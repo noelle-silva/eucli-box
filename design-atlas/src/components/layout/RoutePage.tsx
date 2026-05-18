@@ -20,15 +20,19 @@ type RoutePageProps = {
 };
 
 export function RoutePage({ activeRouteId, route, tree, onRouteChange }: RoutePageProps) {
+  const isImmersive = route.layout === "immersive";
+
   return (
-    <article className="route-page">
-      <header className="route-hero">
-        <span className="eyebrow">{route.eyebrow}</span>
-        <h1>
-          <GradientText>{route.title}</GradientText>
-        </h1>
-        <p>{route.summary}</p>
-      </header>
+    <article className={isImmersive ? "route-page route-page-immersive" : "route-page"}>
+      {isImmersive ? null : (
+        <header className="route-hero">
+          <span className="eyebrow">{route.eyebrow}</span>
+          <h1>
+            <GradientText>{route.title}</GradientText>
+          </h1>
+          <p>{route.summary}</p>
+        </header>
+      )}
 
       <div className="route-blocks">
         {route.blocks.map((block, index) => (
@@ -152,7 +156,7 @@ function VisualBlock({
   onRouteChange: (routeId: string) => void;
 }) {
   return (
-    <section className="visual-block">
+    <section className={block.visual === "document-map" ? "visual-block visual-block-document-map" : "visual-block"}>
       {block.title ? <h2>{block.title}</h2> : null}
       {block.visual === "architecture" ? <ArchitectureMap /> : null}
       {block.visual === "document-map" ? <DocumentMindMap activeRouteId={activeRouteId} onRouteChange={onRouteChange} tree={tree} /> : null}

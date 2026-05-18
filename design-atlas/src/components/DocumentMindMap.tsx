@@ -15,19 +15,6 @@ export function DocumentMindMap({ activeRouteId, tree, onRouteChange }: Document
 
   return (
     <div className={panZoom.isPanning ? "document-map is-panning" : "document-map"} aria-label="文档树思维导图">
-      <div className="document-map-toolbar" data-panzoom-interactive="true">
-        <div>
-          <strong>视角控制</strong>
-          <small>拖动空白处移动，滚轮缩放</small>
-        </div>
-        <div className="document-map-actions">
-          <button type="button" onClick={panZoom.zoomOut}>缩小</button>
-          <span>{Math.round(panZoom.transform.scale * 100)}%</span>
-          <button type="button" onClick={panZoom.zoomIn}>放大</button>
-          <button type="button" onClick={panZoom.resetView}>复位</button>
-        </div>
-      </div>
-
       <div
         ref={panZoom.viewportRef}
         className="document-map-viewport"
@@ -77,12 +64,6 @@ export function DocumentMindMap({ activeRouteId, tree, onRouteChange }: Document
               </section>
             ))}
           </div>
-        </div>
-
-        <div className="document-map-hint" data-panzoom-interactive="true">
-          <span>拖动画布</span>
-          <span>滚轮缩放</span>
-          <span>点击节点跳转</span>
         </div>
       </div>
     </div>

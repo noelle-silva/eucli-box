@@ -39,6 +39,7 @@ export type RouteBlock =
 export type DesignRoute = {
   id: string;
   label: string;
+  layout?: "standard" | "immersive";
   eyebrow: string;
   title: string;
   summary: string;

@@ -3,7 +3,6 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 
 const MIN_SCALE = 0.55;
 const MAX_SCALE = 1.8;
-const ZOOM_STEP = 1.18;
 const WHEEL_ZOOM_SENSITIVITY = 0.0014;
 const DEFAULT_TRANSFORM: ViewTransform = { x: 0, y: 0, scale: 1 };
 
@@ -106,29 +105,6 @@ export function usePanZoomViewport() {
     finishPan(event);
   }
 
-  function zoomIn() {
-    zoomFromViewportCenter(transformRef.current.scale * ZOOM_STEP);
-  }
-
-  function zoomOut() {
-    zoomFromViewportCenter(transformRef.current.scale / ZOOM_STEP);
-  }
-
-  function resetView() {
-    setTransform(DEFAULT_TRANSFORM);
-  }
-
-  function zoomFromViewportCenter(nextScale: number) {
-    const viewport = viewportRef.current;
-
-    if (!viewport) {
-      throw new Error("Pan zoom viewport is not mounted.");
-    }
-
-    const viewportRect = viewport.getBoundingClientRect();
-    zoomToPoint(nextScale, viewportRect.width / 2, viewportRect.height / 2);
-  }
-
   function zoomToPoint(nextScale: number, pointX: number, pointY: number) {
     const currentTransform = transformRef.current;
     const normalizedScale = clamp(nextScale, MIN_SCALE, MAX_SCALE);
@@ -165,14 +141,11 @@ export function usePanZoomViewport() {
     handlePointerDown,
     handlePointerMove,
     handlePointerUp,
-    resetView,
-    zoomIn,
-    zoomOut,
   };
 }
 
 function isInteractiveTarget(target: EventTarget) {
-  return target instanceof Element && Boolean(target.closest("button, a, input, textarea, select, [data-panzoom-interactive='true']"));
+  return target instanceof Element && Boolean(target.closest("button, a, input, textarea, select"));
 }
 
 function clamp(value: number, min: number, max: number) {

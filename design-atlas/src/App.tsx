@@ -24,7 +24,6 @@ export function App() {
     () => getDesignRoute(activeRouteId),
     [activeRouteId],
   );
-
   function handleRouteChange(routeId: string) {
     window.location.hash = routeId;
     setActiveRouteId(routeId);

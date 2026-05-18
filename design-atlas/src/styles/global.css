@@ -64,9 +64,10 @@ button:focus-visible {
   display: grid;
   grid-template-columns: 316px minmax(0, 1fr);
   gap: 24px;
-  width: min(1720px, calc(100% - 28px));
+  width: min(1920px, calc(100% - 28px));
+  height: 100vh;
   margin: 0 auto;
-  padding: 18px 0 48px;
+  padding: 18px 0;
 }
 
 .atlas-sidebar {
@@ -243,12 +244,26 @@ button:focus-visible {
 }
 
 .atlas-route-shell {
+  display: grid;
   min-width: 0;
+  min-height: 0;
 }
 
 .route-page {
   display: grid;
   gap: 24px;
+}
+
+.route-page-immersive {
+  min-height: 0;
+  height: calc(100vh - 36px);
+  gap: 0;
+}
+
+.route-page-immersive .route-blocks {
+  min-height: 0;
+  height: 100%;
+  gap: 0;
 }
 
 .route-hero,
@@ -327,6 +342,12 @@ button:focus-visible {
 .doc-block,
 .visual-block {
   padding: clamp(20px, 3vw, 34px);
+}
+
+.visual-block-document-map {
+  height: 100%;
+  min-height: 0;
+  padding: 0;
 }
 
 .doc-block h2,
@@ -533,9 +554,9 @@ button:focus-visible {
 .document-map {
   --map-line: rgba(99, 102, 241, 0.28);
   --map-strong-line: rgba(124, 58, 237, 0.44);
+  height: 100%;
+  min-height: 0;
   position: relative;
-  display: grid;
-  gap: 14px;
   padding: 14px;
   border: 1px solid rgba(199, 210, 254, 0.72);
   border-radius: 30px;
@@ -548,67 +569,11 @@ button:focus-visible {
   background-size: auto, auto, 38px 38px, 38px 38px, auto;
 }
 
-.document-map-toolbar {
-  position: relative;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.78);
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 14px 42px rgba(15, 23, 42, 0.08);
-  backdrop-filter: blur(18px);
-}
-
-.document-map-toolbar strong,
-.document-map-toolbar small {
-  display: block;
-}
-
-.document-map-toolbar strong {
-  color: var(--ink);
-  font-size: 0.98rem;
-}
-
-.document-map-toolbar small {
-  margin-top: 3px;
-  color: #64748b;
-  font-weight: 800;
-}
-
-.document-map-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.document-map-actions button,
-.document-map-actions span {
-  min-height: 36px;
-  padding: 8px 11px;
-  border: 1px solid rgba(199, 210, 254, 0.72);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.88);
-  color: #334155;
-  font-size: 0.78rem;
-  font-weight: 950;
-}
-
-.document-map-actions button:hover {
-  border-color: rgba(124, 58, 237, 0.28);
-  background: #eef2ff;
-  color: #4338ca;
-}
-
 .document-map-viewport {
   position: relative;
   overflow: hidden;
-  height: clamp(620px, 68vh, 860px);
+  min-height: 0;
+  height: 100%;
   border: 1px solid rgba(199, 210, 254, 0.72);
   border-radius: 24px;
   background:
@@ -659,32 +624,6 @@ button:focus-visible {
   stroke-linecap: round;
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
-}
-
-.document-map-hint {
-  position: absolute;
-  right: 16px;
-  bottom: 16px;
-  z-index: 3;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  max-width: min(560px, calc(100% - 32px));
-  padding: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.78);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.76);
-  box-shadow: 0 14px 42px rgba(15, 23, 42, 0.08);
-  backdrop-filter: blur(18px);
-}
-
-.document-map-hint span {
-  padding: 6px 9px;
-  border-radius: 999px;
-  background: rgba(238, 242, 255, 0.86);
-  color: #475569;
-  font-size: 0.72rem;
-  font-weight: 950;
 }
 
 .document-map-root {
@@ -1519,7 +1458,13 @@ button:focus-visible {
   .atlas-app-shell {
     grid-template-columns: 1fr;
     width: min(100% - 18px, 1720px);
-    padding-top: 10px;
+    height: auto;
+    min-height: 100vh;
+    padding: 10px 0;
+  }
+
+  .route-page-immersive {
+    height: calc(100vh - 20px);
   }
 
   .atlas-sidebar {
@@ -1557,17 +1502,8 @@ button:focus-visible {
     grid-template-columns: 1fr;
   }
 
-  .document-map-toolbar {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .document-map-actions {
-    justify-content: flex-start;
-  }
-
   .document-map-viewport {
-    height: clamp(560px, 68vh, 760px);
+    height: 100%;
   }
 
   .document-map-canvas {
@@ -1602,18 +1538,8 @@ button:focus-visible {
     padding: 10px;
   }
 
-  .document-map-toolbar {
-    padding: 10px;
-  }
-
-  .document-map-actions button,
-  .document-map-actions span {
-    min-height: 34px;
-    padding: 7px 9px;
-  }
-
   .document-map-viewport {
-    height: 560px;
+    height: 100%;
   }
 
   .document-map-canvas {

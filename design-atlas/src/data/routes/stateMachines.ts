@@ -11,36 +11,55 @@ export const stateMachinesRoute: DesignRoute = {
       kind: "mermaid",
       title: "会话状态机",
       chart: `stateDiagram-v2
+  state "空闲" as idle
+  state "运行中" as running
+  state "等待权限" as waiting_permission
+  state "停止中" as stopping
+  state "已停止" as stopped
+  state "已完成" as completed
+  state "失败" as failed
+
   [*] --> idle
-  idle --> running: prompt_submitted
-  running --> waiting_permission: permission_asked
-  waiting_permission --> running: approved
-  waiting_permission --> running: rejected_with_reason
-  running --> stopping: stop_requested
-  stopping --> stopped: runtime_stopped
-  running --> completed: final_answer_saved
-  running --> failed: runtime_error
-  completed --> idle: next_prompt
-  stopped --> idle: next_prompt
-  failed --> idle: recover_or_retry`,
+  idle --> running: 提交提示词
+  running --> waiting_permission: 请求权限确认
+  waiting_permission --> running: 用户批准
+  waiting_permission --> running: 用户拒绝并回填原因
+  running --> stopping: 请求停止
+  stopping --> stopped: 运行时已停止
+  running --> completed: 最终回答已保存
+  running --> failed: 运行时错误
+  completed --> idle: 继续下一轮提示词
+  stopped --> idle: 继续下一轮提示词
+  failed --> idle: 恢复或重试`,
     },
     {
       kind: "mermaid",
       title: "工具调用状态机",
       chart: `stateDiagram-v2
+  state "已解析" as parsed
+  state "权限检查中" as permission_checking
+  state "已拦截" as blocked
+  state "等待用户确认" as waiting_user
+  state "启动工具进程" as spawning
+  state "工具运行中" as running
+  state "执行成功" as succeeded
+  state "执行失败" as failed
+  state "结果已回填" as result_filled
+  state "错误已回填" as error_filled
+
   [*] --> parsed
   parsed --> permission_checking
-  permission_checking --> blocked: deny
-  permission_checking --> waiting_user: ask
-  permission_checking --> spawning: allow
-  waiting_user --> spawning: approve
-  waiting_user --> blocked: reject
+  permission_checking --> blocked: 权限拒绝
+  permission_checking --> waiting_user: 需要询问用户
+  permission_checking --> spawning: 权限放行
+  waiting_user --> spawning: 用户批准
+  waiting_user --> blocked: 用户拒绝
   spawning --> running
-  running --> succeeded: stdout_ok
-  running --> failed: timeout_or_exit_error
-  succeeded --> result_filled
-  failed --> error_filled
-  blocked --> error_filled`,
+  running --> succeeded: stdout 返回成功
+  running --> failed: 超时或退出错误
+  succeeded --> result_filled: 工具结果写回模型上下文
+  failed --> error_filled: 错误原因写回模型上下文
+  blocked --> error_filled: 拒绝原因写回模型上下文`,
     },
     {
       kind: "table",

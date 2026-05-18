@@ -1,12 +1,3 @@
-export type Priority = "P0" | "P1" | "P2";
-
-export type Feature = {
-  priority: Priority;
-  name: string;
-  description: string;
-  pillar: string;
-};
-
 export type Subsystem = {
   name: string;
   role: string;
@@ -31,25 +22,6 @@ export type RoadmapStage = {
   outcome: string;
   items: string[];
 };
-
-export const features: Feature[] = [
-  { priority: "P0", name: "服务器实例", pillar: "Runtime", description: "以 HTTP 服务承载 agent runtime，不做 CLI 或最终客户端。" },
-  { priority: "P0", name: "自有协议", pillar: "Protocol", description: "REST 处理命令与配置，WebSocket 推送实时事件。" },
-  { priority: "P0", name: "会话系统", pillar: "Session", description: "创建会话、发送消息、停止任务、读取历史和维护状态。" },
-  { priority: "P0", name: "Agent 循环", pillar: "Runtime", description: "模型输出、解析工具请求、执行工具、回填结果并继续推理。" },
-  { priority: "P0", name: "VCP 工具触发", pillar: "Tools", description: "使用文本协议声明工具调用，不依赖模型原生 function calling。" },
-  { priority: "P0", name: "子进程工具执行", pillar: "Tools", description: "第一版统一 spawn 子进程，通过 stdin/stdout JSON 通信。" },
-  { priority: "P0", name: "供应商系统", pillar: "Provider", description: "支持 Anthropic 与 OpenAI 兼容协议、密钥和模型坐标。" },
-  { priority: "P0", name: "权限系统", pillar: "Security", description: "allow、deny、ask 三层规则，叠加会话模式。" },
-  { priority: "P1", name: "数据存储中心", pillar: "Data", description: "集中保存会话、配置、权限、工具、Agent 身份和持久化数据。" },
-  { priority: "P1", name: "分频道同步", pillar: "Sync", description: "chat、session、prompt、tool_config 等频道独立增量同步。" },
-  { priority: "P1", name: "占位符系统", pillar: "Prompt", description: "注册、递归解析、防循环嵌套，并连接工具与系统插件。" },
-  { priority: "P1", name: "Agent 身份", pillar: "Agent", description: "名称、头像、描述、系统提示词、会话归属和工具权限。" },
-  { priority: "P1", name: "模型组", pillar: "Provider", description: "把多个模型坐标组成逻辑组，支持权重、轮询、主备和熔断。" },
-  { priority: "P2", name: "VCP 记忆提取版", pillar: "Memory", description: "提取 TagMemo、RAG、DreamWave 等模块作为系统插件。" },
-  { priority: "P2", name: "自研生产记忆", pillar: "Memory", description: "设计长期稳定运行的生产级记忆体系。" },
-  { priority: "P2", name: "同进程工具", pillar: "Tools", description: "未来允许高信任工具以内置方式执行，第一版不做。" },
-];
 
 export const subsystems: Subsystem[] = [
   { name: "会话系统", role: "生命周期、消息收发、事件状态", status: "core", accent: "#7c3aed" },

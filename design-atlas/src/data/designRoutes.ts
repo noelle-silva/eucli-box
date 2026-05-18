@@ -33,7 +33,7 @@ export type RouteBlock =
   | {
       kind: "visual";
       title?: string;
-      visual: "architecture" | "features" | "subsystems" | "mvp" | "decisions" | "roadmap";
+      visual: "architecture" | "feature-tree" | "subsystems" | "mvp" | "decisions" | "roadmap";
     };
 
 export type DesignRoute = {
@@ -167,10 +167,10 @@ export const designRoutes: DesignRoute[] = [
     group: "foundation",
     label: "Feature 清单",
     eyebrow: "Feature Inventory",
-    title: "按 P0/P1/P2 收口功能范围",
-    summary: "P0 保证第一版主链路能跑，P1 做结构化增强，P2 留给未来演进。",
+    title: "按系统树组织功能范围",
+    summary: "功能先按领域和模块分层组织，再给具体条目标 P0/P1/P2，后续实现时按树逐项核对。",
     blocks: [
-      { kind: "visual", visual: "features" },
+      { kind: "visual", visual: "feature-tree" },
       { kind: "visual", visual: "subsystems" },
     ],
   },

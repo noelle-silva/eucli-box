@@ -1,13 +1,14 @@
 import type { CSSProperties } from "react";
 import { ArchitectureMap } from "../ArchitectureMap";
 import { DecisionBoard } from "../DecisionBoard";
-import { FeatureMatrix } from "../FeatureMatrix";
+import { FeatureChecklist } from "../FeatureChecklist";
 import { MvpFlow } from "../MvpFlow";
 import { MermaidDiagram } from "../MermaidDiagram";
 import { Roadmap } from "../Roadmap";
 import { SubsystemGrid } from "../SubsystemGrid";
 import { GradientText, SpotlightPanel } from "../visual-system";
-import { decisions, features, risks, roadmap, subsystems } from "../../data/designAtlas";
+import { decisions, risks, roadmap, subsystems } from "../../data/designAtlas";
+import { featureTree } from "../../data/featureChecklist";
 import type { DesignRoute, RouteBlock } from "../../data/designRoutes";
 
 type RoutePageProps = {
@@ -130,7 +131,7 @@ function VisualBlock({ block }: { block: Extract<RouteBlock, { kind: "visual" }>
     <section className="visual-block">
       {block.title ? <h2>{block.title}</h2> : null}
       {block.visual === "architecture" ? <ArchitectureMap /> : null}
-      {block.visual === "features" ? <FeatureMatrix features={features} /> : null}
+      {block.visual === "feature-tree" ? <FeatureChecklist tree={featureTree} /> : null}
       {block.visual === "subsystems" ? <SubsystemGrid subsystems={subsystems} /> : null}
       {block.visual === "mvp" ? <MvpFlow /> : null}
       {block.visual === "decisions" ? <DecisionBoard decisions={decisions} risks={risks} /> : null}

@@ -10,18 +10,32 @@ export const dataModelRoute: DesignRoute = {
     {
       kind: "mermaid",
       title: "核心实体关系",
-      chart: `erDiagram
-  AGENT ||--o{ SESSION : owns
-  SESSION ||--o{ MESSAGE : contains
-  MESSAGE ||--o{ TOOL_CALL : records
-  TOOL ||--o{ TOOL_CALL : executes
-  AGENT ||--o{ AGENT_TOOL_RULE : limits
-  TOOL ||--o{ AGENT_TOOL_RULE : referenced_by
-  PROVIDER ||--o{ MODEL : offers
-  MODEL_GROUP ||--o{ MODEL_GROUP_MEMBER : contains
-  MODEL ||--o{ MODEL_GROUP_MEMBER : joins
-  PLACEHOLDER ||--o{ PROMPT_TEMPLATE : injects
-  PERMISSION_RULE ||--o{ TOOL_CALL : decides`,
+      chart: `flowchart LR
+  Agent[Agent 身份]
+  Session[会话]
+  Message[消息]
+  ToolCall[工具调用记录]
+  Tool[工具]
+  AgentToolRule[Agent 工具规则]
+  Provider[供应商]
+  Model[模型]
+  ModelGroup[模型组]
+  ModelGroupMember[模型组成员]
+  Placeholder[占位符]
+  PromptTemplate[提示词模板]
+  PermissionRule[权限规则]
+
+  Agent -->|拥有| Session
+  Session -->|包含| Message
+  Message -->|记录| ToolCall
+  Tool -->|执行| ToolCall
+  Agent -->|限制| AgentToolRule
+  Tool -->|被规则引用| AgentToolRule
+  Provider -->|提供| Model
+  ModelGroup -->|包含| ModelGroupMember
+  Model -->|加入| ModelGroupMember
+  Placeholder -->|注入| PromptTemplate
+  PermissionRule -->|裁决| ToolCall`,
     },
     {
       kind: "table",

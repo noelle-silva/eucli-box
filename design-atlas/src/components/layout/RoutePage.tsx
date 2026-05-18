@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { ArchitectureMap } from "../ArchitectureMap";
 import { DecisionBoard } from "../DecisionBoard";
+import { DocumentMindMap } from "../DocumentMindMap";
 import { FeatureChecklist } from "../FeatureChecklist";
 import { MvpFlow } from "../MvpFlow";
 import { MermaidDiagram } from "../MermaidDiagram";
@@ -9,13 +10,16 @@ import { SubsystemGrid } from "../SubsystemGrid";
 import { GradientText, SpotlightPanel } from "../visual-system";
 import { decisions, risks, roadmap, subsystems } from "../../data/designAtlas";
 import { featureTree } from "../../data/featureChecklist";
-import type { DesignRoute, RouteBlock } from "../../data/routes";
+import type { DesignRoute, DocumentTreeSection, RouteBlock } from "../../data/routes";
 
 type RoutePageProps = {
+  activeRouteId: string;
   route: DesignRoute;
+  tree: DocumentTreeSection[];
+  onRouteChange: (routeId: string) => void;
 };
 
-export function RoutePage({ route }: RoutePageProps) {
+export function RoutePage({ activeRouteId, route, tree, onRouteChange }: RoutePageProps) {
   return (
     <article className="route-page">
       <header className="route-hero">
@@ -28,16 +32,26 @@ export function RoutePage({ route }: RoutePageProps) {
 
       <div className="route-blocks">
         {route.blocks.map((block, index) => (
-          <RouteBlockView block={block} key={`${route.id}-${block.kind}-${index}`} />
+          <RouteBlockView activeRouteId={activeRouteId} block={block} key={`${route.id}-${block.kind}-${index}`} onRouteChange={onRouteChange} tree={tree} />
         ))}
       </div>
     </article>
   );
 }
 
-function RouteBlockView({ block }: { block: RouteBlock }) {
+function RouteBlockView({
+  activeRouteId,
+  block,
+  tree,
+  onRouteChange,
+}: {
+  activeRouteId: string;
+  block: RouteBlock;
+  tree: DocumentTreeSection[];
+  onRouteChange: (routeId: string) => void;
+}) {
   if (block.kind === "visual") {
-    return <VisualBlock block={block} />;
+    return <VisualBlock activeRouteId={activeRouteId} block={block} onRouteChange={onRouteChange} tree={tree} />;
   }
 
   return (
@@ -126,11 +140,22 @@ function TimelineBlock({ block }: { block: Extract<RouteBlock, { kind: "timeline
   );
 }
 
-function VisualBlock({ block }: { block: Extract<RouteBlock, { kind: "visual" }> }) {
+function VisualBlock({
+  activeRouteId,
+  block,
+  tree,
+  onRouteChange,
+}: {
+  activeRouteId: string;
+  block: Extract<RouteBlock, { kind: "visual" }>;
+  tree: DocumentTreeSection[];
+  onRouteChange: (routeId: string) => void;
+}) {
   return (
     <section className="visual-block">
       {block.title ? <h2>{block.title}</h2> : null}
       {block.visual === "architecture" ? <ArchitectureMap /> : null}
+      {block.visual === "document-map" ? <DocumentMindMap activeRouteId={activeRouteId} onRouteChange={onRouteChange} tree={tree} /> : null}
       {block.visual === "feature-tree" ? <FeatureChecklist tree={featureTree} /> : null}
       {block.visual === "subsystems" ? <SubsystemGrid subsystems={subsystems} /> : null}
       {block.visual === "mvp" ? <MvpFlow /> : null}

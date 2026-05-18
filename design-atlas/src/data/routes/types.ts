@@ -33,7 +33,7 @@ export type RouteBlock =
   | {
       kind: "visual";
       title?: string;
-      visual: "architecture" | "feature-tree" | "subsystems" | "mvp" | "decisions" | "roadmap";
+      visual: "architecture" | "document-map" | "feature-tree" | "subsystems" | "mvp" | "decisions" | "roadmap";
     };
 
 export type DesignRoute = {

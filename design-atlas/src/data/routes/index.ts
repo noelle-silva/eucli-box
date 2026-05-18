@@ -4,6 +4,7 @@ import { dataFlowRoute } from "./dataFlow";
 import { dataModelRoute } from "./dataModel";
 import { decisionsRoute } from "./decisions";
 import { featuresRoute } from "./features";
+import { homeRoute } from "./home";
 import { implementationRoadmapRoute } from "./implementationRoadmap";
 import { openQuestionsRoute } from "./openQuestions";
 import { stateMachinesRoute } from "./stateMachines";
@@ -16,6 +17,7 @@ export type { DesignRoute, DocumentTreeNode, DocumentTreeSection, RouteBlock } f
 export { documentTree } from "./documentTree";
 
 export const designRoutes: DesignRoute[] = [
+  homeRoute,
   featuresRoute,
   architectureRoute,
   dataFlowRoute,
@@ -29,7 +31,9 @@ export const designRoutes: DesignRoute[] = [
   changelogRoute,
 ];
 
-export const defaultRouteId = "features";
+const standaloneRouteIds = new Set(["home"]);
+
+export const defaultRouteId = "home";
 
 const routeById = new Map<string, DesignRoute>();
 
@@ -50,7 +54,7 @@ for (const routeId of documentRouteIds) {
 }
 
 for (const route of designRoutes) {
-  if (!documentRouteIds.has(route.id)) {
+  if (!documentRouteIds.has(route.id) && !standaloneRouteIds.has(route.id)) {
     throw new Error(`Design route is not mounted in document tree: ${route.id}`);
   }
 }

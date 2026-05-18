@@ -34,7 +34,7 @@ export function App() {
     <div className="atlas-app-shell">
       <Sidebar routes={designRoutes} tree={documentTree} activeRouteId={activeRoute.id} onRouteChange={handleRouteChange} />
       <main className="atlas-route-shell">
-        <RoutePage route={activeRoute} />
+        <RoutePage activeRouteId={activeRoute.id} onRouteChange={handleRouteChange} route={activeRoute} tree={documentTree} />
       </main>
     </div>
   );

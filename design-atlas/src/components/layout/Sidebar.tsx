@@ -9,16 +9,25 @@ type SidebarProps = {
 
 export function Sidebar({ routes, tree, activeRouteId, onRouteChange }: SidebarProps) {
   const routeById = new Map(routes.map((route) => [route.id, route]));
+  const homeRoute = routeById.get("home");
+
+  if (!homeRoute) {
+    throw new Error("Sidebar requires a home route entry.");
+  }
 
   return (
     <aside className="atlas-sidebar" aria-label="design atlas navigation">
-      <div className="sidebar-brand">
+      <button
+        type="button"
+        className={activeRouteId === homeRoute.id ? "sidebar-brand active" : "sidebar-brand"}
+        onClick={() => onRouteChange(homeRoute.id)}
+      >
         <span>eu</span>
         <div>
           <strong>Web Docs</strong>
-          <small>结构化文档树</small>
+          <small>返回文档树主页</small>
         </div>
-      </div>
+      </button>
 
       <nav className="sidebar-nav">
         {tree.map((section) => (

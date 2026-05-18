@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Sidebar } from "./components/layout/Sidebar";
 import { RoutePage } from "./components/layout/RoutePage";
-import { defaultRouteId, designRoutes, routeGroups } from "./data/designRoutes";
+import { defaultRouteId, designRoutes, documentTree, getDesignRoute, hasDesignRoute } from "./data/routes";
 
 function readInitialRouteId() {
   const routeId = window.location.hash.replace("#", "");
-  return designRoutes.some((route) => route.id === routeId) ? routeId : defaultRouteId;
+  return hasDesignRoute(routeId) ? routeId : defaultRouteId;
 }
 
 export function App() {
@@ -21,7 +21,7 @@ export function App() {
   }, []);
 
   const activeRoute = useMemo(
-    () => designRoutes.find((route) => route.id === activeRouteId) ?? designRoutes[0],
+    () => getDesignRoute(activeRouteId),
     [activeRouteId],
   );
 
@@ -32,7 +32,7 @@ export function App() {
 
   return (
     <div className="atlas-app-shell">
-      <Sidebar routes={designRoutes} groups={routeGroups} activeRouteId={activeRoute.id} onRouteChange={handleRouteChange} />
+      <Sidebar routes={designRoutes} tree={documentTree} activeRouteId={activeRoute.id} onRouteChange={handleRouteChange} />
       <main className="atlas-route-shell">
         <RoutePage route={activeRoute} />
       </main>

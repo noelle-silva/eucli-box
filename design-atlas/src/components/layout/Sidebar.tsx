@@ -1,43 +1,76 @@
-import type { DesignRoute } from "../../data/designRoutes";
+import type { DesignRoute, DocumentTreeNode, DocumentTreeSection } from "../../data/routes";
 
 type SidebarProps = {
   routes: DesignRoute[];
-  groups: Array<{ id: string; label: string }>;
+  tree: DocumentTreeSection[];
   activeRouteId: string;
   onRouteChange: (routeId: string) => void;
 };
 
-export function Sidebar({ routes, groups, activeRouteId, onRouteChange }: SidebarProps) {
+export function Sidebar({ routes, tree, activeRouteId, onRouteChange }: SidebarProps) {
+  const routeById = new Map(routes.map((route) => [route.id, route]));
+
   return (
     <aside className="atlas-sidebar" aria-label="design atlas navigation">
       <div className="sidebar-brand">
         <span>eu</span>
         <div>
-          <strong>Design Atlas</strong>
-          <small>项目构想导航</small>
+          <strong>Web Docs</strong>
+          <small>结构化文档树</small>
         </div>
       </div>
 
       <nav className="sidebar-nav">
-        {groups.map((group) => (
-          <section className="sidebar-group" key={group.id}>
-            <h2>{group.label}</h2>
-            {routes
-              .filter((route) => route.group === group.id)
-              .map((route) => (
-                <button
-                  type="button"
-                  className={route.id === activeRouteId ? "sidebar-link active" : "sidebar-link"}
-                  key={route.id}
-                  onClick={() => onRouteChange(route.id)}
-                >
-                  <span>{route.label}</span>
-                  <small>{route.eyebrow}</small>
-                </button>
-              ))}
+        {tree.map((section) => (
+          <section className="sidebar-group" key={section.id}>
+            <h2>{section.label}</h2>
+            <p>{section.summary}</p>
+            {section.children.map((node) => (
+              <SidebarNode activeRouteId={activeRouteId} depth={0} key={node.id} node={node} onRouteChange={onRouteChange} routeById={routeById} />
+            ))}
           </section>
         ))}
       </nav>
     </aside>
+  );
+}
+
+function SidebarNode({
+  activeRouteId,
+  depth,
+  node,
+  onRouteChange,
+  routeById,
+}: {
+  activeRouteId: string;
+  depth: number;
+  node: DocumentTreeNode;
+  onRouteChange: (routeId: string) => void;
+  routeById: Map<string, DesignRoute>;
+}) {
+  if (node.kind === "route") {
+    const route = routeById.get(node.routeId)!;
+
+    return (
+      <button
+        type="button"
+        className={route.id === activeRouteId ? "sidebar-link active" : "sidebar-link"}
+        data-depth={depth}
+        onClick={() => onRouteChange(node.routeId)}
+      >
+        <span>{node.label}</span>
+        <small>{route.eyebrow}</small>
+      </button>
+    );
+  }
+
+  return (
+    <div className="sidebar-branch" data-depth={depth}>
+      <strong>{node.label}</strong>
+      {node.summary ? <small>{node.summary}</small> : null}
+      {node.children.map((child) => (
+        <SidebarNode activeRouteId={activeRouteId} depth={depth + 1} key={child.id} node={child} onRouteChange={onRouteChange} routeById={routeById} />
+      ))}
+    </div>
   );
 }

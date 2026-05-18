@@ -138,12 +138,52 @@ button:focus-visible {
   text-transform: uppercase;
 }
 
+.sidebar-group > p {
+  margin: 0 0 10px;
+  padding: 0 10px;
+  color: #cbd5e1;
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1.55;
+}
+
+.sidebar-branch {
+  display: grid;
+  gap: 7px;
+  margin-top: 9px;
+  padding: 10px 10px 10px calc(10px + var(--branch-depth, 0) * 12px);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.32);
+}
+
+.sidebar-branch[data-depth="1"] {
+  --branch-depth: 1;
+}
+
+.sidebar-branch[data-depth="2"] {
+  --branch-depth: 2;
+}
+
+.sidebar-branch strong {
+  color: #e0f2fe;
+  font-size: 0.86rem;
+  font-weight: 950;
+}
+
+.sidebar-branch small {
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 .sidebar-link {
   display: grid;
   width: 100%;
   gap: 3px;
   margin-top: 7px;
-  padding: 11px 12px;
+  padding: 11px 12px 11px calc(12px + var(--link-depth, 0) * 14px);
   border: 1px solid transparent;
   border-radius: 17px;
   background: transparent;
@@ -154,6 +194,14 @@ button:focus-visible {
     border-color 180ms ease,
     transform 180ms ease,
     color 180ms ease;
+}
+
+.sidebar-link[data-depth="1"] {
+  --link-depth: 1;
+}
+
+.sidebar-link[data-depth="2"] {
+  --link-depth: 2;
 }
 
 .sidebar-link span {

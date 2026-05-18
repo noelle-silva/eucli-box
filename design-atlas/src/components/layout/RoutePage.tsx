@@ -9,7 +9,7 @@ import { SubsystemGrid } from "../SubsystemGrid";
 import { GradientText, SpotlightPanel } from "../visual-system";
 import { decisions, risks, roadmap, subsystems } from "../../data/designAtlas";
 import { featureTree } from "../../data/featureChecklist";
-import type { DesignRoute, RouteBlock } from "../../data/designRoutes";
+import type { DesignRoute, RouteBlock } from "../../data/routes";
 
 type RoutePageProps = {
   route: DesignRoute;

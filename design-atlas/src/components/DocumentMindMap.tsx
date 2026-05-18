@@ -16,7 +16,7 @@ export function DocumentMindMap({ activeRouteId, tree, onRouteChange }: Document
   return (
     <div className={panZoom.isPanning ? "document-map is-panning" : "document-map"} aria-label="文档树思维导图">
       <div
-        ref={panZoom.viewportRef}
+        ref={panZoom.setViewportElement}
         className="document-map-viewport"
         onPointerCancel={panZoom.handlePointerCancel}
         onPointerDown={panZoom.handlePointerDown}

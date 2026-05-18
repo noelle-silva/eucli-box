@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
 const MIN_SCALE = 0.55;
@@ -22,22 +22,32 @@ type DragState = {
 
 export function usePanZoomViewport() {
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const detachWheelListenerRef = useRef<(() => void) | null>(null);
   const dragStateRef = useRef<DragState | null>(null);
   const transformRef = useRef<ViewTransform>(DEFAULT_TRANSFORM);
   const [transform, setTransformState] = useState<ViewTransform>(DEFAULT_TRANSFORM);
   const [isPanning, setIsPanning] = useState(false);
 
   useEffect(() => {
-    const viewport = viewportRef.current;
+    return () => {
+      detachWheelListenerRef.current?.();
+    };
+  }, []);
+
+  const setViewportElement = useCallback((viewport: HTMLDivElement | null) => {
+    detachWheelListenerRef.current?.();
+    detachWheelListenerRef.current = null;
+    viewportRef.current = viewport;
 
     if (!viewport) {
-      throw new Error("Pan zoom viewport is not mounted.");
+      return;
     }
 
     const mountedViewport = viewport;
 
     function handleNativeWheel(event: WheelEvent) {
       event.preventDefault();
+      event.stopPropagation();
 
       const viewportRect = mountedViewport.getBoundingClientRect();
       const pointX = event.clientX - viewportRect.left;
@@ -49,10 +59,7 @@ export function usePanZoomViewport() {
     }
 
     mountedViewport.addEventListener("wheel", handleNativeWheel, { passive: false });
-
-    return () => {
-      mountedViewport.removeEventListener("wheel", handleNativeWheel);
-    };
+    detachWheelListenerRef.current = () => mountedViewport.removeEventListener("wheel", handleNativeWheel);
   }, []);
 
   function setTransform(nextTransform: ViewTransform) {
@@ -136,7 +143,7 @@ export function usePanZoomViewport() {
   return {
     isPanning,
     transform,
-    viewportRef,
+    setViewportElement,
     handlePointerCancel,
     handlePointerDown,
     handlePointerMove,

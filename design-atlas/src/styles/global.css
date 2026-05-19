@@ -420,11 +420,16 @@ button:focus-visible {
   pointer-events: none;
 }
 
-.relation-graph-lines path {
+.relation-graph-lines .relation-curve {
   fill: none;
   stroke: #8fa78b;
   stroke-linecap: round;
   stroke-width: 2.5;
+}
+
+.relation-graph-lines .relation-arrow-head {
+  fill: #8fa78b;
+  stroke: none;
 }
 
 .relation-node-column,

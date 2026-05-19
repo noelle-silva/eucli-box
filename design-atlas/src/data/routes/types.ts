@@ -34,12 +34,14 @@ export type RouteBlock =
       kind: "visual";
       title?: string;
       visual: "architecture" | "document-map" | "feature-tree" | "subsystems" | "mvp" | "decisions" | "roadmap";
+      density?: "standard" | "compact";
     };
 
 export type DesignRoute = {
   id: string;
   label: string;
   layout?: "standard" | "immersive";
+  hero?: "standard" | "hidden";
   eyebrow: string;
   title: string;
   summary: string;

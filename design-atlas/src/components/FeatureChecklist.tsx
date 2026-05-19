@@ -2,15 +2,19 @@ import type { CSSProperties } from "react";
 import type { FeatureBranchNode, FeatureLeafNode, FeatureNode } from "../data/featureChecklist";
 import { featureChecklistTotals, featureDeliveryStageLabels, getFeatureCount } from "../data/featureChecklist";
 import { priorityDisplayLabels } from "../data/priorities";
+import { useFeatureTreeExpansion, type FeatureTreeExpansion } from "./feature-checklist/useFeatureTreeExpansion";
 import { SpotlightPanel } from "./visual-system";
 
 type FeatureChecklistProps = {
+  density?: "standard" | "compact";
   tree: FeatureBranchNode[];
 };
 
-export function FeatureChecklist({ tree }: FeatureChecklistProps) {
+export function FeatureChecklist({ density = "standard", tree }: FeatureChecklistProps) {
+  const expansion = useFeatureTreeExpansion(tree);
+
   return (
-    <div className="feature-checklist">
+    <div className={`feature-checklist feature-checklist-${density}`}>
       <header className="feature-checklist-summary">
         <div>
           <span className="diagram-kicker">Feature Tree</span>
@@ -25,6 +29,17 @@ export function FeatureChecklist({ tree }: FeatureChecklistProps) {
         </div>
       </header>
 
+      <div className="feature-checklist-toolbar" aria-label="feature tree expansion controls">
+        <div>
+          <span>展开状态</span>
+          <strong>{expansion.expandedCount} / {expansion.allBranchIds.length} 个分支已展开</strong>
+        </div>
+        <div className="feature-checklist-actions">
+          <button type="button" onClick={expansion.expandAll}>全部展开</button>
+          <button type="button" onClick={expansion.collapseAll}>全部收起</button>
+        </div>
+      </div>
+
       <div className="feature-checklist-status-row" aria-label="delivery stage totals">
         {Object.entries(featureChecklistTotals.byStage).map(([stage, total]) => (
           <span key={stage}>{featureDeliveryStageLabels[stage as keyof typeof featureDeliveryStageLabels]} · {total}</span>
@@ -33,7 +48,7 @@ export function FeatureChecklist({ tree }: FeatureChecklistProps) {
 
       <div className="feature-tree-root">
         {tree.map((node) => (
-          <FeatureBranch branch={node} depth={0} key={node.id} />
+          <FeatureBranch branch={node} depth={0} expansion={expansion} key={node.id} />
         ))}
       </div>
     </div>
@@ -49,32 +64,46 @@ function Metric({ label, value }: { label: string; value: number }) {
   );
 }
 
-function FeatureBranch({ branch, depth }: { branch: FeatureBranchNode; depth: number }) {
+function FeatureBranch({ branch, depth, expansion }: { branch: FeatureBranchNode; depth: number; expansion: FeatureTreeExpansion }) {
   const accent = branch.accent ?? "#7c3aed";
+  const isExpanded = expansion.isExpanded(branch.id);
+  const childrenId = `feature-tree-children-${branch.id}`;
+  const branchKindLabel = depth === 0 ? "Domain" : "Module";
 
   return (
-    <section className={`feature-tree-branch depth-${Math.min(depth, 2)}`} style={{ "--branch-accent": accent } as CSSProperties}>
-      <div className="feature-tree-branch-head">
-        <div>
-          <span>{depth === 0 ? "Domain" : "Module"}</span>
-          <h3>{branch.title}</h3>
-          <p>{branch.summary}</p>
-        </div>
-        <strong>{getFeatureCount(branch)} 项</strong>
-      </div>
+    <section className={`feature-tree-branch depth-${Math.min(depth, 2)} ${isExpanded ? "is-expanded" : "is-collapsed"}`} style={{ "--branch-accent": accent } as CSSProperties}>
+      <button
+        type="button"
+        className="feature-tree-branch-head"
+        aria-expanded={isExpanded}
+        aria-controls={childrenId}
+        onClick={() => expansion.toggleBranch(branch.id)}
+      >
+        <span className="feature-tree-branch-copy">
+          <span className="feature-tree-branch-kicker">{branchKindLabel}</span>
+          <span className="feature-tree-branch-title">{branch.title}</span>
+          <span className="feature-tree-branch-summary">{branch.summary}</span>
+        </span>
+        <span className="feature-tree-branch-meta">
+          <span>{getFeatureCount(branch)} 项</span>
+          <span className="feature-tree-toggle-indicator" aria-hidden="true">{isExpanded ? "-" : "+"}</span>
+        </span>
+      </button>
 
-      <div className="feature-tree-children">
-        {branch.children.map((node) => (
-          <FeatureNodeView node={node} depth={depth + 1} key={node.id} />
-        ))}
-      </div>
+      {isExpanded ? (
+        <div className="feature-tree-children" id={childrenId}>
+          {branch.children.map((node) => (
+            <FeatureNodeView node={node} depth={depth + 1} expansion={expansion} key={node.id} />
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }
 
-function FeatureNodeView({ node, depth }: { node: FeatureNode; depth: number }) {
+function FeatureNodeView({ node, depth, expansion }: { node: FeatureNode; depth: number; expansion: FeatureTreeExpansion }) {
   if (node.kind === "branch") {
-    return <FeatureBranch branch={node} depth={depth} />;
+    return <FeatureBranch branch={node} depth={depth} expansion={expansion} />;
   }
 
   return <FeatureLeaf feature={node} />;

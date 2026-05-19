@@ -21,10 +21,11 @@ type RoutePageProps = {
 
 export function RoutePage({ activeRouteId, route, tree, onRouteChange }: RoutePageProps) {
   const isImmersive = route.layout === "immersive";
+  const shouldShowHero = !isImmersive && route.hero !== "hidden";
 
   return (
     <article className={isImmersive ? "route-page route-page-immersive" : "route-page"}>
-      {isImmersive ? null : (
+      {shouldShowHero ? (
         <header className="route-hero">
           <span className="eyebrow">{route.eyebrow}</span>
           <h1>
@@ -32,7 +33,7 @@ export function RoutePage({ activeRouteId, route, tree, onRouteChange }: RoutePa
           </h1>
           <p>{route.summary}</p>
         </header>
-      )}
+      ) : null}
 
       <div className="route-blocks">
         {route.blocks.map((block, index) => (
@@ -160,7 +161,7 @@ function VisualBlock({
       {block.title ? <h2>{block.title}</h2> : null}
       {block.visual === "architecture" ? <ArchitectureMap /> : null}
       {block.visual === "document-map" ? <DocumentMindMap activeRouteId={activeRouteId} onRouteChange={onRouteChange} tree={tree} /> : null}
-      {block.visual === "feature-tree" ? <FeatureChecklist tree={featureTree} /> : null}
+      {block.visual === "feature-tree" ? <FeatureChecklist density={block.density} tree={featureTree} /> : null}
       {block.visual === "subsystems" ? <SubsystemGrid subsystems={subsystems} /> : null}
       {block.visual === "mvp" ? <MvpFlow /> : null}
       {block.visual === "decisions" ? <DecisionBoard decisions={decisions} risks={risks} /> : null}

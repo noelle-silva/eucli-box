@@ -95,6 +95,7 @@
       "moduleId": "client-protocol",
       "stage": "mvp",
       "intent": "实例以 HTTP 服务承载 agent runtime，对外接收客户端请求。",
+      "description": "HTTP 服务器模式是 eucli-box 对外暴露能力的基础入口。它不是单独的业务分支，而是把同一个 agent runtime 包装成可被客户端调用的服务形态。这个能力需要明确哪些请求属于同步命令、哪些状态通过后续事件流返回，并且在创建会话、发送消息、停止任务、读取历史这些基础操作里保持一致的错误表达。它的价值是让后续客户端、自动化脚本和其他集成方式都能连接到同一套运行核心，而不是各自实现一套会话与工具逻辑。",
       "acceptance": "能创建会话、发送消息、停止任务、查询历史，并返回明确错误。",
       "relations": { "dependsOn": [], "supports": ["rest-command-api"] },
       "signals": { "inputs": ["client_request"], "outputs": ["server_response"], "events": [] }
@@ -106,6 +107,7 @@
       "moduleId": "client-protocol",
       "stage": "mvp",
       "intent": "用 REST 处理会话、配置、工具、供应商、Agent 等同步操作。",
+      "description": "REST 命令接口负责承载所有具有明确请求和响应边界的操作，例如创建会话、提交提示词、修改配置、读取供应商列表和管理 Agent。它不应该混入模型推理过程中的流式片段，也不应该承担实时事件推送职责。这个原子功能的重点是把命令语义做清楚：请求成功时返回结构化结果，请求失败时返回可定位的结构化错误，并且让后续 WebSocket 事件流只处理运行时变化。",
       "acceptance": "接口语义清楚，命令请求不混入实时流式事件。",
       "relations": { "dependsOn": ["http-server-mode"], "supports": ["session-lifecycle", "websocket-event-stream"] },
       "signals": { "inputs": ["command_request"], "outputs": ["command_result"], "events": ["structured_error"] }
@@ -117,6 +119,7 @@
       "moduleId": "client-protocol",
       "stage": "mvp",
       "intent": "推送 AI 文本、工具进度、权限请求、状态变化和错误。",
+      "description": "WebSocket 实时事件流负责把运行时过程透明地推给客户端。模型输出的文本增量、工具开始和结束、权限请求、会话状态变化、运行错误都应该通过事件表达，而不是让客户端猜测当前发生了什么。这个能力要和 REST 命令接口形成清晰分工：REST 负责发起动作，WebSocket 负责展示过程。它的核心价值是让客户端可以构建稳定的聊天窗口、运行检查器和权限确认界面。",
       "acceptance": "客户端能按事件类型展示 text_delta、tool_result、permission_asked、session_status。",
       "relations": { "dependsOn": ["rest-command-api"], "supports": ["agent-loop"] },
       "signals": { "inputs": ["runtime_event"], "outputs": ["client_event"], "events": ["text_delta", "permission_asked", "session_status"] }
@@ -128,6 +131,7 @@
       "moduleId": "session-loop",
       "stage": "mvp",
       "intent": "支持会话创建、恢复、停止、状态维护、历史读取和标题摘要。",
+      "description": "会话生命周期定义一次用户任务从创建到结束的完整状态边界。它需要保存会话身份、归属 Agent、消息顺序、运行状态、停止状态和可恢复历史。这个功能不能只服务当前 UI，而要作为运行时、数据存储、事件流和后续同步机制的共同基础。只有会话生命周期稳定，后续的 Agent 循环、工具执行、错误恢复和历史回放才有可靠锚点。",
       "acceptance": "一次会话从创建到结束的数据和状态都能被查询并复现。",
       "relations": { "dependsOn": ["rest-command-api"], "supports": ["agent-loop"] },
       "signals": { "inputs": ["session_command"], "outputs": ["session_snapshot"], "events": ["session_status"] }
@@ -139,6 +143,7 @@
       "moduleId": "session-loop",
       "stage": "mvp",
       "intent": "模型输出后扫描工具请求，执行工具，回填结果，再继续推理。",
+      "description": "Agent 循环是 eucli-box 的核心运行机制。它负责把用户提示词、历史消息、供应商模型、工具请求协议和工具结果连接成一个可持续推进的推理过程。模型每次输出后，系统需要判断是否出现工具请求；如果出现，就进入工具解析、权限判断、执行和结果回填；如果没有，就生成最终回答并保存会话结果。这个功能必须把每一步变成可观察过程，不能让工具调用和错误隐藏在黑盒里。",
       "acceptance": "一次任务内能完成多轮模型调用与工具调用，直到产生最终回答。",
       "relations": { "dependsOn": ["session-lifecycle", "websocket-event-stream", "provider-config"], "supports": ["tool-request-protocol"] },
       "signals": { "inputs": ["prompt", "history"], "outputs": ["assistant_message"], "events": ["step_started", "step_finished"] }
@@ -150,6 +155,7 @@
       "moduleId": "tool-runtime",
       "stage": "mvp",
       "intent": "模型通过文本协议声明工具名和参数。",
+      "description": "工具请求协议规定模型如何用文本表达工具调用意图。它不依赖供应商原生 function calling，而是从模型文本中解析出工具名、参数和请求边界。这个功能的关键不是简单字符串匹配，而是要保证解析失败能明确暴露、多个请求能被识别、参数能进入后续权限和执行流程。它为工具系统提供统一入口，让不同模型供应商都能复用同一套工具触发机制。",
       "acceptance": "能从模型文本中提取多个工具请求，并把解析失败作为真实错误返回。",
       "relations": { "dependsOn": ["agent-loop"], "supports": ["permission-rules"] },
       "signals": { "inputs": ["model_text"], "outputs": ["tool_request"], "events": ["tool_parse_error"] }
@@ -161,6 +167,7 @@
       "moduleId": "tool-runtime",
       "stage": "mvp",
       "intent": "工具执行前匹配权限规则，直接放行、拒绝或询问用户。",
+      "description": "权限规则负责在工具真正执行前做能力边界裁决。它需要综合会话安全模式、工具身份、Agent 权限和具体规则，输出 allow、deny 或 ask。这个功能不是 UI 弹窗本身，而是运行时的安全决策点。它必须保证拒绝原因可回填给 Agent，需要用户确认时能通过事件通知客户端，并且不能让任何工具绕过权限系统直接执行。",
       "acceptance": "权限结果能决定工具是否执行，并把拒绝原因或用户选择回填给 agent。",
       "relations": { "dependsOn": ["tool-request-protocol"], "supports": ["subprocess-tool-runtime"] },
       "signals": { "inputs": ["tool_request"], "outputs": ["permission_decision"], "events": ["permission_asked"] }
@@ -172,6 +179,7 @@
       "moduleId": "tool-runtime",
       "stage": "mvp",
       "intent": "第一版统一 spawn 独立子进程，通过 stdin/stdout JSON 通信。",
+      "description": "子进程工具执行提供第一版工具隔离边界。工具不应该直接运行在 Agent 主循环内部，而应作为独立进程通过标准输入输出交换 JSON 数据。这个功能需要处理命令启动、参数传递、超时、退出码、stdout 解析、stderr 错误和结果回填。它的目标是让工具失败不会拖垮主实例，同时让每一次失败都能成为可展示、可追踪、可回填的结构化结果。",
       "acceptance": "工具崩溃不会拖垮实例，超时、非零退出、JSON 错误都有明确结果。",
       "relations": { "dependsOn": ["permission-rules"], "supports": ["agent-loop"] },
       "signals": { "inputs": ["approved_tool_request"], "outputs": ["tool_result"], "events": ["tool_started", "tool_failed"] }
@@ -183,6 +191,7 @@
       "moduleId": "sync-store",
       "stage": "alpha",
       "intent": "集中保存会话、聊天、供应商、工具、权限、Agent 和提示词数据。",
+      "description": "数据存储中心负责把运行时和配置中的重要事实沉淀为可查询、可同步、可恢复的数据。它不是简单数据库表集合，而是项目所有长期状态的权威组织方式。会话、消息、供应商、工具配置、权限规则、Agent 身份和提示词材料都需要在这里形成明确归属。这个功能为后续本地副本、多实例同步、冲突处理和历史恢复提供数据基础。",
       "acceptance": "核心配置和业务记录不散落在客户端或临时内存里。",
       "relations": { "dependsOn": ["session-lifecycle"], "supports": [] },
       "signals": { "inputs": ["domain_record"], "outputs": ["stored_record"], "events": [] }
@@ -194,6 +203,7 @@
       "moduleId": "provider-agent",
       "stage": "mvp",
       "intent": "支持模型供应商配置，保存 baseUrl、model、API Key 等信息。",
+      "description": "供应商配置系统负责把模型来源变成可管理的数据能力。它需要支持不同供应商协议、模型坐标、基础地址和认证信息，并让 Agent 循环能够通过统一方式取得模型调用配置。这个功能的重点是把供应商差异收束在配置层和适配层，避免业务主链路直接依赖某一个模型平台。后续的密钥加密、模型组、熔断和降级都以它为基础。",
       "acceptance": "用户能配置模型供应商并被 runtime 正确调用。",
       "relations": { "dependsOn": [], "supports": ["agent-loop"] },
       "signals": { "inputs": ["provider_form"], "outputs": ["provider_config"], "events": [] }
@@ -205,6 +215,7 @@
       "moduleId": "provider-agent",
       "stage": "alpha",
       "intent": "Agent 拥有名称、头像、描述、系统提示词、会话归属和工具权限。",
+      "description": "Agent 身份系统定义一次对话以什么角色、什么提示词、什么工具边界和什么会话归属运行。它不是简单展示资料，而是会影响权限、上下文、会话隔离和用户体验的核心实体。这个功能需要让每个会话明确绑定 Agent，并让不同 Agent 的权限清单和系统提示词互不混淆。它为后续多 Agent 管理、个性化配置和工具白名单提供基础。",
       "acceptance": "发起会话必须选择 Agent，不同 Agent 的会话和权限互不混淆。",
       "relations": { "dependsOn": ["provider-config"], "supports": ["permission-rules"] },
       "signals": { "inputs": ["agent_profile"], "outputs": ["agent_context"], "events": [] }

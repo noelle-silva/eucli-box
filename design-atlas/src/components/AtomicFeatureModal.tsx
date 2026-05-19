@@ -1,4 +1,5 @@
 import { getAtomicFeatureView, stageLabels } from "../domain/projectDocIndex";
+import { FeatureRelationGraph } from "./FeatureRelationGraph";
 
 type AtomicFeatureModalProps = {
   featureId: string;
@@ -21,6 +22,8 @@ export function AtomicFeatureModal({ featureId, onClose, onFeatureOpen }: Atomic
           <button className="close-button" type="button" onClick={onClose}>关闭</button>
         </header>
 
+        <FeatureRelationGraph graph={feature.relationGraph} onFeatureOpen={onFeatureOpen} />
+
         <div className="fact-grid">
           <Fact label="领域" value={feature.domain.name} />
           <Fact label="模块" value={feature.module.name} />
@@ -28,14 +31,16 @@ export function AtomicFeatureModal({ featureId, onClose, onFeatureOpen }: Atomic
         </div>
 
         <section className="modal-section wide">
+          <h3>详细描述</h3>
+          <p>{feature.description}</p>
+        </section>
+
+        <section className="modal-section">
           <h3>验收口径</h3>
           <p>{feature.acceptance}</p>
         </section>
 
         <div className="modal-grid">
-          <FeatureLinks title="依赖" empty="暂无依赖" features={feature.dependencies} onFeatureOpen={onFeatureOpen} />
-          <FeatureLinks title="支持后续" empty="暂无后续功能" features={feature.supportedFeatures} onFeatureOpen={onFeatureOpen} />
-          <FeatureLinks title="被依赖" empty="暂无被依赖" features={feature.dependentFeatures} onFeatureOpen={onFeatureOpen} />
           <TextChips title="输入" empty="暂无输入" values={feature.signals.inputs} />
           <TextChips title="输出" empty="暂无输出" values={feature.signals.outputs} />
           <TextChips title="事件" empty="暂无事件" values={feature.signals.events} />
@@ -51,23 +56,6 @@ function Fact({ label, value }: { label: string; value: string }) {
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
-  );
-}
-
-function FeatureLinks({ title, empty, features, onFeatureOpen }: { title: string; empty: string; features: Array<{ id: string; title: string }>; onFeatureOpen: (featureId: string) => void }) {
-  return (
-    <section className="modal-section">
-      <h3>{title}</h3>
-      {features.length ? (
-        <div className="chip-row">
-          {features.map((feature) => (
-            <button type="button" key={feature.id} onClick={() => onFeatureOpen(feature.id)}>{feature.title}</button>
-          ))}
-        </div>
-      ) : (
-        <p>{empty}</p>
-      )}
-    </section>
   );
 }
 

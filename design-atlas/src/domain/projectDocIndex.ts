@@ -28,6 +28,7 @@ export type AtomicFeature = {
   moduleId: string;
   stage: FeatureStage;
   intent: string;
+  description: string;
   acceptance: string;
   relations: {
     dependsOn: string[];
@@ -46,6 +47,19 @@ export type AtomicFeatureView = AtomicFeature & {
   dependencies: AtomicFeature[];
   supportedFeatures: AtomicFeature[];
   dependentFeatures: AtomicFeature[];
+  relationGraph: AtomicFeatureRelationGraph;
+};
+
+export type AtomicFeatureRelationNode = {
+  id: string;
+  title: string;
+  stage: FeatureStage;
+};
+
+export type AtomicFeatureRelationGraph = {
+  center: AtomicFeatureRelationNode;
+  dependencies: AtomicFeatureRelationNode[];
+  dependents: AtomicFeatureRelationNode[];
 };
 
 type ProjectDoc = {
@@ -95,6 +109,23 @@ export function getAtomicFeatureView(featureId: string): AtomicFeatureView {
     dependencies,
     supportedFeatures,
     dependentFeatures,
+    relationGraph: createRelationGraph(feature, dependencies, dependentFeatures),
+  };
+}
+
+function createRelationGraph(feature: AtomicFeature, dependencies: AtomicFeature[], dependentFeatures: AtomicFeature[]): AtomicFeatureRelationGraph {
+  return {
+    center: toRelationNode(feature),
+    dependencies: dependencies.map(toRelationNode),
+    dependents: dependentFeatures.map(toRelationNode),
+  };
+}
+
+function toRelationNode(feature: AtomicFeature): AtomicFeatureRelationNode {
+  return {
+    id: feature.id,
+    title: feature.title,
+    stage: feature.stage,
   };
 }
 
@@ -126,6 +157,10 @@ function validateProjectDoc(doc: ProjectDoc) {
 
   for (const featureId of doc.indexes.features) {
     const feature = requireRecord(doc.features, featureId, "feature");
+    requireText(feature.intent, `feature intent for ${featureId}`);
+    requireText(feature.description, `feature description for ${featureId}`);
+    requireMinLength(feature.description, 80, `feature description for ${featureId}`);
+    requireText(feature.acceptance, `feature acceptance for ${featureId}`);
     requireRecord(doc.domains, feature.domainId, `feature domain for ${featureId}`);
     const projectModule = requireRecord(doc.modules, feature.moduleId, `feature module for ${featureId}`);
 
@@ -140,6 +175,18 @@ function validateProjectDoc(doc: ProjectDoc) {
     for (const supportedId of feature.relations.supports) {
       requireRecord(doc.features, supportedId, `supported feature for ${featureId}`);
     }
+  }
+}
+
+function requireText(value: string, label: string) {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`${label} must not be empty`);
+  }
+}
+
+function requireMinLength(value: string, minLength: number, label: string) {
+  if (value.trim().length < minLength) {
+    throw new Error(`${label} must be at least ${minLength} characters`);
   }
 }
 

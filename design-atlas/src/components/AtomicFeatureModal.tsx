@@ -1,14 +1,16 @@
-import { getAtomicFeatureView, stageLabels } from "../domain/projectDocIndex";
+import type { ProjectDocIndex } from "../domain/projectDocIndex";
+import { stageLabels } from "../domain/projectDocIndex";
 import { FeatureRelationGraph } from "./FeatureRelationGraph";
 
 type AtomicFeatureModalProps = {
   featureId: string;
+  index: ProjectDocIndex;
   onClose: () => void;
   onFeatureOpen: (featureId: string) => void;
 };
 
-export function AtomicFeatureModal({ featureId, onClose, onFeatureOpen }: AtomicFeatureModalProps) {
-  const feature = getAtomicFeatureView(featureId);
+export function AtomicFeatureModal({ featureId, index, onClose, onFeatureOpen }: AtomicFeatureModalProps) {
+  const feature = index.getAtomicFeatureView(featureId);
 
   return (
     <div className="modal-layer" role="presentation" onMouseDown={onClose}>

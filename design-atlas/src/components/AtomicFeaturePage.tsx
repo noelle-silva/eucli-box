@@ -1,9 +1,14 @@
 import { useState } from "react";
-import { atomicFeatureIndex, getAtomicFeatureView, stageLabels } from "../domain/projectDocIndex";
+import type { ProjectDocIndex } from "../domain/projectDocIndex";
+import { stageLabels } from "../domain/projectDocIndex";
 import { AtomicFeatureModal } from "./AtomicFeatureModal";
 import { SpotlightCard } from "./ui/SpotlightCard";
 
-export function AtomicFeaturePage() {
+type AtomicFeaturePageProps = {
+  index: ProjectDocIndex;
+};
+
+export function AtomicFeaturePage({ index }: AtomicFeaturePageProps) {
   const [activeFeatureId, setActiveFeatureId] = useState<string | undefined>();
 
   function openFeature(featureId: string) {
@@ -14,13 +19,13 @@ export function AtomicFeaturePage() {
     <main className="page-shell custom-scroll-area">
       <section className="page-intro">
         <span className="eyebrow">Atomic Feature List</span>
-        <h1>原子功能清单</h1>
-        <p>所有项目能力直接以原子功能卡片呈现。每张卡片都是一级对象，点击后查看验收、依赖、后续支持和数据流信号。</p>
+        <h1>{index.project.name} 原子功能清单</h1>
+        <p>{index.project.summary} 当前页面只展示这个项目自己的原子功能索引，点击卡片后查看验收、依赖、后续支持和数据流信号。</p>
       </section>
 
       <section className="feature-grid" aria-label="原子功能卡片列表">
-        {atomicFeatureIndex.map((feature, index) => {
-          const view = getAtomicFeatureView(feature.id);
+        {index.atomicFeatureIndex.map((feature, featureIndex) => {
+          const view = index.getAtomicFeatureView(feature.id);
 
           return (
             <SpotlightCard
@@ -32,7 +37,7 @@ export function AtomicFeaturePage() {
               onClick={() => openFeature(feature.id)}
             >
               <div className="feature-card-head">
-                <span>{String(index + 1).padStart(2, "0")}</span>
+                <span>{String(featureIndex + 1).padStart(2, "0")}</span>
                 <strong>{feature.id}</strong>
               </div>
               <h2>{feature.title}</h2>
@@ -52,7 +57,7 @@ export function AtomicFeaturePage() {
         })}
       </section>
 
-      {activeFeatureId ? <AtomicFeatureModal featureId={activeFeatureId} onClose={() => setActiveFeatureId(undefined)} onFeatureOpen={openFeature} /> : null}
+      {activeFeatureId ? <AtomicFeatureModal featureId={activeFeatureId} index={index} onClose={() => setActiveFeatureId(undefined)} onFeatureOpen={openFeature} /> : null}
     </main>
   );
 }

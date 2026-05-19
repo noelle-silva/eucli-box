@@ -1,4 +1,4 @@
-import rawProjectDoc from "../data/project-doc.json";
+import rawProjectsCatalog from "../data/projects.json";
 
 export type PageId = "atomic-features" | "architecture" | "data-flow" | "roadmap" | "records";
 export type FeatureStage = "mvp" | "alpha" | "beta" | "future";
@@ -6,6 +6,14 @@ export type FeatureStage = "mvp" | "alpha" | "beta" | "future";
 export type NavigationItem = {
   id: PageId;
   label: string;
+};
+
+export type ProjectCatalogEntry = {
+  id: string;
+  name: string;
+  summary: string;
+  repositoryLabel: string;
+  documentFile: string;
 };
 
 export type ProjectDomain = {
@@ -62,6 +70,25 @@ export type AtomicFeatureRelationGraph = {
   dependents: AtomicFeatureRelationNode[];
 };
 
+export type ProjectDocIndex = {
+  project: ProjectCatalogEntry;
+  meta: ProjectDoc["meta"];
+  navigationItems: NavigationItem[];
+  domainIndex: ProjectDomain[];
+  moduleIndex: ProjectModule[];
+  atomicFeatureIndex: AtomicFeature[];
+  getAtomicFeatureView: (featureId: string) => AtomicFeatureView;
+  getFeature: (featureId: string) => AtomicFeature;
+};
+
+type ProjectsCatalog = {
+  defaultProjectId: string;
+  indexes: {
+    projects: string[];
+  };
+  projects: Record<string, ProjectCatalogEntry>;
+};
+
 type ProjectDoc = {
   meta: {
     title: string;
@@ -79,15 +106,14 @@ type ProjectDoc = {
   features: Record<string, AtomicFeature>;
 };
 
-const projectDoc = rawProjectDoc as ProjectDoc;
+const projectDocumentLoaders = import.meta.glob("../data/projects/*.json", { import: "default" });
 
-validateProjectDoc(projectDoc);
+const projectsCatalog = rawProjectsCatalog as ProjectsCatalog;
 
-export const projectMeta = projectDoc.meta;
-export const navigationItems = projectDoc.navigation;
-export const domainIndex = projectDoc.indexes.domains.map((id) => requireRecord(projectDoc.domains, id, "domain index item"));
-export const moduleIndex = projectDoc.indexes.modules.map((id) => requireRecord(projectDoc.modules, id, "module index item"));
-export const atomicFeatureIndex = projectDoc.indexes.features.map((id) => requireRecord(projectDoc.features, id, "feature index item"));
+validateProjectsCatalog(projectsCatalog, projectDocumentLoaders);
+
+export const projectCatalogIndex = projectsCatalog.indexes.projects.map((id) => requireRecord(projectsCatalog.projects, id, "project index item"));
+export const defaultProjectId = projectsCatalog.defaultProjectId;
 
 export const stageLabels: Record<FeatureStage, string> = {
   mvp: "MVP",
@@ -96,20 +122,55 @@ export const stageLabels: Record<FeatureStage, string> = {
   future: "Future",
 };
 
-export function getAtomicFeatureView(featureId: string): AtomicFeatureView {
-  const feature = getFeature(featureId);
-  const dependencies = feature.relations.dependsOn.map(getFeature);
-  const supportedFeatures = feature.relations.supports.map(getFeature);
-  const dependentFeatures = atomicFeatureIndex.filter((candidate) => candidate.relations.dependsOn.includes(feature.id));
+export async function loadProjectDocIndex(projectId: string): Promise<ProjectDocIndex> {
+  const project = requireRecord(projectsCatalog.projects, projectId, "project");
+  const loader = requireRecord(projectDocumentLoaders, createProjectDocumentLoaderKey(project.documentFile), `project document loader for ${projectId}`);
+  const projectDoc = (await loader()) as ProjectDoc;
+
+  validateProjectDoc(projectDoc, projectId);
+
+  const domainIndex = projectDoc.indexes.domains.map((id) => requireRecord(projectDoc.domains, id, `domain index item for ${projectId}`));
+  const moduleIndex = projectDoc.indexes.modules.map((id) => requireRecord(projectDoc.modules, id, `module index item for ${projectId}`));
+  const atomicFeatureIndex = projectDoc.indexes.features.map((id) => requireRecord(projectDoc.features, id, `feature index item for ${projectId}`));
+
+  function getFeature(featureId: string): AtomicFeature {
+    return requireRecord(projectDoc.features, featureId, `atomic feature in ${projectId}`);
+  }
+
+  function getDomain(domainId: string): ProjectDomain {
+    return requireRecord(projectDoc.domains, domainId, `project domain in ${projectId}`);
+  }
+
+  function getModule(moduleId: string): ProjectModule {
+    return requireRecord(projectDoc.modules, moduleId, `project module in ${projectId}`);
+  }
+
+  function getAtomicFeatureView(featureId: string): AtomicFeatureView {
+    const feature = getFeature(featureId);
+    const dependencies = feature.relations.dependsOn.map(getFeature);
+    const supportedFeatures = feature.relations.supports.map(getFeature);
+    const dependentFeatures = atomicFeatureIndex.filter((candidate) => candidate.relations.dependsOn.includes(feature.id));
+
+    return {
+      ...feature,
+      domain: getDomain(feature.domainId),
+      module: getModule(feature.moduleId),
+      dependencies,
+      supportedFeatures,
+      dependentFeatures,
+      relationGraph: createRelationGraph(feature, dependencies, dependentFeatures),
+    };
+  }
 
   return {
-    ...feature,
-    domain: getDomain(feature.domainId),
-    module: getModule(feature.moduleId),
-    dependencies,
-    supportedFeatures,
-    dependentFeatures,
-    relationGraph: createRelationGraph(feature, dependencies, dependentFeatures),
+    project,
+    meta: projectDoc.meta,
+    navigationItems: projectDoc.navigation,
+    domainIndex,
+    moduleIndex,
+    atomicFeatureIndex,
+    getAtomicFeatureView,
+    getFeature,
   };
 }
 
@@ -129,51 +190,65 @@ function toRelationNode(feature: AtomicFeature): AtomicFeatureRelationNode {
   };
 }
 
-export function getFeature(featureId: string): AtomicFeature {
-  return requireRecord(projectDoc.features, featureId, "atomic feature");
+function validateProjectsCatalog(catalog: ProjectsCatalog, documents: Record<string, () => Promise<unknown>>) {
+  assertUnique(catalog.indexes.projects, "project index");
+  requireRecord(catalog.projects, catalog.defaultProjectId, "default project");
+
+  for (const projectId of catalog.indexes.projects) {
+    const project = requireRecord(catalog.projects, projectId, "project");
+    requireText(project.id, `project id for ${projectId}`);
+    requireText(project.name, `project name for ${projectId}`);
+    requireText(project.summary, `project summary for ${projectId}`);
+    requireText(project.repositoryLabel, `project repository label for ${projectId}`);
+    requireRecord(documents, createProjectDocumentLoaderKey(project.documentFile), `project document file for ${projectId}`);
+
+    if (project.id !== projectId) {
+      throw new Error(`Project id mismatch: ${projectId}`);
+    }
+  }
 }
 
-function getDomain(domainId: string): ProjectDomain {
-  return requireRecord(projectDoc.domains, domainId, "project domain");
+function createProjectDocumentLoaderKey(documentFile: ProjectCatalogEntry["documentFile"]) {
+  if (!documentFile.startsWith("projects/") || !documentFile.endsWith(".json")) {
+    throw new Error(`Project document file must match projects/*.json: ${documentFile}`);
+  }
+
+  return `../data/${documentFile}`;
 }
 
-function getModule(moduleId: string): ProjectModule {
-  return requireRecord(projectDoc.modules, moduleId, "project module");
-}
-
-function validateProjectDoc(doc: ProjectDoc) {
-  assertUnique(doc.indexes.domains, "domain index");
-  assertUnique(doc.indexes.modules, "module index");
-  assertUnique(doc.indexes.features, "feature index");
+function validateProjectDoc(doc: ProjectDoc, projectId: string) {
+  assertUnique(doc.indexes.domains, `domain index for ${projectId}`);
+  assertUnique(doc.indexes.modules, `module index for ${projectId}`);
+  assertUnique(doc.indexes.features, `feature index for ${projectId}`);
 
   for (const domainId of doc.indexes.domains) {
-    requireRecord(doc.domains, domainId, "domain");
+    requireRecord(doc.domains, domainId, `domain in ${projectId}`);
   }
 
   for (const moduleId of doc.indexes.modules) {
-    const projectModule = requireRecord(doc.modules, moduleId, "module");
-    requireRecord(doc.domains, projectModule.domainId, `module domain for ${moduleId}`);
+    const projectModule = requireRecord(doc.modules, moduleId, `module in ${projectId}`);
+    requireRecord(doc.domains, projectModule.domainId, `module domain for ${moduleId} in ${projectId}`);
   }
 
   for (const featureId of doc.indexes.features) {
-    const feature = requireRecord(doc.features, featureId, "feature");
-    requireText(feature.intent, `feature intent for ${featureId}`);
-    requireText(feature.description, `feature description for ${featureId}`);
-    requireMinLength(feature.description, 80, `feature description for ${featureId}`);
-    requireText(feature.acceptance, `feature acceptance for ${featureId}`);
-    requireRecord(doc.domains, feature.domainId, `feature domain for ${featureId}`);
-    const projectModule = requireRecord(doc.modules, feature.moduleId, `feature module for ${featureId}`);
+    const feature = requireRecord(doc.features, featureId, `feature in ${projectId}`);
+    requireText(feature.intent, `feature intent for ${featureId} in ${projectId}`);
+    requireText(feature.description, `feature description for ${featureId} in ${projectId}`);
+    requireMinLength(feature.description, 80, `feature description for ${featureId} in ${projectId}`);
+    requireText(feature.acceptance, `feature acceptance for ${featureId} in ${projectId}`);
+    requireRecord(doc.domains, feature.domainId, `feature domain for ${featureId} in ${projectId}`);
+    const projectModule = requireRecord(doc.modules, feature.moduleId, `feature module for ${featureId} in ${projectId}`);
 
     if (projectModule.domainId !== feature.domainId) {
-      throw new Error(`Feature domain/module mismatch: ${featureId}`);
+      throw new Error(`Feature domain/module mismatch: ${featureId} in ${projectId}`);
     }
 
     for (const dependencyId of feature.relations.dependsOn) {
-      requireRecord(doc.features, dependencyId, `feature dependency for ${featureId}`);
+      requireRecord(doc.features, dependencyId, `feature dependency for ${featureId} in ${projectId}`);
     }
 
     for (const supportedId of feature.relations.supports) {
-      requireRecord(doc.features, supportedId, `supported feature for ${featureId}`);
+      requireRecord(doc.features, supportedId, `supported feature for ${featureId} in ${projectId}`);
     }
   }
 }

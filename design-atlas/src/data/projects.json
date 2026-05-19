@@ -1,0 +1,22 @@
+{
+  "defaultProjectId": "eucli-box",
+  "indexes": {
+    "projects": ["eucli-box", "design-atlas"]
+  },
+  "projects": {
+    "eucli-box": {
+      "id": "eucli-box",
+      "name": "eucli-box",
+      "summary": "面向 agent runtime 的项目能力文档。",
+      "repositoryLabel": "E:/eucli-project/eucli-box",
+      "documentFile": "projects/eucli-box.json"
+    },
+    "design-atlas": {
+      "id": "design-atlas",
+      "name": "Design Atlas",
+      "summary": "通用项目设计文档容器与原子功能索引样例。",
+      "repositoryLabel": "independent documentation workspace",
+      "documentFile": "projects/design-atlas.json"
+    }
+  }
+}

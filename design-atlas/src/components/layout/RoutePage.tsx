@@ -1,32 +1,41 @@
 import type { CSSProperties } from "react";
 import { ArchitectureMap } from "../ArchitectureMap";
+import { AtomicFeatureList } from "../AtomicFeatureList";
+import { DataFlowView } from "../DataFlowView";
 import { DecisionBoard } from "../DecisionBoard";
 import { DocumentMindMap } from "../DocumentMindMap";
-import { FeatureChecklist } from "../FeatureChecklist";
 import { MvpFlow } from "../MvpFlow";
 import { MermaidDiagram } from "../MermaidDiagram";
 import { Roadmap } from "../Roadmap";
-import { SubsystemGrid } from "../SubsystemGrid";
 import { SpotlightPanel } from "../visual-system";
-import { decisions, risks, roadmap, subsystems } from "../../data/designAtlas";
-import { featureTree } from "../../data/featureChecklist";
+import { decisions, risks } from "../../data/designAtlas";
 import type { DesignRoute, DocumentTreeSection, RouteBlock } from "../../data/routes";
 
 type RoutePageProps = {
   activeRouteId: string;
   route: DesignRoute;
+  selectedFeatureId?: string;
   tree: DocumentTreeSection[];
+  onFeatureSelect: (featureId: string) => void;
   onRouteChange: (routeId: string) => void;
 };
 
-export function RoutePage({ activeRouteId, route, tree, onRouteChange }: RoutePageProps) {
+export function RoutePage({ activeRouteId, route, selectedFeatureId, tree, onFeatureSelect, onRouteChange }: RoutePageProps) {
   const isImmersive = route.layout === "immersive";
 
   return (
     <article className={isImmersive ? "route-page route-page-immersive" : "route-page"}>
       <div className="route-blocks">
         {route.blocks.map((block, index) => (
-          <RouteBlockView activeRouteId={activeRouteId} block={block} key={`${route.id}-${block.kind}-${index}`} onRouteChange={onRouteChange} tree={tree} />
+          <RouteBlockView
+            activeRouteId={activeRouteId}
+            block={block}
+            key={`${route.id}-${block.kind}-${index}`}
+            onFeatureSelect={onFeatureSelect}
+            onRouteChange={onRouteChange}
+            selectedFeatureId={selectedFeatureId}
+            tree={tree}
+          />
         ))}
       </div>
     </article>
@@ -36,16 +45,20 @@ export function RoutePage({ activeRouteId, route, tree, onRouteChange }: RoutePa
 function RouteBlockView({
   activeRouteId,
   block,
+  selectedFeatureId,
   tree,
+  onFeatureSelect,
   onRouteChange,
 }: {
   activeRouteId: string;
   block: RouteBlock;
+  selectedFeatureId?: string;
   tree: DocumentTreeSection[];
+  onFeatureSelect: (featureId: string) => void;
   onRouteChange: (routeId: string) => void;
 }) {
   if (block.kind === "visual") {
-    return <VisualBlock activeRouteId={activeRouteId} block={block} onRouteChange={onRouteChange} tree={tree} />;
+    return <VisualBlock activeRouteId={activeRouteId} block={block} onFeatureSelect={onFeatureSelect} onRouteChange={onRouteChange} selectedFeatureId={selectedFeatureId} tree={tree} />;
   }
 
   return (
@@ -137,24 +150,28 @@ function TimelineBlock({ block }: { block: Extract<RouteBlock, { kind: "timeline
 function VisualBlock({
   activeRouteId,
   block,
+  selectedFeatureId,
   tree,
+  onFeatureSelect,
   onRouteChange,
 }: {
   activeRouteId: string;
   block: Extract<RouteBlock, { kind: "visual" }>;
+  selectedFeatureId?: string;
   tree: DocumentTreeSection[];
+  onFeatureSelect: (featureId: string) => void;
   onRouteChange: (routeId: string) => void;
 }) {
   return (
     <section className={block.visual === "document-map" ? "visual-block visual-block-document-map" : "visual-block"}>
       {block.title ? <h2>{block.title}</h2> : null}
-      {block.visual === "architecture" ? <ArchitectureMap /> : null}
+      {block.visual === "architecture" ? <ArchitectureMap onFeatureSelect={onFeatureSelect} selectedFeatureId={selectedFeatureId} /> : null}
+      {block.visual === "atomic-feature-list" ? <AtomicFeatureList onFeatureSelect={onFeatureSelect} onRouteChange={onRouteChange} selectedFeatureId={selectedFeatureId} /> : null}
+      {block.visual === "data-flow" ? <DataFlowView onFeatureSelect={onFeatureSelect} selectedFeatureId={selectedFeatureId} /> : null}
       {block.visual === "document-map" ? <DocumentMindMap activeRouteId={activeRouteId} onRouteChange={onRouteChange} tree={tree} /> : null}
-      {block.visual === "feature-tree" ? <FeatureChecklist density={block.density} tree={featureTree} /> : null}
-      {block.visual === "subsystems" ? <SubsystemGrid subsystems={subsystems} /> : null}
       {block.visual === "mvp" ? <MvpFlow /> : null}
       {block.visual === "decisions" ? <DecisionBoard decisions={decisions} risks={risks} /> : null}
-      {block.visual === "roadmap" ? <Roadmap roadmap={roadmap} /> : null}
+      {block.visual === "roadmap" ? <Roadmap onFeatureSelect={onFeatureSelect} selectedFeatureId={selectedFeatureId} /> : null}
     </section>
   );
 }

@@ -813,24 +813,6 @@ button:focus-visible {
   line-height: 1.78;
 }
 
-.architecture-core-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.82fr);
-  gap: 18px;
-  align-items: stretch;
-}
-
-.architecture-satellite-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.architecture-core-column {
-  display: grid;
-  gap: 14px;
-}
-
 .architecture-card {
   display: grid;
   gap: 16px;
@@ -840,14 +822,6 @@ button:focus-visible {
   border-radius: 24px;
   background: rgba(255, 255, 255, 0.86);
   box-shadow: 0 18px 54px rgba(15, 23, 42, 0.09);
-}
-
-.architecture-card-core {
-  min-height: 250px;
-  border-color: rgba(124, 58, 237, 0.28);
-  background:
-    linear-gradient(135deg, rgba(124, 58, 237, 0.12), rgba(6, 182, 212, 0.08)),
-    rgba(255, 255, 255, 0.9);
 }
 
 .architecture-card-head {
@@ -897,8 +871,75 @@ button:focus-visible {
   background: linear-gradient(135deg, #7c3aed, #06b6d4);
 }
 
+.architecture-module-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.architecture-module-card {
+  border-color: color-mix(in srgb, var(--module-accent), white 72%);
+  background:
+    radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--module-accent), transparent 84%), transparent 18rem),
+    rgba(255, 255, 255, 0.86);
+}
+
+.architecture-module-card p {
+  margin: 0;
+  color: #64748b;
+  line-height: 1.58;
+}
+
+.architecture-feature-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.architecture-feature-list button,
+.architecture-relation-feature-row button {
+  padding: 7px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  color: color-mix(in srgb, var(--module-accent), black 22%);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 900;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.architecture-feature-list button:hover,
+.architecture-feature-list button:focus-visible,
+.architecture-relation-feature-row button:hover,
+.architecture-relation-feature-row button:focus-visible {
+  border-color: rgba(124, 58, 237, 0.38);
+  box-shadow: 0 10px 20px rgba(79, 70, 229, 0.12);
+  transform: translateY(-1px);
+}
+
+.architecture-feature-list button.is-selected,
+.architecture-relation-feature-row button.is-selected {
+  border-color: rgba(124, 58, 237, 0.62);
+  background: #ede9fe;
+  color: #5b21b6;
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.13);
+}
+
+.architecture-relation-feature-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .architecture-relation-list {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -944,17 +985,14 @@ button:focus-visible {
   line-height: 1.55;
 }
 
-.subsystem-card h3,
 .decision-card h3,
 .roadmap-stage h3 {
   margin: 8px 0;
   color: var(--ink);
 }
 
-.feature-checklist-summary p,
-.feature-tree-branch-head p,
-.feature-tree-leaf p,
-.subsystem-card p,
+.atomic-feature-list-head p,
+.atomic-feature-card p,
 .decision-card p,
 .roadmap-stage p,
 .risk-panel p {
@@ -963,14 +1001,126 @@ button:focus-visible {
   line-height: 1.68;
 }
 
-.feature-checklist {
+.atomic-feature-list {
   display: grid;
   gap: 18px;
 }
 
-.feature-checklist-summary {
+.data-flow-view {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.48fr);
+  gap: 18px;
+}
+
+.data-flow-intro h2,
+.architecture-intro h2 {
+  margin: 10px 0;
+  color: var(--ink);
+  font-size: clamp(1.55rem, 2.4vw, 2.6rem);
+  letter-spacing: -0.05em;
+}
+
+.data-flow-intro p,
+.architecture-intro p {
+  max-width: 860px;
+  margin: 0;
+  color: #64748b;
+  line-height: 1.72;
+}
+
+.data-flow-rail {
+  display: grid;
+  gap: 12px;
+}
+
+.data-flow-card {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(199, 210, 254, 0.76);
+  border-radius: 24px;
+  background: linear-gradient(135deg, rgba(238, 242, 255, 0.92), rgba(255, 255, 255, 0.86));
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.data-flow-card:hover,
+.data-flow-card:focus-visible {
+  border-color: rgba(37, 99, 235, 0.44);
+  box-shadow: 0 18px 40px rgba(37, 99, 235, 0.14);
+  transform: translateY(-1px);
+}
+
+.data-flow-card.is-selected {
+  border-color: rgba(37, 99, 235, 0.72);
+  background: linear-gradient(135deg, rgba(219, 234, 254, 0.98), rgba(255, 255, 255, 0.92));
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.13), 0 18px 44px rgba(37, 99, 235, 0.16);
+}
+
+.data-flow-index {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #2563eb, #06b6d4);
+  color: white;
+  font-weight: 950;
+}
+
+.data-flow-card small {
+  color: #4f46e5;
+  font-size: 0.72rem;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.data-flow-card h3 {
+  margin: 6px 0 8px;
+  color: var(--ink);
+  font-size: 1.2rem;
+}
+
+.data-flow-card p {
+  margin: 0 0 12px;
+  color: #475569;
+  line-height: 1.62;
+}
+
+.data-flow-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.data-flow-pill-row strong,
+.data-flow-pill-row span {
+  padding: 6px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.data-flow-pill-row strong {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.data-flow-pill-row span {
+  background: rgba(255, 255, 255, 0.9);
+  color: #334155;
+}
+
+.atomic-feature-list-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px;
   gap: 18px;
   align-items: stretch;
   padding: 20px;
@@ -981,430 +1131,255 @@ button:focus-visible {
     rgba(248, 250, 252, 0.78);
 }
 
-.feature-checklist-summary h2 {
+.atomic-feature-list-head h2 {
   margin: 14px 0 10px;
+  color: var(--ink);
+  font-size: clamp(1.7rem, 2.6vw, 3rem);
+  letter-spacing: -0.055em;
 }
 
-.feature-checklist-compact .feature-checklist-summary {
-  grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
-  gap: 14px;
-  padding: 16px;
-  border-radius: 22px;
-}
-
-.feature-checklist-compact .feature-checklist-summary h2 {
-  margin: 8px 0 8px;
-  font-size: clamp(1.45rem, 2.2vw, 2.4rem);
-}
-
-.feature-checklist-compact .feature-checklist-summary p {
-  max-width: 760px;
-  font-size: 0.98rem;
-}
-
-.feature-checklist-metrics {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.feature-checklist-metric {
+.atomic-feature-list-total {
   display: grid;
   place-items: center;
-  min-height: 116px;
+  min-height: 138px;
   padding: 14px;
   border: 1px solid rgba(255, 255, 255, 0.72);
   border-radius: 22px;
   background: rgba(255, 255, 255, 0.78);
 }
 
-.feature-checklist-metric strong {
+.atomic-feature-list-total strong {
   color: var(--ink);
-  font-size: 2.2rem;
+  font-size: 3rem;
   line-height: 1;
 }
 
-.feature-checklist-compact .feature-checklist-metrics {
-  gap: 8px;
-}
-
-.feature-checklist-compact .feature-checklist-metric {
-  min-height: 74px;
-  padding: 10px;
-  border-radius: 18px;
-}
-
-.feature-checklist-compact .feature-checklist-metric strong {
-  font-size: 1.55rem;
-}
-
-.feature-checklist-compact .feature-checklist-metric span {
-  font-size: 0.68rem;
-}
-
-.feature-checklist-metric span,
-.feature-checklist-status-row span,
-.feature-tree-branch-kicker,
-.feature-tree-branch-meta,
-.feature-tree-leaf-topline span,
-.feature-tree-leaf-topline small,
-.feature-tree-meta-row span,
-.feature-checklist-acceptance strong {
+.atomic-feature-list-total span,
+.atomic-feature-card-head span,
+.atomic-feature-card-head strong,
+.atomic-feature-fact-row span,
+.atomic-feature-relation-strip span,
+.atomic-feature-acceptance strong {
   font-size: 0.72rem;
   font-weight: 950;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
-.feature-checklist-metric span {
+.atomic-feature-list-total span {
   color: #64748b;
 }
 
-.feature-checklist-status-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+.atomic-feature-card:focus-visible,
+.atomic-feature-modal button:focus-visible,
+.architecture-feature-list button:focus-visible,
+.architecture-relation-feature-row button:focus-visible,
+.data-flow-card:focus-visible,
+.roadmap-stage li button:focus-visible {
+  outline: 3px solid rgba(129, 140, 248, 0.42);
+  outline-offset: 3px;
 }
 
-.feature-checklist-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 14px 16px;
-  border: 1px solid rgba(199, 210, 254, 0.72);
-  border-radius: 22px;
-  background:
-    linear-gradient(135deg, rgba(238, 242, 255, 0.9), rgba(255, 255, 255, 0.78));
-}
-
-.feature-checklist-toolbar > div:first-child {
+.atomic-feature-grid {
   display: grid;
-  gap: 4px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
 }
 
-.feature-checklist-toolbar span {
-  color: #64748b;
-  font-size: 0.72rem;
-  font-weight: 950;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.feature-checklist-toolbar strong {
-  color: var(--ink);
-}
-
-.feature-checklist-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.feature-checklist-actions button {
-  border: 1px solid rgba(99, 102, 241, 0.24);
-  border-radius: 999px;
-  padding: 9px 12px;
-  background: rgba(255, 255, 255, 0.86);
-  color: #4338ca;
+.atomic-feature-card {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  min-height: 280px;
+  padding: 20px;
+  border: 1px solid rgba(226, 232, 240, 0.92);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(124, 58, 237, 0.13), transparent 18rem),
+    rgba(255, 255, 255, 0.88);
+  color: inherit;
   cursor: pointer;
   font: inherit;
-  font-size: 0.82rem;
-  font-weight: 900;
+  text-align: left;
   transition:
     transform 160ms ease,
     border-color 160ms ease,
     box-shadow 160ms ease;
 }
 
-.feature-checklist-actions button:hover,
-.feature-checklist-actions button:focus-visible {
-  border-color: rgba(99, 102, 241, 0.6);
-  box-shadow: 0 12px 24px rgba(79, 70, 229, 0.14);
-  transform: translateY(-1px);
+.atomic-feature-card:hover,
+.atomic-feature-card:focus-visible {
+  border-color: rgba(124, 58, 237, 0.5);
+  box-shadow: 0 20px 56px rgba(79, 70, 229, 0.16);
+  transform: translateY(-2px);
 }
 
-.feature-checklist-actions button:focus-visible,
-.feature-tree-branch-head:focus-visible {
-  outline: 3px solid rgba(129, 140, 248, 0.42);
-  outline-offset: 3px;
+.atomic-feature-card.is-selected {
+  border-color: rgba(124, 58, 237, 0.64);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.13), 0 24px 68px rgba(79, 70, 229, 0.18);
 }
 
-.feature-checklist-status-row span {
-  padding: 8px 11px;
-  border: 1px solid rgba(226, 232, 240, 0.9);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.72);
-  color: #475569;
-}
-
-.feature-tree-root {
-  display: grid;
-  gap: 20px;
-}
-
-.feature-tree-branch {
-  --branch-accent: #7c3aed;
-  position: relative;
-  display: grid;
-  gap: 16px;
-  padding: 18px;
-  border: 1px solid color-mix(in srgb, var(--branch-accent), white 72%);
-  border-radius: 30px;
-  background:
-    radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--branch-accent), transparent 82%), transparent 20rem),
-    linear-gradient(135deg, color-mix(in srgb, var(--branch-accent), white 92%), rgba(255, 255, 255, 0.82)),
-    white;
-}
-
-.feature-tree-branch.depth-1,
-.feature-tree-branch.depth-2 {
-  border-style: dashed;
-  background: rgba(255, 255, 255, 0.72);
-}
-
-.feature-tree-branch.depth-2 {
-  padding: 14px;
-  border-radius: 24px;
-}
-
-.feature-tree-branch-head {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 18px;
-  border: 0;
-  border-radius: 22px;
-  padding: 0;
-  background: transparent;
-  text-align: left;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-  transition:
-    background-color 160ms ease,
-    transform 160ms ease;
-}
-
-.feature-tree-branch-head:hover {
-  background: rgba(255, 255, 255, 0.38);
-  transform: translateY(-1px);
-}
-
-.feature-tree-branch-kicker {
-  display: inline-flex;
-  width: fit-content;
-  margin-bottom: 8px;
-  padding: 7px 10px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.78);
-  color: color-mix(in srgb, var(--branch-accent), black 18%);
-}
-
-.feature-tree-branch-title {
-  display: block;
-  margin: 0 0 8px;
-  color: var(--ink);
-  font-size: clamp(1.35rem, 2vw, 2rem);
-  font-weight: 950;
-  letter-spacing: -0.04em;
-  line-height: 1.08;
-}
-
-.feature-tree-branch-summary {
-  display: block;
-  margin: 0;
-  color: #64748b;
-  line-height: 1.68;
-}
-
-.feature-tree-branch-meta {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 8px;
-}
-
-.feature-tree-branch-meta > span:first-child {
-  padding: 8px 11px;
-  border-radius: 999px;
-  background: white;
-  color: color-mix(in srgb, var(--branch-accent), black 18%);
-}
-
-.feature-tree-toggle-indicator {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  margin-bottom: 8px;
-  border: 1px solid color-mix(in srgb, var(--branch-accent), white 62%);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--branch-accent), white 88%);
-  color: color-mix(in srgb, var(--branch-accent), black 16%);
-  font-size: 1.15rem;
-  font-weight: 950;
-  line-height: 1;
-}
-
-.feature-tree-branch-copy {
-  display: block;
-  min-width: 0;
-}
-
-.feature-tree-branch.depth-1 .feature-tree-branch-title,
-.feature-tree-branch.depth-2 .feature-tree-branch-title {
-  font-size: clamp(1.08rem, 1.45vw, 1.42rem);
-}
-
-.feature-tree-branch.is-collapsed {
-  gap: 0;
-}
-
-.feature-tree-branch.is-collapsed .feature-tree-branch-head {
-  align-items: center;
-}
-
-.feature-tree-branch.is-collapsed .feature-tree-branch-title {
-  margin-bottom: 4px;
-}
-
-.feature-tree-children {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.feature-tree-branch.depth-1 > .feature-tree-children,
-.feature-tree-branch.depth-2 > .feature-tree-children {
-  grid-template-columns: 1fr;
-}
-
-.feature-tree-leaf {
-  display: grid;
-  gap: 12px;
-  min-height: 246px;
-  padding: 18px;
-  border: 1px solid rgba(226, 232, 240, 0.92);
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.88);
-}
-
-.feature-tree-leaf-topline {
+.atomic-feature-card-head,
+.atomic-feature-fact-row,
+.atomic-feature-modal-actions,
+.atomic-feature-modal-chip-row {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
   gap: 8px;
 }
 
-.feature-tree-leaf-topline span,
-.feature-tree-leaf-topline small,
-.feature-tree-meta-row span {
+.atomic-feature-card-head {
+  justify-content: space-between;
+}
+
+.atomic-feature-card-head span,
+.atomic-feature-card-head strong,
+.atomic-feature-fact-row span,
+.atomic-feature-modal-chip-row span {
   width: fit-content;
   padding: 6px 9px;
   border-radius: 999px;
-}
-
-.feature-tree-leaf-topline span {
   background: #eef2ff;
   color: #4338ca;
 }
 
-.feature-tree-leaf.p0 .feature-tree-leaf-topline span {
-  background: #fff1f2;
-  color: #be123c;
+.atomic-feature-card-head strong {
+  background: rgba(241, 245, 249, 0.96);
+  color: #475569;
+  text-transform: none;
 }
 
-.feature-tree-leaf.p1 .feature-tree-leaf-topline span {
-  background: #eff6ff;
-  color: #1d4ed8;
-}
-
-.feature-tree-leaf.p2 .feature-tree-leaf-topline span {
-  background: #faf5ff;
-  color: #7e22ce;
-}
-
-.feature-tree-leaf-topline small {
-  background: rgba(241, 245, 249, 0.92);
-  color: #64748b;
-}
-
-.feature-tree-leaf h4 {
+.atomic-feature-card h3 {
   margin: 0;
   color: var(--ink);
-  font-size: 1.12rem;
+  font-size: clamp(1.18rem, 1.7vw, 1.6rem);
+  letter-spacing: -0.025em;
 }
 
-.feature-tree-meta-row {
-  display: flex;
-  flex-wrap: wrap;
+.atomic-feature-relation-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 
-.feature-tree-meta-row span {
-  background: rgba(248, 250, 252, 0.96);
-  color: #475569;
-}
-
-.feature-checklist-acceptance {
+.atomic-feature-relation-strip span {
   display: grid;
-  gap: 6px;
-  margin-top: auto;
-  padding: 12px;
+  gap: 4px;
+  padding: 10px;
   border: 1px solid rgba(199, 210, 254, 0.7);
   border-radius: 18px;
-  background: rgba(238, 242, 255, 0.72);
+  background: rgba(248, 250, 252, 0.82);
+  color: #64748b;
+  text-transform: none;
 }
 
-.feature-checklist-acceptance strong {
+.atomic-feature-relation-strip strong {
   color: #4338ca;
+  font-size: 1.25rem;
+  line-height: 1;
 }
 
-.feature-checklist-acceptance span {
-  color: #475569;
-  line-height: 1.58;
-}
-
-.subsystem-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.subsystem-card {
-  min-height: 184px;
-  padding: 18px;
-  border: 1px solid color-mix(in srgb, var(--accent), white 72%);
-  border-radius: 24px;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--accent), white 92%), white),
-    white;
-}
-
-.subsystem-topline {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.status-pill {
-  padding: 6px 9px;
+.atomic-feature-modal button {
+  border: 1px solid rgba(124, 58, 237, 0.24);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.78);
-  color: color-mix(in srgb, var(--accent), black 18%);
-  font-size: 0.72rem;
+  padding: 8px 11px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #5b21b6;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
   font-weight: 900;
 }
 
-.status-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 999px;
-  background: var(--accent);
-  box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent), transparent 82%);
+.atomic-feature-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: clamp(14px, 3vw, 34px);
+  background:
+    radial-gradient(circle at 20% 14%, rgba(124, 58, 237, 0.26), transparent 26rem),
+    radial-gradient(circle at 82% 20%, rgba(6, 182, 212, 0.22), transparent 28rem),
+    rgba(15, 23, 42, 0.62);
+  backdrop-filter: blur(14px);
+}
+
+.atomic-feature-modal {
+  display: grid;
+  gap: 18px;
+  width: min(1120px, 100%);
+  max-height: min(860px, calc(100dvh - 36px));
+  overflow-y: auto;
+  padding: clamp(18px, 3vw, 30px);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 34px;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(124, 58, 237, 0.16), transparent 24rem),
+    radial-gradient(circle at 100% 8%, rgba(6, 182, 212, 0.14), transparent 22rem),
+    rgba(255, 255, 255, 0.94);
+  box-shadow: 0 34px 100px rgba(15, 23, 42, 0.34);
+}
+
+.atomic-feature-modal-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.atomic-feature-modal-head span,
+.atomic-feature-modal-facts span {
+  color: #6d28d9;
+  font-size: 0.72rem;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.atomic-feature-modal-head h2 {
+  margin: 8px 0;
+  color: var(--ink);
+  font-size: clamp(1.75rem, 3vw, 3.25rem);
+  letter-spacing: -0.06em;
+  line-height: 1;
+}
+
+.atomic-feature-modal-head p,
+.atomic-feature-modal-section p {
+  margin: 0;
+  color: #475569;
+  line-height: 1.72;
+}
+
+.atomic-feature-modal-facts,
+.atomic-feature-modal-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.atomic-feature-modal-facts {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.atomic-feature-modal-facts div,
+.atomic-feature-modal-section {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid rgba(199, 210, 254, 0.72);
+  border-radius: 22px;
+  background: rgba(248, 250, 252, 0.78);
+}
+
+.atomic-feature-modal-facts strong,
+.atomic-feature-modal-section h3 {
+  margin: 0;
+  color: var(--ink);
+}
+
+.atomic-feature-modal-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .mvp-flow {
@@ -1531,12 +1506,57 @@ button:focus-visible {
   list-style: none;
 }
 
+.roadmap-stage-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.roadmap-stage-meta span {
+  padding: 7px 9px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
 .roadmap-stage li {
+  display: grid;
+  gap: 4px;
   padding: 9px 10px;
   border-radius: 12px;
   background: #f1f5f9;
   color: #334155;
   font-weight: 700;
+}
+
+.roadmap-stage li.is-selected {
+  background: #ede9fe;
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.18);
+}
+
+.roadmap-stage li strong {
+  color: var(--ink);
+}
+
+.roadmap-stage li span {
+  color: #64748b;
+  font-size: 0.76rem;
+}
+
+.roadmap-stage li button {
+  width: fit-content;
+  border: 1px solid rgba(124, 58, 237, 0.22);
+  border-radius: 999px;
+  padding: 6px 9px;
+  background: white;
+  color: #5b21b6;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 900;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1565,15 +1585,11 @@ button:focus-visible {
     grid-template-columns: 280px minmax(0, 1fr);
   }
 
-  .feature-checklist-summary,
-  .feature-tree-children,
+  .atomic-feature-list-head,
+  .atomic-feature-grid,
   .decision-layout,
   .roadmap {
     grid-template-columns: 1fr;
-  }
-
-  .subsystem-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .mvp-flow {
@@ -1613,14 +1629,14 @@ button:focus-visible {
   }
 
   .doc-card-grid,
-  .subsystem-grid,
+  .atomic-feature-grid,
   .mvp-flow,
   .decision-grid {
     grid-template-columns: 1fr;
   }
 
-  .architecture-core-layout,
-  .architecture-satellite-grid {
+  .architecture-module-grid,
+  .architecture-relation-list {
     grid-template-columns: 1fr;
   }
 
@@ -1656,18 +1672,15 @@ button:focus-visible {
     padding: 16px;
   }
 
-  .feature-checklist-toolbar,
-  .feature-tree-branch-head {
+  .atomic-feature-list-head,
+  .atomic-feature-modal-head {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .feature-checklist-actions {
-    justify-content: stretch;
-  }
-
-  .feature-checklist-actions button {
-    flex: 1 1 130px;
+  .atomic-feature-modal-facts,
+  .atomic-feature-modal-grid {
+    grid-template-columns: 1fr;
   }
 
   .document-map {

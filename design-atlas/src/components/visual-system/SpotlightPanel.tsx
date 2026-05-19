@@ -4,8 +4,9 @@ type SpotlightPanelProps = HTMLAttributes<HTMLElement> & {
   children: ReactNode;
   className?: string;
   accent?: string;
-  tag?: "div" | "article" | "section" | "aside" | "header";
+  tag?: "div" | "article" | "section" | "aside" | "header" | "button";
   style?: CSSProperties;
+  type?: "button" | "submit" | "reset";
 };
 
 export function SpotlightPanel({

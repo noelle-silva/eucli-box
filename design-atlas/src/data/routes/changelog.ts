@@ -14,7 +14,7 @@ export const changelogRoute: DesignRoute = {
         { label: "01", title: "创建 Design Atlas", body: "建立 Vite + React + TypeScript 的独立 web 文档，用可视化页面承载 eucli-box 构想。" },
         { label: "02", title: "引入左侧导航", body: "从长页面改为导航式文档，支持按主题切换内容。" },
         { label: "03", title: "加入 Mermaid", body: "支持架构、同步、权限和路线图等图形化说明，并使用动态加载。" },
-        { label: "04", title: "功能清单树状化", body: "功能列表从 P0/P1/P2 主分类改成领域 → 模块 → 功能项，P 标签只作为条目标记。" },
+        { label: "04", title: "原子功能一等公民", body: "原子功能列表成为主入口，全部原子功能直接平铺可见，结构关系由统一项目模型派生。" },
         { label: "05", title: "迁移为 web 文档结构树", body: "文档改为具体细节约束、任务管理、记录三大分支，并把已有内容迁移归位。" },
       ],
     },

@@ -1,119 +1,50 @@
-type ArchitectureNode = {
-  id: string;
-  title: string;
-  role: string;
-  responsibilities: string[];
+import type { CSSProperties } from "react";
+import { architectureModules, architectureRelations } from "../data/projectModel";
+
+type ArchitectureMapProps = {
+  selectedFeatureId?: string;
+  onFeatureSelect: (featureId: string) => void;
 };
 
-const nodes: ArchitectureNode[] = [
-  {
-    id: "client",
-    title: "自定义客户端",
-    role: "显示器 + 遥控器",
-    responsibilities: ["发起会话", "展示聊天 / 工具 / 状态", "批准权限", "管理配置界面"],
-  },
-  {
-    id: "runtime",
-    title: "eucli-box 实例",
-    role: "Agent Runtime 核心",
-    responsibilities: ["会话管理", "Agent 循环", "工具执行", "权限控制", "供应商调用"],
-  },
-  {
-    id: "storage",
-    title: "数据存储中心",
-    role: "权威数据源",
-    responsibilities: ["会话与聊天记录", "配置与权限", "Agent 身份", "同步事件流"],
-  },
-  {
-    id: "tools",
-    title: "工具子进程",
-    role: "隔离执行单元",
-    responsibilities: ["stdin/stdout JSON", "任意语言实现", "崩溃不影响实例"],
-  },
-  {
-    id: "providers",
-    title: "模型供应商",
-    role: "LLM 能力来源",
-    responsibilities: ["Anthropic", "OpenAI-compatible", "模型组与熔断"],
-  },
-  {
-    id: "plugins",
-    title: "系统插件",
-    role: "后台动态能力",
-    responsibilities: ["占位符动态值", "记忆/RAG", "时间/天气/表情包"],
-  },
-];
-
-const relations = [
-  { from: "client", to: "runtime", label: "REST + WebSocket", description: "客户端发命令，实例推事件" },
-  { from: "runtime", to: "storage", label: "Pull Sync", description: "实例按频道拉取和上传增量" },
-  { from: "runtime", to: "tools", label: "spawn", description: "实例启动工具子进程执行任务" },
-  { from: "runtime", to: "providers", label: "LLM API", description: "实例调用模型完成推理" },
-  { from: "runtime", to: "plugins", label: "dynamic slots", description: "插件提供占位符与后台能力" },
-];
-
-export function ArchitectureMap() {
-  const runtime = nodes.find((node) => node.id === "runtime");
-  const satellites = nodes.filter((node) => node.id !== "runtime");
-
-  if (!runtime) {
-    throw new Error("ArchitectureMap requires a runtime node.");
-  }
-
+export function ArchitectureMap({ selectedFeatureId, onFeatureSelect }: ArchitectureMapProps) {
   return (
-    <section className="architecture-diagram" aria-label="eucli-box system collaboration diagram">
+    <section className="architecture-diagram" aria-label="atomic feature architecture view">
       <div className="architecture-intro">
-        <span className="diagram-kicker">System Collaboration</span>
-        <h2>这张图表达什么？</h2>
-        <p>它展示 eucli-box 不是一个单独页面，而是由客户端、运行时实例、数据中心、工具、供应商和系统插件协作组成的 Agent 服务器体系。</p>
+        <span className="diagram-kicker">Atomic Architecture</span>
+        <h2>原子功能如何组成系统架构</h2>
+        <p>这张图不再维护独立架构事实，而是从统一项目模型派生：模块承载原子功能，功能关系生成模块协作边界。</p>
       </div>
 
-      <div className="architecture-core-layout">
-        <div className="architecture-satellite-grid">
-          {satellites.map((node) => (
-            <ArchitectureCard node={node} key={node.id} />
-          ))}
-        </div>
+      <div className="architecture-module-grid">
+        {architectureModules.map((moduleView) => (
+          <article className="architecture-card architecture-module-card" key={moduleView.id} style={{ "--module-accent": moduleView.domain.accent } as CSSProperties}>
+            <div className="architecture-card-head">
+              <span>{moduleView.domain.title}</span>
+              <strong>{moduleView.title}</strong>
+            </div>
+            <p>{moduleView.summary}</p>
+            <div className="architecture-feature-list" aria-label={`${moduleView.title} atomic features`}>
+              {moduleView.features.map((feature) => (
+                <button className={selectedFeatureId === feature.id ? "is-selected" : ""} key={feature.id} type="button" onClick={() => onFeatureSelect(feature.id)}>{feature.title}</button>
+              ))}
+            </div>
+          </article>
+        ))}
+      </div>
 
-        <div className="architecture-core-column">
-          <ArchitectureCard node={runtime} isCore />
-          <div className="architecture-relation-list" aria-label="system relations">
-            {relations.map((relation) => (
-              <article className="architecture-relation" key={`${relation.from}-${relation.to}`}>
-                <span>{relation.label}</span>
-                <strong>{getNodeTitle(relation.from)} → {getNodeTitle(relation.to)}</strong>
-                <p>{relation.description}</p>
-              </article>
-            ))}
-          </div>
-        </div>
+      <div className="architecture-relation-list" aria-label="atomic feature derived module relations">
+        {architectureRelations.map((relation) => (
+          <article className="architecture-relation" key={`${relation.from.id}-${relation.to.id}`}>
+            <span>{relation.features.length} 个原子功能</span>
+            <strong>{relation.from.title} → {relation.to.title}</strong>
+            <div className="architecture-relation-feature-row">
+              {relation.features.map((feature) => (
+                <button className={selectedFeatureId === feature.id ? "is-selected" : ""} key={feature.id} type="button" onClick={() => onFeatureSelect(feature.id)}>{feature.title}</button>
+              ))}
+            </div>
+          </article>
+        ))}
       </div>
     </section>
   );
-}
-
-function ArchitectureCard({ node, isCore = false }: { node: ArchitectureNode; isCore?: boolean }) {
-  return (
-    <article className={isCore ? "architecture-card architecture-card-core" : "architecture-card"}>
-      <div className="architecture-card-head">
-        <span>{node.role}</span>
-        <strong>{node.title}</strong>
-      </div>
-      <ul>
-        {node.responsibilities.map((responsibility) => (
-          <li key={responsibility}>{responsibility}</li>
-        ))}
-      </ul>
-    </article>
-  );
-}
-
-function getNodeTitle(nodeId: string) {
-  const node = nodes.find((item) => item.id === nodeId);
-
-  if (!node) {
-    throw new Error(`Unknown architecture node: ${nodeId}`);
-  }
-
-  return node.title;
 }

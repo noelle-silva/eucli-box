@@ -6,7 +6,7 @@ export const documentTree: DocumentTreeSection[] = [
     label: "具体细节约束",
     summary: "定义系统应该是什么、怎么运行、怎么验收。",
     children: [
-      { kind: "route", id: "feature-list", label: "功能列表", routeId: "features", summary: "按系统树组织 feature，并给条目标 P0/P1/P2。" },
+      { kind: "route", id: "atomic-feature-list", label: "原子功能列表", routeId: "features", summary: "直接平铺展示所有原子功能，每个功能可展开查看关系与验收。" },
       { kind: "route", id: "architecture-map", label: "架构图", routeId: "architecture", summary: "客户端、运行时实例、数据中心和外部能力关系。" },
       { kind: "route", id: "data-flow-map", label: "数据流向图", routeId: "data-flow", summary: "请求、事件、同步和工具结果的流转路径。" },
       { kind: "route", id: "data-model", label: "数据模型", routeId: "data-model", summary: "核心实体、归属频道和关键关系。" },

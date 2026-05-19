@@ -7,7 +7,7 @@ import { MvpFlow } from "../MvpFlow";
 import { MermaidDiagram } from "../MermaidDiagram";
 import { Roadmap } from "../Roadmap";
 import { SubsystemGrid } from "../SubsystemGrid";
-import { GradientText, SpotlightPanel } from "../visual-system";
+import { SpotlightPanel } from "../visual-system";
 import { decisions, risks, roadmap, subsystems } from "../../data/designAtlas";
 import { featureTree } from "../../data/featureChecklist";
 import type { DesignRoute, DocumentTreeSection, RouteBlock } from "../../data/routes";
@@ -21,20 +21,9 @@ type RoutePageProps = {
 
 export function RoutePage({ activeRouteId, route, tree, onRouteChange }: RoutePageProps) {
   const isImmersive = route.layout === "immersive";
-  const shouldShowHero = !isImmersive && route.hero !== "hidden";
 
   return (
     <article className={isImmersive ? "route-page route-page-immersive" : "route-page"}>
-      {shouldShowHero ? (
-        <header className="route-hero">
-          <span className="eyebrow">{route.eyebrow}</span>
-          <h1>
-            <GradientText>{route.title}</GradientText>
-          </h1>
-          <p>{route.summary}</p>
-        </header>
-      ) : null}
-
       <div className="route-blocks">
         {route.blocks.map((block, index) => (
           <RouteBlockView activeRouteId={activeRouteId} block={block} key={`${route.id}-${block.kind}-${index}`} onRouteChange={onRouteChange} tree={tree} />

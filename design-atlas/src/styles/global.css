@@ -274,7 +274,6 @@ button:focus-visible {
   gap: 0;
 }
 
-.route-hero,
 .doc-block,
 .visual-block {
   position: relative;
@@ -284,28 +283,6 @@ button:focus-visible {
   background: var(--panel);
   box-shadow: var(--shadow);
   backdrop-filter: blur(24px);
-}
-
-.route-hero {
-  min-height: 326px;
-  padding: clamp(28px, 5vw, 58px);
-}
-
-.route-hero::before {
-  content: "";
-  position: absolute;
-  right: -8%;
-  top: -34%;
-  width: 420px;
-  height: 420px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.32), rgba(6, 182, 212, 0.24));
-  filter: blur(4px);
-}
-
-.route-hero > * {
-  position: relative;
-  z-index: 1;
 }
 
 .eyebrow {
@@ -322,24 +299,6 @@ button:focus-visible {
   font-weight: 900;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-}
-
-.route-hero h1 {
-  max-width: 980px;
-  margin: 24px 0 16px;
-  color: var(--ink);
-  font-size: clamp(2.7rem, 6.4vw, 6.8rem);
-  line-height: 0.9;
-  letter-spacing: -0.075em;
-}
-
-.route-hero p {
-  max-width: 820px;
-  margin: 0;
-  color: #475569;
-  font-size: clamp(1.05rem, 1.5vw, 1.28rem);
-  font-weight: 750;
-  line-height: 1.75;
 }
 
 .route-blocks {
@@ -1648,14 +1607,9 @@ button:focus-visible {
     align-items: start;
   }
 
-  .route-hero,
   .doc-block,
   .visual-block {
     border-radius: 24px;
-  }
-
-  .route-hero h1 {
-    font-size: clamp(2.6rem, 12vw, 4.8rem);
   }
 
   .doc-card-grid,
@@ -1702,10 +1656,6 @@ button:focus-visible {
     padding: 16px;
   }
 
-  .route-hero {
-    min-height: auto;
-  }
-
   .feature-checklist-toolbar,
   .feature-tree-branch-head {
     align-items: stretch;
@@ -1718,10 +1668,6 @@ button:focus-visible {
 
   .feature-checklist-actions button {
     flex: 1 1 130px;
-  }
-
-  .feature-tree-branch-toggle {
-    width: fit-content;
   }
 
   .document-map {

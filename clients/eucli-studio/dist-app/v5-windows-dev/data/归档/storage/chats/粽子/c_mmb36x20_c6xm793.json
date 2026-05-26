@@ -1,0 +1,26 @@
+{
+  "createdAt": 1772571311064,
+  "id": "c_mmb36x20_c6xm793",
+  "messages": [
+    {
+      "content": "你好啊",
+      "createdAt": 1772571311064,
+      "id": "m_mmb36x20_nfarthp",
+      "images": [],
+      "pending": false,
+      "role": "user",
+      "streaming": false
+    },
+    {
+      "content": "你好，我是粽子。有什么我可以帮你解决的问题？",
+      "createdAt": 1772571311064,
+      "id": "m_mmb36x1z_etngsax",
+      "images": [],
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    }
+  ],
+  "title": "你好啊",
+  "updatedAt": 1772571333360
+}

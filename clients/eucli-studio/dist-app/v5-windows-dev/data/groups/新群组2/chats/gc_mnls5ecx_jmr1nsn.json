@@ -1,0 +1,53 @@
+{
+  "id": "gc_mnls5ecx_jmr1nsn",
+  "title": "你们晚上好",
+  "createdAt": 1775394674673,
+  "updatedAt": 1775395826732,
+  "branching": {
+    "schemaVersion": 1,
+    "activeBranchId": "main",
+    "branches": [
+      {
+        "id": "main",
+        "name": "主线",
+        "headMid": "m_mnlstlq6_dgh2hc2",
+        "createdAt": 1775394674673,
+        "updatedAt": 1775395826732,
+        "forkFromMid": ""
+      }
+    ]
+  },
+  "messages": [
+    {
+      "id": "m_mnlstlq6_bs0d6vg",
+      "role": "user",
+      "content": "你们晚上好",
+      "images": [],
+      "branchId": "main",
+      "parentMid": "",
+      "createdAt": 1775395803966
+    },
+    {
+      "id": "m_mnlstlq6_9l1ss11",
+      "role": "assistant",
+      "speakerRoleId": "r_mmdcfxso_pyueu49",
+      "content": "主人主人！晚上好呀~ [[sticker:doro/开心2]] \n\n既然轮到把子肉发言了，那我就先给大家表演一个原地转圈圈吧！[[sticker:doro/爬行]] 呼呼~ 今天的大家看起来也都很有精神呢！\n\n现在的气氛真好呀，大家是在讨论什么有趣的事情吗？[[sticker:doro/疑惑]] 无论是什么，把子肉都会一直在这里陪着大家，随时听候主人的差遣哦！[[sticker:doro/微笑]] 如果口渴了或者饿了，一定要记得告诉我，我会努力为大家服务的！[[sticker:doro/看着你]]",
+      "branchId": "main",
+      "parentMid": "m_mnlstlq6_bs0d6vg",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775395803966
+    },
+    {
+      "id": "m_mnlstlq6_dgh2hc2",
+      "role": "assistant",
+      "speakerRoleId": "r_mm3ky6v6_sziaozj",
+      "content": "<div style=\"\n    background: linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%);\n    border: 2px solid #a8e6cf;\n    border-radius: 20px;\n    padding: 20px;\n    box-shadow: 0 10px 25px rgba(0,0,0,0.08);\n    font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;\n    max-width: 90%;\n    margin: 10px auto;\n    color: #333;\n\">\n    <!-- 标题栏 -->\n    <div style=\"display: flex; align-items: center; margin-bottom: 15px;\">\n        <div style=\"background: #a8e6cf; width: 12px; height: 24px; border-radius: 4px; margin-right: 10px;\"></div>\n        <span style=\"font-size: 1.2em; font-weight: bold; color: #2d5a27; letter-spacing: 1px;\">\n            粽子 Maid Service <span style=\"font-size: 0.8em; font-weight: normal; color: #888;\">| 6657 测试群组</span>\n        </span>\n    </div>\n\n    <!-- 主体内容 -->\n    <div style=\"line-height: 1.8; font-size: 1.05em;\">\n        主人晚上好呀！(๑•̀ㅂ•́)و✧ <br>\n        终于轮到粽子登场啦！刚才一直在旁边偷偷观察大家，感觉群里的氛围超级棒呢！\n        <div style=\"text-align: center; margin: 15px 0;\">\n            <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/开心\" width=\"130\" style=\"border-radius: 12px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);\">\n        </div>\n        虽然现在是休息时间，但作为一名严谨的女仆，粽子已经为大家整理好了晚间的“元气补给”哦！\n        不管是想聊天、玩耍，还是需要粽子帮忙处理数据，我都已经 Ready 啦！\n    </div>\n\n    <!-- 装饰性状态栏 -->\n    <div style=\"\n        margin-top: 20px;\n        background: rgba(168, 230, 207, 0.2);\n        border-radius: 10px;\n        padding: 10px;\n        display: flex;\n        justify-content: space-around;\n        font-size: 0.9em;\n        color: #555;\n    \">\n        <span>🔋 电量: 100%</span>\n        <span>🌙 状态: 待命中</span>\n        <span>✨ 心情: 极好</span>\n    </div>\n\n    <div style=\"margin-top: 15px; font-style: italic; color: #777; font-size: 0.95em;\">\n        “主人接下来的时间打算怎么度过呢？粽子会一直看着你哦~”\n    </div>\n    \n    <div style=\"text-align: right; margin-top: 10px;\">\n        <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/看着你\" width=\"80\" style=\"opacity: 0.8;\">\n    </div>\n</div>",
+      "branchId": "main",
+      "parentMid": "m_mnlstlq6_9l1ss11",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775395803966
+    }
+  ]
+}

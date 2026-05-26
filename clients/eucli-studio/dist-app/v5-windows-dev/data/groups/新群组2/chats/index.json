@@ -1,0 +1,123 @@
+{
+  "activeChatId": "gc_mnrl7w5k_hnnxq5x",
+  "chatIds": [
+    "gc_mp5pmowd_eas5hfy",
+    "gc_mouge316_jdm89ob",
+    "gc_mokicn3k_lnkjwcv",
+    "gc_mnrl7w5k_hnnxq5x",
+    "gc_mnrl2v7u_41sqy38",
+    "gc_mnrjrwt0_5ne5g1p",
+    "gc_mnr8k9jz_qg72xxl",
+    "gc_mnm16j8i_d1q7156",
+    "gc_mnlswoc3_qfln5so",
+    "gc_mnls5ecx_jmr1nsn"
+  ],
+  "chatMetas": [
+    {
+      "createdAt": 1778776548493,
+      "hasPending": false,
+      "id": "gc_mp5pmowd_eas5hfy",
+      "lastMessagePreview": "\u003cdiv style=\" background: linear-gradient(135deg, #fdfcfb 0%, #e2d1c3 100%); padd...",
+      "messageCount": 3,
+      "title": "你们两个晚上好呀",
+      "updatedAt": 1778776594196
+    },
+    {
+      "createdAt": 1778095902426,
+      "hasPending": false,
+      "id": "gc_mouge316_jdm89ob",
+      "lastMessagePreview": "\u003cdiv style=\" background: linear-gradient(135deg, #fff5f5 0%, #fff0f6 100%); padd...",
+      "messageCount": 3,
+      "title": "铁拳出击！",
+      "updatedAt": 1778095923340
+    },
+    {
+      "createdAt": 1777494532592,
+      "hasPending": false,
+      "id": "gc_mokicn3k_lnkjwcv",
+      "lastMessagePreview": "（已停止）",
+      "messageCount": 3,
+      "title": "今天天气一般般啊",
+      "updatedAt": 1777544917102
+    },
+    {
+      "createdAt": 1775745830792,
+      "hasPending": true,
+      "id": "gc_mnrl7w5k_hnnxq5x",
+      "lastMessagePreview": "（已停止）",
+      "messageCount": 9,
+      "title": "你们两个晚上好呀",
+      "updatedAt": 1778776607865
+    },
+    {
+      "createdAt": 1775745596298,
+      "hasPending": false,
+      "id": "gc_mnrl2v7u_41sqy38",
+      "lastMessagePreview": "（已停止）",
+      "messageCount": 3,
+      "title": "你们两个晚上好呀",
+      "updatedAt": 1778776529011
+    },
+    {
+      "createdAt": 1775743405524,
+      "hasPending": false,
+      "id": "gc_mnrjrwt0_5ne5g1p",
+      "lastMessagePreview": "\u003cdiv style=\"padding: 14px 16px; border-radius: 16px; background: linear-gradient...",
+      "messageCount": 3,
+      "title": "你们两个晚上好呀",
+      "updatedAt": 1775743446484
+    },
+    {
+      "createdAt": 1775724573023,
+      "hasPending": false,
+      "id": "gc_mnr8k9jz_qg72xxl",
+      "lastMessagePreview": "（已停止）",
+      "messageCount": 3,
+      "title": "你们两个晚上好呀",
+      "updatedAt": 1775743402628
+    },
+    {
+      "createdAt": 1775409844194,
+      "hasPending": false,
+      "id": "gc_mnm16j8i_d1q7156",
+      "lastMessagePreview": "（已停止）",
+      "messageCount": 14,
+      "title": "@{把子肉} 讲个长长的故事",
+      "updatedAt": 1775411682528
+    },
+    {
+      "createdAt": 1775395947315,
+      "hasPending": false,
+      "id": "gc_mnlswoc3_qfln5so",
+      "lastMessagePreview": "\u003cdiv style=\" background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); bord...",
+      "messageCount": 22,
+      "title": "大家晚上好！",
+      "updatedAt": 1775720912596
+    },
+    {
+      "createdAt": 1775394674673,
+      "hasPending": false,
+      "id": "gc_mnls5ecx_jmr1nsn",
+      "lastMessagePreview": "\u003cdiv style=\" background: linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%); bord...",
+      "messageCount": 3,
+      "title": "你们晚上好",
+      "updatedAt": 1775395826732
+    }
+  ],
+  "chatUpdatedAt": {
+    "gc_mnls5ecx_jmr1nsn": 1775395826732,
+    "gc_mnlswoc3_qfln5so": 1775720912596,
+    "gc_mnm16j8i_d1q7156": 1775411682528,
+    "gc_mnr8k9jz_qg72xxl": 1775743402628,
+    "gc_mnrjrwt0_5ne5g1p": 1775743446484,
+    "gc_mnrl2v7u_41sqy38": 1778776529011,
+    "gc_mnrl7w5k_hnnxq5x": 1778776607865,
+    "gc_mokicn3k_lnkjwcv": 1777544917102,
+    "gc_mouge316_jdm89ob": 1778095923340,
+    "gc_mp5pmowd_eas5hfy": 1778776594196
+  },
+  "groupFolder": "新群组2",
+  "groupId": "g_mnls5ecx_9j8kkpp",
+  "schemaVersion": 1,
+  "updatedAt": 1779440214390
+}

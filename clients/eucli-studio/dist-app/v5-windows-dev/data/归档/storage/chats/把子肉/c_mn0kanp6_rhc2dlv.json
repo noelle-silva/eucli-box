@@ -1,0 +1,37 @@
+{
+  "createdAt": 1774111693434,
+  "id": "c_mn0kanp6_rhc2dlv",
+  "messages": [
+    {
+      "content": "你好，试试看echo工具看看",
+      "createdAt": 1774111693434,
+      "id": "m_mn0kanp6_y7eu26p",
+      "images": [],
+      "role": "user"
+    },
+    {
+      "content": "[[sticker:doro/开心]] 好呀主人，我来试试看 echo 工具~<<<[TOOL_REQUEST]>>>\n  <<[CALL-1]>>\n    tool_name:「start」echo「end」\n    text:「start」你好，echo 工具测试成功喵~「end」\n    agent:「start」把子肉「end」\n    note:「start」按用户要求测试 echo 工具「end」\n  <<[/CALL-1]>>\n<<<[END_TOOL_REQUEST]>>>",
+      "createdAt": 1774111693435,
+      "id": "m_mn0kanp6_xaeb5wa",
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    },
+    {
+      "content": "<<<[TOOL_RESPONSE]>>>\n  <<[RESULT-1]>>\n    tool_name:「start」echo「end」\n    status:「start」success「end」\n    output:「start」你好，echo 工具测试成功喵~「end」\n  <<[/RESULT-1]>>\n<<<[END_TOOL_RESPONSE]>>>",
+      "createdAt": 1774111699803,
+      "id": "m_mn0kasm3_h2zel5k",
+      "role": "user"
+    },
+    {
+      "content": "[[sticker:doro/开心2]] echo 工具返回成功啦！\n\n输出内容是：\n`你好，echo 工具测试成功喵~`\n\n还想让我继续测试别的内容吗？[[sticker:doro/看着你]]",
+      "createdAt": 1774111699803,
+      "id": "m_mn0kasm3_9nhtn95",
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    }
+  ],
+  "title": "你好，试试看echo工具看看",
+  "updatedAt": 1774111703584
+}

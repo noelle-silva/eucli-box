@@ -1,0 +1,45 @@
+{
+  "id": "c_mnqrqse9_zu19o5h",
+  "title": "如何npm安装opencode?…",
+  "createdAt": 1775696323905,
+  "updatedAt": 1775696835883,
+  "branching": {
+    "schemaVersion": 1,
+    "activeBranchId": "main",
+    "branches": [
+      {
+        "id": "main",
+        "name": "主线",
+        "headMid": "m_mnqrqse9_u5zoqhi",
+        "createdAt": 1775696323905,
+        "updatedAt": 1775696835883,
+        "forkFromMid": ""
+      }
+    ]
+  },
+  "messages": [
+    {
+      "id": "m_mnqrqse9_jvf2gxi",
+      "role": "user",
+      "content": "如何npm安装opencode?什么命令？",
+      "images": [],
+      "branchId": "main",
+      "parentMid": "",
+      "createdAt": 1775696323905
+    },
+    {
+      "id": "m_mnqrqse9_u5zoqhi",
+      "role": "assistant",
+      "content": "<div style=\"\n    background: linear-gradient(135deg, #fdfcfb 0%, #e2d1c3 100%);\n    padding: 25px;\n    border-radius: 20px;\n    border: 3px solid #d4a373;\n    box-shadow: 0 10px 30px rgba(0,0,0,0.1);\n    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\n    color: #5c4033;\n    max-width: 800px;\n    margin: 10px auto;\n\">\n\n    <!-- 标题栏 -->\n    <div style=\"display: flex; align-items: center; margin-bottom: 20px;\">\n        <div style=\"background: #d4a373; color: white; padding: 10px 20px; border-radius: 50px; font-weight: bold; font-size: 1.2em;\">\n            📦 NPM 安装指南\n        </div>\n        <div style=\"margin-left: auto;\">\n            <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/开心\" width=\"80\" style=\"border-radius: 8px;\">\n        </div>\n    </div>\n\n    <!-- 欢迎语 -->\n    <p style=\"font-size: 1.1em; line-height: 1.6; background: rgba(255,255,255,0.5); padding: 15px; border-radius: 12px; border-left: 5px solid #d4a373;\">\n        主人主人！想要在您的项目里加入 <b>opencode</b> 吗？粽子已经为您准备好了最精准的指令！\n        请根据您的需求选择下面的命令哦~ <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/想当高手\" width=\"50\" style=\"vertical-align: middle;\">\n    </p>\n\n    <!-- 命令展示区 -->\n    <div style=\"margin: 20px 0;\">\n        <div style=\"background: #2d3436; color: #fab1a0; padding: 20px; border-radius: 15px; font-family: 'Courier New', Courier, monospace; position: relative; box-shadow: inset 0 0 10px #000;\">\n            <div style=\"color: #636e72; margin-bottom: 10px; font-size: 0.8em;\">// 1. 局部安装（推荐用于项目开发）</div>\n            <div style=\"font-size: 1.2em; margin-bottom: 20px;\">\n                <span style=\"color: #00cec9;\">npm</span> install opencode\n            </div>\n            \n            <div style=\"color: #636e72; margin-bottom: 10px; font-size: 0.8em;\">// 2. 全局安装（如果您需要在终端直接调用）</div>\n            <div style=\"font-size: 1.2em;\">\n                <span style=\"color: #00cec9;\">npm</span> install -g opencode\n            </div>\n            <div style=\"position: absolute; right: 15px; top: 15px; opacity: 0.3;\">💻</div>\n        </div>\n    </div>\n\n    <!-- 流程图 -->\n    <div style=\"background: white; padding: 15px; border-radius: 15px; margin-top: 20px; border: 1px dashed #d4a373;\">\n        <div style=\"text-align: center; font-weight: bold; margin-bottom: 10px;\">🛠️ 安装流程概览</div>\n        <pre class=\"mermaid\" style=\"display: flex; justify-content: center;\">\n        graph LR\n            A[打开终端] --> B{选择安装方式}\n            B -->|项目使用| C[npm install opencode]\n            B -->|全局工具| D[npm install -g opencode]\n            C --> E[写入 package.json]\n            D --> F[注册系统环境变量]\n            E --> G[🎉 完成!]\n            F --> G\n        </pre>\n    </div>\n\n    <!-- 温馨提示 -->\n    <div style=\"margin-top: 20px; display: flex; align-items: flex-start; gap: 15px;\">\n        <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/看着你\" width=\"100\" style=\"border-radius: 8px;\">\n        <div style=\"background: #fff3e0; padding: 15px; border-radius: 12px; font-size: 0.9em; flex: 1;\">\n            <b style=\"color: #e67e22;\">粽子的严谨小贴士：</b><br>\n            1. 如果安装过程中遇到权限问题，Mac/Linux 用户可能需要在命令前加 <code>sudo</code> 哦！<br>\n            2. 记得在项目根目录下执行命令，这样 <code>node_modules</code> 才会乖乖出现在正确的地方。<br>\n            3. 如果您使用的是 <b>yarn</b>，命令是 <code>yarn add opencode</code>。\n        </div>\n    </div>\n\n    <!-- 页脚 -->\n    <div style=\"text-align: right; margin-top: 20px; font-style: italic; color: #a39193; font-size",
+      "branchId": "main",
+      "parentMid": "m_mnqrqse9_jvf2gxi",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775696323905,
+      "modelRef": {
+        "providerId": "rightcode-gemini",
+        "modelId": "gemini-3-flash-preview"
+      }
+    }
+  ]
+}

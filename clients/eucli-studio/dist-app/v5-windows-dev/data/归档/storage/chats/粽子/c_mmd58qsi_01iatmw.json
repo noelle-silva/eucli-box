@@ -1,0 +1,23 @@
+{
+  "createdAt": 1772695687842,
+  "id": "c_mmd58qsi_01iatmw",
+  "messages": [
+    {
+      "content": "我要测试latex渲染，给我来20个复杂优先的公式。",
+      "createdAt": 1772695687842,
+      "id": "m_mmd58qsi_bdw2zgp",
+      "images": [],
+      "role": "user"
+    },
+    {
+      "content": "当然可以，主人请收下这 20 个“复杂优先”的 LaTeX 公式测试包～（建议逐条渲染看看是否有断行、对齐、字体/符号缺失等问题）  \n<img src=\"http://192.168.123.111:9334/pw=7398723091/doro/看戏\" width=\"140\" style=\"border-radius: 8px;\">\n\n---\n\n### 1. 广义傅里叶变换 + 分布\n$$\n\\mathcal{F}\\{f\\}(\\xi)=\\int_{\\mathbb{R}^n} f(x)e^{-2\\pi i x\\cdot \\xi}\\,dx,\\qquad \n\\mathcal{F}\\{\\partial^\\alpha f\\}(\\xi)=(2\\pi i \\xi)^\\alpha \\mathcal{F}\\{f\\}(\\xi)\n$$\n\n### 2. 变分法欧拉-拉格朗日方程（含高阶导）\n$$\n\\frac{\\partial L}{\\partial y}-\\frac{d}{dx}\\frac{\\partial L}{\\partial y'}+\\frac{d^2}{dx^2}\\frac{\\partial L}{\\partial y''}=0,\\quad\nL=L(x,y,y',y'')\n$$\n\n### 3. 纳维-斯托克斯（不可压缩）\n$$\n\\begin{cases}\n\\partial_t \\mathbf{u}+(\\mathbf{u}\\cdot\\nabla)\\mathbf{u}+\\nabla p=\\nu\\Delta \\mathbf{u}+\\mathbf{f},\\\\\n\\nabla\\cdot \\mathbf{u}=0.\n\\end{cases}\n$$\n\n### 4. 麦克斯韦方程组（微分形式）\n$$\n\\begin{aligned}\n\\nabla\\cdot \\mathbf{E}&=\\frac{\\rho}{\\varepsilon_0},&\n\\nabla\\times \\mathbf{E}&=-\\frac{\\partial \\mathbf{B}}{\\partial t},\\\\\n\\nabla\\cdot \\mathbf{B}&=0,&\n\\nabla\\times \\mathbf{B}&=\\mu_0\\mathbf{J}+\\mu_0\\varepsilon_0\\frac{\\partial \\mathbf{E}}{\\partial t}.\n\\end{aligned}\n$$\n\n### 5. 广义特征值问题（矩阵铅笔）\n$$\nA\\mathbf{x}=\\lambda B\\mathbf{x},\\qquad \\det(A-\\lambda B)=0,\\qquad A,B\\in\\mathbb{C}^{n\\times n}\n$$\n\n### 6. 奇异值分解（SVD）\n$$\nA=U\\Sigma V^{*},\\quad\nU^{*}U=I,\\ V^{*}V=I,\\ \n\\Sigma=\\operatorname{diag}(\\sigma_1,\\dots,\\sigma_r)\n$$\n\n### 7. Woodbury 矩阵恒等式\n$$\n(A+UCV)^{-1}=A^{-1}-A^{-1}U\\left(C^{-1}+VA^{-1}U\\right)^{-1}VA^{-1}\n$$\n\n### 8. 多元高斯分布密度\n$$\np(\\mathbf{x})=\\frac{1}{(2\\pi)^{d/2}\\,|\\Sigma|^{1/2}}\n\\exp\\!\\left(-\\frac12(\\mathbf{x}-\\mu)^{\\mathsf T}\\Sigma^{-1}(\\mathbf{x}-\\mu)\\right)\n$$\n\n### 9. KL 散度（连续形式）\n$$\nD_{\\mathrm{KL}}(P\\|Q)=\\int_{\\Omega} p(x)\\log\\frac{p(x)}{q(x)}\\,dx\n$$\n\n### 10. ELBO（变分推断）\n$$\n\\log p(x)\\ge \\mathbb{E}_{q(z)}[\\log p(x,z)-\\log q(z)]\n= -D_{\\mathrm{KL}}(q(z)\\|p(z\\mid x))+\\log p(x)\n$$\n\n<img src=\"http://192.168.123.111:9334/pw=7398723091/doro/偷窥\" width=\"135\" style=\"border-radius: 8px;\">\n\n### 11. Itô 引理\n$$\ndf(t,X_t)=\\left(\\partial_t f+\\mu\\,\\partial_x f+\\frac12\\sigma^2\\,\\partial_{xx}f\\right)dt\n+\\sigma\\,\\partial_x f\\,dW_t\n$$\n\n### 12. Black–Scholes PDE\n$$\n\\frac{\\partial V}{\\partial t}\n+\\frac12\\sigma^2 S^2\\frac{\\partial^2 V}{\\partial S^2}\n+rS\\frac{\\partial V}{\\partial S}\n-rV=0\n$$\n\n### 13. 斯托克斯定理（微分形式）\n$$\n\\int_{\\partial M}\\omega=\\int_{M} d\\omega\n$$\n\n### 14. 曲率张量（黎曼曲率）\n$$\nR^{\\rho}{}_{\\sigma\\mu\\nu}\n=\\partial_{\\mu}\\Gamma^{\\rho}{}_{\\nu\\sigma}\n-\\partial_{\\nu}\\Gamma^{\\rho}{}_{\\mu\\sigma}\n+\\Gamma^{\\rho}{}_{\\mu\\lambda}\\Gamma^{\\lambda}{}_{\\nu\\sigma}\n-\\Gamma^{\\rho}{}_{\\nu\\lambda}\\Gamma^{\\lambda}{}_{\\mu\\sigma}\n$$\n\n### 15. 爱因斯坦场方程\n$$\nG_{\\mu\\nu}+\\Lambda g_{\\mu\\nu}=\\frac{8\\pi G}{c^{4}}T_{\\mu\\nu}\n$$\n\n### 16. 路径积分（量子力学传播子）\n$$\n\\langle x_f,t_f\\mid x_i,t_i\\rangle\n=\\int \\mathcal{D}x(t)\\,\n\\exp\\!\\left(\\frac{i}{\\hbar}\\int_{t_i}^{t_f} L(x,\\dot{x},t)\\,dt\\right)\n$$\n\n### 17. 薛定谔方程（含哈密顿算符）\n$$\ni\\hbar\\frac{\\partial}{\\partial t}\\Psi(\\mathbf{r},t)\n=\\left(-\\frac{\\hbar^{2}}{2m}\\nabla^{2}+V(\\mathbf{r},t)\\right)\\Psi(\\mathbf{r},t)\n$$\n\n### 18. 拉普拉斯变换与卷积定理\n$$\n\\mathcal{L}\\{(f*g)(t)\\}(s)=\\mathcal{L}\\{f\\}(s)\\cdot \\mathcal{L}\\{g\\}(s),\\qquad\n(f*g)(t)=\\int_{0}^{t} f(\\tau)g(t-\\tau)\\,d\\tau\n$$\n\n### 19. 生成函数（组合）+ 指数型\n$$\nF(x)=\\sum_{n=0}^{\\infty} a_n\\frac{x^n}{n!},\\qquad\na_n=\\left.\\frac{d^n}{dx^n}F(x)\\right|_{x=0}\n$$\n\n### 20. Zeta 函数的解析延拓（功能方程）\n$$\n\\zeta(s)=2^s\\pi^{s-1}\\sin\\!\\left(\\frac{\\pi s}{2}\\right)\\Gamma(1-s)\\zeta(1-s)\n$$\n\n<img src=\"http://192.168.123.111:9334/pw=7398723091/doro/开心\" width=\"150\" style=\"border-radius: 8px;\">\n\n---\n\n如果主人想更“折磨渲染器”的版本（比如 `cases + aligned + matrix + \\left...\\right` 超长嵌套、或者含 `\\DeclareMathOperator` / `\\overset` / `\\underbrace`），粽子也可以再来一套进阶地狱模式～  \n<img src=\"http://192.168.123.111:9334/pw=7398723091/doro/想当高手\" width=\"140\" style=\"border-radius: 8px;\">",
+      "createdAt": 1772695687842,
+      "id": "m_mmd58qsi_i8urrko",
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    }
+  ],
+  "title": "我要测试latex渲染，给我来2…",
+  "updatedAt": 1772695723703
+}

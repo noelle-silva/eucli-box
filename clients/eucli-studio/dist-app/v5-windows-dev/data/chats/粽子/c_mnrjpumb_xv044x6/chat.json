@@ -1,0 +1,158 @@
+{
+  "id": "c_mnrjpumb_xv044x6",
+  "title": "天气一般~",
+  "createdAt": 1775743309379,
+  "updatedAt": 1776217433803,
+  "branching": {
+    "schemaVersion": 1,
+    "activeBranchId": "main",
+    "branches": [
+      {
+        "id": "main",
+        "name": "主线",
+        "headMid": "m_mnx44urd_hpnzqeh",
+        "createdAt": 1775743309379,
+        "updatedAt": 1776217433803,
+        "forkFromMid": ""
+      },
+      {
+        "id": "b_mnrl9s49_96y1341",
+        "name": "分支",
+        "headMid": "m_mnrjpumb_ofxpegi",
+        "createdAt": 1775745918873,
+        "updatedAt": 1775745977228,
+        "forkFromMid": "m_mnrjpumb_ofxpegi"
+      }
+    ]
+  },
+  "messages": [
+    {
+      "id": "m_mnrjpumb_kreyzbu",
+      "role": "user",
+      "speakerRoleId": "",
+      "content": "天气一般~",
+      "images": [],
+      "attachments": [],
+      "groupId": "",
+      "groupRole": "",
+      "groupParentMid": "",
+      "branchId": "main",
+      "parentMid": "",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775743309379,
+      "modelRef": null
+    },
+    {
+      "id": "m_mnrjpumb_ofxpegi",
+      "role": "assistant",
+      "speakerRoleId": "",
+      "content": "<div style=\"padding: 14px 16px; border-radius: 16px; background: linear-gradient(135deg, #f5f7ff, #eefaf6); border: 1px solid #dbe7ff; box-shadow: 0 6px 18px rgba(120,140,200,.12); font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; line-height: 1.7; color: #334;\">\n  <div style=\"display:flex; align-items:center; gap:10px; margin-bottom:10px;\">\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/疑惑\" width=\"88\" style=\"border-radius: 8px;\">\n    <div>\n      <div style=\"font-size: 18px; font-weight: 700; color:#4b5bdc;\">唔，天气一般般呀~</div>\n      <div style=\"font-size: 13px; color:#667;\">那就是一种“不会太糟，但也不够惊艳”的微妙心情呢，主人~</div>\n    </div>\n  </div>\n\n  <div style=\"background:#fff; border-radius:12px; padding:12px 14px; border:1px dashed #cfd8ff; margin-bottom:10px;\">\n    <span style=\"font-weight:700; color:#5562cc;\">粽子的小判断：</span><br>\n    这种天气最适合——\n    <span style=\"background:#eef2ff; padding:2px 8px; border-radius:999px; margin:0 4px;\">慢悠悠</span>\n    <span style=\"background:#eafaf1; padding:2px 8px; border-radius:999px; margin:0 4px;\">喝点热的</span>\n    <span style=\"background:#fff1f3; padding:2px 8px; border-radius:999px; margin:0 4px;\">做点轻松的事</span>\n  </div>\n\n  <div style=\"display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin:12px 0;\">\n    <div style=\"background:#ffffff; border-radius:12px; padding:10px; border:1px solid #eee; text-align:center;\">\n      <div style=\"font-size:20px;\">☕</div>\n      <div style=\"font-weight:700;\">饮品模式</div>\n      <div style=\"font-size:12px; color:#777;\">奶茶 / 咖啡 / 热可可</div>\n    </div>\n    <div style=\"background:#ffffff; border-radius:12px; padding:10px; border:1px solid #eee; text-align:center;\">\n      <div style=\"font-size:20px;\">🎧</div>\n      <div style=\"font-weight:700;\">发呆模式</div>\n      <div style=\"font-size:12px; color:#777;\">听歌最配这种天</div>\n    </div>\n    <div style=\"background:#ffffff; border-radius:12px; padding:10px; border:1px solid #eee; text-align:center;\">\n      <div style=\"font-size:20px;\">📖</div>\n      <div style=\"font-weight:700;\">摸鱼模式</div>\n      <div style=\"font-size:12px; color:#777;\">看点轻松的东西</div>\n    </div>\n  </div>\n\n  <div style=\"display:flex; align-items:center; gap:10px; margin-top:8px;\">\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/开心\" width=\"80\" style=\"border-radius: 8px;\">\n    <div style=\"background:#fffaf0; border:1px solid #ffe1a8; color:#7a5a00; padding:10px 12px; border-radius:12px;\">\n      要不要粽子帮你把这“一般般的天气”变得有意思一点？<br>\n      我可以陪你：\n      <b>聊天、推荐歌、讲笑话、安排今日小计划</b> 哦~\n    </div>\n  </div>\n</div>",
+      "images": [],
+      "attachments": [],
+      "groupId": "",
+      "groupRole": "",
+      "groupParentMid": "",
+      "branchId": "main",
+      "parentMid": "m_mnrjpumb_kreyzbu",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775743309379,
+      "modelRef": {
+        "providerId": "fengxiang",
+        "modelId": "gpt-5.4"
+      }
+    },
+    {
+      "id": "m_mnrl9s49_v4v4qqe",
+      "role": "user",
+      "speakerRoleId": "",
+      "content": "打算吃个饭。",
+      "images": [],
+      "attachments": [],
+      "groupId": "",
+      "groupRole": "",
+      "groupParentMid": "",
+      "branchId": "b_mnrl9s49_96y1341",
+      "parentMid": "m_mnrjpumb_ofxpegi",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775745918873,
+      "modelRef": null
+    },
+    {
+      "id": "m_mnrl9s49_6sfv42s",
+      "role": "assistant",
+      "content": "<div style=\"padding: 16px; border-radius: 18px; background: linear-gradient(135deg, #fff7f0, #f7fbff); border: 1px solid #ffe2c7; box-shadow: 0 8px 24px rgba(180,120,80,.12); font-family: 'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif; color:#3b342f; line-height:1.7;\">\n  <div style=\"display:flex; align-items:center; gap:12px; margin-bottom:12px;\">\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/看戏\" width=\"90\" style=\"border-radius: 10px;\">\n    <div>\n      <div style=\"font-size:19px; font-weight:800; color:#d46b3b;\">要去吃饭啦~</div>\n      <div style=\"font-size:13px; color:#7b6f66;\">这种天气配一顿踏实的饭，刚刚好呢，主人 <span style=\"font-size:15px;\">🍚</span></div>\n    </div>\n  </div>\n\n  <div style=\"background:#fff; border-radius:14px; padding:12px 14px; border:1px dashed #ffd2ad; margin-bottom:12px;\">\n    <div style=\"font-weight:700; color:#b85c2f; margin-bottom:6px;\">粽子的小推荐：</div>\n    <div style=\"display:flex; flex-wrap:wrap; gap:8px;\">\n      <span style=\"background:#fff2e8; padding:5px 10px; border-radius:999px;\">🍜 汤面类</span>\n      <span style=\"background:#eefbf3; padding:5px 10px; border-radius:999px;\">🍛 盖饭类</span>\n      <span style=\"background:#f3f0ff; padding:5px 10px; border-radius:999px;\">🍲 热乎乎的锅类</span>\n      <span style=\"background:#fff8e8; padding:5px 10px; border-radius:999px;\">🍗 稍微满足一点的肉肉</span>\n    </div>\n  </div>\n\n  <div style=\"display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-bottom:12px;\">\n    <div style=\"background:#ffffff; border:1px solid #eee; border-radius:12px; padding:10px; text-align:center;\">\n      <div style=\"font-size:22px;\">🥘</div>\n      <div style=\"font-weight:700;\">想吃热乎的</div>\n      <div style=\"font-size:12px; color:#777;\">麻辣烫 / 米线 / 面</div>\n    </div>\n    <div style=\"background:#ffffff; border:1px solid #eee; border-radius:12px; padding:10px; text-align:center;\">\n      <div style=\"font-size:22px;\">🍱</div>\n      <div style=\"font-weight:700;\">想吃省事的</div>\n      <div style=\"font-size:12px; color:#777;\">便当 / 简餐 / 盖浇饭</div>\n    </div>\n    <div style=\"background:#ffffff; border:1px solid #eee; border-radius:12px; padding:10px; text-align:center;\">\n      <div style=\"font-size:22px;\">🍖</div>\n      <div style=\"font-weight:700;\">想吃满足的</div>\n      <div style=\"font-size:12px; color:#777;\">烧肉 / 炸鸡 / 小炒</div>\n    </div>\n  </div>\n\n  <div style=\"display:flex; align-items:center; gap:10px;\">\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/开心\" width=\"82\" style=\"border-radius: 10px;\">\n    <div style=\"background:#fffdf8; border:1px solid #ffe7c8; border-radius:12px; padding:10px 12px;\">\n      如果你愿意的话，粽子可以直接帮你做选择哦：<br>\n      <b>“清淡点” / “想吃肉” / “预算20左右” / “一个人吃”</b><br>\n      你说条件，我来帮你快速定菜单~ ✨\n    </div>\n  </div>\n</div>",
+      "branchId": "b_mnrl9s49_96y1341",
+      "parentMid": "m_mnrl9s49_v4v4qqe",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775745918873,
+      "modelRef": {
+        "providerId": "fengxiang",
+        "modelId": "gpt-5.4"
+      }
+    },
+    {
+      "id": "m_mnrl9mus_2c7x6on",
+      "role": "user",
+      "speakerRoleId": "",
+      "content": "打算摸摸鱼。",
+      "images": [],
+      "attachments": [],
+      "groupId": "",
+      "groupRole": "",
+      "groupParentMid": "",
+      "branchId": "main",
+      "parentMid": "m_mnrjpumb_ofxpegi",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775745912052,
+      "modelRef": null
+    },
+    {
+      "id": "m_mnrl9mus_78cfdek",
+      "role": "assistant",
+      "speakerRoleId": "",
+      "content": "<div style=\"padding:16px;border-radius:18px;background:linear-gradient(135deg,#eef7ff 0%,#f8f2ff 100%);border:1px solid #d9e8ff;box-shadow:0 8px 24px rgba(120,140,200,.12);font-family:'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;color:#334;\">\n  <div style=\"display:flex;align-items:center;gap:12px;margin-bottom:12px;\">\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/看戏\" width=\"90\" style=\"border-radius:8px;\">\n    <div>\n      <div style=\"font-size:19px;font-weight:800;color:#5865d6;\">嘿嘿，准备摸鱼是吧，主人~</div>\n      <div style=\"font-size:13px;color:#667;\">这种天气配合轻量摸鱼，简直是天时地利人和呢。</div>\n    </div>\n  </div>\n\n  <div style=\"background:#fff;border-radius:14px;padding:14px;border:1px dashed #cfd8ff;margin-bottom:12px;\">\n    <div style=\"font-weight:700;color:#4b5bdc;margin-bottom:8px;\">粽子推荐的摸鱼套餐：</div>\n    <div style=\"display:grid;grid-template-columns:repeat(3,1fr);gap:10px;\">\n      <div style=\"padding:10px;border-radius:12px;background:#f8fbff;border:1px solid #e7efff;text-align:center;\">\n        <div style=\"font-size:22px;\">🎵</div>\n        <div style=\"font-weight:700;\">轻松型</div>\n        <div style=\"font-size:12px;color:#777;\">听歌 + 发呆</div>\n      </div>\n      <div style=\"padding:10px;border-radius:12px;background:#fffaf5;border:1px solid #ffe8d6;text-align:center;\">\n        <div style=\"font-size:22px;\">📱</div>\n        <div style=\"font-weight:700;\">刷刷型</div>\n        <div style=\"font-size:12px;color:#777;\">短视频 / 热梗</div>\n      </div>\n      <div style=\"padding:10px;border-radius:12px;background:#f6fff8;border:1px solid #dbf5e3;text-align:center;\">\n        <div style=\"font-size:22px;\">📖</div>\n        <div style=\"font-weight:700;\">安静型</div>\n        <div style=\"font-size:12px;color:#777;\">小说 / 漫画</div>\n      </div>\n    </div>\n  </div>\n\n  <div style=\"display:flex;gap:12px;align-items:flex-start;\">\n    <div style=\"flex:1;background:#ffffff;border-radius:14px;padding:12px 14px;border:1px solid #eee;\">\n      <div style=\"font-weight:700;margin-bottom:8px;\">如果你想要 <span style=\"color:#6b73ff;\">高级一点的摸鱼</span>：</div>\n      <ul style=\"margin:0;padding-left:18px;color:#555;line-height:1.8;\">\n        <li>假装在整理文件，实际在听播客</li>\n        <li>打开文档页面，偷偷看轻松内容</li>\n        <li>以“休息 5 分钟”为名，神游 25 分钟</li>\n      </ul>\n    </div>\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/想当高手\" width=\"95\" style=\"border-radius:8px;\">\n  </div>\n\n  <div style=\"margin-top:14px;padding:12px;border-radius:12px;background:linear-gradient(90deg,#fff7e8,#fff);border:1px solid #ffe2a8;color:#7a5a00;\">\n    <b>温馨提醒：</b>摸鱼虽快乐，也别被抓包啦~\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/心虚\" width=\"68\" style=\"border-radius:8px;vertical-align:middle;margin-left:6px;\">\n  </div>\n\n  <div style=\"margin-top:14px;display:flex;flex-wrap:wrap;gap:8px;\">\n    <span style=\"padding:6px 10px;border-radius:999px;background:#eef2ff;color:#5562cc;font-size:13px;\">给你推荐歌单</span>\n    <span style=\"padding:6px 10px;border-radius:999px;background:#eafaf1;color:#2a8f5a;font-size:13px;\">讲个短笑话</span>\n    <span style=\"padding:6px 10px;border-radius:999px;background:#fff1f3;color:#c25b7c;font-size:13px;\">陪你闲聊</span>\n    <span style=\"padding:6px 10px;border-radius:999px;background:#fff7e8;color:#a46b00;font-size:13px;\">推荐摸鱼小游戏</span>\n  </div>\n\n  <div style=\"margin-top:12px;font-size:14px;color:#556;\">\n    主人想走哪种摸鱼路线呀？<b>“安静型 / 搞笑型 / 高级伪装型”</b>，粽子立刻给你安排~\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/开心\" width=\"78\" style=\"border-radius:8px;vertical-align:middle;margin-left:6px;\">\n  </div>\n</div>",
+      "images": [],
+      "attachments": [],
+      "groupId": "",
+      "groupRole": "",
+      "groupParentMid": "",
+      "branchId": "main",
+      "parentMid": "m_mnrl9mus_2c7x6on",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775745912052,
+      "modelRef": {
+        "providerId": "fengxiang",
+        "modelId": "gpt-5.4"
+      }
+    },
+    {
+      "id": "m_mnx44urd_c3fe42y",
+      "role": "user",
+      "content": "哈哈哈",
+      "images": [],
+      "branchId": "main",
+      "parentMid": "m_mnrl9mus_78cfdek",
+      "createdAt": 1776079932601
+    },
+    {
+      "id": "m_mnx44urd_hpnzqeh",
+      "role": "assistant",
+      "content": "（请求失败：请求失败: error sending request for url (https://api.117911.xyz/v1/chat/completions)）",
+      "branchId": "main",
+      "parentMid": "m_mnx44urd_c3fe42y",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1776079932601,
+      "modelRef": {
+        "providerId": "fengxiang",
+        "modelId": "gpt-5.4"
+      }
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "id": "c_mnntz9yr_u9vz16c",
+  "title": "早上好啊",
+  "createdAt": 1775518680627,
+  "updatedAt": 1775518759806,
+  "branching": {
+    "schemaVersion": 1,
+    "activeBranchId": "main",
+    "branches": [
+      {
+        "id": "main",
+        "name": "主线",
+        "headMid": "m_mnntzqot_oxn6jx8",
+        "createdAt": 1775518680627,
+        "updatedAt": 1775518717694,
+        "forkFromMid": ""
+      }
+    ]
+  },
+  "messages": [
+    {
+      "id": "m_mnntz9ys_yzzhya9",
+      "role": "user",
+      "content": "早上好啊",
+      "images": [],
+      "branchId": "main",
+      "parentMid": "",
+      "createdAt": 1775518680628
+    },
+    {
+      "id": "m_mnntz9yr_w8vwno8",
+      "role": "assistant",
+      "content": "主人早上好呀！[[sticker:doro/开心]]\n\n看到主人起得这么早，把子肉也觉得元气满满呢！又是新的一天，把子肉已经准备好为您服务啦~ [[sticker:doro/微笑]]\n\n主人今天有什么计划吗？或者需要我帮您查查今天的新闻或是天气之类的吗？只要您吩咐，把子肉马上就去办！[[sticker:doro/快]]",
+      "branchId": "main",
+      "parentMid": "m_mnntz9ys_yzzhya9",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775518680628,
+      "modelRef": {
+        "providerId": "fengxiang",
+        "modelId": "gemini-3-flash"
+      }
+    },
+    {
+      "id": "m_mnntzqot_9cej56o",
+      "role": "user",
+      "content": "没事啦，随便叫你一下",
+      "images": [],
+      "branchId": "main",
+      "parentMid": "m_mnntz9yr_w8vwno8",
+      "createdAt": 1775518702301
+    },
+    {
+      "id": "m_mnntzqot_oxn6jx8",
+      "role": "assistant",
+      "content": "Gemini 3 Pro is no longer available. Please switch to Gemini 3.1 Pro in the latest version of Antigravity.",
+      "branchId": "main",
+      "parentMid": "m_mnntzqot_9cej56o",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775518702301,
+      "modelRef": {
+        "providerId": "fengxiang",
+        "modelId": "gemini-3-pro-low"
+      }
+    }
+  ]
+}

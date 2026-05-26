@@ -1,0 +1,99 @@
+{
+  "id": "c_mnsnvnv9_0h1olr6",
+  "title": "你好呀",
+  "createdAt": 1775810765205,
+  "updatedAt": 1775810802448,
+  "branching": {
+    "schemaVersion": 1,
+    "activeBranchId": "main",
+    "branches": [
+      {
+        "id": "main",
+        "name": "主线",
+        "headMid": "m_mnsnw6kv_9fkddtx",
+        "createdAt": 1775810765205,
+        "updatedAt": 1775810795605,
+        "forkFromMid": ""
+      },
+      {
+        "id": "b_mnsnwcin_zb9gs5m",
+        "name": "分支",
+        "headMid": "m_mnsnwcin_hhroqzy",
+        "createdAt": 1775810797151,
+        "updatedAt": 1775810802448,
+        "forkFromMid": "m_mnsnvnv8_0yy6jxf"
+      }
+    ]
+  },
+  "messages": [
+    {
+      "id": "m_mnsnvnv9_qmhjwdc",
+      "role": "user",
+      "content": "你好呀",
+      "images": [],
+      "branchId": "main",
+      "parentMid": "",
+      "createdAt": 1775810765205
+    },
+    {
+      "id": "m_mnsnvnv8_0yy6jxf",
+      "role": "assistant",
+      "content": "你好呀主人~ 我是把子肉，今天也会努力服侍你哒 [[sticker:doro/开心]]  \n\n有什么想让我帮忙的吗？聊天、查资料、写东西、出主意都可以哦 [[sticker:doro/微笑]]",
+      "branchId": "main",
+      "parentMid": "m_mnsnvnv9_qmhjwdc",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775810765205,
+      "modelRef": {
+        "providerId": "fengxiang",
+        "modelId": "gpt-5.4"
+      }
+    },
+    {
+      "id": "m_mnsnw6kv_v3rwnd7",
+      "role": "user",
+      "content": "你好呀",
+      "images": [],
+      "branchId": "main",
+      "parentMid": "m_mnsnvnv8_0yy6jxf",
+      "createdAt": 1775810789455
+    },
+    {
+      "id": "m_mnsnw6kv_9fkddtx",
+      "role": "assistant",
+      "content": "你好呀主人～又见面啦 [[sticker:doro/开心2]]  \n把子肉在这儿等候差遣哟，有什么想聊的、想问的、想让我帮你做的，都可以告诉我 [[sticker:doro/看着你]]",
+      "branchId": "main",
+      "parentMid": "m_mnsnw6kv_v3rwnd7",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775810789455,
+      "modelRef": {
+        "providerId": "fengxiang",
+        "modelId": "gpt-5.4"
+      }
+    },
+    {
+      "id": "m_mnsnwcin_frscxui",
+      "role": "user",
+      "content": "你好呀",
+      "images": [],
+      "branchId": "b_mnsnwcin_zb9gs5m",
+      "parentMid": "m_mnsnvnv8_0yy6jxf",
+      "createdAt": 1775810797151
+    },
+    {
+      "id": "m_mnsnwcin_hhroqzy",
+      "role": "assistant",
+      "content": "你好呀主人~ 又见面啦 [[sticker:doro/开心2]]  \n把子肉在这里待命中，有什么尽管吩咐吧~ [[sticker:doro/看着你]]",
+      "branchId": "b_mnsnwcin_zb9gs5m",
+      "parentMid": "m_mnsnwcin_frscxui",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775810797151,
+      "modelRef": {
+        "providerId": "fengxiang",
+        "modelId": "gpt-5.4"
+      }
+    }
+  ]
+}

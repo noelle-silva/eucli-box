@@ -1,0 +1,79 @@
+{
+  "id": "c_mmd58qsi_01iatmw",
+  "title": "我要测试latex渲染，给我来2…",
+  "createdAt": 1772695687842,
+  "updatedAt": 1776498006981,
+  "branching": {
+    "schemaVersion": 1,
+    "activeBranchId": "main",
+    "branches": [
+      {
+        "id": "main",
+        "name": "主线",
+        "headMid": "m_mo410z59_iu1ybk0",
+        "createdAt": 1772695687842,
+        "updatedAt": 1776498006981,
+        "forkFromMid": ""
+      }
+    ]
+  },
+  "messages": [
+    {
+      "id": "m_mmd58qsi_bdw2zgp",
+      "role": "user",
+      "speakerRoleId": "",
+      "content": "我要测试latex渲染，给我来20个复杂优先的公式。",
+      "images": [],
+      "attachments": [],
+      "groupId": "",
+      "groupRole": "",
+      "groupParentMid": "",
+      "branchId": "main",
+      "parentMid": "",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1772695687842,
+      "modelRef": null
+    },
+    {
+      "id": "m_mmd58qsi_i8urrko",
+      "role": "assistant",
+      "speakerRoleId": "",
+      "content": "当然可以，主人请收下这 20 个“复杂优先”的 LaTeX 公式测试包～（建议逐条渲染看看是否有断行、对齐、字体/符号缺失等问题）  \n<img src=\"http://192.168.123.111:9334/pw=7398723091/doro/看戏\" width=\"140\" style=\"border-radius: 8px;\">\n\n---\n\n### 1. 广义傅里叶变换 + 分布\n$$\n\\mathcal{F}\\{f\\}(\\xi)=\\int_{\\mathbb{R}^n} f(x)e^{-2\\pi i x\\cdot \\xi}\\,dx,\\qquad \n\\mathcal{F}\\{\\partial^\\alpha f\\}(\\xi)=(2\\pi i \\xi)^\\alpha \\mathcal{F}\\{f\\}(\\xi)\n$$\n\n### 2. 变分法欧拉-拉格朗日方程（含高阶导）\n$$\n\\frac{\\partial L}{\\partial y}-\\frac{d}{dx}\\frac{\\partial L}{\\partial y'}+\\frac{d^2}{dx^2}\\frac{\\partial L}{\\partial y''}=0,\\quad\nL=L(x,y,y',y'')\n$$\n\n### 3. 纳维-斯托克斯（不可压缩）\n$$\n\\begin{cases}\n\\partial_t \\mathbf{u}+(\\mathbf{u}\\cdot\\nabla)\\mathbf{u}+\\nabla p=\\nu\\Delta \\mathbf{u}+\\mathbf{f},\\\\\n\\nabla\\cdot \\mathbf{u}=0.\n\\end{cases}\n$$\n\n### 4. 麦克斯韦方程组（微分形式）\n$$\n\\begin{aligned}\n\\nabla\\cdot \\mathbf{E}&=\\frac{\\rho}{\\varepsilon_0},&\n\\nabla\\times \\mathbf{E}&=-\\frac{\\partial \\mathbf{B}}{\\partial t},\\\\\n\\nabla\\cdot \\mathbf{B}&=0,&\n\\nabla\\times \\mathbf{B}&=\\mu_0\\mathbf{J}+\\mu_0\\varepsilon_0\\frac{\\partial \\mathbf{E}}{\\partial t}.\n\\end{aligned}\n$$\n\n### 5. 广义特征值问题（矩阵铅笔）\n$$\nA\\mathbf{x}=\\lambda B\\mathbf{x},\\qquad \\det(A-\\lambda B)=0,\\qquad A,B\\in\\mathbb{C}^{n\\times n}\n$$\n\n### 6. 奇异值分解（SVD）\n$$\nA=U\\Sigma V^{*},\\quad\nU^{*}U=I,\\ V^{*}V=I,\\ \n\\Sigma=\\operatorname{diag}(\\sigma_1,\\dots,\\sigma_r)\n$$\n\n### 7. Woodbury 矩阵恒等式\n$$\n(A+UCV)^{-1}=A^{-1}-A^{-1}U\\left(C^{-1}+VA^{-1}U\\right)^{-1}VA^{-1}\n$$\n\n### 8. 多元高斯分布密度\n$$\np(\\mathbf{x})=\\frac{1}{(2\\pi)^{d/2}\\,|\\Sigma|^{1/2}}\n\\exp\\!\\left(-\\frac12(\\mathbf{x}-\\mu)^{\\mathsf T}\\Sigma^{-1}(\\mathbf{x}-\\mu)\\right)\n$$\n\n### 9. KL 散度（连续形式）\n$$\nD_{\\mathrm{KL}}(P\\|Q)=\\int_{\\Omega} p(x)\\log\\frac{p(x)}{q(x)}\\,dx\n$$\n\n### 10. ELBO（变分推断）\n$$\n\\log p(x)\\ge \\mathbb{E}_{q(z)}[\\log p(x,z)-\\log q(z)]\n= -D_{\\mathrm{KL}}(q(z)\\|p(z\\mid x))+\\log p(x)\n$$\n\n<img src=\"http://192.168.123.111:9334/pw=7398723091/doro/偷窥\" width=\"135\" style=\"border-radius: 8px;\">\n\n### 11. Itô 引理\n$$\ndf(t,X_t)=\\left(\\partial_t f+\\mu\\,\\partial_x f+\\frac12\\sigma^2\\,\\partial_{xx}f\\right)dt\n+\\sigma\\,\\partial_x f\\,dW_t\n$$\n\n### 12. Black–Scholes PDE\n$$\n\\frac{\\partial V}{\\partial t}\n+\\frac12\\sigma^2 S^2\\frac{\\partial^2 V}{\\partial S^2}\n+rS\\frac{\\partial V}{\\partial S}\n-rV=0\n$$\n\n### 13. 斯托克斯定理（微分形式）\n$$\n\\int_{\\partial M}\\omega=\\int_{M} d\\omega\n$$\n\n### 14. 曲率张量（黎曼曲率）\n$$\nR^{\\rho}{}_{\\sigma\\mu\\nu}\n=\\partial_{\\mu}\\Gamma^{\\rho}{}_{\\nu\\sigma}\n-\\partial_{\\nu}\\Gamma^{\\rho}{}_{\\mu\\sigma}\n+\\Gamma^{\\rho}{}_{\\mu\\lambda}\\Gamma^{\\lambda}{}_{\\nu\\sigma}\n-\\Gamma^{\\rho}{}_{\\nu\\lambda}\\Gamma^{\\lambda}{}_{\\mu\\sigma}\n$$\n\n### 15. 爱因斯坦场方程\n$$\nG_{\\mu\\nu}+\\Lambda g_{\\mu\\nu}=\\frac{8\\pi G}{c^{4}}T_{\\mu\\nu}\n$$\n\n### 16. 路径积分（量子力学传播子）\n$$\n\\langle x_f,t_f\\mid x_i,t_i\\rangle\n=\\int \\mathcal{D}x(t)\\,\n\\exp\\!\\left(\\frac{i}{\\hbar}\\int_{t_i}^{t_f} L(x,\\dot{x},t)\\,dt\\right)\n$$\n\n### 17. 薛定谔方程（含哈密顿算符）\n$$\ni\\hbar\\frac{\\partial}{\\partial t}\\Psi(\\mathbf{r},t)\n=\\left(-\\frac{\\hbar^{2}}{2m}\\nabla^{2}+V(\\mathbf{r},t)\\right)\\Psi(\\mathbf{r},t)\n$$\n\n### 18. 拉普拉斯变换与卷积定理\n$$\n\\mathcal{L}\\{(f*g)(t)\\}(s)=\\mathcal{L}\\{f\\}(s)\\cdot \\mathcal{L}\\{g\\}(s),\\qquad\n(f*g)(t)=\\int_{0}^{t} f(\\tau)g(t-\\tau)\\,d\\tau\n$$\n\n### 19. 生成函数（组合）+ 指数型\n$$\nF(x)=\\sum_{n=0}^{\\infty} a_n\\frac{x^n}{n!},\\qquad\na_n=\\left.\\frac{d^n}{dx^n}F(x)\\right|_{x=0}\n$$\n\n### 20. Zeta 函数的解析延拓（功能方程）\n$$\n\\zeta(s)=2^s\\pi^{s-1}\\sin\\!\\left(\\frac{\\pi s}{2}\\right)\\Gamma(1-s)\\zeta(1-s)\n$$\n\n<img src=\"http://192.168.123.111:9334/pw=7398723091/doro/开心\" width=\"150\" style=\"border-radius: 8px;\">\n\n---\n\n如果主人想更“折磨渲染器”的版本（比如 `cases + aligned + matrix + \\left...\\right` 超长嵌套、或者含 `\\DeclareMathOperator` / `\\overset` / `\\underbrace`），粽子也可以再来一套进阶地狱模式～  \n<img src=\"http://192.168.123.111:9334/pw=7398723091/doro/想当高手\" width=\"140\" style=\"border-radius: 8px;\">",
+      "images": [],
+      "attachments": [],
+      "groupId": "",
+      "groupRole": "",
+      "groupParentMid": "",
+      "branchId": "main",
+      "parentMid": "m_mmd58qsi_bdw2zgp",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1772695687842,
+      "modelRef": null
+    },
+    {
+      "id": "m_mo410z59_j9y4o2h",
+      "role": "user",
+      "content": "来点latex行内公式",
+      "images": [],
+      "branchId": "main",
+      "parentMid": "m_mmd58qsi_i8urrko",
+      "createdAt": 1776497976045
+    },
+    {
+      "id": "m_mo410z59_iu1ybk0",
+      "role": "assistant",
+      "content": "<div style=\"padding:16px 18px;border-radius:14px;background:linear-gradient(135deg,#fff7fb,#f3f9ff);border:1px solid #eadcff;line-height:1.8;\">\n  <div style=\"font-size:20px;font-weight:700;color:#6b4eff;margin-bottom:8px;\">\n    行内公式测试来啦～\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/偷窥\" width=\"90\" style=\"border-radius: 8px;vertical-align:middle;margin-left:6px;\">\n  </div>\n  <div style=\"color:#444;\">\n    主人可以直接看下面这些 <b>LaTeX 行内公式</b> 是否正常渲染：\n  </div>\n</div>\n\n---\n\n### 基础行内公式\n1. 勾股定理：$a^2+b^2=c^2$  \n2. 一元二次方程求根：$x=\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}$  \n3. 欧拉公式：$e^{i\\pi}+1=0$  \n4. 对数恒等式：$\\log(ab)=\\log a+\\log b$  \n5. 极限：$\\lim_{x\\to 0}\\frac{\\sin x}{x}=1$  \n\n### 微积分类\n6. 导数定义：$f'(x)=\\lim_{h\\to 0}\\frac{f(x+h)-f(x)}{h}$  \n7. 定积分：$\\int_0^1 x^2\\,dx=\\frac13$  \n8. 偏导数：$\\frac{\\partial z}{\\partial x}=2x+y$  \n9. 二阶导：$\\frac{d^2y}{dx^2}+y=0$  \n10. 梯度：$\\nabla f=(\\partial_x f,\\partial_y f,\\partial_z f)$  \n\n### 线性代数类\n11. 矩阵：$A=\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}$  \n12. 行列式：$\\det(A)=ad-bc$  \n13. 向量内积：$\\mathbf{u}\\cdot\\mathbf{v}=\\|\\mathbf{u}\\|\\|\\mathbf{v}\\|\\cos\\theta$  \n14. 特征值问题：$A\\mathbf{x}=\\lambda\\mathbf{x}$  \n15. 单位矩阵：$I_n=\\operatorname{diag}(1,\\dots,1)$  \n\n### 概率统计类\n16. 正态分布：$X\\sim\\mathcal N(\\mu,\\sigma^2)$  \n17. 期望：$\\mathbb E[X]=\\sum_x x\\,p(x)$  \n18. 方差：$\\operatorname{Var}(X)=\\mathbb E[(X-\\mu)^2]$  \n19. 贝叶斯公式：$P(A\\mid B)=\\frac{P(B\\mid A)P(A)}{P(B)}$  \n20. KL 散度：$D_{\\mathrm{KL}}(P\\|Q)=\\sum_i p_i\\log\\frac{p_i}{q_i}$  \n\n<img src=\"http://192.168.123.111:9334/pw=7398723091/doro/开心\" width=\"110\" style=\"border-radius: 8px;\">\n\n---\n\n### 混合句内测试\n这些是更适合测试“**正文里夹着公式**”的效果：\n\n- 当 $n\\to\\infty$ 时，数列 $a_n=\\left(1+\\frac1n\\right)^n$ 收敛到 $e$。  \n- 若 $f(x)=x^3$，则其导数为 $f'(x)=3x^2$。  \n- 在二维平面中，圆的方程可写为 $x^2+y^2=r^2$。  \n- 若随机变量 $X\\sim\\mathcal N(0,1)$，则其密度函数为 $p(x)=\\frac{1}{\\sqrt{2\\pi}}e^{-x^2/2}$。  \n- 对矩阵 $A\\in\\mathbb R^{n\\times n}$，若存在 $\\lambda$ 使得 $A\\mathbf v=\\lambda\\mathbf v$，则称 $\\lambda$ 为特征值。  \n\n---\n\n### 专门测试复杂行内写法\n- 上下标混合：$x_{i,j}^{(k+1)}$  \n- 分式嵌套：$\\frac{1}{1+\\frac{1}{x}}$  \n- 根号嵌套：$\\sqrt{a+\\sqrt{b+c}}$  \n- 求和积分：$\\sum_{k=1}^n k=\\frac{n(n+1)}2$ 与 $\\int_a^b f(x)\\,dx$  \n- 条件概率：$P(X=x\\mid Y=y)$  \n- 范数：$\\lVert A \\rVert_F=\\sqrt{\\sum_{i,j}a_{ij}^2}$  \n- 花体/黑板体：$\\mathcal L,\\mathcal F,\\mathbb R,\\mathbb C,\\mathbb N$  \n- 箭头与映射：$f:X\\to Y,\\ x\\mapsto f(x)$  \n- 极限与上标：$\\limsup_{n\\to\\infty} a_n$  \n- 多重指标：$\\partial^\\alpha f$  \n\n<div style=\"margin-top:14px;padding:14px;border-radius:12px;background:#1f2430;color:#f6f7fb;\">\n  <div style=\"font-weight:700;margin-bottom:8px;\">一行超密集测试</div>\n  <div>\n    设 $f:\\mathbb R^n\\to\\mathbb R$ 可微，且在点 $x_0$ 处有梯度 $\\nabla f(x_0)$，若 $\\|\\nabla f(x_0)\\|=0$ 且 Hessian 矩阵 $H_f(x_0)$ 正定，则 $x_0$ 是局部极小点。\n  </div>\n</div>\n\n<img src=\"http://192.168.123.111:9334/pw=7398723091/doro/想当高手\" width=\"120\" style=\"border-radius: 8px;\">\n\n如果主人愿意，粽子还能继续给你：\n- **20条纯行内公式压力测试版**\n- **中英混排行内公式测试**\n- **故意超长公式换行测试**\n- **行内 + 行间混合渲染测试包**\n\n要不要我直接再来一套“**最容易把渲染器搞出问题的行内公式**”呀？  \n<img src=\"http://192.168.123.111:9334/pw=7398723091/doro/看戏\" width=\"100\" style=\"border-radius: 8px;\">",
+      "branchId": "main",
+      "parentMid": "m_mo410z59_j9y4o2h",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1776497976045,
+      "modelRef": {
+        "providerId": "fengxiang",
+        "modelId": "gpt-5.4"
+      }
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "createdAt": 1772380966305,
+  "id": "c_mm7xv63l_yneo05q",
+  "messages": [
+    {
+      "content": "来十个物理数学公式。我要测试latex渲染",
+      "createdAt": 1772380989960,
+      "id": "m_mm7xvoco_fxdalwb",
+      "images": [],
+      "pending": false,
+      "role": "user",
+      "streaming": false
+    },
+    {
+      "content": "1. 牛顿第二定律：  \n\\[\n\\mathbf{F}=m\\mathbf{a}\n\\]\n\n2. 万有引力定律：  \n\\[\nF=G\\frac{m_1m_2}{r^2}\n\\]\n\n3. 爱因斯坦质能方程：  \n\\[\nE=mc^2\n\\]\n\n4. 麦克斯韦方程组（微分形式）：  \n\\[\n\\nabla\\cdot\\mathbf{E}=\\frac{\\rho}{\\varepsilon_0},\\quad\n\\nabla\\cdot\\mathbf{B}=0,\\quad\n\\nabla\\times\\mathbf{E}=-\\frac{\\partial\\mathbf{B}}{\\partial t},\\quad\n\\nabla\\times\\mathbf{B}=\\mu_0\\mathbf{J}+\\mu_0\\varepsilon_0\\frac{\\partial\\mathbf{E}}{\\partial t}\n\\]\n\n5. 薛定谔方程（含时）：  \n\\[\ni\\hbar\\frac{\\partial}{\\partial t}\\Psi(\\mathbf{r},t)=\\left(-\\frac{\\hbar^2}{2m}\\nabla^2+V(\\mathbf{r},t)\\right)\\Psi(\\mathbf{r},t)\n\\]\n\n6. 热传导方程：  \n\\[\n\\frac{\\partial u}{\\partial t}=\\alpha\\nabla^2 u\n\\]\n\n7. 波动方程：  \n\\[\n\\frac{\\partial^2 u}{\\partial t^2}=c^2\\nabla^2 u\n\\]\n\n8. 高斯积分公式（散度定理）：  \n\\[\n\\iiint_{V}\\nabla\\cdot\\mathbf{F}\\,dV=\\iint_{\\partial V}\\mathbf{F}\\cdot d\\mathbf{S}\n\\]\n\n9. 傅里叶变换：  \n\\[\n\\hat{f}(\\omega)=\\int_{-\\infty}^{\\infty}f(t)e^{-i\\omega t}\\,dt\n\\]\n\n10. 欧拉-拉格朗日方程：  \n\\[\n\\frac{d}{dt}\\left(\\frac{\\partial L}{\\partial \\dot{q}}\\right)-\\frac{\\partial L}{\\partial q}=0\n\\]",
+      "createdAt": 1772380989960,
+      "id": "m_mm7xvoco_x7vzpwi",
+      "images": [],
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    },
+    {
+      "content": "再来20个",
+      "createdAt": 1772381013142,
+      "id": "m_mm7xw68m_9x9rqks",
+      "images": [],
+      "pending": false,
+      "role": "user",
+      "streaming": false
+    },
+    {
+      "content": "1. 动量定义：  \n\\[\n\\mathbf{p}=m\\mathbf{v}\n\\]\n\n2. 冲量-动量定理：  \n\\[\n\\Delta \\mathbf{p}=\\int_{t_1}^{t_2}\\mathbf{F}(t)\\,dt\n\\]\n\n3. 功的线积分：  \n\\[\nW=\\int_{\\mathcal{C}}\\mathbf{F}\\cdot d\\mathbf{r}\n\\]\n\n4. 动能定理（动能）：  \n\\[\nT=\\frac{1}{2}mv^2\n\\]\n\n5. 角动量：  \n\\[\n\\mathbf{L}=\\mathbf{r}\\times\\mathbf{p}\n\\]\n\n6. 转动动力学：  \n\\[\n\\boldsymbol{\\tau}=\\frac{d\\mathbf{L}}{dt}\n\\]\n\n7. 转动动能：  \n\\[\nT_{\\mathrm{rot}}=\\frac{1}{2}I\\omega^2\n\\]\n\n8. 简谐振动方程：  \n\\[\n\\ddot{x}+\\omega_0^2 x=0\n\\]\n\n9. 阻尼振动方程：  \n\\[\n\\ddot{x}+2\\beta\\dot{x}+\\omega_0^2 x=0\n\\]\n\n10. 受迫振动方程：  \n\\[\n\\ddot{x}+2\\beta\\dot{x}+\\omega_0^2 x=\\frac{F_0}{m}\\cos(\\omega t)\n\\]\n\n11. 理想气体状态方程：  \n\\[\npV=nRT\n\\]\n\n12. 玻尔兹曼分布：  \n\\[\nP(E)=\\frac{1}{Z}e^{-E/(k_B T)},\\quad Z=\\sum_i e^{-E_i/(k_B T)}\n\\]\n\n13. 熵（统计定义）：  \n\\[\nS=k_B\\ln\\Omega\n\\]\n\n14. 基本热力学关系：  \n\\[\ndU=TdS-p\\,dV+\\mu\\,dN\n\\]\n\n15. 电势与电场关系：  \n\\[\n\\mathbf{E}=-\\nabla \\phi\n\\]\n\n16. 泊松方程：  \n\\[\n\\nabla^2\\phi=-\\frac{\\rho}{\\varepsilon_0}\n\\]\n\n17. 安培环路定律（积分形式）：  \n\\[\n\\oint_{\\mathcal{C}}\\mathbf{B}\\cdot d\\mathbf{l}=\\mu_0 I_{\\mathrm{enc}}+\\mu_0\\varepsilon_0\\frac{d\\Phi_E}{dt}\n\\]\n\n18. 洛伦兹力：  \n\\[\n\\mathbf{F}=q(\\mathbf{E}+\\mathbf{v}\\times\\mathbf{B})\n\\]\n\n19. 相对论能量动量关系：  \n\\[\nE^2=(pc)^2+(mc^2)^2\n\\]\n\n20. 德布罗意关系：  \n\\[\n\\lambda=\\frac{h}{p}\n\\]",
+      "createdAt": 1772381013142,
+      "id": "m_mm7xw68m_j9m9tg2",
+      "images": [],
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    },
+    {
+      "content": "再来",
+      "createdAt": 1772381879085,
+      "id": "m_mm7yeqel_5t3r4ou",
+      "images": [],
+      "role": "user"
+    },
+    {
+      "content": "1. 连续性方程（流体/守恒）：  \n\\[\n\\frac{\\partial \\rho}{\\partial t}+\\nabla\\cdot(\\rho\\mathbf{v})=0\n\\]\n\n2. 欧拉方程（无粘流体）：  \n\\[\n\\rho\\left(\\frac{\\partial \\mathbf{v}}{\\partial t}+(\\mathbf{v}\\cdot\\nabla)\\mathbf{v}\\right)=-\\nabla p+\\rho\\mathbf{f}\n\\]\n\n3. 纳维-斯托克斯方程（不可压牛顿流体）：  \n\\[\n\\rho\\left(\\frac{\\partial \\mathbf{v}}{\\partial t}+(\\mathbf{v}\\cdot\\nabla)\\mathbf{v}\\right)=-\\nabla p+\\mu\\nabla^2\\mathbf{v}+\\rho\\mathbf{f}\n\\]\n\n4. 伯努利方程（沿流线）：  \n\\[\np+\\frac{1}{2}\\rho v^2+\\rho g z=\\text{const}\n\\]\n\n5. 理想流体涡量定义：  \n\\[\n\\boldsymbol{\\omega}=\\nabla\\times\\mathbf{v}\n\\]\n\n6. 傅里叶定律（热流密度）：  \n\\[\n\\mathbf{q}=-k\\nabla T\n\\]\n\n7. 菲克第一定律（扩散通量）：  \n\\[\n\\mathbf{J}=-D\\nabla c\n\\]\n\n8. 菲克第二定律（扩散方程）：  \n\\[\n\\frac{\\partial c}{\\partial t}=D\\nabla^2 c\n\\]\n\n9. 拉普拉斯方程：  \n\\[\n\\nabla^2 \\phi=0\n\\]\n\n10. 格林第一恒等式：  \n\\[\n\\int_V\\left(\\phi\\nabla^2\\psi+\\nabla\\phi\\cdot\\nabla\\psi\\right)\\,dV=\\int_{\\partial V}\\phi\\,\\frac{\\partial\\psi}{\\partial n}\\,dS\n\\]\n\n11. 斯托克斯定理：  \n\\[\n\\oint_{\\partial S}\\mathbf{A}\\cdot d\\mathbf{l}=\\iint_S(\\nabla\\times\\mathbf{A})\\cdot d\\mathbf{S}\n\\]\n\n12. 旋转算符本征方程（角动量）：  \n\\[\n\\hat{L}^2 Y_\\ell^m=\\hbar^2\\ell(\\ell+1)Y_\\ell^m,\\quad \\hat{L}_z Y_\\ell^m=\\hbar m Y_\\ell^m\n\\]\n\n13. 海森堡不确定性原理：  \n\\[\n\\Delta x\\,\\Delta p\\ge \\frac{\\hbar}{2}\n\\]\n\n14. 量子力学对易关系：  \n\\[\n[\\hat{x},\\hat{p}]=i\\hbar\n\\]\n\n15. 狄拉克方程：  \n\\[\n(i\\hbar\\gamma^\\mu\\partial_\\mu-mc)\\psi=0\n\\]\n\n16. 费米-狄拉克分布：  \n\\[\nf(E)=\\frac{1}{e^{(E-\\mu)/(k_BT)}+1}\n\\]\n\n17. 玻色-爱因斯坦分布：  \n\\[\nf(E)=\\frac{1}{e^{(E-\\mu)/(k_BT)}-1}\n\\]\n\n18. 黑体辐射普朗克定律（按频率）：  \n\\[\nu(\\nu,T)=\\frac{8\\pi h\\nu^3}{c^3}\\frac{1}{e^{h\\nu/(k_BT)}-1}\n\\]\n\n19. 斯特藩-玻尔兹曼定律：  \n\\[\nj^\\star=\\sigma T^4\n\\]\n\n20. 爱因斯坦场方程：  \n\\[\nG_{\\mu\\nu}+\\Lambda g_{\\mu\\nu}=\\frac{8\\pi G}{c^4}T_{\\mu\\nu}\n\\]",
+      "createdAt": 1772381879085,
+      "id": "m_mm7yeqel_fvv8c4t",
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    }
+  ],
+  "title": "来十个物理数学公式。我要测试la…",
+  "updatedAt": 1772381903474
+}

@@ -1,0 +1,190 @@
+{
+  "dataVersion": 7,
+  "favorites": {
+    "chatRefsByFolderId": {
+      "favf_mnnpnivv_t60nwzj": [],
+      "favf_mnnpuhcd_zgezwn6": [
+        {
+          "addedAt": 1775511764526,
+          "chatId": "c_mnm2am4n_3ixg97t",
+          "targetId": "r_mmdcfxso_pyueu49",
+          "targetKind": "role"
+        }
+      ],
+      "favf_mnnpuqs5_5u0tdx4": [
+        {
+          "addedAt": 1775511764526,
+          "chatId": "c_mnm2am4n_3ixg97t",
+          "targetId": "r_mmdcfxso_pyueu49",
+          "targetKind": "role"
+        },
+        {
+          "addedAt": 1775512718618,
+          "chatId": "c_mn672c4z_2zyrom0",
+          "targetId": "r_mmdcfxso_pyueu49",
+          "targetKind": "role"
+        },
+        {
+          "addedAt": 1775515082863,
+          "chatId": "c_mn22c4n9_l4jxcu3",
+          "targetId": "r_mmdcfxso_pyueu49",
+          "targetKind": "role"
+        }
+      ],
+      "favf_mnnrtlbq_r5yz227": []
+    },
+    "folders": [
+      {
+        "createdAt": 1775511413851,
+        "id": "favf_mnnpnivv_t60nwzj",
+        "name": "测试2",
+        "parentId": "",
+        "updatedAt": 1775511413851
+      },
+      {
+        "createdAt": 1775511738445,
+        "id": "favf_mnnpuhcd_zgezwn6",
+        "name": "44问题而已",
+        "parentId": "",
+        "updatedAt": 1775512871816
+      },
+      {
+        "createdAt": 1775511750677,
+        "id": "favf_mnnpuqs5_5u0tdx4",
+        "name": "66",
+        "parentId": "favf_mnnpuhcd_zgezwn6",
+        "updatedAt": 1775511750677
+      },
+      {
+        "createdAt": 1775515056182,
+        "id": "favf_mnnrtlbq_r5yz227",
+        "name": "12354235",
+        "parentId": "favf_mnnpuhcd_zgezwn6",
+        "updatedAt": 1775515056182
+      }
+    ]
+  },
+  "schemaVersion": 1,
+  "settings": {
+    "aiServices": {
+      "chatTitleNaming": {
+        "customModelId": "",
+        "enabled": true,
+        "modelId": "gpt-5.4",
+        "providerId": "fengxiang",
+        "systemPrompt": "你是“聊天标题生成器”。\n\n你会收到一段聊天记录。你的任务：为这段聊天生成一个简短、贴切的中文标题。\n\n输出要求：\n- 只输出标题本身（纯文本）\n- 不要输出引号、不要输出解释\n- 尽量不超过 20 个汉字"
+      },
+      "mermaidFix": {
+        "customModelId": "",
+        "enabled": true,
+        "modelId": "gpt-5.3-codex",
+        "providerId": "fengxiang",
+        "systemPrompt": "你是 Mermaid 语法修复器。\n\n你会收到一段 Mermaid 源码（可能无法渲染）。你的任务：在尽量保持原意不变的前提下，修复语法/结构错误，让它可以被 Mermaid 渲染。\n\n输出要求：\n- 只输出修复后的 Mermaid 源码本体\n- 不要输出解释、不要输出 Markdown 代码块标记（不要输出 ```mermaid）"
+      },
+      "stickerNaming": {
+        "customModelId": "",
+        "enabled": true,
+        "modelId": "gpt-5-codex",
+        "providerId": "fengxiang",
+        "systemPrompt": "你是“表情包取名助手”。\n\n你会收到一张表情包图片。你的任务：根据图片内容给它取一个简短、好记的中文名字。\n\n输出要求：\n- 只输出名字本身（纯文本）\n- 不要输出引号、不要输出解释\n- 不要包含 / 或 \\\\ 或 ] 或换行\n- 尽量不超过 12 个汉字"
+      }
+    },
+    "assistantRenderEngine": "default",
+    "attachments": {
+      "maxCharsPerFile": 7500,
+      "maxFileSizeMbByKind": {
+        "docx": 10,
+        "md": 10,
+        "pdf": 200,
+        "ppt": 200,
+        "txt": 10
+      },
+      "maxTotalChars": 310500,
+      "sendLimitChars": 6000
+    },
+    "branchTree": {
+      "dir": "lr",
+      "followSelected": true,
+      "modalHotkey": "Ctrl+D",
+      "view": "float"
+    },
+    "chatBgBlur": 11,
+    "chatBgOpacity": 25,
+    "composerBlur": 7,
+    "composerOpacity": 76,
+    "followScrollSpeed": 2200,
+    "renderSafetyPolicy": "unsafe",
+    "streamEnabled": true,
+    "toolCallServer": {
+      "baseUrl": "http://localhost:9083",
+      "token": "123456789"
+    },
+    "toolRequestRenderPreset": "flow_neon_ultra",
+    "toolRequestRenderPresets": [
+      {
+        "badgeText": "FLOW",
+        "id": "flow_neon_ultra",
+        "name": "流光霓虹（Ultra）",
+        "vars": {
+          "backdrop": "none",
+          "badgeBg": "rgba(34,211,238,.14)",
+          "badgeBorder": "rgba(34,211,238,.30)",
+          "badgeColor": "rgba(34,211,238,.95)",
+          "bg": "linear-gradient(90deg, rgba(2,6,23,.94), rgba(34,211,238,.18), rgba(99,102,241,.28), rgba(34,211,238,.18), rgba(2,6,23,.94))",
+          "bgAnim": "fw-toolreq-flow-x 2.8s linear infinite",
+          "bgPos": "0% 50%",
+          "bgSize": "300% 300%",
+          "border": "rgba(99,102,241,.55)",
+          "pad": "10px 12px",
+          "preBg": "rgba(2,6,23,.76)",
+          "preBorder": "rgba(99,102,241,.28)",
+          "preColor": "rgba(226,232,240,.95)",
+          "prePad": "10px 12px",
+          "preRadius": "12px",
+          "radius": "16px",
+          "shadow": "0 0 0 1px rgba(34,211,238,.12), 0 14px 34px rgba(0,0,0,.28)",
+          "summaryColor": "rgba(224,242,254,.96)"
+        }
+      },
+      {
+        "badgeText": "CALL",
+        "id": "tp_mn21wrmt_wbzf6fn",
+        "name": "玻璃（磨砂）（副本）",
+        "vars": {
+          "backdrop": "blur(10px)",
+          "badgeBg": "rgba(37,99,235,.10)",
+          "badgeBorder": "rgba(37,99,235,.18)",
+          "badgeColor": "rgba(37,99,235,.92)",
+          "bg": "rgba(255,255,255,.10)",
+          "border": "rgba(148,163,184,.35)",
+          "pad": "10px 12px",
+          "preBg": "rgba(255,255,255,.72)",
+          "preBorder": "rgba(148,163,184,.30)",
+          "preColor": "rgba(15,23,42,.78)",
+          "prePad": "10px 12px",
+          "preRadius": "12px",
+          "radius": "14px",
+          "shadow": "0 10px 24px rgba(15,23,42,.10)",
+          "summaryColor": "rgba(15,23,42,.82)"
+        }
+      }
+    ],
+    "toolServers": [
+      {
+        "token": "123456789",
+        "url": "http://127.0.0.1:9083"
+      }
+    ],
+    "topbarBlur": 13,
+    "topbarOpacity": 5,
+    "transparentChatBg": true,
+    "userMessageCollapseEnabled": true,
+    "userMessageCollapseLines": 8
+  },
+  "ui": {
+    "activeGroupId": "g_mnls5ecx_9j8kkpp",
+    "activeRoleId": "r_mm3ky6v6_sziaozj",
+    "activeTargetKind": "role"
+  },
+  "updatedAt": 1779440214406
+}

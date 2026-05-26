@@ -1,0 +1,60 @@
+{
+  "createdAt": 1774172097406,
+  "id": "c_mn1k9bpa_bhaeeek",
+  "messages": [
+    {
+      "attachments": [],
+      "content": "那个L啊 是什么梗？搜索看看",
+      "createdAt": 1774172097406,
+      "groupId": "",
+      "groupParentMid": "",
+      "groupRole": "",
+      "id": "m_mn1k9bpa_ag69b5k",
+      "images": [],
+      "pending": false,
+      "role": "user",
+      "streaming": false
+    },
+    {
+      "attachments": [],
+      "content": "好哒主人，这就去搜一搜“那个L啊”到底是什么梗喵～[[sticker:doro/快]]<<<[TOOL_REQUEST]>>>\n  <<[CALL-1]>>\n    tool_name:「start」tavily_search「end」\n    query:「start」那个L啊 是什么梗 网络梗 来源 含义「end」\n    agent:「start」把子肉「end」\n    note:「start」帮用户搜索“那个L啊”这个梗的来源和含义「end」\n  <<[/CALL-1]>>\n<<<[END_TOOL_REQUEST]>>>",
+      "createdAt": 1774172097406,
+      "groupId": "",
+      "groupParentMid": "",
+      "groupRole": "",
+      "id": "m_mn1k9bpa_p4ah8z3",
+      "images": [],
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    },
+    {
+      "attachments": [],
+      "content": "<<<[TOOL_RESPONSE]>>>\n  <<[RESULT-1]>>\n    tool_name:「start」tavily_search「end」\n    status:「start」failed「end」\n    error:「start」工具服务器请求失败：HTTP 401 unauthorized「end」\n  <<[/RESULT-1]>>\n<<<[END_TOOL_RESPONSE]>>>",
+      "createdAt": 1774172103603,
+      "groupId": "",
+      "groupParentMid": "",
+      "groupRole": "",
+      "id": "m_mn1k9ghf_q2zo0bk",
+      "images": [],
+      "pending": false,
+      "role": "user",
+      "streaming": false
+    },
+    {
+      "attachments": [],
+      "content": "（已停止）",
+      "createdAt": 1774172103603,
+      "groupId": "",
+      "groupParentMid": "",
+      "groupRole": "",
+      "id": "m_mn1k9ghf_e09tpbb",
+      "images": [],
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    }
+  ],
+  "title": "那个L啊 是什么梗？搜索看看",
+  "updatedAt": 1774172151261
+}

@@ -1,0 +1,31 @@
+{
+  "createdAt": 1774173458617,
+  "id": "c_mn1l2i0p_dhsp8v3",
+  "messages": [
+    {
+      "content": "那个L啊 是什么梗？搜索看看",
+      "createdAt": 1774173458617,
+      "id": "m_mn1l2i0p_cfuppiu",
+      "images": [],
+      "role": "user"
+    },
+    {
+      "content": "好哒主人，我去帮你查一下“那个L”这个梗现在一般指什么来源喵～ [[sticker:doro/快]]<<<[TOOL_REQUEST]>>>\n  <<[CALL-1]>>\n    tool_name:「start」tavily_search「end」\n    query:「start」‘那个L’ 是什么梗 网络用语 来源 含义「end」\n    agent:「start」把子肉「end」\n    note:「start」用户想了解‘那个L’这个梗的来源和含义「end」\n  <<[/CALL-1]>>\n<<<[END_TOOL_REQUEST]>>>",
+      "createdAt": 1774173458617,
+      "id": "m_mn1l2i0p_fkynrvc",
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    },
+    {
+      "content": "（已停止）",
+      "createdAt": 1774173464166,
+      "id": "m_mn1l2mau_dcnyf3s",
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    }
+  ],
+  "title": "那个L啊 是什么梗？搜索看看",
+  "updatedAt": 1774173467087
+}

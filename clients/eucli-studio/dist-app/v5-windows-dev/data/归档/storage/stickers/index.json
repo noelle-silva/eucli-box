@@ -1,0 +1,50 @@
+{
+  "categories": [
+    "doro"
+  ],
+  "enabled": true,
+  "map": {
+    "doro": {
+      "开心": {
+        "createdAt": 1773126577695,
+        "relPath": "stickers/doro/sticker-st_mmk9s7il_gvsjm1y.jpg",
+        "updatedAt": 1773127533904
+      },
+      "开心2": {
+        "createdAt": 1773131580068,
+        "relPath": "stickers/doro/sticker-st_mmkcrfdp_allneth.gif",
+        "updatedAt": 1773131602783
+      },
+      "微笑": {
+        "createdAt": 1773131580051,
+        "relPath": "stickers/doro/sticker-st_mmkcrfd2_rwv4rsq.gif",
+        "updatedAt": 1773131588615
+      },
+      "快": {
+        "createdAt": 1773126577765,
+        "relPath": "stickers/doro/sticker-st_mmk9s7kp_bukenrv.webp",
+        "updatedAt": 1773127562451
+      },
+      "煤气灶": {
+        "createdAt": 1773129507101,
+        "relPath": "stickers/doro/sticker-st_mmkbizu9_ab5uoc6.jpg",
+        "updatedAt": 1773129507101
+      },
+      "爬行": {
+        "createdAt": 1773131580061,
+        "relPath": "stickers/doro/sticker-st_mmkcrfdf_w1s03le.gif",
+        "updatedAt": 1773131593991
+      },
+      "疑惑": {
+        "createdAt": 1773126577724,
+        "relPath": "stickers/doro/sticker-st_mmk9s7jj_rhmvi5j.webp",
+        "updatedAt": 1773127541198
+      },
+      "看着你": {
+        "createdAt": 1773126577711,
+        "relPath": "stickers/doro/sticker-st_mmk9s7j3_lsrxmik.jpg",
+        "updatedAt": 1773127165743
+      }
+    }
+  }
+}

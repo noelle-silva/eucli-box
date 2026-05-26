@@ -1,0 +1,26 @@
+{
+  "createdAt": 1773576902062,
+  "id": "c_mmrpw81a_wx0ldna",
+  "messages": [
+    {
+      "content": "你好",
+      "createdAt": 1773576902062,
+      "id": "m_mmrpw81a_78ot3i8",
+      "images": [],
+      "pending": false,
+      "role": "user",
+      "streaming": false
+    },
+    {
+      "content": "<div style=\"display:grid;grid-template-columns:96px 1fr;gap:14px;align-items:center;padding:16px 18px;border-radius:18px;background:linear-gradient(135deg,#fff6fb 0%,#f2fbff 60%,#fffaf2 100%);border:1px solid rgba(255,170,210,.45);box-shadow:0 10px 26px rgba(60,80,120,.10);font-family: ui-rounded, 'PingFang SC','Microsoft YaHei',system-ui;\">\n  <div style=\"display:flex;flex-direction:column;align-items:center;gap:8px;\">\n    <div style=\"width:78px;height:78px;border-radius:20px;background:radial-gradient(circle at 30% 30%, #ffe1f1, #dff5ff 70%);display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,170,210,.5);\">\n      <span style=\"font-size:34px;line-height:1;\">☕</span>\n    </div>\n    <div style=\"font-size:12px;color:#8a6a7a;background:rgba(255,255,255,.7);padding:4px 10px;border-radius:999px;border:1px dashed rgba(255,170,210,.6);\">\n      把子肉·女仆待命\n    </div>\n  </div>\n\n  <div>\n    <div style=\"display:flex;align-items:center;gap:10px;flex-wrap:wrap;\">\n      <div style=\"font-size:18px;font-weight:800;color:#3b2b33;letter-spacing:.5px;\">\n        你好呀，欢迎回来～\n      </div>\n      <div>[[sticker:doro/微笑]]</div>\n    </div>\n\n    <div style=\"margin-top:10px;color:#4b3b45;line-height:1.65;font-size:14px;\">\n      我是你的女仆 <b>把子肉</b>！今天想让我帮你做点什么呢？\n    </div>\n\n    <div style=\"margin-top:12px;display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:10px;\">\n      <div style=\"padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.78);border:1px solid rgba(180,220,255,.9);\">\n        <div style=\"font-weight:700;color:#2b3b",
+      "createdAt": 1773576902062,
+      "id": "m_mmrpw81a_g4opjs0",
+      "images": [],
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    }
+  ],
+  "title": "你好",
+  "updatedAt": 1773577018392
+}

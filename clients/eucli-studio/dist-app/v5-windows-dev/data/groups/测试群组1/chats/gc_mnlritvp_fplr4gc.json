@@ -1,0 +1,61 @@
+{
+  "id": "gc_mnlritvp_fplr4gc",
+  "title": "你们好呀？",
+  "createdAt": 1775393621701,
+  "updatedAt": 1777544885182,
+  "branching": {
+    "schemaVersion": 1,
+    "activeBranchId": "main",
+    "branches": [
+      {
+        "id": "main",
+        "name": "主线",
+        "headMid": "m_molcbvem_bqls84l",
+        "createdAt": 1775393621701,
+        "updatedAt": 1777544885182,
+        "forkFromMid": ""
+      }
+    ]
+  },
+  "messages": [
+    {
+      "id": "m_molcbvem_7h4q2qw",
+      "role": "user",
+      "content": "你们好啊",
+      "images": [],
+      "branchId": "main",
+      "parentMid": "",
+      "createdAt": 1777544885182
+    },
+    {
+      "id": "m_molcbvem_2n4rq2z",
+      "role": "assistant",
+      "speakerRoleId": "r_mm3ky6v6_sziaozj",
+      "content": "（生成中…）",
+      "branchId": "main",
+      "parentMid": "m_molcbvem_7h4q2qw",
+      "pending": true,
+      "streaming": true,
+      "createdAt": 1777544885182,
+      "modelRef": {
+        "providerId": "ikuncode",
+        "modelId": "gemini-3-flash"
+      }
+    },
+    {
+      "id": "m_molcbvem_bqls84l",
+      "role": "assistant",
+      "speakerRoleId": "r_mmdcfxso_pyueu49",
+      "content": "（生成中…）",
+      "branchId": "main",
+      "parentMid": "m_molcbvem_2n4rq2z",
+      "pending": true,
+      "streaming": true,
+      "createdAt": 1777544885182,
+      "modelRef": {
+        "providerId": "ikuncode",
+        "modelId": "gemini-3-flash"
+      }
+    }
+  ]
+}

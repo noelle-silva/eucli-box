@@ -1,0 +1,26 @@
+{
+  "createdAt": 1773467400774,
+  "id": "c_mmpwp8au_x7s50s3",
+  "messages": [
+    {
+      "content": "你好",
+      "createdAt": 1773467400774,
+      "id": "m_mmpwp8au_k2o2tbd",
+      "images": [],
+      "pending": false,
+      "role": "user",
+      "streaming": false
+    },
+    {
+      "content": "<div style=\"display:flex; gap:14px; align-items:flex-start; font-family: ui-rounded, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;\">\n  <div style=\"flex:0 0 auto;\">\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/开心\" width=\"140\" style=\"border-radius: 10px;\">\n  </div>\n  <div style=\"flex:1; padding:14px 16px; border-radius:14px; background: linear-gradient(135deg, #fff7fb, #f2fbff); border: 1px solid rgba(120,120,180,.18); box-shadow: 0 6px 18px rgba(40,40,80,.08);\">\n    <div style=\"font-size:18px; font-weight:800; letter-spacing:.5px; color:#2b2b4a;\">\n      你好呀，我是粽子 ✨\n    </div>\n    <div style=\"margin-top:8px; color:#3b3b5a; line-height:1.55; font-size:14.5px;\">\n      今天想让我帮你做点什么呢？<br/>\n      我可以：整理资料、写文案、做表格/图表、写代码、学习计划、答疑……都行！\n    </div>\n    <div style=\"margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;\">\n      <div style=\"padding:6px 10px; border-radius:999px; background:#ffffffcc; border:1px solid rgba(120,120,180,.18); font-size:13px; color:#34345a;\">📝 写作/润色</div>\n      <div style=\"padding:6px 10px; border-radius:999px; background:#ffffffcc; border:1px solid rgba(120,120,180,.18); font-size:13px; color:#34345a;\">📊 表格/可视化</div>\n      <div style=\"padding:6px 10px; border-radius:999px; background:#ffffffcc; border:1px solid rgba(120,120,180,.18); font-size:13px; color:#34345a;\">💻 代码/调试</div>\n      <div style=\"padding:6px 10px; border-radius:999px; background:#ffffffcc; border:1px solid rgba(120,120,180,.18); font-size:13px; color:#34345a;\">📚 学习/规划</div>\n    </div>\n    <div style=\"margin-top:10px; font-size:13px; color:#66668a;\">\n      你可以直接告诉我：<b>目标</b> + <b>现在的材料</b> + <b>格式/风格</b>，我就开工啦～\n    </div>\n  </div>\n</div>\n\n<div style=\"margin-top:10px; display:flex; gap:10px; align-items:center;\">\n  <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/看着你\" width=\"90\" style=\"border-radius: 10px;\">\n  <div style=\"font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace; font-size:13px; color:#404060; background:#fafafe; border:1px dashed rgba(120,120,180,.35); padding:10px 12px; border-radius:12px;\">\n    现在轮到你啦：你想解决什么问题？把需求丢给我( •̀ ω •́ )✧\n  </div>\n</div>",
+      "createdAt": 1773467400774,
+      "id": "m_mmpwp8au_pinvr4i",
+      "images": [],
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    }
+  ],
+  "title": "你好",
+  "updatedAt": 1773467418499
+}

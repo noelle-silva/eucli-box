@@ -1,0 +1,101 @@
+{
+  "roles/默认角色/role": {
+    "avatar": "🤖",
+    "createdAt": 1774801295067,
+    "id": "r_mnbyv7q3_lserfq9",
+    "modelRef": {
+      "modelId": "",
+      "providerId": "默认供应商（OpenAI 兼容）"
+    },
+    "name": "默认角色",
+    "systemPrompt": "你是一个严谨、简洁的助手。",
+    "temperature": 0.7,
+    "updatedAt": 1774801295067
+  },
+  "chats/默认角色/c_mnbyv7q3_1owfuob": {
+    "createdAt": 1774801295067,
+    "id": "c_mnbyv7q3_1owfuob",
+    "messages": [],
+    "title": "新聊天",
+    "updatedAt": 1774801295067
+  },
+  "stickers/index": {
+    "categories": [],
+    "enabled": false,
+    "map": {}
+  },
+  "meta/index": {
+    "chatIndexByRole": {
+      "r_mnbyv7q3_lserfq9": {
+        "activeChatId": "c_mnbyv7q3_1owfuob",
+        "chatIds": [
+          "c_mnbyv7q3_1owfuob"
+        ],
+        "chatUpdatedAt": {
+          "c_mnbyv7q3_1owfuob": 1774801295067
+        }
+      }
+    },
+    "dataVersion": 2,
+    "roleFolders": {
+      "r_mnbyv7q3_lserfq9": "默认角色"
+    },
+    "roleOrder": [
+      "r_mnbyv7q3_lserfq9"
+    ],
+    "schemaVersion": 1,
+    "settings": {
+      "aiServices": {
+        "mermaidFix": {
+          "customModelId": "",
+          "enabled": false,
+          "modelId": "",
+          "providerId": "默认供应商（OpenAI 兼容）",
+          "systemPrompt": "你是 Mermaid 语法修复器。\n\n你会收到一段 Mermaid 源码（可能无法渲染）。你的任务：在尽量保持原意不变的前提下，修复语法/结构错误，让它可以被 Mermaid 渲染。\n\n输出要求：\n- 只输出修复后的 Mermaid 源码本体\n- 不要输出解释、不要输出 Markdown 代码块标记（不要输出 ```mermaid）"
+        }
+      },
+      "attachments": {
+        "maxFileSizeMbByKind": {
+          "docx": 10,
+          "md": 10,
+          "pdf": 10,
+          "ppt": 10,
+          "txt": 10
+        },
+        "sendLimitChars": 80000
+      },
+      "chatBgBlur": 0,
+      "chatBgOpacity": 0,
+      "composerBlur": 10,
+      "composerOpacity": 86,
+      "providers": [
+        {
+          "apiKey": "",
+          "baseUrl": "https://api.openai.com/v1",
+          "id": "默认供应商（OpenAI 兼容）",
+          "modelsCache": {
+            "fetchedAt": 0,
+            "items": []
+          },
+          "name": "默认供应商（OpenAI 兼容）"
+        }
+      ],
+      "streamEnabled": true,
+      "toolCallServer": {
+        "baseUrl": "http://localhost:9083",
+        "token": ""
+      },
+      "toolRequestRenderPreset": "classic",
+      "toolRequestRenderPresets": [],
+      "topbarBlur": 0,
+      "topbarOpacity": 100,
+      "transparentChatBg": false,
+      "userMessageCollapseEnabled": false,
+      "userMessageCollapseLines": 8
+    },
+    "ui": {
+      "activeRoleId": "r_mnbyv7q3_lserfq9"
+    },
+    "updatedAt": 1774801295097
+  }
+}

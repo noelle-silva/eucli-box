@@ -1,0 +1,18 @@
+{
+  "providerFolders": {
+    "fengxiang": "fengxiang",
+    "ikuncode": "ikuncode",
+    "newapi": "newapi",
+    "rightcode-gemini": "rightcode-gemini",
+    "vcp": "vcp"
+  },
+  "providerOrder": [
+    "rightcode-gemini",
+    "ikuncode",
+    "fengxiang",
+    "vcp",
+    "newapi"
+  ],
+  "schemaVersion": 1,
+  "updatedAt": 1779440214394
+}

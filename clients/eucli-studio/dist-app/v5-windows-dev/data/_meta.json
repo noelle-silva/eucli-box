@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 3,
+  "migratedAt": 1774966045865,
+  "source": {
+    "from": [
+      "ai-chat.json",
+      "ai-chat.runtime.json"
+    ]
+  },
+  "priority": "legacy-first",
+  "note": "migrate@20260331-220725"
+}

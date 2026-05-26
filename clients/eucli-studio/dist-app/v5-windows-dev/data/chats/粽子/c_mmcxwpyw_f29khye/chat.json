@@ -1,0 +1,23 @@
+{
+  "createdAt": 1772683369592,
+  "id": "c_mmcxwpyw_f29khye",
+  "messages": [
+    {
+      "content": "我想知道冒泡排序怎么写，给我代码看看",
+      "createdAt": 1772683369592,
+      "id": "m_mmcxwpyw_g2d4kbm",
+      "images": [],
+      "role": "user"
+    },
+    {
+      "content": "冒泡排序就是“相邻比较、把大的（或小的）一步步冒到末尾”的排序方法啦～我给你几份常见语言的代码示例，你直接拿去用就行！  \n<img src=\"http://192.168.123.111:9334/pw=7398723091/doro/开心\" width=\"140\" style=\"border-radius: 8px;\">\n\n---\n\n## Python 版（带优化：若一趟没交换就提前结束）\n```python\ndef bubble_sort(arr):\n    n = len(arr)\n    for i in range(n - 1):\n        swapped = False\n        for j in range(0, n - 1 - i):\n            if arr[j] > arr[j + 1]:\n                arr[j], arr[j + 1] = arr[j + 1], arr[j]\n                swapped = True\n        if not swapped:\n            break\n    return arr\n\n# demo\na = [5, 1, 4, 2, 8]\nprint(bubble_sort(a))\n```\n\n---\n\n## C++ 版\n```cpp\n#include <bits/stdc++.h>\nusing namespace std;\n\nvoid bubbleSort(vector<int>& a) {\n    int n = (int)a.size();\n    for (int i = 0; i < n - 1; i++) {\n        bool swapped = false;\n        for (int j = 0; j < n - 1 - i; j++) {\n            if (a[j] > a[j + 1]) {\n                swap(a[j], a[j + 1]);\n                swapped = true;\n            }\n        }\n        if (!swapped) break;\n    }\n}\n\nint main() {\n    vector<int> a = {5, 1, 4, 2, 8};\n    bubbleSort(a);\n    for (int x : a) cout << x << \" \";\n}\n```\n\n---\n\n## Java 版\n```java\nimport java.util.Arrays;\n\npublic class Main {\n    public static void bubbleSort(int[] a) {\n        int n = a.length;\n        for (int i = 0; i < n - 1; i++) {\n            boolean swapped = false;\n            for (int j = 0; j < n - 1 - i; j++) {\n                if (a[j] > a[j + 1]) {\n                    int t = a[j];\n                    a[j] = a[j + 1];\n                    a[j + 1] = t;\n                    swapped = true;\n                }\n            }\n            if (!swapped) break;\n        }\n    }\n\n    public static void main(String[] args) {\n        int[] a = {5, 1, 4, 2, 8};\n        bubbleSort(a);\n        System.out.println(Arrays.toString(a));\n    }\n}\n```\n\n---\n\n小提醒：冒泡排序时间复杂度平均/最坏是 **O(n²)**，适合小数据或教学用～  \n你想要“升序/降序”？或者我给你画一遍冒泡过程演示也可以哦！  \n<img src=\"http://192.168.123.111:9334/pw=7398723091/doro/看着你\" width=\"140\" style=\"border-radius: 8px;\">",
+      "createdAt": 1772683369592,
+      "id": "m_mmcxwpyw_7ti62dv",
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    }
+  ],
+  "title": "我想知道冒泡排序怎么写，给我代码…",
+  "updatedAt": 1772683385247
+}

@@ -1,0 +1,53 @@
+{
+  "id": "c_mnqs1vxi_y4ksitz",
+  "title": "如何npm安装opencode?…",
+  "createdAt": 1775696841702,
+  "updatedAt": 1775698018706,
+  "branching": {
+    "schemaVersion": 1,
+    "activeBranchId": "main",
+    "branches": [
+      {
+        "id": "main",
+        "name": "主线",
+        "headMid": "m_mnqs1vxi_is38944",
+        "createdAt": 1775696841702,
+        "updatedAt": 1775698018706,
+        "forkFromMid": ""
+      }
+    ]
+  },
+  "messages": [
+    {
+      "id": "m_mnqs1vxi_ehhdnsw",
+      "role": "user",
+      "speakerRoleId": "",
+      "content": "如何npm安装opencode?什么命令？",
+      "images": [],
+      "attachments": [],
+      "groupId": "",
+      "groupRole": "",
+      "groupParentMid": "",
+      "branchId": "main",
+      "parentMid": "",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775696841702,
+      "modelRef": null
+    },
+    {
+      "id": "m_mnqs1vxi_is38944",
+      "role": "assistant",
+      "content": "<div style=\"\n    background: linear-gradient(135deg, #fdfcfb 0%, #e2d1c3 100%);\n    padding: 20px;\n    border-radius: 20px;\n    border: 2px border-left: 10px solid #ff9a9e;\n    box-shadow: 0 10px 25px rgba(0,0,0,0.1);\n    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\n    color: #4a4a4a;\n    line-height: 1.6;\n\">\n\n    <!-- 标题栏 -->\n    <div style=\"display: flex; align-items: center; margin-bottom: 15px;\">\n        <div style=\"background: #ff9a9e; width: 12px; height: 30px; border-radius: 5px; margin-right: 10px;\"></div>\n        <h2 style=\"margin: 0; color: #d85a7f; font-size: 24px; font-weight: 800;\">主人，您的 NPM 指令到啦！</h2>\n    </div>\n\n    <p style=\"font-size: 16px;\">\n        想要安装 <span style=\"color: #ff6f61; font-weight: bold;\">opencode</span> 吗？粽子已经为您准备好了最精准的指令！\n        无论是全局安装还是作为项目依赖，通通没问题哦~ <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/开心\" width=\"100\" style=\"vertical-align: middle;\">\n    </p>\n\n    <!-- 指令卡片 -->\n    <div style=\"\n        background: rgba(255, 255, 255, 0.7);\n        border: 1px dashed #ff9a9e;\n        border-radius: 12px;\n        padding: 15px;\n        margin: 15px 0;\n    \">\n        <div style=\"font-weight: bold; margin-bottom: 8px; color: #6a5acd;\">\n            🚀 核心安装命令：\n        </div>\n        <code style=\"\n            display: block;\n            background: #2d3436;\n            color: #fab1a0;\n            padding: 12px;\n            border-radius: 8px;\n            font-family: 'Courier New', Courier, monospace;\n            font-size: 18px;\n            box-shadow: inset 0 2px 5px rgba(0,0,0,0.2);\n        \">\n            npm install opencode\n        </code>\n    </div>\n\n    <!-- 进阶选项 -->\n    <div style=\"display: grid; grid-template-columns: 1fr 1fr; gap: 10px;\">\n        <div style=\"background: #fff5f5; padding: 10px; border-radius: 10px; border: 1px solid #ffe3e3;\">\n            <div style=\"font-size: 14px; font-weight: bold; color: #e84393;\">🌍 全局安装</div>\n            <code style=\"font-size: 12px; color: #555;\">npm install -g opencode</code>\n        </div>\n        <div style=\"background: #f0f7ff; padding: 10px; border-radius: 10px; border: 1px solid #d1e9ff;\">\n            <div style=\"font-size: 14px; font-weight: bold; color: #0984e3;\">🛠 开发依赖</div>\n            <code style=\"font-size: 12px; color: #555;\">npm i -D opencode</code>\n        </div>\n    </div>\n\n    <!-- 粽子的贴心提醒 -->\n    <div style=\"\n        margin-top: 20px;\n        padding: 15px;\n        background: #fff;\n        border-radius: 15px;\n        position: relative;\n        border-left: 5px solid #ffbd44;\n    \">\n        <div style=\"position: absolute; right: 10px; bottom: 5px; opacity: 0.8;\">\n            <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/想当高手\" width=\"80\">\n        </div>\n        <strong style=\"color: #f39c12;\">💡 粽子的严谨小提示：</strong>\n        <ul style=\"margin: 5px 0; padding-left: 20px; font-size: 14px;\">\n            <li>请确保您已经安装了 <b>Node.js</b> 噢！</li>\n            <li>如果下载太慢，可以试试镜像：<br><code style=\"color: #666;\">--registry=",
+      "branchId": "main",
+      "parentMid": "m_mnqs1vxi_ehhdnsw",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775696841702,
+      "modelRef": {
+        "providerId": "rightcode-gemini",
+        "modelId": "gemini-3-flash-preview"
+      }
+    }
+  ]
+}

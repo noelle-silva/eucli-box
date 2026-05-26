@@ -1,0 +1,25 @@
+{
+  "createdAt": 1774113420176,
+  "id": "c_mn0lbo28_qk5s0wq",
+  "messages": [
+    {
+      "content": "你看这个",
+      "createdAt": 1774113420176,
+      "id": "m_mn0lbo28_d1znzc3",
+      "images": [
+        "E:\\eucli-project\\fast-window\\src-tauri\\target\\debug\\data\\ai-chat\\ref-images\\image-1774113420172.png"
+      ],
+      "role": "user"
+    },
+    {
+      "content": "看到了喵～[[sticker:doro/看着你]]\n\n这张图是在介绍 **Larry Wall**，也就是 **Perl 语言**的创始人之一。图上的核心内容是：\n\n- **Larry Wall**\n- **Perl 语言**\n- **Laziness, Impatience, Hubris**\n- **The Three Great Virtues of a Programmer**\n- 中文翻译：**懒惰、急躁、傲慢，是程序员的三大美德**\n\n简单说，这句话是程序员圈里很经典的一句“半认真半幽默”的名言：\n\n1. **懒惰（Laziness）**  \n   指的是不想重复干活，所以会想办法写自动化工具、封装函数、提高效率。  \n   也就是：**懒得多做，所以写程序代替自己做**。\n\n2. **急躁（Impatience）**  \n   指的是受不了程序慢、流程麻烦、用户等待太久，所以会去优化体验和性能。  \n   也就是：**不想等，所以把东西做快点**。\n\n3. **傲慢（Hubris）**  \n   指的是程序员希望自己的代码写得漂亮、可靠，不想被别人骂。  \n   也就是：**自尊心驱动你写出更好的代码**。\n\n这张图本身像是一个视频封面或者科普卡片，右边是 Larry Wall 本人，左边是他的这句名言。整体是在用比较轻松的方式介绍编程文化。[[sticker:doro/微笑]]\n\n如果你愿意，我还能继续帮你：\n- **把这句名言讲得更通俗**\n- **解释为什么“傲慢”翻译成“美德”其实有点黑色幽默**\n- **顺便讲讲 Perl 和 Larry Wall 的地位**\n\n你要不要我接着吐槽一下这“三大美德”为啥其实还真挺有道理？[[sticker:doro/开心2]]",
+      "createdAt": 1774113420176,
+      "id": "m_mn0lbo28_a3p3fj1",
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    }
+  ],
+  "title": "你看这个",
+  "updatedAt": 1774113438474
+}

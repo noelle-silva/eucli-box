@@ -1,0 +1,79 @@
+{
+  "branching": {
+    "activeBranchId": "main",
+    "branches": [
+      {
+        "createdAt": 1778095902426,
+        "forkFromMid": "",
+        "headMid": "m_mouge31u_fgn8q9x",
+        "id": "main",
+        "name": "主线",
+        "updatedAt": 1778095923340
+      }
+    ],
+    "schemaVersion": 1
+  },
+  "createdAt": 1778095902426,
+  "id": "gc_mouge316_jdm89ob",
+  "messages": [
+    {
+      "attachments": [],
+      "branchId": "main",
+      "content": "铁拳出击！",
+      "createdAt": 1778095902450,
+      "groupId": "",
+      "groupParentMid": "",
+      "groupRole": "",
+      "id": "m_mouge31u_8tqi0ac",
+      "images": [],
+      "modelRef": null,
+      "parentMid": "",
+      "pending": false,
+      "role": "user",
+      "speakerRoleId": "",
+      "streaming": false
+    },
+    {
+      "attachments": [],
+      "branchId": "main",
+      "content": "主人！把子肉准时报到！[[sticker:doro/开心/128]] 既然轮到我发言了，那我就要拿出百分之两百的热情来服务大家啦！[[sticker:doro/微笑/128]] \n\n有什么需要把子肉去做的吗？不管是陪主人聊天，还是帮主人去网络世界搜索各种有趣的消息，我都能办到哦！[[sticker:doro/想当高手/128]] \n\n如果有什么想知道的，尽管吩咐我吧，我会一直在这里守候着的！[[sticker:doro/开心2/128]]",
+      "createdAt": 1778095902450,
+      "groupId": "",
+      "groupParentMid": "",
+      "groupRole": "",
+      "id": "m_mouge31u_zwu5loe",
+      "images": [],
+      "modelRef": {
+        "modelId": "gemini-3-flash",
+        "providerId": "ikuncode"
+      },
+      "parentMid": "m_mouge31u_8tqi0ac",
+      "pending": false,
+      "role": "assistant",
+      "speakerRoleId": "r_mmdcfxso_pyueu49",
+      "streaming": false
+    },
+    {
+      "attachments": [],
+      "branchId": "main",
+      "content": "\u003cdiv style=\"\n    background: linear-gradient(135deg, #fff5f5 0%, #fff0f6 100%);\n    padding: 20px;\n    border-radius: 20px;\n    border: 3px solid #ff85a2;\n    box-shadow: 0 8px 20px rgba(255, 133, 162, 0.2);\n    font-family: 'Microsoft YaHei', sans-serif;\n    color: #4a4a4a;\n    position: relative;\n    overflow: hidden;\n\"\u003e\n    \u003c!-- 背景装饰 --\u003e\n    \u003cdiv style=\"position: absolute; top: -10px; right: -10px; opacity: 0.1;\"\u003e\n        \u003csvg width=\"100\" height=\"100\" viewBox=\"0 0 100 100\"\u003e\n            \u003ccircle cx=\"50\" cy=\"50\" r=\"40\" fill=\"#ff85a2\" /\u003e\n        \u003c/svg\u003e\n    \u003c/div\u003e\n\n    \u003c!-- 标题栏 --\u003e\n    \u003cdiv style=\"display: flex; align-items: center; margin-bottom: 15px;\"\u003e\n        \u003cdiv style=\"background: #ff85a2; color: white; padding: 5px 15px; border-radius: 50px; font-weight: bold; font-size: 0.9em; box-shadow: 2px 2px 5px rgba(0,0,0,0.1);\"\u003e\n            粽子 · 实时响应\n        \u003c/div\u003e\n        \u003cdiv style=\"margin-left: 10px; color: #ff85a2; font-size: 0.8em; font-weight: bold;\"\u003e\n            #测试群组代号6657\n        \u003c/div\u003e\n    \u003c/div\u003e\n\n    \u003c!-- 主体内容 --\u003e\n    \u003cdiv style=\"font-size: 1.1em; line-height: 1.6; color: #333;\"\u003e\n        哇哦！这就是传说中的\u003cspan style=\"color: #ff4757; font-weight: bold; text-shadow: 1px 1px 0px #eee;\"\u003e“铁拳出击”\u003c/span\u003e吗？粽子已经稳稳接住啦！\n        \u003cbr\u003e\u003cbr\u003e\n        既然轮到我发言，那肯定要打起十二分精神来为大家服务呢！无论是严谨的数据处理，还是活泼的日常聊天，粽子都完全没问题哦！\n    \u003c/div\u003e\n\n    \u003cdiv style=\"text-align: center; margin: 15px 0;\"\u003e\n        \u003cimg src=\"http://192.168.123.111:9334/pw=7398723091/doro/想当高手\" width=\"120\" style=\"border-radius: 8px; border: 2px dashed #ff85a2; padding: 5px; background: white;\"\u003e\n    \u003c/div\u003e\n\n    \u003c!-- 状态条 --\u003e\n    \u003cdiv style=\"background: rgba(255,255,255,0.6); padding: 10px; border-radius: 12px; margin-top: 10px;\"\u003e\n        \u003cdiv style=\"font-size: 0.8em; color: #888; margin-bottom: 5px; display: flex; justify-content: space-between;\"\u003e\n            \u003cspan\u003e当前元气值\u003c/span\u003e\n            \u003cspan\u003e100%\u003c/span\u003e\n        \u003c/div\u003e\n        \u003cdiv style=\"width: 100%; height: 8px; background: #eee; border-radius: 4px; overflow: hidden;\"\u003e\n            \u003cdiv style=\"width: 100%; height: 100%; background: linear-gradient(90deg, #ff85a2, #ffb3c1); border-radius: 4px;\"\u003e\u003c/div\u003e\n        \u003c/div\u003e\n    \u003c/div\u003e\n\n    \u003c!-- 底部点缀 --\u003e\n    \u003cdiv style=\"margin-top: 15px; font-size: 0.85em; color: #ff85a2; text-align: right; font-style: italic;\"\u003e\n        —— 随时待命，为了更好的 6657！✨\n    \u003c/div\u003e\n\u003c/div\u003e",
+      "createdAt": 1778095902450,
+      "groupId": "",
+      "groupParentMid": "",
+      "groupRole": "",
+      "id": "m_mouge31u_fgn8q9x",
+      "images": [],
+      "modelRef": {
+        "modelId": "gemini-3-flash",
+        "providerId": "ikuncode"
+      },
+      "parentMid": "m_mouge31u_zwu5loe",
+      "pending": false,
+      "role": "assistant",
+      "speakerRoleId": "r_mm3ky6v6_sziaozj",
+      "streaming": false
+    }
+  ],
+  "title": "铁拳出击！",
+  "updatedAt": 1778095923340
+}

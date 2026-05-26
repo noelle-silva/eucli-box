@@ -1,0 +1,26 @@
+{
+  "createdAt": 1772193837296,
+  "id": "c_mm4ugcfk_wnrr0aq",
+  "messages": [
+    {
+      "content": "讲一个长长的故事",
+      "createdAt": 1772193846240,
+      "id": "m_mm4ugjc0_q4sfwb5",
+      "images": [],
+      "pending": false,
+      "role": "user",
+      "streaming": false
+    },
+    {
+      "content": "从前有座山，山里有座庙，庙里有个老和尚在给小和尚讲故事。讲的是什么呢？从前有座山，山里有座庙，庙里有个老和尚在给小和尚讲故事。讲的是什么呢？从前有座山……",
+      "createdAt": 1772193846240,
+      "id": "m_mm4ugjc0_62691sb",
+      "images": [],
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    }
+  ],
+  "title": "讲一个长长的故事",
+  "updatedAt": 1772193849455
+}

@@ -1,0 +1,23 @@
+{
+  "createdAt": 1773866451390,
+  "id": "c_mmwia9q6_6u393z6",
+  "messages": [
+    {
+      "content": "你好，试试看echo工具。",
+      "createdAt": 1773866451390,
+      "id": "m_mmwia9q6_vd987dq",
+      "images": [],
+      "role": "user"
+    },
+    {
+      "content": "<<<[TOOL_REQUEST]>>>\n  <<[CALL-1]>>\n    tool_name:「start」echo「end」\n    text:「start」主人您好～这里是echo工具测试：把这句话原样返回给我吧！「end」\n    agent:「start」把子肉「end」\n    note:「start」echo工具测试「end」\n  <<[/CALL-1]>>\n<<<[END_TOOL_REQUEST]>>><<<[TOOL_RESPONSE]>>>\n  <<[RESULT-1]>>\n主人您好～这里是echo工具测试：把这句话原样返回给我吧！\n  <<[/RESULT-1]>>\n<<<[END_TOOL_RESPONSE]>>>\n\n测试成功啦主人～[[sticker:doro/开心]]",
+      "createdAt": 1773866451390,
+      "id": "m_mmwia9q6_zzbitt2",
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    }
+  ],
+  "title": "你好，试试看echo工具。",
+  "updatedAt": 1773866457812
+}

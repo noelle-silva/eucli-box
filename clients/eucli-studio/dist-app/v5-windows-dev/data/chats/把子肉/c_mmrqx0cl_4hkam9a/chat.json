@@ -1,0 +1,131 @@
+{
+  "createdAt": 1773578618373,
+  "id": "c_mmrqx0cl_4hkam9a",
+  "messages": [
+    {
+      "attachments": [
+        {
+          "fullLen": 730,
+          "id": "att_mmrqx0cl_zdfanho",
+          "kind": "md",
+          "lang": "markdown",
+          "name": "CHECKLIST_AQuality-AssurancePlan.md",
+          "sendLen": 730,
+          "sendPct": 100,
+          "text": "## CHECKLIST: A Quality-Assurance Plan\r\n\r\n### 核对表: 质量保证计划\r\n\r\n- [ ] 是否确定出对项目至关重要的特定质量特性了?\r\n- [ ] 是否让其他人意识到项目的质量目标了?\r\n- [ ] 是否能够区分质量的外在特性和内在特性?\r\n- [ ] 是否考虑过某些特性与其他特性相互制约或相互促进的具体方式?\r\n- [ ] 在软件开发的每一个阶段,项目是否要求针对不同错误类型使用不同的错误检测技术?\r\n- [ ] 项目计划中是否有计划有步骤地保证了软件在开发各阶段的质量?\r\n- [ ] 是否使用了某种质量评估方法,并由此确定质量是改善了还是下降了?\r\n- [ ] 管理层是否能理解为了质量保证在前期消耗额外成本,目的就是在项目后期减少成本?\r\n\r\n### Key Points 要点\r\n\r\n- 开发高质量代码最终并没有要求你付出更多,只是你需要对资源进行重新分配,以低廉的成本来防止缺陷出现,从而避免代价高昂的修正工作。\r\n- 并非所有的质量保证目标都可以全部实现。明确哪些目标是你希望达到的,并就这些目标和团队成员进行沟通。\r\n- 没有任何一种错误检测方法能够解决全部问题,测试本身并不是排除错误的最有效方法。成功的质量保证计划应该使用多种不同的技术来检查各种不同类型的错误。\r\n- 在构建期间应当使用一些有效的质量保证技术,但在这之前,一些具有同样强大功能的质量保证技术也是必不可少的。错误发现越早,它与其余代码的纠缠就越少,由此造成的损失也越小。\r\n- 软件领域的质量保证是面向过程的。软件开发与制造业不一样,在这里并不存在会影响最终产品的重复的阶段,因此,最终产品的质量受到开发软件所用的过程的控制。"
+        }
+      ],
+      "content": "附件：CHECKLIST_AQuality-AssurancePlan.md",
+      "createdAt": 1773578618373,
+      "id": "m_mmrqx0cl_uer5vn8",
+      "role": "user"
+    },
+    {
+      "attachments": [
+        {
+          "fullLen": 1220,
+          "id": "att_mmrqx0cl_yo0noio",
+          "kind": "md",
+          "lang": "markdown",
+          "name": "Checklist_Architecture.md",
+          "sendLen": 1220,
+          "sendPct": 100,
+          "text": "## Checklist: Architecture\r\n\r\n### 核对表:架构\r\n\r\n以下是一份问题列表,优秀的架构应该关注这些问题。这张核对表的意图并非用做一份有关如何做架构的完全指南,而是作为一种实用的评估手段,用来评估软件食物链到了程序员这一头还有多少营养成分。这张核对表可用做你自己的核对表的出发点。就像\"需求\"的核对表一样,如果你从事的是非正式项目,那么你会发现其中某些条款甚至都不用去想。如果你从事的是更大型的项目,那么大多数条款都会是很有用的。\r\n\r\n#### 针对各架构主题\r\n\r\n- [ ] 程序的整体组织结构是否清晰?是否包含一个良好的架构全局观(及其理由)?\r\n- [ ] 是否明确定义了主要的构造块(包括每个构造块的职责范围及与其他构造块的接口)?\r\n- [ ] 是否明显涵盖了\"需求\"中列出的所有功能(每个功能对应的构造块不太多也不太少)?\r\n- [ ] 是否描述并论证了那些最关键的类?\r\n- [ ] 是否描述并论证了数据设计?\r\n- [ ] 是否详细定义了数据库的组织结构和内容?\r\n- [ ] 是否指出了所用关键的业务规则,并描述其对系统的影响?\r\n- [ ] 是否描述了用户界面设计的策略?\r\n- [ ] 是否将用户界面模块化,使界面的变更不会影响程序其余部分?\r\n- [ ] 是否描述并论证了处理 I/O 的策略?\r\n- [ ] 是否估算了稀缺资源(如线程、数据库连接、句柄、网络带宽等)的使用量,是否描述并论证了资源管理的策略?\r\n- [ ] 是否描述了架构的安全需求?\r\n- [ ] 架构是否为每个类、每个子系统、或每个功能域(functionality area)提出空间与时间预算?\r\n- [ ] 架构是否描述了如何达到可伸缩性?\r\n- [ ] 架构是否关注互操作性?\r\n- [ ] 是否描述了国际化/本地化的策略?\r\n- [ ] 是否提供了一套内聚的错误处理策略?\r\n- [ ] 是否规定了容错的办法(如果需要)?\r\n- [ ] 是否证实了系统各个部分的技术可行性?\r\n- [ ] 是否详细描述了过度工程(overengineering)的方法?\r\n- [ ] 是否包含了必要的\"买 vs.造\"的决策?\r\n- [ ] 架构是否描述了如何加工被复用的代码,使之符合其他架构目标?\r\n- [ ] 是否将架构设计得能够适应很可能出现的变更?\r\n\r\n#### 架构的总体质量\r\n\r\n- [ ] 架构是否解决了全部需求?\r\n- [ ] 有没有哪个部分是\"过度架构/overarchitected\"或\"欠架构/underarchitected\"?是否明确宣布了在这方面的预期指标?\r\n- [ ] 整个架构是否在概念上协调一致?\r\n- [ ] 顶层设计是否独立于用作实现它的机器和语言?\r\n- [ ] 是否说明了所有主要的决策的动机?\r\n- [ ] 你,作为一名实现该系统的程序员,是否对这个架构感觉良好?"
+        }
+      ],
+      "content": "附件：Checklist_Architecture.md",
+      "createdAt": 1773578618373,
+      "id": "m_mmrqx0cl_s1lcem4",
+      "role": "user"
+    },
+    {
+      "attachments": [
+        {
+          "fullLen": 1263,
+          "id": "att_mmrqx0cl_3qmr940",
+          "kind": "md",
+          "lang": "markdown",
+          "name": "CHECKLIST_ClassQuality.md",
+          "sendLen": 1263,
+          "sendPct": 100,
+          "text": "## CHECKLIST: Class Quality\r\n\r\n这是关于类的质量的考虑事项的核对表。\r\n\r\n### 核对表: 类的质量\r\n\r\n#### 抽象数据类型\r\n\r\n- [ ] 你是否把程序中的类都看做是抽象数据类型了?是否从这个角度评估它们的接口了?\r\n\r\n#### 抽象\r\n\r\n- [ ] 类是否有一个中心目的?\r\n- [ ] 类的命名是否恰当?其名字是否表达了其中心目的?\r\n- [ ] 类的接口是否展现了一致的抽象?\r\n- [ ] 类的接口是否能让人清楚明白地知道该如何用它?\r\n- [ ] 类的接口是否足够抽象,使你能不必顾虑它是如何实现其服务的?你能把类看做黑盒子吗?\r\n- [ ] 类提供的服务是否足够完整,能让其他类无须动用其内部数据?\r\n- [ ] 是否已从类中除去无关信息?\r\n- [ ] 是否考虑过把类进一步分解为组件类?是否已尽可能将其分解?\r\n- [ ] 在修改类时是否维持了其接口的完整性?\r\n\r\n#### 封装\r\n\r\n- [ ] 是否把类的成员的可访问性降到最小?\r\n- [ ] 是否避免暴露类中的数据成员?\r\n- [ ] 在编程语言所许可的范围内,类是否已尽可能地对其他的类隐藏了自己的实现细节?\r\n- [ ] 类是否避免对其使用者,包括其派生类会如何使用它做了假设?\r\n- [ ] 类是否不依赖于其他类?它是松散耦合的吗?\r\n\r\n#### 继承\r\n\r\n- [ ] 继承是否只用来建立\"是一个/is a\"的关系?也就是说,派生类是否遵循了LSP(Liskov替换原则)?\r\n- [ ] 类的文档中是否记述了其继承策略?\r\n- [ ] 派生类是否避免了\"覆盖\"不可覆盖的方法?\r\n- [ ] 是否把公用的接口、数据和行为都放到尽可能高的继承层次中了?\r\n- [ ] 继承层次是否很浅?\r\n- [ ] 基类中所有的数据成员是否都被定义为private而非protected的了?\r\n\r\n#### 跟实现相关的其他问题\r\n\r\n- [ ] 类中是否只有大约七个或更少的数据成员?\r\n- [ ] 是否把类直接或间接调用其他类的子程序的数量减到最少了?\r\n- [ ] 类是否只在绝对必要时才与其他的类相互协作?\r\n- [ ] 是否在构造函数中初始化了所有的数据成员?\r\n- [ ] 除非拥有经过测量的、创建浅层复本的理由,类是否都被设计为当作深层复本使用?\r\n\r\n#### 与语言相关的问题\r\n\r\n- [ ] 你是否研究过所用编程语言里和类相关的各种特有问题?\r\n\r\n### Key Points 要点\r\n\r\n- 类的接口应提供一致的抽象。很多问题都是由于违背该原则而引起的。\r\n- 类的接口应隐藏一些信息——如某个系统接口、某项设计决策、或一些实现细节。\r\n- 包含往往比继承更为可取——除非你要对\"是一个/isa\"的关系建模。\r\n- 继承是一种有用的工具,但它却会增加复杂度,这有违于软件的首要技术使命——管理复杂度。\r\n- 类是管理复杂度的首选工具。要在设计类时给予足够的关注,才能实现这一目标。"
+        }
+      ],
+      "content": "附件：CHECKLIST_ClassQuality.md",
+      "createdAt": 1773578618373,
+      "id": "m_mmrqx0cl_0caw1so",
+      "role": "user"
+    },
+    {
+      "attachments": [
+        {
+          "fullLen": 866,
+          "id": "att_mmrqx0cl_a1iu6ex",
+          "kind": "md",
+          "lang": "markdown",
+          "name": "CHECKLIST_Code-TuningStrategies.md",
+          "sendLen": 866,
+          "sendPct": 100,
+          "text": "## CHECKLIST: Code-Tuning Strategies\r\n\r\n### 核对表: 代码调整策略\r\n\r\n#### 程序整体性能\r\n\r\n- [ ] 你是否考虑通过修改需求来提高性能?\r\n- [ ] 你是否考虑通过修改程序的设计来提高性能?\r\n- [ ] 你是否考虑通过修改类的设计来提高性能?\r\n- [ ] 你是否考虑过减少程序同操作系统的交互从而提高性能?\r\n- [ ] 是否考虑过避免 I/O 操作以提高性能?\r\n- [ ] 是否考虑使用编译型语言替代解释型语言以提高性能?\r\n- [ ] 是否考虑过使用编译器优化选项来提高性能?\r\n- [ ] 是否考虑过使用不同的硬件来提高性能?\r\n- [ ] 是否仅仅将代码调整看做是解决问题的最后一招?\r\n\r\n#### 代码调整方法\r\n\r\n- [ ] 在开始调整代码之前,程序是完全正确的么?\r\n- [ ] 在调整之前是否测量过性能瓶颈在什么地方?\r\n- [ ] 是否记录了每一次修改所产生的效果?\r\n- [ ] 如果没有带来预期的性能提高,你是否放弃了所做的代码调整改变?\r\n- [ ] 你是否对每一个性能瓶颈进行不止一次的修改尝试——也就是说,你是在反复进行代码调整么?\r\n\r\n### Key Points 要点\r\n\r\n- 性能只是软件整体质量的一个方面,通常不是最重要的。精细的代码调整也只是实现整体性能的一种方法,通常也不是决定性的。相对于代码本身的效率而言,程序的架构、细节设计以及数据结构和算法选择对程序的运行速度和资源占用的影响通常会更大。\r\n- 定量测量是实现性能最优化的关键。定量测量需要找出能真正决定程序性能的部分,在修改之后,应当通过重复测量来明确修改是提高还是降低了软件的性能。\r\n- 绝大多数的程序都有那么一小部分代码耗费了绝大部分的运行时间。如果没有测量,你不会知道是哪一部分代码。\r\n- 代码调整需要反复尝试,这样才能获得理想的性能提高。\r\n- 为性能优化工作做好准备的最佳方式就是在最初阶段编写清晰的代码,从而使代码在后续工作中易于理解和修改。"
+        }
+      ],
+      "content": "附件：CHECKLIST_Code-TuningStrategies.md",
+      "createdAt": 1773578618373,
+      "id": "m_mmrqx0cl_x72gx5y",
+      "role": "user"
+    },
+    {
+      "attachments": [
+        {
+          "fullLen": 886,
+          "id": "att_mmrqx0cl_fxj0wgn",
+          "kind": "md",
+          "lang": "markdown",
+          "name": "CHECKLIST_Code-TuningTechniques.md",
+          "sendLen": 886,
+          "sendPct": 100,
+          "text": "## CHECKLIST: Code-Tuning Techniques\r\n\r\n### 核对表: 代码调整方法\r\n\r\n#### 同时改善代码执行速度和规模\r\n\r\n- [ ] 用查询表替换复杂逻辑。\r\n- [ ] 合并循环。\r\n- [ ] 使用整型变量而非浮点变量。\r\n- [ ] 在编译时初始化数据。\r\n- [ ] 使用正确的常量类型。\r\n- [ ] 预先计算结果。\r\n- [ ] 删除公共子表达式。\r\n- [ ] 将关键子程序代码转化为某种低级语言代码。\r\n\r\n#### 仅仅提高代码执行速度\r\n\r\n- [ ] 在知道答案后就停止执行判断。\r\n- [ ] 根据各种情况的出现频率对 case 语句和 if- then- else 串排序。\r\n- [ ] 比较相似逻辑结构的性能。\r\n- [ ] 使用情性求值。\r\n- [ ] 将循环中的 if 判断转到外部。\r\n- [ ] 展开循环。\r\n- [ ] 将循环内部所做的工作减少到最低限度。\r\n- [ ] 在查找循环中使用哨兵。\r\n- [ ] 把执行最为频繁的循环放在嵌套循环的最里面。\r\n- [ ] 减轻内层循环的强度。\r\n- [ ] 将多维数组改为一维数组。\r\n- [ ] 最大限度减少数组索引。\r\n- [ ] 为数据类型扩充索引。\r\n- [ ] 对频繁使用的值进行缓存。\r\n- [ ] 利用代数恒等式。\r\n- [ ] 降低逻辑和数学表达式的强度。\r\n- [ ] 注意系统调用。\r\n- [ ] 用内联子程序重写代码。\r\n\r\n# Key Points 要点\r\n\r\n- 优化结果在不同的语言、编译器和环境下有很大差异。如果没有对每一次的优化进行测量,你将无法判断优化到底是帮助还是损害了这个程序。\r\n- 第一次优化通常不会是最好的。即使找到了效果很不错的,也不要停下扩大战果的步伐。\r\n- 代码调整这一话题有点类似于核能,富有争议,甚至会让人冲动。一些人认为代码调整损害了代码可读性和可维护性,他们绝对会将其弃之不用。其他人则认为只要有适当的安全保障,代码调整对程序是有益的。如果你决定使用本章所述的调整方法,请务必谨慎行事。"
+        }
+      ],
+      "content": "附件：CHECKLIST_Code-TuningTechniques.md",
+      "createdAt": 1773578618373,
+      "id": "m_mmrqx0cl_ozxd09h",
+      "role": "user"
+    },
+    {
+      "attachments": [
+        {
+          "fullLen": 493,
+          "id": "att_mmrqx0cl_d6bpb2a",
+          "kind": "md",
+          "lang": "markdown",
+          "name": "CHECKLIST_ConfigurationManagement.md",
+          "sendLen": 493,
+          "sendPct": 100,
+          "text": "## CHECKLIST: Configuration Management\r\n\r\n### 核对表: 配置管理\r\n\r\n#### 概要\r\n\r\n- [ ] 你的软件配置管理计划是否用于帮助程序员,并能将额外负担降至最低?\r\n- [ ] 你的软件配置管理方法是否避免了对项目的过度控制?\r\n- [ ] 你是否将一些变更请求聚成一组?无论采用非正式的方法(如创建一份未决更改的列表)还是更加系统的方法(如设立变更控制委员会)。\r\n- [ ] 你系统地评估了每一项提交的更改对成本、计划和质量的影响吗?\r\n- [ ] 你是否把重大的变更看做是需求分析还不够完备的警报信号?\r\n\r\n#### 工具\r\n\r\n- [ ] 你用版本控制软件来促进配置管理吗?\r\n- [ ] 你用版本控制软件来减少团队工作中的协调问题吗?\r\n\r\n#### 备份\r\n\r\n- [ ] 你定期地备份项目中的所有资料吗?\r\n- [ ] 你定期地把项目备份数据转移到 off- site storage 里了吗?\r\n- [ ] 所有的资料,包括源代码、文档、图表和重要的笔记都得到备份了吗?\r\n- [ ] 你测试过备份与恢复的过程吗?"
+        }
+      ],
+      "content": "附件：CHECKLIST_ConfigurationManagement.md",
+      "createdAt": 1773578618373,
+      "id": "m_mmrqx0cl_ugzx6g3",
+      "role": "user"
+    },
+    {
+      "content": "你看看",
+      "createdAt": 1773578618373,
+      "id": "m_mmrqx0cl_utgx1kk",
+      "images": [],
+      "role": "user"
+    },
+    {
+      "content": "<div style=\"font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', Arial; line-height:1.55;\">\n  <div style=\"display:flex; gap:14px; align-items:flex-start;\">\n    <div style=\"flex:1; background:linear-gradient(135deg,#fff7fb,#f3fbff); border:1px solid #e9e9ff; border-radius:16px; padding:14px 16px; box-shadow:0 6px 22px rgba(40,40,120,.08);\">\n      <div style=\"display:flex; align-items:center; justify-content:space-between; gap:10px;\">\n        <div style=\"font-size:18px; font-weight:800; letter-spacing:.5px;\">我看完啦：这是 6 份软件工程核对表 📋</div>\n        <div>[[sticker:doro/看着你/128]]</div>\n      </div>\n      <div style=\"margin-top:10px; color:#2b2b2b;\">\n        你发来的内容属于「工程质量体系」的不同切面：从 <b>质量保证</b> → <b>架构</b> → <b>类设计</b> → <b>性能策略/技巧</b> → <b>配置管理</b>，结构很完整，而且每份都兼具“问题清单 + Key Points”这种可落地的形式。[[sticker:doro/开心]]\n      </div>\n    </div>\n\n    <div style=\"width:340px; background:#0b1220; color:#e8eefc; border-radius:16px; padding:14px 16px; box-shadow:0 10px 26px rgba(0,0,0,.25); border:1px solid rgba(120,160,255,.18);\">\n      <div style=\"font-weight:800; font-size:14px; opacity:.95;\">文件一览</div>\n      <div style=\"margin-top:10px; font-size:13px;\">\n        <div style=\"display:flex; justify-content:space-between;\"><span>QA Plan</span><span style=\"opacity:.75;\">质量保证计划</span></div>\n        <div style=\"display:flex; justify-content:space-between;\"><span>Architecture</span><span style=\"opacity:.75;\">架构核对</span></div>\n        <div style=\"display:flex; justify-content:space-between;\"><span>Class Quality</span><span style=\"opacity:.75;\">类的质量</span></div>\n        <div style=\"display:flex; justify-content:space-between;\"><span>Tuning Strategies</span><span style=\"opacity:.75;\">调优策略</span></div>\n        <div style=\"display:flex; justify-content:space-between;\"><span>Tuning Techniques</span><span style=\"opacity:.75;\">调优技巧</span></div>\n        <div style=\"display:flex; justify-content:space-between;\"><span>Config Mgmt</span><span style=\"opacity:.75;\">配置管理</span></div>\n      </div>\n      <div style=\"margin-top:12px; font-size:12px; opacity:.8;\">\n        这套更像“项目复查/评审用清单”，也可以改造成“每个迭代的 DoD/DoR”。[[sticker:doro/微笑/128]]\n      </div>\n    </div>\n  </div>\n\n  <div style=\"margin-top:14px; display:grid; grid-template-columns: 1fr 1fr; gap:14px;\">\n    <div style=\"background:#ffffff; border:1px solid #eee; border-radius:16px; padding:14px 16px;\">\n      <div style=\"font-weight:900; font-size:15px;\">我注意到的亮点</div>\n      <ul style=\"margin:10px 0 0 18px; color:#222;\">\n        <li><b>QA Plan</b> 强调“前期投入换后期省钱”“多种缺陷检测手段组合”——很成熟。[[sticker:doro/开心]]</li>\n        <li><b>Architecture</b> 覆盖从模块职责、数据设计、I/O、安全、可伸缩、容错到 buy-vs-build，适合作为架构评审模板。</li>\n        <li><b>Class Quality</b> 把抽象/封装/继承/实现细节拆开问，能有效抓住“接口一致性”和“松耦合”。</li>\n        <li><b>Performance</b> 分成“策略(先测量、最后再调优)”与“技巧(具体手段)”，避免一上来就微优化。[[sticker:doro/疑惑]]（这点很多团队会忘）</li>\n        <li><b>Config Mgmt</b> 兼顾“不过度控制 + 版本控制 + 备份恢复演练”，非常实用。</li>\n      </ul>\n    </div>\n\n    <div style=\"background:linear-gradient(180deg,#ffffff,#fbfbff); border:1px solid #eee; border-radius:16px; padding:14px 16px;\">\n      <div style=\"font-weight:900; font-size:15px;\">我可以帮你把它“用起来”的三种方式</div>\n      <ol style=\"margin:10px 0 0 18px; color:#222;\">\n        <li><b>合并成一份总目录 + 分阶段使用指南</b>（需求/架构/实现/测试/发布/运维，各阶段该勾哪几块）。</li>\n        <li><b>改造成可执行模板</b>：例如 Notion/Confluence 页面、GitHub Issue 表单、PR 模板、架构评审表单。</li>\n        <li><b>为你的项目定制删减版</b>：把“必选/可选/仅大型项目”打标签，避免清单太长没人勾。[[sticker:doro/快]]</li>\n      </ol>\n    </div>\n  </div>\n\n  <div style=\"margin-top:14px; background:#fff; border:1px solid #eee; border-radius:16px; padding:14px 16px;\">\n    <div style=\"display:flex; align-items:center; justify-content:space-between; gap:12px;\">\n      <div style=\"font-weight:900; font-size:15px;\">你想让我接下来做哪一种？</div>\n      <div>[[sticker:doro/爬行/128]]</div>\n    </div>\n\n    <div style=\"margin-top:10px; color:#222;\">\n      你回我一个选项就行（也可以多选）：\n      <div style=\"margin-top:10px; display:flex; flex-wrap:wrap; gap:10px;\">\n        <div style=\"padding:8px 10px; border:1px solid #e8e8ff; border-radius:999px; background:#f7f7ff;\"><b>A</b>：输出「统一总清单」(带目录与交叉引用)</div>\n        <div style=\"padding:8px 10px; border:1px solid #e8e8ff; border-radius:999px; background:#f7f7ff;\"><b>B</b>：做成「PR 模板 + Issue 模板」(GitHub)</div>\n        <div style=\"padding:8px 10px; border:1px solid #e8e8ff; border-radius:999px; background:#f7f7ff;\"><b>C</b>：做成「架构评审表」(可直接填的表格)</div>\n        <div style=\"padding:8px 10px; border:1px solid #e8e8ff; border-radius:999px; background:#f7f7ff;\"><b>D</b>：按你的项目背景“裁剪/改写”</div>\n      </div>\n      <div style=\"margin-top:10px; font-size:13px; color:#444;\">\n        如果选 <b>D</b>，告诉我：项目类型（Web/移动/嵌入式/数据）、团队规模、是否有性能/安全强约束。[[sticker:doro/微笑]]\n      </div>\n    </div>\n  </div>\n</div>",
+      "createdAt": 1773578618373,
+      "id": "m_mmrqx0cl_rnopgb6",
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    }
+  ],
+  "title": "你看看",
+  "updatedAt": 1773578656891
+}

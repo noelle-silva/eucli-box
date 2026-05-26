@@ -1,0 +1,45 @@
+{
+  "branching": {
+    "activeBranchId": "main",
+    "branches": [
+      {
+        "createdAt": 1778095635663,
+        "forkFromMid": "",
+        "headMid": "m_moug8d73_fgvq43x",
+        "id": "main",
+        "name": "主线",
+        "updatedAt": 1778095635684
+      }
+    ],
+    "schemaVersion": 1
+  },
+  "createdAt": 1778095635663,
+  "id": "c_moug8d73_dxfju7z",
+  "messages": [
+    {
+      "branchId": "main",
+      "content": "铁拳出击！",
+      "createdAt": 1778095635684,
+      "id": "m_moug8d7o_j03p60b",
+      "images": [],
+      "parentMid": "",
+      "role": "user"
+    },
+    {
+      "branchId": "main",
+      "content": "\u003cdiv style=\"\n    background: linear-gradient(135deg, #fdfcfb 0%, #e2d1c3 100%);\n    padding: 20px;\n    border-radius: 20px;\n    border: 3px solid #ff6b6b;\n    box-shadow: 0 10px 25px rgba(0,0,0,0.1);\n    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\n    color: #4a4a4a;\n\"\u003e\n\n\u003cdiv style=\"text-align: center; margin-bottom: 15px;\"\u003e\n    \u003ch1 style=\"color: #d63031; text-shadow: 2px 2px 4px rgba(0,0,0,0.2); font-size: 2.5em; margin: 0;\"\u003e\n        🥊 铁拳出击！！ 🥊\n    \u003c/h1\u003e\n    \u003cp style=\"font-weight: bold; color: #ff7675;\"\u003e—— 粽子接收到了充满力量的指令！ ——\u003c/p\u003e\n\u003c/div\u003e\n\n\u003cdiv style=\"display: flex; justify-content: center; align-items: center; margin: 20px 0;\"\u003e\n    \u003csvg width=\"200\" height=\"150\" viewBox=\"0 0 200 150\"\u003e\n        \u003cdefs\u003e\n            \u003cradialGradient id=\"grad1\" cx=\"50%\" cy=\"50%\" r=\"50%\" fx=\"50%\" fy=\"50%\"\u003e\n                \u003cstop offset=\"0%\" style=\"stop-color:rgb(255,255,0);stop-opacity:1\" /\u003e\n                \u003cstop offset=\"100%\" style=\"stop-color:rgb(255,0,0);stop-opacity:1\" /\u003e\n            \u003c/radialGradient\u003e\n        \u003c/defs\u003e\n        \u003c!-- 爆炸背景 --\u003e\n        \u003cpath d=\"M100 10 L120 50 L160 40 L140 80 L180 110 L130 110 L120 150 L90 120 L50 140 L70 100 L20 80 L70 60 Z\" fill=\"url(#grad1)\"\u003e\n            \u003canimate attributeName=\"transform\" type=\"scale\" values=\"1;1.1;1\" dur=\"0.5s\" repeatCount=\"indefinite\" /\u003e\n        \u003c/path\u003e\n        \u003c!-- 文字 --\u003e\n        \u003ctext x=\"65\" y=\"90\" font-family=\"Arial Black\" font-size=\"30\" fill=\"white\" stroke=\"black\" stroke-width=\"1\"\u003eBOOM!\u003c/text\u003e\n    \u003c/svg\u003e\n\u003c/div\u003e\n\n\u003cdiv style=\"background: rgba(255,255,255,0.7); padding: 15px; border-radius: 12px; border-left: 5px solid #d63031;\"\u003e\n    哇哦！主人这一记铁拳真是威震八方、气吞山河！\u003cbr\u003e\n    粽子已经感受到空气中弥漫的\u003cb\u003e战斗意志\u003c/b\u003e了呢！\n    \u003cbr\u003e\u003cbr\u003e\n    \u003cimg src=\"http://192.168.123.111:9334/pw=7398723091/doro/生气\" width=\"120\" style=\"border-radius: 8px;\"\u003e\n    \u003cbr\u003e\n    虽然粽子只是个女仆，但既然主人发话了，粽子也会拿出\u003cb\u003e120%的严谨态度\u003c/b\u003e来协助您“出击”的！\n\u003c/div\u003e\n\n\u003cdiv style=\"margin-top: 20px;\"\u003e\n    \u003ch3 style=\"color: #2d3436;\"\u003e📊 出击状态分析报告：\u003c/h3\u003e\n    \u003cdiv style=\"width: 100%; background-color: #dfe6e9; border-radius: 10px;\"\u003e\n        \u003cdiv style=\"width: 95%; background-color: #ff7675; padding: 5px; border-radius: 10px; text-align: right; color: white; font-size: 12px; font-weight: bold;\"\u003e威力: 9999+\u003c/div\u003e\n    \u003c/div\u003e\n    \u003cdiv style=\"width: 100%; background-color: #dfe6e9; border-radius: 10px; margin-top: 5px;\"\u003e\n        \u003cdiv style=\"width: 85%; background-color: #fab1a0; padding: 5px; border-radius: 10px; text-align: right; color: white; font-size: 12px; font-weight: bold;\"\u003e气势: MAX\u003c/div\u003e\n    \u003c/div\u003e\n\u003c/div\u003e\n\n\u003cdiv style=\"text-align: right; margin-top: 15px;\"\u003e\n    \u003cimg src=\"http://192.168.123.111:9334/pw=7398723091/doro/想当高手\" width=\"100\" style=\"border-radius: 8px;\"\u003e\n    \u003cp style=\"font-style: italic; color: #636e72;\"\u003e“主人，接下来我们要瞄准哪个目标进行‘打击’呢？粽子已经准备好为您记录辉煌战果了！”\u003c/p\u003e\n\u003c/div\u003e\n\n\u003c/div\u003e",
+      "createdAt": 1778095635684,
+      "id": "m_moug8d73_fgvq43x",
+      "modelRef": {
+        "modelId": "gemini-3-flash",
+        "providerId": "ikuncode"
+      },
+      "parentMid": "m_moug8d7o_j03p60b",
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    }
+  ],
+  "title": "铁拳出击！",
+  "updatedAt": 1778095648437
+}

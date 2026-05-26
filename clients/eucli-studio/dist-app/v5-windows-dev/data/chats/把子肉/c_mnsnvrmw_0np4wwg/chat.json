@@ -1,0 +1,45 @@
+{
+  "id": "c_mnsnvrmw_0np4wwg",
+  "title": "你好呀",
+  "createdAt": 1775810770088,
+  "updatedAt": 1775810777847,
+  "branching": {
+    "schemaVersion": 1,
+    "activeBranchId": "main",
+    "branches": [
+      {
+        "id": "main",
+        "name": "主线",
+        "headMid": "m_mnsnvrmv_krmec8f",
+        "createdAt": 1775810770088,
+        "updatedAt": 1775810777847,
+        "forkFromMid": ""
+      }
+    ]
+  },
+  "messages": [
+    {
+      "id": "m_mnsnvrmw_0bminrc",
+      "role": "user",
+      "content": "你好呀",
+      "images": [],
+      "branchId": "main",
+      "parentMid": "",
+      "createdAt": 1775810770088
+    },
+    {
+      "id": "m_mnsnvrmv_krmec8f",
+      "role": "assistant",
+      "content": "你好呀主人～我是把子肉，很高兴见到你呀 [[sticker:doro/开心]]\n\n今天想让我做点什么呢？\n可以陪你聊天、查资料、写东西、想点子，或者摸摸鱼也行啦 [[sticker:doro/微笑]]",
+      "branchId": "main",
+      "parentMid": "m_mnsnvrmw_0bminrc",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775810770088,
+      "modelRef": {
+        "providerId": "fengxiang",
+        "modelId": "gpt-5.4"
+      }
+    }
+  ]
+}

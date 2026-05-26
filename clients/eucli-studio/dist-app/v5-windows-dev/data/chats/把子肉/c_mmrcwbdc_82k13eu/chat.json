@@ -1,0 +1,26 @@
+{
+  "createdAt": 1773555071376,
+  "id": "c_mmrcwbdc_82k13eu",
+  "messages": [
+    {
+      "content": "你好啊",
+      "createdAt": 1773555071376,
+      "id": "m_mmrcwbdc_8ve2vqq",
+      "images": [],
+      "pending": false,
+      "role": "user",
+      "streaming": false
+    },
+    {
+      "content": "<div style=\"font-family: ui-rounded, 'SF Pro Rounded', 'PingFang SC', 'Microsoft YaHei', sans-serif; padding:16px 18px; border-radius:16px; background: linear-gradient(135deg,#fff7fb,#f3fbff); border:1px solid rgba(120,160,255,.25); box-shadow: 0 10px 24px rgba(40,80,160,.10);\">\n  <div style=\"display:flex; gap:14px; align-items:center;\">\n    <div style=\"width:54px; height:54px; border-radius:14px; background: radial-gradient(circle at 30% 30%, #ffffff, #ffe6f2 35%, #dff4ff 100%); border:1px solid rgba(255,170,210,.35); display:flex; align-items:center; justify-content:center;\">\n      <span style=\"font-size:28px;\">🧹</span>\n    </div>\n    <div style=\"flex:1;\">\n      <div style=\"font-size:18px; font-weight:800; letter-spacing:.5px; color:#24324a;\">\n        你好呀，主人～我是把子肉女仆到位！\n      </div>\n      <div style=\"margin-top:6px; font-size:13px; color:#5b6b86; line-height:1.55;\">\n        今天想让我帮你做点什么呢：写作/代码/学习计划/做个可爱的排版卡片都可以噢。\n      </div>\n    </div>\n  </div>\n\n  <div style=\"margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;\">\n    <div style=\"padding:8px 10px; border-radius:999px; background:#ffffffb8; border:1px solid rgba(120,160,255,.22); font-size:13px; color:#334a68;\">\n      你现在在忙什么？\n    </div>\n    <div style=\"padding:8px 10px; border-radius:999px; background:#ffffffb8; border:1px solid rgba(255,160,200,.22); font-size:13px; color:#334a68;\">\n      想聊点轻松的还是解决问题？\n    </div>\n    <div style=\"padding:8px 10px; border-radius:999px; background:#ffffffb8; border:1px solid rgba(160,220,255,.22); font-size:13px; color:#334a68;\">\n      给我一个关键词我就开工～\n    </div>\n  </div>\n\n  <div style=\"margin-top:14px; display:flex; align-items:center; gap:10px;\">\n    <div style=\"font-size:14px; color:#24324a; font-weight:700;\">表情包模式：</div>\n    <div>[[sticker:doro/微笑/128]]</div>\n    <div>[[sticker:doro/看着你/400]]</div>\n    <div>[[sticker:doro/开心/128]]</div>\n  </div>\n</div>",
+      "createdAt": 1773555071376,
+      "id": "m_mmrcwbdc_g2ynice",
+      "images": [],
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    }
+  ],
+  "title": "你好啊",
+  "updatedAt": 1773556015958
+}

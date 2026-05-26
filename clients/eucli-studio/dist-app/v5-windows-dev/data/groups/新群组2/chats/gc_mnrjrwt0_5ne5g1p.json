@@ -1,0 +1,61 @@
+{
+  "id": "gc_mnrjrwt0_5ne5g1p",
+  "title": "你们两个晚上好呀",
+  "createdAt": 1775743405524,
+  "updatedAt": 1775743446484,
+  "branching": {
+    "schemaVersion": 1,
+    "activeBranchId": "main",
+    "branches": [
+      {
+        "id": "main",
+        "name": "主线",
+        "headMid": "m_mnrjrwt1_5fedh9i",
+        "createdAt": 1775743405524,
+        "updatedAt": 1775743446484,
+        "forkFromMid": ""
+      }
+    ]
+  },
+  "messages": [
+    {
+      "id": "m_mnrjrwt0_qmzc6xi",
+      "role": "user",
+      "content": "你们两个晚上好呀",
+      "images": [],
+      "branchId": "main",
+      "parentMid": "",
+      "createdAt": 1775743405524
+    },
+    {
+      "id": "m_mnrjrwt1_ahrygts",
+      "role": "assistant",
+      "speakerRoleId": "r_mmdcfxso_pyueu49",
+      "content": "晚上好呀主人～我是把子肉，已经乖乖上线啦 [[sticker:doro/开心]]\n\n这么晚还能见到你，感觉今晚都会变得软乎乎的～ [[sticker:doro/微笑]]\n\n你现在是在休息、摸鱼，还是准备睡觉前来群里转一圈呀？ [[st",
+      "branchId": "main",
+      "parentMid": "m_mnrjrwt0_qmzc6xi",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775743405525,
+      "modelRef": {
+        "providerId": "fengxiang",
+        "modelId": "gpt-5.4"
+      }
+    },
+    {
+      "id": "m_mnrjrwt1_5fedh9i",
+      "role": "assistant",
+      "speakerRoleId": "r_mm3ky6v6_sziaozj",
+      "content": "<div style=\"padding: 14px 16px; border-radius: 16px; background: linear-gradient(135deg,#fff7fb 0%,#eef7ff 100%); border: 1px solid #ffd7ea; box-shadow: 0 6px 18px rgba(0,0,0,0.06); font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; line-height: 1.7; color: #444;\">\n  <div style=\"display:flex; align-items:center; gap:10px; margin-bottom:8px;\">\n    <div style=\"font-size: 18px; font-weight: 700; color:#ff6fae;\">晚上好呀~</div>\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/开心\" width=\"80\" style=\"border-radius: 8px;\">\n  </div>\n  <div style=\"font-size:15px;\">\n    粽子来啦 ✨<br>\n    今晚也请多多关照喔～如果你想聊天、问问题、摸鱼、吐槽，或者让我帮你整理点东西，我都可以陪着你呀。\n  </div>\n  <div style=\"margin-top:10px; padding:10px 12px; background: rgba(255,255,255,0.72); border-radius: 12px; border-left: 4px solid #8ec5ff;\">\n    <span style=\"color:#666;\">今日份贴心待机中：</span><br>\n    🌙 陪聊 ｜ 📝 整理内容 ｜ 💡 出主意 ｜ 🔍 查漏补缺\n  </div>\n  <div style=\"margin-top:10px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;\">\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/看着你\" width=\"90\" style=\"border-radius: 8px;\">\n    <span style=\"font-size:14px; color:#555;\">所以——今晚想先从什么开始呢？</span>\n  </div>\n",
+      "branchId": "main",
+      "parentMid": "m_mnrjrwt1_ahrygts",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775743405525,
+      "modelRef": {
+        "providerId": "fengxiang",
+        "modelId": "gpt-5.4"
+      }
+    }
+  ]
+}

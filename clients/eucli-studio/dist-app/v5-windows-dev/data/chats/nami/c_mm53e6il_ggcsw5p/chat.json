@@ -1,0 +1,28 @@
+{
+  "createdAt": 1772208852861,
+  "id": "c_mm53e6il_ggcsw5p",
+  "messages": [
+    {
+      "content": "看看这个",
+      "createdAt": 1772208856876,
+      "id": "m_mm53e9m4_bp82cvo",
+      "images": [
+        "chats/nami/c_mm53e6il_ggcsw5p/images/ref-image-1772208856873.jpg"
+      ],
+      "pending": false,
+      "role": "user",
+      "streaming": false
+    },
+    {
+      "content": "（请求失败：{\"error\":\"Internal Server Error\",\"details\":\"Fetch failed after all retries.\"}）",
+      "createdAt": 1772208856876,
+      "id": "m_mm53e9m4_kn2ota6",
+      "images": [],
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    }
+  ],
+  "title": "看看这个",
+  "updatedAt": 1772208873080
+}

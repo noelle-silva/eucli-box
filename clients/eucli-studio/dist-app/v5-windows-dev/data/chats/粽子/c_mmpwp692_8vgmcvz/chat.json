@@ -1,0 +1,23 @@
+{
+  "createdAt": 1773467398118,
+  "id": "c_mmpwp692_8vgmcvz",
+  "messages": [
+    {
+      "content": "你好",
+      "createdAt": 1773467398118,
+      "id": "m_mmpwp692_wl9z9ys",
+      "images": [],
+      "role": "user"
+    },
+    {
+      "content": "<div style=\"display:flex; gap:14px; align-items:flex-start; font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC','Microsoft YaHei', sans-serif;\">\n  <div style=\"flex:0 0 auto;\">\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/开心\" width=\"140\" style=\"border-radius: 10px;\">\n  </div>\n  <div style=\"flex:1; padding:14px 16px; border-radius:14px; background:linear-gradient(135deg, rgba(255,245,250,.95), rgba(245,250,255,.95)); border:1px solid rgba(180,180,220,.55); box-shadow: 0 8px 24px rgba(60,60,120,.12);\">\n    <div style=\"font-size:18px; font-weight:800; letter-spacing:.5px;\">欢迎回来呀，我是粽子女仆助手 ✦</div>\n    <div style=\"margin-top:8px; color:#334; line-height:1.55;\">\n      你好你好～今天想让我帮你做点什么呢？<br/>\n      <span style=\"font-weight:700;\">可以</span>：写作润色 / 资料整理 / 代码调试 / 学习计划 / 做个小网页 / 画图表 / 解题推导……\n    </div>\n\n    <div style=\"margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;\">\n      <div style=\"padding:8px 10px; border-radius:999px; background:#fff; border:1px solid rgba(180,180,220,.6); font-size:13px;\">① 你现在要解决什么问题？</div>\n      <div style=\"padding:8px 10px; border-radius:999px; background:#fff; border:1px solid rgba(180,180,220,.6); font-size:13px;\">② 期望输出：简短/详细？</div>\n      <div style=\"padding:8px 10px; border-radius:999px; background:#fff; border:1px solid rgba(180,180,220,.6); font-size:13px;\">③ 有无格式要求：MD/HTML/表格？</div>\n    </div>\n  </div>\n</div>\n\n<div style=\"margin-top:10px; display:flex; gap:12px; align-items:center;\">\n  <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/看着你\" width=\"90\" style=\"border-radius:10px;\">\n  <div style=\"font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC','Microsoft YaHei', sans-serif; color:#445; font-size:14px;\">\n    你一句话吩咐就行，我已经把小本本掏出来啦～\n  </div>\n</div>",
+      "createdAt": 1773467398118,
+      "id": "m_mmpwp692_j9ptu9a",
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    }
+  ],
+  "title": "你好",
+  "updatedAt": 1773467412978
+}

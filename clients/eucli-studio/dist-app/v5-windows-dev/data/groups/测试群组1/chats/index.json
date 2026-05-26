@@ -1,0 +1,24 @@
+{
+  "activeChatId": "gc_mnlritvp_fplr4gc",
+  "chatIds": [
+    "gc_mnlritvp_fplr4gc"
+  ],
+  "chatMetas": [
+    {
+      "createdAt": 1775393621701,
+      "hasPending": true,
+      "id": "gc_mnlritvp_fplr4gc",
+      "lastMessagePreview": "（生成中…）",
+      "messageCount": 3,
+      "title": "你们好呀？",
+      "updatedAt": 1777544885182
+    }
+  ],
+  "chatUpdatedAt": {
+    "gc_mnlritvp_fplr4gc": 1777544885182
+  },
+  "groupFolder": "测试群组1",
+  "groupId": "g_mnlritvp_379a1r1",
+  "schemaVersion": 1,
+  "updatedAt": 1779440214392
+}

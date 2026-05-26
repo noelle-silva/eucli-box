@@ -1,0 +1,34 @@
+{
+  "createdAt": 1773919401614,
+  "id": "c_mmxdt6dq_bc6czs2",
+  "messages": [
+    {
+      "attachments": [],
+      "content": "你好，试试看tavily_search工具。",
+      "createdAt": 1773919401614,
+      "groupId": "",
+      "groupParentMid": "",
+      "groupRole": "",
+      "id": "m_mmxdt6dq_pjqlgwf",
+      "images": [],
+      "pending": false,
+      "role": "user",
+      "streaming": false
+    },
+    {
+      "attachments": [],
+      "content": "<<<[TOOL_REQUEST]>>>\n  <<[CALL-1]>>\n    tool_name:「start」tavily_search「end」\n    query:「start」2026年3月 全球科技新闻 头条「end」\n    agent:「start」把子肉「end」\n    note:「start」测试 tavily_search 工具是否可用「end」\n  <<[/CALL-1]>>\n<<<[END_TOOL_REQUEST]>>>正在帮你试用 tavily_search 哦，主人~ [[sticker:doro/快]]\n\n不过目前我这边还没有收到工具返回的搜索结果（也可能是这次调用没有成功返回数据）。为了更好地测试，你想搜什么关键词？给我一句话就行，比如：\n\n- “今天全球科技新闻”\n- “OpenAI 最新动态”\n- “某某公司 财报 2026”\n\n你发关键词我就再搜一次给你看结果~ [[sticker:doro/看着你]]",
+      "createdAt": 1773919401614,
+      "groupId": "",
+      "groupParentMid": "",
+      "groupRole": "",
+      "id": "m_mmxdt6dq_wtkxg45",
+      "images": [],
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    }
+  ],
+  "title": "你好，试试看tavily_sea…",
+  "updatedAt": 1773919425945
+}

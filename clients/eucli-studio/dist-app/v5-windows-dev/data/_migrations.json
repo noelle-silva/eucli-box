@@ -1,0 +1,41 @@
+{
+  "applied": [
+    {
+      "id": "2026-05-05-role-chat-packages",
+      "fromVersion": 2,
+      "toVersion": 3,
+      "description": "角色聊天记录目录化，并把每个聊天使用的图片收拢到对应聊天文件夹",
+      "appliedAt": 1777960170267
+    },
+    {
+      "id": "2026-05-05-remove-migrated-role-chat-root-images",
+      "fromVersion": 3,
+      "toVersion": 4,
+      "description": "清理已经复制进角色聊天包的 ref-images 根部旧图片副本",
+      "appliedAt": 1777960967187
+    },
+    {
+      "id": "2026-05-05-ref-images-to-data-tree",
+      "fromVersion": 4,
+      "toVersion": 5,
+      "description": "将 ref-images 下的图片归档到对应业务数据目录，并移除空的 ref-images",
+      "appliedAt": 1777963858550
+    },
+    {
+      "id": "2026-05-05-split-meta-indexes",
+      "fromVersion": 5,
+      "toVersion": 6,
+      "description": "拆分 meta/index 中的聊天索引和供应商配置",
+      "appliedAt": 1777968168663
+    },
+    {
+      "id": "2026-05-05-chat-index-summaries",
+      "fromVersion": 6,
+      "toVersion": 7,
+      "description": "为聊天索引补充轻量摘要，支持前端按需加载聊天正文",
+      "appliedAt": 1777979562467
+    }
+  ],
+  "schemaVersion": 1,
+  "updatedAt": 1777979562467
+}

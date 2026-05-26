@@ -1,0 +1,90 @@
+{
+  "activeChatId": "c_mm4g2pd0_dg25l1b",
+  "chatIds": [
+    "c_mm794cfx_5vw9syl",
+    "c_mm6k84x8_dntrqx4",
+    "c_mm53ndqv_7rbpvlk",
+    "c_mm53e6il_ggcsw5p",
+    "c_mm4g2pd0_dg25l1b",
+    "c_mm3t461f_2b7cmgt",
+    "c_mm3sbxpf_s0d2mf3"
+  ],
+  "chatMetas": [
+    {
+      "createdAt": 1772339404029,
+      "hasPending": false,
+      "id": "c_mm794cfx_5vw9syl",
+      "lastMessagePreview": "\u003cdiv style=\"background: linear-gradient(145deg, #1a1a2e, #16213e, #0f3460); colo...",
+      "messageCount": 2,
+      "title": "讲一个长长的故事",
+      "updatedAt": 1772339493779
+    },
+    {
+      "createdAt": 1772297590509,
+      "hasPending": false,
+      "id": "c_mm6k84x8_dntrqx4",
+      "lastMessagePreview": "",
+      "messageCount": 0,
+      "title": "新聊天",
+      "updatedAt": 1772297590509
+    },
+    {
+      "createdAt": 1772209282135,
+      "hasPending": false,
+      "id": "c_mm53ndqv_7rbpvlk",
+      "lastMessagePreview": "这张图是一个**脚部特写**的插画（偏二次元/半写实上色）： - **主体**：两只脚交叠的姿势，一只脚底朝向镜头，另一只脚侧面/脚背可见；皮肤高光比较强，质感...",
+      "messageCount": 4,
+      "title": "看看这个",
+      "updatedAt": 1772209406716
+    },
+    {
+      "createdAt": 1772208852861,
+      "hasPending": false,
+      "id": "c_mm53e6il_ggcsw5p",
+      "lastMessagePreview": "（请求失败：{\"error\":\"Internal Server Error\",\"details\":\"Fetch failed after all retries...",
+      "messageCount": 2,
+      "title": "看看这个",
+      "updatedAt": 1772208873080
+    },
+    {
+      "createdAt": 1772169686244,
+      "hasPending": false,
+      "id": "c_mm4g2pd0_dg25l1b",
+      "lastMessagePreview": "\u003cdiv style=\" font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-...",
+      "messageCount": 4,
+      "title": "我没能用屁股夹住海啸 老大家好，…",
+      "updatedAt": 1772182247758
+    },
+    {
+      "createdAt": 1772131123347,
+      "hasPending": false,
+      "id": "c_mm3t461f_2b7cmgt",
+      "lastMessagePreview": "",
+      "messageCount": 0,
+      "title": "新聊天",
+      "updatedAt": 1772131123347
+    },
+    {
+      "createdAt": 1772129806179,
+      "hasPending": false,
+      "id": "c_mm3sbxpf_s0d2mf3",
+      "lastMessagePreview": "\u003cdiv style=\" background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); bord...",
+      "messageCount": 4,
+      "title": "你好",
+      "updatedAt": 1772130442105
+    }
+  ],
+  "chatUpdatedAt": {
+    "c_mm3sbxpf_s0d2mf3": 1772130442105,
+    "c_mm3t461f_2b7cmgt": 1772131123347,
+    "c_mm4g2pd0_dg25l1b": 1772182247758,
+    "c_mm53e6il_ggcsw5p": 1772208873080,
+    "c_mm53ndqv_7rbpvlk": 1772209406716,
+    "c_mm6k84x8_dntrqx4": 1772297590509,
+    "c_mm794cfx_5vw9syl": 1772339493779
+  },
+  "roleFolder": "nami",
+  "roleId": "r_mm3sbxpf_9dbmdce",
+  "schemaVersion": 1,
+  "updatedAt": 1779440214384
+}

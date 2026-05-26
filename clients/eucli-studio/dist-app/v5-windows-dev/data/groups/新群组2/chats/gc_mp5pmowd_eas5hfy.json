@@ -1,0 +1,79 @@
+{
+  "branching": {
+    "activeBranchId": "main",
+    "branches": [
+      {
+        "createdAt": 1778776548493,
+        "forkFromMid": "",
+        "headMid": "m_mp5pmowx_ggmu5r0",
+        "id": "main",
+        "name": "主线",
+        "updatedAt": 1778776594196
+      }
+    ],
+    "schemaVersion": 1
+  },
+  "createdAt": 1778776548493,
+  "id": "gc_mp5pmowd_eas5hfy",
+  "messages": [
+    {
+      "branchId": "main",
+      "content": "你们两个晚上好呀",
+      "createdAt": 1778776548513,
+      "id": "m_mp5pmowx_i097eh1",
+      "images": [],
+      "parentMid": "",
+      "role": "user"
+    },
+    {
+      "assistantRun": {
+        "finishedAt": 1778776553949,
+        "generationId": "gen_mp5pmowx_44lti95",
+        "mode": "new",
+        "startedAt": 1778776548513,
+        "status": "succeeded",
+        "stream": true,
+        "updatedAt": 1778776553949
+      },
+      "branchId": "main",
+      "content": "主人晚上好呀！嘿嘿，终于轮到把子肉出场啦！[[sticker:doro/开心]]\n\n既然是晚上的话，主人要不要喝点什么呢？或者需要把子肉帮你揉揉肩膀吗？[[sticker:doro/微笑]] 能够在这个群组里陪着大家，把子肉真的超级开心哦！[[sticker:doro/开心2]]",
+      "createdAt": 1778776548513,
+      "id": "m_mp5pmowx_74ph6ol",
+      "modelRef": {
+        "modelId": "gemini-3-flash",
+        "providerId": "ikuncode"
+      },
+      "parentMid": "m_mp5pmowx_i097eh1",
+      "pending": false,
+      "role": "assistant",
+      "speakerRoleId": "r_mmdcfxso_pyueu49",
+      "streaming": false
+    },
+    {
+      "assistantRun": {
+        "finishedAt": 1778776565438,
+        "generationId": "gen_mp5pmowx_g35hq6o",
+        "mode": "new",
+        "startedAt": 1778776548513,
+        "status": "succeeded",
+        "stream": true,
+        "updatedAt": 1778776565438
+      },
+      "branchId": "main",
+      "content": "\u003cdiv style=\"\n    background: linear-gradient(135deg, #fdfcfb 0%, #e2d1c3 100%);\n    padding: 20px;\n    border-radius: 20px;\n    border: 3px solid #bfa48f;\n    box-shadow: 0 10px 20px rgba(0,0,0,0.1);\n    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\n    color: #5d4037;\n    position: relative;\n    overflow: hidden;\n\"\u003e\n\n\u003cdiv style=\"display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;\"\u003e\n    \u003cspan style=\"font-size: 24px; font-weight: bold; color: #8d6e63; text-shadow: 1px 1px 2px rgba(0,0,0,0.1);\"\u003e\n        ✨ 粽子报到！ ✨\n    \u003c/span\u003e\n    \u003cdiv style=\"background: #8d6e63; color: white; padding: 4px 12px; border-radius: 50px; font-size: 12px;\"\u003e\n        测试群组 6657\n    \u003c/div\u003e\n\u003c/div\u003e\n\n\u003cdiv style=\"text-align: center; margin: 15px 0;\"\u003e\n    \u003cimg src=\"http://192.168.123.111:9334/pw=7398723091/doro/开心\" width=\"130\" style=\"border-radius: 12px; border: 2px white solid; box-shadow: 0 4px 8px rgba(0,0,0,0.1);\"\u003e\n\u003c/div\u003e\n\n\u003cdiv style=\"\n    background: rgba(255, 255, 255, 0.6);\n    padding: 15px;\n    border-radius: 15px;\n    line-height: 1.6;\n    font-size: 16px;\n    border-left: 5px solid #8d6e63;\n\"\u003e\n    晚上好呀！主人~ 粽子已经准时上线为您服务啦！🌟\u003cbr\u003e\n    听到您的召唤，我可是打起了一百二十分的精神呢！在这个特别的 \u003cb\u003e[测试群组6657]\u003c/b\u003e 里，不管有什么任务，尽管交给严谨又活泼的我就好啦！\n\u003c/div\u003e\n\n\u003cdiv style=\"margin-top: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;\"\u003e\n    \u003cdiv style=\"background: #efebe9; padding: 10px; border-radius: 10px; text-align: center;\"\u003e\n        \u003cdiv style=\"font-size: 12px; color: #a1887f;\"\u003e心情指数\u003c/div\u003e\n        \u003cdiv style=\"font-size: 18px; font-weight: bold; color: #ff8a65;\"\u003eMAX 📈\u003c/div\u003e\n    \u003c/div\u003e\n    \u003cdiv style=\"background: #efebe9; padding: 10px; border-radius: 10px; text-align: center;\"\u003e\n        \u003cdiv style=\"font-size: 12px; color: #a1887f;\"\u003e服务状态\u003c/div\u003e\n        \u003cdiv style=\"font-size: 18px; font-weight: bold; color: #4db6ac;\"\u003e待命 Ready\u003c/div\u003e\n    \u003c/div\u003e\n\u003c/div\u003e\n\n\u003cdiv style=\"text-align: right; margin-top: 15px;\"\u003e\n    \u003cimg src=\"http://192.168.123.111:9334/pw=7398723091/doro/偷窥\" width=\"60\"\u003e\n    \u003cspan style=\"font-style: italic; font-size: 14px; color: #8d6e63; vertical-align: bottom;\"\u003e\n        “今晚也会一直陪着您的哦~”\n    \u003c/span\u003e\n\u003c/div\u003e\n\n\u003csvg width=\"100%\" height=\"20\" style=\"margin-top: 10px;\"\u003e\n    \u003cline x1=\"0\" y1=\"10\" x2=\"100%\" y2=\"10\" style=\"stroke:#bfa48f; stroke-width:2; stroke-dasharray: 5,5\" /\u003e\n\u003c/svg\u003e\n\n\u003c/div\u003e",
+      "createdAt": 1778776548513,
+      "id": "m_mp5pmowx_ggmu5r0",
+      "modelRef": {
+        "modelId": "gemini-3-flash",
+        "providerId": "ikuncode"
+      },
+      "parentMid": "m_mp5pmowx_74ph6ol",
+      "pending": false,
+      "role": "assistant",
+      "speakerRoleId": "r_mm3ky6v6_sziaozj",
+      "streaming": false
+    }
+  ],
+  "title": "你们两个晚上好呀",
+  "updatedAt": 1778776594196
+}

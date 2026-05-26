@@ -1,0 +1,83 @@
+{
+  "createdAt": 1772337455951,
+  "id": "c_mm77ylan_dfevmu8",
+  "messages": [
+    {
+      "content": "你好呀",
+      "createdAt": 1772337459379,
+      "id": "m_mm77ynxv_fdkqxvd",
+      "images": [],
+      "pending": false,
+      "role": "user",
+      "streaming": false
+    },
+    {
+      "content": "你好，我是粽子。你想聊什么，或者需要我帮你做什么？",
+      "createdAt": 1772337459379,
+      "id": "m_mm77ynxv_v2lr3ey",
+      "images": [],
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    },
+    {
+      "content": "你知道她是谁吗？",
+      "createdAt": 1772337489084,
+      "id": "m_mm77zav0_xw6lkxe",
+      "images": [
+        "E:\\eucli-project\\fast-window\\src-tauri\\target\\debug\\data\\ai-chat\\ref-images\\ref-image-1772337489080.png"
+      ],
+      "pending": false,
+      "role": "user",
+      "streaming": false
+    },
+    {
+      "content": "看起来是《火影忍者》里的**手鞠（Temari）**：标志性的金发“四撮”发型、常见的忍者装（网袜等）都很像。\n\n不过这张图里护额是木叶标志，可能是**同人图/改动过设定**，所以我只能说“很像手鞠”。如果你能给我图片出处或更多截图，我可以再确认。",
+      "createdAt": 1772337489084,
+      "id": "m_mm77zav0_n7e5ehq",
+      "images": [],
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    },
+    {
+      "content": "再看看这是谁",
+      "createdAt": 1772572697665,
+      "id": "m_mmb40myp_1wa1n4r",
+      "images": [
+        "E:\\eucli-project\\fast-window\\src-tauri\\target\\debug\\data\\ai-chat\\ref-images\\image-1772572697662.jpg"
+      ],
+      "pending": false,
+      "role": "user",
+      "streaming": false
+    },
+    {
+      "content": "我暂时**无法仅凭这张图准确判断她是哪部作品/哪个角色**（这类红发绿眼的二次元形象很多，也可能是同人图或AI图）。\n\n我能描述到的特征是：**红色长发、绿色眼睛、白衬衫+黑裙、透明高跟凉鞋、森林场景**。\n\n如果你告诉我：\n- 图片来源（截图自哪一集/哪部番/哪个网站），或\n- 再发一张包含角色正脸更清晰/有台词字幕/有其他角色同框的截图  \n我可以更进一步帮你确认。\n\n你也可以用 **Google Lens / SauceNAO / iqdb** 以图搜图，通常能直接找到出处。",
+      "createdAt": 1772572697665,
+      "id": "m_mmb40myp_kv53eyy",
+      "images": [],
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    },
+    {
+      "content": "那看看这个",
+      "createdAt": 1772572773175,
+      "id": "m_mmb42987_qw5zqxk",
+      "images": [
+        "E:\\eucli-project\\fast-window\\src-tauri\\target\\debug\\data\\ai-chat\\ref-images\\image-1772572773173.jpg"
+      ],
+      "role": "user"
+    },
+    {
+      "content": "这张图里的是《火影忍者》的**纲手（Tsunade）**：金发、额头中央的紫色菱形印记（阴封印/百豪之印）是她最明显的特征。  \n不过这张画面风格更像同人/二创。",
+      "createdAt": 1772572773175,
+      "id": "m_mmb42987_hwtmwx3",
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    }
+  ],
+  "title": "你好呀",
+  "updatedAt": 1772572782352
+}

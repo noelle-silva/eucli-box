@@ -1,0 +1,79 @@
+{
+  "branching": {
+    "activeBranchId": "main",
+    "branches": [
+      {
+        "createdAt": 1775745596298,
+        "forkFromMid": "",
+        "headMid": "m_mnrl2v7u_i52hyd9",
+        "id": "main",
+        "name": "主线",
+        "updatedAt": 1778776529011
+      }
+    ],
+    "schemaVersion": 1
+  },
+  "createdAt": 1775745596298,
+  "id": "gc_mnrl2v7u_41sqy38",
+  "messages": [
+    {
+      "attachments": [],
+      "branchId": "main",
+      "content": "你们两个晚上好呀",
+      "createdAt": 1775745596298,
+      "groupId": "",
+      "groupParentMid": "",
+      "groupRole": "",
+      "id": "m_mnrl2v7u_ndwep0i",
+      "images": [],
+      "modelRef": null,
+      "parentMid": "",
+      "pending": false,
+      "role": "user",
+      "speakerRoleId": "",
+      "streaming": false
+    },
+    {
+      "attachments": [],
+      "branchId": "main",
+      "content": "（已停止）",
+      "createdAt": 1775745596298,
+      "groupId": "",
+      "groupParentMid": "",
+      "groupRole": "",
+      "id": "m_mnrl2v7u_p2yjjq2",
+      "images": [],
+      "modelRef": {
+        "modelId": "gpt-5.4",
+        "providerId": "fengxiang"
+      },
+      "parentMid": "m_mnrl2v7u_ndwep0i",
+      "pending": false,
+      "role": "assistant",
+      "speakerRoleId": "r_mmdcfxso_pyueu49",
+      "streaming": false
+    },
+    {
+      "attachments": [],
+      "branchId": "main",
+      "content": "（已停止）",
+      "createdAt": 1775745596298,
+      "groupId": "",
+      "groupParentMid": "",
+      "groupRole": "",
+      "id": "m_mnrl2v7u_i52hyd9",
+      "images": [],
+      "modelRef": {
+        "modelId": "gpt-5.4",
+        "providerId": "fengxiang"
+      },
+      "parentMid": "m_mnrl2v7u_p2yjjq2",
+      "pending": false,
+      "role": "assistant",
+      "speakerRoleId": "r_mm3ky6v6_sziaozj",
+      "streaming": false
+    }
+  ],
+  "title": "你们两个晚上好呀",
+  "updatedAt": 1778776529011
+}

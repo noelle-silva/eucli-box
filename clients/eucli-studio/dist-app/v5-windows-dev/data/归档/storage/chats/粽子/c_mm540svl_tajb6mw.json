@@ -1,0 +1,64 @@
+{
+  "createdAt": 1772209908273,
+  "id": "c_mm540svl_tajb6mw",
+  "messages": [
+    {
+      "content": "你好你是谁？",
+      "createdAt": 1772209912476,
+      "id": "m_mm540w4c_ru0392e",
+      "images": [],
+      "pending": false,
+      "role": "user",
+      "streaming": false
+    },
+    {
+      "content": "我是粽子，一个严谨、简洁的 AI 助手。你想让我帮你做什么？",
+      "createdAt": 1772209912476,
+      "id": "m_mm540w4c_o3ucqly",
+      "images": [],
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    },
+    {
+      "content": "看看这双鞋子",
+      "createdAt": 1772209932901,
+      "id": "m_mm541bvp_l54hu4r",
+      "images": [
+        "E:\\eucli-project\\fast-window\\src-tauri\\target\\debug\\data\\ai-chat\\ref-images\\ref-image-1772209932900.jpg"
+      ],
+      "pending": false,
+      "role": "user",
+      "streaming": false
+    },
+    {
+      "content": "我看到了：这是一双**透明PVC两带一脚蹬高跟凉拖**，颜色偏**裸色/米杏色**鞋垫，**透明粗跟（方跟/酒杯感）**，整体风格偏简洁、显腿长。\n\n**特点**\n- 两条透明宽带：视觉轻、显脚背和脚踝。\n- 一脚蹬（mule）：穿脱方便，但稳定性一般。\n- 透明粗跟：比细跟更稳，适合通勤/聚会。\n\n**可能的优缺点**\n- 优：百搭、显腿长、上脚清爽；粗跟相对好走。\n- 缺：PVC 可能**闷、出汗打滑、磨脚/勒脚**；脚宽或脚背高可能更紧；走久了脚前掌可能累。\n\n**搭配建议**\n- 牛仔裤、阔腿裤、缎面裙、连衣裙都很合适；更适合春夏、室内/短时外出。\n\n你想让我帮你判断：**值不值得买、适合什么场合、还是怎么选尺码/防磨脚**？如果告诉我你的脚型（脚宽/脚背高、平时码数）和预计穿的场景，我可以更具体。",
+      "createdAt": 1772209932901,
+      "id": "m_mm541bvp_3vlwgo6",
+      "images": [],
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    },
+    {
+      "content": "适合什么场合？",
+      "createdAt": 1772209956901,
+      "id": "m_mm541ued_zti5wue",
+      "images": [],
+      "pending": false,
+      "role": "user",
+      "streaming": false
+    },
+    {
+      "content": "这双透明两带粗跟凉拖更适合**“干净、偏正式但不严肃”的场合**，重点是：好看、显腿长，但**不太适合长时间走路或户外复杂路面**。\n\n**适合的场合**\n- **约会/聚餐/酒吧小酌**：搭裙子或牛仔裤都很出效果。\n- **婚礼/宴会/伴娘（非户外草地）**：透明+裸色很不抢戏、又精致。\n- **通勤/办公室（着装不太严的公司）**：配西装裤、衬衫裙、针织裙。\n- **拍照/旅行城市打卡（短时）**：上镜、显腿直。\n\n**不太适合的场合**\n- **需要走很多路**：一脚蹬+PVC容易滑/磨，前掌也更累。\n- **户外粗糙地面/雨天**：透明跟容易刮花；雨天可能打滑、脚也会闷。\n- **草地/沙地**：跟容易陷，且走路不稳。\n- **非常正式的商务会议**：更建议包头或皮质高跟更稳重。\n\n如果你说下你主要想穿去哪里（比如婚礼、上班、约会），我可以给你更具体的搭配和是否建议入手。",
+      "createdAt": 1772209956901,
+      "id": "m_mm541ued_6vm4bgw",
+      "images": [],
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    }
+  ],
+  "title": "你好你是谁？",
+  "updatedAt": 1772209965625
+}

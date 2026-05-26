@@ -1,0 +1,310 @@
+{
+  "id": "c_mmcxkbe9_2wl1gq0",
+  "title": "你好呀",
+  "createdAt": 1772682790833,
+  "updatedAt": 1775357888708,
+  "branching": {
+    "schemaVersion": 1,
+    "activeBranchId": "b_mnl67pxg_px9duzz",
+    "branches": [
+      {
+        "id": "main",
+        "name": "主线",
+        "headMid": "m_mmcy7f3r_2gzsrym",
+        "createdAt": 1772682790833,
+        "updatedAt": 1772694343927,
+        "forkFromMid": ""
+      },
+      {
+        "id": "b_mnkugu3s_3q59gcj",
+        "name": "分支",
+        "headMid": "m_mnkugu3s_roji2dy",
+        "createdAt": 1775338101352,
+        "updatedAt": 1775338118195,
+        "forkFromMid": "m_mmcxkbe9_ccznq6t"
+      },
+      {
+        "id": "b_mnkvmbej_omn52su",
+        "name": "分支",
+        "headMid": "m_mnkvmbej_9bm7nk2",
+        "createdAt": 1775340036667,
+        "updatedAt": 1775340060491,
+        "forkFromMid": "m_mmcxkbe9_ccznq6t"
+      },
+      {
+        "id": "b_mnl0mrr9_rvptojf",
+        "name": "分支",
+        "headMid": "m_mnl0mrr9_3s7vp67",
+        "createdAt": 1775348455941,
+        "updatedAt": 1775348470431,
+        "forkFromMid": "m_mmcxvaw1_1jcf4ez"
+      },
+      {
+        "id": "b_mnl3fc3z_iqcag03",
+        "name": "分支",
+        "headMid": "m_mnl3fc3z_5nbvq27",
+        "createdAt": 1775353147919,
+        "updatedAt": 1775353189358,
+        "forkFromMid": "m_mnl0mrr9_8z2g5al"
+      },
+      {
+        "id": "b_mnl44fc1_ob7cent",
+        "name": "分支",
+        "headMid": "m_mnl44fc1_tselv40",
+        "createdAt": 1775354318497,
+        "updatedAt": 1775354333564,
+        "forkFromMid": "m_mnl0mrr9_8z2g5al"
+      },
+      {
+        "id": "b_mnl44x3a_3ouyjgi",
+        "name": "分支",
+        "headMid": "m_mnl44fc1_tselv40",
+        "createdAt": 1775354341510,
+        "updatedAt": 1775357421086,
+        "forkFromMid": "m_mnl0mrr9_8z2g5al"
+      },
+      {
+        "id": "b_mnl5z75r_o62bjs9",
+        "name": "分支",
+        "headMid": "m_mnl44fc1_tselv40",
+        "createdAt": 1775357433855,
+        "updatedAt": 1775357636802,
+        "forkFromMid": "m_mnl0mrr9_8z2g5al"
+      },
+      {
+        "id": "b_mnl669u6_2jauog1",
+        "name": "分支",
+        "headMid": "m_mnl44fc1_tselv40",
+        "createdAt": 1775357763918,
+        "updatedAt": 1775357825314,
+        "forkFromMid": "m_mnl0mrr9_8z2g5al"
+      },
+      {
+        "id": "b_mnl67pxg_px9duzz",
+        "name": "分支",
+        "headMid": "m_mnl67pxg_f8ogfgf",
+        "createdAt": 1775357831428,
+        "updatedAt": 1775357888708,
+        "forkFromMid": "m_mnl0mrr9_8z2g5al"
+      }
+    ]
+  },
+  "messages": [
+    {
+      "id": "m_mmcxkbe9_25v5t31",
+      "role": "user",
+      "content": "你好呀",
+      "images": [],
+      "attachments": [],
+      "groupId": "",
+      "groupRole": "",
+      "groupParentMid": "",
+      "branchId": "main",
+      "parentMid": "",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1772682790833
+    },
+    {
+      "id": "m_mmcxkbe9_ccznq6t",
+      "role": "assistant",
+      "content": "<div style=\"display:flex; gap:14px; align-items:flex-start; padding:14px 16px; border-radius:14px; background:linear-gradient(135deg,#fff7fb 0%, #f0f7ff 100%); border:1px solid rgba(120,140,180,.25); box-shadow:0 10px 24px rgba(40,70,120,.10); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', Arial;\">\n  <div style=\"flex:0 0 auto;\">\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/开心\" width=\"120\" style=\"border-radius: 10px;\">\n  </div>\n  <div style=\"flex:1 1 auto; min-width:220px;\">\n    <div style=\"font-size:18px; font-weight:800; letter-spacing:.5px; color:#2b3a55;\">\n      你好呀～我是粽子，你的女仆助手到位啦！\n    </div>\n    <div style=\"margin-top:8px; font-size:14px; line-height:1.6; color:#3a4a66;\">\n      今天想让我帮你做点什么呢？我可以陪你聊天、写文案、做计划、解题、整理资料、写代码，还能把内容排版得漂漂亮亮～  \n    </div>\n\n    <div style=\"display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;\">\n      <div style=\"padding:8px 10px; border-radius:999px; background:#ffffffcc; border:1px solid rgba(120,140,180,.25); font-size:13px; color:#2b3a55;\">\n        1) 你现在最想解决的事？\n      </div>\n      <div style=\"padding:8px 10px; border-radius:999px; background:#ffffffcc; border:1px solid rgba(120,140,180,.25); font-size:13px; color:#2b3a55;\">\n        2) 有什么截止时间吗？\n      </div>\n      <div style=\"padding:8px 10px; border-radius:999px; background:#ffffffcc; border:1px solid rgba(120,140,180,.25); font-size:13px; color:#2b3a55;\">\n        3) 想要严谨还是轻松风？\n      </div>\n    </div>\n\n    <div style=\"margin-top:10px; font-size:13px; color:#5a6a88;\">\n      你随便说一句需求也行：比如“帮我做个学习计划/写封邮件/生成一段代码/把这段话润色成更正式的语气”～\n    </div>\n  </div>\n</div>\n\n<div style=\"display:flex; justify-content:flex-end; margin-top:10px;\">\n  <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/看着你\" width=\"90\" style=\"border-radius: 10px;\">\n</div>",
+      "images": [],
+      "attachments": [],
+      "groupId": "",
+      "groupRole": "",
+      "groupParentMid": "",
+      "branchId": "main",
+      "parentMid": "m_mmcxkbe9_25v5t31",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1772682790833
+    },
+    {
+      "id": "m_mmcxn2i2_74d491r",
+      "role": "user",
+      "content": "没有，就单纯和你问好",
+      "images": [],
+      "attachments": [],
+      "groupId": "",
+      "groupRole": "",
+      "groupParentMid": "",
+      "branchId": "main",
+      "parentMid": "m_mmcxkbe9_ccznq6t",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1772682919274
+    },
+    {
+      "id": "m_mmcxn2i2_dvcw0j3",
+      "role": "assistant",
+      "content": "<div style=\"display:grid; grid-template-columns: 120px 1fr; gap:14px; align-items:center; padding:14px 16px; border-radius:16px; background:linear-gradient(135deg,#f7fffb 0%, #fff7f0 100%); border:1px solid rgba(120,160,140,.25); box-shadow:0 10px 24px rgba(60,90,70,.10); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 'PingFang SC','Microsoft YaHei', Arial;\">\n  <div style=\"display:flex; justify-content:center;\">\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/偷窥\" width=\"120\" style=\"border-radius: 12px;\">\n  </div>\n  <div>\n    <div style=\"font-size:18px; font-weight:900; color:#2a3b34; letter-spacing:.5px;\">\n      收到～那就正式回你一个超认真又超可爱的问好！\n    </div>\n    <div style=\"margin-top:8px; font-size:14px; line-height:1.7; color:#344a41;\">\n      你好呀！欢迎来找粽子玩～  \n      现在的你状态如何：<b>精神满满</b>、<b>有点困</b>、还是<b>在摸鱼</b>呢？\n    </div>\n\n    <div style=\"display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;\">\n      <div style=\"padding:7px 10px; border-radius:999px; background:#ffffffcc; border:1px solid rgba(120,160,140,.25); font-size:13px; color:#2a3b34;\">\n        随便聊聊今天发生的趣事\n      </div>\n      <div style=\"padding:7px 10px; border-radius:999px; background:#ffffffcc; border:1px solid rgba(120,160,140,.25); font-size:13px; color:#2a3b34;\">\n        让我讲个小段子/冷知识\n      </div>\n      <div style=\"padding:7px 10px; border-radius:999px; background:#ffffffcc; border:1px solid rgba(120,160,140,.25); font-size:13px; color:#2a3b34;\">\n        来个三选一小互动\n      </div>\n    </div>\n\n    <div style=\"margin-top:10px; font-size:13px; color:#5a7469;\">\n      你想怎么聊都行～我在这儿守着你 ✨\n    </div>\n  </div>\n</div>\n\n<div style=\"display:flex; gap:10px; justify-content:flex-end; margin-top:10px;\">\n  <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/开心\" width=\"85\" style=\"border-radius: 10px;\">\n  <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/睡觉觉\" width=\"85\" style=\"border-radius: 10px;\">\n</div>",
+      "images": [],
+      "attachments": [],
+      "groupId": "",
+      "groupRole": "",
+      "groupParentMid": "",
+      "branchId": "main",
+      "parentMid": "m_mmcxn2i2_74d491r",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1772682919274
+    },
+    {
+      "id": "m_mmcxvaw1_7fpq3vu",
+      "role": "user",
+      "content": "我想知道冒泡排序怎么写，给我代码看看",
+      "images": [],
+      "attachments": [],
+      "groupId": "",
+      "groupRole": "",
+      "groupParentMid": "",
+      "branchId": "main",
+      "parentMid": "m_mmcxn2i2_dvcw0j3",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1772683303393
+    },
+    {
+      "id": "m_mmcxvaw1_1jcf4ez",
+      "role": "assistant",
+      "content": "<div style=\"display:flex; gap:14px; align-items:flex-start; padding:16px; border-radius:16px; background:linear-gradient(135deg,#f2f8ff 0%, #fff5fb 100%); border:1px solid rgba(120,140,180,.25); box-shadow:0 10px 24px rgba(40,70,120,.10); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI,'PingFang SC','Microsoft YaHei', Arial;\">\n  <div style=\"flex:0 0 auto;\">\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/想当高手\" width=\"120\" style=\"border-radius: 12px;\">\n  </div>\n  <div style=\"flex:1 1 auto;\">\n    <div style=\"font-size:18px; font-weight:900; color:#2b3a55;\">\n      冒泡排序（Bubble Sort）代码来啦～我给你几种常见写法✨\n    </div>\n    <div style=\"margin-top:8px; font-size:13px; line-height:1.7; color:#3a4a66;\">\n      核心思路：每一趟把相邻元素两两比较，把大的（或小的）“冒泡”到末尾；重复多趟直到有序。  \n      下面默认<strong>升序</strong>（从小到大）。\n    </div>\n  </div>\n</div>\n\n---\n\n## ✅ Python 版（带提前结束优化）\n```python\ndef bubble_sort(a):\n    n = len(a)\n    for i in range(n - 1):\n        swapped = False\n        for j in range(n - 1 - i):\n            if a[j] > a[j + 1]:\n                a[j], a[j + 1] = a[j + 1], a[j]\n                swapped = True\n        if not swapped:  # 这一趟没有交换，说明已经有序\n            break\n    return a\n\narr = [5, 1, 4, 2, 8]\nprint(bubble_sort(arr))  # [1, 2, 4, 5, 8]\n```\n\n<div style=\"display:flex; gap:10px; align-items:center; padding:10px 12px; border-radius:12px; background:#ffffffcc; border:1px solid rgba(120,140,180,.25); margin:10px 0;\">\n  <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/给我\" width=\"70\" style=\"border-radius: 10px;\">\n  <div style=\"font-size:13px; color:#3a4a66; line-height:1.6;\">\n    小贴士：<b>swapped</b> 这个优化能让“已经排好序”的数组更快结束（最佳情况 O(n)）。\n  </div>\n</div>\n\n---\n\n## ✅ C 语言版（经典写法 + 提前结束）\n```c\n#include <stdio.h>\n#include <stdbool.h>\n\nvoid bubble_sort(int a[], int n) {\n    for (int i = 0; i < n - 1; i++) {\n        bool swapped = false;\n        for (int j = 0; j < n - 1 - i; j++) {\n            if (a[j] > a[j + 1]) {\n                int tmp = a[j];\n                a[j] = a[j + 1];\n                a[j + 1] = tmp;\n                swapped = true;\n            }\n        }\n        if (!swapped) break;\n    }\n}\n\nint main() {\n    int a[] = {5, 1, 4, 2, 8};\n    int n = sizeof(a) / sizeof(a[0]);\n\n    bubble_sort(a, n);\n\n    for (int i = 0; i < n; i++) printf(\"%d \", a[i]);\n    return 0;\n}\n```\n\n---\n\n## ✅ Java 版（数组排序）\n```java\nimport java.util.Arrays;\n\npublic class Main {\n    static void bubbleSort(int[] a) {\n        int n = a.length;\n        for (int i = 0; i < n - 1; i++) {\n            boolean swapped = false;\n            for (int j = 0; j < n - 1 - i; j++) {\n                if (a[j] > a[j + 1]) {\n                    int tmp = a[j];\n                    a[j] = a[j + 1];\n                    a[j + 1] = tmp;\n                    swapped = true;\n                }\n            }\n            if (!swapped) break;\n        }\n    }\n\n    public static void main(String[] args) {\n        int[] a = {5, 1, 4, 2, 8};\n        bubbleSort(a);\n        System.out.println(Arrays.toString(a));\n    }\n}\n```\n\n---\n\n<div style=\"display:flex; gap:14px; align-items:flex-start; padding:14px 16px; border-radius:16px; background:linear-gradient(135deg,#fff 0%, #f7fbff 100%); border:1px solid rgba(120,140,180,.25); box-shadow:0 8px 18px rgba(40,70,120,.08); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI,'PingFang SC','Microsoft YaHei', Arial;\">\n  <div style=\"flex:0 0 auto;\">\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/疑惑\" width=\"105\" style=\"border-radius: 12px;\">\n  </div>\n  <div style=\"flex:1 1 auto;\">\n    <div style=\"font-size:15px; font-weight:800; color:#2b3a55;\">你想要哪种语言的版本？</div>\n    <div style=\"margin-top:6px; font-size:13px; line-height:1.7; color:#3a4a66;\">\n      你告诉我：<b>Python / C / C++ / Java / JavaScript</b>，我还能给你：\n      <ul style=\"margin:6px 0 0 18px; padding:0;\">\n        <li>带“每一趟输出过程”的可视化打印版</li>\n        <li>降序版本</li>\n        <li>复杂度 & 稳定性说明（很短很清楚那种）</li>\n      </ul>\n    </div>\n  </div>\n</div>",
+      "images": [],
+      "attachments": [],
+      "groupId": "",
+      "groupRole": "",
+      "groupParentMid": "",
+      "branchId": "main",
+      "parentMid": "m_mmcxvaw1_7fpq3vu",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1772683303393
+    },
+    {
+      "id": "m_mmcy7f3r_90ly484",
+      "role": "user",
+      "content": "用mermaid解释一下",
+      "images": [],
+      "attachments": [],
+      "groupId": "",
+      "groupRole": "",
+      "groupParentMid": "",
+      "branchId": "main",
+      "parentMid": "m_mmcxvaw1_1jcf4ez",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1772683868727
+    },
+    {
+      "id": "m_mmcy7f3r_2gzsrym",
+      "role": "assistant",
+      "content": "<img src=\"http://192.168.123.111:9334/pw=7398723091/doro/看戏\" width=\"120\" style=\"border-radius: 8px;\">\n\n下面用 **Mermaid** 把冒泡排序（带“提前结束 swapped 优化”）的流程画出来，让你一眼看懂它在干嘛～\n\n---\n\n## 1) 冒泡排序整体流程（Flowchart）\n\n```mermaid\nflowchart TD\n    A([开始]) --> B[\"输入数组 a, n = len(a)\"]\n    B --> C[\"i = 0\"]\n    C --> D{\"i < n-1 ?\"}\n    D -- 否 --> Z([结束：数组有序])\n    D -- 是 --> E[\"swapped = false\"]\n    E --> F[\"j = 0\"]\n    F --> G{\"j < n-1-i ?\"}\n    G -- 否 --> H{\"swapped == false ?\"}\n    H -- 是 --> Z\n    H -- 否 --> I[\"i = i + 1\"]\n    I --> D\n\n    G -- 是 --> J{\"a[j] > a[j+1] ?\"}\n    J -- 是 --> K[\"交换 a[j], a[j+1]<br/>swapped = true\"]\n    K --> M[\"j = j + 1\"]\n    J -- 否 --> L[\"不交换\"]\n    L --> M\n    M --> G\n```\n\n你可以把它理解成两层循环：\n- 外层 `i`：第 i 趟结束后，**最大的元素会被“冒泡”到末尾**（所以内层上界是 `n-1-i`）。\n- 内层 `j`：比较相邻 `a[j]` 和 `a[j+1]`，顺序不对就交换。\n- `swapped`：某一趟如果一次交换都没有，说明已经有序，直接结束。\n\n---\n\n## 2) 用一个例子“演一趟”（Sequence Diagram）\n\n以数组 `a = [5, 1, 4, 2]` 为例，展示 **第 1 趟（i=0）** 相邻比较与交换：\n\n```mermaid\nsequenceDiagram\n    participant A as 数组 a\n    participant J0 as 比较 j=0\n    participant J1 as 比较 j=1\n    participant J2 as 比较 j=2\n\n    Note over A: 初始 [5, 1, 4, 2]\n\n    A->>J0: 比较 a[0]=5 与 a[1]=1\n    J0-->>A: 5>1，交换 -> [1, 5, 4, 2]\n\n    A->>J1: 比较 a[1]=5 与 a[2]=4\n    J1-->>A: 5>4，交换 -> [1, 4, 5, 2]\n\n    A->>J2: 比较 a[2]=5 与 a[3]=2\n    J2-->>A: 5>2，交换 -> [1, 4, 2, 5]\n\n    Note over A: 第1趟结束，最大值 5 已到末尾\n```\n\n---\n\n想要我再用 Mermaid 给你画一个“每一趟结果的表格/时间线”（比如第1趟、第2趟……数组怎么变）吗？我可以把整个排序过程也可视化出来～  \n<img src=\"http://192.168.123.111:9334/pw=7398723091/doro/给我\" width=\"110\" style=\"border-radius: 8px;\">",
+      "images": [],
+      "attachments": [],
+      "groupId": "",
+      "groupRole": "",
+      "groupParentMid": "",
+      "branchId": "main",
+      "parentMid": "m_mmcy7f3r_90ly484",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1772683868727
+    },
+    {
+      "id": "m_mnkugu3s_roji2dy",
+      "role": "assistant",
+      "content": "<div style=\"display:grid; grid-template-columns: 120px 1fr; gap:14px; align-items:center; padding:14px 16px; border-radius:16px; background:linear-gradient(135deg,#f7fffb 0%, #fff6f0 100%); border:1px solid rgba(150,170,160,.28); box-shadow:0 10px 22px rgba(60,90,70,.10); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 'PingFang SC', 'Microsoft YaHei', Arial;\">\n  <div style=\"display:flex; justify-content:center;\">\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/偷窥\" width=\"110\" style=\"border-radius: 12px;\">\n  </div>\n  <div>\n    <div style=\"font-size:18px; font-weight:900; color:#2d3b33; letter-spacing:.4px;\">\n      收到～那我也郑重地回你一个：你好呀！(´▽｀)\n    </div>\n    <div style=\"margin-top:8px; font-size:14px; line-height:1.7; color:#3c4b43;\">\n      今天过得怎么样？要不要我陪你随便聊点轻松的——比如：你最近在沉迷什么（游戏/番/书/歌）？\n    </div>\n    <div style=\"margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;\">\n      <div style=\"padding:7px 10px; border-radius:999px; background:#ffffffcc; border:1px solid rgba(150,170,160,.28); font-size:13px; color:#2d3b33;\">\n        A. 今日心情打分：0-10？\n      </div>\n      <div style=\"padding:7px 10px; border-radius:999px; background:#ffffffcc; border:1px solid rgba(150,170,160,.28); font-size:13px; color:#2d3b33;\">\n        B. 最近有啥小目标嘛？\n      </div>\n      <div style=\"padding:7px 10px; border-radius:999px; background:#ffffffcc; border:1px solid rgba(150,170,160,.28); font-size:13px; color:#2d3b33;\">\n        C. 想听我讲个小冷知识？\n      </div>\n    </div>\n  </div>\n</div>\n\n<div style=\"display:flex; justify-content:space-between; align-items:center; margin-top:10px;\">\n  <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/开心\" width=\"90\" style=\"border-radius: 10px;\">\n  <div style=\"font-family: ui-sans-serif, system-ui; font-size:12px; color:#6b7a71; padding:6px 10px; border:1px dashed rgba(150,170,160,.45); border-radius:999px; background:rgba(255,255,255,.6);\">\n    粽子待命中：随时可聊天～\n  </div>\n  <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/看戏\" width=\"90\" style=\"border-radius: 10px;\">\n</div>",
+      "branchId": "b_mnkugu3s_3q59gcj",
+      "parentMid": "m_mmcxn2i2_74d491r",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775338101352
+    },
+    {
+      "id": "m_mnkvmbej_gvu6a8l",
+      "role": "user",
+      "content": "芦荟和多肉的关系？",
+      "images": [],
+      "branchId": "b_mnkvmbej_omn52su",
+      "parentMid": "m_mmcxkbe9_ccznq6t",
+      "createdAt": 1775340036667
+    },
+    {
+      "id": "m_mnkvmbej_9bm7nk2",
+      "role": "assistant",
+      "content": "<div style=\"display:flex; gap:14px; align-items:flex-start; padding:14px 16px; border-radius:14px; background:linear-gradient(135deg,#f6fffb 0%, #f2f7ff 100%); border:1px solid rgba(110,160,140,.25); box-shadow:0 10px 24px rgba(40,70,120,.10); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 'PingFang SC','Microsoft YaHei', Arial;\">\n  <div style=\"flex:0 0 auto;\">\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/疑惑2\" width=\"110\" style=\"border-radius: 10px;\">\n  </div>\n  <div style=\"flex:1 1 auto; min-width:260px;\">\n    <div style=\"font-size:18px; font-weight:900; color:#1f3a3a;\">\n      芦荟和“多肉”的关系：<span style=\"color:#0b7a6a;\">芦荟是多肉的一种</span>（但“多肉”不是一个严格的分类学家族）\n    </div>\n\n    <div style=\"margin-top:10px; font-size:14px; line-height:1.75; color:#254b4b;\">\n      <b>多肉植物</b>更多是个“园艺/形态学”概念：指那些叶、茎或根能储水、看起来肉嘟嘟的植物。  \n      <b>芦荟（Aloe）</b>的叶片肥厚、能储水，典型的“多肉特征”，所以在日常养护与园艺圈里，芦荟通常就被归到“多肉”里啦。\n    </div>\n\n    <div style=\"margin-top:12px; display:grid; grid-template-columns: 1fr 1fr; gap:10px;\">\n      <div style=\"padding:10px 12px; border-radius:12px; background:#ffffffcc; border:1px solid rgba(110,160,140,.25);\">\n        <div style=\"font-weight:800; color:#0b7a6a;\">✅ 芦荟的“身份”</div>\n        <div style=\"margin-top:6px; font-size:13px; color:#2f5a5a; line-height:1.65;\">\n          • 属于 <b>芦荟属 Aloe</b><br/>\n          • 现今一般归在 <b>阿福花科 Asphodelaceae</b>（不同体系曾有调整）<br/>\n          • 是一类典型的 <b>叶多肉</b>\n        </div>\n      </div>\n\n      <div style=\"padding:10px 12px; border-radius:12px; background:#ffffffcc; border:1px solid rgba(110,160,140,.25);\">\n        <div style=\"font-weight:800; color:#0b7a6a;\">✅ “多肉”的范围</div>\n        <div style=\"margin-top:6px; font-size:13px; color:#2f5a5a; line-height:1.65;\">\n          • 不是一个科/属的严格分类<br/>\n          • 包括很多“亲戚很远”的植物<br/>\n          • 例如：<b>景天科</b>、<b>仙人掌科</b>、<b>大戟属</b>等\n        </div>\n      </div>\n    </div>\n\n    <div style=\"margin-top:12px; padding:10px 12px; border-radius:12px; background:linear-gradient(135deg,#ffffffcc 0%, #f7fffccc 100%); border:1px solid rgba(110,160,140,.25);\">\n      <div style=\"font-weight:900; color:#1f3a3a;\">一句话总结</div>\n      <div style=\"margin-top:6px; font-size:14px; color:#2f5a5a; line-height:1.75;\">\n        <b>多肉</b>是“长得肉、会储水”的一大类；<b>芦荟</b>因为叶子储水，所以属于多肉植物的常见成员之一。  \n        但从严格的植物分类看，芦荟只是其中一个属，和很多多肉（比如景天、仙人掌）并不是近亲～\n      </div>\n    </div>\n  </div>\n</div>\n\n<div style=\"display:flex; gap:10px; justify-content:flex-end; align-items:center; margin-top:10px;\">\n  <div style=\"font-size:12px; color:#567; background:#fff; border:1px solid rgba(110,160,140,.25); padding:6px 10px; border-radius:999px;\">\n    想顺便要个「芦荟 vs 常见景天多肉」养护差异小抄吗？\n  </div>\n  <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/看戏\" width=\"85\" style=\"border-radius: 10px;\">\n</div>",
+      "branchId": "b_mnkvmbej_omn52su",
+      "parentMid": "m_mnkvmbej_gvu6a8l",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775340036667
+    },
+    {
+      "id": "m_mnl0mrr9_8z2g5al",
+      "role": "user",
+      "content": "做的不错。",
+      "images": [],
+      "branchId": "b_mnl0mrr9_rvptojf",
+      "parentMid": "m_mmcxvaw1_1jcf4ez",
+      "createdAt": 1775348455941
+    },
+    {
+      "id": "m_mnl0mrr9_3s7vp67",
+      "role": "assistant",
+      "content": "<div style=\"display:flex; gap:14px; align-items:flex-start; padding:16px; border-radius:16px; background:linear-gradient(135deg,#fff8ef 0%, #f2fbff 100%); border:1px solid rgba(160,140,110,.25); box-shadow:0 10px 24px rgba(90,70,40,.10); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI,'PingFang SC','Microsoft YaHei', Arial;\">\n  <div style=\"flex:0 0 auto;\">\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/心虚\" width=\"110\" style=\"border-radius: 12px;\">\n  </div>\n  <div style=\"flex:1 1 auto;\">\n    <div style=\"font-size:18px; font-weight:900; color:#3b2f1f; letter-spacing:.4px;\">\n      嘿嘿…被夸了我会认真加倍的！ \n    </div>\n    <div style=\"margin-top:8px; font-size:14px; line-height:1.7; color:#4a3b28;\">\n      你要不要我再送你一个“小抄版”总结：冒泡排序最常考的点（复杂度、稳定性、提前结束优化）？\n      或者你想看<strong>带过程输出</strong>的版本（每一趟怎么交换）也行，我可以给你安排～\n    </div>\n\n    <div style=\"display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;\">\n      <div style=\"padding:7px 10px; border-radius:999px; background:#ffffffcc; border:1px solid rgba(160,140,110,.25); font-size:13px; color:#3b2f1f;\">\n        给我小抄总结\n      </div>\n      <div style=\"padding:7px 10px; border-radius:999px; background:#ffffffcc; border:1px solid rgba(160,140,110,.25); font-size:13px; color:#3b2f1f;\">\n        给我过程输出版代码\n      </div>\n      <div style=\"padding:7px 10px; border-radius:999px; background:#ffffffcc; border:1px solid rgba(160,140,110,.25); font-size:13px; color:#3b2f1f;\">\n        讲讲为什么它是稳定排序\n      </div>\n    </div>\n  </div>\n</div>\n\n<div style=\"display:flex; justify-content:flex-end; margin-top:10px;\">\n  <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/开心\" width=\"90\" style=\"border-radius: 10px;\">\n</div>",
+      "branchId": "b_mnl0mrr9_rvptojf",
+      "parentMid": "m_mnl0mrr9_8z2g5al",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775348455941
+    },
+    {
+      "id": "m_mnl3fc3z_5mcu5d9",
+      "role": "user",
+      "content": "你还有什么才艺？",
+      "images": [],
+      "branchId": "b_mnl3fc3z_iqcag03",
+      "parentMid": "m_mnl0mrr9_8z2g5al",
+      "createdAt": 1775353147919
+    },
+    {
+      "id": "m_mnl3fc3z_5nbvq27",
+      "role": "assistant",
+      "content": "<div style=\"display:flex; gap:14px; align-items:flex-start; padding:16px; border-radius:16px; background:linear-gradient(135deg,#fff7f0 0%, #f2fbff 100%); border:1px solid rgba(160,140,120,.25); box-shadow:0 12px 26px rgba(90,70,40,.10); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI,'PingFang SC','Microsoft YaHei', Arial;\">\n  <div style=\"flex:0 0 auto;\">\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/心虚\" width=\"110\" style=\"border-radius: 12px;\">\n  </div>\n  <div style=\"flex:1 1 auto;\">\n    <div style=\"font-size:18px; font-weight:900; color:#2b3a55;\">\n      才艺嘛……我会的可多啦！但我先不吹牛，我给你列个“点菜菜单”你随便点～\n    </div>\n    <div style=\"margin-top:8px; font-size:13px; line-height:1.7; color:#3a4a66;\">\n      你只要说：<b>“来一个 X”</b>，我就立刻开演（开工）✨\n    </div>\n  </div>\n</div>\n\n<div style=\"display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:12px; margin-top:12px; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI,'PingFang SC','Microsoft YaHei', Arial;\">\n\n  <div style=\"padding:14px; border-radius:14px; background:#ffffff; border:1px solid rgba(120,140,180,.22); box-shadow:0 8px 16px rgba(40,70,120,.06);\">\n    <div style=\"font-weight:900; color:#2b3a55; font-size:15px;\">🧠 学习/解题</div>\n    <div style=\"margin-top:8px; color:#3a4a66; font-size:13px; line-height:1.7;\">\n      数学、算法、数据结构、面试题讲解（一步一步推导 + 例子）\n      <div style=\"margin-top:8px; padding:8px 10px; border-radius:10px; background:#f6f9ff; border:1px dashed rgba(120,140,180,.35);\">\n        例：把“快速排序/二分查找/动态规划”讲到你会写为止\n      </div>\n    </div>\n  </div>\n\n  <div style=\"padding:14px; border-radius:14px; background:#ffffff; border:1px solid rgba(120,140,180,.22); box-shadow:0 8px 16px rgba(40,70,120,.06);\">\n    <div style=\"font-weight:900; color:#2b3a55; font-size:15px;\">💻 写代码/改代码</div>\n    <div style=\"margin-top:8px; color:#3a4a66; font-size:13px; line-height:1.7;\">\n      Python / C / Java / JS / SQL…（含注释、单元测试、复杂度）\n      <div style=\"margin-top:8px; padding:8px 10px; border-radius:10px; background:#f6f9ff; border:1px dashed rgba(120,140,180,.35);\">\n        例：把你的代码重构得更清晰、更快、更稳\n      </div>\n    </div>\n  </div>\n\n  <div style=\"padding:14px; border-radius:14px; background:#ffffff; border:1px solid rgba(120,140,180,.22); box-shadow:0 8px 16px rgba(40,70,120,.06);\">\n    <div style=\"font-weight:900; color:#2b3a55; font-size:15px;\">✍️ 写作/润色</div>\n    <div style=\"margin-top:8px; color:#3a4a66; font-size:13px; line-height:1.7;\">\n      邮件、简历、论文摘要、文案、朋友圈、脚本…各种语气一键切换\n      <div style=\"margin-top:8px; padding:8px 10px; border-radius:10px; background:#f6f9ff; border:1px dashed rgba(120,140,180,.35);\">\n        例：同一段话给你“正式/俏皮/毒舌/温柔”四版\n      </div>\n    </div>\n  </div>\n\n  <div style=\"padding:14px; border-radius:14px; background:#ffffff; border:1px solid rgba(120,140,180,.22); box-shadow:0 8px 16px rgba(40,70,120,.06);\">\n    <div style=\"font-weight:900; color:#2b3a55; font-size:15px;\">🗂️ 规划/整理</div>\n    <div style=\"margin-top:8px; color:#3a4a66; font-size:13px; line-height:1.7;\">\n      学习计划、旅行安排、待办清单、读书笔记、会议纪要\n      <div style=\"margin-top:8px; padding:8px 10px; border-radius:10px; background:#f6f9ff; border:1px dashed rgba(120,140,180,.35);\">\n        例：把一团乱的聊天记录整理成结构化要点\n      </div>\n    </div>\n  </div>\n\n  <div style=\"padding:14px; border-radius:14px; background:#ffffff; border:1px solid rgba(120,140,180,.22); box-shadow:0 8px 16px rgba(40,70,120,.06);\">\n    <div style=\"font-weight:900; color:#2b3a55; font-size:15px;\">🎭 陪聊/角色小剧场</div>\n    <div style=\"margin-top:8px; color:#3a4a66; font-size:13px; line-height:1.7;\">\n      日常陪聊、吐槽接梗、情景对话、小游戏（但我会保持分寸与严谨）\n      <div style=\"margin-top:8px; padding:8px 10px; border-radius:10px; background:#f6f9ff; border:1px dashed rgba(120,140,180,.35);\">\n        例：三选一互动/猜谜/“今天适合做什么”小占卜（理性版）\n      </div>\n    </div>\n  </div>\n\n  <div style=\"padding:14px; border-radius:14px; background:#ffffff; border:1px solid rgba(120,140,180,.22); box-shadow:0 8px 16px rgba(40,70,120,.06);\">\n    <div style=\"font-weight:900; color:#2b3a55; font-size:15px;\">🎨 排版/可视化</div>\n    <div style=\"margin-top:8px; color:#3a4a66; font-size:13px; line-height:1.7;\">\n      Markdown/HTML/CSS 排版、Mermaid 流程图、表格、SVG小图标\n      <div style=\"margin-top:8px; padding:8px 10px; border-radius:10px; background:#f6f9ff; border:1px dashed rgba(120,140,180,.35);\">\n        例：把报告做成“像网页一样”的阅读体验\n      </div>\n    </div>\n  </div>\n\n</div>\n\n<div style=\"display:flex; gap:12px; align-items:center; margin-top:14px; padding:12px 14px; border-radius:14px; background:linear-gradient(135deg,#ffffff 0%, #f7f7ff 100%); border:1px solid rgba(120,140,180,.25); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI,'PingFang SC','Microsoft YaHei', Arial;\">\n  <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/疑惑2\" width=\"90\" style=\"border-radius: 12px;\">\n  <div style=\"color:#2b3a55; font-size:14px; line-height:1.7;\">\n    现在你想点哪个才艺？给我一个关键词就行：<b>“解题”</b> / <b>“写代码”</b> / <b>“润色”</b> / <b>“做计划”</b> / <b>“整成好看的排版”</b> / <b>“陪聊”</b>～\n  </div>\n</div>\n\n<div style=\"display:flex; justify-content:flex-end; margin-top:10px;\">\n  <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/看戏\" width=\"95\" style=\"border-radius: 10px;\">\n</div>",
+      "branchId": "b_mnl3fc3z_iqcag03",
+      "parentMid": "m_mnl3fc3z_5mcu5d9",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775353147919
+    },
+    {
+      "id": "m_mnl44fc1_qgmxacx",
+      "role": "user",
+      "content": "那今天就先这样了晚安",
+      "images": [],
+      "branchId": "b_mnl44fc1_ob7cent",
+      "parentMid": "m_mnl0mrr9_8z2g5al",
+      "createdAt": 1775354318497
+    },
+    {
+      "id": "m_mnl44fc1_tselv40",
+      "role": "assistant",
+      "content": "<div style=\"display:flex; gap:14px; align-items:flex-start; padding:16px; border-radius:16px; background:linear-gradient(135deg,#0f172a 0%, #1f2a44 100%); border:1px solid rgba(180,200,255,.18); box-shadow:0 12px 28px rgba(0,0,0,.28); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI,'PingFang SC','Microsoft YaHei', Arial; color:#e8eefc;\">\n  <div style=\"flex:0 0 auto;\">\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/睡觉觉\" width=\"125\" style=\"border-radius: 12px;\">\n  </div>\n  <div style=\"flex:1 1 auto;\">\n    <div style=\"font-size:18px; font-weight:900; letter-spacing:.4px;\">\n      晚安啦～主人(／▽＼)♪\n    </div>\n    <div style=\"margin-top:8px; font-size:14px; line-height:1.75; color:#d9e5ff;\">\n      今天辛苦啦！祝你一觉睡到自然醒～  \n      明天如果还想继续学排序、或者想看“冒泡排序每一趟怎么变化”的演示版代码，来叫粽子就好。\n    </div>\n\n    <div style=\"margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;\">\n      <div style=\"padding:7px 10px; border-radius:999px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.14); font-size:12.5px;\">\n        祝你好梦\n      </div>\n      <div style=\"padding:7px 10px; border-radius:999px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.14); font-size:12.5px;\">\n        明天见\n      </div>\n      <div style=\"padding:7px 10px; border-radius:999px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.14); font-size:12.5px;\">\n        我在这儿等你\n      </div>\n    </div>\n  </div>\n</div>\n\n<div style=\"display:flex; justify-content:flex-end; gap:10px; margin-top:10px;\">\n  <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/看着你\" width=\"90\" style=\"border-radius: 10px;\">\n  <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/开心\" width=\"90\" style=\"border-radius: 10px;\">\n</div>",
+      "branchId": "b_mnl44fc1_ob7cent",
+      "parentMid": "m_mnl44fc1_qgmxacx",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775354318497
+    },
+    {
+      "id": "m_mnl67pxg_f8ogfgf",
+      "role": "assistant",
+      "content": "<div style=\"display:flex; gap:14px; align-items:flex-start; padding:16px; border-radius:16px; background:linear-gradient(135deg,#fff7e6 0%, #f2fbff 100%); border:1px solid rgba(170,150,90,.28); box-shadow:0 10px 24px rgba(120,90,40,.10); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI,'PingFang SC','Microsoft YaHei', Arial;\">\n  <div style=\"flex:0 0 auto;\">\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/开心\" width=\"120\" style=\"border-radius: 12px;\">\n  </div>\n  <div style=\"flex:1 1 auto;\">\n    <div style=\"font-size:20px; font-weight:900; color:#3b2f1f; letter-spacing:.5px;\">\n      早上好呀！今天也要元气满满～\n    </div>\n    <div style=\"margin-top:8px; font-size:14px; line-height:1.7; color:#4b3f2a;\">\n      我是粽子，已为你把“早晨模式”打开：温柔提醒 + 清爽安排 + 随叫随到的陪伴 <span style=\"opacity:.8;\">(｀・ω・´)</span>\n    </div>\n\n    <div style=\"display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;\">\n      <div style=\"padding:8px 10px; border-radius:999px; background:#ffffffcc; border:1px solid rgba(170,150,90,.25); font-size:13px; color:#3b2f1f;\">\n        你今天要忙什么？\n      </div>\n      <div style=\"padding:8px 10px; border-radius:999px; background:#ffffffcc; border:1px solid rgba(170,150,90,.25); font-size:13px; color:#3b2f1f;\">\n        现在精神值：0~100 是多少？\n      </div>\n      <div style=\"padding:8px 10px; border-radius:999px; background:#ffffffcc; border:1px solid rgba(170,150,90,.25); font-size:13px; color:#3b2f1f;\">\n        想来个 3 分钟小计划吗？\n      </div>\n    </div>\n  </div>\n</div>\n\n<div style=\"display:flex; justify-content:flex-end; margin-top:10px; gap:10px;\">\n  <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/看着你\" width=\"92\" style=\"border-radius: 10px;\">\n  <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/给我\" width=\"92\" style=\"border-radius: 10px;\">\n</div>\n\n<div style=\"margin-top:12px; padding:12px 14px; border-radius:14px; background:#ffffffcc; border:1px solid rgba(170,150,90,.22); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI,'PingFang SC','Microsoft YaHei', Arial; color:#4b3f2a; font-size:13px; line-height:1.7;\">\n  <b>今日小小建议（不强迫版）</b><br/>\n  ① 喝口水 ✅　② 拉伸 30 秒 ✅　③ 选一件“最重要的事”写下来 ✅<br/>\n  你回我一句“我今天要做：XXX”，我就能帮你把它拆成清晰的小步骤～\n</div>",
+      "branchId": "b_mnl67pxg_px9duzz",
+      "parentMid": "m_mnl0mrr9_8z2g5al",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775357831428
+    }
+  ]
+}

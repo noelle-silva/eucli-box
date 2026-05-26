@@ -1,0 +1,16 @@
+{
+  "apiKey": "sk-xZNyeIov71B41nsNIsC8qkLAATQjeGdpZ8XvGHoQ9WBm0pNS",
+  "baseUrl": "https://api.ikuncode.cc/v1",
+  "id": "ikuncode",
+  "modelsCache": {
+    "fetchedAt": 1779258372993,
+    "items": [
+      "gemini-3-flash",
+      "gemini-3-flash-preview",
+      "gemini-3.1-pro-low",
+      "gemini-3.1-pro-preview",
+      "gemini-3.5-flash"
+    ]
+  },
+  "name": "ikuncode"
+}

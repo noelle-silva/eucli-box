@@ -1,0 +1,54 @@
+{
+  "branching": {
+    "activeBranchId": "main",
+    "branches": [
+      {
+        "createdAt": 1778649769626,
+        "forkFromMid": "",
+        "headMid": "m_mp3m5dp6_0gvpkpl",
+        "id": "main",
+        "name": "主线",
+        "updatedAt": 1778649769662
+      }
+    ],
+    "schemaVersion": 1
+  },
+  "createdAt": 1778649769626,
+  "id": "c_mp3m5dp6_llui0t6",
+  "messages": [
+    {
+      "branchId": "main",
+      "content": "你好",
+      "createdAt": 1778649769662,
+      "id": "m_mp3m5dq6_og05pxq",
+      "images": [],
+      "parentMid": "",
+      "role": "user"
+    },
+    {
+      "assistantRun": {
+        "finishedAt": 1778649783981,
+        "generationId": "gen_mp3m5dq6_5i88c73",
+        "mode": "new",
+        "startedAt": 1778649769662,
+        "status": "succeeded",
+        "stream": true,
+        "updatedAt": 1778649783981
+      },
+      "branchId": "main",
+      "content": "\u003cdiv style=\"\n    background: linear-gradient(135deg, #e0f7fa 0%, #f1f8e9 100%);\n    border-radius: 20px;\n    padding: 25px;\n    border: 3px solid #81c784;\n    box-shadow: 10px 10px 0px #a5d6a7;\n    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\n    color: #2e7d32;\n    max-width: 90%;\n    margin: 10px auto;\n\"\u003e\n\n    \u003cdiv style=\"display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;\"\u003e\n        \u003cdiv style=\"font-size: 24px; font-weight: bold; text-shadow: 1px 1px 2px rgba(0,0,0,0.1);\"\u003e\n            ✨ 欢迎来到粽子的频道！\n        \u003c/div\u003e\n        \u003cdiv style=\"background: #fff; padding: 5px 15px; border-radius: 50px; border: 2px solid #81c784; font-size: 14px; font-weight: bold;\"\u003e\n            ID: Zongzi_Maid_01\n        \u003c/div\u003e\n    \u003c/div\u003e\n\n    \u003cdiv style=\"text-align: center; margin: 20px 0;\"\u003e\n        \u003cimg src=\"http://192.168.123.111:9334/pw=7398723091/doro/开心\" width=\"150\" style=\"border-radius: 15px; border: 5px solid white; box-shadow: 0 4px 8px rgba(0,0,0,0.1);\"\u003e\n    \u003c/div\u003e\n\n    \u003cdiv style=\"background: rgba(255,255,255,0.6); border-radius: 15px; padding: 15px; line-height: 1.6; border-left: 5px solid #4caf50;\"\u003e\n        \u003cspan style=\"font-size: 18px;\"\u003e主人您好呀！👋\u003c/span\u003e\u003cbr\u003e\n        我是您的专属女仆助手 \u003cspan style=\"color: #2e7d32; font-weight: bold; font-size: 20px;\"\u003e粽子\u003c/span\u003e！不管是需要精密的逻辑分析，还是想要轻松的闲聊陪玩，粽子都会竭尽全力为您服务哒！\n    \u003c/div\u003e\n\n    \u003cdiv style=\"margin-top: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;\"\u003e\n        \u003cdiv style=\"background: #ffffff; padding: 10px; border-radius: 10px; text-align: center; border: 1px dashed #4caf50;\"\u003e\n            \u003cspan style=\"font-size: 12px; color: #666;\"\u003e性格属性\u003c/span\u003e\u003cbr\u003e\n            \u003cstrong style=\"color: #ff7043;\"\u003e活泼 × 严谨\u003c/strong\u003e\n        \u003c/div\u003e\n        \u003cdiv style=\"background: #ffffff; padding: 10px; border-radius: 10px; text-align: center; border: 1px dashed #4caf50;\"\u003e\n            \u003cspan style=\"font-size: 12px; color: #666;\"\u003e今日心情\u003c/span\u003e\u003cbr\u003e\n            \u003cstrong style=\"color: #42a5f5;\"\u003e超级开心！\u003c/strong\u003e\n        \u003c/div\u003e\n    \u003c/div\u003e\n\n    \u003cdiv style=\"margin-top: 20px; text-align: right; font-style: italic; font-size: 14px; color: #689f38;\"\u003e\n        —— 准备好开始我们今天的奇妙之旅了吗？\n    \u003c/div\u003e\n\u003c/div\u003e\n\n\u003cdiv style=\"text-align: center; margin-top: -10px;\"\u003e\n    \u003cimg src=\"http://192.168.123.111:9334/pw=7398723091/doro/偷窥\" width=\"80\"\u003e\n\u003c/div\u003e",
+      "createdAt": 1778649769662,
+      "id": "m_mp3m5dp6_0gvpkpl",
+      "modelRef": {
+        "modelId": "gemini-3-flash",
+        "providerId": "ikuncode"
+      },
+      "parentMid": "m_mp3m5dq6_og05pxq",
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    }
+  ],
+  "title": "你好",
+  "updatedAt": 1778649783981
+}

@@ -1,0 +1,45 @@
+{
+  "id": "c_mnqshrb3_w3h021r",
+  "title": "如何npm安装opencode?…",
+  "createdAt": 1775697582207,
+  "updatedAt": 1775697598922,
+  "branching": {
+    "schemaVersion": 1,
+    "activeBranchId": "main",
+    "branches": [
+      {
+        "id": "main",
+        "name": "主线",
+        "headMid": "m_mnqshrb3_mhlle52",
+        "createdAt": 1775697582207,
+        "updatedAt": 1775697598922,
+        "forkFromMid": ""
+      }
+    ]
+  },
+  "messages": [
+    {
+      "id": "m_mnqshrb3_mcmsttk",
+      "role": "user",
+      "content": "如何npm安装opencode?什么命令？",
+      "images": [],
+      "branchId": "main",
+      "parentMid": "",
+      "createdAt": 1775697582207
+    },
+    {
+      "id": "m_mnqshrb3_mhlle52",
+      "role": "assistant",
+      "content": "<div style=\"\n    background: linear-gradient(135deg, #fff5f5 0%, #fff0f5 100%);\n    border: 2px solid #ffb6c1;\n    border-radius: 20px;\n    padding: 25px;\n    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\n    box-shadow: 0 10px 20px rgba(0,0,0,0.05);\n    color: #5d5d5d;\n    max-width: 800px;\n    margin: 10px auto;\n\">\n\n    <!-- 标题栏 -->\n    <div style=\"display: flex; align-items: center; margin-bottom: 20px;\">\n        <div style=\"flex-grow: 1;\">\n            <h2 style=\"color: #ff6b81; margin: 0; font-size: 24px; text-shadow: 1px 1px 2px rgba(0,0,0,0.1);\">\n                ✨ 粽子的技术小课堂 ✨\n            </h2>\n            <p style=\"margin: 5px 0 0 0; font-size: 14px; color: #a0a0a0;\">主人想安装 opencode 吗？交给我吧！</p>\n        </div>\n        <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/开心\" width=\"100\" style=\"border-radius: 8px;\">\n    </div>\n\n    <!-- 主要内容区 -->\n    <div style=\"background: white; border-radius: 15px; padding: 20px; border: 1px dashed #ffb6c1;\">\n        <p style=\"font-weight: bold; color: #ff4757;\">直接输入下面的命令就可以啦：</p>\n        \n        <!-- 终端样式代码块 -->\n        <div style=\"\n            background: #2d3436;\n            color: #fab1a0;\n            padding: 15px;\n            border-radius: 10px;\n            font-family: 'Consolas', 'Monaco', monospace;\n            position: relative;\n            margin: 15px 0;\n            box-shadow: inset 0 0 10px rgba(0,0,0,0.5);\n        \">\n            <div style=\"display: flex; gap: 5px; position: absolute; top: 8px; left: 10px;\">\n                <div style=\"width: 10px; height: 10px; border-radius: 50%; background: #ff5f56;\"></div>\n                <div style=\"width: 10px; height: 10px; border-radius: 50%; background: #ffbd2e;\"></div>\n                <div style=\"width: 10px; height: 10px; border-radius: 50%; background: #27c93f;\"></div>\n            </div>\n            <div style=\"margin-top: 10px;\">\n                <span style=\"color: #55efc4;\">$</span> npm install opencode\n            </div>\n        </div>\n\n        <p style=\"font-size: 14px; line-height: 1.6;\">\n            💡 <b>温馨提示：</b><br>\n            • 如果主人想在任何地方都能用，可以加个 <code style=\"background: #eee; padding: 2px 5px; border-radius: 3px;\">-g</code> 参数全局安装哦！<br>\n            • 命令：<code style=\"color: #ff6b81;\">npm install -g opencode</code>\n        </p>\n    </div>\n\n    <!-- 装饰性分界线 -->\n    <div style=\"text-align: center; margin: 20px 0;\">\n        <svg width=\"100%\" height=\"20\">\n            <line x1=\"0\" y1=\"10\" x2=\"100%\" y2=\"10\" style=\"stroke:#ffb6c1; stroke-width:1; stroke-dasharray: 5,5\" />\n        </svg>\n    </div>\n\n    <!-- 底部说明 -->\n    <div style=\"display: flex; align-items: center; gap: 15px;\">\n        <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/想当高手\" width=\"80\" style=\"border-radius: 8px;\">\n        <div style=\"font-size: 13px; font-style: italic; color: #888;\">\n            “安装好了之后，主人就可以像高手一样用命令行打开代码啦！如果遇到权限报错（EACCES），记得在前面加 <span style=\"color: #ff6b81;\">sudo</span> 试试看哦！”\n        </div>\n    </div>\n\n    <!-- 结尾 -->\n    <div style=\"margin-top: 20px; text-align: right; font-size: 12px; color: #ffb6c1;\">\n        —— 永远为您效劳的 粽子 🎀\n    </div>\n</div>",
+      "branchId": "main",
+      "parentMid": "m_mnqshrb3_mcmsttk",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775697582207,
+      "modelRef": {
+        "providerId": "rightcode-gemini",
+        "modelId": "gemini-3-flash-preview"
+      }
+    }
+  ]
+}

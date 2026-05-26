@@ -1,0 +1,62 @@
+{
+  "createdAt": 1772564714461,
+  "id": "c_mmaz9j31_140y4lx",
+  "messages": [
+    {
+      "content": "你直接输出一些div容器不用html包裹，我要测试渲染",
+      "createdAt": 1772564733970,
+      "id": "m_mmaz9y4y_7twvgo1",
+      "images": [],
+      "pending": false,
+      "role": "user",
+      "streaming": false
+    },
+    {
+      "content": "<div style=\"padding:16px; border:2px solid #222; border-radius:10px; font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial; max-width:720px;\">\n  <div style=\"font-size:18px; font-weight:700; margin-bottom:8px;\">渲染测试容器 A</div>\n  <div style=\"color:#444; line-height:1.5;\">\n    这是一段文字，用于测试字体、换行与容器内边距。\n  </div>\n\n  <div style=\"display:flex; gap:10px; margin-top:12px;\">\n    <div style=\"flex:1; padding:10px; background:#f3f4f6; border:1px solid #d1d5db; border-radius:8px;\">\n      <div style=\"font-weight:600; margin-bottom:6px;\">卡片 1</div>\n      <div style=\"font-size:13px; color:#555;\">测试 flex 子项</div>\n    </div>\n    <div style=\"flex:1; padding:10px; background:#eef2ff; border:1px solid #c7d2fe; border-radius:8px;\">\n      <div style=\"font-weight:600; margin-bottom:6px;\">卡片 2</div>\n      <div style=\"font-size:13px; color:#555;\">测试背景与边框</div>\n    </div>\n  </div>\n\n  <div style=\"margin-top:12px; padding:10px; border-left:4px solid #22c55e; background:#f0fdf4; border-radius:8px;\">\n    <div style=\"font-weight:600;\">提示区域</div>\n    <div style=\"font-size:13px; color:#166534;\">用于测试嵌套、圆角和左侧高亮边。</div>\n  </div>\n</div>\n\n<div style=\"margin-top:14px; padding:14px; border:1px dashed #999; border-radius:10px; max-width:720px;\">\n  <div style=\"display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial;\">\n    <div style=\"height:60px; border-radius:10px; background:linear-gradient(135deg,#60a5fa,#a78bfa);\"></div>\n    <div style=\"height:60px; border-radius:10px; background:linear-gradient(135deg,#34d399,#fbbf24);\"></div>\n    <div style=\"height:60px; border-radius:10px; background:linear-gradient(135deg,#fb7185,#f97316);\"></div>\n  </div>\n  <div style=\"margin-top:10px; font-size:12px; color:#555;\">渲染测试容器 B（grid + 渐变块）</div>\n</div>\n\n<div style=\"margin-top:14px; max-width:720px; padding:14px; border-radius:12px; background:#111827; color:#e5e7eb; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;\">\n  <div style=\"font-weight:700; margin-bottom:8px;\">渲染测试容器 C（暗色 + 等宽字体）</div>\n  <div style=\"padding:10px; background:#0b1220; border:1px solid #1f2937; border-radius:10px;\">\n    <div>line_1: 0123456789</div>\n    <div>line_2: abcdefghijklmnopqrstuvwxyz</div>\n    <div>line_3: 中文混排测试</div>\n  </div>\n</div>",
+      "createdAt": 1772564733970,
+      "id": "m_mmaz9y4y_c1nwo63",
+      "images": [],
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    },
+    {
+      "content": "你把第三个容器改成绿色",
+      "createdAt": 1772564793315,
+      "id": "m_mmazb7xf_oag8e6z",
+      "images": [],
+      "pending": false,
+      "role": "user",
+      "streaming": false
+    },
+    {
+      "content": "<div style=\"padding:16px; border:2px solid #222; border-radius:10px; font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial; max-width:720px;\">\n  <div style=\"font-size:18px; font-weight:700; margin-bottom:8px;\">渲染测试容器 A</div>\n  <div style=\"color:#444; line-height:1.5;\">\n    这是一段文字，用于测试字体、换行与容器内边距。\n  </div>\n\n  <div style=\"display:flex; gap:10px; margin-top:12px;\">\n    <div style=\"flex:1; padding:10px; background:#f3f4f6; border:1px solid #d1d5db; border-radius:8px;\">\n      <div style=\"font-weight:600; margin-bottom:6px;\">卡片 1</div>\n      <div style=\"font-size:13px; color:#555;\">测试 flex 子项</div>\n    </div>\n    <div style=\"flex:1; padding:10px; background:#eef2ff; border:1px solid #c7d2fe; border-radius:8px;\">\n      <div style=\"font-weight:600; margin-bottom:6px;\">卡片 2</div>\n      <div style=\"font-size:13px; color:#555;\">测试背景与边框</div>\n    </div>\n  </div>\n\n  <div style=\"margin-top:12px; padding:10px; border-left:4px solid #22c55e; background:#f0fdf4; border-radius:8px;\">\n    <div style=\"font-weight:600;\">提示区域</div>\n    <div style=\"font-size:13px; color:#166534;\">用于测试嵌套、圆角和左侧高亮边。</div>\n  </div>\n</div>\n\n<div style=\"margin-top:14px; padding:14px; border:1px dashed #999; border-radius:10px; max-width:720px;\">\n  <div style=\"display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial;\">\n    <div style=\"height:60px; border-radius:10px; background:linear-gradient(135deg,#60a5fa,#a78bfa);\"></div>\n    <div style=\"height:60px; border-radius:10px; background:linear-gradient(135deg,#34d399,#fbbf24);\"></div>\n    <div style=\"height:60px; border-radius:10px; background:linear-gradient(135deg,#fb7185,#f97316);\"></div>\n  </div>\n  <div style=\"margin-top:10px; font-size:12px; color:#555;\">渲染测试容器 B（grid + 渐变块）</div>\n</div>\n\n<div style=\"margin-top:14px; max-width:720px; padding:14px; border-radius:12px; background:#052e16; color:#dcfce7; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;\">\n  <div style=\"font-weight:700; margin-bottom:8px;\">渲染测试容器 C（绿色 + 等宽字体）</div>\n  <div style=\"padding:10px; background:#064e3b; border:1px solid #14532d; border-radius:10px;\">\n    <div>line_1: 0123456789</div>\n    <div>line_2: abcdefghijklmnopqrstuvwxyz</div>\n    <div>line_3: 中文混排测试</div>\n  </div>\n</div>",
+      "createdAt": 1772564793315,
+      "id": "m_mmazb7xf_qohmkyf",
+      "images": [],
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    },
+    {
+      "content": "输出一些mermaid我看看，测试一下",
+      "createdAt": 1772564811074,
+      "id": "m_mmazblmq_8hecrk9",
+      "images": [],
+      "pending": false,
+      "role": "user",
+      "streaming": false
+    },
+    {
+      "content": "```mermaid\nflowchart LR\n  A[开始] --> B{条件判断}\n  B -- 是 --> C[执行路径 1]\n  B -- 否 --> D[执行路径 2]\n  C --> E[结束]\n  D --> E\n```\n\n```mermaid\nsequenceDiagram\n  participant U as 用户\n  participant Z as 粽子\n  U->>Z: 请求生成 Mermaid\n  Z-->>U: 返回流程图/时序图\n  U->>Z: 渲染测试\n```\n\n```mermaid\nstateDiagram-v2\n  [*] --> Idle\n  Idle --> Working: start()\n  Working --> Idle: done()\n  Working --> Error: fail()\n  Error --> Idle: reset()\n```\n\n```mermaid\ngantt\n  title 测试甘特图\n  dateFormat  YYYY-MM-DD\n  axisFormat  %m/%d\n  section 阶段A\n  需求确认     :a1, 2026-03-01, 2d\n  方案设计     :a2, after a1, 2d\n  section 阶段B\n  开发实现     :b1, 2026-03-05, 4d\n  联调测试     :b2, after b1, 2d\n```",
+      "createdAt": 1772564811074,
+      "id": "m_mmazblmq_svx2457",
+      "images": [],
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    }
+  ],
+  "title": "你直接输出一些div容器不用ht…",
+  "updatedAt": 1772568612728
+}

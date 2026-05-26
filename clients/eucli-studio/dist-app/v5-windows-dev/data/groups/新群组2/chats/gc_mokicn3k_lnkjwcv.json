@@ -1,0 +1,70 @@
+{
+  "id": "gc_mokicn3k_lnkjwcv",
+  "title": "今天天气一般般啊",
+  "createdAt": 1777494532592,
+  "updatedAt": 1777544917102,
+  "branching": {
+    "schemaVersion": 1,
+    "activeBranchId": "main",
+    "branches": [
+      {
+        "id": "main",
+        "name": "主线",
+        "headMid": "m_mokicn3k_eijtmgr",
+        "createdAt": 1777494532592,
+        "updatedAt": 1777544917102,
+        "forkFromMid": ""
+      }
+    ]
+  },
+  "messages": [
+    {
+      "id": "m_mokicn3k_zhlho8p",
+      "role": "user",
+      "speakerRoleId": "",
+      "content": "今天天气一般般啊",
+      "images": [],
+      "attachments": [],
+      "groupId": "",
+      "groupRole": "",
+      "groupParentMid": "",
+      "branchId": "main",
+      "parentMid": "",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1777494532592
+    },
+    {
+      "id": "m_mokicn3k_df1zp6m",
+      "role": "assistant",
+      "speakerRoleId": "r_mmdcfxso_pyueu49",
+      "content": "（已停止）",
+      "images": [],
+      "attachments": [],
+      "groupId": "",
+      "groupRole": "",
+      "groupParentMid": "",
+      "branchId": "main",
+      "parentMid": "m_mokicn3k_zhlho8p",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1777494532592
+    },
+    {
+      "id": "m_mokicn3k_eijtmgr",
+      "role": "assistant",
+      "speakerRoleId": "r_mm3ky6v6_sziaozj",
+      "content": "（已停止）",
+      "images": [],
+      "attachments": [],
+      "groupId": "",
+      "groupRole": "",
+      "groupParentMid": "",
+      "branchId": "main",
+      "parentMid": "m_mokicn3k_df1zp6m",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1777494532592
+    }
+  ]
+}

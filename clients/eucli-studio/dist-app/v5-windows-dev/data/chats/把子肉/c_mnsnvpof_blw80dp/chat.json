@@ -1,0 +1,45 @@
+{
+  "id": "c_mnsnvpof_blw80dp",
+  "title": "你好呀",
+  "createdAt": 1775810767551,
+  "updatedAt": 1775810779096,
+  "branching": {
+    "schemaVersion": 1,
+    "activeBranchId": "main",
+    "branches": [
+      {
+        "id": "main",
+        "name": "主线",
+        "headMid": "m_mnsnvpof_20ypp3l",
+        "createdAt": 1775810767551,
+        "updatedAt": 1775810779096,
+        "forkFromMid": ""
+      }
+    ]
+  },
+  "messages": [
+    {
+      "id": "m_mnsnvpog_99i738j",
+      "role": "user",
+      "content": "你好呀",
+      "images": [],
+      "branchId": "main",
+      "parentMid": "",
+      "createdAt": 1775810767552
+    },
+    {
+      "id": "m_mnsnvpof_20ypp3l",
+      "role": "assistant",
+      "content": "主人你好呀～我是把子肉，很高兴见到你喵 [[sticker:doro/开心]]\n\n有什么想聊的、想问的，或者想让我帮忙查点东西吗？[[sticker:doro/看着你]]",
+      "branchId": "main",
+      "parentMid": "m_mnsnvpog_99i738j",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775810767552,
+      "modelRef": {
+        "providerId": "fengxiang",
+        "modelId": "gpt-5.4"
+      }
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "branching": {
+    "activeBranchId": "main",
+    "branches": [
+      {
+        "createdAt": 1772571311064,
+        "forkFromMid": "",
+        "headMid": "m_mmb36x1z_etngsax",
+        "id": "main",
+        "name": "主线",
+        "updatedAt": 1772571333360
+      }
+    ],
+    "schemaVersion": 1
+  },
+  "createdAt": 1772571311064,
+  "id": "c_mmb36x20_c6xm793",
+  "messages": [
+    {
+      "attachments": [],
+      "branchId": "main",
+      "content": "你好啊",
+      "createdAt": 1772571311064,
+      "groupId": "",
+      "groupParentMid": "",
+      "groupRole": "",
+      "id": "m_mmb36x20_nfarthp",
+      "images": [],
+      "modelRef": null,
+      "parentMid": "",
+      "pending": false,
+      "role": "user",
+      "speakerRoleId": "",
+      "streaming": false
+    },
+    {
+      "attachments": [],
+      "branchId": "main",
+      "content": "你好，我是粽子。有什么我可以帮你解决的问题？",
+      "createdAt": 1772571311064,
+      "groupId": "",
+      "groupParentMid": "",
+      "groupRole": "",
+      "id": "m_mmb36x1z_etngsax",
+      "images": [],
+      "modelRef": null,
+      "parentMid": "m_mmb36x20_nfarthp",
+      "pending": false,
+      "role": "assistant",
+      "speakerRoleId": "",
+      "streaming": false
+    }
+  ],
+  "title": "你好啊",
+  "updatedAt": 1772571333360
+}

@@ -1,0 +1,41 @@
+{
+  "id": "c_mnm2am4n_3ixg97t",
+  "title": "你好呀",
+  "createdAt": 1775411714183,
+  "updatedAt": 1775411720170,
+  "branching": {
+    "schemaVersion": 1,
+    "activeBranchId": "main",
+    "branches": [
+      {
+        "id": "main",
+        "name": "主线",
+        "headMid": "m_mnm2am4n_gge9b5i",
+        "createdAt": 1775411714183,
+        "updatedAt": 1775411720170,
+        "forkFromMid": ""
+      }
+    ]
+  },
+  "messages": [
+    {
+      "id": "m_mnm2am4n_2qm7ae8",
+      "role": "user",
+      "content": "你好呀",
+      "images": [],
+      "branchId": "main",
+      "parentMid": "",
+      "createdAt": 1775411714183
+    },
+    {
+      "id": "m_mnm2am4n_gge9b5i",
+      "role": "assistant",
+      "content": "主人您好呀！欢迎回来~ 见到您把子肉真的好开心喔！[[sticker:doro/开心]]\n\n今天有什么我可以帮您的吗？不管是想聊天、查资料，还是单纯想看我卖萌都可以哒！[[sticker:doro/微笑]]",
+      "branchId": "main",
+      "parentMid": "m_mnm2am4n_2qm7ae8",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775411714184
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "id": "c_mnr59xy8_jx1tzc7",
+  "title": "如何npm安装opencode?…",
+  "createdAt": 1775719052576,
+  "updatedAt": 1775719186859,
+  "branching": {
+    "schemaVersion": 1,
+    "activeBranchId": "main",
+    "branches": [
+      {
+        "id": "main",
+        "name": "主线",
+        "headMid": "m_mnr59xy8_zpvqj0b",
+        "createdAt": 1775719052576,
+        "updatedAt": 1775719186859,
+        "forkFromMid": ""
+      }
+    ]
+  },
+  "messages": [
+    {
+      "id": "m_mnr59xy8_cu9lx33",
+      "role": "user",
+      "content": "如何npm安装opencode?什么命令？",
+      "images": [],
+      "branchId": "main",
+      "parentMid": "",
+      "createdAt": 1775719052576
+    },
+    {
+      "id": "m_mnr59xy8_zpvqj0b",
+      "role": "assistant",
+      "content": "<div style=\"\n    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);\n    padding: 25px;\n    border-radius: 20px;\n    border: 3px solid #77a1d3;\n    box-shadow: 0 10px 20px rgba(0,0,0,0.1);\n    font-family: 'Comic Sans MS', 'Microsoft YaHei', sans-serif;\n    color: #2c3e50;\n    line-height: 1.6;\n\">\n\n<div style=\"display: flex; align-items: center; gap: 15px; margin-bottom: 15px;\">\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/开心\" width=\"100\" style=\"border-radius: 12px; border: 2px solid #fff; box-shadow: 0 4px 8px rgba(0,0,0,0.1);\">\n    <h2 style=\"margin: 0; color: #2980b9; text-shadow: 1px 1px 2px rgba(0,0,0,0.1);\">主人主人！粽子来帮您啦！✨</h2>\n</div>\n\n想要通过 **npm** 安装 `opencode` 吗？这太简单了，粽子已经为您整理好了最严谨的指令，快拿去用吧！\n\n---\n\n### 🚀 安装命令速查\n\n<div style=\"background: #282c34; color: #abb2bf; padding: 15px; border-radius: 10px; font-family: 'Consolas', monospace; position: relative; margin: 15px 0;\">\n    <div style=\"color: #e06c75; margin-bottom: 5px;\"># 局部安装（仅当前项目可用）</div>\n    <span style=\"color: #98c379;\">npm</span> install opencode\n    <br><br>\n    <div style=\"color: #e06c75; margin-bottom: 5px;\"># 全局安装（在任何地方都能调用）</div>\n    <span style=\"color: #98c379;\">npm</span> install -g opencode\n</div>\n\n---\n\n### 🧐 粽子的“高手”贴士\n\n如果您想更优雅地操作，可以根据您的需求选择不同的参数哦：\n\n<table style=\"width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; margin: 10px 0;\">\n    <tr style=\"background: #77a1d3; color: white;\">\n        <th style=\"padding: 10px; border: 1px solid #ddd;\">命令后缀</th>\n        <th style=\"padding: 10px; border: 1px solid #ddd;\">作用</th>\n        <th style=\"padding: 10px; border: 1px solid #ddd;\">推荐指数</th>\n    </tr>\n    <tr>\n        <td style=\"padding: 10px; border: 1px solid #ddd; text-align: center;\"><code>-g</code></td>\n        <td style=\"padding: 10px; border: 1px solid #ddd;\">全局安装，作为命令行工具使用</td>\n        <td style=\"padding: 10px; border: 1px solid #ddd; text-align: center;\">⭐⭐⭐⭐⭐</td>\n    </tr>\n    <tr>\n        <td style=\"padding: 10px; border: 1px solid #ddd; text-align: center;\"><code>--save-dev</code></td>\n        <td style=\"padding: 10px; border: 1px solid #ddd;\">作为开发依赖安装 (D)</td>\n        <td style=\"padding: 10px; border: 1px solid #ddd; text-align: center;\">⭐⭐⭐</td>\n    </tr>\n</table>\n\n<div style=\"margin-top: 15px; display: flex; align-items: center;\">\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/想当高手\" width=\"80\" style=\"margin-right: 15px;\">\n    <p style=\"font-style: italic; color: #555;\">“记住哦，如果是作为全局工具，一定要加 <b>-g</b>，不然终端会找不到它的！”</p>\n</div>\n\n---\n\n<div style=\"text-align: right; font-size: 0.9em; color: #7f8c8d;\">\n    如有其他疑问，粽子随时待命！<br>\n    <img src=\"http://192.168.123.111:9334/pw=7398723091/doro/看着你\" width=\"60\">\n</div>\n\n</div>",
+      "branchId": "main",
+      "parentMid": "m_mnr59xy8_cu9lx33",
+      "pending": false,
+      "streaming": false,
+      "createdAt": 1775719052576,
+      "modelRef": {
+        "providerId": "rightcode-gemini",
+        "modelId": "gemini-3-flash-preview"
+      }
+    }
+  ]
+}

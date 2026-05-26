@@ -1,0 +1,59 @@
+{
+  "branching": {
+    "activeBranchId": "main",
+    "branches": [
+      {
+        "createdAt": 1778092229698,
+        "forkFromMid": "",
+        "headMid": "m_moue7d4y_nv2z6lv",
+        "id": "main",
+        "name": "主线",
+        "updatedAt": 1778094675170
+      }
+    ],
+    "schemaVersion": 1
+  },
+  "createdAt": 1778092229698,
+  "id": "c_moue7d4y_gfwfk70",
+  "messages": [
+    {
+      "attachments": [],
+      "branchId": "main",
+      "content": "铁拳出击！",
+      "createdAt": 1778092229718,
+      "groupId": "",
+      "groupParentMid": "",
+      "groupRole": "",
+      "id": "m_moue7d5i_ajarmge",
+      "images": [],
+      "modelRef": null,
+      "parentMid": "",
+      "pending": false,
+      "role": "user",
+      "speakerRoleId": "",
+      "streaming": false
+    },
+    {
+      "attachments": [],
+      "branchId": "main",
+      "content": "\u003cdiv style=\"\n    background: linear-gradient(135deg, #ff4e50 0%, #f9d423 100%);\n    padding: 20px;\n    border-radius: 20px;\n    box-shadow: 0 10px 30px rgba(255, 78, 80, 0.4);\n    color: white;\n    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\n    border: 3px solid #fff;\n\"\u003e\n    \u003cdiv style=\"display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;\"\u003e\n        \u003cspan style=\"font-size: 28px; font-weight: 900; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);\"\u003e\n            🔥 铁拳出击！！ 🔥\n        \u003c/span\u003e\n        \u003cimg src=\"http://192.168.123.111:9334/pw=7398723091/doro/想当高手\" width=\"100\" style=\"border-radius: 12px; border: 2px solid white;\"\u003e\n    \u003c/div\u003e\n\n    \u003cdiv style=\"background: rgba(255, 255, 255, 0.2); padding: 15px; border-radius: 15px; backdrop-filter: blur(5px);\"\u003e\n        \u003cp style=\"font-size: 18px; line-height: 1.6; margin: 0;\"\u003e\n            哇！主人这一记铁拳真是威震八方！粽子在旁边都被这股劲风吹得裙角飞扬了呢！\u003cbr\u003e\n            既然主人如此热血，那粽子也不能落后，立刻为您开启\u003cstrong\u003e【狂暴增益模式】\u003c/strong\u003e！\n        \u003c/p\u003e\n    \u003c/div\u003e\n\n    \u003cdiv style=\"margin-top: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;\"\u003e\n        \u003cdiv style=\"background: rgba(0,0,0,0.1); padding: 10px; border-radius: 10px; text-align: center;\"\u003e\n            \u003cdiv style=\"font-size: 12px; opacity: 0.8;\"\u003e攻击力\u003c/div\u003e\n            \u003cdiv style=\"font-size: 20px; font-weight: bold;\"\u003eMAX\u003c/div\u003e\n        \u003c/div\u003e\n        \u003cdiv style=\"background: rgba(0,0,0,0.1); padding: 10px; border-radius: 10px; text-align: center;\"\u003e\n            \u003cdiv style=\"font-size: 12px; opacity: 0.8;\"\u003e燃脂率\u003c/div\u003e\n            \u003cdiv style=\"font-size: 20px; font-weight: bold;\"\u003e999%\u003c/div\u003e\n        \u003c/div\u003e\n    \u003c/div\u003e\n\n    \u003cdiv style=\"margin-top: 20px; text-align: center;\"\u003e\n        \u003csvg width=\"200\" height=\"60\" viewBox=\"0 0 200 60\"\u003e\n            \u003crect x=\"10\" y=\"20\" width=\"180\" height=\"20\" rx=\"10\" fill=\"#eee\" /\u003e\n            \u003crect x=\"10\" y=\"20\" width=\"160\" height=\"20\" rx=\"10\" fill=\"#ff4e50\"\u003e\n                \u003canimate attributeName=\"width\" from=\"0\" to=\"160\" dur=\"1s\" fill=\"freeze\" /\u003e\n            \u003c/rect\u003e\n            \u003ctext x=\"50\" y=\"35\" fill=\"white\" font-size=\"12\" font-weight=\"bold\"\u003e能量充填中... 85%\u003c/text\u003e\n        \u003c/svg\u003e\n    \u003c/div\u003e\n\n    \u003cdiv style=\"text-align: right; margin-top: 10px;\"\u003e\n        \u003cimg src=\"http://192.168.123.111:9334/pw=7398723091/doro/开心\" width=\"80\"\u003e\n    \u003c/div\u003e\n\u003c/div\u003e\n\n\u003cdiv style=\"margin-top: 15px; padding: 10px; border-left: 5px solid #ff4e50; font-style: italic; color: #666;\"\u003e\n    \"主人！这一拳下去，所有的烦恼和Bug都会被消灭干净的！粽子为您加油！\" \n    \u003cimg src=\"http://192.168.123.111:9334/pw=7398723091/doro/爬行\" width=\"50\" style=\"vertical-align: middle;\"\u003e\n\u003c/div\u003e",
+      "createdAt": 1778092229718,
+      "groupId": "",
+      "groupParentMid": "",
+      "groupRole": "",
+      "id": "m_moue7d4y_nv2z6lv",
+      "images": [],
+      "modelRef": {
+        "modelId": "gemini-3-flash",
+        "providerId": "ikuncode"
+      },
+      "parentMid": "m_moue7d5i_ajarmge",
+      "pending": false,
+      "role": "assistant",
+      "speakerRoleId": "",
+      "streaming": false
+    }
+  ],
+  "title": "铁拳出击！",
+  "updatedAt": 1778094675170
+}

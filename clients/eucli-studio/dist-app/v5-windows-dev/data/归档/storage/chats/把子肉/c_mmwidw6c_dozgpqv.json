@@ -1,0 +1,36 @@
+{
+  "createdAt": 1773866620452,
+  "id": "c_mmwidw6c_dozgpqv",
+  "messages": [
+    {
+      "attachments": [],
+      "content": "你好，试试看echo工具。",
+      "createdAt": 1773866620452,
+      "groupId": "",
+      "groupParentMid": "",
+      "groupRole": "",
+      "id": "m_mmwidw6c_261hxhq",
+      "images": [],
+      "kind": "",
+      "pending": false,
+      "role": "user",
+      "streaming": false
+    },
+    {
+      "attachments": [],
+      "content": "<<<[TOOL_REQUEST]>>>\n  <<[CALL]>>\n    tool_name:「start」echo「end」\n    text:「start」你好！这是echo工具测试：把子肉来啦～「end」\n    agent:「start」把子肉「end」\n    note:「start」echo工具测试「end」\n  <<[/CALL]>>\n<<<[END_TOOL_REQUEST]>>><<<[TOOL_REQUEST]>>>\n  <<[CALL]>>\n    tool_name:「start」echo「end」\n    text:「start」你好！这是echo工具测试：把子肉来啦～「end」\n    agent:「start」把子肉「end」\n    note:「start」echo工具测试「end」\n  <<[/CALL]>>\n<<<[END_TOOL_REQUEST]>>>\n\n[[sticker:doro/开心]]",
+      "createdAt": 1773866620453,
+      "groupId": "",
+      "groupParentMid": "",
+      "groupRole": "",
+      "id": "m_mmwidw6c_144dyl1",
+      "images": [],
+      "kind": "",
+      "pending": false,
+      "role": "assistant",
+      "streaming": false
+    }
+  ],
+  "title": "你好，试试看echo工具。",
+  "updatedAt": 1773866697506
+}

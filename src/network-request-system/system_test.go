@@ -93,6 +93,35 @@ func TestDoReportsTimeout(t *testing.T) {
 	assertAppErrorCode(t, err, "network.timeout")
 }
 
+func TestNewSystemRejectsZeroMaxTimeout(t *testing.T) {
+	_, err := NewSystem(Config{MaxTimeout: 0, DefaultTimeout: time.Second})
+	if err == nil {
+		t.Fatal("expected error for zero MaxTimeout")
+	}
+	var appErr *apperrors.AppError
+	if !errors.As(err, &appErr) || appErr.Code != "network.invalid_request" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestBuildRequestRejectsNilContext(t *testing.T) {
+	system, err := NewSystem(Config{MaxTimeout: time.Second, DefaultTimeout: time.Second})
+	if err != nil {
+		t.Fatalf("NewSystem() error = %v", err)
+	}
+	_, err = system.Do(nil, types.HTTPRequest{Method: http.MethodGet, URL: "https://example.com"})
+	assertAppErrorCode(t, err, "network.invalid_request")
+}
+
+func TestDoRejectsNonHttpScheme(t *testing.T) {
+	system, err := NewSystem(Config{MaxTimeout: time.Second, DefaultTimeout: time.Second})
+	if err != nil {
+		t.Fatalf("NewSystem() error = %v", err)
+	}
+	_, err = system.Do(context.Background(), types.HTTPRequest{Method: http.MethodGet, URL: "ftp://example.com"})
+	assertAppErrorCode(t, err, "network.invalid_request")
+}
+
 func assertAppErrorCode(t *testing.T, err error, code string) {
 	t.Helper()
 	var appErr *apperrors.AppError

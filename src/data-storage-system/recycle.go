@@ -33,7 +33,10 @@ func moveToRecycle(ctx context.Context, paths paths, kind types.StorageItemKind,
 	record := types.RecycleRecord{ID: recycleID, OriginalID: originalID, OriginalType: kind, DeletedAt: time.Now().UTC()}
 	if err := writeJSON(ctx, filepath.Join(target, "deleted-at.json"), record); err != nil {
 		if rollbackErr := os.Rename(target, source); rollbackErr != nil {
-			return storageDeleteFailed("delete metadata write failed and rollback also failed", rollbackErr)
+			return storageDeleteFailed(
+				fmt.Sprintf("delete metadata write failed: %v; rollback also failed: %v", err, rollbackErr),
+				fmt.Errorf("delete metadata write failed: %w; rollback also failed: %w", err, rollbackErr),
+			)
 		}
 		return err
 	}

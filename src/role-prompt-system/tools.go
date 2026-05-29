@@ -27,6 +27,16 @@ func (s *system) GetToolRunMode(ctx context.Context, roleID string, toolName str
 	if err != nil {
 		return "", err
 	}
+	if policy.Mode == types.ToolPolicyWhitelist {
+		if !slices.Contains(policy.Tools, toolName) {
+			return "", roleToolModeMissing("tool is not in role policy", nil)
+		}
+	}
+	if policy.Mode == types.ToolPolicyBlacklist {
+		if slices.Contains(policy.Tools, toolName) {
+			return "", roleToolModeMissing("tool is blocked by role policy", nil)
+		}
+	}
 	mode, ok := policy.RunModes[toolName]
 	if !ok {
 		return "", roleToolModeMissing("tool run mode is missing", nil)
@@ -62,8 +72,20 @@ func validateToolPolicy(policy types.ToolPolicy) error {
 	}
 	if policy.Mode == types.ToolPolicyWhitelist {
 		for _, tool := range policy.Tools {
-			if _, ok := policy.RunModes[tool]; !ok {
+			if _, ok := policy.RunModes[strings.TrimSpace(tool)]; !ok {
 				return roleInvalid("tool policy tool has no run mode configured", nil)
+			}
+		}
+		for toolName := range policy.RunModes {
+			found := false
+			for _, tool := range policy.Tools {
+				if strings.TrimSpace(tool) == toolName {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return roleInvalid("tool policy run mode references a tool not in the permission list", nil)
 			}
 		}
 	}

@@ -30,15 +30,13 @@ func (s *system) Start(ctx context.Context) error {
 			return gatewayServerFailed("gateway server failed", err)
 		}
 		return nil
-	default:
-		return nil
 	}
 }
 
 func (s *system) Shutdown(ctx context.Context) error {
-	s.closeConnections()
 	if err := s.server.Shutdown(ctx); err != nil {
 		return gatewayServerFailed("failed to shutdown gateway server", err)
 	}
+	s.closeConnections()
 	return nil
 }

@@ -13,6 +13,15 @@ func (s *system) SaveProvider(ctx context.Context, provider types.Provider) erro
 	if err := validateProvider(provider); err != nil {
 		return err
 	}
+	providers, err := s.storage.ListProviders(ctx)
+	if err != nil {
+		return providerStorageFailed("failed to list providers for name uniqueness check", err)
+	}
+	for _, p := range providers {
+		if p.Name == provider.Name && p.ID != provider.ID {
+			return providerInvalid("provider name already exists", nil)
+		}
+	}
 	provider.BaseURL = normalizeBaseURL(provider.BaseURL)
 	now := time.Now().UTC()
 	if provider.CreatedAt.IsZero() {
@@ -67,6 +76,9 @@ func validateProvider(provider types.Provider) error {
 	parsed, err := url.ParseRequestURI(provider.BaseURL)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return providerInvalid("provider base url is invalid", err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return providerInvalid("provider base url must use http or https", nil)
 	}
 	if strings.TrimSpace(provider.Key) == "" {
 		return providerInvalid("provider key is required", nil)

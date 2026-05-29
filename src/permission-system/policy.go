@@ -21,7 +21,7 @@ func isAllowedByPolicy(policy types.ToolPolicy, toolName string) (bool, string, 
 	for _, tool := range policy.Tools {
 		name := strings.TrimSpace(tool)
 		if name == "" {
-			return false, "tool policy contains empty tool name", permissionInvalid("tool policy contains empty tool name", nil)
+			return false, "permission internal error", permissionInvalid("tool policy contains empty tool name", nil)
 		}
 		tools[name] = struct{}{}
 	}
@@ -38,6 +38,6 @@ func isAllowedByPolicy(policy types.ToolPolicy, toolName string) (bool, string, 
 		}
 		return true, "tool is not blocked by role blacklist", nil
 	default:
-		return false, "tool policy mode is invalid", permissionInvalid("tool policy mode is invalid", nil)
+		return false, "permission internal error", permissionInvalid("tool policy mode is invalid", nil)
 	}
 }

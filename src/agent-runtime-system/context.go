@@ -27,12 +27,19 @@ func (s *system) availableTools(ctx context.Context, roleID string) ([]types.Too
 	if err != nil {
 		return nil, runtimeToolFailed("failed to list tools", err)
 	}
-	allowed := policyToolsAllowed(policy)
+	filter := make(map[string]struct{}, len(policy.Tools))
+	for _, tool := range policy.Tools {
+		filter[tool] = struct{}{}
+	}
 	tools := make([]types.ToolDefinition, 0, len(summaries))
 	for _, summary := range summaries {
-		_, idOk := allowed[summary.ID]
-		_, nameOk := allowed[summary.Name]
-		if !idOk && !nameOk {
+		_, idOk := filter[summary.ID]
+		_, nameOk := filter[summary.Name]
+		matched := idOk || nameOk
+		if policy.Mode == types.ToolPolicyBlacklist {
+			matched = !matched
+		}
+		if !matched {
 			continue
 		}
 		tool, err := s.tools.LoadTool(ctx, summary.ID)
@@ -42,15 +49,4 @@ func (s *system) availableTools(ctx context.Context, roleID string) ([]types.Too
 		tools = append(tools, tool)
 	}
 	return tools, nil
-}
-
-func policyToolsAllowed(policy types.ToolPolicy) map[string]struct{} {
-	result := make(map[string]struct{}, len(policy.Tools))
-	for _, tool := range policy.Tools {
-		result[tool] = struct{}{}
-	}
-	if policy.Mode == types.ToolPolicyBlacklist {
-		return result
-	}
-	return result
 }

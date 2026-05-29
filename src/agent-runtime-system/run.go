@@ -140,13 +140,13 @@ func validateRunRequest(ctx context.Context, request types.RunRequest) error {
 }
 
 func (s *system) completeRun(ctx context.Context, record *runRecord, session types.Session) {
-	state, err := s.updateRun(record.runID, types.RunStatusCompleted, "")
-	if err != nil {
+	if err := s.saveSession(ctx, session, types.RunStatusCompleted); err != nil {
+		state, _ := s.updateRun(record.runID, types.RunStatusFailed, "save session failed: "+err.Error())
+		s.publish(record.runID, "run_failed", state)
 		return
 	}
-	if err := s.saveSession(ctx, session, types.RunStatusCompleted); err != nil {
-		_, _ = s.updateRun(record.runID, types.RunStatusFailed, "save session failed: "+err.Error())
-		s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: "save session failed"})
+	state, err := s.updateRun(record.runID, types.RunStatusCompleted, "")
+	if err != nil {
 		return
 	}
 	s.publish(record.runID, "run_completed", state)
@@ -155,6 +155,11 @@ func (s *system) completeRun(ctx context.Context, record *runRecord, session typ
 func (s *system) failRun(ctx context.Context, record *runRecord, session types.Session, reason string) {
 	state, err := s.updateRun(record.runID, types.RunStatusFailed, reason)
 	if err != nil {
+		if session.ID != "" {
+			session = appendMessage(session, failureMessage(reason))
+			_ = s.saveSession(ctx, session, types.RunStatus(session.Status))
+		}
+		s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: reason})
 		return
 	}
 	if session.ID != "" {

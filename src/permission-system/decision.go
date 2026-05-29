@@ -2,7 +2,6 @@ package permission
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"eucli-box/pkg/types"
@@ -35,7 +34,7 @@ func (s *system) Decide(ctx context.Context, roleID string, action types.ToolAct
 	case types.ToolRunAsk:
 		return needsConfirmation(decision, "tool requires user confirmation"), nil
 	default:
-		return deny(decision, fmt.Sprintf("unsupported tool run mode %q", mode)), permissionInvalid("unsupported tool run mode", nil)
+		return deny(decision, "permission internal error"), permissionInvalid("unsupported tool run mode", nil)
 	}
 }
 

@@ -31,6 +31,8 @@ type System interface {
 	ListTools(ctx context.Context) ([]types.ToolSummary, error)
 	DeleteTool(ctx context.Context, toolID string) error
 
+	SaveCallRecord(ctx context.Context, record types.CallRecord) error
+
 	RebuildIndexes(ctx context.Context) error
 }
 

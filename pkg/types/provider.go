@@ -33,8 +33,9 @@ type ModelInfo struct {
 }
 
 type ModelCoordinate struct {
-	ProviderID string `json:"providerId"`
-	ModelID    string `json:"modelId"`
+	ProviderID   string `json:"providerId"`
+	ProviderName string `json:"providerName"`
+	ModelID      string `json:"modelId"`
 }
 
 type ModelRequest struct {
@@ -50,4 +51,13 @@ type ModelResponse struct {
 	ToolIntents []ToolIntent `json:"toolIntents,omitempty"`
 	Raw         []byte       `json:"raw,omitempty"`
 	CreatedAt   time.Time    `json:"createdAt"`
+}
+
+type CallRecord struct {
+	ID         string    `json:"id"`
+	ProviderID string    `json:"providerId"`
+	ModelID    string    `json:"modelId"`
+	Success    bool      `json:"success"`
+	ErrorCode  string    `json:"errorCode,omitempty"`
+	CreatedAt  time.Time `json:"createdAt"`
 }

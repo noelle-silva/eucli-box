@@ -146,7 +146,8 @@ func (f *fakeNetwork) Do(ctx context.Context, req types.HTTPRequest) (types.HTTP
 }
 
 type fakeProviderStorage struct {
-	providers map[string]types.Provider
+	providers   map[string]types.Provider
+	callRecords []types.CallRecord
 }
 
 func newFakeProviderStorage() *fakeProviderStorage {
@@ -176,6 +177,11 @@ func (f *fakeProviderStorage) ListProviders(ctx context.Context) ([]types.Provid
 
 func (f *fakeProviderStorage) DeleteProvider(ctx context.Context, providerID string) error {
 	delete(f.providers, providerID)
+	return nil
+}
+
+func (f *fakeProviderStorage) SaveCallRecord(ctx context.Context, record types.CallRecord) error {
+	f.callRecords = append(f.callRecords, record)
 	return nil
 }
 

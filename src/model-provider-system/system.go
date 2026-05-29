@@ -28,6 +28,7 @@ type StorageSystem interface {
 	LoadProvider(ctx context.Context, providerID string) (types.Provider, error)
 	ListProviders(ctx context.Context) ([]types.ProviderSummary, error)
 	DeleteProvider(ctx context.Context, providerID string) error
+	SaveCallRecord(ctx context.Context, record types.CallRecord) error
 }
 
 type Config struct {

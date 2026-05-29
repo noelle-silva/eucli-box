@@ -22,7 +22,7 @@ func normalizeResponse(resp *http.Response, started int64) (types.HTTPResponse, 
 		StatusCode: resp.StatusCode,
 		Headers:    cloneHeaders(resp.Header),
 		Body:       body,
-		Duration:   time.Since(time.Unix(0, started).UTC()),
+		Duration:   time.Since(time.Unix(0, started)),
 	}, nil
 }
 

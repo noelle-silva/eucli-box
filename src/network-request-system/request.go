@@ -61,7 +61,7 @@ func buildRequest(ctx context.Context, req types.HTTPRequest, config Config) (pr
 	if contentType != "" && httpReq.Header.Get("Content-Type") == "" {
 		httpReq.Header.Set("Content-Type", contentType)
 	}
-	return preparedRequest{request: httpReq, started: time.Now().UTC().UnixNano(), cancel: cancel}, nil
+	return preparedRequest{request: httpReq, started: time.Now().UnixNano(), cancel: cancel}, nil
 }
 
 func buildBody(kind types.HTTPBodyKind, body []byte) (io.Reader, string, error) {

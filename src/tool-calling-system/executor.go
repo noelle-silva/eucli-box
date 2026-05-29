@@ -33,14 +33,19 @@ func (s *system) Execute(ctx context.Context, plan types.ToolRunPlan) (types.Too
 	if plan.PlanStatus != types.ToolPlanStatusReady {
 		return types.ToolResult{}, toolExecutionInvalid("tool plan is not ready for execution", nil)
 	}
+	if err := ctx.Err(); err != nil {
+		return types.ToolResult{}, toolExecutionInvalid("execution cancelled", err)
+	}
 	if err := validatePlan(plan); err != nil {
 		return types.ToolResult{}, err
 	}
 	if err := ensureToolDirectory(plan.Tool); err != nil {
 		return types.ToolResult{}, err
 	}
-	if _, err := selectExecutable(plan.Tool); err != nil {
+	if resolved, err := selectExecutable(plan.Tool); err != nil {
 		return types.ToolResult{}, err
+	} else if resolved != plan.Executable {
+		return types.ToolResult{}, toolExecutionInvalid("tool executable path has changed since prepare", nil)
 	}
 	_, executableErr := cleanExecutablePath(plan.Tool, plan.Executable)
 	if executableErr != nil {

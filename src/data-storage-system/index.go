@@ -162,7 +162,7 @@ func readRecycleRecords(ctx context.Context, root string) ([]types.RecycleRecord
 		}
 		target := filepath.Join(root, entry.Name(), "deleted-at.json")
 		if !dataFileExists(target) {
-			return nil, storageReadFailed("recycle item is missing deleted-at.json", os.ErrNotExist)
+			continue
 		}
 		record, err := readJSON[types.RecycleRecord](ctx, target)
 		if err != nil {

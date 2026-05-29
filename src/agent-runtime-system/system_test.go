@@ -1,0 +1,238 @@
+package agentruntime
+
+import (
+	"context"
+	"errors"
+	"sync"
+	"testing"
+	"time"
+
+	"eucli-box/pkg/types"
+)
+
+func TestStartRunCompletesWithoutTool(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	session := fakes.storage.lastSession()
+	if len(session.Messages) != 2 || session.Messages[0].Type != "user" || session.Messages[1].Type != "assistant" {
+		t.Fatalf("messages = %#v", session.Messages)
+	}
+}
+
+func TestRunWaitsForToolConfirmationThenCompletes(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{
+		{ID: "m1", Content: "need tool", ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}}}},
+		{ID: "m2", Content: "final"},
+	}
+	fakes.tool.prepareDecision = types.PermissionDecision{ID: "decision-1", ActionID: "intent-1", ToolName: "file-reader", Status: types.PermissionStatusNeedsConfirmation}
+	fakes.tool.confirmedDecision = types.PermissionDecision{ID: "decision-1", ActionID: "intent-1", ToolName: "file-reader", Status: types.PermissionStatusAllowed}
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tool"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	waitStatus(t, system, state.ID, types.RunStatusWaitingConfirmation)
+	if err := system.SubmitToolConfirmation(context.Background(), types.ToolConfirmation{DecisionID: "decision-1", Approved: true}); err != nil {
+		t.Fatalf("SubmitToolConfirmation() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	if fakes.tool.executeCount != 1 {
+		t.Fatalf("executeCount = %d", fakes.tool.executeCount)
+	}
+}
+
+func TestRunFailsWhenMaxStepsExceeded(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.alwaysTool = true
+	fakes.tool.prepareDecision = types.PermissionDecision{ID: "decision-1", ActionID: "intent-1", ToolName: "file-reader", Status: types.PermissionStatusAllowed}
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 1})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "loop"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusFailed || final.Reason != "run exceeded max steps" {
+		t.Fatalf("final = %#v", final)
+	}
+}
+
+func newTestRuntime(t *testing.T, fakes *runtimeFakes, config Config) System {
+	t.Helper()
+	system, err := NewSystem(config, fakes.storage, fakes.roles, fakes.provider, fakes.tool)
+	if err != nil {
+		t.Fatalf("NewSystem() error = %v", err)
+	}
+	return system
+}
+
+func waitRun(t *testing.T, system System, runID string) types.RunState {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		state, err := system.GetRun(context.Background(), runID)
+		if err != nil {
+			t.Fatalf("GetRun() error = %v", err)
+		}
+		if state.Status == types.RunStatusCompleted || state.Status == types.RunStatusFailed || state.Status == types.RunStatusCancelled {
+			return state
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	state, _ := system.GetRun(context.Background(), runID)
+	t.Fatalf("run did not finish, last state = %#v", state)
+	return types.RunState{}
+}
+
+func waitStatus(t *testing.T, system System, runID string, status types.RunStatus) types.RunState {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		state, err := system.GetRun(context.Background(), runID)
+		if err != nil {
+			t.Fatalf("GetRun() error = %v", err)
+		}
+		if state.Status == status {
+			return state
+		}
+		if state.Status == types.RunStatusFailed || state.Status == types.RunStatusCancelled || state.Status == types.RunStatusCompleted {
+			t.Fatalf("run reached terminal state before %s: %#v", status, state)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("run did not reach status %s", status)
+	return types.RunState{}
+}
+
+type runtimeFakes struct {
+	storage  *fakeRuntimeStorage
+	roles    *fakeRuntimeRoles
+	provider *fakeRuntimeProvider
+	tool     *fakeRuntimeTools
+}
+
+func newRuntimeFakes() *runtimeFakes {
+	return &runtimeFakes{storage: newFakeRuntimeStorage(), roles: &fakeRuntimeRoles{}, provider: &fakeRuntimeProvider{}, tool: newFakeRuntimeTools()}
+}
+
+type fakeRuntimeStorage struct {
+	mu       sync.Mutex
+	sessions map[string]types.Session
+}
+
+func newFakeRuntimeStorage() *fakeRuntimeStorage {
+	return &fakeRuntimeStorage{sessions: map[string]types.Session{}}
+}
+
+func (f *fakeRuntimeStorage) SaveSession(ctx context.Context, session types.Session) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sessions[session.RoleID+"/"+session.ID] = session
+	return nil
+}
+
+func (f *fakeRuntimeStorage) LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	session, ok := f.sessions[roleID+"/"+sessionID]
+	if !ok {
+		return types.Session{}, errors.New("session missing")
+	}
+	return session, nil
+}
+
+func (f *fakeRuntimeStorage) lastSession() types.Session {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, session := range f.sessions {
+		return session
+	}
+	return types.Session{}
+}
+
+type fakeRuntimeRoles struct{}
+
+func (f *fakeRuntimeRoles) BuildContext(ctx context.Context, roleID string, session types.Session, tools []types.ToolDefinition) (types.RoleContext, error) {
+	return types.RoleContext{RoleID: roleID, RoleName: "Developer", ModelConfig: types.ModelConfig{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Temperature: 0.7}, Messages: session.Messages, Tools: tools, ToolPolicy: types.ToolPolicy{Mode: types.ToolPolicyWhitelist, Tools: []string{"file-reader"}}}, nil
+}
+
+func (f *fakeRuntimeRoles) GetToolPolicy(ctx context.Context, roleID string) (types.ToolPolicy, error) {
+	return types.ToolPolicy{Mode: types.ToolPolicyWhitelist, Tools: []string{"file-reader"}}, nil
+}
+
+type fakeRuntimeProvider struct {
+	mu         sync.Mutex
+	responses  []types.ModelResponse
+	alwaysTool bool
+	calls      int
+}
+
+func (f *fakeRuntimeProvider) Complete(ctx context.Context, request types.ModelRequest) (types.ModelResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls++
+	if f.alwaysTool {
+		return types.ModelResponse{ID: "m", Content: "tool", ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader"}}}, nil
+	}
+	if len(f.responses) == 0 {
+		return types.ModelResponse{ID: "default", Content: "done"}, nil
+	}
+	response := f.responses[0]
+	f.responses = f.responses[1:]
+	return response, nil
+}
+
+type fakeRuntimeTools struct {
+	prepareDecision   types.PermissionDecision
+	confirmedDecision types.PermissionDecision
+	executeCount      int
+}
+
+func newFakeRuntimeTools() *fakeRuntimeTools {
+	return &fakeRuntimeTools{prepareDecision: types.PermissionDecision{ID: "decision-1", Status: types.PermissionStatusAllowed}}
+}
+
+func (f *fakeRuntimeTools) NormalizeIntent(ctx context.Context, intent types.ToolIntent) (types.ToolAction, error) {
+	return types.ToolAction{ID: intent.ID, ToolName: intent.ToolName, Arguments: intent.Arguments}, nil
+}
+
+func (f *fakeRuntimeTools) Prepare(ctx context.Context, roleID string, action types.ToolAction) (types.ToolRunPlan, error) {
+	decision := f.prepareDecision
+	decision.ActionID = action.ID
+	decision.ToolName = action.ToolName
+	return types.ToolRunPlan{ID: "plan-1", Action: action, Decision: decision}, nil
+}
+
+func (f *fakeRuntimeTools) ApplyConfirmation(ctx context.Context, plan types.ToolRunPlan, confirmation types.ToolConfirmation) (types.ToolRunPlan, error) {
+	decision := f.confirmedDecision
+	if decision.ID == "" {
+		decision = types.PermissionDecision{ID: plan.Decision.ID, ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Status: types.PermissionStatusAllowed}
+	}
+	plan.Decision = decision
+	return plan, nil
+}
+
+func (f *fakeRuntimeTools) Execute(ctx context.Context, plan types.ToolRunPlan) (types.ToolResult, error) {
+	f.executeCount++
+	return types.ToolResult{ID: "result-1", ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Status: types.ToolStatusSuccess, Content: "tool ok", CreatedAt: time.Now().UTC()}, nil
+}
+
+func (f *fakeRuntimeTools) LoadTool(ctx context.Context, toolID string) (types.ToolDefinition, error) {
+	return types.ToolDefinition{ID: toolID, Name: toolID, Description: "tool", Type: "local"}, nil
+}
+
+func (f *fakeRuntimeTools) ListTools(ctx context.Context) ([]types.ToolSummary, error) {
+	return []types.ToolSummary{{ID: "file-reader", Name: "file-reader", Description: "Read files", Type: "local"}}, nil
+}

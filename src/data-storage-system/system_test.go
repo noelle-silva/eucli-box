@@ -1,0 +1,179 @@
+package datastorage
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	apperrors "eucli-box/pkg/errors"
+	"eucli-box/pkg/types"
+)
+
+func TestInitializeCreatesStorageLayout(t *testing.T) {
+	system := newTestSystem(t)
+	for _, dir := range []string{"sessions", "roles", "providers", "tools", "recycle", "meta"} {
+		assertDir(t, filepath.Join(system.paths.root, dir))
+	}
+	assertFile(t, filepath.Join(system.paths.root, "meta", "version.json"))
+}
+
+func TestSaveLoadListAndDeleteRole(t *testing.T) {
+	system := newTestSystem(t)
+	role := types.Role{ID: "developer", Name: "Developer", Avatar: "avatar.png", UpdatedAt: time.Date(2026, 5, 30, 10, 0, 0, 0, time.UTC)}
+	if err := system.SaveRole(context.Background(), role); err != nil {
+		t.Fatalf("SaveRole() error = %v", err)
+	}
+	loaded, err := system.LoadRole(context.Background(), "developer")
+	if err != nil {
+		t.Fatalf("LoadRole() error = %v", err)
+	}
+	if loaded.Name != "Developer" {
+		t.Fatalf("loaded role name = %s", loaded.Name)
+	}
+	roles, err := system.ListRoles(context.Background())
+	if err != nil {
+		t.Fatalf("ListRoles() error = %v", err)
+	}
+	if len(roles) != 1 || roles[0].ID != "developer" {
+		t.Fatalf("roles = %#v", roles)
+	}
+	if err := system.DeleteRole(context.Background(), "developer"); err != nil {
+		t.Fatalf("DeleteRole() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(system.paths.root, "roles", "developer")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("role directory still exists err=%v", err)
+	}
+	recycleEntries, err := os.ReadDir(filepath.Join(system.paths.root, "recycle"))
+	if err != nil {
+		t.Fatalf("ReadDir(recycle) error = %v", err)
+	}
+	if len(recycleEntries) == 0 {
+		t.Fatalf("expected recycle item")
+	}
+}
+
+func TestSessionsAreListedByLastActive(t *testing.T) {
+	system := newTestSystem(t)
+	oldSession := types.Session{ID: "old", RoleID: "developer", Title: "old", LastActive: time.Date(2026, 5, 30, 8, 0, 0, 0, time.UTC)}
+	newSession := types.Session{ID: "new", RoleID: "developer", Title: "new", LastActive: time.Date(2026, 5, 30, 9, 0, 0, 0, time.UTC)}
+	if err := system.SaveSession(context.Background(), oldSession); err != nil {
+		t.Fatalf("SaveSession(old) error = %v", err)
+	}
+	if err := system.SaveSession(context.Background(), newSession); err != nil {
+		t.Fatalf("SaveSession(new) error = %v", err)
+	}
+	sessions, err := system.ListSessions(context.Background(), "developer")
+	if err != nil {
+		t.Fatalf("ListSessions() error = %v", err)
+	}
+	if len(sessions) != 2 || sessions[0].ID != "new" || sessions[1].ID != "old" {
+		t.Fatalf("sessions = %#v", sessions)
+	}
+	index, err := readJSON[sessionRoleIndex](context.Background(), filepath.Join(system.paths.root, "sessions", "index.json"))
+	if err != nil {
+		t.Fatalf("read session root index error = %v", err)
+	}
+	if len(index.Folders) != 1 || index.Folders[0].ID != "developer" {
+		t.Fatalf("session root index = %#v", index)
+	}
+}
+
+func TestProviderAndToolStores(t *testing.T) {
+	system := newTestSystem(t)
+	provider := types.Provider{ID: "openai-main", Name: "OpenAI", Protocol: types.ProviderProtocolOpenAI, UpdatedAt: time.Date(2026, 5, 30, 10, 0, 0, 0, time.UTC)}
+	tool := types.ToolDefinition{ID: "file-reader", Name: "File Reader", Type: "local", UpdatedAt: time.Date(2026, 5, 30, 11, 0, 0, 0, time.UTC)}
+	if err := system.SaveProvider(context.Background(), provider); err != nil {
+		t.Fatalf("SaveProvider() error = %v", err)
+	}
+	if err := system.SaveTool(context.Background(), tool); err != nil {
+		t.Fatalf("SaveTool() error = %v", err)
+	}
+	providers, err := system.ListProviders(context.Background())
+	if err != nil {
+		t.Fatalf("ListProviders() error = %v", err)
+	}
+	tools, err := system.ListTools(context.Background())
+	if err != nil {
+		t.Fatalf("ListTools() error = %v", err)
+	}
+	if len(providers) != 1 || providers[0].ID != provider.ID {
+		t.Fatalf("providers = %#v", providers)
+	}
+	if len(tools) != 1 || tools[0].ID != tool.ID {
+		t.Fatalf("tools = %#v", tools)
+	}
+}
+
+func TestRebuildIndexesRestoresDeletedIndexes(t *testing.T) {
+	system := newTestSystem(t)
+	role := types.Role{ID: "developer", Name: "Developer"}
+	if err := system.SaveRole(context.Background(), role); err != nil {
+		t.Fatalf("SaveRole() error = %v", err)
+	}
+	index := filepath.Join(system.paths.root, "roles", "index.json")
+	if err := os.Remove(index); err != nil {
+		t.Fatalf("Remove(index) error = %v", err)
+	}
+	if err := system.RebuildIndexes(context.Background()); err != nil {
+		t.Fatalf("RebuildIndexes() error = %v", err)
+	}
+	assertFile(t, index)
+}
+
+func TestRejectsUnsafeIDs(t *testing.T) {
+	system := newTestSystem(t)
+	err := system.SaveRole(context.Background(), types.Role{ID: "../escape", Name: "bad"})
+	assertAppErrorCode(t, err, "storage.invalid_request")
+}
+
+func newTestSystem(t *testing.T) *system {
+	t.Helper()
+	created, err := NewSystem(Config{RootDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("NewSystem() error = %v", err)
+	}
+	system, ok := created.(*system)
+	if !ok {
+		t.Fatalf("unexpected system type %T", created)
+	}
+	if err := system.Initialize(context.Background()); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	return system
+}
+
+func assertDir(t *testing.T, path string) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat(%s) error = %v", path, err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("%s is not directory", path)
+	}
+}
+
+func assertFile(t *testing.T, path string) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat(%s) error = %v", path, err)
+	}
+	if info.IsDir() {
+		t.Fatalf("%s is directory", path)
+	}
+}
+
+func assertAppErrorCode(t *testing.T, err error, code string) {
+	t.Helper()
+	var appErr *apperrors.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("error %v is not AppError", err)
+	}
+	if appErr.Code != code {
+		t.Fatalf("code = %s, want %s", appErr.Code, code)
+	}
+}

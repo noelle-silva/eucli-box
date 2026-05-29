@@ -1,0 +1,99 @@
+package types
+
+import "time"
+
+type ToolDefinition struct {
+	ID            string         `json:"id"`
+	Name          string         `json:"name"`
+	Description   string         `json:"description"`
+	Type          string         `json:"type"`
+	InputSchema   map[string]any `json:"inputSchema,omitempty"`
+	UserConfig    map[string]any `json:"userConfig,omitempty"`
+	DefaultConfig map[string]any `json:"defaultConfig,omitempty"`
+	Directory     string         `json:"directory,omitempty"`
+	Binaries      []ToolBinary   `json:"binaries,omitempty"`
+	CreatedAt     time.Time      `json:"createdAt"`
+	UpdatedAt     time.Time      `json:"updatedAt"`
+}
+
+type ToolBinary struct {
+	GOOS   string `json:"goos"`
+	GOARCH string `json:"goarch"`
+	Path   string `json:"path"`
+}
+
+type ToolSummary struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Type        string    `json:"type"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
+type ToolIntent struct {
+	ID        string         `json:"id"`
+	ToolName  string         `json:"toolName"`
+	Arguments map[string]any `json:"arguments,omitempty"`
+	Raw       string         `json:"raw,omitempty"`
+	CreatedAt time.Time      `json:"createdAt"`
+}
+
+type ToolAction struct {
+	ID        string         `json:"id"`
+	ToolName  string         `json:"toolName"`
+	Arguments map[string]any `json:"arguments,omitempty"`
+	CreatedAt time.Time      `json:"createdAt"`
+}
+
+type ToolRunPlan struct {
+	ID         string             `json:"id"`
+	Action     ToolAction         `json:"action"`
+	Tool       ToolDefinition     `json:"tool"`
+	Decision   PermissionDecision `json:"decision"`
+	Status     ToolStatus         `json:"status"`
+	Executable string             `json:"executable,omitempty"`
+	CreatedAt  time.Time          `json:"createdAt"`
+}
+
+type ToolStatus string
+
+const (
+	ToolStatusSuccess   ToolStatus = "success"
+	ToolStatusFailed    ToolStatus = "failed"
+	ToolStatusDenied    ToolStatus = "denied"
+	ToolStatusCancelled ToolStatus = "cancelled"
+)
+
+type ToolResult struct {
+	ID        string         `json:"id"`
+	ActionID  string         `json:"actionId"`
+	ToolName  string         `json:"toolName"`
+	Status    ToolStatus     `json:"status"`
+	Content   string         `json:"content"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+	Error     string         `json:"error,omitempty"`
+	CreatedAt time.Time      `json:"createdAt"`
+}
+
+type ToolConfirmation struct {
+	ID         string    `json:"id"`
+	DecisionID string    `json:"decisionId"`
+	Approved   bool      `json:"approved"`
+	Reason     string    `json:"reason,omitempty"`
+	CreatedAt  time.Time `json:"createdAt"`
+}
+
+type PermissionDecision struct {
+	ID        string    `json:"id"`
+	ActionID  string    `json:"actionId"`
+	ToolName  string    `json:"toolName"`
+	Status    string    `json:"status"`
+	Reason    string    `json:"reason"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+const (
+	PermissionStatusAllowed           = "allowed"
+	PermissionStatusDenied            = "denied"
+	PermissionStatusNeedsConfirmation = "needs_confirmation"
+)

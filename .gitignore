@@ -16,6 +16,10 @@ build/
 .vite/
 **/.vite/
 
+# eucli-box runtime data
+data/*
+!data/.gitkeep
+
 # Logs
 *.log
 npm-debug.log*

@@ -11,12 +11,12 @@ import (
 
 func (s *system) Decide(ctx context.Context, roleID string, action types.ToolAction) (types.PermissionDecision, error) {
 	if err := validateAction(action); err != nil {
-		return types.PermissionDecision{}, err
+		return deny(newDecision(action), "invalid tool action"), err
 	}
 	decision := newDecision(action)
 	policy, err := s.roles.GetToolPolicy(ctx, roleID)
 	if err != nil {
-		return deny(decision, "failed to read role tool policy"), permissionRoleFailed("failed to read role tool policy", err)
+		return deny(decision, "permission internal error"), permissionRoleFailed("failed to read role tool policy", err)
 	}
 	allowed, reason, err := isAllowedByPolicy(policy, action.ToolName)
 	if err != nil {
@@ -27,7 +27,7 @@ func (s *system) Decide(ctx context.Context, roleID string, action types.ToolAct
 	}
 	mode, err := s.roles.GetToolRunMode(ctx, roleID, action.ToolName)
 	if err != nil {
-		return deny(decision, "failed to read tool run mode"), permissionRoleFailed("failed to read tool run mode", err)
+		return deny(decision, "permission internal error"), permissionRoleFailed("failed to read tool run mode", err)
 	}
 	switch mode {
 	case types.ToolRunDirect:

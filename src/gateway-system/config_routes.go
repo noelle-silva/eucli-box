@@ -9,7 +9,7 @@ import (
 func (s *system) handleListRoles(w http.ResponseWriter, r *http.Request) {
 	roles, err := s.roles.ListRoles(r.Context())
 	if err != nil {
-		writeError(w, gatewayDependencyFailed("failed to list roles", err))
+		writeError(w, err)
 		return
 	}
 	writeData(w, http.StatusOK, roles)
@@ -21,8 +21,12 @@ func (s *system) handleSaveRole(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	if err := validateRole(role); err != nil {
+		writeError(w, err)
+		return
+	}
 	if err := s.roles.SaveRole(r.Context(), role); err != nil {
-		writeError(w, gatewayDependencyFailed("failed to save role", err))
+		writeError(w, err)
 		return
 	}
 	writeNoContent(w)
@@ -36,7 +40,7 @@ func (s *system) handleLoadRole(w http.ResponseWriter, r *http.Request) {
 	}
 	role, err := s.roles.LoadRole(r.Context(), roleID)
 	if err != nil {
-		writeError(w, gatewayDependencyFailed("failed to load role", err))
+		writeError(w, err)
 		return
 	}
 	writeData(w, http.StatusOK, role)
@@ -49,7 +53,7 @@ func (s *system) handleDeleteRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.roles.DeleteRole(r.Context(), roleID); err != nil {
-		writeError(w, gatewayDependencyFailed("failed to delete role", err))
+		writeError(w, err)
 		return
 	}
 	writeNoContent(w)
@@ -58,7 +62,7 @@ func (s *system) handleDeleteRole(w http.ResponseWriter, r *http.Request) {
 func (s *system) handleListProviders(w http.ResponseWriter, r *http.Request) {
 	providers, err := s.providers.ListProviders(r.Context())
 	if err != nil {
-		writeError(w, gatewayDependencyFailed("failed to list providers", err))
+		writeError(w, err)
 		return
 	}
 	writeData(w, http.StatusOK, providers)
@@ -70,8 +74,12 @@ func (s *system) handleSaveProvider(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	if err := validateProvider(provider); err != nil {
+		writeError(w, err)
+		return
+	}
 	if err := s.providers.SaveProvider(r.Context(), provider); err != nil {
-		writeError(w, gatewayDependencyFailed("failed to save provider", err))
+		writeError(w, err)
 		return
 	}
 	writeNoContent(w)
@@ -85,7 +93,7 @@ func (s *system) handleLoadProvider(w http.ResponseWriter, r *http.Request) {
 	}
 	provider, err := s.providers.LoadProvider(r.Context(), providerID)
 	if err != nil {
-		writeError(w, gatewayDependencyFailed("failed to load provider", err))
+		writeError(w, err)
 		return
 	}
 	writeData(w, http.StatusOK, provider)
@@ -98,7 +106,7 @@ func (s *system) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.providers.DeleteProvider(r.Context(), providerID); err != nil {
-		writeError(w, gatewayDependencyFailed("failed to delete provider", err))
+		writeError(w, err)
 		return
 	}
 	writeNoContent(w)
@@ -112,7 +120,7 @@ func (s *system) handleRefreshProviderModels(w http.ResponseWriter, r *http.Requ
 	}
 	models, err := s.providers.RefreshModels(r.Context(), providerID)
 	if err != nil {
-		writeError(w, gatewayDependencyFailed("failed to refresh provider models", err))
+		writeError(w, err)
 		return
 	}
 	writeData(w, http.StatusOK, models)
@@ -121,7 +129,7 @@ func (s *system) handleRefreshProviderModels(w http.ResponseWriter, r *http.Requ
 func (s *system) handleListTools(w http.ResponseWriter, r *http.Request) {
 	tools, err := s.tools.ListTools(r.Context())
 	if err != nil {
-		writeError(w, gatewayDependencyFailed("failed to list tools", err))
+		writeError(w, err)
 		return
 	}
 	writeData(w, http.StatusOK, tools)
@@ -133,8 +141,12 @@ func (s *system) handleSaveTool(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	if err := validateTool(tool); err != nil {
+		writeError(w, err)
+		return
+	}
 	if err := s.tools.SaveTool(r.Context(), tool); err != nil {
-		writeError(w, gatewayDependencyFailed("failed to save tool", err))
+		writeError(w, err)
 		return
 	}
 	writeNoContent(w)
@@ -148,7 +160,7 @@ func (s *system) handleLoadTool(w http.ResponseWriter, r *http.Request) {
 	}
 	tool, err := s.tools.LoadTool(r.Context(), toolID)
 	if err != nil {
-		writeError(w, gatewayDependencyFailed("failed to load tool", err))
+		writeError(w, err)
 		return
 	}
 	writeData(w, http.StatusOK, tool)

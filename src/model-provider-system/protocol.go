@@ -48,7 +48,21 @@ func requireSuccess(response types.HTTPResponse) error {
 	}
 	message := fmt.Sprintf("provider service returned status %d", response.StatusCode)
 	if len(response.Body) > 0 {
-		message = message + ": " + string(response.Body)
+		bodyStr := string(response.Body)
+		lines := strings.Split(bodyStr, "\n")
+		filtered := make([]string, 0, len(lines))
+		for _, line := range lines {
+			lower := strings.ToLower(line)
+			if strings.Contains(lower, "key") || strings.Contains(lower, "api_key") || strings.Contains(lower, "secret") {
+				continue
+			}
+			filtered = append(filtered, line)
+		}
+		bodyStr = strings.Join(filtered, "\n")
+		if len(bodyStr) > 200 {
+			bodyStr = bodyStr[:200] + "..."
+		}
+		message = message + ": " + bodyStr
 	}
 	return providerServiceFailed(message, nil)
 }

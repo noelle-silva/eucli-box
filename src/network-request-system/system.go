@@ -48,8 +48,8 @@ func normalizeConfig(config Config) (Config, error) {
 	if config.DefaultTimeout == 0 {
 		config.DefaultTimeout = 30 * time.Second
 	}
-	if config.MaxTimeout == 0 {
-		config.MaxTimeout = 120 * time.Second
+	if config.MaxTimeout <= 0 {
+		return Config{}, invalidRequest("max timeout must be positive", nil)
 	}
 	if config.DefaultTimeout > config.MaxTimeout {
 		return Config{}, invalidRequest("default timeout cannot exceed max timeout", nil)

@@ -17,13 +17,12 @@ func (s *system) Subscribe(ctx context.Context) (<-chan types.RunEvent, func(), 
 	s.subscribers[ch] = struct{}{}
 	s.mu.Unlock()
 	unsubscribe := func() {
-		s.mu.Lock()
-		if _, ok := s.subscribers[ch]; ok {
-			delete(s.subscribers, ch)
-			close(ch)
-		}
-		s.mu.Unlock()
+		s.removeSubscriber(ch)
 	}
+	go func() {
+		<-ctx.Done()
+		s.removeSubscriber(ch)
+	}()
 	return ch, unsubscribe, nil
 }
 

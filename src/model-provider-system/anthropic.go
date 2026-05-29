@@ -87,6 +87,7 @@ func (anthropicAdapter) BuildCompleteRequest(provider types.Provider, request ty
 		Headers: map[string]string{
 			"x-api-key":         provider.Key,
 			"anthropic-version": "2023-06-01",
+			"Content-Type":      "application/json",
 		},
 		BodyKind: types.HTTPBodyJSON,
 		Body:     payload,

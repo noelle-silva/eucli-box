@@ -57,11 +57,14 @@ type system struct {
 }
 
 type runRecord struct {
-	state          types.RunState
-	session        types.Session
-	cancel         context.CancelFunc
-	confirmationCh chan types.ToolConfirmation
+	runID   string
+	roleID  string
+	state   types.RunState
+	session types.Session
+	cancel  context.CancelFunc
+
 	pendingPlan    *types.ToolRunPlan
+	confirmationCh chan types.ToolConfirmation
 }
 
 func NewSystem(config Config, storage StorageSystem, roles RoleSystem, providers ProviderSystem, tools ToolSystem) (System, error) {
@@ -87,4 +90,23 @@ func NewSystem(config Config, storage StorageSystem, roles RoleSystem, providers
 		config.ToolTimeout = 120 * time.Second
 	}
 	return &system{config: config, storage: storage, roles: roles, providers: providers, tools: tools, runs: map[string]*runRecord{}, subscribers: map[chan types.RunEvent]struct{}{}}, nil
+}
+
+func (s *system) getRunState(runID string) (types.RunState, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.runs[runID]
+	if !ok {
+		return types.RunState{}, false
+	}
+	return record.state, true
+}
+
+func (s *system) removeSubscriber(ch chan types.RunEvent) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.subscribers[ch]; ok {
+		delete(s.subscribers, ch)
+		close(ch)
+	}
 }

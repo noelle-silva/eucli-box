@@ -50,10 +50,18 @@ type ToolRunPlan struct {
 	Action     ToolAction         `json:"action"`
 	Tool       ToolDefinition     `json:"tool"`
 	Decision   PermissionDecision `json:"decision"`
-	Status     ToolStatus         `json:"status"`
+	PlanStatus ToolPlanStatus     `json:"planStatus"`
 	Executable string             `json:"executable,omitempty"`
 	CreatedAt  time.Time          `json:"createdAt"`
 }
+
+type ToolPlanStatus string
+
+const (
+	ToolPlanStatusReady             ToolPlanStatus = "ready"
+	ToolPlanStatusNeedsConfirmation ToolPlanStatus = "needs_confirmation"
+	ToolPlanStatusDenied            ToolPlanStatus = "denied"
+)
 
 type ToolStatus string
 

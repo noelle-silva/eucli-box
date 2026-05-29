@@ -14,6 +14,9 @@ func (s *system) BuildContext(ctx context.Context, roleID string, session types.
 	if err := validateRole(ctx, s.providers, role); err != nil {
 		return types.RoleContext{}, err
 	}
+	if session.RoleID == "" || session.RoleID != roleID {
+		return types.RoleContext{}, roleInvalid("session role does not match requested role", nil)
+	}
 	return types.RoleContext{
 		RoleID:      role.ID,
 		RoleName:    role.Name,

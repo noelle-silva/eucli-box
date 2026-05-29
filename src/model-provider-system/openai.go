@@ -78,7 +78,7 @@ func (openAIAdapter) BuildCompleteRequest(provider types.Provider, request types
 	return types.HTTPRequest{
 		Method:   "POST",
 		URL:      joinURL(provider.BaseURL, "/chat/completions"),
-		Headers:  map[string]string{"Authorization": "Bearer " + provider.Key},
+		Headers:  map[string]string{"Authorization": "Bearer " + provider.Key, "Content-Type": "application/json"},
 		BodyKind: types.HTTPBodyJSON,
 		Body:     payload,
 		Timeout:  time.Duration(timeout),

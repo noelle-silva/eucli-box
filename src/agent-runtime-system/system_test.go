@@ -212,7 +212,13 @@ func (f *fakeRuntimeTools) Prepare(ctx context.Context, roleID string, action ty
 	decision := f.prepareDecision
 	decision.ActionID = action.ID
 	decision.ToolName = action.ToolName
-	return types.ToolRunPlan{ID: "plan-1", Action: action, Decision: decision}, nil
+	planStatus := types.ToolPlanStatusReady
+	if decision.Status == types.PermissionStatusDenied {
+		planStatus = types.ToolPlanStatusDenied
+	} else if decision.Status == types.PermissionStatusNeedsConfirmation {
+		planStatus = types.ToolPlanStatusNeedsConfirmation
+	}
+	return types.ToolRunPlan{ID: "plan-1", Action: action, Tool: types.ToolDefinition{ID: action.ToolName, Name: action.ToolName, Description: "tool", Type: "local"}, Decision: decision, PlanStatus: planStatus}, nil
 }
 
 func (f *fakeRuntimeTools) ApplyConfirmation(ctx context.Context, plan types.ToolRunPlan, confirmation types.ToolConfirmation) (types.ToolRunPlan, error) {

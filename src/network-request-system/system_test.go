@@ -26,7 +26,7 @@ func TestDoReturnsStandardResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	system, err := NewSystem(Config{})
+	system, err := NewSystem(Config{MaxTimeout: 30 * time.Second})
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -57,7 +57,7 @@ func TestDoDoesNotTreatNon2xxAsNetworkError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	system, err := NewSystem(Config{})
+	system, err := NewSystem(Config{MaxTimeout: 30 * time.Second})
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -71,7 +71,7 @@ func TestDoDoesNotTreatNon2xxAsNetworkError(t *testing.T) {
 }
 
 func TestDoRejectsInvalidRequest(t *testing.T) {
-	system, err := NewSystem(Config{})
+	system, err := NewSystem(Config{MaxTimeout: 30 * time.Second})
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}

@@ -22,21 +22,29 @@ type toolInput struct {
 type toolOutput struct {
 	Status   types.ToolStatus `json:"status"`
 	Content  string           `json:"content"`
+	Error    string           `json:"error,omitempty"`
 	Metadata map[string]any   `json:"metadata"`
 }
 
 func (s *system) Execute(ctx context.Context, plan types.ToolRunPlan) (types.ToolResult, error) {
-	if plan.Decision.Status == types.PermissionStatusDenied {
+	if plan.PlanStatus == types.ToolPlanStatusDenied {
 		return deniedResult(plan, plan.Decision.Reason), nil
 	}
-	if plan.Decision.Status == types.PermissionStatusNeedsConfirmation {
-		return types.ToolResult{}, toolExecutionInvalid("tool plan still needs confirmation", nil)
+	if plan.PlanStatus != types.ToolPlanStatusReady {
+		return types.ToolResult{}, toolExecutionInvalid("tool plan is not ready for execution", nil)
 	}
-	if plan.Decision.Status != types.PermissionStatusAllowed {
-		return types.ToolResult{}, toolExecutionInvalid("tool plan is not allowed", nil)
+	if err := validatePlan(plan); err != nil {
+		return types.ToolResult{}, err
 	}
-	if plan.Executable == "" {
-		return types.ToolResult{}, toolExecutionInvalid("tool executable is required", nil)
+	if err := ensureToolDirectory(plan.Tool); err != nil {
+		return types.ToolResult{}, err
+	}
+	if _, err := selectExecutable(plan.Tool); err != nil {
+		return types.ToolResult{}, err
+	}
+	_, executableErr := cleanExecutablePath(plan.Tool, plan.Executable)
+	if executableErr != nil {
+		return types.ToolResult{}, executableErr
 	}
 	input, err := json.Marshal(toolInput{ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Arguments: plan.Action.Arguments, UserConfig: plan.Tool.UserConfig, ToolDirectory: plan.Tool.Directory})
 	if err != nil {
@@ -65,14 +73,33 @@ func (s *system) Execute(ctx context.Context, plan types.ToolRunPlan) (types.Too
 	return parseToolOutput(plan, stdout.Bytes()), nil
 }
 
+func validatePlan(plan types.ToolRunPlan) error {
+	if plan.Tool.ID == "" {
+		return toolExecutionInvalid("tool plan is missing tool definition", nil)
+	}
+	if plan.Action.ID == "" || plan.Action.ToolName == "" {
+		return toolExecutionInvalid("tool plan is missing action", nil)
+	}
+	if plan.Decision.Status != types.PermissionStatusAllowed {
+		return toolExecutionInvalid("tool plan decision is not allowed", nil)
+	}
+	return nil
+}
+
 func parseToolOutput(plan types.ToolRunPlan, raw []byte) types.ToolResult {
 	var output toolOutput
 	if err := json.Unmarshal(bytes.TrimSpace(raw), &output); err != nil {
 		return failedResult(plan, "tool output is not valid json")
 	}
 	switch output.Status {
-	case types.ToolStatusSuccess, types.ToolStatusFailed, types.ToolStatusDenied, types.ToolStatusCancelled:
-		return types.ToolResult{ID: newToolResultID(), ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Status: output.Status, Content: output.Content, Metadata: output.Metadata, CreatedAt: time.Now().UTC()}
+	case types.ToolStatusSuccess:
+		return types.ToolResult{ID: newToolResultID(), ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Status: types.ToolStatusSuccess, Content: output.Content, Metadata: output.Metadata, CreatedAt: time.Now().UTC()}
+	case types.ToolStatusFailed, types.ToolStatusDenied, types.ToolStatusCancelled:
+		errMsg := output.Error
+		if errMsg == "" {
+			errMsg = output.Content
+		}
+		return types.ToolResult{ID: newToolResultID(), ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Status: output.Status, Error: errMsg, CreatedAt: time.Now().UTC()}
 	default:
 		return failedResult(plan, "tool output status is invalid")
 	}

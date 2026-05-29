@@ -60,6 +60,13 @@ func validateToolPolicy(policy types.ToolPolicy) error {
 			return roleInvalid("tool run mode must be direct or ask", nil)
 		}
 	}
+	if policy.Mode == types.ToolPolicyWhitelist {
+		for _, tool := range policy.Tools {
+			if _, ok := policy.RunModes[tool]; !ok {
+				return roleInvalid("tool policy tool has no run mode configured", nil)
+			}
+		}
+	}
 	return nil
 }
 

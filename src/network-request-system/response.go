@@ -1,6 +1,8 @@
 package networkrequest
 
 import (
+	"context"
+	"errors"
 	"io"
 	"net/http"
 	"time"
@@ -11,6 +13,9 @@ import (
 func normalizeResponse(resp *http.Response, started int64) (types.HTTPResponse, error) {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(resp.Request.Context().Err(), context.DeadlineExceeded) {
+			return types.HTTPResponse{}, requestTimeout("http request timed out", err)
+		}
 		return types.HTTPResponse{}, requestFailed("failed to read http response body", err)
 	}
 	return types.HTTPResponse{

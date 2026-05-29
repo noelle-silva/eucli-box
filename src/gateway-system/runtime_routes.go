@@ -12,9 +12,13 @@ func (s *system) handleStartRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	if err := validateRunRequest(request); err != nil {
+		writeError(w, err)
+		return
+	}
 	state, err := s.runtime.StartRun(r.Context(), request)
 	if err != nil {
-		writeError(w, gatewayDependencyFailed("failed to start run", err))
+		writeError(w, err)
 		return
 	}
 	writeData(w, http.StatusCreated, state)
@@ -28,7 +32,7 @@ func (s *system) handleGetRun(w http.ResponseWriter, r *http.Request) {
 	}
 	state, err := s.runtime.GetRun(r.Context(), runID)
 	if err != nil {
-		writeError(w, gatewayDependencyFailed("failed to get run", err))
+		writeError(w, err)
 		return
 	}
 	writeData(w, http.StatusOK, state)
@@ -41,7 +45,7 @@ func (s *system) handleCancelRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.runtime.CancelRun(r.Context(), runID); err != nil {
-		writeError(w, gatewayDependencyFailed("failed to cancel run", err))
+		writeError(w, err)
 		return
 	}
 	writeNoContent(w)
@@ -53,8 +57,12 @@ func (s *system) handleToolConfirmation(w http.ResponseWriter, r *http.Request) 
 		writeError(w, err)
 		return
 	}
+	if err := validateConfirmation(confirmation); err != nil {
+		writeError(w, err)
+		return
+	}
 	if err := s.runtime.SubmitToolConfirmation(r.Context(), confirmation); err != nil {
-		writeError(w, gatewayDependencyFailed("failed to submit tool confirmation", err))
+		writeError(w, err)
 		return
 	}
 	writeNoContent(w)

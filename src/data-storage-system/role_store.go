@@ -2,6 +2,7 @@ package datastorage
 
 import (
 	"context"
+	"path/filepath"
 	"sort"
 
 	"eucli-box/pkg/types"
@@ -17,6 +18,13 @@ func (s *system) SaveRole(ctx context.Context, role types.Role) error {
 	}
 	if err := writeJSON(ctx, target, role); err != nil {
 		return err
+	}
+	roleDir, err := s.paths.roleDir(role.ID)
+	if err != nil {
+		return err
+	}
+	if err := ensureDirs(filepath.Join(roleDir, "attachments")); err != nil {
+		return storageWriteFailed("failed to create role attachments directory", err)
 	}
 	return s.rebuildRoleIndex(ctx)
 }

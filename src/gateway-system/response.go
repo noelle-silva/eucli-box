@@ -37,14 +37,16 @@ func writeNoContent(w http.ResponseWriter) {
 }
 
 func writeError(w http.ResponseWriter, err error) {
-	status := http.StatusInternalServerError
 	var appErr *apperrors.AppError
 	if errors.As(err, &appErr) {
-		status = statusForCode(appErr.Code)
-		writeJSON(w, status, errorResponse{Error: responseError{Code: appErr.Code, Message: appErr.Message, System: appErr.System}})
+		inner := resolveInnerAppError(err)
+		if inner != nil {
+			appErr = inner
+		}
+		writeJSON(w, statusForCode(appErr.Code), errorResponse{Error: responseError{Code: appErr.Code, Message: appErr.Message, System: appErr.System}})
 		return
 	}
-	writeJSON(w, status, errorResponse{Error: responseError{Code: "gateway.internal_error", Message: err.Error(), System: systemName}})
+	writeJSON(w, http.StatusInternalServerError, errorResponse{Error: responseError{Code: "gateway.internal_error", Message: err.Error(), System: systemName}})
 }
 
 func statusForCode(code string) int {

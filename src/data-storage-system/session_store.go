@@ -2,6 +2,7 @@ package datastorage
 
 import (
 	"context"
+	"path/filepath"
 	"sort"
 
 	"eucli-box/pkg/types"
@@ -20,6 +21,13 @@ func (s *system) SaveSession(ctx context.Context, session types.Session) error {
 	}
 	if err := writeJSON(ctx, target, session); err != nil {
 		return err
+	}
+	attachmentsDir, err := s.paths.sessionDir(session.RoleID, session.ID)
+	if err != nil {
+		return err
+	}
+	if err := ensureDirs(filepath.Join(attachmentsDir, "attachments")); err != nil {
+		return storageWriteFailed("failed to create session attachments directory", err)
 	}
 	return s.rebuildAllSessionIndexes(ctx)
 }

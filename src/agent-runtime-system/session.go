@@ -40,11 +40,25 @@ func toolMessage(result types.ToolResult) types.Message {
 	if content == "" {
 		content = result.Error
 	}
-	return types.Message{ID: utils.NewID("message"), Type: "tool", Content: content, ToolName: result.ToolName, Reason: result.Error, CreatedAt: time.Now().UTC()}
+	return types.Message{ID: utils.NewID("message"), Type: "tool", Content: content, ToolID: result.ID, ToolName: result.ToolName, Reason: result.Error, CreatedAt: time.Now().UTC()}
 }
 
 func failureMessage(reason string) types.Message {
 	return types.Message{ID: utils.NewID("message"), Type: "failure", Reason: reason, Content: reason, CreatedAt: time.Now().UTC()}
+}
+
+func toolRequestMessage(action types.ToolAction) types.Message {
+	return types.Message{ID: utils.NewID("message"), Type: "tool_request", Content: action.ToolName, ToolName: action.ToolName, CreatedAt: time.Now().UTC()}
+}
+
+func toolConfirmationMessage(decision types.PermissionDecision) types.Message {
+	content := decision.Status
+	if decision.Status == types.PermissionStatusAllowed {
+		content = "tool approved by user"
+	} else {
+		content = "tool rejected by user"
+	}
+	return types.Message{ID: utils.NewID("message"), Type: "tool_confirmation", Content: content, ToolName: decision.ToolName, Reason: decision.Reason, CreatedAt: time.Now().UTC()}
 }
 
 func firstTitle(message string) string {

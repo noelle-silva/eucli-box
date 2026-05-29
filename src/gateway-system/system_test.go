@@ -60,7 +60,7 @@ func TestInvalidJSONReturnsBadRequest(t *testing.T) {
 func TestProviderAndToolRoutes(t *testing.T) {
 	fakes := newGatewayFakes()
 	system := newTestGateway(t, fakes)
-	providerReq := httptest.NewRequest(http.MethodPost, "/api/providers", strings.NewReader(`{"id":"openai-main","name":"OpenAI","protocol":"openai"}`))
+	providerReq := httptest.NewRequest(http.MethodPost, "/api/providers", strings.NewReader(`{"id":"openai-main","name":"OpenAI","baseUrl":"https://api.test/v1","key":"secret","protocol":"openai"}`))
 	providerRec := httptest.NewRecorder()
 	system.Handler().ServeHTTP(providerRec, providerReq)
 	if providerRec.Code != http.StatusNoContent {

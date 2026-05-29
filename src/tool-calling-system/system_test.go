@@ -38,15 +38,21 @@ func main() { fmt.Print(`+"`"+`{"status":"success","content":"ok","metadata":{}}
 	if err != nil {
 		t.Fatalf("Prepare() error = %v", err)
 	}
-	if plan.Status != types.ToolStatusDenied || plan.Decision.Reason != "blocked" {
+	if plan.PlanStatus != types.ToolPlanStatusDenied || plan.Decision.Reason != "blocked" {
 		t.Fatalf("plan = %#v", plan)
 	}
 }
 
 func TestApplyConfirmationUpdatesPlan(t *testing.T) {
+	storage := newFakeToolStorage()
+	tool := testTool(t, buildTool(t, `package main
+import "fmt"
+func main() { fmt.Print(`+"`"+`{"status":"success","content":"ok","metadata":{}}`+"`"+`) }
+`))
+	storage.tools[tool.ID] = tool
 	permissions := &fakePermission{confirmation: types.PermissionDecision{ID: "d1", ActionID: "a1", ToolName: "web-search", Status: types.PermissionStatusAllowed, Reason: "approved"}}
-	system := newTestToolSystem(t, permissions, newFakeToolStorage(), Config{})
-	plan := types.ToolRunPlan{Decision: types.PermissionDecision{ID: "d1", Status: types.PermissionStatusNeedsConfirmation}}
+	system := newTestToolSystem(t, permissions, storage, Config{})
+	plan := types.ToolRunPlan{ID: "plan-1", Action: types.ToolAction{ID: "a1", ToolName: tool.Name}, Tool: tool, Decision: types.PermissionDecision{ID: "d1", ActionID: "a1", ToolName: tool.Name, Status: types.PermissionStatusNeedsConfirmation}, PlanStatus: types.ToolPlanStatusNeedsConfirmation}
 	updated, err := system.ApplyConfirmation(context.Background(), plan, types.ToolConfirmation{DecisionID: "d1", Approved: true})
 	if err != nil {
 		t.Fatalf("ApplyConfirmation() error = %v", err)
@@ -116,6 +122,34 @@ func main() {}
 	assertAppErrorCode(t, err, "tool.not_found")
 }
 
+func TestExecuteReturnsDeniedResult(t *testing.T) {
+	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{})
+	result, err := system.Execute(context.Background(), types.ToolRunPlan{Action: types.ToolAction{ID: "a1", ToolName: "file-reader"}, Tool: types.ToolDefinition{ID: "file-reader"}, PlanStatus: types.ToolPlanStatusDenied, Decision: types.PermissionDecision{Status: types.PermissionStatusDenied, Reason: "blocked"}})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if result.Status != types.ToolStatusDenied || result.Error != "blocked" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestApplyConfirmationRejectsUserRefusal(t *testing.T) {
+	storage := newFakeToolStorage()
+	tool := testTool(t, buildTool(t, `package main
+func main() {}
+`))
+	storage.tools[tool.ID] = tool
+	system := newTestToolSystem(t, &fakePermission{}, storage, Config{})
+	plan := types.ToolRunPlan{ID: "plan-1", Action: types.ToolAction{ID: "a1", ToolName: tool.Name}, Tool: tool, Decision: types.PermissionDecision{ID: "d1", ActionID: "a1", ToolName: tool.Name, Status: types.PermissionStatusNeedsConfirmation}, PlanStatus: types.ToolPlanStatusNeedsConfirmation}
+	updated, err := system.ApplyConfirmation(context.Background(), plan, types.ToolConfirmation{DecisionID: "d1", Approved: false})
+	if err != nil {
+		t.Fatalf("ApplyConfirmation() error = %v", err)
+	}
+	if updated.PlanStatus != types.ToolPlanStatusDenied {
+		t.Fatalf("plan status = %s", updated.PlanStatus)
+	}
+}
+
 func newTestToolSystem(t *testing.T, permission PermissionSystem, storage StorageSystem, config Config) System {
 	t.Helper()
 	system, err := NewSystem(config, permission, storage)
@@ -144,6 +178,7 @@ func allowedPlan(tool types.ToolDefinition, executable string) types.ToolRunPlan
 		Action:     types.ToolAction{ID: "a1", ToolName: tool.Name, Arguments: map[string]any{"path": "README.md"}},
 		Tool:       tool,
 		Decision:   types.PermissionDecision{ID: "d1", ActionID: "a1", ToolName: tool.Name, Status: types.PermissionStatusAllowed},
+		PlanStatus: types.ToolPlanStatusReady,
 		Executable: executable,
 	}
 }
@@ -233,17 +268,6 @@ func assertAppErrorCode(t *testing.T, err error, code string) {
 	}
 	if appErr.Code != code {
 		t.Fatalf("code = %s, want %s", appErr.Code, code)
-	}
-}
-
-func TestExecuteReturnsDeniedResult(t *testing.T) {
-	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{})
-	result, err := system.Execute(context.Background(), types.ToolRunPlan{Action: types.ToolAction{ID: "a1", ToolName: "file-reader"}, Decision: types.PermissionDecision{Status: types.PermissionStatusDenied, Reason: "blocked"}})
-	if err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-	if result.Status != types.ToolStatusDenied || result.Error != "blocked" {
-		t.Fatalf("result = %#v", result)
 	}
 }
 

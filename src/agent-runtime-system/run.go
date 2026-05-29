@@ -16,7 +16,7 @@ func (s *system) StartRun(ctx context.Context, request types.RunRequest) (types.
 	runCtx, cancel := context.WithCancel(context.Background())
 	now := nowUTC()
 	state := types.RunState{ID: utils.NewID("run"), RoleID: request.RoleID, SessionID: request.SessionID, Status: types.RunStatusCreated, CreatedAt: now, UpdatedAt: now}
-	record := &runRecord{state: state, cancel: cancel}
+	record := &runRecord{runID: state.ID, roleID: request.RoleID, state: state, cancel: cancel}
 	s.mu.Lock()
 	s.runs[state.ID] = record
 	s.mu.Unlock()
@@ -28,13 +28,11 @@ func (s *system) GetRun(ctx context.Context, runID string) (types.RunState, erro
 	if strings.TrimSpace(runID) == "" {
 		return types.RunState{}, runtimeInvalid("run id is required", nil)
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	record, ok := s.runs[runID]
+	state, ok := s.getRunState(runID)
 	if !ok {
 		return types.RunState{}, runtimeNotFound("run was not found", nil)
 	}
-	return record.state, nil
+	return state, nil
 }
 
 func (s *system) CancelRun(ctx context.Context, runID string) error {
@@ -55,18 +53,18 @@ func (s *system) CancelRun(ctx context.Context, runID string) error {
 }
 
 func (s *system) run(ctx context.Context, record *runRecord, request types.RunRequest) {
-	state, err := s.updateRun(record.state.ID, types.RunStatusRunning, "")
+	state, err := s.updateRun(record.runID, types.RunStatusRunning, "")
 	if err != nil {
 		return
 	}
-	s.publish(record.state.ID, "run_started", state)
+	s.publish(record.runID, "run_started", state)
 	session, err := s.loadOrCreateSession(ctx, request)
 	if err != nil {
 		s.failRun(context.Background(), record, session, err.Error())
 		return
 	}
 	if record.state.SessionID == "" {
-		if err := s.setRunSessionID(record.state.ID, session.ID); err != nil {
+		if err := s.setRunSessionID(record.runID, session.ID); err != nil {
 			s.failRun(context.Background(), record, session, err.Error())
 			return
 		}
@@ -79,46 +77,53 @@ func (s *system) run(ctx context.Context, record *runRecord, request types.RunRe
 	record.session = session
 	for step := 1; step <= s.config.MaxSteps; step++ {
 		if err := ctx.Err(); err != nil {
-			s.cancelRunRecord(context.Background(), record, session)
+			s.cancelRunRecord(context.Background(), record, record.session)
 			return
 		}
-		roleContext, err := s.buildRoleContext(ctx, record.state.RoleID, session)
+		roleContext, err := s.buildRoleContext(ctx, record.roleID, record.session)
 		if err != nil {
-			s.failRun(context.Background(), record, session, err.Error())
+			s.failRun(context.Background(), record, record.session, err.Error())
 			return
 		}
 		modelResponse, err := s.callModel(ctx, roleContext)
 		if err != nil {
-			s.failRun(context.Background(), record, session, err.Error())
+			s.failRun(context.Background(), record, record.session, err.Error())
 			return
 		}
-		session = appendMessage(session, assistantMessage(modelResponse.Content))
-		s.publish(record.state.ID, "model_output", modelResponse)
-		if err := s.saveSession(ctx, session, types.RunStatusRunning); err != nil {
-			s.failRun(context.Background(), record, session, err.Error())
+		if err := ctx.Err(); err != nil {
+			s.cancelRunRecord(context.Background(), record, record.session)
+			return
+		}
+		record.session = appendMessage(record.session, assistantMessage(modelResponse.Content))
+		s.publish(record.runID, "model_output", modelResponse)
+		if err := s.saveSession(ctx, record.session, types.RunStatusRunning); err != nil {
+			s.failRun(context.Background(), record, record.session, err.Error())
 			return
 		}
 		if len(modelResponse.ToolIntents) == 0 {
-			s.completeRun(context.Background(), record, session)
+			s.completeRun(context.Background(), record, record.session)
 			return
 		}
 		if len(modelResponse.ToolIntents) > 1 {
-			s.failRun(context.Background(), record, session, "model returned more than one tool intent")
+			s.failRun(context.Background(), record, record.session, "model returned more than one tool intent")
 			return
 		}
-		result, _, err := s.handleToolIntent(ctx, record, modelResponse.ToolIntents[0])
+		result, err := s.handleToolIntent(ctx, record, modelResponse.ToolIntents[0])
 		if err != nil {
-			s.failRun(context.Background(), record, session, err.Error())
+			s.failRun(context.Background(), record, record.session, err.Error())
 			return
 		}
-		session = appendMessage(session, toolMessage(result))
-		s.publish(record.state.ID, "tool_result", result)
-		if err := s.saveSession(ctx, session, types.RunStatusRunning); err != nil {
-			s.failRun(context.Background(), record, session, err.Error())
+		if err := ctx.Err(); err != nil {
+			s.cancelRunRecord(context.Background(), record, record.session)
+			return
+		}
+		s.publish(record.runID, "tool_result", result)
+		if err := s.saveSession(ctx, record.session, types.RunStatusRunning); err != nil {
+			s.failRun(context.Background(), record, record.session, err.Error())
 			return
 		}
 	}
-	s.failRun(context.Background(), record, session, "run exceeded max steps")
+	s.failRun(context.Background(), record, record.session, "run exceeded max steps")
 }
 
 func validateRunRequest(ctx context.Context, request types.RunRequest) error {
@@ -135,35 +140,45 @@ func validateRunRequest(ctx context.Context, request types.RunRequest) error {
 }
 
 func (s *system) completeRun(ctx context.Context, record *runRecord, session types.Session) {
-	state, err := s.updateRun(record.state.ID, types.RunStatusCompleted, "")
+	state, err := s.updateRun(record.runID, types.RunStatusCompleted, "")
 	if err != nil {
 		return
 	}
-	_ = s.saveSession(ctx, session, types.RunStatusCompleted)
-	s.publish(record.state.ID, "run_completed", state)
+	if err := s.saveSession(ctx, session, types.RunStatusCompleted); err != nil {
+		_, _ = s.updateRun(record.runID, types.RunStatusFailed, "save session failed: "+err.Error())
+		s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: "save session failed"})
+		return
+	}
+	s.publish(record.runID, "run_completed", state)
 }
 
 func (s *system) failRun(ctx context.Context, record *runRecord, session types.Session, reason string) {
-	state, err := s.updateRun(record.state.ID, types.RunStatusFailed, reason)
+	state, err := s.updateRun(record.runID, types.RunStatusFailed, reason)
 	if err != nil {
 		return
 	}
 	if session.ID != "" {
 		session = appendMessage(session, failureMessage(reason))
-		_ = s.saveSession(ctx, session, types.RunStatusFailed)
+		if err := s.saveSession(ctx, session, types.RunStatusFailed); err != nil {
+			s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: "save session failed: " + err.Error()})
+			return
+		}
 	}
-	s.publish(record.state.ID, "run_failed", state)
+	s.publish(record.runID, "run_failed", state)
 }
 
 func (s *system) cancelRunRecord(ctx context.Context, record *runRecord, session types.Session) {
-	state, err := s.updateRun(record.state.ID, types.RunStatusCancelled, "cancelled")
+	state, err := s.updateRun(record.runID, types.RunStatusCancelled, "cancelled")
 	if err != nil {
 		return
 	}
 	if session.ID != "" {
-		_ = s.saveSession(ctx, session, types.RunStatusCancelled)
+		if err := s.saveSession(ctx, session, types.RunStatusCancelled); err != nil {
+			s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: "save session failed: " + err.Error()})
+			return
+		}
 	}
-	s.publish(record.state.ID, "run_cancelled", state)
+	s.publish(record.runID, "run_cancelled", state)
 }
 
 func nowUTC() time.Time {

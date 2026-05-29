@@ -2,6 +2,7 @@ package datastorage
 
 import (
 	"context"
+	"path/filepath"
 	"sort"
 
 	"eucli-box/pkg/types"
@@ -17,6 +18,13 @@ func (s *system) SaveTool(ctx context.Context, tool types.ToolDefinition) error 
 	}
 	if err := writeJSON(ctx, target, tool); err != nil {
 		return err
+	}
+	toolDir, err := s.paths.toolDir(tool.ID)
+	if err != nil {
+		return err
+	}
+	if err := ensureDirs(filepath.Join(toolDir, "binary")); err != nil {
+		return storageWriteFailed("failed to create tool binary directory", err)
 	}
 	return s.rebuildToolIndex(ctx)
 }

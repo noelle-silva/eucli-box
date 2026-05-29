@@ -22,7 +22,7 @@ var allowedMethods = map[string]struct{}{
 
 func buildRequest(ctx context.Context, req types.HTTPRequest, config Config) (preparedRequest, error) {
 	if ctx == nil {
-		ctx = context.Background()
+		return preparedRequest{}, invalidRequest("context is required", nil)
 	}
 	method := strings.ToUpper(strings.TrimSpace(req.Method))
 	if _, ok := allowedMethods[method]; !ok {
@@ -31,6 +31,9 @@ func buildRequest(ctx context.Context, req types.HTTPRequest, config Config) (pr
 	parsedURL, err := url.ParseRequestURI(strings.TrimSpace(req.URL))
 	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
 		return preparedRequest{}, invalidRequest("invalid request url", err)
+	}
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return preparedRequest{}, invalidRequest("unsupported url scheme", nil)
 	}
 	timeout := req.Timeout
 	if timeout == 0 {

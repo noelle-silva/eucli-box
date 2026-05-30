@@ -48,6 +48,7 @@ type ToolSystem interface {
 
 type Config struct {
 	Addr         string
+	Key          string
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
 }

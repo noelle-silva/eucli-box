@@ -87,7 +87,7 @@ import { AI_STUDIO_CHAT_ROOT_ID } from '../runtime/aiStudioGlobals'
 import { isAssistantGenerating } from '../domain/assistantRunState'
 import { formatModelRefDisplayText } from '../domain/modelRefUtils'
 
-type SettingsTab = 'appearance' | 'attachments' | 'data' | 'groups' | 'roles' | 'providers' | 'services' | 'stickers'
+type SettingsTab = 'appearance' | 'attachments' | 'data' | 'groups' | 'roles' | 'providers' | 'services' | 'stickers' | 'box'
 
 type DataDirectoryStatus = {
   dataDir: string
@@ -3223,6 +3223,14 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                     sx={{ borderRadius: 999, minWidth: 0, px: 1.25, py: 0.25 }}
                   >
                     表情包
+                  </Button>
+                  <Button
+                    size="small"
+                    variant={settingsTab === 'box' ? 'contained' : 'outlined'}
+                    onClick={() => setSettingsTab('box')}
+                    sx={{ borderRadius: 999, minWidth: 0, px: 1.25, py: 0.25 }}
+                  >
+                    eucli-box 连接
                   </Button>
                   {standaloneWindowControls}
                 </>
@@ -6609,6 +6617,118 @@ function StickersSettingsPanel(props: { controller: any; loading: boolean; data:
   )
 }
 
+function BoxConnectionSettingsPanel(props: { controller: any; loading: boolean }) {
+  const { controller, loading } = props
+  const [url, setUrl] = React.useState('')
+  const [key, setKey] = React.useState('')
+  const [status, setStatus] = React.useState<'idle' | 'testing' | 'connected' | 'error'>('idle')
+  const [statusMsg, setStatusMsg] = React.useState('')
+  const [loaded, setLoaded] = React.useState(false)
+
+  React.useEffect(() => {
+    controller.actions.getBoxConnection?.()
+      .then((cfg: any) => {
+        setUrl(String(cfg?.url || ''))
+        setKey(String(cfg?.key || ''))
+        setLoaded(true)
+      })
+      .catch(() => setLoaded(true))
+  }, [controller])
+
+  const handleTest = useEvent(() => {
+    setStatus('testing')
+    setStatusMsg('')
+    controller.actions.testBoxConnection?.()
+      .then((result: any) => {
+        setStatus('connected')
+        setStatusMsg(String(result?.message || '连接成功'))
+      })
+      .catch((e: any) => {
+        setStatus('error')
+        setStatusMsg(String(e?.message || e || '连接失败'))
+      })
+  })
+
+  const handleSave = useEvent(() => {
+    controller.actions.saveBoxConnection?.({ url, key })
+      .then(() => {
+        controller?.capabilities?.ui?.showToast?.('已保存')
+      })
+      .catch((e: any) => {
+        controller?.capabilities?.ui?.showToast?.(String(e?.message || e || '保存失败'))
+      })
+  })
+
+  const statusLabel = status === 'testing' ? '连接中…' : status === 'connected' ? '已连接 ✓' : status === 'error' ? '未连接 ✗' : '未连接'
+
+  return (
+    <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', px: 2, pt: `calc(${TOPBAR_H}px + 16px)`, pb: 2, bgcolor: 'grey.50' }}>
+      <Paper variant="outlined" sx={{ p: 1.5 }}>
+        <Stack spacing={1.5}>
+          <Typography sx={{ fontWeight: 900 }}>eucli-box 连接设置</Typography>
+          <Divider />
+
+          <TextField
+            size="small"
+            label="eucli-box 地址"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="http://127.0.0.1:8765"
+            disabled={loading}
+            fullWidth
+          />
+
+          <TextField
+            size="small"
+            label="认证密钥"
+            type="password"
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            placeholder="输入认证密钥"
+            disabled={loading}
+            fullWidth
+            autoComplete="off"
+          />
+
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Button
+              variant="outlined"
+              onClick={handleTest}
+              disabled={loading || status === 'testing' || !url.trim()}
+              startIcon={status === 'testing' ? <AutorenewIcon sx={{ animation: 'spin 1s linear infinite' }} /> : undefined}
+            >
+              测试连接
+            </Button>
+            <Button
+              variant="contained"
+              onClick={handleSave}
+              disabled={loading}
+            >
+              保存
+            </Button>
+            <Box sx={{ flex: 1 }} />
+            <Typography
+              variant="body2"
+              sx={{
+                fontWeight: 700,
+                color: status === 'connected' ? 'success.main' : status === 'error' ? 'error.main' : 'text.secondary',
+              }}
+            >
+              {statusLabel}
+            </Typography>
+          </Stack>
+
+          {statusMsg ? (
+            <Typography variant="caption" color={status === 'connected' ? 'success.main' : 'error.main'}>
+              {statusMsg}
+            </Typography>
+          ) : null}
+        </Stack>
+      </Paper>
+    </Box>
+  )
+}
+
 function PluginSettingsPage(props: {
   controller: any
   loading: boolean
@@ -7205,6 +7325,10 @@ function PluginSettingsPage(props: {
 
   if (tab === 'stickers') {
     return <StickersSettingsPanel controller={controller} loading={loading} data={data} />
+  }
+
+  if (tab === 'box') {
+    return <BoxConnectionSettingsPanel controller={controller} loading={loading} />
   }
 
   if (tab === 'services') {

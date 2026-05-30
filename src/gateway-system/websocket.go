@@ -11,6 +11,10 @@ import (
 )
 
 func (s *system) handleEventsWebSocket(w http.ResponseWriter, r *http.Request) {
+	if err := s.validateRequestKey(r); err != nil {
+		writeError(w, err)
+		return
+	}
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return

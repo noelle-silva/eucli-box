@@ -21,6 +21,9 @@ export const AI_CHAT_DIRECT_METHOD = {
   imagePick: 'aiChat.imagePick',
   getPendingConfirmation: 'aiChat.getPendingConfirmation',
   submitConfirmation: 'aiChat.submitConfirmation',
+  boxConnectionGet: 'box.connection.get',
+  boxConnectionSave: 'box.connection.save',
+  boxConnectionTest: 'box.connection.test',
 } as const
 
 export const AI_CHAT_DIRECT_EVENT = {

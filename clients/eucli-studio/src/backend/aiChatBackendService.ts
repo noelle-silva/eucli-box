@@ -178,6 +178,24 @@ export function createAiChatBackendService(opts: {
         return {}
       }
 
+      case AI_CHAT_DIRECT_METHOD.boxConnectionGet: {
+        return await cap.storage.get('box/connection').catch(() => ({ url: '', key: '' }))
+      }
+      case AI_CHAT_DIRECT_METHOD.boxConnectionSave: {
+        const url = String(p?.url || '').trim()
+        const key = String(p?.key || '').trim()
+        await cap.storage.set('box/connection', { url, key })
+        return {}
+      }
+      case AI_CHAT_DIRECT_METHOD.boxConnectionTest: {
+        const cfg: { url?: string } = await cap.storage.get('box/connection').catch(() => ({ url: '', key: '' })) || {}
+        const baseUrl = String(cfg?.url || '').trim()
+        if (!baseUrl) throw new AiChatDirectError('BAD_REQUEST', '请先配置 eucli-box 地址')
+        const healthUrl = baseUrl.replace(/\/+$/, '') + '/health'
+        const res = await cap.net.request({ method: 'GET', url: healthUrl, timeoutMs: 8000 })
+        return { ok: true, message: '连接成功' }
+      }
+
       default:
         throw new AiChatDirectError('METHOD_NOT_FOUND', `未知方法: ${method}`)
     }

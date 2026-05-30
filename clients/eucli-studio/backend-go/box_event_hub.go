@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -11,6 +12,8 @@ import (
 
 type boxEventHub struct {
 	wsURL       string
+	baseURL     string
+	token       string
 	mu          sync.Mutex
 	conn        *websocket.Conn
 	subscribers map[string]map[int]func(boxRunEvent)
@@ -23,9 +26,11 @@ type boxEventHub struct {
 	maxFailures int
 }
 
-func newBoxEventHub(wsURL string) *boxEventHub {
+func newBoxEventHub(wsURL string, token string) *boxEventHub {
 	h := &boxEventHub{
 		wsURL:       wsURL,
+		baseURL:     wsURL,
+		token:       token,
 		subscribers: make(map[string]map[int]func(boxRunEvent)),
 		maxBackoff:  30 * time.Second,
 		maxFailures: 10,
@@ -81,11 +86,28 @@ func (h *boxEventHub) connectLoop() {
 
 func (h *boxEventHub) dial() (*websocket.Conn, error) {
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
-	conn, _, err := dialer.Dial(h.wsURL, nil)
+	h.mu.Lock()
+	fullURL := h.baseURL
+	token := h.token
+	h.mu.Unlock()
+	if token != "" {
+		fullURL += "?token=" + url.QueryEscape(token)
+	}
+	conn, _, err := dialer.Dial(fullURL, nil)
 	if err != nil {
 		return nil, err
 	}
 	return conn, nil
+}
+
+func (h *boxEventHub) updateConnection(wsURL string, token string) {
+	h.mu.Lock()
+	h.baseURL = wsURL
+	h.token = token
+	if h.conn != nil {
+		h.conn.Close()
+	}
+	h.mu.Unlock()
 }
 
 func (h *boxEventHub) readLoop(conn *websocket.Conn) {

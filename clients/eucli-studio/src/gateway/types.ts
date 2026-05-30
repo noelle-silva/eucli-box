@@ -20,4 +20,7 @@ export type AiChatInternalGateway = {
   consumeAssistantFinal: (assistantMid: string) => Promise<any>
   getPendingConfirmation?: () => Promise<any>
   submitConfirmation?: (decisionId: string, approved: boolean) => Promise<void>
+  getBoxConnection?: () => Promise<{ url: string; key: string }>
+  saveBoxConnection?: (connection: { url: string; key: string }) => Promise<void>
+  testBoxConnection?: () => Promise<{ ok: boolean; message: string }>
 }

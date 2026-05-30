@@ -21,7 +21,9 @@ const (
 )
 
 func newService(dataDir string) *service {
-	svc := &service{dataDir: dataDir, box: newBoxClientFromEnv()}
+	svc := &service{dataDir: dataDir}
+	initialConfig := loadBoxConnectionFromStorage(svc)
+	svc.box = newBoxClient(svc, initialConfig)
 	svc.ai = newAIRunQueue(svc)
 	return svc
 }
@@ -125,4 +127,63 @@ func (svc *service) submitConfirmation(params json.RawMessage) (map[string]bool,
 
 	_ = svc.storageRemoveByKey("runtime/" + toolConfirmationKey)
 	return map[string]bool{"ok": true}, nil
+}
+
+func (svc *service) getBoxConnection() (map[string]any, error) {
+	value, err := svc.storageGetByKey("box/connection")
+	if err != nil {
+		return nil, err
+	}
+	if value == nil {
+		return map[string]any{"url": "http://127.0.0.1:8765", "key": ""}, nil
+	}
+	cfg, _ := value.(map[string]any)
+	if cfg == nil {
+		return map[string]any{"url": "http://127.0.0.1:8765", "key": ""}, nil
+	}
+	return cfg, nil
+}
+
+func (svc *service) saveBoxConnection(params json.RawMessage) (map[string]any, error) {
+	var payload struct {
+		URL string `json:"url"`
+		Key string `json:"key"`
+	}
+	if err := json.Unmarshal(params, &payload); err != nil {
+		return nil, err
+	}
+	url := strings.TrimSpace(payload.URL)
+	if url == "" {
+		return nil, errors.New("url is required")
+	}
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		return nil, errors.New("url must start with http:// or https://")
+	}
+	url = strings.TrimRight(url, "/")
+	key := strings.TrimSpace(payload.Key)
+	cfg := map[string]any{"url": url, "key": key, "updatedAt": nowMs()}
+	if err := svc.storageSetByKey("box/connection", cfg); err != nil {
+		return nil, err
+	}
+	svc.box.reloadConnection(svc)
+	return cfg, nil
+}
+
+func (svc *service) testBoxConnection() (map[string]any, error) {
+	value, err := svc.storageGetByKey("box/connection")
+	if err != nil {
+		return nil, err
+	}
+	if value == nil {
+		return nil, errors.New("请先在设置页面配置 eucli-box 连接地址")
+	}
+	cfg, _ := value.(map[string]any)
+	if cfg == nil || strings.TrimSpace(asString(cfg["url"])) == "" {
+		return nil, errors.New("请先在设置页面配置 eucli-box 连接地址")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	result := svc.box.health(ctx)
+	result["url"] = cfg["url"]
+	return result, nil
 }

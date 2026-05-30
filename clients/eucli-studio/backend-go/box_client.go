@@ -18,9 +18,19 @@ import (
 
 const defaultEucliBoxURL = "http://127.0.0.1:8765"
 
+type storageReader interface {
+	Get(key string) (any, error)
+}
+
+type boxConnectionConfig struct {
+	URL string `json:"url"`
+	Key string `json:"key"`
+}
+
 type boxClient struct {
 	httpBase string
 	wsBase   string
+	key      string
 	http     *http.Client
 	events   *boxEventHub
 }
@@ -78,15 +88,50 @@ type boxProviderSummary struct {
 	Protocol string `json:"protocol"`
 }
 
-func newBoxClientFromEnv() *boxClient {
-	httpBase := strings.TrimSpace(os.Getenv("EUCLI_BOX_URL"))
+func newBoxClient(storage storageReader, initialConfig boxConnectionConfig) *boxClient {
+	c := &boxClient{http: &http.Client{Timeout: 30 * time.Second}}
+	c.applyConfig(initialConfig)
+	c.events = newBoxEventHub(c.wsBase+"/ws/events", c.key)
+	return c
+}
+
+func loadBoxConnectionFromStorage(storage storageReader) boxConnectionConfig {
+	raw, err := storage.Get("box/connection")
+	if err != nil || raw == nil {
+		return boxConnectionConfig{
+			URL: strings.TrimSpace(os.Getenv("EUCLI_BOX_URL")),
+		}
+	}
+	configMap, ok := raw.(map[string]any)
+	if !ok {
+		return boxConnectionConfig{
+			URL: strings.TrimSpace(os.Getenv("EUCLI_BOX_URL")),
+		}
+	}
+	return boxConnectionConfig{
+		URL: strings.TrimSpace(asString(configMap["url"])),
+		Key: strings.TrimSpace(asString(configMap["key"])),
+	}
+}
+
+func (c *boxClient) applyConfig(config boxConnectionConfig) {
+	httpBase := strings.TrimSpace(config.URL)
 	if httpBase == "" {
 		httpBase = defaultEucliBoxURL
 	}
 	httpBase = strings.TrimRight(httpBase, "/")
-	c := &boxClient{httpBase: httpBase, wsBase: websocketBaseURL(httpBase), http: &http.Client{Timeout: 30 * time.Second}}
-	c.events = newBoxEventHub(c.wsBase + "/ws/events")
-	return c
+	c.httpBase = httpBase
+	c.wsBase = websocketBaseURL(httpBase)
+	c.key = strings.TrimSpace(config.Key)
+}
+
+func (c *boxClient) reloadConnection(storage storageReader) error {
+	config := loadBoxConnectionFromStorage(storage)
+	c.applyConfig(config)
+	if c.events != nil {
+		c.events.updateConnection(c.wsBase+"/ws/events", c.key)
+	}
+	return nil
 }
 
 func websocketBaseURL(httpBase string) string {
@@ -284,6 +329,7 @@ func (c *boxClient) getJSON(ctx context.Context, path string, out any) error {
 	if err != nil {
 		return err
 	}
+	c.setAuthHeader(req)
 	return c.do(req, out)
 }
 
@@ -297,10 +343,20 @@ func (c *boxClient) postJSON(ctx context.Context, path string, in any, out any) 
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	c.setAuthHeader(req)
 	return c.do(req, out)
 }
 
+func (c *boxClient) setAuthHeader(req *http.Request) {
+	if c.key != "" {
+		req.Header.Set("Authorization", "Bearer "+c.key)
+	}
+}
+
 func (c *boxClient) do(req *http.Request, out any) error {
+	if c.key != "" {
+		req.Header.Set("X-Eucli-Key", c.key)
+	}
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return err

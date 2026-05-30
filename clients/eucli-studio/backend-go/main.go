@@ -219,6 +219,8 @@ func (svc *service) dispatch(method string, params json.RawMessage) (any, error)
 		return nil, errors.New("附件能力将在业务迁移阶段接入")
 	case "aiChat.syncCatalog":
 		return nil, svc.syncBoxCatalog(context.Background())
+	case "box.reloadConnection":
+		return nil, svc.box.reloadConnection(svc)
 	case "aiChat.healthCheck":
 		ctx, cancel := defaultBoxHealthCtx()
 		defer cancel()
@@ -259,6 +261,12 @@ func (svc *service) dispatch(method string, params json.RawMessage) (any, error)
 		return svc.getPendingConfirmation()
 	case "aiChat.submitConfirmation":
 		return svc.submitConfirmation(params)
+	case "box.connection.get":
+		return svc.getBoxConnection()
+	case "box.connection.save":
+		return svc.saveBoxConnection(params)
+	case "box.connection.test":
+		return svc.testBoxConnection()
 	default:
 		return nil, fmt.Errorf("未知请求：%s", method)
 	}
@@ -458,6 +466,10 @@ func (svc *service) saveProvider(params json.RawMessage) ([]provider, error) {
 
 func (svc *service) storageGet(params json.RawMessage) (any, error) {
 	key := requestKey(params)
+	return svc.storageGetByKey(key)
+}
+
+func (svc *service) Get(key string) (any, error) {
 	return svc.storageGetByKey(key)
 }
 

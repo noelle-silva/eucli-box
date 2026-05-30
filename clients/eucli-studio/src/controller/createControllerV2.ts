@@ -1856,6 +1856,15 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     openProvidersEditor,
     openNewRoleEditor,
     openNewGroupEditor,
+    getBoxConnection: () => {
+      return (aiGateway?.getBoxConnection?.() ?? Promise.resolve({ url: '', key: '' }))
+    },
+    saveBoxConnection: (connection: { url: string; key: string }) => {
+      return aiGateway?.saveBoxConnection?.(connection) ?? Promise.resolve()
+    },
+    testBoxConnection: () => {
+      return aiGateway?.testBoxConnection?.() ?? Promise.reject(new Error('testBoxConnection not available'))
+    },
     openRoleEditorRaw: (rid: string) => openRoleEditor(rid),
     openGroupEditorRaw: (gid: string) => openGroupEditor(gid),
     createChatForActiveTargetRaw: () => createChatForActiveTarget(),

@@ -48,5 +48,14 @@ export function createAiChatDirectGateway(directClient: AiChatDirectClient): AiC
     submitConfirmation(decisionId: string, approved: boolean) {
       return directClient.invoke(AI_CHAT_DIRECT_METHOD.submitConfirmation, { decisionId, approved }, { timeoutMs: ACK_TIMEOUT_MS }).then(() => undefined)
     },
+    getBoxConnection() {
+      return directClient.invoke<{ url: string; key: string }>(AI_CHAT_DIRECT_METHOD.boxConnectionGet, undefined, { timeoutMs: POLL_TIMEOUT_MS })
+    },
+    saveBoxConnection(connection: { url: string; key: string }) {
+      return directClient.invoke<void>(AI_CHAT_DIRECT_METHOD.boxConnectionSave, connection, { timeoutMs: ACK_TIMEOUT_MS })
+    },
+    testBoxConnection() {
+      return directClient.invoke<{ ok: boolean; message: string }>(AI_CHAT_DIRECT_METHOD.boxConnectionTest, undefined, { timeoutMs: 10000 })
+    },
   }
 }

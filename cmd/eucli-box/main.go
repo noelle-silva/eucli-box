@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -34,7 +36,8 @@ func run() error {
 		return fmt.Errorf("start network request system: %w", err)
 	}
 
-	storageSystem, err := datastorage.NewSystem(datastorage.Config{RootDir: envOrDefault("EUCLI_BOX_DATA_DIR", "data")})
+	dataDir := envOrDefault("EUCLI_BOX_DATA_DIR", "data")
+	storageSystem, err := datastorage.NewSystem(datastorage.Config{RootDir: dataDir})
 	if err != nil {
 		return fmt.Errorf("start data storage system: %w", err)
 	}
@@ -67,7 +70,7 @@ func run() error {
 		return fmt.Errorf("start agent runtime system: %w", err)
 	}
 
-	gatewaySystem, err := gateway.NewSystem(gateway.Config{Addr: envOrDefault("EUCLI_BOX_ADDR", "127.0.0.1:8765")}, runtimeSystem, roleSystem, providerSystem, toolSystem)
+	gatewaySystem, err := gateway.NewSystem(gateway.Config{Addr: envOrDefault("EUCLI_BOX_ADDR", "127.0.0.1:8765"), Key: readBoxKey(dataDir)}, runtimeSystem, roleSystem, providerSystem, toolSystem)
 	if err != nil {
 		return fmt.Errorf("start gateway system: %w", err)
 	}
@@ -92,4 +95,13 @@ func envOrDefault(key string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func readBoxKey(dataDir string) string {
+	keyFile := filepath.Join(dataDir, "box.key")
+	payload, err := os.ReadFile(keyFile)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(payload))
 }

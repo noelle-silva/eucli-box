@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -22,8 +23,13 @@ type boxEventHub struct {
 	closeCh     chan struct{}
 	closeOnce   sync.Once
 
+	toolConfCallback func(boxRunEvent)
+	onDisconnect     func()
+
 	maxBackoff  time.Duration
 	maxFailures int
+
+	loopAlive atomic.Bool
 }
 
 func newBoxEventHub(wsURL string, token string) *boxEventHub {
@@ -41,6 +47,9 @@ func newBoxEventHub(wsURL string, token string) *boxEventHub {
 }
 
 func (h *boxEventHub) connectLoop() {
+	h.loopAlive.Store(true)
+	defer h.loopAlive.Store(false)
+
 	backoff := 1 * time.Second
 	failures := 0
 
@@ -57,6 +66,12 @@ func (h *boxEventHub) connectLoop() {
 			log.Printf("boxEventHub: dial failed: %v (attempt %d, backoff %v)", err, failures, backoff)
 			if failures >= h.maxFailures {
 				log.Printf("boxEventHub: too many consecutive failures (%d), giving up", failures)
+				h.mu.Lock()
+				dc := h.onDisconnect
+				h.mu.Unlock()
+				if dc != nil {
+					dc()
+				}
 				return
 			}
 			time.Sleep(backoff)
@@ -78,9 +93,13 @@ func (h *boxEventHub) connectLoop() {
 		h.mu.Lock()
 		h.conn = nil
 		h.connected = false
+		dc := h.onDisconnect
 		h.mu.Unlock()
 
 		log.Printf("boxEventHub: disconnected, reconnecting...")
+		if dc != nil {
+			dc()
+		}
 	}
 }
 
@@ -108,6 +127,16 @@ func (h *boxEventHub) updateConnection(wsURL string, token string) {
 		h.conn.Close()
 	}
 	h.mu.Unlock()
+
+	if !h.loopAlive.Load() {
+		select {
+		case <-h.closeCh:
+			return
+		default:
+		}
+		log.Printf("boxEventHub: connectLoop was dead, restarting")
+		go h.connectLoop()
+	}
 }
 
 func (h *boxEventHub) readLoop(conn *websocket.Conn) {
@@ -147,7 +176,7 @@ func (h *boxEventHub) readLoop(conn *websocket.Conn) {
 	}()
 
 	go func() {
-		ticker := time.NewTicker(35 * time.Second)
+		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
@@ -173,6 +202,15 @@ func (h *boxEventHub) readLoop(conn *websocket.Conn) {
 			log.Printf("boxEventHub: read error: %v", err)
 			return
 		}
+
+		h.mu.Lock()
+		cb := h.toolConfCallback
+		h.mu.Unlock()
+
+		if event.Type == "tool_confirmation_requested" && cb != nil {
+			cb(event)
+		}
+
 		runID := strings.TrimSpace(event.RunID)
 		if runID == "" {
 			continue
@@ -224,6 +262,24 @@ func (h *boxEventHub) subscribe(runID string, onEvent func(boxRunEvent)) func() 
 			}
 		}
 	}
+}
+
+func (h *boxEventHub) setToolConfirmationCallback(cb func(boxRunEvent)) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.toolConfCallback = cb
+}
+
+func (h *boxEventHub) setOnDisconnect(cb func()) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.onDisconnect = cb
+}
+
+func (h *boxEventHub) isConnected() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.connected
 }
 
 func nextBackoff(current, max time.Duration) time.Duration {

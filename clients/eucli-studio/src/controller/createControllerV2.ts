@@ -729,6 +729,10 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     removeLoadedChat,
     cleanupFavoriteRefsForTarget: favOps.cleanupFavoriteRefsForTarget,
     cleanupFavoriteRefsForChat: favOps.cleanupFavoriteRefsForChat,
+    pushBoxRole: (role) => aiGateway?.pushBoxRole?.(role) ?? Promise.resolve(),
+    pushBoxProvider: (p) => aiGateway?.pushBoxProvider?.(p) ?? Promise.resolve(),
+    deleteBoxRole: (id) => aiGateway?.deleteBoxRole?.(id) ?? Promise.resolve(),
+    deleteBoxProvider: (id) => aiGateway?.deleteBoxProvider?.(id) ?? Promise.resolve(),
   })
   const {
     pickRoleAvatarImage,
@@ -858,13 +862,22 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     onSubmit: (approved: boolean) => {
       const conf = state.pendingConfirmation as any
       if (!conf) return Promise.resolve()
-      const id = String((conf as any)?.decision?.id || (conf as any)?.decisionId || '')
-      return aiGateway.submitConfirmation?.(id, approved) ?? Promise.resolve()
+      const id = String((conf as any)?.event?.payload?.decisionId || (conf as any)?.decisionId || '')
+      return (aiGateway.confirmTool?.(id, approved) ?? Promise.resolve())
+        .catch(e => {
+          api.ui?.showToast?.('提交确认失败: ' + (e?.message || e))
+        })
     },
     onFound: (confirmation: any) => {
       state.pendingConfirmation = confirmation
       state.modal = 'toolConfirm'
       emit()
+    },
+    onDisconnected: () => {
+      state.pendingConfirmation = null
+      state.modal = ''
+      emit()
+      api.ui?.showToast?.('eucli-box WebSocket 已断开，工具确认弹窗已关闭')
     },
   })
 
@@ -1805,8 +1818,8 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     approveConfirmation: () => {
       const conf = state.pendingConfirmation as any
       if (!conf) return
-      const id = String((conf as any)?.decision?.id || (conf as any)?.decisionId || '')
-      aiGateway.submitConfirmation?.(id, true)?.catch(() => {})
+      const id = String((conf as any)?.event?.payload?.decisionId || (conf as any)?.decisionId || '')
+      aiGateway.confirmTool?.(id, true)?.catch((e: any) => api.ui?.showToast?.('确认提交失败: ' + String((e as any)?.message || e)))
       state.pendingConfirmation = null
       state.modal = ''
       emit()
@@ -1814,13 +1827,20 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     rejectConfirmation: () => {
       const conf = state.pendingConfirmation as any
       if (!conf) return
-      const id = String((conf as any)?.decision?.id || (conf as any)?.decisionId || '')
-      aiGateway.submitConfirmation?.(id, false)?.catch(() => {})
+      const id = String((conf as any)?.event?.payload?.decisionId || (conf as any)?.decisionId || '')
+      aiGateway.confirmTool?.(id, false)?.catch((e: any) => api.ui?.showToast?.('确认提交失败: ' + String((e as any)?.message || e)))
       state.pendingConfirmation = null
       state.modal = ''
       emit()
     },
     closeConfirmation: () => {
+      const conf = state.pendingConfirmation as any
+      if (conf) {
+        const id = String((conf as any)?.event?.payload?.decisionId || (conf as any)?.decisionId || '')
+        if (id) {
+          aiGateway.confirmTool?.(id, false)?.catch((e: any) => api.ui?.showToast?.('确认提交失败: ' + String((e as any)?.message || e)))
+        }
+      }
       state.pendingConfirmation = null
       state.modal = ''
       emit()

@@ -85,8 +85,12 @@ export function createEntityEditors(deps: {
   removeLoadedChat?: (kind: 'role' | 'group', targetId: string, chatId: string) => void
   cleanupFavoriteRefsForTarget: (kind: string, targetId: string) => void
   cleanupFavoriteRefsForChat: (targetKind: string, targetId: string, chatId: string) => void
+  pushBoxRole?: (role: Record<string, unknown>) => Promise<void>
+  pushBoxProvider?: (provider: Record<string, unknown>) => Promise<void>
+  deleteBoxRole?: (id: string) => Promise<void>
+  deleteBoxProvider?: (id: string) => Promise<void>
 }) {
-  const { getState, save, render, closeModal, showToast, pickImageFiles, filesImages, ensureChatLoaded, ensureGroupChatLoaded, renameRoleChatInStore, renameGroupChatInStore, removeChatInStore, removeLoadedChat, cleanupFavoriteRefsForTarget, cleanupFavoriteRefsForChat } = deps
+  const { getState, save, render, closeModal, showToast, pickImageFiles, filesImages, ensureChatLoaded, ensureGroupChatLoaded, renameRoleChatInStore, renameGroupChatInStore, removeChatInStore, removeLoadedChat, cleanupFavoriteRefsForTarget, cleanupFavoriteRefsForChat, pushBoxRole, pushBoxProvider, deleteBoxRole, deleteBoxProvider } = deps
   const sa = createStateAccessors({ getState })
 
   function scrollToBottomSoon() {
@@ -254,6 +258,7 @@ export function createEntityEditors(deps: {
       }
       state.draft.activeRoleId = newRid
       save().catch(() => {})
+      pushBoxRole?.({ id: newRid, name, avatar, avatarImage, systemPrompt: sys, temperature, modelRef: { providerId, modelId }, createdAt: role.createdAt, updatedAt: role.updatedAt }).catch(e => showToast?.('推送角色失败: ' + (e?.message||e)))
       closeModal()
       return
     }
@@ -270,6 +275,7 @@ export function createEntityEditors(deps: {
     role.updatedAt = now()
 
     save().catch(() => {})
+    pushBoxRole?.({ id: role.id, name: role.name, avatar: role.avatar, avatarImage: role.avatarImage, systemPrompt: role.systemPrompt, temperature: role.temperature, modelRef: role.modelRef, createdAt: role.createdAt, updatedAt: role.updatedAt }).catch(e => showToast?.('推送角色失败: ' + (e?.message||e)))
     closeModal()
   }
 
@@ -297,9 +303,8 @@ export function createEntityEditors(deps: {
       ;(state.draft as any).activeGroupId = ''
     }
     save().catch(() => {})
+    deleteBoxRole?.(rid).catch(e => showToast?.('删除角色失败: ' + (e?.message||e)))
   }
-
-  // ===== Group CRUD =====
 
   function openNewGroupEditor() {
     const state = getState()
@@ -516,6 +521,7 @@ export function createEntityEditors(deps: {
 
     state.draft.editProviderId = ''
     save().catch(() => {})
+    pushBoxProvider?.({id: p.id, name: p.name, baseUrl: p.baseUrl, apiKey: p.apiKey, protocol: (p as any).protocol || 'openai', createdAt: p.createdAt, updatedAt: p.updatedAt}).catch(e => showToast?.('推送供应商失败: ' + (e?.message||e)))
     render()
   }
 
@@ -557,6 +563,7 @@ export function createEntityEditors(deps: {
     }
 
     save().catch(() => {})
+    deleteBoxProvider?.(pid).catch(e => showToast?.('删除供应商失败: ' + (e?.message||e)))
   }
 
   // ===== Create chat for active =====

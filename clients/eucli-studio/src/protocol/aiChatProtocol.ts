@@ -24,6 +24,16 @@ export const AI_CHAT_DIRECT_METHOD = {
   boxConnectionGet: 'box.connection.get',
   boxConnectionSave: 'box.connection.save',
   boxConnectionTest: 'box.connection.test',
+  boxRolePush: 'box.role.push',
+  boxProviderPush: 'box.provider.push',
+  boxRoleDelete: 'box.role.delete',
+  boxProviderDelete: 'box.provider.delete',
+  boxCatalogSync: 'box.catalog.sync',
+  boxSessionList: 'box.session.list',
+  boxSessionCreate: 'box.session.create',
+  boxSessionGet: 'box.session.get',
+  boxSessionDelete: 'box.session.delete',
+  boxToolConfirm: 'box.tool.confirm',
 } as const
 
 export const AI_CHAT_DIRECT_EVENT = {

@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -76,6 +77,9 @@ type service struct {
 	dataDir string
 	ai      *aiRunQueue
 	box     *boxClient
+
+	frontendMu    sync.Mutex
+	frontendConns []*websocket.Conn
 }
 
 type storedImage struct {
@@ -83,6 +87,42 @@ type storedImage struct {
 	Path    string `json:"path"`
 	MIME    string `json:"mime"`
 	Size    int    `json:"size"`
+}
+
+func (svc *service) addFrontendConn(conn *websocket.Conn) {
+	svc.frontendMu.Lock()
+	defer svc.frontendMu.Unlock()
+	svc.frontendConns = append(svc.frontendConns, conn)
+}
+
+func (svc *service) removeFrontendConn(conn *websocket.Conn) {
+	svc.frontendMu.Lock()
+	defer svc.frontendMu.Unlock()
+	for i, c := range svc.frontendConns {
+		if c == conn {
+			svc.frontendConns = append(svc.frontendConns[:i], svc.frontendConns[i+1:]...)
+			return
+		}
+	}
+}
+
+func (svc *service) pushFrontendNotification(name string, payload any) {
+	svc.frontendMu.Lock()
+	conns := make([]*websocket.Conn, len(svc.frontendConns))
+	copy(conns, svc.frontendConns)
+	svc.frontendMu.Unlock()
+
+	if len(conns) == 0 {
+		return
+	}
+	notify := map[string]any{
+		"type":    "event",
+		"name":    name,
+		"payload": payload,
+	}
+	for _, conn := range conns {
+		_ = conn.WriteJSON(notify)
+	}
 }
 
 var imageDataURLPattern = regexp.MustCompile(`^data:(image/[a-zA-Z0-9.+-]+);base64,`)
@@ -143,6 +183,9 @@ func run() error {
 
 func handleConnection(conn *websocket.Conn, svc *service) {
 	defer conn.Close()
+	defer svc.removeFrontendConn(conn)
+	svc.addFrontendConn(conn)
+
 	for {
 		var frame requestFrame
 		if err := conn.ReadJSON(&frame); err != nil {
@@ -267,6 +310,26 @@ func (svc *service) dispatch(method string, params json.RawMessage) (any, error)
 		return svc.saveBoxConnection(params)
 	case "box.connection.test":
 		return svc.testBoxConnection()
+	case "box.role.push":
+		return svc.pushBoxRole(params)
+	case "box.provider.push":
+		return svc.pushBoxProvider(params)
+	case "box.role.delete":
+		return svc.deleteBoxRole(params)
+	case "box.provider.delete":
+		return svc.deleteBoxProvider(params)
+	case "box.catalog.sync":
+		return svc.syncBoxCatalogRPC()
+	case "box.session.list":
+		return svc.listBoxSessions(params)
+	case "box.session.create":
+		return svc.createBoxSession(params)
+	case "box.session.get":
+		return svc.getBoxSession(params)
+	case "box.session.delete":
+		return svc.deleteBoxSession(params)
+	case "box.tool.confirm":
+		return svc.submitConfirmation(params)
 	default:
 		return nil, fmt.Errorf("未知请求：%s", method)
 	}

@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 )
@@ -21,29 +23,35 @@ func (svc *service) syncBoxCatalog(ctx context.Context) error {
 		return fmt.Errorf("sync eucli-box providers: %w", err)
 	}
 
+	var errs []string
+
+	existing, loadErr := svc.loadObject(splitMetaKey)
 	var meta map[string]any
-	if raw, err := svc.loadObject(splitMetaKey); err == nil && raw != nil {
-		meta = raw
+	if loadErr == nil && existing != nil {
+		meta = existing
+	} else if recovered := svc.loadRawMetaAll(); recovered != nil {
+		meta = recovered
 	} else {
 		meta = map[string]any{
 			"schemaVersion": boxSchemaVersion,
 			"dataVersion":   boxDataVersion,
 			"updatedAt":     nowMs(),
-			"ui":            map[string]any{},
-			"settings":      map[string]any{},
-			"favorites":     map[string]any{"folders": []any{}, "chatRefsByFolderId": map[string]any{}},
 		}
 	}
-
-	roleOrder := normalizeStringIDsKeepOrder(meta["roleOrder"])
-	roleFolders := normalizeStringMapGo(meta["roleFolders"])
-	providerOrder := normalizeStringIDsKeepOrder(nil)
-	providerFolders := normalizeStringMapGo(nil)
-
-	if idx, _ := svc.loadObject(splitProvidersIndexKeyGo()); idx != nil {
-		providerOrder = normalizeStringIDsKeepOrder(idx["providerOrder"])
-		providerFolders = normalizeStringMapGo(idx["providerFolders"])
+	if asMap(meta["ui"]) == nil {
+		meta["ui"] = map[string]any{}
 	}
+	if asMap(meta["settings"]) == nil {
+		meta["settings"] = map[string]any{}
+	}
+	if asMap(meta["favorites"]) == nil {
+		meta["favorites"] = map[string]any{"folders": []any{}, "chatRefsByFolderId": map[string]any{}}
+	}
+
+	roleOrder := make([]string, 0, len(roles))
+	roleFolders := map[string]string{}
+	providerOrder := make([]string, 0, len(providers))
+	providerFolders := map[string]string{}
 
 	for _, role := range roles {
 		roleID := strings.TrimSpace(asString(role["id"]))
@@ -59,7 +67,8 @@ func (svc *service) syncBoxCatalog(ctx context.Context) error {
 		avatar := strings.TrimSpace(asString(role["avatar"]))
 		description := strings.TrimSpace(asString(role["description"]))
 		systemPrompt := strings.TrimSpace(boxFirstPromptText(role))
-		temperature := asFloat64(role["temperature"], 0.7)
+		modelConfig := asMap(role["modelConfig"])
+		temperature := asFloat64(modelConfig["temperature"], 0.7)
 
 		clientRole := map[string]any{
 			"id":           roleID,
@@ -73,10 +82,12 @@ func (svc *service) syncBoxCatalog(ctx context.Context) error {
 			"updatedAt":    boxTimeOrDefault(role, "updatedAt"),
 		}
 		if err := svc.storageSetByKey(splitRoleKeyGo(folder), clientRole); err != nil {
-			return fmt.Errorf("write role %s: %w", roleID, err)
+			errs = append(errs, fmt.Sprintf("write role %s: %v", roleID, err))
+			continue
 		}
 		if _, err := svc.ensureChatIndexForRoleFolder(roleID, folder); err != nil {
-			return fmt.Errorf("ensure chat index for role %s: %w", roleID, err)
+			errs = append(errs, fmt.Sprintf("ensure chat index for role %s: %v", roleID, err))
+			continue
 		}
 		if !containsString(roleOrder, roleID) {
 			roleOrder = append(roleOrder, roleID)
@@ -94,10 +105,11 @@ func (svc *service) syncBoxCatalog(ctx context.Context) error {
 			providerFolders[providerID] = folder
 		}
 		clientProvider := map[string]any{
-			"id":      providerID,
-			"name":    strings.TrimSpace(asString(provider["name"])),
-			"baseUrl": strings.TrimSpace(asString(provider["baseUrl"])),
-			"apiKey":  "", // 密钥不写入本地快照
+			"id":       providerID,
+			"name":     strings.TrimSpace(asString(provider["name"])),
+			"baseUrl":  strings.TrimSpace(asString(provider["baseUrl"])),
+			"apiKey":   "",
+			"protocol": strings.TrimSpace(asString(provider["protocol"])),
 			"modelsCache": map[string]any{
 				"items":     boxModels(provider["models"]),
 				"fetchedAt": nowMs(),
@@ -106,7 +118,8 @@ func (svc *service) syncBoxCatalog(ctx context.Context) error {
 			"updatedAt": boxTimeOrDefault(provider, "updatedAt"),
 		}
 		if err := svc.storageSetByKey(splitProviderKeyGo(folder), clientProvider); err != nil {
-			return fmt.Errorf("write provider %s: %w", providerID, err)
+			errs = append(errs, fmt.Sprintf("write provider %s: %v", providerID, err))
+			continue
 		}
 		if !containsString(providerOrder, providerID) {
 			providerOrder = append(providerOrder, providerID)
@@ -143,6 +156,9 @@ func (svc *service) syncBoxCatalog(ctx context.Context) error {
 		return fmt.Errorf("write providers/index: %w", err)
 	}
 
+	if len(errs) > 0 {
+		return fmt.Errorf("部分同步失败: %s", strings.Join(errs, "; "))
+	}
 	return nil
 }
 
@@ -182,10 +198,9 @@ func boxFirstPromptText(role map[string]any) string {
 
 func boxModelRef(role map[string]any) map[string]any {
 	modelConfig := asMap(role["modelConfig"])
-	coordinate := asMap(modelConfig["coordinate"])
 	return map[string]any{
-		"providerId": strings.TrimSpace(asString(coordinate["providerId"])),
-		"modelId":    strings.TrimSpace(asString(coordinate["modelId"])),
+		"providerId": strings.TrimSpace(asString(modelConfig["providerId"])),
+		"modelId":    strings.TrimSpace(asString(modelConfig["model"])),
 	}
 }
 
@@ -279,6 +294,53 @@ func boxSafeDirName(name string, id string) string {
 		value = "_" + value
 	}
 	return value
+}
+
+func (svc *service) loadRawMetaAll() map[string]any {
+	path, err := svc.storagePathForKey(splitMetaKey)
+	if err != nil {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return nil
+	}
+	var root map[string]json.RawMessage
+	if json.Unmarshal(data, &root) != nil {
+		return nil
+	}
+	if rawValue, ok := root["value"]; ok {
+		var inner map[string]json.RawMessage
+		if json.Unmarshal(rawValue, &inner) != nil {
+			return nil
+		}
+		root = inner
+	}
+	out := map[string]any{}
+	for key, rawField := range root {
+		var val any
+		if json.Unmarshal(rawField, &val) == nil {
+			out[key] = val
+		}
+	}
+	return out
+}
+
+func (svc *service) loadRawMetaFields(keys ...string) map[string]any {
+	all := svc.loadRawMetaAll()
+	if all == nil {
+		return nil
+	}
+	out := map[string]any{}
+	for _, key := range keys {
+		if v, ok := all[key]; ok {
+			out[key] = v
+		}
+	}
+	return out
 }
 
 

@@ -6641,7 +6641,7 @@ function BoxConnectionSettingsPanel(props: { controller: any; loading: boolean }
     controller.actions.testBoxConnection?.()
       .then((result: any) => {
         setStatus('connected')
-        setStatusMsg(String(result?.message || '连接成功'))
+        setStatusMsg(String(result?.status === 'ok' ? `连接成功，已发现 ${result?.roles ?? 0} 个角色` : (result?.status || '连接成功')))
       })
       .catch((e: any) => {
         setStatus('error')

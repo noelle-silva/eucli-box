@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -313,6 +314,18 @@ func (svc *service) buildBoxRunRequestFromStorage(job map[string]any) (boxRunReq
 	sessionID, err := svc.loadBoxSessionID(roleID, chatID)
 	if err != nil {
 		return boxRunRequest{}, err
+	}
+	if sessionID == "" {
+		newSession, csErr := svc.box.createSession(context.Background(), roleID)
+		if csErr != nil {
+			return boxRunRequest{}, fmt.Errorf("create eucli-box session failed: %w", csErr)
+		}
+		if newSession != nil {
+			sessionID = strings.TrimSpace(asString(newSession["id"]))
+			if sessionID != "" {
+				_ = svc.saveBoxSessionID(roleID, chatID, sessionID)
+			}
+		}
 	}
 	return boxRunRequest{RoleID: roleID, SessionID: sessionID, Message: message, LocalRoleID: roleID, LocalChatID: chatID}, nil
 }

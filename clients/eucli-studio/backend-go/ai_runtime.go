@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,6 +26,17 @@ func newService(dataDir string) *service {
 	initialConfig := loadBoxConnectionFromStorage(svc)
 	svc.box = newBoxClient(svc, initialConfig)
 	svc.ai = newAIRunQueue(svc)
+	svc.box.setToolConfirmationCallback(func(event boxRunEvent) {
+		_ = svc.storageSetByKey("runtime/"+toolConfirmationKey, map[string]any{
+			"event":   event,
+			"updated": time.Now().UnixMilli(),
+		})
+		svc.pushFrontendNotification("aiChat.tool.confirmation", event)
+	})
+	svc.box.events.setOnDisconnect(func() {
+		_ = svc.storageRemoveByKey("runtime/" + toolConfirmationKey)
+		svc.pushFrontendNotification("box.ws.disconnected", map[string]any{"at": time.Now().UnixMilli()})
+	})
 	return svc
 }
 
@@ -99,7 +111,11 @@ func (svc *service) imageReadDataURLByRel(relPath string) (string, error) {
 
 func (svc *service) getPendingConfirmation() (any, error) {
 	key := "runtime/" + toolConfirmationKey
-	return svc.storageGetByKey(key)
+	value, err := svc.storageGetByKey(key)
+	if value == nil && !svc.box.isBoxConnected() {
+		return map[string]any{"disconnected": true}, nil
+	}
+	return value, err
 }
 
 func (svc *service) submitConfirmation(params json.RawMessage) (map[string]bool, error) {
@@ -113,15 +129,10 @@ func (svc *service) submitConfirmation(params json.RawMessage) (map[string]bool,
 		return nil, errors.New("decisionId is required")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := svc.box.postJSON(ctx, "/api/tool-confirmations", map[string]any{
-		"id":         "tc-" + fmt.Sprint(time.Now().UnixMilli()),
-		"decisionId": decisionID,
-		"approved":   payload.Approved,
-		"createdAt":  time.Now().UTC().Format(time.RFC3339),
-	}, nil); err != nil {
+	if err := svc.box.submitToolConfirmation(ctx, decisionID, payload.Approved); err != nil {
 		return nil, err
 	}
 
@@ -137,8 +148,11 @@ func (svc *service) getBoxConnection() (map[string]any, error) {
 	if value == nil {
 		return map[string]any{"url": "http://127.0.0.1:8765", "key": ""}, nil
 	}
-	cfg, _ := value.(map[string]any)
-	if cfg == nil {
+	cfg, ok := value.(map[string]any)
+	if !ok || cfg == nil {
+		if value != nil {
+			log.Printf("getBoxConnection: unexpected type %T, using default config", value)
+		}
 		return map[string]any{"url": "http://127.0.0.1:8765", "key": ""}, nil
 	}
 	return cfg, nil
@@ -177,13 +191,167 @@ func (svc *service) testBoxConnection() (map[string]any, error) {
 	if value == nil {
 		return nil, errors.New("请先在设置页面配置 eucli-box 连接地址")
 	}
-	cfg, _ := value.(map[string]any)
-	if cfg == nil || strings.TrimSpace(asString(cfg["url"])) == "" {
+	cfg, ok := value.(map[string]any)
+	if !ok || cfg == nil || strings.TrimSpace(asString(cfg["url"])) == "" {
+		if !ok && value != nil {
+			log.Printf("testBoxConnection: unexpected type %T", value)
+		}
 		return nil, errors.New("请先在设置页面配置 eucli-box 连接地址")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	result := svc.box.health(ctx)
+	if strings.TrimSpace(asString(result["status"])) != "ok" {
+		return nil, fmt.Errorf("无法连接到 eucli-box: %s", asString(result["error"]))
+	}
 	result["url"] = cfg["url"]
 	return result, nil
+}
+
+func (svc *service) pushBoxRole(params json.RawMessage) (map[string]any, error) {
+	var role map[string]any
+	if err := json.Unmarshal(params, &role); err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := svc.box.putRole(ctx, role); err != nil {
+		return nil, err
+	}
+	synced := true
+	if err := svc.syncBoxCatalog(context.Background()); err != nil {
+		log.Printf("[WARN] pushBoxRole: syncBoxCatalog failed after PUT succeeded: %v", err)
+		synced = false
+	}
+	return map[string]any{"ok": true, "synced": synced}, nil
+}
+
+func (svc *service) pushBoxProvider(params json.RawMessage) (map[string]any, error) {
+	var provider map[string]any
+	if err := json.Unmarshal(params, &provider); err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := svc.box.putProvider(ctx, provider); err != nil {
+		return nil, err
+	}
+	synced := true
+	if err := svc.syncBoxCatalog(context.Background()); err != nil {
+		log.Printf("[WARN] pushBoxProvider: syncBoxCatalog failed after PUT succeeded: %v", err)
+		synced = false
+	}
+	return map[string]any{"ok": true, "synced": synced}, nil
+}
+
+func (svc *service) deleteBoxRole(params json.RawMessage) (map[string]any, error) {
+	var payload struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(params, &payload)
+	id := strings.TrimSpace(payload.ID)
+	if id == "" {
+		return nil, errors.New("id is required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := svc.box.deleteRole(ctx, id); err != nil {
+		return nil, err
+	}
+	synced := true
+	if err := svc.syncBoxCatalog(context.Background()); err != nil {
+		log.Printf("[WARN] deleteBoxRole: syncBoxCatalog failed after DELETE succeeded: %v", err)
+		synced = false
+	}
+	return map[string]any{"ok": true, "synced": synced}, nil
+}
+
+func (svc *service) deleteBoxProvider(params json.RawMessage) (map[string]any, error) {
+	var payload struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(params, &payload)
+	id := strings.TrimSpace(payload.ID)
+	if id == "" {
+		return nil, errors.New("id is required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := svc.box.deleteProvider(ctx, id); err != nil {
+		return nil, err
+	}
+	synced := true
+	if err := svc.syncBoxCatalog(context.Background()); err != nil {
+		log.Printf("[WARN] deleteBoxProvider: syncBoxCatalog failed after DELETE succeeded: %v", err)
+		synced = false
+	}
+	return map[string]any{"ok": true, "synced": synced}, nil
+}
+
+func (svc *service) syncBoxCatalogRPC() (map[string]any, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if err := svc.syncBoxCatalog(ctx); err != nil {
+		return nil, err
+	}
+	return map[string]any{"ok": true}, nil
+}
+
+func (svc *service) listBoxSessions(params json.RawMessage) (any, error) {
+	var payload struct {
+		RoleID string `json:"roleId"`
+	}
+	_ = json.Unmarshal(params, &payload)
+	roleID := strings.TrimSpace(payload.RoleID)
+	if roleID == "" {
+		return nil, errors.New("roleId is required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return svc.box.listSessions(ctx, roleID)
+}
+
+func (svc *service) createBoxSession(params json.RawMessage) (any, error) {
+	var payload struct {
+		RoleID string `json:"roleId"`
+	}
+	_ = json.Unmarshal(params, &payload)
+	roleID := strings.TrimSpace(payload.RoleID)
+	if roleID == "" {
+		return nil, errors.New("roleId is required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return svc.box.createSession(ctx, roleID)
+}
+
+func (svc *service) getBoxSession(params json.RawMessage) (any, error) {
+	var payload struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(params, &payload)
+	id := strings.TrimSpace(payload.ID)
+	if id == "" {
+		return nil, errors.New("id is required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return svc.box.getSession(ctx, id)
+}
+
+func (svc *service) deleteBoxSession(params json.RawMessage) (map[string]any, error) {
+	var payload struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(params, &payload)
+	id := strings.TrimSpace(payload.ID)
+	if id == "" {
+		return nil, errors.New("id is required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := svc.box.deleteSession(ctx, id); err != nil {
+		return nil, err
+	}
+	return map[string]any{"ok": true}, nil
 }

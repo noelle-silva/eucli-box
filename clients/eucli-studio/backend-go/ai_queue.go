@@ -463,7 +463,7 @@ func (q *aiRunQueue) executeBox(ctx context.Context, run *aiRun) {
 		current := strings.TrimSpace(run.currentOutput())
 		next := strings.TrimSpace(delta)
 		if current != "" && next != "" {
-			next = current + "\n\n" + next
+			next = current + next
 		} else if current != "" {
 			next = current
 		}

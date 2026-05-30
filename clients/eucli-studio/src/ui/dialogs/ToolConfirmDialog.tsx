@@ -10,8 +10,9 @@ export function ToolConfirmDialog(props: ToolConfirmDialogProps) {
   const { open, controller, pendingConfirmation } = props
   const conf = pendingConfirmation as any
 
-  const toolName = String(conf?.toolName || conf?.decision?.toolName || '未知工具')
-  const description = String(conf?.description || conf?.decision?.description || conf?.message || '')
+  const payload = (conf?.event?.payload) as any
+  const toolName = String(payload?.toolName || conf?.toolName || '未知工具')
+  const description = String(payload?.toolDescription || conf?.description || conf?.message || '')
 
   return (
     <Dialog open={open} onClose={() => controller.actions.closeConfirmation()} fullWidth maxWidth="sm">

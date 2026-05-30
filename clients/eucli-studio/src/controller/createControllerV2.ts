@@ -100,6 +100,7 @@ import { createImageUtils } from '../ui/imageUtils'
 import { createUiPolling } from '../ui/uiPolling'
 import { createEventHandlers } from '../ui/eventHandlers'
 import { createMermaidUi } from '../ui/mermaidUi'
+import { createToolConfirmationPoller } from '../ui/toolConfirmation'
 
 // ---- services ----
 import { createAiServices } from '../services/aiServices'
@@ -183,6 +184,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       renderSafetyPolicyTarget: '',
     } as any,
     data: null as any,
+    pendingConfirmation: null as any,
   }
 
   // ============================================================
@@ -240,6 +242,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   function closeModal() {
     // cancelMermaidDrag handled by eventHandlers module
     state.modal = ''
+    state.pendingConfirmation = null
     state.draft.deleteRoleId = ''
     ;(state.draft as any).deleteGroupId = ''
     state.draft.deleteProviderId = ''
@@ -846,6 +849,24 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     save,
   })
   const { startUiPollers, stopUiPollers, uiPollTick, syncActiveRoleChatsFromStorage, syncActiveTargetChatsFromStorage, syncChatByIdFromStorage, syncGroupChatByIdFromStorage, applyChatUpdatedNoticeOnce, reapplyUiStreamCache } = uiPolling
+
+  // ============================================================
+  // 18.5 TOOL CONFIRMATION POLLER
+  // ============================================================
+  const toolConfirmPoller = createToolConfirmationPoller({
+    getPendingConfirmation: () => aiGateway.getPendingConfirmation?.() ?? Promise.resolve(null),
+    onSubmit: (approved: boolean) => {
+      const conf = state.pendingConfirmation as any
+      if (!conf) return Promise.resolve()
+      const id = String((conf as any)?.decision?.id || (conf as any)?.decisionId || '')
+      return aiGateway.submitConfirmation?.(id, approved) ?? Promise.resolve()
+    },
+    onFound: (confirmation: any) => {
+      state.pendingConfirmation = confirmation
+      state.modal = 'toolConfirm'
+      emit()
+    },
+  })
 
   // ============================================================
   // 19. EVENT HANDLERS
@@ -1780,6 +1801,30 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     deleteMessage: (messageId: any) => deleteMessage(String(messageId || '')),
     deleteMessageSubtree: (messageId: any) => deleteMessageSubtree(String(messageId || '')),
     editMessage: (messageId: any, content: any) => editMessage(String(messageId || ''), content),
+    // -- tool confirmation --
+    approveConfirmation: () => {
+      const conf = state.pendingConfirmation as any
+      if (!conf) return
+      const id = String((conf as any)?.decision?.id || (conf as any)?.decisionId || '')
+      aiGateway.submitConfirmation?.(id, true)?.catch(() => {})
+      state.pendingConfirmation = null
+      state.modal = ''
+      emit()
+    },
+    rejectConfirmation: () => {
+      const conf = state.pendingConfirmation as any
+      if (!conf) return
+      const id = String((conf as any)?.decision?.id || (conf as any)?.decisionId || '')
+      aiGateway.submitConfirmation?.(id, false)?.catch(() => {})
+      state.pendingConfirmation = null
+      state.modal = ''
+      emit()
+    },
+    closeConfirmation: () => {
+      state.pendingConfirmation = null
+      state.modal = ''
+      emit()
+    },
     // UI event bridge
     hydrateRefImages,
     applyMermaidScaleDom,
@@ -1825,10 +1870,12 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     await load()
     await aiGateway.startBackgroundWorker(350).catch(() => {})
     startUiPollers()
+    toolConfirmPoller.startPolling()
     render()
   }
 
   function dispose() {
+    toolConfirmPoller.stopPolling()
     stopUiPollers()
     uiCore.dispose()
   }

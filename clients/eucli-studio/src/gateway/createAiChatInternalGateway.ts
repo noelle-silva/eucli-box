@@ -2,7 +2,7 @@ import { now } from '../core/utils'
 import type { AiChatNetAdapter, AiChatRun, AiChatRuntimeStore } from '../engine'
 import { createAiChatRequestPipeline } from '../requestPipeline'
 import type { AiChatRunSpec } from '../requestPipeline'
-import { assistantFinalKey, assistantStreamKey } from '../runtime/runtimeKeys'
+import { assistantFinalKey, assistantStreamKey, TOOL_CONFIRMATION_KEY } from '../runtime/runtimeKeys'
 import { createAiChatEngineBridge } from './engineBridge'
 import type { AiChatInternalGateway, AiChatRawServiceRequestInput } from './types'
 
@@ -86,5 +86,33 @@ export function createAiChatInternalGateway(opts: {
       }
     },
     consumeAssistantFinal,
+    getPendingConfirmation: async () => {
+      try {
+        return await store.get(TOOL_CONFIRMATION_KEY)
+      } catch (_) {
+        return null
+      }
+    },
+    submitConfirmation: async (decisionId: string, approved: boolean) => {
+      const id = String(decisionId || '').trim()
+      if (!id) return
+      try {
+        // 调用后台Go服务发送确认到eucli-box的 /api/tool-confirmations
+        await opts.net.request({
+          method: 'POST',
+          url: '/api/tool-confirmations',
+          body: JSON.stringify({
+            id: 'tc-' + String(Date.now()),
+            decisionId: id,
+            approved,
+            createdAt: new Date().toISOString(),
+          }),
+          headers: { 'Content-Type': 'application/json' },
+        })
+      } catch (_) {}
+      try {
+        await store.remove(TOOL_CONFIRMATION_KEY)
+      } catch (_) {}
+    },
   }
 }

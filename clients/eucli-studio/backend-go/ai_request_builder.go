@@ -271,6 +271,52 @@ func (svc *service) loadObject(key string) (map[string]any, error) {
 	return obj, nil
 }
 
+func (svc *service) buildBoxRunRequestFromStorage(job map[string]any) (boxRunRequest, error) {
+	roleID := strings.TrimSpace(asString(job["roleId"]))
+	chatID := strings.TrimSpace(asString(job["chatId"]))
+	if roleID == "" || chatID == "" {
+		return boxRunRequest{}, errors.New("job 缺少 roleId/chatId")
+	}
+	meta, err := svc.loadSplitMeta()
+	if err != nil {
+		return boxRunRequest{}, err
+	}
+	folder := strings.TrimSpace(asString(asMap(meta["roleFolders"])[roleID]))
+	if folder == "" {
+		return boxRunRequest{}, errors.New("角色不存在")
+	}
+	chat, err := svc.loadObject(splitChatKeyGo(folder, chatID))
+	if err != nil || chat == nil {
+		return boxRunRequest{}, errors.New("会话不存在")
+	}
+	history := buildHistory(chat, job)
+	if len(history) == 0 {
+		return boxRunRequest{}, errors.New("会话缺少用户消息")
+	}
+	var lastUser map[string]any
+	for i := len(history) - 1; i >= 0; i-- {
+		if asString(history[i]["role"]) == "user" {
+			lastUser = history[i]
+			break
+		}
+	}
+	if lastUser == nil {
+		return boxRunRequest{}, errors.New("会话缺少用户消息")
+	}
+	if len(normImagePathsGo(lastUser["images"], 1)) > 0 {
+		return boxRunRequest{}, errors.New("eucli-box 当前消息入口暂不支持图片输入")
+	}
+	message := strings.TrimSpace(buildUserTextForOpenAIGo(lastUser))
+	if message == "" {
+		return boxRunRequest{}, errors.New("用户消息为空")
+	}
+	sessionID, err := svc.loadBoxSessionID(roleID, chatID)
+	if err != nil {
+		return boxRunRequest{}, err
+	}
+	return boxRunRequest{RoleID: roleID, SessionID: sessionID, Message: message, LocalRoleID: roleID, LocalChatID: chatID}, nil
+}
+
 func buildHistory(chat map[string]any, job map[string]any) []map[string]any {
 	msgs0 := normalizeObjectList(chat["messages"])
 	branchID := strings.TrimSpace(asString(job["branchId"]))

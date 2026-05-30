@@ -43,6 +43,8 @@ type aiRun struct {
 	ScopeKey  string
 	Target    aiRunTarget
 	Req       aiHTTPRequest
+	BoxReq    boxRunRequest
+	UseBox    bool
 	Stream    bool
 	CreatedAt int64
 	StartedAt int64

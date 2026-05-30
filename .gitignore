@@ -16,6 +16,12 @@ build/
 .vite/
 **/.vite/
 
+# Compiled binaries
+*.exe
+*.dll
+*.so
+*.dylib
+
 # eucli-box runtime data
 data/*
 !data/.gitkeep

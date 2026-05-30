@@ -165,6 +165,19 @@ export function createAiChatBackendService(opts: {
       case AI_CHAT_DIRECT_METHOD.imagePick:
         throw new AiChatDirectError('NOT_IMPLEMENTED', 'imagePick must be handled by UI host capability')
 
+      case AI_CHAT_DIRECT_METHOD.getPendingConfirmation: {
+        if (!gateway?.getPendingConfirmation) throw new AiChatDirectError('NOT_IMPLEMENTED', 'getPendingConfirmation not available')
+        return await gateway.getPendingConfirmation()
+      }
+      case AI_CHAT_DIRECT_METHOD.submitConfirmation: {
+        const decisionId = String(p?.decisionId || '').trim()
+        const approved = Boolean(p?.approved)
+        if (!decisionId) throw new AiChatDirectError('BAD_REQUEST', 'decisionId is required')
+        if (!gateway?.submitConfirmation) throw new AiChatDirectError('NOT_IMPLEMENTED', 'submitConfirmation not available')
+        await gateway.submitConfirmation(decisionId, approved)
+        return {}
+      }
+
       default:
         throw new AiChatDirectError('METHOD_NOT_FOUND', `未知方法: ${method}`)
     }

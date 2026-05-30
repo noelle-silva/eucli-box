@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -73,6 +75,7 @@ type provider struct {
 type service struct {
 	dataDir string
 	ai      *aiRunQueue
+	box     *boxClient
 }
 
 type storedImage struct {
@@ -101,6 +104,9 @@ func run() error {
 	if err := svc.runMigrations(); err != nil {
 		return err
 	}
+	if err := svc.syncBoxCatalog(context.Background()); err != nil {
+		log.Printf("initial catalog sync failed (eucli-box may be offline): %v", err)
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return fmt.Errorf("failed to bind local websocket: %w", err)
@@ -122,6 +128,15 @@ func run() error {
 	addr := listener.Addr().(*net.TCPAddr)
 	writeReady(addr.Port)
 	log.Printf("ready {\"url\":\"ws://127.0.0.1:%d\"}", addr.Port)
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt)
+	go func() {
+		<-quit
+		log.Printf("shutting down...")
+		svc.box.Close()
+		server.Close()
+	}()
 
 	return server.Serve(listener)
 }
@@ -202,8 +217,12 @@ func (svc *service) dispatch(method string, params json.RawMessage) (any, error)
 		return map[string]bool{"cancelled": true}, nil
 	case "studio.attachment.add", "studio.attachment.remove":
 		return nil, errors.New("附件能力将在业务迁移阶段接入")
+	case "aiChat.syncCatalog":
+		return nil, svc.syncBoxCatalog(context.Background())
 	case "aiChat.healthCheck":
-		return map[string]any{"version": 1, "status": "ok"}, nil
+		ctx, cancel := defaultBoxHealthCtx()
+		defer cancel()
+		return map[string]any{"version": 1, "status": "ok", "eucliBox": svc.box.health(ctx)}, nil
 	case "aiChat.storageGet":
 		return svc.storageGet(params)
 	case "aiChat.storageSet":
@@ -236,6 +255,10 @@ func (svc *service) dispatch(method string, params json.RawMessage) (any, error)
 		return svc.consumeAssistantFinal(params)
 	case "aiChat.resetAssistantRuntime":
 		return svc.resetAssistantRuntime(params)
+	case "aiChat.getPendingConfirmation":
+		return svc.getPendingConfirmation()
+	case "aiChat.submitConfirmation":
+		return svc.submitConfirmation(params)
 	default:
 		return nil, fmt.Errorf("未知请求：%s", method)
 	}
@@ -911,6 +934,12 @@ func asInt64(raw any, fallback int64) int64 {
 	default:
 		return fallback
 	}
+}
+
+const defaultBoxHealthTimeout = 5 * time.Second
+
+func defaultBoxHealthCtx() (context.Context, func()) {
+	return context.WithTimeout(context.Background(), defaultBoxHealthTimeout)
 }
 
 func nowMs() int64 {

@@ -77,6 +77,7 @@ import { GroupDialog } from './dialogs/GroupDialog'
 
 const isRenderableNode = (node: React.ReactNode): node is Exclude<React.ReactNode, null> => node !== null
 import { ConfirmDialog } from './dialogs/ConfirmDialog'
+import { ToolConfirmDialog } from './dialogs/ToolConfirmDialog'
 import { MermaidDialog } from './dialogs/MermaidDialog'
 import { ImageDialog } from './dialogs/ImageDialog'
 import { RoleAvatarCropper } from './components/avatar/RoleAvatarCropper'
@@ -6255,6 +6256,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
         <RoleDialog open={s.modal === 'role'} controller={controller} providers={providers} draft={s.draft} models={s.models} />
         <GroupDialog open={s.modal === 'group'} controller={controller} roles={roles} draft={s.draft} />
         <ConfirmDialog open={s.modal === 'confirm'} controller={controller} draft={s.draft} roles={roles} groups={groups} providers={providers} />
+        <ToolConfirmDialog open={s.modal === 'toolConfirm'} controller={controller} pendingConfirmation={s.pendingConfirmation} />
         <MermaidDialog open={s.modal === 'mermaid'} controller={controller} mermaid={s.mermaid} />
         <ImageDialog open={s.modal === 'image'} controller={controller} viewer={s.imageViewer} />
       </Box>

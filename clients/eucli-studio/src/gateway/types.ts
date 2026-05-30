@@ -18,4 +18,6 @@ export type AiChatInternalGateway = {
   resetAssistantRuntime: (assistantMid: string) => Promise<void>
   readAssistantStream: (assistantMid: string) => Promise<any>
   consumeAssistantFinal: (assistantMid: string) => Promise<any>
+  getPendingConfirmation?: () => Promise<any>
+  submitConfirmation?: (decisionId: string, approved: boolean) => Promise<void>
 }

@@ -1,3 +1,24 @@
+// NOTE: The utility functions below are copied from the main package.
+// If you modify any of them, ensure the main package copies are also updated.
+//
+// Function locations in the main package:
+//
+//	cleanStorageKey    → main.go:638
+//	cleanImageRelPath  → main.go:683
+//	safeJoin           → main.go:705
+//	atomicWriteFile    → main.go:722
+//	atomicWriteFile differs slightly: migrations uses time.Now().UnixMilli(),
+//	main uses nowMs() (main.go:945) — functionally equivalent.
+//	isAllowedImageExt  → main.go:764
+//	copyFile           → migration_runner.go:523
+//	asString           → main.go:913
+//	asMap              → ai_request_builder.go:576
+//	asSlice            → ai_request_builder.go:581
+//	normalizeObjectList → ai_request_builder.go:472
+//	objectListAsAny    → ai_storage_patch.go:277
+//
+// When making changes, update the corresponding copy listed above.
+
 package migrations
 
 import (

@@ -42,5 +42,11 @@ export function createAiChatDirectGateway(directClient: AiChatDirectClient): AiC
     consumeAssistantFinal(assistantMid: string) {
       return directClient.invoke(AI_CHAT_DIRECT_METHOD.consumeAssistantFinal, { assistantMid }, { timeoutMs: POLL_TIMEOUT_MS })
     },
+    getPendingConfirmation() {
+      return directClient.invoke(AI_CHAT_DIRECT_METHOD.getPendingConfirmation, {}, { timeoutMs: POLL_TIMEOUT_MS })
+    },
+    submitConfirmation(decisionId: string, approved: boolean) {
+      return directClient.invoke(AI_CHAT_DIRECT_METHOD.submitConfirmation, { decisionId, approved }, { timeoutMs: ACK_TIMEOUT_MS }).then(() => undefined)
+    },
   }
 }

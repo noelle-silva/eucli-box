@@ -2,6 +2,7 @@ export const ASSISTANT_STREAM_KEY_PREFIX = 'bg.stream.'
 export const ENGINE_FINAL_KEY_PREFIX = 'engine.v1/final/'
 export const ENGINE_MID_RUN_KEY_PREFIX = 'engine.v1/mid-run/'
 export const ENGINE_PROGRESS_KEY_PREFIX = 'engine.v1/progress/'
+export const TOOL_CONFIRMATION_KEY = 'engine.v1/tool-confirmation'
 export const UI_CHAT_UPDATED_NOTICE_KEY = 'ui/notice/chat-updated'
 
 function requireRuntimeId(value: unknown, label: string) {

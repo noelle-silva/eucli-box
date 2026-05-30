@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -8,17 +9,19 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
 	assistantStreamKeyPrefix = "bg.stream."
 	assistantFinalKeyPrefix  = "engine.v1/final/"
 	assistantMidRunKeyPrefix = "engine.v1/mid-run/"
+	toolConfirmationKey      = "engine.v1/tool-confirmation"
 	uiChatUpdatedNoticeKey   = "ui/notice/chat-updated"
 )
 
 func newService(dataDir string) *service {
-	svc := &service{dataDir: dataDir}
+	svc := &service{dataDir: dataDir, box: newBoxClientFromEnv()}
 	svc.ai = newAIRunQueue(svc)
 	return svc
 }
@@ -90,4 +93,36 @@ func (svc *service) imageReadDataURLByRel(relPath string) (string, error) {
 		return "", fmt.Errorf("unsupported image MIME: %s", mime)
 	}
 	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(payload), nil
+}
+
+func (svc *service) getPendingConfirmation() (any, error) {
+	key := "runtime/" + toolConfirmationKey
+	return svc.storageGetByKey(key)
+}
+
+func (svc *service) submitConfirmation(params json.RawMessage) (map[string]bool, error) {
+	var payload struct {
+		DecisionID string `json:"decisionId"`
+		Approved   bool   `json:"approved"`
+	}
+	_ = json.Unmarshal(params, &payload)
+	decisionID := strings.TrimSpace(payload.DecisionID)
+	if decisionID == "" {
+		return nil, errors.New("decisionId is required")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := svc.box.postJSON(ctx, "/api/tool-confirmations", map[string]any{
+		"id":         "tc-" + fmt.Sprint(time.Now().UnixMilli()),
+		"decisionId": decisionID,
+		"approved":   payload.Approved,
+		"createdAt":  time.Now().UTC().Format(time.RFC3339),
+	}, nil); err != nil {
+		return nil, err
+	}
+
+	_ = svc.storageRemoveByKey("runtime/" + toolConfirmationKey)
+	return map[string]bool{"ok": true}, nil
 }

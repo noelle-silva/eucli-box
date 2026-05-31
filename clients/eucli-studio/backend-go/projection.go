@@ -405,7 +405,14 @@ func fromUIRole(value any) map[string]any {
 }
 
 func toUIProvider(provider map[string]any) map[string]any {
-	return map[string]any{"id": stringField(provider, "id"), "name": stringField(provider, "name"), "baseUrl": stringField(provider, "baseUrl"), "apiKey": stringField(provider, "key"), "protocol": stringField(provider, "protocol"), "modelsCache": map[string]any{"items": []any{}, "fetchedAt": 0}}
+	models := []any{}
+	for _, model := range objectList(provider["models"]) {
+		id := stringField(model, "id")
+		if id != "" {
+			models = append(models, id)
+		}
+	}
+	return map[string]any{"id": stringField(provider, "id"), "name": stringField(provider, "name"), "baseUrl": stringField(provider, "baseUrl"), "apiKey": stringField(provider, "key"), "protocol": stringField(provider, "protocol"), "modelsCache": map[string]any{"items": models, "fetchedAt": millisFromAny(provider["updatedAt"])}}
 }
 
 func fromUIProvider(value any) map[string]any {

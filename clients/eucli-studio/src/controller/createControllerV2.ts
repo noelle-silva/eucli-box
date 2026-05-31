@@ -603,7 +603,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     getState: () => state,
     getProvider,
     netRequest: capabilities.net?.request || ((() => Promise.resolve({})) as any),
-    save: saveDataTree,
     emit,
     showToast: api.ui?.showToast,
   })

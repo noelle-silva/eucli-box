@@ -176,6 +176,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       providerName: '',
       providerBaseUrl: '',
       providerApiKey: '',
+      providerProtocol: '',
 
       deleteRoleId: '',
       deleteGroupId: '',

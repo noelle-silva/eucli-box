@@ -62,6 +62,14 @@ function findExistingParentForDeletedMessage(messageId: string, deletedMessagePa
   return ''
 }
 
+async function writeRequired(storage: { set: (key: string, value: any) => Promise<any> }, key: string, value: any) {
+  await storage.set(key, value)
+}
+
+async function removeRequired(storage: { remove: (key: string) => Promise<any> }, key: string) {
+  await storage.remove(key)
+}
+
 function normalizeMessageAfterDeletionIntent(message: any, deletedMessageIds: Set<string>, deletedMessageParentById: Map<string, string>, localIds: Set<string>) {
   const m = message && typeof message === 'object' ? message : null
   if (!m || !deletedMessageIds.size) return message
@@ -515,9 +523,7 @@ export function createSplitStorage(deps: {
       const chatUpdatedAt: Record<string, number> = chatMetaUpdatedAtMap(chatMetas)
       chatIndexByRole[rid] = { activeChatId, chatIds, chatUpdatedAt, chatMetas }
 
-      try {
-        await storage.set(splitRoleKey(folder), r)
-      } catch (_) {}
+      await writeRequired(storage, splitRoleKey(folder), r)
 
       await _syncRoleAvatarFile(folder, r)
 
@@ -539,13 +545,11 @@ export function createSplitStorage(deps: {
             const raw0 = await storage.get(newKey)
             const stored = raw0 && typeof raw0 === 'object' ? raw0 : null
             const merged = mergeChatForConcurrentWrite(c, stored)
-            await storage.set(newKey, merged)
+            await writeRequired(storage, newKey, merged)
           })
         } catch (_) {}
         if (oldKey && oldKey !== newKey) {
-          try {
-            await storage.remove(oldKey)
-          } catch (_) {}
+          await removeRequired(storage, oldKey)
         }
       }
     }
@@ -567,9 +571,7 @@ export function createSplitStorage(deps: {
       const chatUpdatedAt: any = chatMetaUpdatedAtMap(chatMetas)
       ;(chatIndexByGroup as any)[gid] = { activeChatId, chatIds, chatUpdatedAt, chatMetas }
 
-      try {
-        await storage.set(splitGroupKey(folder), g)
-      } catch (_) {}
+      await writeRequired(storage, splitGroupKey(folder), g)
 
       await _syncGroupAvatarFile(folder, g)
 
@@ -594,13 +596,11 @@ export function createSplitStorage(deps: {
             const raw0 = await storage.get(newKey)
             const stored = raw0 && typeof raw0 === 'object' ? raw0 : null
             const merged = mergeChatForConcurrentWrite(c, stored)
-            await storage.set(newKey, merged)
+            await writeRequired(storage, newKey, merged)
           })
         } catch (_) {}
         if (oldKey && oldKey !== newKey) {
-          try {
-            await storage.remove(oldKey)
-          } catch (_) {}
+          await removeRequired(storage, oldKey)
         }
       }
     }
@@ -670,23 +670,19 @@ export function createSplitStorage(deps: {
       } catch (_) {}
     }
 
-    try {
-      await storage.set(splitProvidersIndexKey(), {
-        schemaVersion: SPLIT_SCHEMA_VERSION,
-        updatedAt: now(),
-        providerOrder,
-        providerFolders,
-      })
-    } catch (_) {}
+    await writeRequired(storage, splitProvidersIndexKey(), {
+      schemaVersion: SPLIT_SCHEMA_VERSION,
+      updatedAt: now(),
+      providerOrder,
+      providerFolders,
+    })
 
     for (const p of providers) {
       const pid = String(p?.id || '')
       if (!pid) continue
       const folder = String(providerFolders[pid] || '')
       if (!folder) continue
-      try {
-        await storage.set(splitProviderKey(folder), p)
-      } catch (_) {}
+      await writeRequired(storage, splitProviderKey(folder), p)
     }
 
     const meta = {
@@ -699,7 +695,7 @@ export function createSplitStorage(deps: {
     }
 
     try {
-      await storage.set(SPLIT_META_KEY, meta)
+      await writeRequired(storage, SPLIT_META_KEY, meta)
       splitMetaCache = {
         ...meta,
         roleOrder,
@@ -843,9 +839,7 @@ export function createSplitStorage(deps: {
         if (!pid || newProviderSet.has(pid)) continue
         const oldFolder = String((oldProviderFolders as any)?.[pid] || '')
         if (!oldFolder) continue
-        try {
-          await storage.remove(splitProviderKey(oldFolder))
-        } catch (_) {}
+          await removeRequired(storage, splitProviderKey(oldFolder))
       }
     }
   }

@@ -211,7 +211,7 @@ export function normalizeData(raw: any) {
   mb.pdf = normalizeMaxFileSizeMb(mb.pdf)
   mb.docx = normalizeMaxFileSizeMb(mb.docx)
   mb.ppt = normalizeMaxFileSizeMb(mb.ppt)
-  if (!Array.isArray(d.settings.providers) || d.settings.providers.length === 0) d.settings.providers = defaultData().settings.providers
+  if (!Array.isArray(d.settings.providers)) d.settings.providers = []
 
   if (!d.settings.stickers || typeof d.settings.stickers !== 'object') d.settings.stickers = {}
   const st = d.settings.stickers
@@ -296,7 +296,7 @@ export function normalizeData(raw: any) {
 
   ;(d as any).favorites = normalizeFavorites((d as any).favorites)
 
-  if (!Array.isArray(d.roles) || d.roles.length === 0) d.roles = defaultData().roles
+  if (!Array.isArray(d.roles)) d.roles = []
 
   for (const r of d.roles) {
     if (!r || typeof r !== 'object') continue

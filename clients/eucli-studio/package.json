@@ -19,6 +19,7 @@
     "apps:release:dry": "node ../../scripts/release-v5-app.mjs --dry-run",
     "apps:release": "node ../../scripts/release-v5-app.mjs",
     "dev": "vite --host 127.0.0.1 --port 1431",
+    "dev:app": "pnpm build:backend && pnpm build:resources && pnpm tauri dev",
     "tauri": "tauri"
   },
   "dependencies": {

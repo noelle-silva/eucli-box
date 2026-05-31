@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 type service struct {
@@ -24,8 +25,7 @@ func (s *service) dispatch(ctx context.Context, method string, params json.RawMe
 		cfg, _ := s.config.load()
 		return map[string]any{"version": 1, "status": "ok", "configured": cfg.EucliBoxURL != ""}, nil
 	case "studio.bootstrap":
-		cfg, _ := s.config.load()
-		return map[string]any{"eucliBoxConfigured": cfg.EucliBoxURL != "", "eucliBoxUrl": cfg.EucliBoxURL}, nil
+		return s.bootstrap(ctx)
 	case "eucli.config.get":
 		return s.config.load()
 	case "eucli.config.set":
@@ -69,6 +69,30 @@ func (s *service) dispatch(ctx context.Context, method string, params json.RawMe
 	default:
 		return nil, newError("METHOD_NOT_FOUND", "未知请求："+method)
 	}
+}
+
+func (s *service) bootstrap(ctx context.Context) (any, error) {
+	cfg, err := s.config.load()
+	if err != nil {
+		return nil, err
+	}
+	info := map[string]any{
+		"eucliBoxConfigured": false,
+		"eucliBoxReachable":  false,
+		"eucliBoxUrl":        cfg.EucliBoxURL,
+		"eucliBoxIssue":      "",
+	}
+	if strings.TrimSpace(cfg.EucliBoxURL) == "" {
+		return info, nil
+	}
+	info["eucliBoxConfigured"] = true
+	_, err = s.eb.request(ctx, ebRequest{Method: "GET", Path: "/api/roles", Timeout: 8000})
+	if err != nil {
+		info["eucliBoxIssue"] = err.Error()
+		return info, nil
+	}
+	info["eucliBoxReachable"] = true
+	return info, nil
 }
 
 func storageKey(params json.RawMessage) (string, error) {

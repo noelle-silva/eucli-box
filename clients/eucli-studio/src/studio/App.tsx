@@ -28,6 +28,13 @@ type FwLaunchInfo = {
   mode: string
 }
 
+type RuntimeBootstrap = {
+  eucliBoxConfigured?: boolean
+  eucliBoxReachable?: boolean
+  eucliBoxUrl?: string
+  eucliBoxIssue?: string
+}
+
 function getTauriWindowSafe() {
   try {
     return getCurrentWindow()
@@ -70,6 +77,7 @@ export function App() {
   const [eucliBoxUrlDraft, setEucliBoxUrlDraft] = React.useState('http://127.0.0.1:8765')
   const [eucliBoxKeyDraft, setEucliBoxKeyDraft] = React.useState('')
   const [eucliBoxConfigBusy, setEucliBoxConfigBusy] = React.useState(false)
+  const [runtimeBootstrap, setRuntimeBootstrap] = React.useState<RuntimeBootstrap | null>(null)
   const runtimeRef = React.useRef<AiChatAppRuntime | null>(null)
   const runtimeVersionRef = React.useRef(0)
   const mountedRef = React.useRef(false)
@@ -99,6 +107,7 @@ export function App() {
     runtimeRef.current?.dispose()
     runtimeRef.current = null
     setController(null)
+    setRuntimeBootstrap(null)
     if (isCancelled()) return null
     const runtime = await createAiChatAppRuntime({
       showToast,
@@ -110,6 +119,8 @@ export function App() {
     }
       runtimeRef.current = runtime
       setController(runtime.controller)
+      const bootstrap = runtime.bootstrap && typeof runtime.bootstrap === 'object' ? runtime.bootstrap as RuntimeBootstrap : null
+      setRuntimeBootstrap(bootstrap)
       const config = await runtime.getEucliBoxConfig().catch(() => null)
       if (config && !isCancelled() && runtimeVersionRef.current === runtimeVersion) {
         setEucliBoxConfig(config)
@@ -255,8 +266,11 @@ export function App() {
     }
   }
 
-  const issue = bootError || dataDirStatus?.error || (dataDirStatus && !dataDirStatus.writable ? '数据目录不可写' : '')
-  const needsEucliBoxConfig = !!controller && bootStatus === 'ready' && !issue && !String(eucliBoxConfig?.eucliBoxUrl || '').trim()
+  const runtimeBootstrapIssue = bootStatus === 'ready' && runtimeBootstrap?.eucliBoxConfigured && runtimeBootstrap?.eucliBoxReachable === false
+    ? String(runtimeBootstrap?.eucliBoxIssue || 'eucli-box 当前不可达')
+    : ''
+  const issue = bootError || dataDirStatus?.error || runtimeBootstrapIssue || (dataDirStatus && !dataDirStatus.writable ? '数据目录不可写' : '')
+  const needsEucliBoxConfig = !!controller && bootStatus === 'ready' && !String(eucliBoxConfig?.eucliBoxUrl || '').trim()
 
   const canRenderChatApp = !!controller && bootStatus === 'ready' && !issue && !needsEucliBoxConfig
 
@@ -285,6 +299,7 @@ export function App() {
           urlDraft={eucliBoxUrlDraft}
           keyDraft={eucliBoxKeyDraft}
           busy={eucliBoxConfigBusy}
+          issue={runtimeBootstrapIssue}
           onUrlChange={setEucliBoxUrlDraft}
           onKeyChange={setEucliBoxKeyDraft}
           onSubmit={saveEucliBoxConfig}
@@ -318,11 +333,12 @@ function EucliBoxConfigScreen(props: {
   urlDraft: string
   keyDraft: string
   busy: boolean
+  issue: string
   onUrlChange: (value: string) => void
   onKeyChange: (value: string) => void
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void
 }) {
-  const { standalone, windowControlActions, urlDraft, keyDraft, busy, onUrlChange, onKeyChange, onSubmit } = props
+  const { standalone, windowControlActions, urlDraft, keyDraft, busy, issue, onUrlChange, onKeyChange, onSubmit } = props
   const onTopbarPointerDown = React.useCallback((event: React.PointerEvent<HTMLElement>) => {
     if (event.button !== 0) return
     const target = event.target
@@ -340,6 +356,7 @@ function EucliBoxConfigScreen(props: {
       <section className="bootFallbackCard eucliConfigCard">
         <div className="bootFallbackTitle">连接 eucli-box</div>
         <div className="bootFallbackText">请填写当前手动启动的 eucli-box gateway 地址和 key。客户端只保存连接配置，业务事实仍由 eucli-box 负责。</div>
+        {issue ? <div className="bootFallbackIssue">{issue}</div> : null}
         <form className="eucliConfigForm" onSubmit={onSubmit}>
           <label className="eucliConfigLabel">
             <span>Gateway 地址</span>

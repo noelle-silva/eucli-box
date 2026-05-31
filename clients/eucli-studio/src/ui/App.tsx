@@ -7600,7 +7600,7 @@ function PluginSettingsPage(props: {
                       {String(p?.name || '')}
                     </Typography>
                     <Typography variant="caption" color="text.secondary" noWrap>
-                      {String(p?.baseUrl || '')}
+                      {providerProtocolLabel(p?.protocol)} · {String(p?.baseUrl || '')}
                     </Typography>
                   </Box>
 
@@ -7628,6 +7628,21 @@ function PluginSettingsPage(props: {
                       onChange={(e) => controller.actions.setDraft('providerBaseUrl', e.target.value)}
                       placeholder="https://api.openai.com/v1"
                     />
+                    <FormControl fullWidth>
+                      <InputLabel id={`provider-protocol-${pid}`}>协议</InputLabel>
+                      <Select
+                        labelId={`provider-protocol-${pid}`}
+                        label="协议"
+                        value={String(draft?.providerProtocol || '')}
+                        onChange={(e) => controller.actions.setDraft('providerProtocol', e.target.value)}
+                      >
+                        <MenuItem value="">
+                          <em>请选择协议</em>
+                        </MenuItem>
+                        <MenuItem value="openai">OpenAI 兼容</MenuItem>
+                        <MenuItem value="anthropic">Anthropic</MenuItem>
+                      </Select>
+                    </FormControl>
                     <ApiKeyField value={String(draft?.providerApiKey || '')} onValueChange={(next) => controller.actions.setDraft('providerApiKey', next)} />
                     <Stack direction="row" spacing={1} justifyContent="flex-end">
                       <Button variant="contained" onClick={() => controller.actions.saveProvider()}>
@@ -7643,6 +7658,13 @@ function PluginSettingsPage(props: {
       </Paper>
     </Box>
   )
+}
+
+function providerProtocolLabel(protocol: unknown) {
+  const value = String(protocol || '').trim()
+  if (value === 'openai') return 'OpenAI 兼容'
+  if (value === 'anthropic') return 'Anthropic'
+  return '未选择协议'
 }
 
 function DataSettingsPanel(props: { dataDirectory?: AiChatDataDirectory; loading: boolean }) {

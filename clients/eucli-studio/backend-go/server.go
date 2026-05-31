@@ -47,13 +47,15 @@ func (s *directServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	go s.handleConnection(r.Context(), conn)
+	go s.handleConnection(conn)
 }
 
-func (s *directServer) handleConnection(ctx context.Context, conn *websocket.Conn) {
+func (s *directServer) handleConnection(conn *websocket.Conn) {
 	defer conn.Close()
 	s.hub.add(conn)
 	defer s.hub.remove(conn)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	healthChecked := false
 	for {
 		var frame requestFrame

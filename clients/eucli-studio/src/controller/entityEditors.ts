@@ -485,10 +485,11 @@ export function createEntityEditors(deps: {
     state.draft.providerName = String(p.name || '')
     state.draft.providerBaseUrl = String(p.baseUrl || '')
     state.draft.providerApiKey = String(p.apiKey || '')
+    state.draft.providerProtocol = String(p.protocol || '')
     render()
   }
 
-  function saveProviderInlineEditor() {
+  async function saveProviderInlineEditor() {
     const state = getState()
     const pid = String(state.draft.editProviderId || '')
     const p = sa.getProvider(pid)
@@ -508,15 +509,30 @@ export function createEntityEditors(deps: {
     const oldApiKey = String(p.apiKey || '').trim()
     const nextBaseUrl = String(state.draft.providerBaseUrl || '').trim() || 'http://'
     const nextApiKey = String(state.draft.providerApiKey || '').trim()
+    const nextProtocol = normalizeProviderProtocol(state.draft.providerProtocol)
+    const previous = { ...p, modelsCache: p.modelsCache && typeof p.modelsCache === 'object' ? { ...p.modelsCache } : p.modelsCache }
 
-    p.name = nextName
-    p.baseUrl = nextBaseUrl
-    p.apiKey = nextApiKey
-    if (oldBaseUrl !== nextBaseUrl || oldApiKey !== nextApiKey) p.modelsCache = { items: [], fetchedAt: 0 }
+    if (!nextProtocol) {
+      showToast?.('请选择供应商协议')
+      render()
+      return
+    }
 
-    state.draft.editProviderId = ''
-    save().catch(() => {})
-    render()
+    try {
+      p.name = nextName
+      p.baseUrl = nextBaseUrl
+      p.apiKey = nextApiKey
+      p.protocol = nextProtocol
+      if (oldBaseUrl !== nextBaseUrl || oldApiKey !== nextApiKey) p.modelsCache = { items: [], fetchedAt: 0 }
+      await save()
+      state.draft.editProviderId = ''
+      showToast?.('供应商已保存')
+      render()
+    } catch (e: any) {
+      Object.assign(p, previous)
+      showToast?.(String(e?.message || e || '供应商保存失败'))
+      render()
+    }
   }
 
   function createProvider() {
@@ -536,10 +552,15 @@ export function createEntityEditors(deps: {
       name,
       baseUrl: 'http://',
       apiKey: '',
+      protocol: '',
       modelsCache: { items: [], fetchedAt: 0 },
     })
-    save().catch(() => {})
     openProviderInlineEditor(pid)
+  }
+
+  function normalizeProviderProtocol(value: any) {
+    const protocol = String(value || '').trim()
+    return protocol === 'openai' || protocol === 'anthropic' ? protocol : ''
   }
 
   function deleteProvider(providerId: any) {

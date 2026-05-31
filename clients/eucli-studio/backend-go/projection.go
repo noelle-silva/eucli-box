@@ -70,10 +70,13 @@ func (p *projectionService) set(ctx context.Context, key string, value any) erro
 		return p.saveRole(ctx, value)
 	}
 	if match := providerKeyPattern.FindStringSubmatch(key); match != nil {
-		return p.saveProvider(ctx, value)
+		return p.saveProvider(ctx, match[1], value)
 	}
 	if match := chatKeyPattern.FindStringSubmatch(key); match != nil {
 		return p.saveSession(ctx, match[1], value)
+	}
+	if key == "providers/index" {
+		return nil
 	}
 	_, err := p.config.updateProjection(func(projection *projectionConfig) {
 		projection.ClientObjects[key] = value
@@ -89,6 +92,19 @@ func (p *projectionService) set(ctx context.Context, key string, value any) erro
 }
 
 func (p *projectionService) remove(ctx context.Context, key string) error {
+	if match := providerKeyPattern.FindStringSubmatch(key); match != nil {
+		providerID, err := p.providerIDByFolder(ctx, match[1])
+		if err != nil {
+			return err
+		}
+		if _, err := p.eb.request(ctx, ebRequest{Method: "DELETE", Path: fmt.Sprintf("/api/providers/%s", providerID)}); err != nil {
+			return err
+		}
+		_, err = p.config.updateProjection(func(projection *projectionConfig) {
+			delete(projection.ProviderFolders, providerID)
+		})
+		return err
+	}
 	if match := chatKeyPattern.FindStringSubmatch(key); match != nil {
 		roleID, err := p.roleIDByFolder(ctx, match[1])
 		if err != nil {
@@ -262,12 +278,18 @@ func (p *projectionService) saveRole(ctx context.Context, value any) error {
 	return err
 }
 
-func (p *projectionService) saveProvider(ctx context.Context, value any) error {
+func (p *projectionService) saveProvider(ctx context.Context, folder string, value any) error {
 	provider := fromUIProvider(value)
-	if stringField(provider, "id") == "" {
+	providerID := stringField(provider, "id")
+	if providerID == "" {
 		return newError("BAD_REQUEST", "provider id is required")
 	}
-	_, err := p.eb.request(ctx, ebRequest{Method: "POST", Path: "/api/providers", Body: mustJSON(provider)})
+	if _, err := p.eb.request(ctx, ebRequest{Method: "POST", Path: "/api/providers", Body: mustJSON(provider)}); err != nil {
+		return err
+	}
+	_, err := p.config.updateProjection(func(projection *projectionConfig) {
+		projection.ProviderFolders[providerID] = folder
+	})
 	return err
 }
 
@@ -288,7 +310,23 @@ func (p *projectionService) listRoles(ctx context.Context) ([]map[string]any, er
 
 func (p *projectionService) listProviders(ctx context.Context) ([]map[string]any, error) {
 	data, err := p.eb.request(ctx, ebRequest{Method: "GET", Path: "/api/providers"})
-	return objectList(data), err
+	if err != nil {
+		return nil, err
+	}
+	summaries := objectList(data)
+	providers := make([]map[string]any, 0, len(summaries))
+	for _, summary := range summaries {
+		id := stringField(summary, "id")
+		if id == "" {
+			continue
+		}
+		detail, err := p.eb.request(ctx, ebRequest{Method: "GET", Path: fmt.Sprintf("/api/providers/%s", id)})
+		if err != nil {
+			return nil, err
+		}
+		providers = append(providers, objectMap(detail))
+	}
+	return providers, nil
 }
 
 func (p *projectionService) listSessions(ctx context.Context, roleID string) ([]map[string]any, error) {
@@ -317,6 +355,21 @@ func (p *projectionService) roleIDByFolder(ctx context.Context, folder string) (
 		}
 	}
 	return "", newError("NOT_FOUND", "角色不存在")
+}
+
+func (p *projectionService) providerIDByFolder(ctx context.Context, folder string) (string, error) {
+	providers, err := p.listProviders(ctx)
+	if err != nil {
+		return "", err
+	}
+	cfg, _ := p.config.load()
+	for _, provider := range providers {
+		id := stringField(provider, "id")
+		if folderFor(cfg.Projection.ProviderFolders, id, stringField(provider, "name"), "供应商") == folder {
+			return id, nil
+		}
+	}
+	return "", newError("NOT_FOUND", "供应商不存在")
 }
 
 func toUIRole(role map[string]any) map[string]any {
@@ -352,12 +405,12 @@ func fromUIRole(value any) map[string]any {
 }
 
 func toUIProvider(provider map[string]any) map[string]any {
-	return map[string]any{"id": stringField(provider, "id"), "name": stringField(provider, "name"), "baseUrl": stringField(provider, "baseUrl"), "apiKey": stringField(provider, "key"), "modelsCache": map[string]any{"items": []any{}, "fetchedAt": 0}}
+	return map[string]any{"id": stringField(provider, "id"), "name": stringField(provider, "name"), "baseUrl": stringField(provider, "baseUrl"), "apiKey": stringField(provider, "key"), "protocol": stringField(provider, "protocol"), "modelsCache": map[string]any{"items": []any{}, "fetchedAt": 0}}
 }
 
 func fromUIProvider(value any) map[string]any {
 	provider := objectMap(value)
-	return map[string]any{"id": stringField(provider, "id"), "name": stringField(provider, "name"), "baseUrl": stringField(provider, "baseUrl"), "key": stringField(provider, "apiKey"), "protocol": fallback(stringField(provider, "protocol"), "openai")}
+	return map[string]any{"id": stringField(provider, "id"), "name": stringField(provider, "name"), "baseUrl": stringField(provider, "baseUrl"), "key": stringField(provider, "apiKey"), "protocol": stringField(provider, "protocol")}
 }
 
 func toUIChat(session map[string]any) map[string]any {
@@ -419,7 +472,7 @@ func objectList(value any) []map[string]any {
 	return out
 }
 
-func stringField(m map[string]any, key string) string { return strings.TrimSpace(fmt.Sprint(m[key])) }
+func stringField(m map[string]any, key string) string { if m == nil || m[key] == nil { return "" }; return strings.TrimSpace(fmt.Sprint(m[key])) }
 func numberField(m map[string]any, key string, fallback float64) float64 { if n, ok := m[key].(float64); ok { return n }; return fallback }
 func fallback(value string, fallback string) string { if strings.TrimSpace(value) == "" { return fallback }; return strings.TrimSpace(value) }
 func nowMillis() int64 { return time.Now().UnixMilli() }

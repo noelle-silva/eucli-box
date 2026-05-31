@@ -104,7 +104,7 @@ func TestWebSocketForwardsRuntimeEvents(t *testing.T) {
 
 func newTestGateway(t *testing.T, fakes *gatewayFakes) System {
 	t.Helper()
-	system, err := NewSystem(Config{}, fakes.runtime, fakes.roles, fakes.providers, fakes.tools)
+	system, err := NewSystem(Config{}, fakes.runtime, fakes.roles, fakes.providers, fakes.tools, fakes.sessions)
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -116,10 +116,42 @@ type gatewayFakes struct {
 	roles     *fakeGatewayRoles
 	providers *fakeGatewayProviders
 	tools     *fakeGatewayTools
+	sessions  *fakeGatewaySessions
 }
 
 func newGatewayFakes() *gatewayFakes {
-	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools()}
+	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions()}
+}
+
+type fakeGatewaySessions struct{ sessions map[string]types.Session }
+
+func newFakeGatewaySessions() *fakeGatewaySessions {
+	return &fakeGatewaySessions{sessions: map[string]types.Session{}}
+}
+
+func (f *fakeGatewaySessions) SaveSession(ctx context.Context, session types.Session) error {
+	f.sessions[session.RoleID+"/"+session.ID] = session
+	return nil
+}
+
+func (f *fakeGatewaySessions) LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error) {
+	return f.sessions[roleID+"/"+sessionID], nil
+}
+
+func (f *fakeGatewaySessions) ListSessions(ctx context.Context, roleID string) ([]types.SessionSummary, error) {
+	out := []types.SessionSummary{}
+	for _, s := range f.sessions {
+		if s.RoleID != roleID {
+			continue
+		}
+		out = append(out, types.SessionSummary{ID: s.ID, RoleID: s.RoleID, Title: s.Title, Status: s.Status, LastActive: s.LastActive})
+	}
+	return out, nil
+}
+
+func (f *fakeGatewaySessions) DeleteSession(ctx context.Context, roleID string, sessionID string) error {
+	delete(f.sessions, roleID+"/"+sessionID)
+	return nil
 }
 
 type fakeGatewayRuntime struct {

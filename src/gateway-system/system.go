@@ -46,6 +46,13 @@ type ToolSystem interface {
 	ListTools(ctx context.Context) ([]types.ToolSummary, error)
 }
 
+type SessionSystem interface {
+	SaveSession(ctx context.Context, session types.Session) error
+	LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error)
+	ListSessions(ctx context.Context, roleID string) ([]types.SessionSummary, error)
+	DeleteSession(ctx context.Context, roleID string, sessionID string) error
+}
+
 type Config struct {
 	Addr         string
 	Key          string
@@ -59,6 +66,7 @@ type system struct {
 	roles     RoleSystem
 	providers ProviderSystem
 	tools     ToolSystem
+	sessions  SessionSystem
 	mux       *http.ServeMux
 	server    *http.Server
 	upgrader  websocket.Upgrader
@@ -67,7 +75,7 @@ type system struct {
 	connections map[*websocket.Conn]struct{}
 }
 
-func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, providers ProviderSystem, tools ToolSystem) (System, error) {
+func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, providers ProviderSystem, tools ToolSystem, sessions SessionSystem) (System, error) {
 	if runtime == nil {
 		return nil, gatewayInvalid("runtime system dependency is required", nil)
 	}
@@ -79,6 +87,9 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, providers
 	}
 	if tools == nil {
 		return nil, gatewayInvalid("tool system dependency is required", nil)
+	}
+	if sessions == nil {
+		return nil, gatewayInvalid("session system dependency is required", nil)
 	}
 	if config.Addr == "" {
 		config.Addr = "127.0.0.1:8765"
@@ -98,6 +109,7 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, providers
 		roles:       roles,
 		providers:   providers,
 		tools:       tools,
+		sessions:    sessions,
 		mux:         http.NewServeMux(),
 		upgrader:    websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
 		connections: map[*websocket.Conn]struct{}{},

@@ -11,6 +11,11 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("GET /api/roles/{roleID}", s.authWrap(s.handleLoadRole))
 	s.mux.HandleFunc("DELETE /api/roles/{roleID}", s.authWrap(s.handleDeleteRole))
 
+	s.mux.HandleFunc("GET /api/roles/{roleID}/sessions", s.authWrap(s.handleListSessions))
+	s.mux.HandleFunc("POST /api/roles/{roleID}/sessions", s.authWrap(s.handleSaveSession))
+	s.mux.HandleFunc("GET /api/roles/{roleID}/sessions/{sessionID}", s.authWrap(s.handleLoadSession))
+	s.mux.HandleFunc("DELETE /api/roles/{roleID}/sessions/{sessionID}", s.authWrap(s.handleDeleteSession))
+
 	s.mux.HandleFunc("GET /api/providers", s.authWrap(s.handleListProviders))
 	s.mux.HandleFunc("POST /api/providers", s.authWrap(s.handleSaveProvider))
 	s.mux.HandleFunc("GET /api/providers/{providerID}", s.authWrap(s.handleLoadProvider))

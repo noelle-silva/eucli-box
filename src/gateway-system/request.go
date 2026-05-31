@@ -99,3 +99,19 @@ func validateConfirmation(confirmation types.ToolConfirmation) error {
 	}
 	return nil
 }
+
+func validateSession(routeRoleID string, session types.Session) error {
+	if strings.TrimSpace(routeRoleID) == "" {
+		return gatewayInvalid("roleID is required", nil)
+	}
+	if strings.TrimSpace(session.RoleID) == "" {
+		return gatewayInvalid("session roleId is required", nil)
+	}
+	if strings.TrimSpace(session.RoleID) != strings.TrimSpace(routeRoleID) {
+		return gatewayInvalid("session roleId does not match route roleID", nil)
+	}
+	if strings.TrimSpace(session.ID) == "" {
+		return gatewayInvalid("session id is required", nil)
+	}
+	return nil
+}

@@ -8,12 +8,14 @@ import (
 )
 
 type service struct {
-	config *configStore
-	eb     *ebClient
+	config     *configStore
+	eb         *ebClient
+	projection *projectionService
 }
 
 func newService(config *configStore) *service {
-	return &service{config: config, eb: newEBClient(config)}
+	eb := newEBClient(config)
+	return &service{config: config, eb: eb, projection: newProjectionService(config, eb)}
 }
 
 func (s *service) dispatch(ctx context.Context, method string, params json.RawMessage) (any, error) {
@@ -44,13 +46,56 @@ func (s *service) dispatch(ctx context.Context, method string, params json.RawMe
 		return nil, newError("EB_MODEL_REQUIRED", fmt.Sprintf("%s 必须通过 e-b runs 接口推进，客户端不再本地运行", method))
 	case "aiChat.cancelAssistant", "aiChat.getAssistantRuntime", "aiChat.readAssistantStream", "aiChat.consumeAssistantFinal", "aiChat.resetAssistantRuntime", "aiChat.waitServiceFinal":
 		return nil, newError("EB_MODEL_REQUIRED", fmt.Sprintf("%s 必须通过 e-b runs/events 接口读取，客户端不再维护本地运行态", method))
-	case "aiChat.storageGet", "aiChat.storageSet", "aiChat.storageRemove":
-		return nil, newError("EB_MODEL_REQUIRED", fmt.Sprintf("%s 已禁用：客户端不再维护 e-b 业务事实副本", method))
+	case "aiChat.storageGet":
+		key, err := storageKey(params)
+		if err != nil {
+			return nil, err
+		}
+		return s.projection.get(ctx, key)
+	case "aiChat.storageSet":
+		key, value, err := storageSetPayload(params)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{}, s.projection.set(ctx, key, value)
+	case "aiChat.storageRemove":
+		key, err := storageKey(params)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{}, s.projection.remove(ctx, key)
 	case "aiChat.imageRead", "aiChat.imageWrite", "aiChat.imageDelete", "aiChat.imagePick":
 		return nil, newError("NOT_IMPLEMENTED", fmt.Sprintf("%s 尚未接入 e-b 附件能力", method))
 	default:
 		return nil, newError("METHOD_NOT_FOUND", "未知请求："+method)
 	}
+}
+
+func storageKey(params json.RawMessage) (string, error) {
+	var req struct {
+		Key string `json:"key"`
+	}
+	if err := json.Unmarshal(paramsOrEmpty(params), &req); err != nil {
+		return "", err
+	}
+	if req.Key == "" {
+		return "", newError("BAD_REQUEST", "storage key is required")
+	}
+	return req.Key, nil
+}
+
+func storageSetPayload(params json.RawMessage) (string, any, error) {
+	var req struct {
+		Key   string `json:"key"`
+		Value any    `json:"value"`
+	}
+	if err := json.Unmarshal(paramsOrEmpty(params), &req); err != nil {
+		return "", nil, err
+	}
+	if req.Key == "" {
+		return "", nil, newError("BAD_REQUEST", "storage key is required")
+	}
+	return req.Key, req.Value, nil
 }
 
 func (s *service) handleNetRequest(ctx context.Context, params json.RawMessage) (any, error) {

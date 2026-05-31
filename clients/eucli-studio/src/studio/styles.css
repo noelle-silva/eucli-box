@@ -114,6 +114,46 @@ textarea {
   background: rgba(255, 255, 255, 0.96);
 }
 
+.eucliConfigCard {
+  width: min(620px, 100%);
+}
+
+.eucliConfigForm {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.eucliConfigLabel {
+  display: grid;
+  gap: 7px;
+  color: #394255;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.eucliConfigLabel input {
+  width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid rgba(73, 82, 106, 0.16);
+  border-radius: 12px;
+  color: #1f2430;
+  background: rgba(255, 255, 255, 0.82);
+  outline: none;
+}
+
+.eucliConfigLabel input:focus {
+  border-color: rgba(84, 118, 255, 0.48);
+  box-shadow: 0 0 0 3px rgba(84, 118, 255, 0.12);
+}
+
+.eucliConfigForm button:disabled,
+.eucliConfigLabel input:disabled {
+  cursor: not-allowed;
+  opacity: 0.64;
+}
+
 .toast {
   position: fixed;
   right: 18px;

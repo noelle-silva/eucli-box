@@ -16,7 +16,19 @@ type BackendEndpoint = {
 export type AiChatAppRuntime = {
   controller: AiChatController
   bootstrap: unknown
+  getEucliBoxConfig: () => Promise<EucliBoxConfig>
+  setEucliBoxConfig: (config: EucliBoxConfigInput) => Promise<EucliBoxConfig>
   dispose: () => void
+}
+
+export type EucliBoxConfig = {
+  eucliBoxUrl: string
+  eucliBoxKey?: string
+}
+
+export type EucliBoxConfigInput = {
+  eucliBoxUrl: string
+  eucliBoxKey?: string
 }
 
 export type AiChatAppHostOptions = {
@@ -26,115 +38,30 @@ export type AiChatAppHostOptions = {
 
 export async function createAiChatAppRuntime(options: AiChatAppHostOptions): Promise<AiChatAppRuntime> {
   const baseApi = createAiStudioHostApi(options)
-  try {
-    const { api, directClient } = await createDirectCapabilitiesAdapter(baseApi)
-    let controllerToDispose: AiChatController | null = null
-    const capabilities = createAiChatCapabilitiesFromHostApi(api, AI_STUDIO_APP_ID)
-    const aiGateway = createAiChatDirectGateway(directClient)
-    const created = createAiChatControllerV2({ capabilities, aiGateway })
-    const controller = created.controller
-    controllerToDispose = controller
-    const bootstrap = await directClient.invoke('studio.bootstrap').catch(() => null)
-
-    await created.init()
-    ;(window as any)[AI_STUDIO_CONTROLLER_KEY] = controller
-
-    return {
-      controller,
-      bootstrap,
-      dispose() {
-        try {
-          if ((window as any)[AI_STUDIO_CONTROLLER_KEY] === controller) {
-            delete (window as any)[AI_STUDIO_CONTROLLER_KEY]
-          }
-          controller.dispose()
-        } finally {
-          directClient.close()
-        }
-      },
-    }
-  } catch (error) {
-    console.warn('[eucli-studio] direct backend unavailable, fallback to local controller:', error)
-    return createFallbackRuntime(baseApi)
-  }
-}
-
-function createMemoryStore() {
-  const map = new Map<string, any>()
-  return {
-    async get(key: string) {
-      return map.has(key) ? map.get(key) : null
-    },
-    async set(key: string, value: unknown) {
-      map.set(key, value)
-    },
-    async remove(key: string) {
-      map.delete(key)
-    },
-    async getAll() {
-      return Object.fromEntries(map.entries())
-    },
-    async listDir() {
-      return []
-    },
-    async flush() {},
-  }
-}
-
-export async function createFallbackRuntime(baseApi: any): Promise<AiChatAppRuntime> {
-  const storage = createMemoryStore()
-  const runtimeStorage = createMemoryStore()
-  const hostApi = {
-    __meta: { runtime: 'ui', appId: AI_STUDIO_APP_ID },
-    storage,
-    runtimeStorage,
-    net: {
-      request: async () => ({ status: 503, body: 'eucli-box unavailable' }),
-      requestStream: undefined,
-    },
-    files: {
-      pickImages: baseApi.files?.pickImages,
-      images: {
-        read: async () => '',
-        writeBase64: async () => '',
-        delete: async () => {},
-      },
-    },
-    ui: baseApi.ui,
-    clipboard: baseApi.clipboard,
-    host: baseApi.host,
-  }
-
-  const capabilities = createAiChatCapabilitiesFromHostApi(hostApi, AI_STUDIO_APP_ID)
-  const aiGateway: any = new Proxy(
-    {},
-    {
-      get(_target, key) {
-        const name = String(key || '')
-        if (name === 'startBackgroundWorker') return async () => {}
-        if (name === 'getPendingConfirmation') return async () => null
-        if (name === 'readAssistantStream') return async () => null
-        if (name === 'consumeAssistantFinal') return async () => null
-        if (name === 'getAssistantRuntime') return async () => null
-        return async (..._args: any[]) => {
-          throw new Error('eucli-box 尚未接入')
-        }
-      },
-    },
-  )
-
+  const { api, directClient } = await createDirectCapabilitiesAdapter(baseApi)
+  const capabilities = createAiChatCapabilitiesFromHostApi(api, AI_STUDIO_APP_ID)
+  const aiGateway = createAiChatDirectGateway(directClient)
   const created = createAiChatControllerV2({ capabilities, aiGateway })
   const controller = created.controller
+  const bootstrap = await directClient.invoke('studio.bootstrap').catch(() => null)
+
   await created.init()
   ;(window as any)[AI_STUDIO_CONTROLLER_KEY] = controller
+
   return {
     controller,
-    bootstrap: null,
+    bootstrap,
+    getEucliBoxConfig: () => directClient.invoke<EucliBoxConfig>('eucli.config.get'),
+    setEucliBoxConfig: (config) => directClient.invoke<EucliBoxConfig>('eucli.config.set', config),
     dispose() {
-      if ((window as any)[AI_STUDIO_CONTROLLER_KEY] === controller) {
-        delete (window as any)[AI_STUDIO_CONTROLLER_KEY]
+      try {
+        if ((window as any)[AI_STUDIO_CONTROLLER_KEY] === controller) {
+          delete (window as any)[AI_STUDIO_CONTROLLER_KEY]
+        }
+        controller.dispose()
+      } finally {
+        directClient.close()
       }
-      controller.dispose()
     },
   }
 }

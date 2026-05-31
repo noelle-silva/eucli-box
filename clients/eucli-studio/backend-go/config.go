@@ -12,8 +12,19 @@ import (
 const configFileName = "eucli-studio-client-config.json"
 
 type clientConfig struct {
-	EucliBoxURL string `json:"eucliBoxUrl"`
-	EucliBoxKey string `json:"eucliBoxKey"`
+	EucliBoxURL string           `json:"eucliBoxUrl"`
+	EucliBoxKey string           `json:"eucliBoxKey"`
+	Projection  projectionConfig `json:"projection"`
+}
+
+type projectionConfig struct {
+	UI               map[string]any       `json:"ui,omitempty"`
+	Settings         map[string]any       `json:"settings,omitempty"`
+	Favorites        map[string]any       `json:"favorites,omitempty"`
+	RoleFolders      map[string]string    `json:"roleFolders,omitempty"`
+	ProviderFolders  map[string]string    `json:"providerFolders,omitempty"`
+	ActiveChatByRole map[string]string    `json:"activeChatByRole,omitempty"`
+	ClientObjects    map[string]any       `json:"clientObjects,omitempty"`
 }
 
 type configStore struct {
@@ -52,6 +63,7 @@ func (s *configStore) loadLocked() (clientConfig, error) {
 	}
 	cfg.EucliBoxURL = normalizeBaseURL(cfg.EucliBoxURL)
 	cfg.EucliBoxKey = strings.TrimSpace(cfg.EucliBoxKey)
+	cfg.Projection = normalizeProjection(cfg.Projection)
 	return cfg, nil
 }
 
@@ -61,6 +73,7 @@ func (s *configStore) save(next clientConfig) (clientConfig, error) {
 	cfg := clientConfig{
 		EucliBoxURL: normalizeBaseURL(next.EucliBoxURL),
 		EucliBoxKey: strings.TrimSpace(next.EucliBoxKey),
+		Projection:  normalizeProjection(next.Projection),
 	}
 	payload, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
@@ -70,6 +83,51 @@ func (s *configStore) save(next clientConfig) (clientConfig, error) {
 		return clientConfig{}, err
 	}
 	return cfg, nil
+}
+
+func (s *configStore) updateProjection(fn func(*projectionConfig)) (projectionConfig, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cfg, err := s.loadLocked()
+	if err != nil {
+		return projectionConfig{}, err
+	}
+	projection := normalizeProjection(cfg.Projection)
+	fn(&projection)
+	cfg.Projection = normalizeProjection(projection)
+	payload, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return projectionConfig{}, err
+	}
+	if err := os.WriteFile(s.path, append(payload, '\n'), 0o600); err != nil {
+		return projectionConfig{}, err
+	}
+	return cfg.Projection, nil
+}
+
+func normalizeProjection(value projectionConfig) projectionConfig {
+	if value.UI == nil {
+		value.UI = map[string]any{}
+	}
+	if value.Settings == nil {
+		value.Settings = map[string]any{}
+	}
+	if value.Favorites == nil {
+		value.Favorites = map[string]any{"folders": []any{}, "chatRefsByFolderId": map[string]any{}}
+	}
+	if value.RoleFolders == nil {
+		value.RoleFolders = map[string]string{}
+	}
+	if value.ProviderFolders == nil {
+		value.ProviderFolders = map[string]string{}
+	}
+	if value.ActiveChatByRole == nil {
+		value.ActiveChatByRole = map[string]string{}
+	}
+	if value.ClientObjects == nil {
+		value.ClientObjects = map[string]any{}
+	}
+	return value
 }
 
 func (s *configStore) requireConfigured() (clientConfig, error) {

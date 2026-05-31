@@ -6,9 +6,7 @@ import { AiChatApp } from '../ui/App'
 import { StandaloneWindowControls, type WindowControlActions } from '../ui/components/StandaloneWindowControls'
 import type { AiChatController } from '../controller/types'
 import { AI_STUDIO_CHAT_ROOT_ID } from '../runtime/aiStudioGlobals'
-import { createAiChatAppRuntime, createFallbackRuntime, type AiChatAppRuntime } from './aiChatAppHost'
-
-const BYPASS_BOOT_ISSUE = true
+import { createAiChatAppRuntime, type AiChatAppRuntime, type EucliBoxConfig } from './aiChatAppHost'
 
 type DataDirStatus = {
   dataDir: string
@@ -68,6 +66,10 @@ export function App() {
   const [controller, setController] = React.useState<AiChatController | null>(null)
   const [toast, setToast] = React.useState<ToastMessage | null>(null)
   const [launchInfo, setLaunchInfo] = React.useState<FwLaunchInfo>({ launched: false, standalone: true, mode: 'standalone' })
+  const [eucliBoxConfig, setEucliBoxConfig] = React.useState<EucliBoxConfig | null>(null)
+  const [eucliBoxUrlDraft, setEucliBoxUrlDraft] = React.useState('http://127.0.0.1:8765')
+  const [eucliBoxKeyDraft, setEucliBoxKeyDraft] = React.useState('')
+  const [eucliBoxConfigBusy, setEucliBoxConfigBusy] = React.useState(false)
   const runtimeRef = React.useRef<AiChatAppRuntime | null>(null)
   const runtimeVersionRef = React.useRef(0)
   const mountedRef = React.useRef(false)
@@ -98,57 +100,25 @@ export function App() {
     runtimeRef.current = null
     setController(null)
     if (isCancelled()) return null
-    try {
-      const runtime = await createAiChatAppRuntime({
-        showToast,
-        onBack: () => getCurrentWindow().hide(),
-      })
-      if (isCancelled() || runtimeVersionRef.current !== runtimeVersion) {
-        runtime.dispose()
-        return null
-      }
+    const runtime = await createAiChatAppRuntime({
+      showToast,
+      onBack: () => getCurrentWindow().hide(),
+    })
+    if (isCancelled() || runtimeVersionRef.current !== runtimeVersion) {
+      runtime.dispose()
+      return null
+    }
       runtimeRef.current = runtime
       setController(runtime.controller)
+      const config = await runtime.getEucliBoxConfig().catch(() => null)
+      if (config && !isCancelled() && runtimeVersionRef.current === runtimeVersion) {
+        setEucliBoxConfig(config)
+        setEucliBoxUrlDraft(config.eucliBoxUrl || 'http://127.0.0.1:8765')
+        setEucliBoxKeyDraft(config.eucliBoxKey || '')
+      }
       setBootStatus('ready')
       setBootError('')
       return runtime
-    } catch (error) {
-      if (isCancelled() || runtimeVersionRef.current !== runtimeVersion) {
-        return null
-      }
-      if (BYPASS_BOOT_ISSUE) {
-        console.warn('[eucli-studio] backend bootstrap bypassed:', error)
-        const runtime = await createFallbackRuntime({
-          files: {
-            pickImages: undefined,
-          },
-          ui: {
-            showToast,
-            startDragging: () => TAURI_WINDOW?.startDragging?.(),
-          },
-          clipboard: {
-            writeText: async () => {},
-            readText: async () => '',
-            writeImage: async () => {},
-          },
-          host: {
-            back: async () => {
-              await getCurrentWindow().hide()
-            },
-          },
-        })
-        if (isCancelled() || runtimeVersionRef.current !== runtimeVersion) {
-          runtime.dispose()
-          return null
-        }
-        runtimeRef.current = runtime
-        setController(runtime.controller)
-        setBootStatus('ready')
-        setBootError('')
-        return runtime
-      }
-      throw error
-    }
   }, [showToast])
 
   const isAppUnmounted = React.useCallback(() => !mountedRef.current, [])
@@ -260,9 +230,35 @@ export function App() {
     }
   }
 
-  const issue = BYPASS_BOOT_ISSUE ? '' : bootError || dataDirStatus?.error || (dataDirStatus && !dataDirStatus.writable ? '数据目录不可写' : '')
+  async function saveEucliBoxConfig(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const runtime = runtimeRef.current
+    if (!runtime || eucliBoxConfigBusy) return
+    const eucliBoxUrl = eucliBoxUrlDraft.trim().replace(/\/+$/, '')
+    const eucliBoxKey = eucliBoxKeyDraft.trim()
+    if (!eucliBoxUrl) {
+      showToast('请填写 eucli-box 地址')
+      return
+    }
+    try {
+      setEucliBoxConfigBusy(true)
+      const config = await runtime.setEucliBoxConfig({ eucliBoxUrl, eucliBoxKey })
+      setEucliBoxConfig(config)
+      setEucliBoxUrlDraft(config.eucliBoxUrl || eucliBoxUrl)
+      setEucliBoxKeyDraft(config.eucliBoxKey || '')
+      showToast('eucli-box 连接配置已保存')
+      await connectMountedBackend()
+    } catch (error: any) {
+      showToast(String(error?.message || error || '保存 eucli-box 连接配置失败'))
+    } finally {
+      if (mountedRef.current) setEucliBoxConfigBusy(false)
+    }
+  }
 
-  const canRenderChatApp = !!controller && bootStatus === 'ready' && !issue
+  const issue = bootError || dataDirStatus?.error || (dataDirStatus && !dataDirStatus.writable ? '数据目录不可写' : '')
+  const needsEucliBoxConfig = !!controller && bootStatus === 'ready' && !issue && !String(eucliBoxConfig?.eucliBoxUrl || '').trim()
+
+  const canRenderChatApp = !!controller && bootStatus === 'ready' && !issue && !needsEucliBoxConfig
 
   return (
     <div className="appShell">
@@ -282,6 +278,17 @@ export function App() {
             }}
           />
         </div>
+      ) : needsEucliBoxConfig ? (
+        <EucliBoxConfigScreen
+          standalone={launchInfo.standalone}
+          windowControlActions={WINDOW_CONTROL_ACTIONS}
+          urlDraft={eucliBoxUrlDraft}
+          keyDraft={eucliBoxKeyDraft}
+          busy={eucliBoxConfigBusy}
+          onUrlChange={setEucliBoxUrlDraft}
+          onKeyChange={setEucliBoxKeyDraft}
+          onSubmit={saveEucliBoxConfig}
+        />
       ) : (
         <BootFallback
           status={bootStatus}
@@ -303,6 +310,50 @@ function normalizeLaunchInfo(raw: FwLaunchInfo): FwLaunchInfo {
     standalone: raw?.standalone !== false,
     mode: String(raw?.mode || (raw?.standalone === false ? 'default' : 'standalone')),
   }
+}
+
+function EucliBoxConfigScreen(props: {
+  standalone: boolean
+  windowControlActions: WindowControlActions
+  urlDraft: string
+  keyDraft: string
+  busy: boolean
+  onUrlChange: (value: string) => void
+  onKeyChange: (value: string) => void
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void
+}) {
+  const { standalone, windowControlActions, urlDraft, keyDraft, busy, onUrlChange, onKeyChange, onSubmit } = props
+  const onTopbarPointerDown = React.useCallback((event: React.PointerEvent<HTMLElement>) => {
+    if (event.button !== 0) return
+    const target = event.target
+    if (!(target instanceof HTMLElement)) return
+    if (target.closest('button, a, input, textarea, select, [role="button"], [data-window-controls="true"]')) return
+    void TAURI_WINDOW?.startDragging?.().catch(() => {})
+  }, [])
+
+  return (
+    <main className="bootFallback" role="main" aria-live="polite">
+      <header className="bootFallbackTopbar" onPointerDown={onTopbarPointerDown}>
+        <div className="bootFallbackBrand">AI Studio</div>
+        {standalone ? <StandaloneWindowControls actions={windowControlActions} /> : null}
+      </header>
+      <section className="bootFallbackCard eucliConfigCard">
+        <div className="bootFallbackTitle">连接 eucli-box</div>
+        <div className="bootFallbackText">请填写当前手动启动的 eucli-box gateway 地址和 key。客户端只保存连接配置，业务事实仍由 eucli-box 负责。</div>
+        <form className="eucliConfigForm" onSubmit={onSubmit}>
+          <label className="eucliConfigLabel">
+            <span>Gateway 地址</span>
+            <input value={urlDraft} onChange={event => onUrlChange(event.target.value)} placeholder="http://127.0.0.1:8765" disabled={busy} />
+          </label>
+          <label className="eucliConfigLabel">
+            <span>Key</span>
+            <input value={keyDraft} onChange={event => onKeyChange(event.target.value)} placeholder="如未启用 key 可留空" disabled={busy} type="password" />
+          </label>
+          <button type="submit" disabled={busy}>{busy ? '保存中…' : '保存并连接'}</button>
+        </form>
+      </section>
+    </main>
+  )
 }
 
 function BootFallback(props: {

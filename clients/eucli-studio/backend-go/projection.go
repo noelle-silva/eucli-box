@@ -67,7 +67,7 @@ func (p *projectionService) get(ctx context.Context, key string) (any, error) {
 
 func (p *projectionService) set(ctx context.Context, key string, value any) error {
 	if match := roleKeyPattern.FindStringSubmatch(key); match != nil {
-		return p.saveRole(ctx, value)
+		return p.saveRole(ctx, match[1], value)
 	}
 	if match := providerKeyPattern.FindStringSubmatch(key); match != nil {
 		return p.saveProvider(ctx, match[1], value)
@@ -92,6 +92,23 @@ func (p *projectionService) set(ctx context.Context, key string, value any) erro
 }
 
 func (p *projectionService) remove(ctx context.Context, key string) error {
+	if match := roleKeyPattern.FindStringSubmatch(key); match != nil {
+		roleID, err := p.roleIDByFolder(ctx, match[1])
+		if isNotFoundError(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := p.eb.request(ctx, ebRequest{Method: "DELETE", Path: fmt.Sprintf("/api/roles/%s", roleID)}); err != nil {
+			return err
+		}
+		_, err = p.config.updateProjection(func(projection *projectionConfig) {
+			delete(projection.RoleFolders, roleID)
+			delete(projection.ActiveChatByRole, roleID)
+		})
+		return err
+	}
 	if match := providerKeyPattern.FindStringSubmatch(key); match != nil {
 		providerID, err := p.providerIDByFolder(ctx, match[1])
 		if err != nil {
@@ -269,12 +286,18 @@ func (p *projectionService) chatByFolder(ctx context.Context, folder string, cha
 	return toUIChat(session), nil
 }
 
-func (p *projectionService) saveRole(ctx context.Context, value any) error {
+func (p *projectionService) saveRole(ctx context.Context, folder string, value any) error {
 	role := fromUIRole(value)
-	if stringField(role, "id") == "" {
+	roleID := stringField(role, "id")
+	if roleID == "" {
 		return newError("BAD_REQUEST", "role id is required")
 	}
-	_, err := p.eb.request(ctx, ebRequest{Method: "POST", Path: "/api/roles", Body: mustJSON(role)})
+	if _, err := p.eb.request(ctx, ebRequest{Method: "POST", Path: "/api/roles", Body: mustJSON(role)}); err != nil {
+		return err
+	}
+	_, err := p.config.updateProjection(func(projection *projectionConfig) {
+		projection.RoleFolders[roleID] = folder
+	})
 	return err
 }
 
@@ -305,7 +328,23 @@ func (p *projectionService) saveSession(ctx context.Context, folder string, valu
 
 func (p *projectionService) listRoles(ctx context.Context) ([]map[string]any, error) {
 	data, err := p.eb.request(ctx, ebRequest{Method: "GET", Path: "/api/roles"})
-	return objectList(data), err
+	if err != nil {
+		return nil, err
+	}
+	summaries := objectList(data)
+	roles := make([]map[string]any, 0, len(summaries))
+	for _, summary := range summaries {
+		id := stringField(summary, "id")
+		if id == "" {
+			continue
+		}
+		detail, err := p.eb.request(ctx, ebRequest{Method: "GET", Path: fmt.Sprintf("/api/roles/%s", id)})
+		if err != nil {
+			return nil, err
+		}
+		roles = append(roles, objectMap(detail))
+	}
+	return roles, nil
 }
 
 func (p *projectionService) listProviders(ctx context.Context) ([]map[string]any, error) {
@@ -490,3 +529,5 @@ func folderFor(existing map[string]string, id string, name string, fallbackName 
 func safeFolderName(value string) string { return strings.NewReplacer("/", "_", "\\", "_", ":", "_", "*", "_", "?", "_", "\"", "_", "<", "_", ">", "_", "|", "_").Replace(value) }
 func promptText(prompts []map[string]any) string { for _, prompt := range prompts { if stringField(prompt, "role") == "system" { return stringField(prompt, "content") } }; return "" }
 func messageRole(message map[string]any) string { role := stringField(message, "role"); if role == "" { role = stringField(message, "type") }; if role == "assistant" { return "assistant" }; return "user" }
+
+func isNotFoundError(err error) bool { return err != nil && strings.Contains(err.Error(), "不存在") }

@@ -62,6 +62,31 @@ function findExistingParentForDeletedMessage(messageId: string, deletedMessagePa
   return ''
 }
 
+function stringList(value: any): string[] {
+  return Array.isArray(value) ? value.map((item: any) => String(item || '').trim()).filter(Boolean) : []
+}
+
+function stringMap(value: any): Record<string, string> {
+  const src = value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+  const out: Record<string, string> = {}
+  for (const [key, raw] of Object.entries(src)) {
+    const k = String(key || '').trim()
+    const v = String(raw || '').trim()
+    if (k && v) out[k] = v
+  }
+  return out
+}
+
+function uniqueFolder(baseRaw: string, used: Set<string>, id: string, prefix: string) {
+  const base = String(baseRaw || prefix).trim() || prefix
+  if (!used.has(base)) return base
+  const tail = id.slice(Math.max(0, id.length - 8)) || uid(prefix)
+  let folder = `${base}__${tail}`
+  let suffix = 2
+  while (used.has(folder)) folder = `${base}__${tail}_${suffix++}`
+  return folder
+}
+
 async function writeRequired(storage: { set: (key: string, value: any) => Promise<any> }, key: string, value: any) {
   await storage.set(key, value)
 }
@@ -313,6 +338,123 @@ export function createSplitStorage(deps: {
 
   async function saveGroupChat(groupId: any, chat: any, intent?: ChatSaveIntent) {
     await saveChatEntry('group', groupId, chat, intent)
+  }
+
+  async function saveRoleEntity(role: any, boxRaw?: any) {
+    const roleId = String(role?.id || '').trim()
+    if (!roleId || !role || typeof role !== 'object') throw new Error('角色无效')
+
+    await withSplitMetaWrite(async () => {
+      const meta = (await loadSplitMeta()) || splitMetaCache
+      if (!meta) throw new Error('存储未初始化')
+
+      const roleOrder = stringList(meta.roleOrder)
+      if (!roleOrder.includes(roleId)) roleOrder.unshift(roleId)
+
+      const roleFolders = stringMap(meta.roleFolders)
+      if (!roleFolders[roleId]) {
+        roleFolders[roleId] = uniqueFolder(roleFolderName(role), new Set(Object.values(roleFolders)), roleId, 'role')
+      }
+      const folder = roleFolders[roleId]
+
+      const box = boxRaw && typeof boxRaw === 'object' ? boxRaw : {}
+      const chats = Array.isArray(box.chats) ? box.chats : []
+      let chatMetas = chatMetasFromBox(box, '新聊天')
+      for (const chat of chats) {
+        if (!String(chat?.id || '').trim()) continue
+        chatMetas = upsertChatMeta(chatMetas, chatMetaFromChat(chat, '新聊天'), '新聊天')
+      }
+      const chatIndex = {
+        activeChatId: String(box.activeChatId || chatMetas[0]?.id || ''),
+        chatIds: chatMetaIds(chatMetas),
+        chatUpdatedAt: chatMetaUpdatedAtMap(chatMetas),
+        chatMetas,
+      }
+
+      await writeRequired(storage, splitRoleKey(folder), role)
+      await _syncRoleAvatarFile(folder, role)
+      await writeRequired(storage, splitChatsIndexKey(), { schemaVersion: SPLIT_SCHEMA_VERSION, updatedAt: now(), roleOrder, roleFolders })
+      await writeRequired(storage, splitRoleChatIndexKey(folder), { schemaVersion: SPLIT_SCHEMA_VERSION, roleId, roleFolder: folder, ...chatIndex, updatedAt: now() })
+
+      for (const chat of chats) {
+        const chatId = String(chat?.id || '').trim()
+        if (!chatId) continue
+        await writeRequired(storage, splitChatKey(folder, chatId), chat)
+      }
+
+      splitMetaCache = { ...meta, roleOrder, roleFolders, chatIndexByRole: { ...(meta.chatIndexByRole || {}), [roleId]: chatIndex } }
+    })
+  }
+
+  async function removeRoleEntity(roleIdRaw: any) {
+    const roleId = String(roleIdRaw || '').trim()
+    if (!roleId) throw new Error('角色无效')
+
+    await withSplitMetaWrite(async () => {
+      const meta = (await loadSplitMeta()) || splitMetaCache
+      if (!meta) throw new Error('存储未初始化')
+
+      const roleOrder = stringList(meta.roleOrder).filter((id) => id !== roleId)
+      const roleFolders = stringMap(meta.roleFolders)
+      const folder = roleFolders[roleId]
+      if (!folder) throw new Error('角色不存在')
+
+      const chatIndexByRole = { ...(meta.chatIndexByRole || {}) }
+      const oldIndex = chatIndexByRole[roleId] || {}
+      delete chatIndexByRole[roleId]
+      delete roleFolders[roleId]
+
+      await removeRequired(storage, splitRoleKey(folder))
+      await storage.remove(splitRoleChatIndexKey(folder)).catch(() => {})
+      for (const chatId of stringList(oldIndex.chatIds)) await storage.remove(splitChatKey(folder, chatId)).catch(() => {})
+      await writeRequired(storage, splitChatsIndexKey(), { schemaVersion: SPLIT_SCHEMA_VERSION, updatedAt: now(), roleOrder, roleFolders })
+
+      splitMetaCache = { ...meta, roleOrder, roleFolders, chatIndexByRole }
+    })
+  }
+
+  async function saveProviderEntity(provider: any) {
+    const providerId = String(provider?.id || '').trim()
+    if (!providerId || !provider || typeof provider !== 'object') throw new Error('供应商无效')
+
+    await withSplitMetaWrite(async () => {
+      const meta = (await loadSplitMeta()) || splitMetaCache
+      if (!meta) throw new Error('存储未初始化')
+
+      const providerOrder = stringList((meta as any).providerOrder)
+      if (!providerOrder.includes(providerId)) providerOrder.unshift(providerId)
+
+      const providerFolders = stringMap((meta as any).providerFolders)
+      if (!providerFolders[providerId]) {
+        providerFolders[providerId] = uniqueFolder(providerFolderName(provider), new Set(Object.values(providerFolders)), providerId, 'provider')
+      }
+
+      await writeRequired(storage, splitProvidersIndexKey(), { schemaVersion: SPLIT_SCHEMA_VERSION, updatedAt: now(), providerOrder, providerFolders })
+      await writeRequired(storage, splitProviderKey(providerFolders[providerId]), provider)
+
+      splitMetaCache = { ...meta, providerOrder, providerFolders }
+    })
+  }
+
+  async function removeProviderEntity(providerIdRaw: any) {
+    const providerId = String(providerIdRaw || '').trim()
+    if (!providerId) throw new Error('供应商无效')
+
+    await withSplitMetaWrite(async () => {
+      const meta = (await loadSplitMeta()) || splitMetaCache
+      if (!meta) throw new Error('存储未初始化')
+
+      const providerOrder = stringList((meta as any).providerOrder).filter((id) => id !== providerId)
+      const providerFolders = stringMap((meta as any).providerFolders)
+      const folder = providerFolders[providerId]
+      if (!folder) throw new Error('供应商不存在')
+      delete providerFolders[providerId]
+
+      await removeRequired(storage, splitProviderKey(folder))
+      await writeRequired(storage, splitProvidersIndexKey(), { schemaVersion: SPLIT_SCHEMA_VERSION, updatedAt: now(), providerOrder, providerFolders })
+
+      splitMetaCache = { ...meta, providerOrder, providerFolders }
+    })
   }
 
   async function renameChatEntry(kind: ChatIndexKind, targetId: any, chatId: any, title: any) {
@@ -726,9 +868,7 @@ export function createSplitStorage(deps: {
         if (!oldFolder) continue
 
         if (!newRoleSet.has(rid)) {
-          try {
-            await storage.remove(splitRoleKey(oldFolder))
-          } catch (_) {}
+          await removeRequired(storage, splitRoleKey(oldFolder))
           const oldIdx = oldChatIndexByRole?.[rid]
           const oldChatIds = Array.isArray(oldIdx?.chatIds) ? oldIdx.chatIds : []
           for (const cid0 of oldChatIds) {
@@ -743,9 +883,7 @@ export function createSplitStorage(deps: {
 
         const newFolder = String(roleFolders?.[rid] || '')
         if (newFolder && newFolder !== oldFolder) {
-          try {
-            await storage.remove(splitRoleKey(oldFolder))
-          } catch (_) {}
+          await removeRequired(storage, splitRoleKey(oldFolder))
           const oldIdx = oldChatIndexByRole?.[rid]
           const oldChatIds = Array.isArray(oldIdx?.chatIds) ? oldIdx.chatIds : []
           for (const cid0 of oldChatIds) {
@@ -915,6 +1053,10 @@ export function createSplitStorage(deps: {
     loadSplitData,
     ensureSplitStoreReady,
     saveSplitData,
+    saveRoleEntity,
+    removeRoleEntity,
+    saveProviderEntity,
+    removeProviderEntity,
     saveRoleChat,
     saveGroupChat,
     renameRoleChat,

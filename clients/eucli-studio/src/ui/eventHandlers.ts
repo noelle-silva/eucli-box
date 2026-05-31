@@ -182,13 +182,7 @@ export function createEventHandlers(deps: {
     }
 
     if (act === 'confirm-delete') {
-      const state = deps.getState()
-      const rid = String(state.draft.deleteRoleId || '')
-      const pid = String(state.draft.deleteProviderId || '')
-      deps.actions.closeModal()
-      if (rid) deps.actions.deleteRole(rid)
-      if (pid) deps.actions.deleteProvider(pid)
-      deps.render()
+      void deps.actions.confirmDelete?.()
       return
     }
 

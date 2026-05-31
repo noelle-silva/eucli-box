@@ -442,6 +442,10 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     renameGroupChat: renameGroupChatInStore,
     saveMetaOnly,
     saveSplitData,
+    saveRoleEntity,
+    removeRoleEntity,
+    saveProviderEntity,
+    removeProviderEntity,
   } = splitStore
 
   // Update splitMetaCache on loadSplitMeta (wrapper)
@@ -713,6 +717,10 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   const entityEditors = createEntityEditors({
     getState: () => state,
     save: saveDataTree,
+    saveRoleEntity,
+    removeRoleEntity,
+    saveProviderEntity,
+    removeProviderEntity,
     render,
     closeModal,
     showToast: api.ui?.showToast,
@@ -1483,18 +1491,24 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       state.modal = 'confirm'
       emit()
     },
-    confirmDelete: () => {
+    confirmDelete: async () => {
       const rid = String(state.draft.deleteRoleId || '')
       const gid = String((state.draft as any).deleteGroupId || '')
       const pid = String(state.draft.deleteProviderId || '')
       const nextRenderSafetyPolicy = String((state.draft as any).renderSafetyPolicyTarget || '').trim() === 'unsafe' ? 'unsafe' : ''
-      closeModal()
-      if (rid) deleteRole(rid)
+      let ok = true
+      if (rid) ok = await deleteRole(rid)
       if (gid) deleteGroup(gid)
-      if (pid) deleteProvider(pid)
+      if (pid) ok = await deleteProvider(pid)
       if (nextRenderSafetyPolicy && state.data) {
         ;(state.data.settings as any).renderSafetyPolicy = nextRenderSafetyPolicy
-        saveMeta().catch(() => {})
+        await saveMeta().catch((e: any) => {
+          ok = false
+          api.ui?.showToast?.(String(e?.message || e || '保存渲染安全策略失败'))
+        })
+      }
+      if (ok) {
+        closeModal()
       }
       emit()
     },

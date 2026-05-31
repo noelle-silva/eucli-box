@@ -72,6 +72,10 @@ function imageBasename(p: string): string {
 export function createEntityEditors(deps: {
   getState: () => any
   save: () => Promise<void>
+  saveRoleEntity?: (role: any, box?: any) => Promise<void>
+  removeRoleEntity?: (roleId: any) => Promise<void>
+  saveProviderEntity?: (provider: any) => Promise<void>
+  removeProviderEntity?: (providerId: any) => Promise<void>
   render: () => void
   closeModal: () => void
   showToast?: (msg: string) => void
@@ -86,7 +90,7 @@ export function createEntityEditors(deps: {
   cleanupFavoriteRefsForTarget: (kind: string, targetId: string) => void
   cleanupFavoriteRefsForChat: (targetKind: string, targetId: string, chatId: string) => void
 }) {
-  const { getState, save, render, closeModal, showToast, pickImageFiles, filesImages, ensureChatLoaded, ensureGroupChatLoaded, renameRoleChatInStore, renameGroupChatInStore, removeChatInStore, removeLoadedChat, cleanupFavoriteRefsForTarget, cleanupFavoriteRefsForChat } = deps
+  const { getState, save, saveRoleEntity, removeRoleEntity, saveProviderEntity, removeProviderEntity, render, closeModal, showToast, pickImageFiles, filesImages, ensureChatLoaded, ensureGroupChatLoaded, renameRoleChatInStore, renameGroupChatInStore, removeChatInStore, removeLoadedChat, cleanupFavoriteRefsForTarget, cleanupFavoriteRefsForChat } = deps
   const sa = createStateAccessors({ getState })
 
   function scrollToBottomSoon() {
@@ -215,7 +219,7 @@ export function createEntityEditors(deps: {
     render()
   }
 
-  function saveRoleEditor() {
+  async function saveRoleEditor() {
     const state = getState()
     if (!state.data) return
     const rid = String(state.draft.editRoleId || '')
@@ -229,10 +233,15 @@ export function createEntityEditors(deps: {
     let modelId = String(state.draft.roleModelId || '').trim()
     if (modelId === '__custom__') modelId = String(state.draft.roleCustomModelId || '').trim()
 
+    if (!sys) return showToast?.('请填写角色系统提示词')
+    if (!providerId) return showToast?.('请选择角色供应商')
+    if (!modelId) return showToast?.('请选择或填写角色模型')
+
     if (rid === NEW_ROLE_ID) {
       const newRid = uid('r')
       const cid = uid('c')
       const t = now()
+      const previousActiveRoleId = String(state.draft.activeRoleId || '')
       const role = {
         id: newRid,
         name,
@@ -253,13 +262,23 @@ export function createEntityEditors(deps: {
         chats: [{ id: cid, title: '新聊天', createdAt: t, updatedAt: t, branching: createDefaultChatBranching('', t, t), messages: [] }],
       }
       state.draft.activeRoleId = newRid
-      save().catch(() => {})
-      closeModal()
+      try {
+        await saveRoleEntity?.(role, state.data.chatsByRole[newRid])
+        showToast?.('角色已保存')
+        closeModal()
+      } catch (e: any) {
+        state.data.roles = state.data.roles.filter((item: any) => String(item?.id || '') !== newRid)
+        if (state.data.chatsByRole && typeof state.data.chatsByRole === 'object') delete state.data.chatsByRole[newRid]
+        state.draft.activeRoleId = previousActiveRoleId
+        showToast?.(String(e?.message || e || '角色保存失败'))
+        render()
+      }
       return
     }
 
     const role = state.data.roles.find((r: any) => String(r?.id) === rid)
     if (!role) return
+    const previous = { ...role, modelRef: role.modelRef && typeof role.modelRef === 'object' ? { ...role.modelRef } : role.modelRef }
 
     role.name = name
     role.avatar = avatar
@@ -269,34 +288,51 @@ export function createEntityEditors(deps: {
     role.modelRef = { providerId, modelId }
     role.updatedAt = now()
 
-    save().catch(() => {})
-    closeModal()
+    try {
+      await saveRoleEntity?.(role, state.data.chatsByRole?.[rid])
+      showToast?.('角色已保存')
+      closeModal()
+    } catch (e: any) {
+      Object.assign(role, previous)
+      showToast?.(String(e?.message || e || '角色保存失败'))
+      render()
+    }
   }
 
-  function deleteRole(roleId: any) {
+  async function deleteRole(roleId: any) {
     const state = getState()
-    if (!state.data) return
+    if (!state.data) return false
     const rid = String(roleId || '')
+    if (!rid) return false
+    const previousRoles = Array.isArray(state.data.roles) ? state.data.roles.slice() : []
+    const previousChatsByRole = state.data.chatsByRole && typeof state.data.chatsByRole === 'object' ? { ...state.data.chatsByRole } : {}
+    const previousActiveRoleId = String(state.draft.activeRoleId || '')
+    const previousActiveTargetKind = String((state.draft as any).activeTargetKind || '')
+    const previousActiveGroupId = String((state.draft as any).activeGroupId || '')
     state.data.roles = state.data.roles.filter((r: any) => String(r?.id) !== rid)
     if (state.data.chatsByRole && typeof state.data.chatsByRole === 'object') delete state.data.chatsByRole[rid]
     cleanupFavoriteRefsForTarget('role', rid)
-
-    if (!state.data.roles.length) {
-      const d = defaultData()
-      state.data.settings.providers = state.data.settings.providers.length ? state.data.settings.providers : d.settings.providers
-      state.data.roles = d.roles
-      state.data.chatsByRole = d.chatsByRole
-      ;(state.data as any).groups = (d as any).groups
-      ;(state.data as any).chatsByGroup = (d as any).chatsByGroup
-      state.data.ui = d.ui
-    }
 
     state.draft.activeRoleId = String(state.data.roles[0]?.id || '')
     if (!Array.isArray((state.data as any).groups) || !(state.data as any).groups.length) {
       ;(state.draft as any).activeTargetKind = 'role'
       ;(state.draft as any).activeGroupId = ''
     }
-    save().catch(() => {})
+    try {
+      await removeRoleEntity?.(rid)
+      showToast?.('角色已删除')
+      render()
+      return true
+    } catch (e: any) {
+      state.data.roles = previousRoles
+      state.data.chatsByRole = previousChatsByRole
+      state.draft.activeRoleId = previousActiveRoleId
+      ;(state.draft as any).activeTargetKind = previousActiveTargetKind
+      ;(state.draft as any).activeGroupId = previousActiveGroupId
+      showToast?.(String(e?.message || e || '角色删除失败'))
+      render()
+      return false
+    }
   }
 
   // ===== Group CRUD =====
@@ -524,7 +560,7 @@ export function createEntityEditors(deps: {
       p.apiKey = nextApiKey
       p.protocol = nextProtocol
       if (oldBaseUrl !== nextBaseUrl || oldApiKey !== nextApiKey) p.modelsCache = { items: [], fetchedAt: 0 }
-      await save()
+      await saveProviderEntity?.(p)
       state.draft.editProviderId = ''
       showToast?.('供应商已保存')
       render()
@@ -563,11 +599,20 @@ export function createEntityEditors(deps: {
     return protocol === 'openai' || protocol === 'anthropic' ? protocol : ''
   }
 
-  function deleteProvider(providerId: any) {
+  async function deleteProvider(providerId: any) {
     const state = getState()
-    if (!state.data) return
+    if (!state.data) return false
     const pid = String(providerId || '')
-    if (state.data.settings.providers.length <= 1) return showToast?.('至少保留一个供应商')
+    if (!pid) return false
+    if (state.data.settings.providers.length <= 1) {
+      showToast?.('至少保留一个供应商')
+      return false
+    }
+
+    const previousProviders = Array.isArray(state.data.settings.providers) ? state.data.settings.providers.slice() : []
+    const previousRoles = Array.isArray(state.data.roles)
+      ? state.data.roles.map((role: any) => ({ ...role, modelRef: role?.modelRef && typeof role.modelRef === 'object' ? { ...role.modelRef } : role?.modelRef }))
+      : []
 
     state.data.settings.providers = state.data.settings.providers.filter((p: any) => String(p?.id) !== pid)
 
@@ -577,7 +622,18 @@ export function createEntityEditors(deps: {
       if (String(r.modelRef.providerId) === pid) r.modelRef.providerId = fallback
     }
 
-    save().catch(() => {})
+    try {
+      await removeProviderEntity?.(pid)
+      showToast?.('供应商已删除')
+      render()
+      return true
+    } catch (e: any) {
+      state.data.settings.providers = previousProviders
+      state.data.roles = previousRoles
+      showToast?.(String(e?.message || e || '供应商删除失败'))
+      render()
+      return false
+    }
   }
 
   // ===== Create chat for active =====

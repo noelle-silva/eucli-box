@@ -1,12 +1,9 @@
-import { now } from '../core/utils'
 import type { AiChatNetAdapter, AiChatRun, AiChatRuntimeStore } from '../engine'
-import { createAiChatRequestPipeline } from '../requestPipeline'
 import type { AiChatRunSpec } from '../requestPipeline'
-import { assistantFinalKey, assistantStreamKey, TOOL_CONFIRMATION_KEY } from '../runtime/runtimeKeys'
-import { createAiChatEngineBridge } from './engineBridge'
+import { assistantFinalKey, assistantStreamKey } from '../runtime/runtimeKeys'
 import type { AiChatInternalGateway, AiChatRawServiceRequestInput } from './types'
 
-const sleepMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, Math.floor(ms || 0))))
+const errBoxOnlyRuntime = () => new Error('AI 运行必须通过 eucli-box Go 后端；客户端本地运行路径已禁用')
 
 export function createAiChatInternalGateway(opts: {
   runtime: 'ui' | 'background'
@@ -19,22 +16,6 @@ export function createAiChatInternalGateway(opts: {
   onFinalEvent?: (run: AiChatRun, finalText: string) => Promise<void> | void
 }): AiChatInternalGateway {
   const store = opts.store
-  const bridge = createAiChatEngineBridge({
-    runtime: opts.runtime,
-    store,
-    net: opts.net,
-    onRunFinal: opts.onRunFinal,
-    onProgressEvent: opts.onProgressEvent,
-    onFinalEvent: opts.onFinalEvent,
-  })
-  const pipeline = createAiChatRequestPipeline({
-    store,
-    streamKey: assistantStreamKey,
-    finalKey: assistantFinalKey,
-    bridge,
-    buildRoleReqFromStorage: opts.buildRoleReqFromStorage,
-    buildGroupReqFromStorage: opts.buildGroupReqFromStorage,
-  })
 
   async function consumeAssistantFinal(assistantMid: string) {
     const mid = String(assistantMid || '').trim()
@@ -54,28 +35,24 @@ export function createAiChatInternalGateway(opts: {
   }
 
   return {
-    startBackgroundWorker: (intervalMs?: number) => bridge.startBackgroundLoop(intervalMs),
-    submitRoleChatCompletion: (input: AiChatRunSpec) => pipeline.enqueueOne(input),
-    submitGroupChatCompletion: (input: AiChatRunSpec) => pipeline.enqueueOne(input),
-    submitManyChatCompletions: (inputs: AiChatRunSpec[]) => pipeline.enqueueMany(inputs),
-    submitRawServiceRequest: (input: AiChatRawServiceRequestInput) => pipeline.enqueueReq(input),
+    startBackgroundWorker: async () => undefined,
+    submitRoleChatCompletion: async (_input: AiChatRunSpec) => { throw errBoxOnlyRuntime() },
+    submitGroupChatCompletion: async (_input: AiChatRunSpec) => { throw errBoxOnlyRuntime() },
+    submitManyChatCompletions: async (_inputs: AiChatRunSpec[]) => { throw errBoxOnlyRuntime() },
+    submitRawServiceRequest: async (_input: AiChatRawServiceRequestInput) => { throw errBoxOnlyRuntime() },
     waitServiceFinal: async (assistantMid: string, timeoutMs: number) => {
-      const deadline = now() + Math.max(2000, Math.floor(timeoutMs || 0))
-      while (now() < deadline) {
-        const finalValue = await consumeAssistantFinal(assistantMid)
-        if (finalValue && typeof finalValue === 'object') {
-          const status = String(finalValue?.status || '').trim()
-          const text = String(finalValue?.text || '')
-          if (status && status !== 'succeeded') throw new Error(text || '请求失败')
-          return text
-        }
-        await sleepMs(120)
-      }
-      throw new Error('AI 微服务请求超时（后台可能未启动或已卡住）')
+      void assistantMid
+      void timeoutMs
+      throw errBoxOnlyRuntime()
     },
-    cancelAssistant: (assistantMid: string) => bridge.cancelAssistant(assistantMid),
-    getAssistantRuntime: (assistantMid: string) => bridge.getAssistantRuntime(assistantMid),
-    resetAssistantRuntime: (assistantMid: string) => pipeline.resetAssistantRuntime(assistantMid),
+    cancelAssistant: async (_assistantMid: string) => undefined,
+    getAssistantRuntime: async (_assistantMid: string) => null,
+    resetAssistantRuntime: async (assistantMid: string) => {
+      const mid = String(assistantMid || '').trim()
+      if (!mid) return
+      await store.remove(assistantStreamKey(mid)).catch(() => undefined)
+      await store.remove(assistantFinalKey(mid)).catch(() => undefined)
+    },
     readAssistantStream: async (assistantMid: string) => {
       const mid = String(assistantMid || '').trim()
       if (!mid) return null
@@ -86,33 +63,7 @@ export function createAiChatInternalGateway(opts: {
       }
     },
     consumeAssistantFinal,
-    getPendingConfirmation: async () => {
-      try {
-        return await store.get(TOOL_CONFIRMATION_KEY)
-      } catch (_) {
-        return null
-      }
-    },
-    submitConfirmation: async (decisionId: string, approved: boolean) => {
-      const id = String(decisionId || '').trim()
-      if (!id) return
-      try {
-        // 调用后台Go服务发送确认到eucli-box的 /api/tool-confirmations
-        await opts.net.request({
-          method: 'POST',
-          url: '/api/tool-confirmations',
-          body: JSON.stringify({
-            id: 'tc-' + String(Date.now()),
-            decisionId: id,
-            approved,
-            createdAt: new Date().toISOString(),
-          }),
-          headers: { 'Content-Type': 'application/json' },
-        })
-      } catch (_) {}
-      try {
-        await store.remove(TOOL_CONFIRMATION_KEY)
-      } catch (_) {}
-    },
+    getPendingConfirmation: async () => null,
+    submitConfirmation: async () => { throw errBoxOnlyRuntime() },
   }
 }

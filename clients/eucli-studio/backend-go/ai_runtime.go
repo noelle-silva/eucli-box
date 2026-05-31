@@ -22,38 +22,59 @@ const (
 )
 
 func newService(dataDir string) *service {
-	svc := &service{dataDir: dataDir}
+	svc := &service{dataDir: dataDir, runtimeState: make(map[string]any)}
 	initialConfig := loadBoxConnectionFromStorage(svc)
 	svc.box = newBoxClient(svc, initialConfig)
 	svc.ai = newAIRunQueue(svc)
 	svc.box.setToolConfirmationCallback(func(event boxRunEvent) {
-		_ = svc.storageSetByKey("runtime/"+toolConfirmationKey, map[string]any{
+		svc.runtimeSet(toolConfirmationKey, map[string]any{
 			"event":   event,
 			"updated": time.Now().UnixMilli(),
 		})
 		svc.pushFrontendNotification("aiChat.tool.confirmation", event)
 	})
 	svc.box.events.setOnDisconnect(func() {
-		_ = svc.storageRemoveByKey("runtime/" + toolConfirmationKey)
+		svc.runtimeRemove(toolConfirmationKey)
 		svc.pushFrontendNotification("box.ws.disconnected", map[string]any{"at": time.Now().UnixMilli()})
 	})
 	return svc
 }
 
 func assistantStreamStorageKey(assistantMid string) string {
-	return "runtime/" + assistantStreamKeyPrefix + strings.TrimSpace(assistantMid)
+	return assistantStreamKeyPrefix + strings.TrimSpace(assistantMid)
 }
 
 func assistantFinalStorageKey(assistantMid string) string {
-	return "runtime/" + assistantFinalKeyPrefix + strings.TrimSpace(assistantMid)
+	return assistantFinalKeyPrefix + strings.TrimSpace(assistantMid)
 }
 
 func assistantMidRunStorageKey(assistantMid string) string {
-	return "runtime/" + assistantMidRunKeyPrefix + strings.TrimSpace(assistantMid)
+	return assistantMidRunKeyPrefix + strings.TrimSpace(assistantMid)
 }
 
 func uiChatUpdatedNoticeStorageKey() string {
 	return "runtime/" + uiChatUpdatedNoticeKey
+}
+
+func (svc *service) runtimeSet(key string, value any) {
+	svc.runtimeMu.Lock()
+	defer svc.runtimeMu.Unlock()
+	if svc.runtimeState == nil {
+		svc.runtimeState = make(map[string]any)
+	}
+	svc.runtimeState[strings.TrimSpace(key)] = value
+}
+
+func (svc *service) runtimeGet(key string) any {
+	svc.runtimeMu.Lock()
+	defer svc.runtimeMu.Unlock()
+	return svc.runtimeState[strings.TrimSpace(key)]
+}
+
+func (svc *service) runtimeRemove(key string) {
+	svc.runtimeMu.Lock()
+	defer svc.runtimeMu.Unlock()
+	delete(svc.runtimeState, strings.TrimSpace(key))
 }
 
 func requestAssistantMid(params json.RawMessage) string {
@@ -110,12 +131,11 @@ func (svc *service) imageReadDataURLByRel(relPath string) (string, error) {
 }
 
 func (svc *service) getPendingConfirmation() (any, error) {
-	key := "runtime/" + toolConfirmationKey
-	value, err := svc.storageGetByKey(key)
+	value := svc.runtimeGet(toolConfirmationKey)
 	if value == nil && !svc.box.isBoxConnected() {
 		return map[string]any{"disconnected": true}, nil
 	}
-	return value, err
+	return value, nil
 }
 
 func (svc *service) submitConfirmation(params json.RawMessage) (map[string]bool, error) {
@@ -136,7 +156,7 @@ func (svc *service) submitConfirmation(params json.RawMessage) (map[string]bool,
 		return nil, err
 	}
 
-	_ = svc.storageRemoveByKey("runtime/" + toolConfirmationKey)
+	svc.runtimeRemove(toolConfirmationKey)
 	return map[string]bool{"ok": true}, nil
 }
 
@@ -218,12 +238,10 @@ func (svc *service) pushBoxRole(params json.RawMessage) (map[string]any, error) 
 	if err := svc.box.putRole(ctx, role); err != nil {
 		return nil, err
 	}
-	synced := true
 	if err := svc.syncBoxCatalog(context.Background()); err != nil {
-		log.Printf("[WARN] pushBoxRole: syncBoxCatalog failed after PUT succeeded: %v", err)
-		synced = false
+		return nil, err
 	}
-	return map[string]any{"ok": true, "synced": synced}, nil
+	return map[string]any{"ok": true}, nil
 }
 
 func (svc *service) pushBoxProvider(params json.RawMessage) (map[string]any, error) {
@@ -236,12 +254,10 @@ func (svc *service) pushBoxProvider(params json.RawMessage) (map[string]any, err
 	if err := svc.box.putProvider(ctx, provider); err != nil {
 		return nil, err
 	}
-	synced := true
 	if err := svc.syncBoxCatalog(context.Background()); err != nil {
-		log.Printf("[WARN] pushBoxProvider: syncBoxCatalog failed after PUT succeeded: %v", err)
-		synced = false
+		return nil, err
 	}
-	return map[string]any{"ok": true, "synced": synced}, nil
+	return map[string]any{"ok": true}, nil
 }
 
 func (svc *service) deleteBoxRole(params json.RawMessage) (map[string]any, error) {
@@ -258,12 +274,10 @@ func (svc *service) deleteBoxRole(params json.RawMessage) (map[string]any, error
 	if err := svc.box.deleteRole(ctx, id); err != nil {
 		return nil, err
 	}
-	synced := true
 	if err := svc.syncBoxCatalog(context.Background()); err != nil {
-		log.Printf("[WARN] deleteBoxRole: syncBoxCatalog failed after DELETE succeeded: %v", err)
-		synced = false
+		return nil, err
 	}
-	return map[string]any{"ok": true, "synced": synced}, nil
+	return map[string]any{"ok": true}, nil
 }
 
 func (svc *service) deleteBoxProvider(params json.RawMessage) (map[string]any, error) {
@@ -280,21 +294,20 @@ func (svc *service) deleteBoxProvider(params json.RawMessage) (map[string]any, e
 	if err := svc.box.deleteProvider(ctx, id); err != nil {
 		return nil, err
 	}
-	synced := true
 	if err := svc.syncBoxCatalog(context.Background()); err != nil {
-		log.Printf("[WARN] deleteBoxProvider: syncBoxCatalog failed after DELETE succeeded: %v", err)
-		synced = false
+		return nil, err
 	}
-	return map[string]any{"ok": true, "synced": synced}, nil
+	return map[string]any{"ok": true}, nil
 }
 
 func (svc *service) syncBoxCatalogRPC() (map[string]any, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	if err := svc.syncBoxCatalog(ctx); err != nil {
-		return nil, err
+	snapshot, err := svc.fetchBoxCatalog(ctx)
+	if err != nil {
+		return map[string]any{"ok": false, "roles": snapshot.Roles, "providers": snapshot.Providers, "error": err.Error()}, nil
 	}
-	return map[string]any{"ok": true}, nil
+	return map[string]any{"ok": true, "roles": snapshot.Roles, "providers": snapshot.Providers}, nil
 }
 
 func (svc *service) listBoxSessions(params json.RawMessage) (any, error) {

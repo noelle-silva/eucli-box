@@ -78,6 +78,9 @@ type service struct {
 	ai      *aiRunQueue
 	box     *boxClient
 
+	runtimeMu    sync.Mutex
+	runtimeState map[string]any
+
 	frontendMu    sync.Mutex
 	frontendConns []*websocket.Conn
 }
@@ -145,7 +148,7 @@ func run() error {
 		return err
 	}
 	if err := svc.syncBoxCatalog(context.Background()); err != nil {
-		log.Printf("initial catalog sync failed (eucli-box may be offline): %v", err)
+		log.Printf("initial eucli-box catalog sync failed: %v", err)
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

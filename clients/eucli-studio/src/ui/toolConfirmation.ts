@@ -6,6 +6,7 @@ export function createToolConfirmationPoller(deps: {
   onSubmit: (approved: boolean) => Promise<void>
   onFound: (confirmation: any) => void
   onDisconnected?: () => void
+  onError?: (message: string) => void
 }) {
   let pollingActive = false
   let pollTimer = 0
@@ -37,8 +38,8 @@ export function createToolConfirmationPoller(deps: {
           }
         }
       } catch (e) {
-          console.warn('toolConfirmation poll error:', e)
-        }
+        deps.onError?.(String((e as any)?.message || e || '工具确认通道异常'))
+      }
     }
     tick()
     pollTimer = window.setInterval(tick, Math.max(200, Math.floor(intervalMs || 0)))
@@ -54,5 +55,10 @@ export function createToolConfirmationPoller(deps: {
     wasDisconnected = false
   }
 
-  return { startPolling, stopPolling }
+  async function submit(approved: boolean) {
+    await deps.onSubmit(approved)
+    lastConfirmationId = ''
+  }
+
+  return { startPolling, stopPolling, submit }
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"net/url"
 	"strings"
@@ -18,6 +19,7 @@ type boxEventHub struct {
 	mu          sync.Mutex
 	conn        *websocket.Conn
 	subscribers map[string]map[int]func(boxRunEvent)
+	backlog     map[string][]boxRunEvent
 	nextSubID   int
 	connected   bool
 	closeCh     chan struct{}
@@ -38,6 +40,7 @@ func newBoxEventHub(wsURL string, token string) *boxEventHub {
 		baseURL:     wsURL,
 		token:       token,
 		subscribers: make(map[string]map[int]func(boxRunEvent)),
+		backlog:     make(map[string][]boxRunEvent),
 		maxBackoff:  30 * time.Second,
 		maxFailures: 10,
 		closeCh:     make(chan struct{}),
@@ -65,16 +68,12 @@ func (h *boxEventHub) connectLoop() {
 			failures++
 			log.Printf("boxEventHub: dial failed: %v (attempt %d, backoff %v)", err, failures, backoff)
 			if failures >= h.maxFailures {
-				log.Printf("boxEventHub: too many consecutive failures (%d), giving up", failures)
-				h.mu.Lock()
-				dc := h.onDisconnect
-				h.mu.Unlock()
-				if dc != nil {
-					dc()
-				}
+				log.Printf("boxEventHub: stopped after %d consecutive dial failures", failures)
 				return
 			}
-			time.Sleep(backoff)
+			if !h.sleepBackoff(backoff) {
+				return
+			}
 			backoff = nextBackoff(backoff, h.maxBackoff)
 			continue
 		}
@@ -100,6 +99,17 @@ func (h *boxEventHub) connectLoop() {
 		if dc != nil {
 			dc()
 		}
+	}
+}
+
+func (h *boxEventHub) sleepBackoff(backoff time.Duration) bool {
+	timer := time.NewTimer(backoff)
+	defer timer.Stop()
+	select {
+	case <-h.closeCh:
+		return false
+	case <-timer.C:
+		return true
 	}
 }
 
@@ -211,7 +221,7 @@ func (h *boxEventHub) readLoop(conn *websocket.Conn) {
 			cb(event)
 		}
 
-		runID := strings.TrimSpace(event.RunID)
+		runID := eventRunID(event)
 		if runID == "" {
 			continue
 		}
@@ -222,12 +232,34 @@ func (h *boxEventHub) readLoop(conn *websocket.Conn) {
 		for _, fn := range subs {
 			listeners = append(listeners, fn)
 		}
+		if len(listeners) == 0 {
+			h.appendBacklogLocked(runID, event)
+		}
 		h.mu.Unlock()
+
+		if len(listeners) == 0 {
+			continue
+		}
 
 		for _, fn := range listeners {
 			fn(event)
 		}
 	}
+}
+
+func eventRunID(event boxRunEvent) string {
+	runID := strings.TrimSpace(event.RunID)
+	if runID != "" {
+		return runID
+	}
+	if len(event.Payload) == 0 {
+		return ""
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(asString(payload["runId"]))
 }
 
 func (h *boxEventHub) Close() {
@@ -242,8 +274,9 @@ func (h *boxEventHub) Close() {
 }
 
 func (h *boxEventHub) subscribe(runID string, onEvent func(boxRunEvent)) func() {
+	var replay []boxRunEvent
+
 	h.mu.Lock()
-	defer h.mu.Unlock()
 
 	if h.subscribers[runID] == nil {
 		h.subscribers[runID] = make(map[int]func(boxRunEvent))
@@ -251,6 +284,15 @@ func (h *boxEventHub) subscribe(runID string, onEvent func(boxRunEvent)) func() 
 	id := h.nextSubID
 	h.nextSubID++
 	h.subscribers[runID][id] = onEvent
+	if buffered := h.backlog[runID]; len(buffered) > 0 {
+		replay = append(replay, buffered...)
+		delete(h.backlog, runID)
+	}
+	h.mu.Unlock()
+
+	for _, event := range replay {
+		onEvent(event)
+	}
 
 	return func() {
 		h.mu.Lock()
@@ -262,6 +304,17 @@ func (h *boxEventHub) subscribe(runID string, onEvent func(boxRunEvent)) func() 
 			}
 		}
 	}
+}
+
+func (h *boxEventHub) appendBacklogLocked(runID string, event boxRunEvent) {
+	if h.backlog == nil {
+		h.backlog = make(map[string][]boxRunEvent)
+	}
+	items := append(h.backlog[runID], event)
+	if len(items) > 64 {
+		items = items[len(items)-64:]
+	}
+	h.backlog[runID] = items
 }
 
 func (h *boxEventHub) setToolConfirmationCallback(cb func(boxRunEvent)) {

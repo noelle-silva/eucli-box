@@ -1,82 +1,21 @@
 package main
 
 import (
-	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestBuildOpenAIChatReqUsesSplitChatIndexRoleFolders(t *testing.T) {
+func TestBuildOpenAIChatReqFromStorageRejectsLocalModelPath(t *testing.T) {
 	dataDir := t.TempDir()
-	writeJSONForRunnerTest(t, filepath.Join(dataDir, "meta", "index.json"), map[string]any{
-		"schemaVersion": 1,
-		"dataVersion":   7,
-		"settings":      map[string]any{},
-	})
-	writeJSONForRunnerTest(t, filepath.Join(dataDir, "chats", "index.json"), map[string]any{
-		"schemaVersion": 1,
-		"roleOrder":     []any{"r1"},
-		"roleFolders":   map[string]any{"r1": "Alice"},
-	})
-	writeJSONForRunnerTest(t, filepath.Join(dataDir, "chats", "Alice", "index.json"), map[string]any{
-		"schemaVersion": 1,
-		"activeChatId":  "c1",
-		"chatIds":       []any{"c1"},
-	})
-	writeJSONForRunnerTest(t, filepath.Join(dataDir, "roles", "Alice", "role.json"), map[string]any{
-		"id":           "r1",
-		"name":         "Alice",
-		"systemPrompt": "You are Alice.",
-		"modelRef": map[string]any{
-			"providerId": "p1",
-			"modelId":    "m1",
-		},
-	})
-	writeJSONForRunnerTest(t, filepath.Join(dataDir, "chats", "Alice", "c1", "chat.json"), map[string]any{
-		"id":        "c1",
-		"title":     "Hello",
-		"createdAt": int64(1),
-		"updatedAt": int64(2),
-		"messages":  []any{map[string]any{"id": "m1", "role": "user", "content": "hello"}},
-	})
-	writeJSONForRunnerTest(t, filepath.Join(dataDir, "providers", "OpenAI", "provider.json"), map[string]any{
-		"id":      "p1",
-		"name":    "OpenAI",
-		"baseUrl": "https://example.test/v1",
-		"apiKey":  "secret",
-	})
-	writeJSONForRunnerTest(t, filepath.Join(dataDir, "providers", "index.json"), map[string]any{
-		"schemaVersion":   1,
-		"providerOrder":   []any{"p1"},
-		"providerFolders": map[string]any{"p1": "OpenAI"},
-	})
-
 	svc := newService(dataDir)
-	req, err := svc.buildOpenAIChatReqFromStorage(map[string]any{
+	_, err := svc.buildOpenAIChatReqFromStorage(map[string]any{
 		"roleId": "r1",
 		"chatId": "c1",
 		"stream": false,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if req.URL != "https://example.test/v1/chat/completions" {
-		t.Fatalf("url = %q", req.URL)
-	}
-	if got := req.Headers["Authorization"]; got != "Bearer secret" {
-		t.Fatalf("authorization = %q", got)
-	}
-	if !strings.Contains(req.Body, `"model":"m1"`) {
-		t.Fatalf("body missing model: %s", req.Body)
-	}
-	var body map[string]any
-	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
-		t.Fatal(err)
-	}
-	messages, _ := body["messages"].([]any)
-	if len(messages) != 2 {
-		t.Fatalf("messages = %#v", body["messages"])
+	if err == nil || !strings.Contains(err.Error(), "eucli-box") {
+		t.Fatalf("expected eucli-box-only error, got %v", err)
 	}
 }
 

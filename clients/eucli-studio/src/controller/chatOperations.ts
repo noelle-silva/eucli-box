@@ -14,8 +14,8 @@ import {
   findChatMessageById,
   findPrevAssistantMidForAssistant,
   findChatBranch,
-  createDefaultChatBranching,
 } from '../domain/branching'
+import { chatMetaFromChat } from '../domain/chatMeta'
 import { looksLikeImageDataUrl } from '../domain/textProcessing'
 import { detectDraftFileKind, addDraftFilePlaceholder } from '../domain/draftFileUtils'
 import type { DraftFileKind, DraftFileItem } from '../domain/draftFileUtils'
@@ -32,14 +32,7 @@ import {
   ASSISTANT_RUNNING_CONTENT,
 } from '../domain/assistantRunState'
 import { hasActiveAssistantMessages, listActiveAssistantMessages } from '../domain/chatRunState'
-import { createDeletedMessagesSaveIntent, type ChatSaveIntent } from '../domain/chatSaveIntent'
-import { runChatMutationTransaction, runLocalChatMutation } from '../domain/chatMutationTransaction'
-import {
-  planDeleteMessageSubtree,
-  planDeleteSingleMessage,
-  repairBranchHeadsAfterSingleMessageDeletion,
-  repairBranchHeadsAfterSubtreeDeletion,
-} from '../domain/chatMessageDeletion'
+import type { ChatSaveIntent } from '../domain/chatSaveIntent'
 import { createAssistantArtifactCleanup } from './assistantArtifactCleanup'
 
 type ChatAttachmentItem = {
@@ -54,6 +47,38 @@ type ChatAttachmentItem = {
 }
 
 type ChatMsgGroupRole = '' | 'root' | 'attachment'
+
+function clonePlain<T>(value: T): T {
+  const clone = (globalThis as any)?.structuredClone
+  if (typeof clone === 'function') return clone(value)
+  return JSON.parse(JSON.stringify(value))
+}
+
+function restoreObject(target: any, snapshot: any) {
+  if (!target || typeof target !== 'object' || !snapshot || typeof snapshot !== 'object') return
+  for (const key of Object.keys(target)) {
+    try { delete target[key] } catch (_) {}
+  }
+  Object.assign(target, clonePlain(snapshot))
+}
+
+function buildUserTextForBox(rootMsg: any, attachMsgs: any[]): string {
+  const base = String(rootMsg?.content || '').trim()
+  const attachments = Array.isArray(attachMsgs) ? attachMsgs.flatMap((msg: any) => Array.isArray(msg?.attachments) ? msg.attachments : []) : []
+  if (!attachments.length) return base
+  const blocks = attachments
+    .map((att: any) => {
+      const name = String(att?.name || '文件').trim() || '文件'
+      const lang = String(att?.lang || 'text').trim() || 'text'
+      const text = String(att?.text || '').trim()
+      if (!text) return ''
+      return `附件：${name}\n\`\`\`${lang}\n${text.replaceAll('```', '``\u200b`')}\n\`\`\``
+    })
+    .filter(Boolean)
+  const extra = blocks.join('\n\n').trim()
+  if (!extra) return base
+  return base ? `${base}\n\n${extra}` : extra
+}
 
 function imageExtFromDataUrl(dataUrl: unknown): string {
   const match = /^data:image\/([a-zA-Z0-9.+-]+);base64,/.exec(String(dataUrl || '').trim())
@@ -94,6 +119,58 @@ export function createChatOperations(deps: {
     resetAssistantRuntime: (messageId) => aiGateway.resetAssistantRuntime(messageId),
   })
 
+  function rejectLocalBusinessPath(message = '该能力必须由 eucli-box 提供，客户端本地旧业务路径已禁用') {
+    showToast?.(message)
+  }
+
+  function boxSessionToChatMeta(session: any): any {
+    const id = String(session?.id || '').trim()
+    const t = Number(Date.parse(String(session?.createdAt || session?.lastActive || ''))) || now()
+    const updatedAt = Number(Date.parse(String(session?.lastActive || session?.updatedAt || ''))) || t
+    const messageCount = Array.isArray(session?.messages) ? session.messages.length : Number(session?.messageCount || 0)
+    const lastMessage = Array.isArray(session?.messages) ? session.messages[session.messages.length - 1] : null
+    return chatMetaFromChat({
+      id,
+      title: String(session?.title || '新聊天'),
+      createdAt: t,
+      updatedAt,
+      messages: [],
+      lastMessagePreview: String(lastMessage?.content || lastMessage?.reason || ''),
+      messageCount,
+    }, '新聊天')
+  }
+
+  async function ensureBoxBackedChat(roleId: string) {
+    const rid = String(roleId || '').trim()
+    if (!rid) throw new Error('请先选择角色')
+    const state = getState()
+    const box = sa.ensureChatsBoxBare(rid)
+    if (!box) throw new Error('会话状态不可用')
+
+    const activeSessionId = String(box.activeChatId || '').trim()
+    if (activeSessionId && aiGateway.getBoxSession) {
+      const session = await aiGateway.getBoxSession(activeSessionId)
+      box.chats = []
+      box.chatMetas = [boxSessionToChatMeta(session)]
+      box.activeChatId = activeSessionId
+      return { id: activeSessionId, boxSessionId: activeSessionId, messages: [] as any[], chatMetasOnly: true } as any
+    }
+
+    if (!aiGateway.createBoxSession) throw new Error('eucli-box 会话创建通道不可用')
+    const session = await aiGateway.createBoxSession(rid)
+    const meta = boxSessionToChatMeta(session)
+    box.chats = []
+    box.chatMetas = [meta]
+    box.activeChatId = meta.id
+    return { id: meta.id, boxSessionId: meta.id, messages: [] as any[], chatMetasOnly: true } as any
+  }
+
+  function userMessageTextForBox(message: any) {
+    if (!message) return ''
+    const text = buildUserTextForBox(message, [])
+    return String(text || message?.content || '').trim()
+  }
+
   function beginAssistantMessageRun(message: any, streamEnabled: boolean, mode: 'new' | 'regenerate' | 'tool-followup' = 'new') {
     return beginAssistantRun(message, {
       mode,
@@ -116,7 +193,7 @@ export function createChatOperations(deps: {
 
   async function submitChatCompletion(input: any) {
     const kind = String(input?.target?.kind || '').trim() === 'group' ? 'group' : 'role'
-    if (kind === 'group') return aiGateway.submitGroupChatCompletion(input)
+    if (kind === 'group') throw new Error('群聊运行必须由 eucli-box 提供，客户端本地群聊路径已禁用')
     return aiGateway.submitRoleChatCompletion(input)
   }
 
@@ -137,25 +214,6 @@ export function createChatOperations(deps: {
 
   function chatHasPendingAssistantInBranch(chat: any, branchId: string, excludeMid?: any) {
     return hasActiveAssistantMessages(chat, { branchId, excludeMid })
-  }
-
-  function activeChatOperationTarget() {
-    const state = getState()
-    const kind = sa.activeTargetKind() === 'group' ? 'group' : 'role'
-    const target = kind === 'group' ? sa.activeGroup() : sa.activeRole()
-    const targetId = String((target as any)?.id || '').trim()
-    if (!targetId) return null
-    const pendingChat =
-      kind === 'group'
-        ? state.pendingGroupChat && String(state.pendingGroupChat.groupId || '') === targetId
-          ? state.pendingGroupChat.chat
-          : null
-        : state.pendingChat && String(state.pendingChat.roleId || '') === targetId
-          ? state.pendingChat.chat
-          : null
-    const chat = pendingChat || sa.activeChatFromData()
-    if (!chat) return null
-    return { kind, target, targetId, chat, pendingChat }
   }
 
   // ============ draft image ============
@@ -275,7 +333,7 @@ export function createChatOperations(deps: {
     await ensureActiveChatLoaded?.()
 
     if (sa.activeTargetKind() === 'group') {
-      await sendGroupChat(opts)
+      rejectLocalBusinessPath('群聊运行必须由 eucli-box 提供，客户端本地群聊路径已禁用')
       return
     }
 
@@ -296,21 +354,13 @@ export function createChatOperations(deps: {
 
     const providerId = String(picked.providerId || '')
     const modelId = String(picked.modelId || '').trim()
-    const p = sa.getProvider(providerId)
-    if (!p) return showToast?.('未找到该供应商')
-
-    const baseUrl = trimSlash(p.baseUrl || '')
-    const apiKey = String(p.apiKey || '').trim()
-
-    if (!isHttpBaseUrl(baseUrl)) return showToast?.('请在供应商设置里配置 Base URL（http/https）')
-    if (!apiKey) return showToast?.('请在供应商设置里配置 API Key')
-    if (!modelId) {
-      return showToast?.(picked.overridden ? '请先为"当前会话临时模型"选择模型ID' : '请在角色设置里选择模型（供应商 + 模型ID）')
-    }
 
     let chat = null
 
     let assistantMid = ''
+    let boxRunAccepted = false
+    let rollbackChatSnapshot: any = null
+    let rollbackDraftSnapshot: any = null
     try {
       if (draftImages.length && typeof filesImages?.writeBase64 !== 'function') {
         return showToast?.('未授权：files.images.writeBase64')
@@ -322,16 +372,11 @@ export function createChatOperations(deps: {
       const streamEnabled = !!state.data?.settings?.streamEnabled
       assistantMid = uid('m')
 
-      if (state.pendingChat && String(state.pendingChat.roleId || '') === rid) {
-        chat = sa.createChatForRole(rid)
-        sa.clearPendingChat()
-      } else {
-        chat = sa.activeChatFromData()
-        if (!chat) chat = sa.createChatForRole(rid)
-      }
+      chat = await ensureBoxBackedChat(rid)
+      sa.clearPendingChat()
       if (!chat) throw new Error('创建会话失败')
 
-      const meta = typeof loadSplitMeta === 'function' ? await loadSplitMeta().catch(() => null) : null
+      const meta = await loadSplitMeta?.().catch(() => null)
       const chatFolder = String(meta?.roleFolders?.[rid] || '').trim() || roleFolderName(role)
       const savedPaths: string[] = []
       for (const [index, img] of draftImages.slice(0, MAX_DRAFT_IMAGES).entries()) {
@@ -358,22 +403,23 @@ export function createChatOperations(deps: {
 
       let draftForkMid = ''
       let draftNewBranchId = ''
-      if (draft || forkOverride) {
-        draftForkMid = String((draft ? draft?.forkFromMid : forkOverride) || '').trim()
-        if (!draftForkMid) throw new Error('分支草稿无效（缺少基点）')
-        const items0 = Array.isArray(chat.messages) ? chat.messages : []
-        const ok = items0.some((m: any) => String(m?.id || '') === draftForkMid)
-        if (!ok) throw new Error('分支草稿无效（基点消息不存在）')
-
-        draftNewBranchId = genUniqueBranchId(branching)
-        activeBranchId = draftNewBranchId
-        parentMid = draftForkMid
-      } else if (!parentMid) {
+      if (draft || forkOverride) throw new Error('分支运行必须由 eucli-box 提供，客户端本地分支路径已禁用')
+      if (!parentMid) {
         const items0 = Array.isArray(chat.messages) ? chat.messages : []
         parentMid = items0.length ? String(items0[items0.length - 1]?.id || '') : ''
       }
 
+      if (activeBranchId !== CHAT_DEFAULT_BRANCH_ID) throw new Error('分支运行必须由 eucli-box 提供，客户端本地分支路径已禁用')
+
       if (chatHasPendingAssistantInBranch(chat, activeBranchId)) throw new Error('该分支正在生成中，请先停止或等待完成')
+
+      rollbackChatSnapshot = clonePlain(chat)
+      rollbackDraftSnapshot = {
+        input: state.draft.input,
+        images: clonePlain(state.draft.images || []),
+        files: clonePlain((state.draft as any).files || []),
+        branchDraft: clonePlain(state.branchDraft),
+      }
 
       const wasEmpty = !Array.isArray(chat.messages) || chat.messages.length === 0
       const userText = String(input || '').trim()
@@ -445,22 +491,6 @@ export function createChatOperations(deps: {
       }
       parentMid = rootMid
 
-      if (draftNewBranchId && draftForkMid) {
-        const t = now()
-        const branches = Array.isArray((branching as any).branches) ? (branching as any).branches : []
-        branches.push({
-          id: draftNewBranchId,
-          name: '分支',
-          headMid: draftForkMid,
-          createdAt: t,
-          updatedAt: t,
-          forkFromMid: draftForkMid,
-        })
-        ;(branching as any).branches = branches.slice(0, 200)
-        ;(branching as any).activeBranchId = draftNewBranchId
-        ;(chat as any).branching = branching
-      }
-
       chat.messages.push(...attachMsgs, rootMsg)
       chat.updatedAt = now()
       if (wasEmpty && String(chat.title || '') === '新聊天') {
@@ -473,7 +503,7 @@ export function createChatOperations(deps: {
       state.draft.input = ''
       state.draft.images = []
       ;(state.draft as any).files = []
-      if (draft && draftNewBranchId && draftForkMid) state.branchDraft = null
+      if (draft) state.branchDraft = null
 
       chat.messages.push({
         id: assistantMid,
@@ -491,8 +521,6 @@ export function createChatOperations(deps: {
       setChatBranchHeadMid(chat, activeBranchId, assistantMid)
       repairChatLinearBranching(chat)
 
-      await save()
-
       const jobStub: any = {
         kind: 'openai.chat.completions',
         roleId: String(role.id || ''),
@@ -502,6 +530,8 @@ export function createChatOperations(deps: {
         branchId: activeBranchId,
         stream: streamEnabled,
       }
+      jobStub.message = buildUserTextForBox(rootMsg, attachMsgs)
+      jobStub.sessionId = String((chat as any)?.boxSessionId || '')
       await submitChatCompletion({
         target: {
           kind: 'role',
@@ -514,14 +544,24 @@ export function createChatOperations(deps: {
         stream: streamEnabled,
         jobStub,
       })
+      boxRunAccepted = true
     } catch (e) {
       const msg = String((e as any)?.message || e || '请求失败')
-      const items = Array.isArray(chat?.messages) ? chat.messages : []
-      const am = assistantMid ? items.find((m: any) => String(m?.id || '') === assistantMid) : null
-      if (am) {
-        finishAssistantMessage(am, `（请求失败：${msg}）`, 'failed')
+      if (rollbackChatSnapshot && !boxRunAccepted) {
+        restoreObject(chat, rollbackChatSnapshot)
+        if (rollbackDraftSnapshot) {
+          state.draft.input = rollbackDraftSnapshot.input
+          state.draft.images = rollbackDraftSnapshot.images
+          ;(state.draft as any).files = rollbackDraftSnapshot.files
+          state.branchDraft = rollbackDraftSnapshot.branchDraft
+        }
+      } else {
+        const items = Array.isArray(chat?.messages) ? chat.messages : []
+        const am = assistantMid ? items.find((m: any) => String(m?.id || '') === assistantMid) : null
+        if (am) {
+          finishAssistantMessage(am, `（请求失败：${msg}）`, 'failed')
+        }
       }
-      save().catch(() => {})
       showToast?.(msg)
     } finally {
       state.sending = false
@@ -532,390 +572,8 @@ export function createChatOperations(deps: {
   // ============ send group chat ============
 
   async function sendGroupChat(_opts?: { forkFromMid?: string }) {
-    const state = getState()
-    if (state.sending || state.loading || !state.data) return
-
-    await ensureActiveChatLoaded?.()
-
-    const group = sa.activeGroup()
-    if (!group) return showToast?.('请先选择群组')
-    const gid = String((group as any).id || '').trim()
-    if (!gid) return showToast?.('群组无效')
-
-    const roles = Array.isArray(state.data.roles) ? state.data.roles : []
-    const roleById = new Map<string, any>()
-    for (const r of roles) {
-      const rid = String(r?.id || '').trim()
-      if (!rid || roleById.has(rid)) continue
-      roleById.set(rid, r)
-    }
-
-    const member0 = Array.isArray((group as any).memberRoleIds) ? (group as any).memberRoleIds : []
-    const memberRoleIds = member0.map((x: any) => String(x || '').trim()).filter((x: any) => !!x && roleById.has(x)).slice(0, 50)
-    if (!memberRoleIds.length) return showToast?.('该群组还没有成员角色')
-
-    const input = String(state.draft.input || '').trim()
-    const draftImages = Array.isArray(state.draft.images) ? state.draft.images : []
-    const draftFiles: DraftFileItem[] = Array.isArray((state.draft as any).files) ? ((state.draft as any).files as any[]) : []
-    const hasFiles = draftFiles.length > 0
-    if (!input && !draftImages.length && !hasFiles) return showToast?.('输入不能为空')
-    if (hasFiles && draftFiles.some((x: any) => !!x?.pending)) return showToast?.('文件解析中，请稍候…')
-
-    const extractAtMentionNames = (text: string) => {
-      const t = String(text || '')
-      if (!t) return [] as string[]
-      const out: string[] = []
-      const re = /@\{([^\}\r\n]{1,80})\}/g
-      let m: RegExpExecArray | null = null
-      while ((m = re.exec(t))) {
-        const name = String(m[1] || '').trim()
-        if (name) out.push(name)
-      }
-      return out
-    }
-
-    const atMentionSpeakerRoleIds = (() => {
-      const names = extractAtMentionNames(input)
-      if (!names.length) return [] as string[]
-      const idByName = new Map<string, string>()
-      for (const rid of memberRoleIds) {
-        const r = roleById.get(rid) || null
-        const name = String((r as any)?.name || '').trim()
-        if (!name || idByName.has(name)) continue
-        idByName.set(name, rid)
-      }
-      const out: string[] = []
-      const seen = new Set<string>()
-      for (const name of names) {
-        const rid = idByName.get(name) || ''
-        if (!rid || seen.has(rid)) continue
-        seen.add(rid)
-        out.push(rid)
-      }
-      return out
-    })()
-
-    const mode = String((group as any).mode || '').trim() === 'random' ? 'random' : 'roundRobin'
-
-    const pickRandomRolesOnce = () => {
-      const randomCfg = (group as any).random && typeof (group as any).random === 'object' ? (group as any).random : {}
-      const weights0 = (randomCfg as any).weightsByRoleId && typeof (randomCfg as any).weightsByRoleId === 'object' ? (randomCfg as any).weightsByRoleId : {}
-      let minCount = Number((randomCfg as any).minCount ?? 1)
-      let maxCount = Number((randomCfg as any).maxCount ?? 2)
-      if (!isFinite(minCount)) minCount = 1
-      if (!isFinite(maxCount)) maxCount = 2
-      minCount = clamp(Math.round(minCount), 1, 20)
-      maxCount = clamp(Math.round(maxCount), 1, 20)
-      if (maxCount < minCount) maxCount = minCount
-
-      const pool = memberRoleIds
-        .map((rid: string) => {
-          const w = Number((weights0 as any)[rid] ?? 1)
-          const weight = isFinite(w) && w >= 0 ? w : 1
-          return { rid, weight }
-        })
-        .filter((x: { rid: string; weight: number }) => x.weight > 0)
-
-      const candidates = pool.length ? pool.slice() : memberRoleIds.map((rid: string) => ({ rid, weight: 1 }))
-      const maxK = Math.max(1, Math.min(candidates.length, maxCount))
-      const minK = Math.max(1, Math.min(maxK, minCount))
-      const k = minK + Math.floor(Math.random() * (maxK - minK + 1))
-
-      const chosen: string[] = []
-      const bag = candidates.slice()
-      for (let i = 0; i < k && bag.length; i++) {
-        let sum = 0
-        for (const it of bag) sum += it.weight
-        if (!(sum > 0)) break
-        let r = Math.random() * sum
-        let idx = -1
-        for (let j = 0; j < bag.length; j++) {
-          r -= bag[j].weight
-          if (r <= 0) {
-            idx = j
-            break
-          }
-        }
-        if (idx < 0) idx = bag.length - 1
-        const picked = bag.splice(idx, 1)[0]
-        if (picked?.rid) chosen.push(String(picked.rid))
-      }
-      return chosen.length ? chosen : memberRoleIds.slice(0, 1)
-    }
-
-    const speakerRoleIds = (() => {
-      if (atMentionSpeakerRoleIds.length) return atMentionSpeakerRoleIds
-      if (mode === 'random') return pickRandomRolesOnce()
-      const order0 = Array.isArray((group as any).roundRobinOrder) ? (group as any).roundRobinOrder : []
-      const order = order0.map((x: any) => String(x || '').trim()).filter((x: any) => !!x && memberRoleIds.includes(x))
-      return order.length ? order : memberRoleIds.slice()
-    })()
-
-    let chat: any = null
-    let assistantMids: Array<{ roleId: string; mid: string; generationId: string }> = []
-
-    try {
-      if (draftImages.length && typeof filesImages?.writeBase64 !== 'function') {
-        return showToast?.('未授权：files.images.writeBase64')
-      }
-
-      state.sending = true
-      renderComposer()
-
-      // 校验每个参与发言的角色是否可用（避免落盘后才报错）
-      for (const rid of speakerRoleIds) {
-        const r = roleById.get(String(rid || ''))
-        if (!r) throw new Error('群组成员角色不存在')
-        sa.ensureRoleDefaults(r)
-        const picked = pickChatModelRef(r, null)
-        const providerId = String(picked.providerId || '')
-        const modelId = String(picked.modelId || '').trim()
-        const p = sa.getProvider(providerId)
-        if (!p) throw new Error(`未找到供应商：${String((r as any).name || '角色')}`)
-        const baseUrl = trimSlash(p.baseUrl || '')
-        const apiKey = String(p.apiKey || '').trim()
-        if (!isHttpBaseUrl(baseUrl)) throw new Error(`请先为「${String((r as any).name || '角色')}」配置 Base URL（http/https）`)
-        if (!apiKey) throw new Error(`请先为「${String((r as any).name || '角色')}」配置 API Key`)
-        if (!modelId) throw new Error(`请先为「${String((r as any).name || '角色')}」选择模型ID`)
-      }
-
-      const streamEnabled = !!state.data?.settings?.streamEnabled
-
-      const pending = (state as any).pendingGroupChat
-      if (pending && String(pending.groupId || '') === gid && pending.chat) {
-        chat = sa.createChatForGroup(gid)
-        sa.clearPendingGroupChat()
-      } else {
-        if (!(state.data as any).chatsByGroup || typeof (state.data as any).chatsByGroup !== 'object') (state.data as any).chatsByGroup = {}
-        if (!(state.data as any).chatsByGroup[gid] || typeof (state.data as any).chatsByGroup[gid] !== 'object')
-          (state.data as any).chatsByGroup[gid] = { activeChatId: '', chats: [] }
-        const box = (state.data as any).chatsByGroup[gid]
-        if (!Array.isArray(box.chats)) box.chats = []
-        box.activeChatId = String(box.activeChatId || '')
-        if (!box.chats.length) {
-          const cid = uid('gc')
-          const t = now()
-          box.chats = [{ id: cid, title: '群聊', createdAt: t, updatedAt: t, branching: createDefaultChatBranching('', t, t), messages: [] }]
-          box.activeChatId = cid
-        }
-        if (!box.activeChatId || !box.chats.some((c: any) => String(c?.id || '') === box.activeChatId)) box.activeChatId = String(box.chats[0]?.id || '')
-        chat = box.chats.find((c: any) => String(c?.id || '') === String(box.activeChatId || '')) || box.chats[0] || null
-      }
-      if (!chat) throw new Error('创建会话失败')
-
-      const meta = typeof loadSplitMeta === 'function' ? await loadSplitMeta().catch(() => null) : null
-      const groupFolder = String(meta?.groupFolders?.[gid] || '').trim()
-      if (!groupFolder) throw new Error('群组索引损坏：groupFolders 缺失')
-
-      const savedPaths: string[] = []
-      for (const [index, img] of draftImages.slice(0, MAX_DRAFT_IMAGES).entries()) {
-        const dataUrl = String(img?.dataUrl || '')
-        if (!looksLikeImageDataUrl(dataUrl)) continue
-        const relPath = groupChatImageRelPath(groupFolder, chat.id, chatImageFileName(chat.id, index, dataUrl))
-        const saved = await filesImages!.writeBase64!({ scope: 'data', relPath, overwrite: false, dataUrlOrBase64: dataUrl })
-        const path = String(saved || '').trim()
-        if (path) savedPaths.push(path)
-      }
-
-      const branching = ensureChatBranching(chat)
-      let activeBranchId = normalizeBranchId((branching as any)?.activeBranchId || CHAT_DEFAULT_BRANCH_ID)
-      const activeBranch = ensureChatBranch(chat, activeBranchId)
-      let parentMid = String(activeBranch?.headMid || '').trim()
-
-      const forkOverride = String(_opts?.forkFromMid || '').trim()
-      let draftForkMid = ''
-      let draftNewBranchId = ''
-      if (forkOverride) {
-        draftForkMid = forkOverride
-        const items0 = Array.isArray(chat.messages) ? chat.messages : []
-        const ok = items0.some((m: any) => String(m?.id || '') === draftForkMid)
-        if (!ok) throw new Error('选中的节点不存在，无法从该节点发送')
-
-        draftNewBranchId = genUniqueBranchId(branching)
-        activeBranchId = draftNewBranchId
-        parentMid = draftForkMid
-      } else if (!parentMid) {
-        const items0 = Array.isArray(chat.messages) ? chat.messages : []
-        parentMid = items0.length ? String(items0[items0.length - 1]?.id || '') : ''
-      }
-
-      if (chatHasPendingAssistantInBranch(chat, activeBranchId)) throw new Error('该分支正在生成中，请先停止或等待完成')
-
-      const wasEmpty = !Array.isArray(chat.messages) || chat.messages.length === 0
-      const userText = String(input || '').trim()
-      const hasUserMain = !!userText || savedPaths.length > 0
-
-      const attachGroupId = hasFiles ? uid('g') : ''
-      const rootMid = uid('m')
-
-      const attachMsgs: any[] = []
-      if (hasFiles) {
-        for (const f of draftFiles) {
-          if (!f || f.pending) continue
-          if (String(f?.error || '')) continue
-          const name = String(f?.name || '文件')
-          const kind = String(f?.kind || 'txt') as DraftFileKind
-          const lang = kind === 'md' || kind === 'ppt' ? 'markdown' : 'text'
-          const raw = String(f?.text || '').trim()
-          const fullLen = raw.length
-          if (!raw) continue
-
-          const pct0 = Math.round(Number(f?.sendPct ?? 100))
-          const pct = clamp(pct0, 0, 100)
-          const sendLen = Math.max(0, Math.ceil((fullLen * pct) / 100))
-          const snippetRaw = sendLen >= fullLen ? raw : raw.slice(0, sendLen).trimEnd()
-          if (!snippetRaw.trim()) continue
-
-          const att: ChatAttachmentItem = {
-            id: uid('att'),
-            name,
-            kind,
-            lang,
-            text: snippetRaw,
-            fullLen,
-            sendLen,
-            sendPct: pct,
-          }
-          const mid = uid('m')
-          attachMsgs.push({
-            id: mid,
-            role: 'user',
-            content: `附件：${name}`,
-            attachments: [att],
-            groupId: attachGroupId,
-            groupRole: 'attachment' as ChatMsgGroupRole,
-            groupParentMid: rootMid,
-            branchId: activeBranchId,
-            parentMid,
-            createdAt: now(),
-          })
-          parentMid = mid
-        }
-      }
-
-      if (!hasUserMain && !attachMsgs.length) throw new Error('没有可发送的内容（文件解析失败或为空）')
-
-      const rootMsg: any = {
-        id: rootMid,
-        role: 'user',
-        content: hasUserMain ? userText : attachMsgs.length ? '（附件）' : userText,
-        images: savedPaths,
-        branchId: activeBranchId,
-        parentMid,
-        createdAt: now(),
-      }
-      if (attachMsgs.length) {
-        rootMsg.groupId = attachGroupId
-        rootMsg.groupRole = 'root' as ChatMsgGroupRole
-        rootMsg.groupParentMid = ''
-      }
-      parentMid = rootMid
-
-      if (draftNewBranchId && draftForkMid) {
-        const t = now()
-        const branches = Array.isArray((branching as any).branches) ? (branching as any).branches : []
-        branches.push({
-          id: draftNewBranchId,
-          name: '分支',
-          headMid: draftForkMid,
-          createdAt: t,
-          updatedAt: t,
-          forkFromMid: draftForkMid,
-        })
-        ;(branching as any).branches = branches.slice(0, 200)
-        ;(branching as any).activeBranchId = draftNewBranchId
-        ;(chat as any).branching = branching
-      }
-
-      chat.messages.push(...attachMsgs, rootMsg)
-      chat.updatedAt = now()
-      if (wasEmpty && String(chat.title || '') === '群聊') {
-        const t = userText.replace(/\s+/g, ' ').trim()
-        chat.title = t ? (t.length > 16 ? t.slice(0, 16) + '…' : t) : '群聊'
-      }
-
-      state.draft.input = ''
-      state.draft.images = []
-      ;(state.draft as any).files = []
-
-      assistantMids = []
-      for (const rid of speakerRoleIds) {
-        const rid0 = String(rid || '')
-        const speakerRole = roleById.get(rid0)
-        const picked = pickChatModelRef(speakerRole, null)
-        const messageModelRef = buildMessageModelRef(picked.providerId, picked.modelId)
-        const mid = uid('m')
-        assistantMids.push({ roleId: rid0, mid, generationId: '' })
-        chat.messages.push({
-          id: mid,
-          role: 'assistant',
-          speakerRoleId: rid0,
-          content: ASSISTANT_RUNNING_CONTENT,
-          branchId: activeBranchId,
-          parentMid,
-          createdAt: now(),
-          modelRef: messageModelRef,
-        })
-        const assistantMsg = chat.messages[chat.messages.length - 1]
-        beginAssistantMessageRun(assistantMsg, streamEnabled, 'new')
-        assistantMids[assistantMids.length - 1].generationId = assistantGenerationId(assistantMsg)
-        parentMid = mid
-      }
-
-      chat.updatedAt = now()
-      if (assistantMids.length) setChatBranchHeadMid(chat, activeBranchId, assistantMids[assistantMids.length - 1].mid)
-      repairChatLinearBranching(chat)
-
-      await save()
-
-      await aiGateway.submitManyChatCompletions(
-        assistantMids
-          .map((it: any) => {
-            const assistantMid = String(it?.mid || '').trim()
-            const roleId = String(it?.roleId || '').trim()
-            const generationId = String(it?.generationId || '').trim()
-            if (!assistantMid || !roleId) return null
-            const jobStub: any = {
-              kind: 'openai.chat.completions',
-              targetKind: 'group',
-              groupId: gid,
-              roleId,
-              chatId: String(chat.id || ''),
-              assistantMid,
-              generationId,
-              branchId: activeBranchId,
-              stream: streamEnabled,
-            }
-            return {
-              target: {
-                kind: 'group',
-                groupId: gid,
-                roleId,
-                chatId: String(chat.id || ''),
-                branchId: activeBranchId,
-                assistantMid,
-                generationId,
-              } as any,
-              stream: streamEnabled,
-              jobStub,
-            }
-          })
-          .filter((x: any): x is any => !!x)
-      )
-    } catch (e) {
-      const msg = String((e as any)?.message || e || '请求失败')
-      const items = Array.isArray(chat?.messages) ? chat.messages : []
-      for (const it of assistantMids) {
-        const am = it?.mid ? items.find((m: any) => String(m?.id || '') === String(it.mid || '')) : null
-        if (!am) continue
-        finishAssistantMessage(am, `（请求失败：${msg}）`, 'failed')
-      }
-      save().catch(() => {})
-      showToast?.(msg)
-    } finally {
-      state.sending = false
-      render()
-    }
+    void _opts
+    rejectLocalBusinessPath('群聊运行必须由 eucli-box 提供，客户端本地群聊路径已禁用')
   }
 
   // ============ stop sending ============
@@ -1005,16 +663,6 @@ export function createChatOperations(deps: {
     const picked = pickChatModelRef(role, chat)
     const providerId = String(picked.providerId || '')
     const modelId = String(picked.modelId || '').trim()
-    const p = sa.getProvider(providerId)
-    if (!p) return showToast?.('未找到该供应商')
-
-    const baseUrl = trimSlash(p.baseUrl || '')
-    const apiKey = String(p.apiKey || '').trim()
-    if (!isHttpBaseUrl(baseUrl)) return showToast?.('请在供应商设置里配置 Base URL（http/https）')
-    if (!apiKey) return showToast?.('请在供应商设置里配置 API Key')
-    if (!modelId) {
-      return showToast?.(picked.overridden ? '请先为"当前会话临时模型"选择模型ID' : '请在角色设置里选择模型（供应商 + 模型ID）')
-    }
 
     try {
       state.sending = true
@@ -1059,8 +707,6 @@ export function createChatOperations(deps: {
         await aiGateway.resetAssistantRuntime(mid)
       } catch (_) {}
 
-      await save()
-
       const jobStub: any = {
         kind: 'openai.chat.completions',
         roleId: String(role.id || ''),
@@ -1071,6 +717,8 @@ export function createChatOperations(deps: {
         branchId,
         stream: streamEnabled,
       }
+      jobStub.message = userMessageTextForBox(userMsg)
+      jobStub.sessionId = String((chat as any)?.boxSessionId || chat.id || '')
       await submitChatCompletion({
         target: {
           kind: 'role',
@@ -1090,7 +738,6 @@ export function createChatOperations(deps: {
       if (am) {
         finishAssistantMessage(am, `（请求失败：${msg}）`, 'failed')
       }
-      save().catch(() => {})
       showToast?.(msg)
     } finally {
       state.sending = false
@@ -1101,121 +748,8 @@ export function createChatOperations(deps: {
   // ============ regenerate group assistant message ============
 
   async function regenerateGroupAssistantMessage(assistantMid: string) {
-    const state = getState()
-    if (state.sending || state.loading || !state.data) return
-
-    await ensureActiveChatLoaded?.()
-
-    const group = sa.activeGroup()
-    const chat = sa.activeChatFromData()
-    if (!group || !chat) return
-
-    const groupId = String((group as any)?.id || '').trim()
-    const chatId = String((chat as any)?.id || '').trim()
-    const mid = String(assistantMid || '').trim()
-    if (!groupId || !chatId || !mid) return
-
-    const roles = Array.isArray(state.data.roles) ? state.data.roles : []
-    const roleById = new Map<string, any>()
-    for (const r of roles) {
-      const rid = String(r?.id || '').trim()
-      if (!rid || roleById.has(rid)) continue
-      roleById.set(rid, r)
-    }
-
-    try {
-      state.sending = true
-      renderComposer()
-
-      const msgs = Array.isArray(chat.messages) ? chat.messages : []
-      const aiIndex = msgs.findIndex((m: any) => String(m?.id || '') === mid)
-      if (aiIndex < 0) throw new Error('未找到该消息')
-
-      const target = msgs[aiIndex]
-      if (!target || target.role !== 'assistant') throw new Error('只能重新生成 AI 回复')
-      if (hasActiveAssistantMessages({ messages: [target] })) throw new Error('该消息正在生成中')
-      const branching = ensureChatBranching(chat)
-      const activeBranchId = normalizeBranchId((branching as any)?.activeBranchId || CHAT_DEFAULT_BRANCH_ID)
-      const branchId = normalizeBranchId((target as any)?.branchId || activeBranchId)
-      if (chatHasPendingAssistantInBranch(chat, branchId, mid)) throw new Error('该分支正在生成中，请先停止或等待完成')
-
-      let speakerRoleId = String((target as any)?.speakerRoleId || '').trim()
-      if (!speakerRoleId) {
-        const member0 = Array.isArray((group as any)?.memberRoleIds) ? ((group as any).memberRoleIds as any[]) : []
-        const memberRoleIds = member0.map((x: any) => String(x || '').trim()).filter((x: any) => !!x && roleById.has(x))
-        speakerRoleId = memberRoleIds[0] ? String(memberRoleIds[0]) : ''
-      }
-      if (!speakerRoleId) throw new Error('该消息缺少 speakerRoleId，无法确定由谁重新生成')
-
-      const speakerRole = roleById.get(speakerRoleId) || null
-      if (!speakerRole) throw new Error('群组成员角色不存在')
-      sa.ensureRoleDefaults(speakerRole)
-
-      const picked = pickChatModelRef(speakerRole, null)
-      const providerId = String(picked.providerId || '')
-      const modelId = String(picked.modelId || '').trim()
-      const p = sa.getProvider(providerId)
-      if (!p) throw new Error(`未找到供应商：${String((speakerRole as any).name || '角色')}`)
-      const baseUrl = trimSlash(p.baseUrl || '')
-      const apiKey = String(p.apiKey || '').trim()
-      if (!isHttpBaseUrl(baseUrl)) throw new Error(`请先为「${String((speakerRole as any).name || '角色')}」配置 Base URL（http/https）`)
-      if (!apiKey) throw new Error(`请先为「${String((speakerRole as any).name || '角色')}」配置 API Key`)
-      if (!modelId) throw new Error(`请先为「${String((speakerRole as any).name || '角色')}」选择模型ID`)
-
-      const streamEnabled = !!state.data?.settings?.streamEnabled
-      beginAssistantMessageRun(target, streamEnabled, 'regenerate')
-      const generationId = assistantGenerationId(target)
-      ;(target as any).speakerRoleId = speakerRoleId
-      ;(target as any).modelRef = buildMessageModelRef(providerId, modelId)
-      chat.updatedAt = now()
-      repairChatLinearBranching(chat)
-
-      try {
-        await aiGateway.resetAssistantRuntime(mid)
-      } catch (_) {}
-
-      await save()
-
-      const jobStub: any = {
-        kind: 'openai.chat.completions',
-        targetKind: 'group',
-        groupId,
-        roleId: String(speakerRoleId || ''),
-        chatId,
-        assistantMid: mid,
-        generationId,
-        cutoffMid: mid,
-        branchId,
-        stream: streamEnabled,
-      }
-      await submitChatCompletion({
-        target: {
-          kind: 'group',
-          groupId,
-          roleId: String(speakerRoleId || ''),
-          chatId,
-          branchId,
-          assistantMid: mid,
-          generationId,
-        } as any,
-        stream: streamEnabled,
-        jobStub,
-      })
-    } catch (e) {
-      const msg = String((e as any)?.message || e || '请求失败')
-      try {
-        const items = Array.isArray((chat as any)?.messages) ? (chat as any).messages : []
-        const am = mid ? items.find((m: any) => String(m?.id || '') === mid) : null
-        if (am) {
-          finishAssistantMessage(am, `（请求失败：${msg}）`, 'failed')
-        }
-      } catch (_) {}
-      save().catch(() => {})
-      showToast?.(msg)
-    } finally {
-      state.sending = false
-      render()
-    }
+    void assistantMid
+    rejectLocalBusinessPath('群聊运行必须由 eucli-box 提供，客户端本地群聊路径已禁用')
   }
 
   // ============ reply from user message ============
@@ -1242,16 +776,6 @@ export function createChatOperations(deps: {
     const picked = pickChatModelRef(role, chat)
     const providerId = String(picked.providerId || '')
     const modelId = String(picked.modelId || '').trim()
-    const p = sa.getProvider(providerId)
-    if (!p) return showToast?.('未找到该供应商')
-
-    const baseUrl = trimSlash(p.baseUrl || '')
-    const apiKey = String(p.apiKey || '').trim()
-    if (!isHttpBaseUrl(baseUrl)) return showToast?.('请在供应商设置里配置 Base URL（http/https）')
-    if (!apiKey) return showToast?.('请在供应商设置里配置 API Key')
-    if (!modelId) {
-      return showToast?.(picked.overridden ? '请先为"当前会话临时模型"选择模型ID' : '请在角色设置里选择模型（供应商 + 模型ID）')
-    }
 
     let assistantMid = ''
     try {
@@ -1287,8 +811,6 @@ export function createChatOperations(deps: {
       setChatBranchHeadMid(chat, activeBranchId, assistantMid)
       repairChatLinearBranching(chat)
 
-      await save()
-
       const jobStub: any = {
         kind: 'openai.chat.completions',
         roleId: String(role.id || ''),
@@ -1299,6 +821,8 @@ export function createChatOperations(deps: {
         branchId: activeBranchId,
         stream: streamEnabled,
       }
+      jobStub.message = userMessageTextForBox(target)
+      jobStub.sessionId = String((chat as any)?.boxSessionId || chat.id || '')
       await submitChatCompletion({
         target: {
           kind: 'role',
@@ -1318,7 +842,6 @@ export function createChatOperations(deps: {
       if (am) {
         finishAssistantMessage(am, `（请求失败：${msg}）`, 'failed')
       }
-      save().catch(() => {})
       showToast?.(msg)
     } finally {
       state.sending = false
@@ -1329,6 +852,9 @@ export function createChatOperations(deps: {
   // ============ reply from user message in group ============
 
   async function replyFromUserMessageInGroup(userMid: string) {
+    rejectLocalBusinessPath('群聊运行必须由 eucli-box 提供，客户端本地群聊路径已禁用')
+    return
+
     const state = getState()
     if (state.sending || state.loading || !state.data) return
 
@@ -1561,6 +1087,9 @@ export function createChatOperations(deps: {
   // ============ create parallel branch from assistant message ============
 
   async function createParallelBranchFromAssistantMessage(assistantMid: any) {
+    rejectLocalBusinessPath('分支能力必须由 eucli-box 提供，客户端本地分支路径已禁用')
+    return
+
     const state = getState()
     if (state.sending || state.loading || !state.data) return
 
@@ -1616,6 +1145,9 @@ export function createChatOperations(deps: {
   // ============ switch branch by assistant sibling ============
 
   async function switchBranchByAssistantSibling(assistantMid: any, delta: any) {
+    rejectLocalBusinessPath('分支能力必须由 eucli-box 提供，客户端本地分支路径已禁用')
+    return
+
     const state = getState()
     if (state.loading || !state.data) return
 
@@ -1709,6 +1241,9 @@ export function createChatOperations(deps: {
   // ============ set active branch ============
 
   async function setActiveBranch(branchId: any) {
+    rejectLocalBusinessPath('分支能力必须由 eucli-box 提供，客户端本地分支路径已禁用')
+    return
+
     const state = getState()
     if (state.loading || !state.data) return
 
@@ -1737,222 +1272,23 @@ export function createChatOperations(deps: {
   // ============ delete message ============
 
   async function deleteMessage(messageId: any) {
-    const state = getState()
-    if (state.loading || !state.data) return
-    if (state.sending) return showToast?.('操作中，请稍后重试')
-
-    await ensureActiveChatLoaded?.()
-
-    const mid = String(messageId || '').trim()
-    if (!mid) return
-
-    const opTarget = activeChatOperationTarget()
-    if (!opTarget) return
-
-    const { chat, pendingChat } = opTarget
-    if (chatHasPendingAssistant(chat)) return showToast?.('该会话正在生成中，无法删除消息')
-
-    const msgs = Array.isArray(chat.messages) ? chat.messages : []
-    const idx = msgs.findIndex((m: any) => String(m?.id || '') === mid)
-    if (idx < 0) return showToast?.('未找到该消息')
-
-    const target = msgs[idx]
-    if (!target) return showToast?.('未找到该消息')
-
-    if (target.role === 'assistant') {
-      if (hasActiveAssistantMessages({ messages: [target] })) return showToast?.('该消息正在生成中，无法删除')
-    }
-
-    const oldById = new Map<string, any>()
-    for (const m of msgs) {
-      const id = String(m?.id || '').trim()
-      if (!id || oldById.has(id)) continue
-      oldById.set(id, m)
-    }
-
-    const plan = planDeleteSingleMessage(msgs, mid, target)
-    const assistantCleanupIds = target.role === 'assistant' ? [mid] : []
-    if (pendingChat) {
-      try {
-        await runLocalChatMutation({
-          chat,
-          onRollback: emit,
-          onCommit: emit,
-          afterCommit: () => assistantArtifactCleanup.cleanup(assistantCleanupIds, { resetRuntime: true }),
-          mutate: () => {
-            chat.messages = plan.nextMessages
-            chat.updatedAt = now()
-            repairChatLinearBranching(chat)
-            repairBranchHeadsAfterSingleMessageDeletion(chat, oldById, plan.targetParentMid)
-          },
-        })
-        showToast?.('已删除')
-      } catch (e) {
-        showToast?.(String((e as any)?.message || e || '删除失败'))
-      }
-      return
-    }
-
-    try {
-      await runChatMutationTransaction({
-        chat,
-        intent: createDeletedMessagesSaveIntent(plan.deletedMessageIds, plan.deletedMessageParentById),
-        save,
-        onRollback: emit,
-        onCommit: emit,
-        afterCommit: () => assistantArtifactCleanup.cleanup(assistantCleanupIds, { resetRuntime: true }),
-        mutate: () => {
-          chat.messages = plan.nextMessages
-          chat.updatedAt = now()
-          repairChatLinearBranching(chat)
-          repairBranchHeadsAfterSingleMessageDeletion(chat, oldById, plan.targetParentMid)
-        },
-      })
-      showToast?.('已删除')
-    } catch (e) {
-      showToast?.(String((e as any)?.message || e || '删除失败'))
-    }
+    void messageId
+    rejectLocalBusinessPath('消息删除必须由 eucli-box 提供，客户端本地会话历史修改已禁用')
   }
 
   // ============ delete message subtree ============
 
   async function deleteMessageSubtree(messageId: any) {
-    const state = getState()
-    if (state.loading || !state.data) return
-    if (state.sending) return showToast?.('操作中，请稍后重试')
-
-    await ensureActiveChatLoaded?.()
-
-    const mid0 = String(messageId || '').trim()
-    if (!mid0) return
-
-    const opTarget = activeChatOperationTarget()
-    if (!opTarget) return
-
-    const { chat, pendingChat } = opTarget
-    if (chatHasPendingAssistant(chat)) return showToast?.('该会话正在生成中，无法删除消息')
-
-    const msgs = Array.isArray(chat.messages) ? (chat.messages as any[]) : []
-    const idx = msgs.findIndex((m: any) => String(m?.id || '') === mid0)
-    if (idx < 0) return showToast?.('未找到该消息')
-
-    const oldById = new Map<string, any>()
-    for (const m of msgs) {
-      const id = String(m?.id || '').trim()
-      if (!id || oldById.has(id)) continue
-      oldById.set(id, m)
-    }
-
-    const plan = planDeleteMessageSubtree(msgs, mid0)
-    if (plan.nextMessages.length === msgs.length) return showToast?.('未删除任何消息')
-
-    const assistantCleanupIds = Array.from(plan.deletedMessageIds).filter((id) => String(oldById.get(id)?.role || '') === 'assistant')
-
-    if (pendingChat) {
-      try {
-        await runLocalChatMutation({
-          chat,
-          onRollback: emit,
-          onCommit: emit,
-          afterCommit: () => assistantArtifactCleanup.cleanup(assistantCleanupIds, { resetRuntime: true }),
-          mutate: () => {
-            chat.messages = plan.nextMessages
-            chat.updatedAt = now()
-            repairChatLinearBranching(chat)
-            repairBranchHeadsAfterSubtreeDeletion(chat, oldById, plan.nextMessages)
-          },
-        })
-        showToast?.('已删除（含子节点）')
-      } catch (e) {
-        showToast?.(String((e as any)?.message || e || '删除失败'))
-      }
-      return
-    }
-
-    try {
-      await runChatMutationTransaction({
-        chat,
-        intent: createDeletedMessagesSaveIntent(plan.deletedMessageIds, plan.deletedMessageParentById, plan.subtreeRootIds),
-        save,
-        onRollback: emit,
-        onCommit: emit,
-        afterCommit: () => assistantArtifactCleanup.cleanup(assistantCleanupIds, { resetRuntime: true }),
-        mutate: () => {
-          chat.messages = plan.nextMessages
-          chat.updatedAt = now()
-          repairChatLinearBranching(chat)
-          repairBranchHeadsAfterSubtreeDeletion(chat, oldById, plan.nextMessages)
-        },
-      })
-      showToast?.('已删除（含子节点）')
-    } catch (e) {
-      showToast?.(String((e as any)?.message || e || '删除失败'))
-    }
+    void messageId
+    rejectLocalBusinessPath('消息删除必须由 eucli-box 提供，客户端本地会话历史修改已禁用')
   }
 
   // ============ edit message ============
 
   async function editMessage(messageId: any, content: any) {
-    const state = getState()
-    if (state.loading || !state.data) return
-    if (state.sending) return showToast?.('操作中，请稍后重试')
-
-    await ensureActiveChatLoaded?.()
-
-    const mid = String(messageId || '').trim()
-    if (!mid) return
-
-    const opTarget = activeChatOperationTarget()
-    if (!opTarget) return
-
-    const { chat, pendingChat } = opTarget
-    if (chatHasPendingAssistant(chat)) return showToast?.('该会话正在生成中，无法编辑消息')
-
-    const msgs = Array.isArray(chat.messages) ? chat.messages : []
-    const target = msgs.find((m: any) => String(m?.id || '') === mid)
-    if (!target) return showToast?.('未找到该消息')
-
-    if (target.role === 'assistant') {
-      if (hasActiveAssistantMessages({ messages: [target] })) return showToast?.('该消息正在生成中，无法编辑')
-    }
-
-    if (pendingChat) {
-      try {
-        await runLocalChatMutation({
-          chat,
-          onRollback: emit,
-          onCommit: emit,
-          afterCommit: () => assistantArtifactCleanup.cleanup(target.role === 'assistant' ? [mid] : []),
-          mutate: () => {
-            target.content = String(content ?? '')
-            chat.updatedAt = now()
-            repairChatLinearBranching(chat)
-          },
-        })
-        showToast?.('已保存')
-      } catch (e) {
-        showToast?.(String((e as any)?.message || e || '保存失败'))
-      }
-      return
-    }
-
-    try {
-      await runChatMutationTransaction({
-        chat,
-        save,
-        onRollback: emit,
-        onCommit: emit,
-        afterCommit: () => assistantArtifactCleanup.cleanup(target.role === 'assistant' ? [mid] : []),
-        mutate: () => {
-          target.content = String(content ?? '')
-          chat.updatedAt = now()
-          repairChatLinearBranching(chat)
-        },
-      })
-      showToast?.('已保存')
-    } catch (e) {
-      showToast?.(String((e as any)?.message || e || '保存失败'))
-    }
+    void messageId
+    void content
+    rejectLocalBusinessPath('消息编辑必须由 eucli-box 提供，客户端本地会话历史修改已禁用')
   }
 
   return {

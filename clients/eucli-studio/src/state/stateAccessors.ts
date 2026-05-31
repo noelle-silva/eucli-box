@@ -186,14 +186,6 @@ export function createStateAccessors(deps: {
     if (!s.data.chatsByRole[rid] || typeof s.data.chatsByRole[rid] !== 'object') s.data.chatsByRole[rid] = { activeChatId: '', chatMetas: [], chats: [] }
     const box = ensureBoxShape(s.data.chatsByRole[rid], '新聊天')
     box.activeChatId = String(box.activeChatId || '')
-    if (!box.chats.length && !box.chatMetas.length) {
-      const cid = uid('c')
-      const t = now()
-      const chat = { id: cid, title: '新聊天', createdAt: t, updatedAt: t, branching: createDefaultChatBranching('', t, t), messages: [] }
-      box.chats = [chat]
-      box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chat, '新聊天'), '新聊天')
-      box.activeChatId = cid
-    }
     if (!box.activeChatId || !chatIdExistsInBox(box, box.activeChatId)) box.activeChatId = firstChatIdInBox(box)
     return box
   }
@@ -212,29 +204,8 @@ export function createStateAccessors(deps: {
   }
 
   function createChatForRole(roleId: any) {
-    const rid = String(roleId || '')
-    const box = ensureChatsBoxBare(rid)
-    if (!box) return null
-    const cid = uid('c')
-    const t = now()
-    const chat = { id: cid, title: '新聊天', createdAt: t, updatedAt: t, branching: createDefaultChatBranching('', t, t), messages: [] }
-    box.chats.unshift(chat)
-    box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chat, '新聊天'), '新聊天')
-    box.activeChatId = cid
-    return chat
-  }
-
-  function createChatForGroup(groupId: any) {
-    const gid = String(groupId || '').trim()
-    const box = ensureGroupChatsBox(gid)
-    if (!box) return null
-    const cid = uid('gc')
-    const t = now()
-    const chat = { id: cid, title: '群聊', createdAt: t, updatedAt: t, branching: createDefaultChatBranching('', t, t), messages: [] }
-    box.chats.unshift(chat)
-    box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chat, '群聊'), '群聊')
-    box.activeChatId = cid
-    return chat
+    void roleId
+    return null
   }
 
   function findChatByIds(roleId: any, chatId: any) {
@@ -291,7 +262,6 @@ export function createStateAccessors(deps: {
     ensureChatsBox,
     ensureChatsBoxBare,
     createChatForRole,
-    createChatForGroup,
     findChatByIds,
     findGroupChatByIds,
     pickChatModelRef,

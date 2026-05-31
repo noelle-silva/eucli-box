@@ -36,7 +36,7 @@ export function RoleDialog(props: { open: boolean; controller: any; providers: a
   const modelPick = String(draft?.roleModelId || '')
   const customModel = String(draft?.roleCustomModelId || '')
   const temp = Number(draft?.roleTemperature || 0.7)
-  const modelItems = Array.isArray(models?.items) ? (models.items as any[]).map((x) => String(x)) : []
+  const modelItems = Array.isArray(models?.items) ? (models.items as any[]).map((x) => x && typeof x === 'object' ? String(x.id || '').trim() : String(x).trim()).filter(Boolean) : []
   const hasPickInList = !!modelPick && modelPick !== '__custom__' && modelItems.some((x) => x === modelPick)
 
   return (

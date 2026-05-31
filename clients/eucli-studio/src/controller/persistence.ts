@@ -31,18 +31,14 @@ export function createPersistence(deps: {
     if (!state) return
     await saveMetaOnly()
 
-    const kind = String(state.draft?.activeTargetKind || '') === 'group' ? 'group' : 'role'
-    const targetId = kind === 'group' ? String(state.draft?.activeGroupId || '') : String(state.draft?.activeRoleId || '')
-    const chat = activeChatFromData()
-    if (!targetId || !chat) return
-    if (kind === 'group') await saveGroupChat(targetId, chat, intent)
-    else await saveRoleChat(targetId, chat, intent)
+    void activeChatFromData
+    void intent
   }
 
   async function saveDataTree() {
     const state = syncDraftUiToData()
     if (!state) return
-    await saveSplitData(state.data)
+    await saveMetaOnly()
   }
 
   return {

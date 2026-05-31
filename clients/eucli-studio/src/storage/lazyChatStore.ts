@@ -78,7 +78,6 @@ export function createLazyChatStore(deps: {
       stickers = null
     }
 
-    const providers = await loadProvidersFromStorage(storage, meta)
     const d: any = {
       version: VERSION,
       settings: meta.settings && typeof meta.settings === 'object' ? meta.settings : {},
@@ -90,36 +89,7 @@ export function createLazyChatStore(deps: {
       ui: meta.ui && typeof meta.ui === 'object' ? meta.ui : {},
     }
     d.settings.stickers = stickers && typeof stickers === 'object' ? stickers : {}
-    d.settings.providers = providers
-
-    for (const rid of meta.roleOrder || []) {
-      const folder = String(meta.roleFolders?.[rid] || '')
-      if (!folder) throw new Error('存储索引损坏：roleFolders 缺失')
-      const role = await storage.get(splitRoleKey(folder))
-      if (!role || typeof role !== 'object') throw new Error('存储损坏：角色文件缺失或无效')
-      d.roles.push(role)
-      const idx = meta.chatIndexByRole?.[rid] && typeof meta.chatIndexByRole?.[rid] === 'object' ? meta.chatIndexByRole[rid] : {}
-      d.chatsByRole[String(role.id || rid)] = {
-        activeChatId: String(idx.activeChatId || ''),
-        chatMetas: chatMetasFromBox(idx, '新聊天'),
-        chats: [],
-      }
-    }
-
-    for (const gid of (meta as any).groupOrder || []) {
-      const folder = String((meta as any).groupFolders?.[gid] || '')
-      if (!folder) throw new Error('存储索引损坏：groupFolders 缺失')
-      const group = await storage.get(splitGroupKey(folder))
-      if (!group || typeof group !== 'object') throw new Error('存储损坏：群组文件缺失或无效')
-      d.groups.push(group)
-      const idx = (meta as any).chatIndexByGroup?.[gid] && typeof (meta as any).chatIndexByGroup?.[gid] === 'object' ? (meta as any).chatIndexByGroup[gid] : {}
-      d.chatsByGroup[String(group.id || gid)] = {
-        activeChatId: String(idx.activeChatId || ''),
-        chatMetas: chatMetasFromBox(idx, '群聊'),
-        chats: [],
-      }
-    }
-
+    d.settings.providers = []
     return normalizeData(d)
   }
 
@@ -134,49 +104,37 @@ export function createLazyChatStore(deps: {
     const existing = box.chats.find((c: any) => String(c?.id || '') === chatId) || null
     if (existing) return existing
 
-    const meta = await loadSplitMeta()
-    const folder = folderForTarget(meta, kind, targetId)
-    if (!folder) throw new Error(kind === 'group' ? '群组不存在' : '角色不存在')
-    const raw = await storage.get(chatKeyFor(kind, folder, chatId))
-    const chat = normalizeLoadedChat(raw, kind)
-    if (!chat) throw new Error('会话不存在')
-
-    const index = box.chats.findIndex((c: any) => String(c?.id || '') === chatId)
-    if (index >= 0) box.chats[index] = chat
-    else box.chats.unshift(chat)
-    box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chat, kind === 'group' ? '群聊' : '新聊天'), kind === 'group' ? '群聊' : '新聊天')
-    return chat
+    void kind
+    return null
   }
 
   async function loadChat(kind: LazyChatKind, targetIdRaw: any, chatIdRaw: any) {
     const targetId = String(targetIdRaw || '').trim()
     const chatId = String(chatIdRaw || '').trim()
     if (!targetId || !chatId) return null
-    const meta = await loadSplitMeta()
-    const folder = folderForTarget(meta, kind, targetId)
-    if (!folder) throw new Error(kind === 'group' ? '群组不存在' : '角色不存在')
-    const raw = await storage.get(chatKeyFor(kind, folder, chatId))
-    return normalizeLoadedChat(raw, kind)
+    void kind
+    void targetId
+    void chatId
+    return null
   }
 
   async function saveChat(kind: LazyChatKind, targetIdRaw: any, chatRaw: any) {
     const targetId = String(targetIdRaw || '').trim()
     const chatId = String(chatRaw?.id || '').trim()
     if (!targetId || !chatId) return
-    const meta = await loadSplitMeta()
-    const folder = folderForTarget(meta, kind, targetId)
-    if (!folder) throw new Error(kind === 'group' ? '群组不存在' : '角色不存在')
-    await storage.set(chatKeyFor(kind, folder, chatId), chatRaw)
+    void kind
+    void targetId
+    void chatId
+    void chatRaw
   }
 
   async function removeChat(kind: LazyChatKind, targetIdRaw: any, chatIdRaw: any) {
     const targetId = String(targetIdRaw || '').trim()
     const chatId = String(chatIdRaw || '').trim()
     if (!targetId || !chatId || typeof storage.remove !== 'function') return
-    const meta = await loadSplitMeta()
-    const folder = folderForTarget(meta, kind, targetId)
-    if (!folder) return
-    await storage.remove(chatKeyFor(kind, folder, chatId))
+    void kind
+    void targetId
+    void chatId
   }
 
   async function ensureActiveChatLoaded() {

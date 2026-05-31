@@ -54,8 +54,8 @@ async function readObject(storage: SplitStorageReader, key: string): Promise<Rec
 
 export async function loadProvidersFromStorage(storage: SplitStorageReader, metaOverride?: any): Promise<any[]> {
   const index = await readObject(storage, splitProvidersIndexKey())
-  const providerOrder = stringList(index.providerOrder)
-  const providerFolders = stringMap(index.providerFolders)
+  const providerOrder = stringList(index.providerOrder).length ? stringList(index.providerOrder) : stringList(metaOverride?.providerOrder)
+  const providerFolders = Object.keys(stringMap(index.providerFolders)).length ? stringMap(index.providerFolders) : stringMap(metaOverride?.providerFolders)
 
   if (!providerOrder.length && metaOverride?.settings && Array.isArray(metaOverride.settings.providers)) {
     return metaOverride.settings.providers.filter((x: any) => x && typeof x === 'object')

@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,11 +36,9 @@ type boxClient struct {
 }
 
 type boxRunRequest struct {
-	RoleID      string `json:"roleId"`
-	SessionID   string `json:"sessionId"`
-	Message     string `json:"message"`
-	LocalRoleID string `json:"-"`
-	LocalChatID string `json:"-"`
+	RoleID    string `json:"roleId"`
+	SessionID string `json:"sessionId"`
+	Message   string `json:"message"`
 }
 
 type boxRunState struct {
@@ -195,7 +192,7 @@ func (c *boxClient) listRoles(ctx context.Context) ([]map[string]any, error) {
 		return nil, fmt.Errorf("listRoles all failed: %s", strings.Join(errs, "; "))
 	}
 	if len(errs) > 0 {
-		log.Printf("boxClient.listRoles partial failures: %s", strings.Join(errs, "; "))
+		return roles, fmt.Errorf("listRoles partial failures: %s", strings.Join(errs, "; "))
 	}
 	return roles, nil
 }
@@ -223,7 +220,7 @@ func (c *boxClient) listProviders(ctx context.Context) ([]map[string]any, error)
 		return nil, fmt.Errorf("listProviders all failed: %s", strings.Join(errs, "; "))
 	}
 	if len(errs) > 0 {
-		log.Printf("boxClient.listProviders partial failures: %s", strings.Join(errs, "; "))
+		return providers, fmt.Errorf("listProviders partial failures: %s", strings.Join(errs, "; "))
 	}
 	return providers, nil
 }
@@ -411,6 +408,14 @@ func providerModelsToBox(modelsCache map[string]any) []map[string]any {
 	out := make([]map[string]any, 0, len(items))
 	for _, item := range items {
 		model := asMap(item)
+		if model == nil {
+			id := strings.TrimSpace(asString(item))
+			if id == "" {
+				continue
+			}
+			out = append(out, map[string]any{"id": id, "name": id})
+			continue
+		}
 		out = append(out, map[string]any{
 			"id":   strings.TrimSpace(asString(model["id"])),
 			"name": strings.TrimSpace(asString(model["name"])),
@@ -473,7 +478,7 @@ func (c *boxClient) runChat(ctx context.Context, request boxRunRequest, onDelta 
 			}
 		case "run_completed":
 			mu.Lock()
-			current := strings.TrimSpace(text.String())
+			current := text.String()
 			mu.Unlock()
 			select {
 			case done <- boxRunResult{Status: "succeeded", Text: current}:
@@ -485,7 +490,7 @@ func (c *boxClient) runChat(ctx context.Context, request boxRunRequest, onDelta 
 				reason = "eucli-box run failed"
 			}
 			mu.Lock()
-			current := strings.TrimSpace(text.String())
+			current := text.String()
 			mu.Unlock()
 			select {
 			case done <- boxRunResult{Status: "failed", Text: current, Reason: reason}:
@@ -493,7 +498,7 @@ func (c *boxClient) runChat(ctx context.Context, request boxRunRequest, onDelta 
 			}
 		case "run_cancelled":
 			mu.Lock()
-			current := strings.TrimSpace(text.String())
+			current := text.String()
 			if current == "" {
 				current = "（已停止）"
 			}
@@ -514,7 +519,7 @@ func (c *boxClient) runChat(ctx context.Context, request boxRunRequest, onDelta 
 			log.Printf("boxClient.runChat: cancel run %s failed: %v", runID, err)
 		}
 		mu.Lock()
-		current := strings.TrimSpace(text.String())
+		current := text.String()
 		if current == "" {
 			current = "（已停止）"
 		}
@@ -661,7 +666,7 @@ func contentFromPayload(payload json.RawMessage) string {
 	if err := json.Unmarshal(payload, &obj); err != nil {
 		return ""
 	}
-	return strings.TrimSpace(asString(obj["content"]))
+	return asString(obj["content"])
 }
 
 func reasonFromPayload(payload json.RawMessage) string {
@@ -672,35 +677,6 @@ func reasonFromPayload(payload json.RawMessage) string {
 	return strings.TrimSpace(firstNonEmptyString(obj["reason"], obj["message"], obj["error"]))
 }
 
-func (svc *service) loadBoxSessionID(roleID string, chatID string) (string, error) {
-	value, err := svc.storageGetByKey(boxSessionMapKey(roleID, chatID))
-	if err != nil {
-		return "", err
-	}
-	box, _ := value.(map[string]any)
-	return strings.TrimSpace(asString(box["sessionId"])), nil
-}
-
 func (svc *service) boxRunChat(ctx context.Context, request boxRunRequest, onDelta func(string), onSession func(string)) (boxRunResult, error) {
 	return svc.box.runChat(ctx, request, onDelta, onSession)
-}
-
-func (svc *service) saveBoxSessionID(roleID string, chatID string, sessionID string) error {
-	sessionID = strings.TrimSpace(sessionID)
-	if sessionID == "" {
-		return nil
-	}
-	return svc.storageSetByKey(boxSessionMapKey(roleID, chatID), map[string]any{"sessionId": sessionID, "updatedAt": nowMs()})
-}
-
-func boxSessionMapKey(roleID string, chatID string) string {
-	return "box/session-map/" + boxStorageSegment(roleID) + "/" + boxStorageSegment(chatID)
-}
-
-func boxStorageSegment(raw string) string {
-	value := strings.TrimSpace(raw)
-	if value == "" {
-		value = "empty"
-	}
-	return base64.RawURLEncoding.EncodeToString([]byte(value))
 }

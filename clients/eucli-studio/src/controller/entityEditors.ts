@@ -1,10 +1,8 @@
 import { now, uid, clamp, clampTemp, normImagePaths } from '../core/utils'
 import { createStateAccessors } from '../state/stateAccessors'
-import { createDefaultChatBranching } from '../domain/branching'
 import { chatMetaFromChat, removeChatMeta, upsertChatMeta } from '../domain/chatMeta'
-import { NEW_ROLE_ID, NEW_GROUP_ID } from '../domain/constants'
+import { NEW_ROLE_ID } from '../domain/constants'
 import { isAssistantGenerating } from '../domain/assistantRunState'
-import { defaultData } from '../domain/dataNormalizers'
 
 function looksLikeImageDataUrl(s: any): boolean {
   const t = String(s || '')
@@ -61,6 +59,10 @@ function chatHasPendingAssistant(chat: any): boolean {
   return false
 }
 
+function modelCacheId(item: any): string {
+  return item && typeof item === 'object' ? String(item.id || '').trim() : String(item || '').trim()
+}
+
 function imageBasename(p: string): string {
   const s = String(p || '')
   const a = s.lastIndexOf('/')
@@ -89,9 +91,80 @@ export function createEntityEditors(deps: {
   pushBoxProvider?: (provider: Record<string, unknown>) => Promise<void>
   deleteBoxRole?: (id: string) => Promise<void>
   deleteBoxProvider?: (id: string) => Promise<void>
+  syncBoxCatalog?: () => Promise<{ roles?: any[]; providers?: any[] } | void>
+  listBoxSessions?: (roleId: string) => Promise<any[]>
+  createBoxSession?: (roleId: string) => Promise<any>
+  getBoxSession?: (id: string) => Promise<any>
+  deleteBoxSession?: (id: string) => Promise<void>
 }) {
-  const { getState, save, render, closeModal, showToast, pickImageFiles, filesImages, ensureChatLoaded, ensureGroupChatLoaded, renameRoleChatInStore, renameGroupChatInStore, removeChatInStore, removeLoadedChat, cleanupFavoriteRefsForTarget, cleanupFavoriteRefsForChat, pushBoxRole, pushBoxProvider, deleteBoxRole, deleteBoxProvider } = deps
+  const { getState, save, render, closeModal, showToast, pickImageFiles, filesImages, ensureChatLoaded, ensureGroupChatLoaded, renameRoleChatInStore, renameGroupChatInStore, removeChatInStore, removeLoadedChat, cleanupFavoriteRefsForTarget, cleanupFavoriteRefsForChat, pushBoxRole, pushBoxProvider, deleteBoxRole, deleteBoxProvider, syncBoxCatalog, listBoxSessions, createBoxSession, getBoxSession, deleteBoxSession } = deps
   const sa = createStateAccessors({ getState })
+
+  function applyBoxCatalogSnapshot(snapshot: any) {
+    if (!snapshot || typeof snapshot !== 'object') return
+    const state = getState()
+    if (!state.data) return
+    if (Array.isArray(snapshot.roles)) state.data.roles = snapshot.roles
+    if (Array.isArray(snapshot.providers)) {
+      if (!state.data.settings || typeof state.data.settings !== 'object') state.data.settings = {} as any
+      state.data.settings.providers = snapshot.providers
+    }
+  }
+
+  async function refreshBoxCatalogView() {
+    if (!syncBoxCatalog) throw new Error('eucli-box 目录同步通道不可用')
+    const snapshot = await syncBoxCatalog()
+    applyBoxCatalogSnapshot(snapshot)
+    const err = snapshot && typeof snapshot === 'object' ? String((snapshot as any).error || '') : ''
+    if (err) showToast?.('eucli-box 目录部分同步失败: ' + err)
+  }
+
+  function boxSessionToChatMeta(session: any): any {
+    const id = String(session?.id || '').trim()
+    const t = Number(Date.parse(String(session?.createdAt || session?.lastActive || ''))) || now()
+    const updatedAt = Number(Date.parse(String(session?.lastActive || session?.updatedAt || ''))) || t
+    const messageCount = Array.isArray(session?.messages) ? session.messages.length : Number(session?.messageCount || 0)
+    const lastMessage = Array.isArray(session?.messages) ? session.messages[session.messages.length - 1] : null
+    return chatMetaFromChat({
+      id,
+      title: String(session?.title || '新聊天'),
+      createdAt: t,
+      updatedAt,
+      messages: [],
+      lastMessagePreview: String(lastMessage?.content || lastMessage?.reason || ''),
+      messageCount,
+    }, '新聊天')
+  }
+
+  function upsertRoleSessionMeta(roleId: string, session: any) {
+    const state = getState()
+    if (!state.data) return null
+    const meta = boxSessionToChatMeta(session)
+    if (!meta.id) return null
+    const box = sa.ensureChatsBoxBare(roleId)
+    if (!box) return null
+    box.chats = []
+    box.chatMetas = upsertChatMeta(box.chatMetas, meta, '新聊天')
+    box.activeChatId = meta.id
+    return meta
+  }
+
+  async function syncRoleSessionsFromBox(roleId: string) {
+    const rid = String(roleId || '').trim()
+    if (!rid) return
+    if (!listBoxSessions) throw new Error('eucli-box 会话列表通道不可用')
+    const state = getState()
+    if (!state.data) return
+    if (!getBoxSession) throw new Error('eucli-box 会话读取通道不可用')
+    const sessions = await listBoxSessions(rid)
+    const box = sa.ensureChatsBoxBare(rid)
+    if (!box) return
+    const metas = (Array.isArray(sessions) ? sessions : []).map((session: any) => boxSessionToChatMeta(session)).filter((meta: any) => !!meta.id)
+    box.chats = []
+    box.chatMetas = metas
+    const current = String(box.activeChatId || '')
+    box.activeChatId = current && metas.some((meta: any) => String(meta.id || '') === current) ? current : String(metas[0]?.id || '')
+  }
 
   function scrollToBottomSoon() {
     // UI 负责滚动逻辑（React）
@@ -211,7 +284,7 @@ export function createEntityEditors(deps: {
     const cachedItems = Array.isArray(p?.modelsCache?.items) ? p.modelsCache.items : []
     state.models = { loading: false, error: '', items: cachedItems.slice(0, 300) }
 
-    const inCache = !!curModelId && cachedItems.some((x: any) => String(x) === curModelId)
+    const inCache = !!curModelId && cachedItems.some((x: any) => modelCacheId(x) === curModelId)
     state.draft.roleModelId = inCache ? curModelId : curModelId ? '__custom__' : ''
     state.draft.roleCustomModelId = inCache ? '' : curModelId
 
@@ -219,7 +292,7 @@ export function createEntityEditors(deps: {
     render()
   }
 
-  function saveRoleEditor() {
+  async function saveRoleEditor() {
     const state = getState()
     if (!state.data) return
     const rid = String(state.draft.editRoleId || '')
@@ -235,8 +308,6 @@ export function createEntityEditors(deps: {
 
     if (rid === NEW_ROLE_ID) {
       const newRid = uid('r')
-      const cid = uid('c')
-      const t = now()
       const role = {
         id: newRid,
         name,
@@ -249,16 +320,17 @@ export function createEntityEditors(deps: {
         updatedAt: now(),
       }
       sa.ensureRoleDefaults(role)
-      state.data.roles.unshift(role)
-      if (!state.data.chatsByRole || typeof state.data.chatsByRole !== 'object') state.data.chatsByRole = {}
-      state.data.chatsByRole[newRid] = {
-        activeChatId: cid,
-        chatMetas: [{ id: cid, title: '新聊天', createdAt: t, updatedAt: t, lastMessagePreview: '', messageCount: 0, hasPending: false }],
-        chats: [{ id: cid, title: '新聊天', createdAt: t, updatedAt: t, branching: createDefaultChatBranching('', t, t), messages: [] }],
+      try {
+        if (!pushBoxRole) throw new Error('eucli-box 角色写入通道不可用')
+        await pushBoxRole({ id: newRid, name, avatar, avatarImage, systemPrompt: sys, temperature, modelRef: { providerId, modelId }, createdAt: role.createdAt, updatedAt: role.updatedAt })
+        await refreshBoxCatalogView()
+      } catch (e: any) {
+        showToast?.('保存角色失败: ' + String(e?.message || e))
+        return
       }
+      if (!state.data.chatsByRole || typeof state.data.chatsByRole !== 'object') state.data.chatsByRole = {}
+      if (!state.data.chatsByRole[newRid]) state.data.chatsByRole[newRid] = { activeChatId: '', chatMetas: [], chats: [] }
       state.draft.activeRoleId = newRid
-      save().catch(() => {})
-      pushBoxRole?.({ id: newRid, name, avatar, avatarImage, systemPrompt: sys, temperature, modelRef: { providerId, modelId }, createdAt: role.createdAt, updatedAt: role.updatedAt }).catch(e => showToast?.('推送角色失败: ' + (e?.message||e)))
       closeModal()
       return
     }
@@ -266,66 +338,44 @@ export function createEntityEditors(deps: {
     const role = state.data.roles.find((r: any) => String(r?.id) === rid)
     if (!role) return
 
-    role.name = name
-    role.avatar = avatar
-    role.avatarImage = avatarImage
-    role.systemPrompt = sys
-    role.temperature = temperature
-    role.modelRef = { providerId, modelId }
-    role.updatedAt = now()
+    const nextRole = { id: role.id, name, avatar, avatarImage, systemPrompt: sys, temperature, modelRef: { providerId, modelId }, createdAt: role.createdAt, updatedAt: now() }
+    try {
+      if (!pushBoxRole) throw new Error('eucli-box 角色写入通道不可用')
+      await pushBoxRole(nextRole)
+      await refreshBoxCatalogView()
+    } catch (e: any) {
+      showToast?.('保存角色失败: ' + String(e?.message || e))
+      return
+    }
 
-    save().catch(() => {})
-    pushBoxRole?.({ id: role.id, name: role.name, avatar: role.avatar, avatarImage: role.avatarImage, systemPrompt: role.systemPrompt, temperature: role.temperature, modelRef: role.modelRef, createdAt: role.createdAt, updatedAt: role.updatedAt }).catch(e => showToast?.('推送角色失败: ' + (e?.message||e)))
     closeModal()
   }
 
-  function deleteRole(roleId: any) {
+  async function deleteRole(roleId: any) {
     const state = getState()
     if (!state.data) return
     const rid = String(roleId || '')
-    state.data.roles = state.data.roles.filter((r: any) => String(r?.id) !== rid)
+    try {
+      if (!deleteBoxRole) throw new Error('eucli-box 角色删除通道不可用')
+      await deleteBoxRole(rid)
+      await refreshBoxCatalogView()
+    } catch (e: any) {
+      showToast?.('删除角色失败: ' + String(e?.message || e))
+      return
+    }
     if (state.data.chatsByRole && typeof state.data.chatsByRole === 'object') delete state.data.chatsByRole[rid]
     cleanupFavoriteRefsForTarget('role', rid)
-
-    if (!state.data.roles.length) {
-      const d = defaultData()
-      state.data.settings.providers = state.data.settings.providers.length ? state.data.settings.providers : d.settings.providers
-      state.data.roles = d.roles
-      state.data.chatsByRole = d.chatsByRole
-      ;(state.data as any).groups = (d as any).groups
-      ;(state.data as any).chatsByGroup = (d as any).chatsByGroup
-      state.data.ui = d.ui
-    }
 
     state.draft.activeRoleId = String(state.data.roles[0]?.id || '')
     if (!Array.isArray((state.data as any).groups) || !(state.data as any).groups.length) {
       ;(state.draft as any).activeTargetKind = 'role'
       ;(state.draft as any).activeGroupId = ''
     }
-    save().catch(() => {})
-    deleteBoxRole?.(rid).catch(e => showToast?.('删除角色失败: ' + (e?.message||e)))
+    render()
   }
 
   function openNewGroupEditor() {
-    const state = getState()
-    if (!state.data) return
-    sa.ensureGroupsList()
-
-    ;(state.draft as any).editGroupId = NEW_GROUP_ID
-    ;(state.draft as any).groupName = '新群组'
-    ;(state.draft as any).groupAvatar = '👥'
-    ;(state.draft as any).groupAvatarImage = ''
-    ;(state.draft as any).groupAvatarImageCropSrc = ''
-    ;(state.draft as any).groupPrompt = ''
-    ;(state.draft as any).groupMode = 'roundRobin'
-    ;(state.draft as any).groupMemberRoleIds = []
-    ;(state.draft as any).groupRoundRobinOrder = []
-    ;(state.draft as any).groupRandomWeights = {}
-    ;(state.draft as any).groupRandomMinCount = 1
-    ;(state.draft as any).groupRandomMaxCount = 2
-
-    state.modal = 'group'
-    render()
+    showToast?.('群聊能力已交由 eucli-box 接管，客户端本地群聊编辑已禁用')
   }
 
   function createGroup() {
@@ -333,144 +383,15 @@ export function createEntityEditors(deps: {
   }
 
   function openGroupEditor(groupId: any) {
-    const state = getState()
-    if (!state.data) return
-    sa.ensureGroupsList()
-
-    const gid = String(groupId || '').trim()
-    if (!gid) return
-    const group = ((state.data as any).groups as any[]).find((g: any) => String(g?.id || '') === gid) || null
-    if (!group) return
-
-    ;(state.draft as any).editGroupId = gid
-    ;(state.draft as any).groupName = String(group?.name || '')
-    ;(state.draft as any).groupAvatar = String(group?.avatar || '')
-    ;(state.draft as any).groupAvatarImage = looksLikeImageDataUrl(group?.avatarImage) ? String(group?.avatarImage || '') : ''
-    ;(state.draft as any).groupAvatarImageCropSrc = ''
-    ;(state.draft as any).groupPrompt = String(group?.prompt || '')
-    ;(state.draft as any).groupMode = String(group?.mode || 'roundRobin') === 'random' ? 'random' : 'roundRobin'
-    ;(state.draft as any).groupMemberRoleIds = Array.isArray(group?.memberRoleIds) ? group.memberRoleIds.slice(0, 50) : []
-    ;(state.draft as any).groupRoundRobinOrder = Array.isArray(group?.roundRobinOrder) ? group.roundRobinOrder.slice(0, 80) : []
-
-    const randomCfg = group?.random && typeof group.random === 'object' ? group.random : {}
-    ;(state.draft as any).groupRandomWeights = randomCfg.weightsByRoleId && typeof randomCfg.weightsByRoleId === 'object' ? { ...randomCfg.weightsByRoleId } : {}
-    ;(state.draft as any).groupRandomMinCount = clamp(Math.round(Number(randomCfg.minCount ?? 1)), 1, 20)
-    ;(state.draft as any).groupRandomMaxCount = clamp(Math.round(Number(randomCfg.maxCount ?? 2)), 1, 20)
-
-    state.modal = 'group'
-    render()
+    showToast?.('群聊能力已交由 eucli-box 接管，客户端本地群聊编辑已禁用')
   }
 
   function saveGroupEditor() {
-    const state = getState()
-    if (!state.data) return
-    sa.ensureGroupsList()
-
-    const gid = String((state.draft as any).editGroupId || '').trim()
-    const name = String((state.draft as any).groupName || '').replace(/\s+/g, ' ').trim() || '未命名群组'
-    const avatar = String((state.draft as any).groupAvatar || '').trim() || '👥'
-    const avatarImage = looksLikeImageDataUrl((state.draft as any).groupAvatarImage) ? String((state.draft as any).groupAvatarImage || '') : ''
-    const prompt = String((state.draft as any).groupPrompt || '').trim()
-    const mode = String((state.draft as any).groupMode || '').trim() === 'random' ? 'random' : 'roundRobin'
-
-    const roles = Array.isArray(state.data.roles) ? state.data.roles : []
-    const roleIdSet = new Set(roles.map((r: any) => String(r?.id || '')).filter(Boolean))
-    const members0 = Array.isArray((state.draft as any).groupMemberRoleIds) ? (state.draft as any).groupMemberRoleIds : []
-    const memberRoleIds: string[] = (Array.from(new Set(members0.map((x: any) => String(x || '').trim()).filter((x: any) => !!x && roleIdSet.has(x)))) as string[]).slice(0, 50)
-    if (!memberRoleIds.length) return showToast?.('请至少选择 1 个群组成员角色')
-
-    const order0 = Array.isArray((state.draft as any).groupRoundRobinOrder) ? (state.draft as any).groupRoundRobinOrder : []
-    const order = order0.map((x: any) => String(x || '').trim()).filter((x: any) => !!x && memberRoleIds.includes(x))
-    const roundRobinOrder = order.length ? order : memberRoleIds.slice()
-
-    const weights0 = (state.draft as any).groupRandomWeights && typeof (state.draft as any).groupRandomWeights === 'object' ? (state.draft as any).groupRandomWeights : {}
-    const weightsByRoleId: any = {}
-    for (const rid of memberRoleIds) {
-      const w = Number((weights0 as any)[rid] ?? 1)
-      weightsByRoleId[rid] = isFinite(w) && w >= 0 ? w : 1
-    }
-    let minCount = Number((state.draft as any).groupRandomMinCount ?? 1)
-    let maxCount = Number((state.draft as any).groupRandomMaxCount ?? 2)
-    if (!isFinite(minCount)) minCount = 1
-    if (!isFinite(maxCount)) maxCount = 2
-    minCount = clamp(Math.round(minCount), 1, 20)
-    maxCount = clamp(Math.round(maxCount), 1, 20)
-    if (maxCount < minCount) maxCount = minCount
-
-    const nowT = now()
-    const groups = (state.data as any).groups as any[]
-
-    if (gid === NEW_GROUP_ID) {
-      const newGid = uid('g')
-      const chatId = uid('gc')
-      const group = {
-        id: newGid,
-        name,
-        avatar,
-        avatarImage,
-        prompt,
-        mode,
-        memberRoleIds,
-        roundRobinOrder,
-        random: { weightsByRoleId, minCount, maxCount },
-        createdAt: nowT,
-        updatedAt: nowT,
-      }
-      groups.unshift(group)
-      ;(state.data as any).chatsByGroup[newGid] = {
-        activeChatId: chatId,
-        chatMetas: [{ id: chatId, title: '群聊', createdAt: nowT, updatedAt: nowT, lastMessagePreview: '', messageCount: 0, hasPending: false }],
-        chats: [{ id: chatId, title: '群聊', createdAt: nowT, updatedAt: nowT, branching: createDefaultChatBranching('', nowT, nowT), messages: [] }],
-      }
-      ;(state.draft as any).activeTargetKind = 'group'
-      ;(state.draft as any).activeGroupId = newGid
-      save().catch(() => {})
-      closeModal()
-      return
-    }
-
-    const group = groups.find((g: any) => String(g?.id || '') === gid) || null
-    if (!group) return
-
-    group.name = name
-    group.avatar = avatar
-    group.avatarImage = avatarImage
-    group.prompt = prompt
-    group.mode = mode
-    group.memberRoleIds = memberRoleIds
-    group.roundRobinOrder = roundRobinOrder
-    group.random = { weightsByRoleId, minCount, maxCount }
-    group.updatedAt = nowT
-
-    save().catch(() => {})
-    closeModal()
+    showToast?.('群聊能力已交由 eucli-box 接管，客户端本地群聊编辑已禁用')
   }
 
   function deleteGroup(groupId: any) {
-    const state = getState()
-    if (!state.data) return
-    sa.ensureGroupsList()
-    const gid = String(groupId || '').trim()
-    if (!gid) return
-
-    ;(state.data as any).groups = ((state.data as any).groups as any[]).filter((g: any) => String(g?.id || '') !== gid)
-    if ((state.data as any).chatsByGroup && typeof (state.data as any).chatsByGroup === 'object') delete (state.data as any).chatsByGroup[gid]
-    cleanupFavoriteRefsForTarget('group', gid)
-
-    const curKind = sa.activeTargetKind()
-    const curGid = String((state.draft as any).activeGroupId || '')
-    if (curKind === 'group' && curGid === gid) {
-      const next = Array.isArray((state.data as any).groups) ? (state.data as any).groups[0] : null
-      if (next) {
-        ;(state.draft as any).activeGroupId = String(next?.id || '')
-      } else {
-        ;(state.draft as any).activeTargetKind = 'role'
-        ;(state.draft as any).activeGroupId = ''
-      }
-    }
-
-    save().catch(() => {})
-    render()
+    showToast?.('群聊能力已交由 eucli-box 接管，客户端本地群聊删除已禁用')
   }
 
   // ===== Provider CRUD =====
@@ -493,91 +414,98 @@ export function createEntityEditors(deps: {
     render()
   }
 
-  function saveProviderInlineEditor() {
+  async function saveProviderInlineEditor() {
     const state = getState()
     const pid = String(state.draft.editProviderId || '')
     const p = sa.getProvider(pid)
     if (!p) return
 
-    const desiredName = String(state.draft.providerName || '').replace(/\s+/g, ' ').trim() || '未命名供应商'
-    const used = new Set((state.data?.settings?.providers || []).filter((x: any) => x && typeof x === 'object').map((x: any) => String(x.name || '')).filter(Boolean))
-    used.delete(String(p.name || ''))
-    let nextName = desiredName
-    if (used.has(nextName)) {
-      let i = 2
-      while (used.has(`${desiredName}（${i}）`)) i++
-      nextName = `${desiredName}（${i}）`
-    }
+    const nextName = String(state.draft.providerName || '').replace(/\s+/g, ' ').trim() || '未命名供应商'
 
-    const oldBaseUrl = String(p.baseUrl || '').trim()
-    const oldApiKey = String(p.apiKey || '').trim()
     const nextBaseUrl = String(state.draft.providerBaseUrl || '').trim() || 'http://'
     const nextApiKey = String(state.draft.providerApiKey || '').trim()
 
-    p.name = nextName
-    p.baseUrl = nextBaseUrl
-    p.apiKey = nextApiKey
-    if (oldBaseUrl !== nextBaseUrl || oldApiKey !== nextApiKey) p.modelsCache = { items: [], fetchedAt: 0 }
+    const nextProvider = {
+      id: p.id,
+      name: nextName,
+      baseUrl: nextBaseUrl,
+      apiKey: nextApiKey,
+      protocol: (p as any).protocol || 'openai',
+      modelsCache: { items: [], fetchedAt: 0 },
+      createdAt: p.createdAt,
+      updatedAt: now(),
+    }
+    try {
+      if (!pushBoxProvider) throw new Error('eucli-box 供应商写入通道不可用')
+      await pushBoxProvider(nextProvider)
+      await refreshBoxCatalogView()
+    } catch (e: any) {
+      showToast?.('保存供应商失败: ' + String(e?.message || e))
+      return
+    }
 
     state.draft.editProviderId = ''
-    save().catch(() => {})
-    pushBoxProvider?.({id: p.id, name: p.name, baseUrl: p.baseUrl, apiKey: p.apiKey, protocol: (p as any).protocol || 'openai', createdAt: p.createdAt, updatedAt: p.updatedAt}).catch(e => showToast?.('推送供应商失败: ' + (e?.message||e)))
     render()
   }
 
-  function createProvider() {
+  async function createProvider() {
     const state = getState()
     if (!state.data) return
-    const desiredName = '新供应商（OpenAI 兼容）'
-    const used = new Set(state.data.settings.providers.map((p: any) => String(p?.name || '')).filter(Boolean))
-    let name = desiredName
-    if (used.has(name)) {
-      let i = 2
-      while (used.has(`${desiredName}（${i}）`)) i++
-      name = `${desiredName}（${i}）`
-    }
+    const name = '新供应商（OpenAI 兼容）'
     const pid = uid('p')
-    state.data.settings.providers.unshift({
+    const provider = {
       id: pid,
       name,
       baseUrl: 'http://',
       apiKey: '',
       modelsCache: { items: [], fetchedAt: 0 },
-    })
-    save().catch(() => {})
+      createdAt: now(),
+      updatedAt: now(),
+    }
+    try {
+      if (!pushBoxProvider) throw new Error('eucli-box 供应商写入通道不可用')
+      await pushBoxProvider(provider)
+      await refreshBoxCatalogView()
+    } catch (e: any) {
+      showToast?.('创建供应商失败: ' + String(e?.message || e))
+      return
+    }
     openProviderInlineEditor(pid)
   }
 
-  function deleteProvider(providerId: any) {
+  async function deleteProvider(providerId: any) {
     const state = getState()
     if (!state.data) return
     const pid = String(providerId || '')
-    if (state.data.settings.providers.length <= 1) return showToast?.('至少保留一个供应商')
-
-    state.data.settings.providers = state.data.settings.providers.filter((p: any) => String(p?.id) !== pid)
-
-    const fallback = String(state.data.settings.providers[0]?.id || '')
-    for (const r of state.data.roles) {
-      if (!r?.modelRef) continue
-      if (String(r.modelRef.providerId) === pid) r.modelRef.providerId = fallback
+    try {
+      if (!deleteBoxProvider) throw new Error('eucli-box 供应商删除通道不可用')
+      await deleteBoxProvider(pid)
+      await refreshBoxCatalogView()
+    } catch (e: any) {
+      showToast?.('删除供应商失败: ' + String(e?.message || e))
+      return
     }
-
-    save().catch(() => {})
-    deleteBoxProvider?.(pid).catch(e => showToast?.('删除供应商失败: ' + (e?.message||e)))
+    render()
   }
 
   // ===== Create chat for active =====
 
-  function createChatForActiveRole() {
+  async function createChatForActiveRole() {
     const state = getState()
     const role = sa.activeRole()
     if (!role) return showToast?.('请先选择角色')
     const rid = String(role.id || '')
-    const t = now()
-    state.pendingChat = {
-      roleId: rid,
-      chat: { id: uid('pc'), title: '新聊天', createdAt: t, updatedAt: t, branching: createDefaultChatBranching('', t, t), messages: [], pendingLocal: true },
+    if (!createBoxSession) return showToast?.('eucli-box 会话创建通道不可用')
+    let chat: any = null
+    try {
+      const session = await createBoxSession(rid)
+      chat = upsertRoleSessionMeta(rid, session)
+      if (!chat) throw new Error('会话数据无效')
+    } catch (e: any) {
+      showToast?.('创建会话失败: ' + String(e?.message || e))
+      return
     }
+    state.pendingChat = null
     state.sideTab = 'chats'
     state.draft.input = ''
     state.draft.images = []
@@ -586,22 +514,7 @@ export function createEntityEditors(deps: {
   }
 
   function createChatForActiveGroup() {
-    const state = getState()
-    const group = sa.activeGroup()
-    if (!group) return showToast?.('请先选择群组')
-    const gid = String((group as any).id || '').trim()
-    if (!gid) return showToast?.('群组无效')
-    const t = now()
-    ;(state as any).pendingGroupChat = {
-      groupId: gid,
-      chat: { id: uid('pgc'), title: '群聊', createdAt: t, updatedAt: t, branching: createDefaultChatBranching('', t, t), messages: [], pendingLocal: true },
-    }
-    state.sideTab = 'chats'
-    state.draft.input = ''
-    state.draft.images = []
-    ;(state.draft as any).files = []
-    render()
-    scrollToBottomSoon()
+    showToast?.('群聊能力已交由 eucli-box 接管，客户端本地群聊会话已禁用')
   }
 
   function createChatForActiveTarget() {
@@ -623,30 +536,22 @@ export function createEntityEditors(deps: {
       Array.isArray(box.chatMetas) && box.chatMetas.some((c: any) => String(c?.id || '') === cid) ||
       Array.isArray(box.chats) && box.chats.some((c: any) => String(c?.id || '') === cid)
     if (!cid || !exists) return
-    await ensureChatLoaded?.(String(role.id || ''), cid)
+    try {
+      if (!getBoxSession) throw new Error('eucli-box 会话读取通道不可用')
+      const session = await getBoxSession(cid)
+      upsertRoleSessionMeta(String(role.id || ''), session)
+    } catch (e: any) {
+      showToast?.('读取会话失败: ' + String(e?.message || e))
+      return
+    }
     box.activeChatId = cid
-    save().catch(() => {})
     render()
     scrollToBottomSoon()
   }
 
   async function pickChatForActiveGroup(chatId: any) {
-    const state = getState()
-    const group = sa.activeGroup()
-    if (!group || !state.data) return
-    sa.clearPendingGroupChat()
-    const box = sa.ensureGroupChatsBoxBare(String((group as any).id || ''))
-    if (!box) return
-    const cid = String(chatId || '')
-    const exists =
-      Array.isArray(box.chatMetas) && box.chatMetas.some((c: any) => String(c?.id || '') === cid) ||
-      Array.isArray(box.chats) && box.chats.some((c: any) => String(c?.id || '') === cid)
-    if (!cid || !exists) return
-    await ensureGroupChatLoaded?.(String((group as any).id || ''), cid)
-    box.activeChatId = cid
-    save().catch(() => {})
-    render()
-    scrollToBottomSoon()
+    void chatId
+    showToast?.('群聊能力已交由 eucli-box 接管，客户端本地群聊会话已禁用')
   }
 
   function pickChatForActiveTarget(chatId: any) {
@@ -657,6 +562,9 @@ export function createEntityEditors(deps: {
   // ===== Rename =====
 
   function renameChatTitle(roleId: any, chatId: any, title: any) {
+    showToast?.('会话重命名必须由 eucli-box 提供，客户端本地会话修改已禁用')
+    return
+
     const state = getState()
     if (!state.data) return
     const rid = String(roleId || '')
@@ -692,38 +600,10 @@ export function createEntityEditors(deps: {
   }
 
   function renameGroupChatTitle(groupId: any, chatId: any, title: any) {
-    const state = getState()
-    if (!state.data) return
-    const gid = String(groupId || '').trim()
-    const cid = String(chatId || '').trim()
-    if (!gid || !cid) return
-
-    const box = sa.ensureGroupChatsBoxBare(gid)
-    if (!box) return
-    let t = String(title ?? '').replace(/\s+/g, ' ').trim()
-    if (t.length > 80) t = t.slice(0, 80).trim()
-    t = t || '群聊'
-    const chats = Array.isArray(box.chats) ? box.chats : []
-    const chat = chats.find((c: any) => String(c?.id) === cid) || null
-    if (chat) {
-      chat.title = t
-      chat.updatedAt = now()
-      box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chat, '群聊'), '群聊')
-    } else {
-      const old = Array.isArray(box.chatMetas) ? box.chatMetas.find((m: any) => String(m?.id || '') === cid) : null
-      box.chatMetas = upsertChatMeta(box.chatMetas, {
-        id: cid,
-        title: t,
-        createdAt: Number(old?.createdAt || now()),
-        updatedAt: now(),
-        lastMessagePreview: String(old?.lastMessagePreview || ''),
-        messageCount: Number(old?.messageCount || 0),
-        hasPending: !!old?.hasPending,
-      }, '群聊')
-    }
-
-    ;(renameGroupChatInStore?.(gid, cid, t) || save()).catch(() => {})
-    render()
+    void groupId
+    void chatId
+    void title
+    showToast?.('群聊能力已交由 eucli-box 接管，客户端本地群聊会话已禁用')
   }
 
   // ===== Image path collection =====
@@ -811,7 +691,7 @@ export function createEntityEditors(deps: {
     }
   }
 
-  function deleteChatForRole(roleId: any, chatId: any) {
+  async function deleteChatForRole(roleId: any, chatId: any) {
     const state = getState()
     if (!state.data) return
     const rid = String(roleId || '')
@@ -823,58 +703,27 @@ export function createEntityEditors(deps: {
     const before = Array.isArray(box.chats) ? box.chats : []
     const target = before.find((c: any) => String(c?.id) === cid) || null
     if (target && chatHasPendingAssistant(target)) return showToast?.('正在生成中，不能删除该会话')
+    try {
+      if (!deleteBoxSession) throw new Error('eucli-box 会话删除通道不可用')
+      await deleteBoxSession(cid)
+    } catch (e: any) {
+      showToast?.('删除会话失败: ' + String(e?.message || e))
+      return
+    }
 
     box.chats = before.filter((c: any) => String(c?.id) !== cid)
     box.chatMetas = removeChatMeta(box.chatMetas, cid, '新聊天')
     cleanupFavoriteRefsForChat('role', rid, cid)
     if (String(box.activeChatId || '') === cid) box.activeChatId = String(box.chatMetas[0]?.id || box.chats[0]?.id || '')
 
-    if (!box.chatMetas.length && !box.chats.length) {
-      const nid = uid('c')
-      const t = now()
-      const chat = { id: nid, title: '新聊天', createdAt: t, updatedAt: t, branching: createDefaultChatBranching('', t, t), messages: [] }
-      box.chats = [chat]
-      box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chat, '新聊天'), '新聊天')
-      box.activeChatId = nid
-    }
-
     removeLoadedChat?.('role', rid, cid)
-    void removeChatInStore?.('role', rid, cid).catch(() => {})
-    void save().catch(() => {})
     render()
   }
 
   function deleteChatForGroup(groupId: any, chatId: any) {
-    const state = getState()
-    if (!state.data) return
-    const gid = String(groupId || '').trim()
-    const cid = String(chatId || '').trim()
-    if (!gid || !cid) return
-
-    const box = sa.ensureGroupChatsBoxBare(gid)
-    if (!box) return
-    const before = Array.isArray(box.chats) ? box.chats : []
-    const target = before.find((c: any) => String(c?.id) === cid) || null
-    if (target && chatHasPendingAssistant(target)) return showToast?.('正在生成中，不能删除该会话')
-
-    box.chats = before.filter((c: any) => String(c?.id) !== cid)
-    box.chatMetas = removeChatMeta(box.chatMetas, cid, '群聊')
-    cleanupFavoriteRefsForChat('group', gid, cid)
-    if (String(box.activeChatId || '') === cid) box.activeChatId = String(box.chatMetas[0]?.id || box.chats[0]?.id || '')
-
-    if (!box.chatMetas.length && !box.chats.length) {
-      const nid = uid('gc')
-      const t = now()
-      const chat = { id: nid, title: '群聊', createdAt: t, updatedAt: t, branching: createDefaultChatBranching('', t, t), messages: [] }
-      box.chats = [chat]
-      box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chat, '群聊'), '群聊')
-      box.activeChatId = nid
-    }
-
-    removeLoadedChat?.('group', gid, cid)
-    void removeChatInStore?.('group', gid, cid).catch(() => {})
-    void save().catch(() => {})
-    render()
+    void groupId
+    void chatId
+    showToast?.('群聊能力已交由 eucli-box 接管，客户端本地群聊删除已禁用')
   }
 
   return {
@@ -911,5 +760,6 @@ export function createEntityEditors(deps: {
     deleteChatImages,
     deleteChatForRole,
     deleteChatForGroup,
+    syncRoleSessionsFromBox,
   }
 }

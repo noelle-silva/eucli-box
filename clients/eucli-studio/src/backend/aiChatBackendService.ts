@@ -1,15 +1,7 @@
 import type { AiChatDirectEvent } from '../protocol/aiChatProtocol'
-import { AI_CHAT_DIRECT_METHOD, AI_CHAT_DIRECT_EVENT } from '../protocol/aiChatProtocol'
+import { AI_CHAT_DIRECT_METHOD } from '../protocol/aiChatProtocol'
 import { AiChatDirectError } from '../protocol/aiChatProtocolGuards'
-import { createAiChatInternalGateway } from '../gateway/createAiChatInternalGateway'
 import type { AiChatCapabilities } from '../gateway/capabilities'
-import type { AiChatRun } from '../engine'
-import { buildOpenAiChatReqFromStorage, buildOpenAiGroupChatReqFromStorage, type RequestBuilderDeps } from './requestBuilders'
-import { createPatchOperations } from '../controller/patchOperations'
-import { createChatWriteLock } from '../storage/chatWriteLock'
-import { loadSplitMetaSnapshot } from '../storage/splitIndexes'
-import { updateStoredChatIndexEntry } from '../storage/chatIndexUpdater'
-import { repairChatLinearBranching } from '../domain/branching'
 
 export type AiChatBackendService = {
   dispatch: (method: string, params: unknown) => Promise<unknown>
@@ -21,59 +13,7 @@ export function createAiChatBackendService(opts: {
   onEvent?: (event: AiChatDirectEvent) => void
 }): AiChatBackendService {
   const cap = opts.capabilities
-  const onEvent = opts.onEvent
-
-  function emit(event: AiChatDirectEvent) {
-    if (onEvent) {
-      try { onEvent(event) } catch (_) {}
-    }
-  }
-
-  const builderDeps: RequestBuilderDeps = {
-    storage: { get: async (key) => cap.storage.get(key) },
-    imageReader: typeof cap.files?.images?.read === 'function'
-      ? { read: async (path: string) => cap.files.images.read!({ scope: 'data', path }) }
-      : undefined,
-  }
-
-  const chatWriteLock = createChatWriteLock({ rtStorage: cap.runtimeStorage })
-
-  async function touchChatIndex(kind: 'role' | 'group', targetId: string, chatId: string, updatedAt: number) {
-    await updateStoredChatIndexEntry(cap.storage, kind, targetId, chatId, { updatedAt: Number(updatedAt || 0) })
-  }
-
-  let gateway: ReturnType<typeof createAiChatInternalGateway>
-  const patchOps = createPatchOperations({
-    getState: () => ({ data: null }),
-    storage: cap.storage,
-    loadSplitMeta: () => loadSplitMetaSnapshot(cap.storage) as any,
-    withChatWriteLock: chatWriteLock.withChatWriteLock,
-    touchChatUpdatedAt: (rid: string, cid: string, ua: number) => touchChatIndex('role', rid, cid, ua),
-    touchGroupChatUpdatedAt: (gid: string, cid: string, ua: number) => touchChatIndex('group', gid, cid, ua),
-    writeChatUpdatedNotice: chatWriteLock.writeChatUpdatedNotice,
-    repairChatLinearBranching,
-  })
-
-  gateway = createAiChatInternalGateway({
-    runtime: 'background',
-    store: cap.runtimeStorage,
-    net: cap.net,
-    onRunFinal: patchOps.onAssistantRunFinal,
-    onProgressEvent: async (run: AiChatRun, text: string) => {
-      const mid = String(run?.target?.assistantMid || '').trim()
-      if (!mid) return
-      emit({ type: 'event', name: AI_CHAT_DIRECT_EVENT.runProgress, payload: { assistantMid: mid, text, generationId: String(run?.target?.generationId || '') } })
-    },
-    onFinalEvent: async (run: AiChatRun, finalText: string) => {
-      const mid = String(run?.target?.assistantMid || '').trim()
-      if (!mid) return
-      emit({ type: 'event', name: AI_CHAT_DIRECT_EVENT.runFinal, payload: { assistantMid: mid, text: finalText, status: String(run?.status || ''), generationId: String(run?.target?.generationId || '') } })
-    },
-    buildRoleReqFromStorage: (jobStub) => buildOpenAiChatReqFromStorage(builderDeps, jobStub),
-    buildGroupReqFromStorage: (jobStub) => buildOpenAiGroupChatReqFromStorage(builderDeps, jobStub),
-  })
-
-  gateway.startBackgroundWorker(350).catch(() => {})
+  void opts.onEvent
 
   async function dispatch(method: string, params: unknown): Promise<unknown> {
     const p = (params && typeof params === 'object' ? params : {}) as Record<string, unknown>
@@ -83,51 +23,45 @@ export function createAiChatBackendService(opts: {
         return { version: 1, status: 'ok' }
 
       case AI_CHAT_DIRECT_METHOD.submitChatCompletion: {
-        await gateway.submitRoleChatCompletion(p as any)
-        return {}
+        throw new AiChatDirectError('NOT_IMPLEMENTED', '请通过 eucli-box Go 后端提交聊天请求')
       }
       case AI_CHAT_DIRECT_METHOD.submitManyChatCompletions: {
-        const list = Array.isArray(p?.inputs) ? p.inputs : (Array.isArray(p) ? p : [p])
-        await gateway.submitManyChatCompletions(list as any)
-        return {}
+        throw new AiChatDirectError('NOT_IMPLEMENTED', '请通过 eucli-box Go 后端提交聊天请求')
       }
       case AI_CHAT_DIRECT_METHOD.submitRawServiceRequest: {
-        await gateway.submitRawServiceRequest(p as any)
-        return {}
+        throw new AiChatDirectError('NOT_IMPLEMENTED', '请通过 eucli-box Go 后端提交服务请求')
       }
 
       case AI_CHAT_DIRECT_METHOD.cancelAssistant: {
         const mid = String(p?.assistantMid || '').trim()
         if (!mid) throw new AiChatDirectError('BAD_REQUEST', 'assistantMid is required')
-        await gateway.cancelAssistant(mid)
-        return {}
+        throw new AiChatDirectError('NOT_IMPLEMENTED', '请通过 eucli-box Go 后端取消任务')
       }
       case AI_CHAT_DIRECT_METHOD.getAssistantRuntime: {
         const mid = String(p?.assistantMid || '').trim()
         if (!mid) throw new AiChatDirectError('BAD_REQUEST', 'assistantMid is required')
-        return await gateway.getAssistantRuntime(mid)
+        return null
       }
       case AI_CHAT_DIRECT_METHOD.readAssistantStream: {
         const mid = String(p?.assistantMid || '').trim()
         if (!mid) throw new AiChatDirectError('BAD_REQUEST', 'assistantMid is required')
-        return await gateway.readAssistantStream(mid)
+        return null
       }
       case AI_CHAT_DIRECT_METHOD.consumeAssistantFinal: {
         const mid = String(p?.assistantMid || '').trim()
         if (!mid) throw new AiChatDirectError('BAD_REQUEST', 'assistantMid is required')
-        return await gateway.consumeAssistantFinal(mid)
+        return null
       }
       case AI_CHAT_DIRECT_METHOD.resetAssistantRuntime: {
         const mid = String(p?.assistantMid || '').trim()
         if (!mid) throw new AiChatDirectError('BAD_REQUEST', 'assistantMid is required')
-        await gateway.resetAssistantRuntime(mid)
         return {}
       }
       case AI_CHAT_DIRECT_METHOD.waitServiceFinal: {
         const mid = String(p?.assistantMid || '').trim()
         const timeoutMs = Number(p?.timeoutMs || 0)
         if (!mid) throw new AiChatDirectError('BAD_REQUEST', 'assistantMid is required')
-        return await gateway.waitServiceFinal(mid, timeoutMs || 140_000)
+        throw new AiChatDirectError('NOT_IMPLEMENTED', '请通过 eucli-box Go 后端等待服务结果')
       }
 
       case AI_CHAT_DIRECT_METHOD.storageGet: {
@@ -166,34 +100,23 @@ export function createAiChatBackendService(opts: {
         throw new AiChatDirectError('NOT_IMPLEMENTED', 'imagePick must be handled by UI host capability')
 
       case AI_CHAT_DIRECT_METHOD.getPendingConfirmation: {
-        if (!gateway?.getPendingConfirmation) throw new AiChatDirectError('NOT_IMPLEMENTED', 'getPendingConfirmation not available')
-        return await gateway.getPendingConfirmation()
+        return await cap.runtimeStorage.get('toolConfirmation').catch(() => null)
       }
       case AI_CHAT_DIRECT_METHOD.submitConfirmation: {
         const decisionId = String(p?.decisionId || '').trim()
         const approved = Boolean(p?.approved)
         if (!decisionId) throw new AiChatDirectError('BAD_REQUEST', 'decisionId is required')
-        if (!gateway?.submitConfirmation) throw new AiChatDirectError('NOT_IMPLEMENTED', 'submitConfirmation not available')
-        await gateway.submitConfirmation(decisionId, approved)
-        return {}
+        throw new AiChatDirectError('NOT_IMPLEMENTED', '请通过 eucli-box Go 后端提交工具确认')
       }
 
       case AI_CHAT_DIRECT_METHOD.boxConnectionGet: {
-        return await cap.storage.get('box/connection').catch(() => ({ url: '', key: '' }))
+        throw new AiChatDirectError('NOT_IMPLEMENTED', '请通过 eucli-box Go 后端读取连接配置')
       }
       case AI_CHAT_DIRECT_METHOD.boxConnectionSave: {
-        const url = String(p?.url || '').trim()
-        const key = String(p?.key || '').trim()
-        await cap.storage.set('box/connection', { url, key })
-        return {}
+        throw new AiChatDirectError('NOT_IMPLEMENTED', '请通过 eucli-box Go 后端保存连接配置')
       }
       case AI_CHAT_DIRECT_METHOD.boxConnectionTest: {
-        const cfg: { url?: string } = await cap.storage.get('box/connection').catch(() => ({ url: '', key: '' })) || {}
-        const baseUrl = String(cfg?.url || '').trim()
-        if (!baseUrl) throw new AiChatDirectError('BAD_REQUEST', '请先配置 eucli-box 地址')
-        const healthUrl = baseUrl.replace(/\/+$/, '') + '/health'
-        const res = await cap.net.request({ method: 'GET', url: healthUrl, timeoutMs: 8000 })
-        return { ok: true, message: '连接成功' }
+        throw new AiChatDirectError('NOT_IMPLEMENTED', '请通过 eucli-box Go 后端测试连接')
       }
 
       default:

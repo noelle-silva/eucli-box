@@ -73,7 +73,7 @@ export function createAiChatDirectGateway(directClient: AiChatDirectClient): AiC
       return directClient.invoke<void>(AI_CHAT_DIRECT_METHOD.boxProviderDelete, { id }, { timeoutMs: ACK_TIMEOUT_MS })
     },
     syncBoxCatalog() {
-      return directClient.invoke<void>(AI_CHAT_DIRECT_METHOD.boxCatalogSync, undefined, { timeoutMs: ACK_TIMEOUT_MS })
+      return directClient.invoke<{ roles?: any[]; providers?: any[] }>(AI_CHAT_DIRECT_METHOD.boxCatalogSync, undefined, { timeoutMs: ACK_TIMEOUT_MS })
     },
     listBoxSessions(roleId: string) {
       return directClient.invoke<any[]>(AI_CHAT_DIRECT_METHOD.boxSessionList, { roleId }, { timeoutMs: POLL_TIMEOUT_MS })

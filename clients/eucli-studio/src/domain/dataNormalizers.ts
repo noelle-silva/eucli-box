@@ -44,6 +44,8 @@ export function normalizeSplitMeta(raw: any) {
   const roleOrder = Array.isArray(raw.roleOrder) ? raw.roleOrder.map((x: any) => String(x || '')).filter((x: any) => !!x) : []
   const roleFolders = raw.roleFolders && typeof raw.roleFolders === 'object' ? raw.roleFolders : {}
   const chatIndexByRole = raw.chatIndexByRole && typeof raw.chatIndexByRole === 'object' ? raw.chatIndexByRole : {}
+  const providerOrder = Array.isArray((raw as any).providerOrder) ? (raw as any).providerOrder.map((x: any) => String(x || '')).filter((x: any) => !!x) : []
+  const providerFolders = (raw as any).providerFolders && typeof (raw as any).providerFolders === 'object' ? (raw as any).providerFolders : {}
   const groupOrder = Array.isArray((raw as any).groupOrder) ? (raw as any).groupOrder.map((x: any) => String(x || '')).filter((x: any) => !!x) : []
   const groupFolders = (raw as any).groupFolders && typeof (raw as any).groupFolders === 'object' ? (raw as any).groupFolders : {}
   const chatIndexByGroup =
@@ -59,6 +61,8 @@ export function normalizeSplitMeta(raw: any) {
     roleOrder,
     roleFolders,
     chatIndexByRole,
+    providerOrder,
+    providerFolders,
     groupOrder,
     groupFolders,
     chatIndexByGroup,
@@ -211,7 +215,7 @@ export function normalizeData(raw: any) {
   mb.pdf = normalizeMaxFileSizeMb(mb.pdf)
   mb.docx = normalizeMaxFileSizeMb(mb.docx)
   mb.ppt = normalizeMaxFileSizeMb(mb.ppt)
-  if (!Array.isArray(d.settings.providers) || d.settings.providers.length === 0) d.settings.providers = defaultData().settings.providers
+  if (!Array.isArray(d.settings.providers)) d.settings.providers = []
 
   if (!d.settings.stickers || typeof d.settings.stickers !== 'object') d.settings.stickers = {}
   const st = d.settings.stickers
@@ -296,7 +300,7 @@ export function normalizeData(raw: any) {
 
   ;(d as any).favorites = normalizeFavorites((d as any).favorites)
 
-  if (!Array.isArray(d.roles) || d.roles.length === 0) d.roles = defaultData().roles
+  if (!Array.isArray(d.roles)) d.roles = []
 
   for (const r of d.roles) {
     if (!r || typeof r !== 'object') continue
@@ -396,14 +400,6 @@ export function normalizeData(raw: any) {
 
         return out
       })
-
-    if (!box.chats.length && !box.chatMetas.length) {
-      const cid = uid('c')
-      const t = now()
-      box.chats = [{ id: cid, title: '新聊天', createdAt: t, updatedAt: t, branching: createDefaultChatBranching('', t, t), messages: [] }]
-      box.chatMetas = chatMetasFromBox(box, '新聊天')
-      box.activeChatId = cid
-    }
 
     const roleMetaIds = box.chatMetas.map((m: any) => String(m?.id || '')).filter(Boolean)
     if (!box.activeChatId || (!box.chats.some((c: any) => String(c.id) === box.activeChatId) && !roleMetaIds.includes(box.activeChatId))) {

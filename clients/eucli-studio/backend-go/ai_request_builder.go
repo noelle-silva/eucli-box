@@ -18,249 +18,11 @@ const (
 )
 
 func (svc *service) buildOpenAIChatReqFromStorage(job map[string]any) (aiHTTPRequest, error) {
-	roleID := strings.TrimSpace(asString(job["roleId"]))
-	chatID := strings.TrimSpace(asString(job["chatId"]))
-	if roleID == "" || chatID == "" {
-		return aiHTTPRequest{}, errors.New("job 缺少 roleId/chatId")
-	}
-
-	meta, err := svc.loadSplitMeta()
-	if err != nil {
-		return aiHTTPRequest{}, err
-	}
-	folder := strings.TrimSpace(asString(asMap(meta["roleFolders"])[roleID]))
-	if folder == "" {
-		return aiHTTPRequest{}, errors.New("角色不存在")
-	}
-
-	role, err := svc.loadObject(splitRoleKeyGo(folder))
-	if err != nil || role == nil {
-		return aiHTTPRequest{}, errors.New("角色不存在")
-	}
-	chat, err := svc.loadObject(splitChatKeyGo(folder, chatID))
-	if err != nil || chat == nil {
-		return aiHTTPRequest{}, errors.New("会话不存在")
-	}
-
-	providers, err := svc.loadProviders()
-	if err != nil {
-		return aiHTTPRequest{}, err
-	}
-	fallbackPid := ""
-	if len(providers) > 0 {
-		fallbackPid = strings.TrimSpace(asString(asMap(providers[0])["id"]))
-	}
-	modelRef := asMap(role["modelRef"])
-	providerID := strings.TrimSpace(asString(modelRef["providerId"]))
-	modelID := strings.TrimSpace(asString(modelRef["modelId"]))
-	if providerID == "" {
-		providerID = fallbackPid
-	}
-	if override := normalizeChatModelOverrideGo(chat); override != nil {
-		if providerByID(providers, asString(override["providerId"])) != nil {
-			providerID = strings.TrimSpace(asString(override["providerId"]))
-			modelID = strings.TrimSpace(asString(override["modelId"]))
-		}
-	}
-
-	provider := providerByID(providers, providerID)
-	if provider == nil {
-		return aiHTTPRequest{}, errors.New("供应商不存在")
-	}
-	baseURL := trimSlashGo(asString(provider["baseUrl"]))
-	apiKey := strings.TrimSpace(asString(provider["apiKey"]))
-	if !isHTTPBaseURLGo(baseURL) {
-		return aiHTTPRequest{}, errors.New("Base URL 无效（需 http/https）")
-	}
-	if apiKey == "" {
-		return aiHTTPRequest{}, errors.New("API Key 为空")
-	}
-	if modelID == "" {
-		return aiHTTPRequest{}, errors.New("模型ID 为空")
-	}
-
-	history := buildHistory(chat, job)
-	messages := make([]map[string]any, 0, len(history)+1)
-	if sys := strings.TrimSpace(asString(role["systemPrompt"])); sys != "" {
-		messages = append(messages, map[string]any{"role": "system", "content": sys})
-	}
-	for _, msg := range history {
-		roleName := "user"
-		if asString(msg["role"]) == "assistant" {
-			roleName = "assistant"
-		}
-		text := asString(msg["content"])
-		if roleName == "user" {
-			text = buildUserTextForOpenAIGo(msg)
-			paths := normImagePathsGo(msg["images"], 8)
-			if len(paths) > 0 {
-				parts := []any{map[string]any{"type": "text", "text": text}}
-				for _, imagePath := range paths {
-					dataURL, err := svc.imageReadDataURLByRel(imagePath)
-					if err != nil {
-						return aiHTTPRequest{}, fmt.Errorf("读取图片失败：%w", err)
-					}
-					if !strings.HasPrefix(dataURL, "data:image/") {
-						return aiHTTPRequest{}, errors.New("读取图片失败：格式不支持")
-					}
-					parts = append(parts, map[string]any{"type": "image_url", "image_url": map[string]any{"url": dataURL}})
-				}
-				messages = append(messages, map[string]any{"role": "user", "content": parts})
-				continue
-			}
-		}
-		messages = append(messages, map[string]any{"role": roleName, "content": text})
-	}
-
-	stream := truthy(job["stream"])
-	return buildChatCompletionsRequest(baseURL, apiKey, modelID, messages, clampTempGo(role["temperature"]), stream), nil
+	return aiHTTPRequest{}, errBoxOnlyAIRuntime
 }
 
 func (svc *service) buildOpenAIGroupChatReqFromStorage(job map[string]any) (aiHTTPRequest, error) {
-	roleID := strings.TrimSpace(asString(job["roleId"]))
-	groupID := strings.TrimSpace(asString(job["groupId"]))
-	chatID := strings.TrimSpace(asString(job["chatId"]))
-	if roleID == "" || groupID == "" || chatID == "" {
-		return aiHTTPRequest{}, errors.New("job 缺少 groupId/roleId/chatId")
-	}
-
-	meta, err := svc.loadSplitMeta()
-	if err != nil {
-		return aiHTTPRequest{}, err
-	}
-	roleFolder := strings.TrimSpace(asString(asMap(meta["roleFolders"])[roleID]))
-	groupFolder := strings.TrimSpace(asString(asMap(meta["groupFolders"])[groupID]))
-	if roleFolder == "" {
-		return aiHTTPRequest{}, errors.New("角色不存在")
-	}
-	if groupFolder == "" {
-		return aiHTTPRequest{}, errors.New("群组不存在")
-	}
-
-	role, err := svc.loadObject(splitRoleKeyGo(roleFolder))
-	if err != nil || role == nil {
-		return aiHTTPRequest{}, errors.New("角色不存在")
-	}
-	group, err := svc.loadObject(splitGroupKeyGo(groupFolder))
-	if err != nil || group == nil {
-		return aiHTTPRequest{}, errors.New("群组不存在")
-	}
-	chat, err := svc.loadObject(splitGroupChatKeyGo(groupFolder, chatID))
-	if err != nil || chat == nil {
-		return aiHTTPRequest{}, errors.New("会话不存在")
-	}
-
-	providers, err := svc.loadProviders()
-	if err != nil {
-		return aiHTTPRequest{}, err
-	}
-	fallbackPid := ""
-	if len(providers) > 0 {
-		fallbackPid = strings.TrimSpace(asString(asMap(providers[0])["id"]))
-	}
-	modelRef := asMap(role["modelRef"])
-	providerID := strings.TrimSpace(asString(modelRef["providerId"]))
-	modelID := strings.TrimSpace(asString(modelRef["modelId"]))
-	if providerID == "" {
-		providerID = fallbackPid
-	}
-	if override := normalizeChatModelOverrideGo(chat); override != nil {
-		if providerByID(providers, asString(override["providerId"])) != nil {
-			providerID = strings.TrimSpace(asString(override["providerId"]))
-			modelID = strings.TrimSpace(asString(override["modelId"]))
-		}
-	}
-
-	provider := providerByID(providers, providerID)
-	if provider == nil {
-		return aiHTTPRequest{}, errors.New("供应商不存在")
-	}
-	baseURL := trimSlashGo(asString(provider["baseUrl"]))
-	apiKey := strings.TrimSpace(asString(provider["apiKey"]))
-	if !isHTTPBaseURLGo(baseURL) {
-		return aiHTTPRequest{}, errors.New("Base URL 无效（需 http/https）")
-	}
-	if apiKey == "" {
-		return aiHTTPRequest{}, errors.New("API Key 为空")
-	}
-	if modelID == "" {
-		return aiHTTPRequest{}, errors.New("模型ID 为空")
-	}
-
-	roleNameByID := map[string]string{}
-	memberRoleIDs := normalizeStringIDs(group["memberRoleIds"])
-	ids := append(memberRoleIDs, roleID)
-	seen := map[string]bool{}
-	for _, rid := range ids {
-		if seen[rid] {
-			continue
-		}
-		seen[rid] = true
-		folder := strings.TrimSpace(asString(asMap(meta["roleFolders"])[rid]))
-		if folder == "" {
-			continue
-		}
-		if rr, err := svc.loadObject(splitRoleKeyGo(folder)); err == nil && rr != nil {
-			name := strings.TrimSpace(asString(rr["name"]))
-			if name == "" {
-				name = "AI"
-			}
-			roleNameByID[rid] = name
-		}
-	}
-	if _, ok := roleNameByID[roleID]; !ok {
-		name := strings.TrimSpace(asString(role["name"]))
-		if name == "" {
-			name = "AI"
-		}
-		roleNameByID[roleID] = name
-	}
-	speakerName := roleNameByID[roleID]
-	if speakerName == "" {
-		speakerName = "AI"
-	}
-
-	history := buildHistory(chat, job)
-	messages := make([]map[string]any, 0, len(history)+4)
-	if sys := strings.TrimSpace(asString(role["systemPrompt"])); sys != "" {
-		messages = append(messages, map[string]any{"role": "system", "content": sys})
-	}
-	messages = append(messages, map[string]any{"role": "system", "content": "你只能以你自己/当前这个成员的身份发言，不得冒充或代替其他任何群成员或用户说话。"})
-	if groupPrompt := strings.TrimSpace(asString(group["prompt"])); groupPrompt != "" {
-		messages = append(messages, map[string]any{"role": "system", "content": "群聊设定：\n" + groupPrompt})
-	}
-
-	for _, msg := range history {
-		if asString(msg["role"]) != "assistant" {
-			baseText := buildUserTextForOpenAIGo(msg)
-			wrappedText := strings.TrimRight(fmt.Sprintf("[%s的发言]: %s", groupSpeakerUserPrefix, baseText), " \t\r\n")
-			paths := normImagePathsGo(msg["images"], 8)
-			if len(paths) > 0 {
-				parts := []any{map[string]any{"type": "text", "text": wrappedText}}
-				for _, imagePath := range paths {
-					dataURL, err := svc.imageReadDataURLByRel(imagePath)
-					if err != nil {
-						return aiHTTPRequest{}, fmt.Errorf("读取图片失败：%w", err)
-					}
-					parts = append(parts, map[string]any{"type": "image_url", "image_url": map[string]any{"url": dataURL}})
-				}
-				messages = append(messages, map[string]any{"role": "user", "content": parts})
-				continue
-			}
-			messages = append(messages, map[string]any{"role": "user", "content": wrappedText})
-			continue
-		}
-		rid0 := strings.TrimSpace(asString(msg["speakerRoleId"]))
-		name := roleNameByID[rid0]
-		if name == "" {
-			name = speakerName
-		}
-		messages = append(messages, map[string]any{"role": "assistant", "content": strings.TrimRight(fmt.Sprintf("[%s的发言]: %s", name, asString(msg["content"])), " \t\r\n")})
-	}
-	messages = append(messages, map[string]any{"role": "user", "content": fmt.Sprintf("现在轮到你 %s 发言了。系统已经为大家添加 [xxx的发言]: 这样的标记头，以用于区分不同发言来自谁。大家不用自己再输出自己的发言标记头，也不需要讨论发言标记系统，正常聊天即可。", speakerName)})
-
-	stream := truthy(job["stream"])
-	return buildChatCompletionsRequest(baseURL, apiKey, modelID, messages, clampTempGo(role["temperature"]), stream), nil
+	return aiHTTPRequest{}, errBoxOnlyAIRuntime
 }
 
 func (svc *service) loadObject(key string) (map[string]any, error) {
@@ -274,60 +36,46 @@ func (svc *service) loadObject(key string) (map[string]any, error) {
 
 func (svc *service) buildBoxRunRequestFromStorage(job map[string]any) (boxRunRequest, error) {
 	roleID := strings.TrimSpace(asString(job["roleId"]))
-	chatID := strings.TrimSpace(asString(job["chatId"]))
-	if roleID == "" || chatID == "" {
-		return boxRunRequest{}, errors.New("job 缺少 roleId/chatId")
+	if roleID == "" {
+		return boxRunRequest{}, errors.New("job 缺少 roleId")
 	}
-	meta, err := svc.loadSplitMeta()
-	if err != nil {
-		return boxRunRequest{}, err
-	}
-	folder := strings.TrimSpace(asString(asMap(meta["roleFolders"])[roleID]))
-	if folder == "" {
-		return boxRunRequest{}, errors.New("角色不存在")
-	}
-	chat, err := svc.loadObject(splitChatKeyGo(folder, chatID))
-	if err != nil || chat == nil {
-		return boxRunRequest{}, errors.New("会话不存在")
-	}
-	history := buildHistory(chat, job)
-	if len(history) == 0 {
-		return boxRunRequest{}, errors.New("会话缺少用户消息")
-	}
-	var lastUser map[string]any
-	for i := len(history) - 1; i >= 0; i-- {
-		if asString(history[i]["role"]) == "user" {
-			lastUser = history[i]
-			break
-		}
-	}
-	if lastUser == nil {
-		return boxRunRequest{}, errors.New("会话缺少用户消息")
-	}
-	if len(normImagePathsGo(lastUser["images"], 1)) > 0 {
-		return boxRunRequest{}, errors.New("eucli-box 当前消息入口暂不支持图片输入")
-	}
-	message := strings.TrimSpace(buildUserTextForOpenAIGo(lastUser))
+	message := strings.TrimSpace(asString(job["message"]))
 	if message == "" {
-		return boxRunRequest{}, errors.New("用户消息为空")
+		return boxRunRequest{}, errors.New("job 缺少 message；客户端不得从本地会话历史构造运行请求")
 	}
-	sessionID, err := svc.loadBoxSessionID(roleID, chatID)
-	if err != nil {
-		return boxRunRequest{}, err
+	sessionID := strings.TrimSpace(asString(job["sessionId"]))
+	if sessionID == "" {
+		session, err := svc.box.createSession(context.Background(), roleID)
+		if err != nil {
+			return boxRunRequest{}, fmt.Errorf("create eucli-box session failed: %w", err)
+		}
+		sessionID = strings.TrimSpace(asString(session["id"]))
 	}
 	if sessionID == "" {
-		newSession, csErr := svc.box.createSession(context.Background(), roleID)
-		if csErr != nil {
-			return boxRunRequest{}, fmt.Errorf("create eucli-box session failed: %w", csErr)
-		}
-		if newSession != nil {
-			sessionID = strings.TrimSpace(asString(newSession["id"]))
-			if sessionID != "" {
-				_ = svc.saveBoxSessionID(roleID, chatID, sessionID)
-			}
+		return boxRunRequest{}, errors.New("eucli-box session id is required")
+	}
+	return boxRunRequest{RoleID: roleID, SessionID: sessionID, Message: message}, nil
+}
+
+func (svc *service) ensureBoxSessionForChat(ctx context.Context, roleID string, chatID string, currentSessionID string) (string, error) {
+	sessionID := strings.TrimSpace(currentSessionID)
+	if sessionID != "" {
+		if _, err := svc.box.getSession(ctx, sessionID); err == nil {
+			return sessionID, nil
+		} else if !isHTTPNotFound(err) {
+			return "", fmt.Errorf("verify eucli-box session failed: %w", err)
 		}
 	}
-	return boxRunRequest{RoleID: roleID, SessionID: sessionID, Message: message, LocalRoleID: roleID, LocalChatID: chatID}, nil
+
+	newSession, err := svc.box.createSession(ctx, roleID)
+	if err != nil {
+		return "", fmt.Errorf("create eucli-box session failed: %w", err)
+	}
+	sessionID = strings.TrimSpace(asString(newSession["id"]))
+	if sessionID == "" {
+		return "", errors.New("create eucli-box session failed: empty session id")
+	}
+	return sessionID, nil
 }
 
 func buildHistory(chat map[string]any, job map[string]any) []map[string]any {

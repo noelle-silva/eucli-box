@@ -7,11 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
 )
+
+var errBoxOnlyAIRuntime = errors.New("AI 运行必须通过 eucli-box；客户端本地直连模型路径已禁用")
 
 type aiRunQueue struct {
 	svc       aiRunQueueDeps
@@ -58,39 +59,7 @@ func (svc *service) submitManyChatCompletions(params json.RawMessage) (map[strin
 }
 
 func (svc *service) submitRunSpec(spec aiRunSpec) (map[string]any, error) {
-	target := normalizeRunTarget(spec.Target)
-	if svc.shouldUseBoxRuntime(target) {
-		return svc.submitBoxRunSpec(spec)
-	}
-	mid := strings.TrimSpace(target.AssistantMid)
-	if mid == "" {
-		return nil, errors.New("assistantMid is required")
-	}
-	if err := svc.resetAssistantRuntimeByMid(mid); err != nil {
-		return nil, err
-	}
-
-	var req aiHTTPRequest
-	var err error
-	jobStub := runJobStubWithTarget(spec.JobStub, target)
-	if target.Kind == "group" {
-		req, err = svc.buildOpenAIGroupChatReqFromStorage(jobStub)
-	} else {
-		req, err = svc.buildOpenAIChatReqFromStorage(jobStub)
-	}
-	if err != nil {
-		return nil, err
-	}
-	run, err := svc.ai.enqueue(target, req, spec.Stream)
-	if err != nil {
-		return nil, err
-	}
-	return map[string]any{"ok": true, "runId": run.ID}, nil
-}
-
-func (svc *service) shouldUseBoxRuntime(target aiRunTarget) bool {
-	target = normalizeRunTarget(target)
-	return target.Kind == "role" && target.Tag != "service" && normalizeBranchID(target.BranchID) == chatDefaultBranchID
+	return svc.submitBoxRunSpec(spec)
 }
 
 func (svc *service) submitBoxRunSpec(spec aiRunSpec) (map[string]any, error) {
@@ -132,23 +101,7 @@ func runJobStubWithTarget(job map[string]any, target aiRunTarget) map[string]any
 }
 
 func (svc *service) submitRawServiceRequest(params json.RawMessage) (map[string]any, error) {
-	var spec aiRawRunSpec
-	if err := json.Unmarshal(params, &spec); err != nil {
-		return nil, err
-	}
-	target := normalizeRunTarget(spec.Target)
-	mid := strings.TrimSpace(target.AssistantMid)
-	if mid == "" {
-		return nil, errors.New("assistantMid is required")
-	}
-	if err := svc.resetAssistantRuntimeByMid(mid); err != nil {
-		return nil, err
-	}
-	run, err := svc.ai.enqueue(target, normalizeHTTPRequest(spec.Req), spec.Stream)
-	if err != nil {
-		return nil, err
-	}
-	return map[string]any{"ok": true, "runId": run.ID}, nil
+	return nil, errBoxOnlyAIRuntime
 }
 
 func (svc *service) waitServiceFinal(params json.RawMessage) (string, error) {
@@ -200,7 +153,7 @@ func (svc *service) readAssistantStream(params json.RawMessage) (any, error) {
 	if mid == "" {
 		return nil, nil
 	}
-	return svc.storageGetByKey(assistantStreamStorageKey(mid))
+	return svc.runtimeGet(assistantStreamStorageKey(mid)), nil
 }
 
 func (svc *service) consumeAssistantFinal(params json.RawMessage) (any, error) {
@@ -212,14 +165,11 @@ func (svc *service) consumeAssistantFinal(params json.RawMessage) (any, error) {
 }
 
 func (svc *service) consumeAssistantFinalByMid(mid string) (map[string]any, error) {
-	value, err := svc.storageGetByKey(assistantFinalStorageKey(mid))
-	if err != nil {
-		return nil, err
-	}
+	value := svc.runtimeGet(assistantFinalStorageKey(mid))
 	if value == nil {
 		return nil, nil
 	}
-	_ = svc.storageRemoveByKey(assistantFinalStorageKey(mid))
+	svc.runtimeRemove(assistantFinalStorageKey(mid))
 	finalValue, _ := value.(map[string]any)
 	if finalValue == nil {
 		return map[string]any{"status": "succeeded", "text": asString(value)}, nil
@@ -240,9 +190,9 @@ func (svc *service) resetAssistantRuntimeByMid(mid string) error {
 	if mid == "" {
 		return nil
 	}
-	_ = svc.storageRemoveByKey(assistantStreamStorageKey(mid))
-	_ = svc.storageRemoveByKey(assistantFinalStorageKey(mid))
-	_ = svc.storageRemoveByKey(assistantMidRunStorageKey(mid))
+	svc.runtimeRemove(assistantStreamStorageKey(mid))
+	svc.runtimeRemove(assistantFinalStorageKey(mid))
+	svc.runtimeRemove(assistantMidRunStorageKey(mid))
 	return nil
 }
 
@@ -282,9 +232,7 @@ func (q *aiRunQueue) enqueue(target aiRunTarget, req aiHTTPRequest, stream bool)
 	q.queued = append(q.queued, run)
 	q.mu.Unlock()
 
-	if err := q.svc.storageSetByKey(assistantMidRunStorageKey(target.AssistantMid), map[string]any{"runId": run.ID, "generationId": target.GenerationID, "createdAt": now}); err != nil {
-		log.Printf("storage set failed: %v", err)
-	}
+	q.svc.runtimeSet(assistantMidRunStorageKey(target.AssistantMid), map[string]any{"runId": run.ID, "generationId": target.GenerationID, "createdAt": now})
 	q.pump()
 	return run, nil
 }
@@ -319,9 +267,7 @@ func (q *aiRunQueue) enqueueBox(target aiRunTarget, request boxRunRequest) (*aiR
 	q.queued = append(q.queued, run)
 	q.mu.Unlock()
 
-	if err := q.svc.storageSetByKey(assistantMidRunStorageKey(target.AssistantMid), map[string]any{"runId": run.ID, "generationId": target.GenerationID, "createdAt": now}); err != nil {
-		log.Printf("storage set failed: %v", err)
-	}
+	q.svc.runtimeSet(assistantMidRunStorageKey(target.AssistantMid), map[string]any{"runId": run.ID, "generationId": target.GenerationID, "createdAt": now})
 	q.pump()
 	return run, nil
 }
@@ -396,54 +342,11 @@ func (q *aiRunQueue) pump() {
 }
 
 func (q *aiRunQueue) execute(ctx context.Context, run *aiRun) {
-	if run.UseBox {
-		q.executeBox(ctx, run)
+	if !run.UseBox {
+		q.finalize(run, "failed", fmt.Sprintf("（请求失败：%s）", errBoxOnlyAIRuntime.Error()), errBoxOnlyAIRuntime.Error())
 		return
 	}
-	lastFlushAt := int64(0)
-	flush := func(force bool) {
-		text := run.currentOutput()
-		if !force && nowMs()-lastFlushAt < 220 {
-			return
-		}
-		lastFlushAt = nowMs()
-		if err := q.svc.storageSetByKey(assistantStreamStorageKey(run.Target.AssistantMid), map[string]any{"text": text, "generationId": run.Target.GenerationID, "updatedAt": nowMs()}); err != nil {
-			log.Printf("storage set failed: %v", err)
-		}
-	}
-
-	text, err := runOpenAIRequest(ctx, run.Req, run.Stream, func(delta string) {
-		next := run.currentOutput() + delta
-		run.setOutput(next)
-		flush(false)
-	})
-	if text != "" {
-		run.setOutput(text)
-	}
-	flush(true)
-
-	run.mu.Lock()
-	canceled := run.cancelRequested || ctx.Err() != nil
-	run.mu.Unlock()
-
-	if canceled {
-		finalText := strings.TrimSpace(run.currentOutput())
-		if finalText == "" {
-			finalText = "（已停止）"
-		}
-		q.finalize(run, "canceled", finalText, "")
-		return
-	}
-	if err != nil {
-		msg := strings.TrimSpace(err.Error())
-		finalText := strings.TrimSpace(run.currentOutput())
-		if finalText == "" {
-			finalText = fmt.Sprintf("（请求失败：%s）", msg)
-		}
-		q.finalize(run, "failed", finalText, msg)
-		return
-	}
-	q.finalize(run, "succeeded", run.currentOutput(), "")
+	q.executeBox(ctx, run)
 }
 
 func (q *aiRunQueue) executeBox(ctx context.Context, run *aiRun) {
@@ -454,26 +357,13 @@ func (q *aiRunQueue) executeBox(ctx context.Context, run *aiRun) {
 			return
 		}
 		lastFlushAt = nowMs()
-		if err := q.svc.storageSetByKey(assistantStreamStorageKey(run.Target.AssistantMid), map[string]any{"text": text, "generationId": run.Target.GenerationID, "updatedAt": nowMs()}); err != nil {
-			log.Printf("storage set failed: %v", err)
-		}
+		q.svc.runtimeSet(assistantStreamStorageKey(run.Target.AssistantMid), map[string]any{"text": text, "generationId": run.Target.GenerationID, "updatedAt": nowMs()})
 	}
 
 	result, err := q.svc.boxRunChat(ctx, run.BoxReq, func(delta string) {
-		current := strings.TrimSpace(run.currentOutput())
-		next := strings.TrimSpace(delta)
-		if current != "" && next != "" {
-			next = current + next
-		} else if current != "" {
-			next = current
-		}
-		run.setOutput(next)
+		run.setOutput(run.currentOutput() + delta)
 		flush(false)
-	}, func(sessionID string) {
-		if err := q.svc.saveBoxSessionID(run.BoxReq.LocalRoleID, run.BoxReq.LocalChatID, sessionID); err != nil {
-			log.Printf("save box session failed: %v", err)
-		}
-	})
+	}, nil)
 	if strings.TrimSpace(result.Text) != "" {
 		run.setOutput(result.Text)
 	}
@@ -529,20 +419,9 @@ func (q *aiRunQueue) finalize(run *aiRun, status string, text string, errMsg str
 		if errMsg != "" {
 			finalValue["error"] = map[string]any{"message": errMsg}
 		}
-		if err := q.svc.storageSetByKey(assistantFinalStorageKey(run.Target.AssistantMid), finalValue); err != nil {
-			log.Printf("storage set failed: %v", err)
-		}
-		if strings.TrimSpace(run.Target.Tag) != "service" {
-			if err := q.svc.patchAssistantMessageFinal(run.Target, status, text, finishedAt); err != nil {
-				log.Printf("patch assistant message final failed: %v", err)
-			}
-		}
-		if err := q.svc.storageRemoveByKey(assistantStreamStorageKey(run.Target.AssistantMid)); err != nil {
-			log.Printf("storage remove failed: %v", err)
-		}
-		if err := q.svc.storageRemoveByKey(assistantMidRunStorageKey(run.Target.AssistantMid)); err != nil {
-			log.Printf("storage remove failed: %v", err)
-		}
+		q.svc.runtimeSet(assistantFinalStorageKey(run.Target.AssistantMid), finalValue)
+		q.svc.runtimeRemove(assistantStreamStorageKey(run.Target.AssistantMid))
+		q.svc.runtimeRemove(assistantMidRunStorageKey(run.Target.AssistantMid))
 
 		q.mu.Lock()
 		delete(q.scopeBusy, run.ScopeKey)
@@ -559,8 +438,8 @@ func (q *aiRunQueue) findRunLocked(assistantMid string) *aiRun {
 	if runID := strings.TrimSpace(q.midToRun[assistantMid]); runID != "" {
 		return q.runs[runID]
 	}
-	value, err := q.svc.storageGetByKey(assistantMidRunStorageKey(assistantMid))
-	if err != nil || value == nil {
+	value := q.svc.runtimeGet(assistantMidRunStorageKey(assistantMid))
+	if value == nil {
 		return nil
 	}
 	box, _ := value.(map[string]any)

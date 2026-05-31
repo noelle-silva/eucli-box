@@ -1,4 +1,4 @@
-import { now, uid, trimSlash, isHttpBaseUrl } from '../core/utils'
+import { now } from '../core/utils'
 import {
   extractMermaidCodeFromAiReply,
   replaceMermaidFenceOnce,
@@ -13,11 +13,9 @@ import {
   DEFAULT_STICKER_NAMING_SYSTEM_PROMPT,
 } from '../domain/constants'
 
-const sleepMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, Math.floor(ms || 0))))
-
 export interface AiServicesDeps {
   getState: () => any
-  netRequest: (req: any) => Promise<any>
+  netRequest?: (req: any) => Promise<any>
   filesImagesRead: (req: any) => Promise<string>
   aiGateway: {
     submitRawServiceRequest: (input: any) => Promise<void>
@@ -41,12 +39,9 @@ export interface AiServicesDeps {
 export function createAiServices(deps: AiServicesDeps) {
   const {
     getState,
-    netRequest,
     filesImagesRead,
-    aiGateway,
     save,
     emit,
-    getProvider,
     getGroupById,
     ensureChatLoaded,
     ensureGroupChatLoaded,
@@ -105,80 +100,8 @@ export function createAiServices(deps: AiServicesDeps) {
     return run
   }
 
-  async function requestOpenAiChatOnce(req: any) {
-    const purpose = String(req?.purpose || '').trim() || 'misc'
-    const providerId = String(req?.providerId || '').trim()
-    const modelId = String(req?.modelId || '').trim()
-    const systemPrompt = String(req?.systemPrompt ?? '').trim()
-    const userContent = String(req?.userContent ?? '').trim()
-    const userMessagesRaw = Array.isArray(req?.userMessages) ? req.userMessages : null
-    const userMessages = userMessagesRaw ? userMessagesRaw.map((x: any) => String(x ?? '').trim()).filter((x: string) => !!x).slice(0, 6) : null
-    const userPartsRaw = Array.isArray(req?.userParts) ? req.userParts : null
-    const userParts = userPartsRaw ? userPartsRaw.slice(0, 12) : null
-
-    if (!providerId) throw new Error('供应商ID 为空')
-    const p = getProvider(providerId)
-    if (!p) throw new Error('供应商不存在')
-
-    const baseUrl = trimSlash(p.baseUrl || '')
-    const apiKey = String(p.apiKey || '').trim()
-    if (!isHttpBaseUrl(baseUrl)) throw new Error('Base URL 无效（需 http/https）')
-    if (!apiKey) throw new Error('API Key 为空')
-    if (!modelId) throw new Error('模型ID 为空')
-    if (userParts && !userParts.length) throw new Error('用户消息为空')
-    if (userMessages && !userMessages.length) throw new Error('用户消息为空')
-    if (!userParts && !userMessages && !userContent) throw new Error('用户消息为空')
-
-    if (typeof netRequest !== 'function') throw new Error('未授权：net.request')
-
-    const messages: any[] = []
-    if (systemPrompt) messages.push({ role: 'system', content: systemPrompt })
-    if (userParts) {
-      messages.push({ role: 'user', content: userParts })
-    } else if (userMessages) {
-      for (const m of userMessages) messages.push({ role: 'user', content: m })
-    } else {
-      messages.push({ role: 'user', content: userContent })
-    }
-
-    const httpReq = {
-      method: 'POST',
-      url: `${baseUrl}/chat/completions`,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model: modelId, messages, temperature: 0, stream: false }),
-      timeoutMs: 120000,
-    }
-
-    const assistantMid = uid('svc')
-    const target = {
-      kind: 'role',
-      roleId: '__ai_service__',
-      chatId: `svc:${purpose}`,
-      branchId: 'main',
-      assistantMid,
-      tag: 'service',
-      service: purpose,
-    }
-
-    const waitFinal = async (mid: string, timeoutMs: number) => {
-      const deadline = now() + Math.max(2000, Math.floor(timeoutMs || 0))
-      while (now() < deadline) {
-        const fin = await aiGateway.consumeAssistantFinal(mid)
-        if (fin && typeof fin === 'object') {
-          const status = String(fin?.status || '').trim()
-          const text = String(fin?.text || '')
-          if (status && status !== 'succeeded') throw new Error(text || '请求失败')
-          return text
-        }
-        await sleepMs(120)
-      }
-      throw new Error('AI 微服务请求超时（后台可能未启动或已卡住）')
-    }
-
-    await aiGateway.submitRawServiceRequest({ target: target as any, req: httpReq, stream: false })
-
-    const out = await waitFinal(assistantMid, 140_000)
-    return String(out || '')
+  async function requestOpenAiChatOnce(_req: any) {
+    throw new Error('AI 微服务旧直连模型路径已禁用，请通过 eucli-box 提供对应能力')
   }
 
   async function aiFixMermaidInMessage(messageId: any, mermaidSrc: any, renderErrorMsg: any) {

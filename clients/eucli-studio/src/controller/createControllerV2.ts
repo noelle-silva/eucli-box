@@ -5,7 +5,6 @@ import { createDefaultAssistantRenderEngine } from '../render/assistantEngineDef
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import mammoth from 'mammoth/mammoth.browser'
 import { extractPptMarkdown } from '../core/ppt'
-import { createAiChatInternalGateway } from '../gateway/createAiChatInternalGateway'
 import type { AiChatInternalGateway } from '../gateway/types'
 import type { AiChatCapabilities } from '../gateway/capabilities'
 import { UI_CHAT_UPDATED_NOTICE_KEY } from '../runtime/runtimeKeys'
@@ -59,7 +58,6 @@ import { normalizeMessageAttachments, normalizeMessageGroup } from '../domain/me
 import { validateFavoriteFolderName } from '../domain/favoriteValidator'
 import { normalizeChatModelOverride, normalizeMessageModelRef, buildMessageModelRef } from '../domain/modelRefUtils'
 import { isAssistantGenerating } from '../domain/assistantRunState'
-import { moveListItemById, type ListMovePosition } from '../domain/listOrdering'
 import { detectDraftFileKind, addDraftFilePlaceholder, removeDraftFile, removeDraftImage as removeDraftImageFromList, fileExtLower } from '../domain/draftFileUtils'
 import type { DraftFileKind, DraftFileItem, DraftImageItem } from '../domain/draftFileUtils'
 import { validateStickerCategoryName, validateStickerName, imageExtFromDataUrl } from '../domain/stickerValidator'
@@ -111,11 +109,10 @@ import { createFavoritesOperations } from './favoritesOperations'
 import { createEntityEditors } from './entityEditors'
 import { createChatOperations } from './chatOperations'
 import { createPatchOperations } from './patchOperations'
-import { createBuildOpenAiReq } from './buildOpenAiReq'
 import { createPersistence } from './persistence'
 import { createChatRuntimeReconciliation } from './chatRuntimeReconciliation'
 
-export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilities; aiGateway?: AiChatInternalGateway }): {
+export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilities; aiGateway: AiChatInternalGateway }): {
   controller: AiChatController
   init: () => Promise<void>
 } {
@@ -404,22 +401,10 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   })
   const { addStickerInternal, syncRoleAvatarFile, syncGroupAvatarFile } = stickerStore
 
-  const buildReq = createBuildOpenAiReq({
-    storage,
-    filesImagesRead: api.files?.images?.read as any || ((() => Promise.resolve('')) as any),
-  })
-  const { buildOpenAiChatReqFromStorage, buildOpenAiGroupChatReqFromStorage } = buildReq
   let onAssistantRunFinalHandler: (run: any, finalText: string) => Promise<void> | void = async () => {
     throw new Error('Assistant run final handler 未初始化')
   }
-  const aiGateway = deps.aiGateway || createAiChatInternalGateway({
-    runtime,
-    store: runtimeStorage,
-    net: capabilities.net,
-    onRunFinal: (run, finalText) => onAssistantRunFinalHandler(run, finalText),
-    buildRoleReqFromStorage: buildOpenAiChatReqFromStorage,
-    buildGroupReqFromStorage: buildOpenAiGroupChatReqFromStorage,
-  })
+  const aiGateway = deps.aiGateway
 
   const splitStore = createSplitStorage({
     storage,
@@ -492,7 +477,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     ensureChatsBox,
     ensureChatsBoxBare,
     createChatForRole,
-    createChatForGroup,
     findChatByIds,
     findGroupChatByIds,
     pickChatModelRef,
@@ -568,6 +552,15 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       const split = await loadShell()
       if (!split) throw new Error('存储未初始化')
       state.data = split
+      const catalog = aiGateway.syncBoxCatalog ? await aiGateway.syncBoxCatalog() : null
+      if (catalog && typeof catalog === 'object') {
+        if (Array.isArray((catalog as any).roles)) state.data.roles = (catalog as any).roles
+        if (Array.isArray((catalog as any).providers)) {
+          if (!state.data.settings || typeof state.data.settings !== 'object') state.data.settings = {} as any
+          state.data.settings.providers = (catalog as any).providers
+        }
+        if ((catalog as any).error) api.ui?.showToast?.('eucli-box 目录部分同步失败: ' + String((catalog as any).error))
+      }
       state.draft.activeRoleId = String(split?.ui?.activeRoleId || '')
       state.draft.activeGroupId = String((split?.ui as any)?.activeGroupId || '')
       state.draft.activeTargetKind = String((split?.ui as any)?.activeTargetKind || 'role') === 'group' ? 'group' : 'role'
@@ -604,8 +597,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   const modelRefresh = createModelRefresh({
     getState: () => state,
     getProvider,
-    netRequest: capabilities.net?.request || ((() => Promise.resolve({})) as any),
-    save: saveDataTree,
+    syncBoxCatalog: () => aiGateway.syncBoxCatalog ? aiGateway.syncBoxCatalog() : Promise.reject(new Error('eucli-box 目录同步通道不可用')),
     emit,
     showToast: api.ui?.showToast,
   })
@@ -685,6 +677,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   // Placeholder functions that will be filled after entityEditors is created
   let renameChatTitleFn: (rid: string, cid: string, title: string) => void = () => {}
   let renameGroupChatTitleFn: (gid: string, cid: string, title: string) => void = () => {}
+  let syncRoleSessionsFromBoxFn: (rid: string) => Promise<void> = async () => {}
 
   const aiServices = createAiServices({
     getState: () => state,
@@ -729,10 +722,15 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     removeLoadedChat,
     cleanupFavoriteRefsForTarget: favOps.cleanupFavoriteRefsForTarget,
     cleanupFavoriteRefsForChat: favOps.cleanupFavoriteRefsForChat,
-    pushBoxRole: (role) => aiGateway?.pushBoxRole?.(role) ?? Promise.resolve(),
-    pushBoxProvider: (p) => aiGateway?.pushBoxProvider?.(p) ?? Promise.resolve(),
-    deleteBoxRole: (id) => aiGateway?.deleteBoxRole?.(id) ?? Promise.resolve(),
-    deleteBoxProvider: (id) => aiGateway?.deleteBoxProvider?.(id) ?? Promise.resolve(),
+    pushBoxRole: (role) => aiGateway.pushBoxRole ? aiGateway.pushBoxRole(role) : Promise.reject(new Error('eucli-box 角色写入通道不可用')),
+    pushBoxProvider: (p) => aiGateway.pushBoxProvider ? aiGateway.pushBoxProvider(p) : Promise.reject(new Error('eucli-box 供应商写入通道不可用')),
+    deleteBoxRole: (id) => aiGateway.deleteBoxRole ? aiGateway.deleteBoxRole(id) : Promise.reject(new Error('eucli-box 角色删除通道不可用')),
+    deleteBoxProvider: (id) => aiGateway.deleteBoxProvider ? aiGateway.deleteBoxProvider(id) : Promise.reject(new Error('eucli-box 供应商删除通道不可用')),
+    syncBoxCatalog: () => aiGateway.syncBoxCatalog ? aiGateway.syncBoxCatalog() : Promise.reject(new Error('eucli-box 目录同步通道不可用')),
+    listBoxSessions: (roleId) => aiGateway.listBoxSessions ? aiGateway.listBoxSessions(roleId) : Promise.reject(new Error('eucli-box 会话列表通道不可用')),
+    createBoxSession: (roleId) => aiGateway.createBoxSession ? aiGateway.createBoxSession(roleId) : Promise.reject(new Error('eucli-box 会话创建通道不可用')),
+    getBoxSession: (id) => aiGateway.getBoxSession ? aiGateway.getBoxSession(id) : Promise.reject(new Error('eucli-box 会话读取通道不可用')),
+    deleteBoxSession: (id) => aiGateway.deleteBoxSession ? aiGateway.deleteBoxSession(id) : Promise.reject(new Error('eucli-box 会话删除通道不可用')),
   })
   const {
     pickRoleAvatarImage,
@@ -768,11 +766,13 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     deleteChatImages,
     deleteChatForRole,
     deleteChatForGroup,
+    syncRoleSessionsFromBox,
   } = entityEditors
 
   // Fill placeholder
   renameChatTitleFn = renameChatTitle
   renameGroupChatTitleFn = renameGroupChatTitle
+  syncRoleSessionsFromBoxFn = syncRoleSessionsFromBox
 
   // ============================================================
   // 16. CHAT OPERATIONS
@@ -863,10 +863,8 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       const conf = state.pendingConfirmation as any
       if (!conf) return Promise.resolve()
       const id = String((conf as any)?.event?.payload?.decisionId || (conf as any)?.decisionId || '')
-      return (aiGateway.confirmTool?.(id, approved) ?? Promise.resolve())
-        .catch(e => {
-          api.ui?.showToast?.('提交确认失败: ' + (e?.message || e))
-        })
+      if (!aiGateway.confirmTool) return Promise.reject(new Error('工具确认通道不可用'))
+      return aiGateway.confirmTool(id, approved)
     },
     onFound: (confirmation: any) => {
       state.pendingConfirmation = confirmation
@@ -879,7 +877,15 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       emit()
       api.ui?.showToast?.('eucli-box WebSocket 已断开，工具确认弹窗已关闭')
     },
+    onError: (message: string) => api.ui?.showToast?.(message),
   })
+
+  async function submitToolConfirmation(approved: boolean) {
+    await toolConfirmPoller.submit(approved)
+    state.pendingConfirmation = null
+    state.modal = ''
+    emit()
+  }
 
   // ============================================================
   // 19. EVENT HANDLERS
@@ -1003,9 +1009,11 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       state.branchDraft = null
       ;(state.draft as any).activeTargetKind = 'role'
       state.draft.activeRoleId = String(roleId || '')
-      ensureChatsBoxBare(state.draft.activeRoleId)
-      ensureActiveChatLoadedAndReconcile().catch(() => {}).finally(() => emit())
-      saveMeta().catch(() => {})
+      syncRoleSessionsFromBoxFn(state.draft.activeRoleId)
+        .then(() => ensureActiveChatLoadedAndReconcile())
+        .catch((e: any) => api.ui?.showToast?.('读取 eucli-box 会话列表失败: ' + String(e?.message || e)))
+        .finally(() => emit())
+      saveMeta().catch((e: any) => api.ui?.showToast?.('保存本地快照失败: ' + String(e?.message || e)))
       emit()
     },
     setActiveGroup: (groupId: any) => {
@@ -1473,18 +1481,10 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     },
     saveProvider: () => saveProviderInlineEditor(),
     moveRole: (roleId: any, targetRoleId: any, position: any) => {
-      if (!state.data || !Array.isArray(state.data.roles)) return
-      const rid = String(roleId || '').trim()
-      const targetRid = String(targetRoleId || '').trim()
-      const pos: ListMovePosition = String(position || '').trim() === 'after' ? 'after' : 'before'
-      if (!rid || !targetRid || rid === targetRid) return
-
-      const nextRoles = moveListItemById(state.data.roles, (role: any) => String(role?.id || ''), rid, targetRid, pos)
-      if (nextRoles === state.data.roles) return
-
-      state.data.roles = nextRoles
-      saveDataTree().catch(() => {})
-      emit()
+      void roleId
+      void targetRoleId
+      void position
+      api.ui?.showToast?.('角色排序必须由 eucli-box 提供，客户端本地角色顺序修改已禁用')
     },
     askDeleteProvider: (providerId: any) => {
       state.draft.deleteProviderId = String(providerId || '')
@@ -1540,7 +1540,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
           t0 = now()
           api.ui?.showToast?.('AI 修复 Mermaid 中…')
           return aiFixMermaidInMessage(String(messageId || ''), String(mermaidSrc || ''), String(renderErrorMsg || ''))
-        })
+  })
         .then((fixed: any) => {
           api.ui?.showToast?.(`Mermaid 已修复（${cost()}s）`)
           return fixed
@@ -1815,32 +1815,21 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     deleteMessageSubtree: (messageId: any) => deleteMessageSubtree(String(messageId || '')),
     editMessage: (messageId: any, content: any) => editMessage(String(messageId || ''), content),
     // -- tool confirmation --
-    approveConfirmation: () => {
-      const conf = state.pendingConfirmation as any
-      if (!conf) return
-      const id = String((conf as any)?.event?.payload?.decisionId || (conf as any)?.decisionId || '')
-      aiGateway.confirmTool?.(id, true)?.catch((e: any) => api.ui?.showToast?.('确认提交失败: ' + String((e as any)?.message || e)))
-      state.pendingConfirmation = null
-      state.modal = ''
-      emit()
+    approveConfirmation: async () => {
+      try {
+        await submitToolConfirmation(true)
+      } catch (e: any) {
+        api.ui?.showToast?.('确认提交失败: ' + String((e as any)?.message || e))
+      }
     },
-    rejectConfirmation: () => {
-      const conf = state.pendingConfirmation as any
-      if (!conf) return
-      const id = String((conf as any)?.event?.payload?.decisionId || (conf as any)?.decisionId || '')
-      aiGateway.confirmTool?.(id, false)?.catch((e: any) => api.ui?.showToast?.('确认提交失败: ' + String((e as any)?.message || e)))
-      state.pendingConfirmation = null
-      state.modal = ''
-      emit()
+    rejectConfirmation: async () => {
+      try {
+        await submitToolConfirmation(false)
+      } catch (e: any) {
+        api.ui?.showToast?.('确认提交失败: ' + String((e as any)?.message || e))
+      }
     },
     closeConfirmation: () => {
-      const conf = state.pendingConfirmation as any
-      if (conf) {
-        const id = String((conf as any)?.event?.payload?.decisionId || (conf as any)?.decisionId || '')
-        if (id) {
-          aiGateway.confirmTool?.(id, false)?.catch((e: any) => api.ui?.showToast?.('确认提交失败: ' + String((e as any)?.message || e)))
-        }
-      }
       state.pendingConfirmation = null
       state.modal = ''
       emit()
@@ -1877,13 +1866,13 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     openNewRoleEditor,
     openNewGroupEditor,
     getBoxConnection: () => {
-      return (aiGateway?.getBoxConnection?.() ?? Promise.resolve({ url: '', key: '' }))
+      return (aiGateway.getBoxConnection?.() ?? Promise.resolve({ url: '', key: '' }))
     },
     saveBoxConnection: (connection: { url: string; key: string }) => {
-      return aiGateway?.saveBoxConnection?.(connection) ?? Promise.resolve()
+      return aiGateway.saveBoxConnection?.(connection) ?? Promise.reject(new Error('eucli-box 连接保存通道不可用'))
     },
     testBoxConnection: () => {
-      return aiGateway?.testBoxConnection?.() ?? Promise.reject(new Error('testBoxConnection not available'))
+      return aiGateway.testBoxConnection?.() ?? Promise.reject(new Error('testBoxConnection not available'))
     },
     openRoleEditorRaw: (rid: string) => openRoleEditor(rid),
     openGroupEditorRaw: (gid: string) => openGroupEditor(gid),

@@ -89,7 +89,7 @@ clients/eucli-studio/src/controller/entityEditors.ts
 clients/eucli-studio/src/controller/createControllerV2.ts
 clients/eucli-studio/src/controller/chatOperations.ts
 clients/eucli-studio/src/controller/persistence.ts
-clients/eucli-studio/src/controller/stateAccessors.ts
+clients/eucli-studio/src/state/stateAccessors.ts
 clients/eucli-studio/src/storage/splitStorage.ts
 clients/eucli-studio/src/domain/dataNormalizers.ts
 clients/eucli-studio/src/protocol/aiChatProtocol.ts

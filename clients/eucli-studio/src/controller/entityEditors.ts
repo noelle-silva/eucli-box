@@ -392,7 +392,7 @@ export function createEntityEditors(deps: {
     render()
   }
 
-  function saveGroupEditor() {
+  async function saveGroupEditor() {
     const state = getState()
     if (!state.data) return
     sa.ensureGroupsList()
@@ -434,6 +434,10 @@ export function createEntityEditors(deps: {
     if (gid === NEW_GROUP_ID) {
       const newGid = uid('g')
       const chatId = uid('gc')
+      const previousGroups = groups.slice()
+      const previousChatsByGroup = (state.data as any).chatsByGroup && typeof (state.data as any).chatsByGroup === 'object' ? { ...(state.data as any).chatsByGroup } : {}
+      const previousActiveTargetKind = String((state.draft as any).activeTargetKind || '')
+      const previousActiveGroupId = String((state.draft as any).activeGroupId || '')
       const group = {
         id: newGid,
         name,
@@ -448,6 +452,7 @@ export function createEntityEditors(deps: {
         updatedAt: nowT,
       }
       groups.unshift(group)
+      if (!(state.data as any).chatsByGroup || typeof (state.data as any).chatsByGroup !== 'object') (state.data as any).chatsByGroup = {}
       ;(state.data as any).chatsByGroup[newGid] = {
         activeChatId: chatId,
         chatMetas: [{ id: chatId, title: '群聊', createdAt: nowT, updatedAt: nowT, lastMessagePreview: '', messageCount: 0, hasPending: false }],
@@ -455,13 +460,29 @@ export function createEntityEditors(deps: {
       }
       ;(state.draft as any).activeTargetKind = 'group'
       ;(state.draft as any).activeGroupId = newGid
-      save().catch(() => {})
-      closeModal()
+      try {
+        await save()
+        showToast?.('群组已保存')
+        closeModal()
+      } catch (e: any) {
+        ;(state.data as any).groups = previousGroups
+        ;(state.data as any).chatsByGroup = previousChatsByGroup
+        ;(state.draft as any).activeTargetKind = previousActiveTargetKind
+        ;(state.draft as any).activeGroupId = previousActiveGroupId
+        showToast?.(String(e?.message || e || '群组保存失败'))
+        render()
+      }
       return
     }
 
     const group = groups.find((g: any) => String(g?.id || '') === gid) || null
     if (!group) return
+    const previous = {
+      ...group,
+      memberRoleIds: Array.isArray(group.memberRoleIds) ? group.memberRoleIds.slice() : group.memberRoleIds,
+      roundRobinOrder: Array.isArray(group.roundRobinOrder) ? group.roundRobinOrder.slice() : group.roundRobinOrder,
+      random: group.random && typeof group.random === 'object' ? { ...group.random, weightsByRoleId: group.random.weightsByRoleId && typeof group.random.weightsByRoleId === 'object' ? { ...group.random.weightsByRoleId } : group.random.weightsByRoleId } : group.random,
+    }
 
     group.name = name
     group.avatar = avatar
@@ -473,8 +494,15 @@ export function createEntityEditors(deps: {
     group.random = { weightsByRoleId, minCount, maxCount }
     group.updatedAt = nowT
 
-    save().catch(() => {})
-    closeModal()
+    try {
+      await save()
+      showToast?.('群组已保存')
+      closeModal()
+    } catch (e: any) {
+      Object.assign(group, previous)
+      showToast?.(String(e?.message || e || '群组保存失败'))
+      render()
+    }
   }
 
   function deleteGroup(groupId: any) {

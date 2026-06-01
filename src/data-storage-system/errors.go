@@ -8,6 +8,10 @@ func storageInvalid(message string, cause error) error {
 	return apperrors.Wrap(systemName, "storage.invalid_request", message, cause)
 }
 
+func storageNotFound(message string, cause error) error {
+	return apperrors.Wrap(systemName, "storage.not_found", message, cause)
+}
+
 func storageInitFailed(message string, cause error) error {
 	return apperrors.Wrap(systemName, "storage.initialize_failed", message, cause)
 }

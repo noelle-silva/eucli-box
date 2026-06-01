@@ -20,6 +20,9 @@ type System interface {
 	LoadRole(ctx context.Context, roleID string) (types.Role, error)
 	ListRoles(ctx context.Context) ([]types.RoleSummary, error)
 	DeleteRole(ctx context.Context, roleID string) error
+	SaveRoleAvatar(ctx context.Context, roleID string, dataURL string) error
+	LoadRoleAvatar(ctx context.Context, roleID string) (string, error)
+	DeleteRoleAvatar(ctx context.Context, roleID string) error
 
 	SaveProvider(ctx context.Context, provider types.Provider) error
 	LoadProvider(ctx context.Context, providerID string) (types.Provider, error)

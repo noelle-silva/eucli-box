@@ -15,10 +15,11 @@ const (
 )
 
 var (
-	roleKeyPattern     = regexp.MustCompile(`^roles/([^/]+)/role$`)
-	providerKeyPattern = regexp.MustCompile(`^providers/([^/]+)/provider$`)
-	chatKeyPattern     = regexp.MustCompile(`^chats/([^/]+)/([^/]+)/chat$`)
-	roleChatIndexPattern = regexp.MustCompile(`^chats/([^/]+)/index$`)
+	roleKeyPattern        = regexp.MustCompile(`^roles/([^/]+)/role$`)
+	providerKeyPattern    = regexp.MustCompile(`^providers/([^/]+)/provider$`)
+	chatKeyPattern        = regexp.MustCompile(`^chats/([^/]+)/([^/]+)/chat$`)
+	roleChatIndexPattern  = regexp.MustCompile(`^chats/([^/]+)/index$`)
+	roleAvatarPathPattern = regexp.MustCompile(`^roles/([^/]+)/avatar\.(png|jpg|jpeg|webp)$`)
 )
 
 type projectionService struct {
@@ -175,20 +176,20 @@ func (p *projectionService) meta(ctx context.Context) (any, error) {
 		providerFolders[id] = folderFor(projection.ProviderFolders, id, stringField(provider, "name"), "供应商")
 	}
 	return map[string]any{
-		"schemaVersion": splitSchemaVersion,
-		"dataVersion":   uiVersion,
-		"updatedAt":     nowMillis(),
-		"ui":            projection.UI,
-		"settings":      mergeSettings(projection.Settings, providers),
-		"favorites":     projection.Favorites,
-		"roleOrder":     roleOrder,
-		"roleFolders":   roleFolders,
-		"chatIndexByRole": chatIndexByRole,
-		"groupOrder":    []any{},
-		"groupFolders":  map[string]any{},
+		"schemaVersion":    splitSchemaVersion,
+		"dataVersion":      uiVersion,
+		"updatedAt":        nowMillis(),
+		"ui":               projection.UI,
+		"settings":         mergeSettings(projection.Settings, providers),
+		"favorites":        projection.Favorites,
+		"roleOrder":        roleOrder,
+		"roleFolders":      roleFolders,
+		"chatIndexByRole":  chatIndexByRole,
+		"groupOrder":       []any{},
+		"groupFolders":     map[string]any{},
 		"chatIndexByGroup": map[string]any{},
-		"providerOrder": providerOrder,
-		"providerFolders": providerFolders,
+		"providerOrder":    providerOrder,
+		"providerFolders":  providerFolders,
 	}, nil
 }
 
@@ -253,10 +254,22 @@ func (p *projectionService) roleByFolder(ctx context.Context, folder string) (an
 	for _, role := range roles {
 		id := stringField(role, "id")
 		if folderFor(cfg.Projection.RoleFolders, id, stringField(role, "name"), "角色") == folder {
-			return toUIRole(role), nil
+			uiRole := toUIRole(role)
+			if avatarImage, err := p.loadRoleAvatar(ctx, id); err == nil {
+				uiRole["avatarImage"] = avatarImage
+			}
+			return uiRole, nil
 		}
 	}
 	return nil, newError("NOT_FOUND", "角色不存在")
+}
+
+func (p *projectionService) roleIDByAvatarPath(ctx context.Context, path string) (string, error) {
+	match := roleAvatarPathPattern.FindStringSubmatch(strings.TrimSpace(path))
+	if match == nil {
+		return "", newError("NOT_IMPLEMENTED", "仅支持角色头像图片路径")
+	}
+	return p.roleIDByFolder(ctx, match[1])
 }
 
 func (p *projectionService) providerByFolder(ctx context.Context, folder string) (any, error) {
@@ -381,6 +394,14 @@ func (p *projectionService) loadSession(ctx context.Context, roleID string, sess
 	return objectMap(data), nil
 }
 
+func (p *projectionService) loadRoleAvatar(ctx context.Context, roleID string) (string, error) {
+	data, err := p.eb.request(ctx, ebRequest{Method: "GET", Path: fmt.Sprintf("/api/roles/%s/avatar", roleID)})
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(fmt.Sprint(data)), nil
+}
+
 func (p *projectionService) roleIDByFolder(ctx context.Context, folder string) (string, error) {
 	roles, err := p.listRoles(ctx)
 	if err != nil {
@@ -415,14 +436,14 @@ func toUIRole(role map[string]any) map[string]any {
 	modelConfig := objectMap(role["modelConfig"])
 	coordinate := objectMap(modelConfig["coordinate"])
 	return map[string]any{
-		"id": stringField(role, "id"),
-		"name": fallback(stringField(role, "name"), "未命名角色"),
-		"avatar": stringField(role, "avatar"),
+		"id":           stringField(role, "id"),
+		"name":         fallback(stringField(role, "name"), "未命名角色"),
+		"avatar":       stringField(role, "avatar"),
 		"systemPrompt": promptText(objectList(role["prompts"])),
-		"temperature": numberField(modelConfig, "temperature", 0.7),
-		"modelRef": map[string]any{"providerId": stringField(coordinate, "providerId"), "modelId": stringField(coordinate, "modelId")},
-		"createdAt": millisFromAny(role["createdAt"]),
-		"updatedAt": millisFromAny(role["updatedAt"]),
+		"temperature":  numberField(modelConfig, "temperature", 0.7),
+		"modelRef":     map[string]any{"providerId": stringField(coordinate, "providerId"), "modelId": stringField(coordinate, "modelId")},
+		"createdAt":    millisFromAny(role["createdAt"]),
+		"updatedAt":    millisFromAny(role["updatedAt"]),
 	}
 }
 
@@ -431,15 +452,15 @@ func fromUIRole(value any) map[string]any {
 	modelRef := objectMap(role["modelRef"])
 	now := time.Now().UTC().Format(time.RFC3339)
 	return map[string]any{
-		"id": stringField(role, "id"),
-		"name": fallback(stringField(role, "name"), "未命名角色"),
-		"avatar": stringField(role, "avatar"),
+		"id":          stringField(role, "id"),
+		"name":        fallback(stringField(role, "name"), "未命名角色"),
+		"avatar":      stringField(role, "avatar"),
 		"description": stringField(role, "description"),
-		"prompts": []any{map[string]any{"id": "system", "role": "system", "content": stringField(role, "systemPrompt"), "order": 0, "createdAt": now, "updatedAt": now}},
+		"prompts":     []any{map[string]any{"id": "system", "role": "system", "content": stringField(role, "systemPrompt"), "order": 0, "createdAt": now, "updatedAt": now}},
 		"modelConfig": map[string]any{"coordinate": map[string]any{"providerId": stringField(modelRef, "providerId"), "modelId": stringField(modelRef, "modelId")}, "temperature": numberField(role, "temperature", 0.7)},
-		"toolPolicy": map[string]any{"mode": "whitelist", "tools": []any{}},
-		"createdAt": timeFromMillis(role["createdAt"]),
-		"updatedAt": time.Now().UTC().Format(time.RFC3339),
+		"toolPolicy":  map[string]any{"mode": "whitelist", "tools": []any{}},
+		"createdAt":   timeFromMillis(role["createdAt"]),
+		"updatedAt":   time.Now().UTC().Format(time.RFC3339),
 	}
 }
 
@@ -518,16 +539,67 @@ func objectList(value any) []map[string]any {
 	return out
 }
 
-func stringField(m map[string]any, key string) string { if m == nil || m[key] == nil { return "" }; return strings.TrimSpace(fmt.Sprint(m[key])) }
-func numberField(m map[string]any, key string, fallback float64) float64 { if n, ok := m[key].(float64); ok { return n }; return fallback }
-func fallback(value string, fallback string) string { if strings.TrimSpace(value) == "" { return fallback }; return strings.TrimSpace(value) }
+func stringField(m map[string]any, key string) string {
+	if m == nil || m[key] == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(m[key]))
+}
+func numberField(m map[string]any, key string, fallback float64) float64 {
+	if n, ok := m[key].(float64); ok {
+		return n
+	}
+	return fallback
+}
+func fallback(value string, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return strings.TrimSpace(value)
+}
 func nowMillis() int64 { return time.Now().UnixMilli() }
-func millisFromAny(value any) int64 { if s, ok := value.(string); ok { if t, err := time.Parse(time.RFC3339, s); err == nil { return t.UnixMilli() } }; if n, ok := value.(float64); ok { return int64(n) }; return nowMillis() }
-func timeFromMillis(value any) string { ms := millisFromAny(value); return time.UnixMilli(ms).UTC().Format(time.RFC3339) }
+func millisFromAny(value any) int64 {
+	if s, ok := value.(string); ok {
+		if t, err := time.Parse(time.RFC3339, s); err == nil {
+			return t.UnixMilli()
+		}
+	}
+	if n, ok := value.(float64); ok {
+		return int64(n)
+	}
+	return nowMillis()
+}
+func timeFromMillis(value any) string {
+	ms := millisFromAny(value)
+	return time.UnixMilli(ms).UTC().Format(time.RFC3339)
+}
 func mustJSON(value any) json.RawMessage { payload, _ := json.Marshal(value); return payload }
-func folderFor(existing map[string]string, id string, name string, fallbackName string) string { if existing[id] != "" { return existing[id] }; return safeFolderName(fallback(name, fallbackName)) }
-func safeFolderName(value string) string { return strings.NewReplacer("/", "_", "\\", "_", ":", "_", "*", "_", "?", "_", "\"", "_", "<", "_", ">", "_", "|", "_").Replace(value) }
-func promptText(prompts []map[string]any) string { for _, prompt := range prompts { if stringField(prompt, "role") == "system" { return stringField(prompt, "content") } }; return "" }
-func messageRole(message map[string]any) string { role := stringField(message, "role"); if role == "" { role = stringField(message, "type") }; if role == "assistant" { return "assistant" }; return "user" }
+func folderFor(existing map[string]string, id string, name string, fallbackName string) string {
+	if existing[id] != "" {
+		return existing[id]
+	}
+	return safeFolderName(fallback(name, fallbackName))
+}
+func safeFolderName(value string) string {
+	return strings.NewReplacer("/", "_", "\\", "_", ":", "_", "*", "_", "?", "_", "\"", "_", "<", "_", ">", "_", "|", "_").Replace(value)
+}
+func promptText(prompts []map[string]any) string {
+	for _, prompt := range prompts {
+		if stringField(prompt, "role") == "system" {
+			return stringField(prompt, "content")
+		}
+	}
+	return ""
+}
+func messageRole(message map[string]any) string {
+	role := stringField(message, "role")
+	if role == "" {
+		role = stringField(message, "type")
+	}
+	if role == "assistant" {
+		return "assistant"
+	}
+	return "user"
+}
 
 func isNotFoundError(err error) bool { return err != nil && strings.Contains(err.Error(), "不存在") }

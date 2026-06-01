@@ -222,10 +222,13 @@ func (f *fakeGatewayRuntime) publish(event types.RunEvent) {
 	}
 }
 
-type fakeGatewayRoles struct{ roles map[string]types.Role }
+type fakeGatewayRoles struct {
+	roles   map[string]types.Role
+	avatars map[string]string
+}
 
 func newFakeGatewayRoles() *fakeGatewayRoles {
-	return &fakeGatewayRoles{roles: map[string]types.Role{}}
+	return &fakeGatewayRoles{roles: map[string]types.Role{}, avatars: map[string]string{}}
 }
 func (f *fakeGatewayRoles) SaveRole(ctx context.Context, role types.Role) error {
 	f.roles[role.ID] = role
@@ -243,6 +246,18 @@ func (f *fakeGatewayRoles) ListRoles(ctx context.Context) ([]types.RoleSummary, 
 }
 func (f *fakeGatewayRoles) DeleteRole(ctx context.Context, roleID string) error {
 	delete(f.roles, roleID)
+	delete(f.avatars, roleID)
+	return nil
+}
+func (f *fakeGatewayRoles) SaveRoleAvatar(ctx context.Context, roleID string, dataURL string) error {
+	f.avatars[roleID] = dataURL
+	return nil
+}
+func (f *fakeGatewayRoles) LoadRoleAvatar(ctx context.Context, roleID string) (string, error) {
+	return f.avatars[roleID], nil
+}
+func (f *fakeGatewayRoles) DeleteRoleAvatar(ctx context.Context, roleID string) error {
+	delete(f.avatars, roleID)
 	return nil
 }
 

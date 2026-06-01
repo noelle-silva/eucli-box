@@ -46,15 +46,13 @@ export function createStickerStorage(deps: {
     const avatarImage = String(role?.avatarImage || '').trim()
 
     if (looksLikeImageDataUrl(avatarImage)) {
-      if (typeof filesImages?.writeBase64 !== 'function') return
-      await filesImages
-        .writeBase64({ scope: 'data', relPath, overwrite: true, dataUrlOrBase64: avatarImage })
-        .catch(() => {})
+      if (typeof filesImages?.writeBase64 !== 'function') throw new Error('未授权：files.images.writeBase64')
+      await filesImages.writeBase64({ scope: 'data', relPath, overwrite: true, dataUrlOrBase64: avatarImage })
       return
     }
 
-    if (typeof filesImages?.delete !== 'function') return
-    await filesImages.delete({ scope: 'data', path: relPath }).catch(() => {})
+    if (typeof filesImages?.delete !== 'function') throw new Error('未授权：files.images.delete')
+    await filesImages.delete({ scope: 'data', path: relPath })
   }
 
   async function syncGroupAvatarFile(folder: any, group: any) {
@@ -65,15 +63,13 @@ export function createStickerStorage(deps: {
     const avatarImage = String(group?.avatarImage || '').trim()
 
     if (looksLikeImageDataUrl(avatarImage)) {
-      if (typeof filesImages?.writeBase64 !== 'function') return
-      await filesImages
-        .writeBase64({ scope: 'data', relPath, overwrite: true, dataUrlOrBase64: avatarImage })
-        .catch(() => {})
+      if (typeof filesImages?.writeBase64 !== 'function') throw new Error('未授权：files.images.writeBase64')
+      await filesImages.writeBase64({ scope: 'data', relPath, overwrite: true, dataUrlOrBase64: avatarImage })
       return
     }
 
-    if (typeof filesImages?.delete !== 'function') return
-    await filesImages.delete({ scope: 'data', path: relPath }).catch(() => {})
+    if (typeof filesImages?.delete !== 'function') throw new Error('未授权：files.images.delete')
+    await filesImages.delete({ scope: 'data', path: relPath })
   }
 
   function getStickerRelPath(category: any, name: any) {

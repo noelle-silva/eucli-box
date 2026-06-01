@@ -59,6 +59,53 @@ func (s *system) handleDeleteRole(w http.ResponseWriter, r *http.Request) {
 	writeNoContent(w)
 }
 
+func (s *system) handleSaveRoleAvatar(w http.ResponseWriter, r *http.Request) {
+	roleID, err := pathValue(r, "roleID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	payload, err := decodeJSON[struct {
+		DataURL string `json:"dataUrl"`
+	}](r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if err := s.roles.SaveRoleAvatar(r.Context(), roleID, payload.DataURL); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeNoContent(w)
+}
+
+func (s *system) handleLoadRoleAvatar(w http.ResponseWriter, r *http.Request) {
+	roleID, err := pathValue(r, "roleID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	dataURL, err := s.roles.LoadRoleAvatar(r.Context(), roleID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, dataURL)
+}
+
+func (s *system) handleDeleteRoleAvatar(w http.ResponseWriter, r *http.Request) {
+	roleID, err := pathValue(r, "roleID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if err := s.roles.DeleteRoleAvatar(r.Context(), roleID); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeNoContent(w)
+}
+
 func (s *system) handleListProviders(w http.ResponseWriter, r *http.Request) {
 	providers, err := s.providers.ListProviders(r.Context())
 	if err != nil {

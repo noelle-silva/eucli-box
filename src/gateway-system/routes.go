@@ -10,6 +10,9 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("POST /api/roles", s.authWrap(s.handleSaveRole))
 	s.mux.HandleFunc("GET /api/roles/{roleID}", s.authWrap(s.handleLoadRole))
 	s.mux.HandleFunc("DELETE /api/roles/{roleID}", s.authWrap(s.handleDeleteRole))
+	s.mux.HandleFunc("GET /api/roles/{roleID}/avatar", s.authWrap(s.handleLoadRoleAvatar))
+	s.mux.HandleFunc("PUT /api/roles/{roleID}/avatar", s.authWrap(s.handleSaveRoleAvatar))
+	s.mux.HandleFunc("DELETE /api/roles/{roleID}/avatar", s.authWrap(s.handleDeleteRoleAvatar))
 
 	s.mux.HandleFunc("GET /api/roles/{roleID}/sessions", s.authWrap(s.handleListSessions))
 	s.mux.HandleFunc("POST /api/roles/{roleID}/sessions", s.authWrap(s.handleSaveSession))

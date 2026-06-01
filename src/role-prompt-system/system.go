@@ -11,6 +11,9 @@ type System interface {
 	LoadRole(ctx context.Context, roleID string) (types.Role, error)
 	ListRoles(ctx context.Context) ([]types.RoleSummary, error)
 	DeleteRole(ctx context.Context, roleID string) error
+	SaveRoleAvatar(ctx context.Context, roleID string, dataURL string) error
+	LoadRoleAvatar(ctx context.Context, roleID string) (string, error)
+	DeleteRoleAvatar(ctx context.Context, roleID string) error
 
 	BuildContext(ctx context.Context, roleID string, session types.Session, tools []types.ToolDefinition) (types.RoleContext, error)
 	GetToolPolicy(ctx context.Context, roleID string) (types.ToolPolicy, error)
@@ -22,6 +25,9 @@ type StorageSystem interface {
 	LoadRole(ctx context.Context, roleID string) (types.Role, error)
 	ListRoles(ctx context.Context) ([]types.RoleSummary, error)
 	DeleteRole(ctx context.Context, roleID string) error
+	SaveRoleAvatar(ctx context.Context, roleID string, dataURL string) error
+	LoadRoleAvatar(ctx context.Context, roleID string) (string, error)
+	DeleteRoleAvatar(ctx context.Context, roleID string) error
 }
 
 type ProviderSystem interface {

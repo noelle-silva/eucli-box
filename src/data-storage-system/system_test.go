@@ -55,6 +55,36 @@ func TestSaveLoadListAndDeleteRole(t *testing.T) {
 	}
 }
 
+func TestSaveLoadAndDeleteRoleAvatarImageFile(t *testing.T) {
+	system := newTestSystem(t)
+	role := types.Role{ID: "developer", Name: "Developer"}
+	if err := system.SaveRole(context.Background(), role); err != nil {
+		t.Fatalf("SaveRole() error = %v", err)
+	}
+	avatar := "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lz2YNgAAAABJRU5ErkJggg=="
+	if err := system.SaveRoleAvatar(context.Background(), role.ID, avatar); err != nil {
+		t.Fatalf("SaveRoleAvatar() error = %v", err)
+	}
+
+	avatarDir := filepath.Join(system.paths.root, "roles", role.ID, "attachments", "avatar")
+	assertFile(t, filepath.Join(avatarDir, "avatar.png"))
+	assertNoFile(t, filepath.Join(avatarDir, "avatar.bin"))
+	assertNoFile(t, filepath.Join(avatarDir, "avatar.json"))
+
+	loaded, err := system.LoadRoleAvatar(context.Background(), role.ID)
+	if err != nil {
+		t.Fatalf("LoadRoleAvatar() error = %v", err)
+	}
+	if loaded != avatar {
+		t.Fatalf("loaded avatar = %q, want %q", loaded, avatar)
+	}
+
+	if err := system.DeleteRoleAvatar(context.Background(), role.ID); err != nil {
+		t.Fatalf("DeleteRoleAvatar() error = %v", err)
+	}
+	assertNoFile(t, filepath.Join(avatarDir, "avatar.png"))
+}
+
 func TestSessionsAreListedByLastActive(t *testing.T) {
 	system := newTestSystem(t)
 	oldSession := types.Session{ID: "old", RoleID: "developer", Title: "old", LastActive: time.Date(2026, 5, 30, 8, 0, 0, 0, time.UTC)}
@@ -164,6 +194,13 @@ func assertFile(t *testing.T, path string) {
 	}
 	if info.IsDir() {
 		t.Fatalf("%s is directory", path)
+	}
+}
+
+func assertNoFile(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected %s to not exist, err=%v", path, err)
 	}
 }
 

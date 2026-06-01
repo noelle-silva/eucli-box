@@ -64,11 +64,90 @@ func (s *service) dispatch(ctx context.Context, method string, params json.RawMe
 			return nil, err
 		}
 		return map[string]any{}, s.projection.remove(ctx, key)
-	case "aiChat.imageRead", "aiChat.imageWrite", "aiChat.imageDelete", "aiChat.imagePick":
-		return nil, newError("NOT_IMPLEMENTED", fmt.Sprintf("%s 尚未接入 e-b 附件能力", method))
+	case "aiChat.imageRead":
+		return s.handleImageRead(ctx, params)
+	case "aiChat.imageWrite":
+		return s.handleImageWrite(ctx, params)
+	case "aiChat.imageDelete":
+		return s.handleImageDelete(ctx, params)
+	case "aiChat.imagePick":
+		return nil, newError("NOT_IMPLEMENTED", fmt.Sprintf("%s 必须由宿主 UI 处理", method))
 	default:
 		return nil, newError("METHOD_NOT_FOUND", "未知请求："+method)
 	}
+}
+
+func (s *service) handleImageRead(ctx context.Context, params json.RawMessage) (any, error) {
+	req, err := imagePayload(params)
+	if err != nil {
+		return nil, err
+	}
+	roleID, err := s.projection.roleIDByAvatarPath(ctx, req.Path)
+	if err != nil {
+		return nil, err
+	}
+	return s.eb.request(ctx, ebRequest{Method: "GET", Path: fmt.Sprintf("/api/roles/%s/avatar", roleID)})
+}
+
+func (s *service) handleImageWrite(ctx context.Context, params json.RawMessage) (any, error) {
+	req, err := imagePayload(params)
+	if err != nil {
+		return nil, err
+	}
+	roleID, err := s.projection.roleIDByAvatarPath(ctx, req.Path)
+	if err != nil {
+		return nil, err
+	}
+	if req.DataURL == "" {
+		return nil, newError("BAD_REQUEST", "image data url is required")
+	}
+	_, err = s.eb.request(ctx, ebRequest{Method: "PUT", Path: fmt.Sprintf("/api/roles/%s/avatar", roleID), Body: mustJSON(map[string]any{"dataUrl": req.DataURL})})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"relPath": req.Path}, nil
+}
+
+func (s *service) handleImageDelete(ctx context.Context, params json.RawMessage) (any, error) {
+	req, err := imagePayload(params)
+	if err != nil {
+		return nil, err
+	}
+	roleID, err := s.projection.roleIDByAvatarPath(ctx, req.Path)
+	if err != nil {
+		return nil, err
+	}
+	_, err = s.eb.request(ctx, ebRequest{Method: "DELETE", Path: fmt.Sprintf("/api/roles/%s/avatar", roleID)})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{}, nil
+}
+
+type imageRequest struct {
+	Path    string
+	DataURL string
+}
+
+func imagePayload(params json.RawMessage) (imageRequest, error) {
+	var raw map[string]any
+	if err := json.Unmarshal(paramsOrEmpty(params), &raw); err != nil {
+		return imageRequest{}, err
+	}
+	path := strings.TrimSpace(fmt.Sprint(firstPresent(raw, "relPath", "path")))
+	if path == "" {
+		return imageRequest{}, newError("BAD_REQUEST", "image path is required")
+	}
+	return imageRequest{Path: path, DataURL: strings.TrimSpace(fmt.Sprint(firstPresent(raw, "dataUrlOrBase64", "dataUrl", "base64")))}, nil
+}
+
+func firstPresent(raw map[string]any, keys ...string) any {
+	for _, key := range keys {
+		if value, ok := raw[key]; ok && value != nil {
+			return value
+		}
+	}
+	return ""
 }
 
 func (s *service) bootstrap(ctx context.Context) (any, error) {

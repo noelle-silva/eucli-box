@@ -114,11 +114,12 @@ func newTestRoleSystem(t *testing.T, storage StorageSystem, providers ProviderSy
 }
 
 type fakeRoleStorage struct {
-	roles map[string]types.Role
+	roles   map[string]types.Role
+	avatars map[string]string
 }
 
 func newFakeRoleStorage() *fakeRoleStorage {
-	return &fakeRoleStorage{roles: map[string]types.Role{}}
+	return &fakeRoleStorage{roles: map[string]types.Role{}, avatars: map[string]string{}}
 }
 
 func (f *fakeRoleStorage) SaveRole(ctx context.Context, role types.Role) error {
@@ -144,6 +145,25 @@ func (f *fakeRoleStorage) ListRoles(ctx context.Context) ([]types.RoleSummary, e
 
 func (f *fakeRoleStorage) DeleteRole(ctx context.Context, roleID string) error {
 	delete(f.roles, roleID)
+	delete(f.avatars, roleID)
+	return nil
+}
+
+func (f *fakeRoleStorage) SaveRoleAvatar(ctx context.Context, roleID string, dataURL string) error {
+	f.avatars[roleID] = dataURL
+	return nil
+}
+
+func (f *fakeRoleStorage) LoadRoleAvatar(ctx context.Context, roleID string) (string, error) {
+	avatar, ok := f.avatars[roleID]
+	if !ok {
+		return "", errors.New("role avatar missing")
+	}
+	return avatar, nil
+}
+
+func (f *fakeRoleStorage) DeleteRoleAvatar(ctx context.Context, roleID string) error {
+	delete(f.avatars, roleID)
 	return nil
 }
 

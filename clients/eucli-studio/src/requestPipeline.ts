@@ -1,19 +1,7 @@
-import type { AiChatRuntimeStore } from './engine'
+import type { AiChatRuntimeStore, AiChatRunTarget } from './engine'
 import { assistantMidRunKey } from './runtime/runtimeKeys'
 
 export type AiChatRunKind = 'role' | 'group'
-
-export type AiChatRunTarget = {
-  kind: AiChatRunKind
-  roleId: string
-  groupId?: string
-  chatId: string
-  branchId: string
-  assistantMid: string
-  generationId?: string
-  tag?: 'chat' | 'service'
-  service?: string
-}
 
 export type AiChatRunSpec = {
   target: AiChatRunTarget

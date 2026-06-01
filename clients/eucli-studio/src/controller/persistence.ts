@@ -4,11 +4,10 @@ export function createPersistence(deps: {
   getState: () => any
   activeChatFromData: () => any
   saveMetaOnly: () => Promise<void>
-  saveSplitData: (data: any) => Promise<void>
   saveRoleChat: (roleId: any, chat: any, intent?: ChatSaveIntent) => Promise<void>
   saveGroupChat: (groupId: any, chat: any, intent?: ChatSaveIntent) => Promise<void>
 }) {
-  const { getState, activeChatFromData, saveMetaOnly, saveSplitData, saveRoleChat, saveGroupChat } = deps
+  const { getState, activeChatFromData, saveMetaOnly, saveRoleChat, saveGroupChat } = deps
 
   function syncDraftUiToData() {
     const state = getState()
@@ -39,15 +38,8 @@ export function createPersistence(deps: {
     else await saveRoleChat(targetId, chat, intent)
   }
 
-  async function saveDataTree() {
-    const state = syncDraftUiToData()
-    if (!state) return
-    await saveSplitData(state.data)
-  }
-
   return {
     saveMeta,
     saveCurrentChat,
-    saveDataTree,
   }
 }

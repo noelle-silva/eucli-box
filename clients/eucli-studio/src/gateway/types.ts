@@ -1,4 +1,10 @@
-import type { AiChatRunSpec, AiChatRunTarget } from '../requestPipeline'
+import type { AiChatRunTarget } from '../engine/types'
+
+export type AiChatRunSpec = {
+  target: AiChatRunTarget
+  stream: boolean
+  jobStub: any
+}
 
 export type AiChatRawServiceRequestInput = {
   target: AiChatRunTarget
@@ -8,11 +14,6 @@ export type AiChatRawServiceRequestInput = {
 
 export type AiChatInternalGateway = {
   startBackgroundWorker: (intervalMs?: number) => Promise<void>
-  submitRoleChatCompletion: (input: AiChatRunSpec) => Promise<void>
-  submitGroupChatCompletion: (input: AiChatRunSpec) => Promise<void>
-  submitManyChatCompletions: (inputs: AiChatRunSpec[]) => Promise<void>
-  submitRawServiceRequest: (input: AiChatRawServiceRequestInput) => Promise<void>
-  waitServiceFinal: (assistantMid: string, timeoutMs: number) => Promise<string>
   cancelAssistant: (assistantMid: string) => Promise<void>
   getAssistantRuntime: (assistantMid: string) => Promise<{ runId: string; generationId: string; status: string; active: boolean } | null>
   resetAssistantRuntime: (assistantMid: string) => Promise<void>

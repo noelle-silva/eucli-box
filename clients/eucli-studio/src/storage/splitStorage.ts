@@ -1,7 +1,7 @@
 import { now, uid } from '../core/utils'
 import { VERSION, SPLIT_SCHEMA_VERSION, SPLIT_META_KEY, STICKERS_KEY } from '../domain/constants'
 import { chatMetaFromChat, chatMetaIds, chatMetaUpdatedAtMap, chatMetasFromBox, upsertChatMeta } from '../domain/chatMeta'
-import { normalizeData, defaultData } from '../domain/dataNormalizers'
+import { normalizeData } from '../domain/dataNormalizers'
 import { normalizeFavorites } from '../domain/favorites'
 import { resolveAssistantMessageForMerge } from '../domain/assistantRunState'
 import { normalizeChatSaveIntent, type ChatSaveIntent } from '../domain/chatSaveIntent'
@@ -608,7 +608,41 @@ export function createSplitStorage(deps: {
   async function ensureSplitStoreReady() {
     const meta = (await loadSplitMeta()) || splitMetaCache
     if (meta) return
-    await saveSplitData(defaultData())
+    const updatedAt = now()
+    await storage.set(STICKERS_KEY, {})
+    await writeRequired(storage, splitChatsIndexKey(), {
+      schemaVersion: SPLIT_SCHEMA_VERSION,
+      updatedAt,
+      roleOrder: [],
+      roleFolders: {},
+    })
+    await writeRequired(storage, splitGroupsIndexKey(), {
+      schemaVersion: SPLIT_SCHEMA_VERSION,
+      updatedAt,
+      groupOrder: [],
+      groupFolders: {},
+    })
+    await writeRequired(storage, splitProvidersIndexKey(), {
+      schemaVersion: SPLIT_SCHEMA_VERSION,
+      updatedAt,
+      providerOrder: [],
+      providerFolders: {},
+    })
+    await writeRequired(storage, SPLIT_META_KEY, {
+      schemaVersion: SPLIT_SCHEMA_VERSION,
+      dataVersion: VERSION,
+      updatedAt,
+      ui: {},
+      settings: {},
+      favorites: { folders: [], chatRefsByFolderId: {} },
+      roleOrder: [],
+      roleFolders: {},
+      chatIndexByRole: {},
+      groupOrder: [],
+      groupFolders: {},
+      chatIndexByGroup: {},
+    })
+    splitMetaCache = await loadSplitMetaSnapshot(storage)
   }
 
   async function saveSplitData(d: any) {
@@ -1090,7 +1124,6 @@ export function createSplitStorage(deps: {
     touchChatUpdatedAt,
     loadSplitData,
     ensureSplitStoreReady,
-    saveSplitData,
     saveRoleEntity,
     removeRoleEntity,
     saveProviderEntity,

@@ -5,7 +5,6 @@ import { createDefaultAssistantRenderEngine } from '../render/assistantEngineDef
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import mammoth from 'mammoth/mammoth.browser'
 import { extractPptMarkdown } from '../core/ppt'
-import { createAiChatInternalGateway } from '../gateway/createAiChatInternalGateway'
 import type { AiChatInternalGateway } from '../gateway/types'
 import type { AiChatCapabilities } from '../gateway/capabilities'
 import { UI_CHAT_UPDATED_NOTICE_KEY } from '../runtime/runtimeKeys'
@@ -110,18 +109,16 @@ import { createFavoritesOperations } from './favoritesOperations'
 import { createEntityEditors } from './entityEditors'
 import { createChatOperations } from './chatOperations'
 import { createPatchOperations } from './patchOperations'
-import { createBuildOpenAiReq } from './buildOpenAiReq'
 import { createPersistence } from './persistence'
 import { createChatRuntimeReconciliation } from './chatRuntimeReconciliation'
 import { createRoleSession } from './ebRoleSession'
 
-export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilities; aiGateway?: AiChatInternalGateway }): {
+export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilities; aiGateway: AiChatInternalGateway }): {
   controller: AiChatController
   init: () => Promise<void>
 } {
   const capabilities = deps.capabilities
   const api = capabilities
-  const runtime = capabilities.meta.runtime
   const runtimeStorage = capabilities.runtimeStorage
   const storage = capabilities.storage
 
@@ -403,22 +400,10 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   })
   const { addStickerInternal, syncRoleAvatarFile, syncGroupAvatarFile } = stickerStore
 
-  const buildReq = createBuildOpenAiReq({
-    storage,
-    filesImagesRead: api.files?.images?.read as any || ((() => Promise.resolve('')) as any),
-  })
-  const { buildOpenAiChatReqFromStorage, buildOpenAiGroupChatReqFromStorage } = buildReq
   let onAssistantRunFinalHandler: (run: any, finalText: string) => Promise<void> | void = async () => {
     throw new Error('Assistant run final handler 未初始化')
   }
-  const aiGateway = deps.aiGateway || createAiChatInternalGateway({
-    runtime,
-    store: runtimeStorage,
-    net: capabilities.net,
-    onRunFinal: (run, finalText) => onAssistantRunFinalHandler(run, finalText),
-    buildRoleReqFromStorage: buildOpenAiChatReqFromStorage,
-    buildGroupReqFromStorage: buildOpenAiGroupChatReqFromStorage,
-  })
+  const aiGateway = deps.aiGateway
 
   const splitStore = createSplitStorage({
     storage,
@@ -446,7 +431,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     renameGroupChat: renameGroupChatInStore,
     saveMetaOnly,
     saveStickersOnly,
-    saveSplitData,
     saveRoleEntity,
     removeRoleEntity,
     saveProviderEntity,
@@ -520,11 +504,10 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     getState: () => state,
     activeChatFromData,
     saveMetaOnly,
-    saveSplitData,
     saveRoleChat,
     saveGroupChat,
   })
-  const { saveMeta, saveCurrentChat, saveDataTree } = persistence
+  const { saveMeta, saveCurrentChat } = persistence
 
   // ============================================================
   // 7.1. CHAT RUNTIME RECONCILIATION
@@ -691,22 +674,9 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   let renameGroupChatTitleFn: (gid: string, cid: string, title: string) => void = () => {}
 
   const aiServices = createAiServices({
-    getState: () => state,
-    filesImagesRead: (api.files?.images?.read as any) || ((() => Promise.resolve('')) as any),
-    save: saveDataTree,
-    emit,
-    getGroupById,
-    ensureChatLoaded: (rid: string, cid: string) => ensureChatLoadedAndReconcile('role', rid, cid),
-    ensureGroupChatLoaded: (gid: string, cid: string) => ensureChatLoadedAndReconcile('group', gid, cid),
-    resolveAiModelId,
-    locateMessageInActiveChat,
-    patchMessageContentSilent,
-    enqueueMermaidFixWrite: (mid: string, fn: () => Promise<string>) => enqueueMermaidFixWrite(mid, fn),
-    chatHasPendingAssistant,
-    renameChatTitle: (rid: string, cid: string, title: string) => renameChatTitleFn(rid, cid, title),
-    renameGroupChatTitle: (gid: string, cid: string, title: string) => renameGroupChatTitleFn(gid, cid, title),
+    // AI microservices are intentionally blocked until e-b exposes real roots.
   })
-  const { requestOpenAiChatOnce, aiFixMermaidInMessage, aiGenerateChatTitle, aiGenerateGroupChatTitle, aiGenerateStickerName } = aiServices
+  const { aiFixMermaidInMessage, aiGenerateChatTitle, aiGenerateGroupChatTitle, aiGenerateStickerName } = aiServices
 
   // Fill the placeholder
   aiGenerateChatTitleFn = aiGenerateChatTitle

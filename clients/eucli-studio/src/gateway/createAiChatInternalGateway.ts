@@ -1,10 +1,9 @@
 import { now } from '../core/utils'
 import type { AiChatNetAdapter, AiChatRun, AiChatRuntimeStore } from '../engine'
 import { createAiChatRequestPipeline } from '../requestPipeline'
-import type { AiChatRunSpec } from '../requestPipeline'
 import { assistantFinalKey, assistantStreamKey } from '../runtime/runtimeKeys'
 import { createAiChatEngineBridge } from './engineBridge'
-import type { AiChatInternalGateway, AiChatRawServiceRequestInput } from './types'
+import type { AiChatInternalGateway, AiChatRawServiceRequestInput, AiChatRunSpec } from './types'
 
 const sleepMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, Math.floor(ms || 0))))
 

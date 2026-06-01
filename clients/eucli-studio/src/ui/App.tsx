@@ -3365,10 +3365,18 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                   <Typography variant="body2" color="text.secondary">
                     加载中…
                   </Typography>
-                ) : !activeRole || !activeChat ? (
-                <Typography variant="body2" color="text.secondary">
-                  请选择角色
-                </Typography>
+                ) : activeTargetKind === 'group' && !activeGroup ? (
+                  <Typography variant="body2" color="text.secondary">
+                    请选择群组
+                  </Typography>
+                ) : activeTargetKind !== 'group' && !activeRole ? (
+                  <Typography variant="body2" color="text.secondary">
+                    请选择角色
+                  </Typography>
+                ) : !activeChat ? (
+                  <Typography variant="body2" color="text.secondary">
+                    还没有消息。输入内容并发送。
+                  </Typography>
               ) : !Array.isArray(activeChat.messages) || activeChat.messages.length === 0 ? (
                 <Typography variant="body2" color="text.secondary">
                   还没有消息。输入内容并发送。

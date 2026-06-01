@@ -76,6 +76,9 @@ func (p *projectionService) set(ctx context.Context, key string, value any) erro
 	if match := chatKeyPattern.FindStringSubmatch(key); match != nil {
 		return p.saveSession(ctx, match[1], value)
 	}
+	if match := roleChatIndexPattern.FindStringSubmatch(key); match != nil {
+		return p.saveRoleChatIndex(ctx, match[1], value)
+	}
 	if key == "providers/index" {
 		return nil
 	}
@@ -239,6 +242,18 @@ func (p *projectionService) sessionsIndexForRole(ctx context.Context, roleID str
 	}
 	cfg, _ := p.config.load()
 	active := cfg.Projection.ActiveChatByRole[roleID]
+	if active != "" {
+		found := false
+		for _, id := range chatIds {
+			if id == active {
+				found = true
+				break
+			}
+		}
+		if !found {
+			active = ""
+		}
+	}
 	if active == "" && len(chatIds) > 0 {
 		active = chatIds[0]
 	}
@@ -336,6 +351,23 @@ func (p *projectionService) saveSession(ctx context.Context, folder string, valu
 	}
 	session := fromUIChat(value, roleID)
 	_, err = p.eb.request(ctx, ebRequest{Method: "POST", Path: fmt.Sprintf("/api/roles/%s/sessions", roleID), Body: mustJSON(session)})
+	return err
+}
+
+func (p *projectionService) saveRoleChatIndex(ctx context.Context, folder string, value any) error {
+	roleID, err := p.roleIDByFolder(ctx, folder)
+	if err != nil {
+		return err
+	}
+	index := objectMap(value)
+	activeChatID := stringField(index, "activeChatId")
+	_, err = p.config.updateProjection(func(projection *projectionConfig) {
+		if activeChatID == "" {
+			delete(projection.ActiveChatByRole, roleID)
+			return
+		}
+		projection.ActiveChatByRole[roleID] = activeChatID
+	})
 	return err
 }
 

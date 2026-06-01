@@ -8,6 +8,7 @@ import {
   splitRoleKey,
 } from '../domain/storageKeys'
 import { loadProvidersFromStorage, loadSplitMetaSnapshot } from './splitIndexes'
+import { normalizeStoredChat } from './normalizeStoredChat'
 
 export type LazyChatKind = 'role' | 'group'
 
@@ -38,26 +39,16 @@ function chatKeyFor(kind: LazyChatKind, folder: string, chatId: string): string 
   return kind === 'group' ? splitGroupChatKey(folder, chatId) : splitChatKey(folder, chatId)
 }
 
-function normalizeLoadedChat(chat: any, kind: LazyChatKind) {
-  const fallbackTitle = kind === 'group' ? '群聊' : '新聊天'
-  const id = String(chat?.id || '').trim()
-  if (!id) return null
-  const data: any = {
-    version: VERSION,
-    settings: { providers: [{ id: '__lazy__', name: '__lazy__', baseUrl: 'http://', apiKey: '' }] },
-    favorites: { folders: [], chatRefsByFolderId: {} },
-    roles: [{ id: '__lazy_role__', name: '__lazy__', createdAt: 1, updatedAt: 1, modelRef: { providerId: '__lazy__', modelId: '' } }],
-    chatsByRole: {
-      __lazy_role__: {
-        activeChatId: id,
-        chats: [{ ...chat, title: String(chat?.title || '').trim() || fallbackTitle }],
-      },
-    },
-    groups: [],
-    chatsByGroup: {},
-    ui: {},
-  }
-  return normalizeData(data).chatsByRole.__lazy_role__.chats[0] || null
+function isMissingChatError(error: unknown) {
+  const message = String((error as any)?.message || error || '')
+  return message.includes('json file does not exist') || message.includes('会话不存在') || message.includes('session does not exist')
+}
+
+function removeMissingChatRef(box: any, chatId: string, kind: LazyChatKind) {
+  if (!box || !chatId) return
+  box.chats = Array.isArray(box.chats) ? box.chats.filter((c: any) => String(c?.id || '') !== chatId) : []
+  box.chatMetas = removeChatMeta(box.chatMetas, chatId, kind === 'group' ? '群聊' : '新聊天')
+  if (String(box.activeChatId || '') === chatId) box.activeChatId = String(box.chatMetas[0]?.id || box.chats[0]?.id || '')
 }
 
 export function createLazyChatStore(deps: {
@@ -137,9 +128,21 @@ export function createLazyChatStore(deps: {
     const meta = await loadSplitMeta()
     const folder = folderForTarget(meta, kind, targetId)
     if (!folder) throw new Error(kind === 'group' ? '群组不存在' : '角色不存在')
-    const raw = await storage.get(chatKeyFor(kind, folder, chatId))
-    const chat = normalizeLoadedChat(raw, kind)
-    if (!chat) throw new Error('会话不存在')
+    let raw: any = null
+    try {
+      raw = await storage.get(chatKeyFor(kind, folder, chatId))
+    } catch (error) {
+      if (isMissingChatError(error)) {
+        removeMissingChatRef(box, chatId, kind)
+        return null
+      }
+      throw error
+    }
+    const chat = normalizeStoredChat(raw, kind)
+    if (!chat) {
+      removeMissingChatRef(box, chatId, kind)
+      return null
+    }
 
     const index = box.chats.findIndex((c: any) => String(c?.id || '') === chatId)
     if (index >= 0) box.chats[index] = chat
@@ -156,7 +159,7 @@ export function createLazyChatStore(deps: {
     const folder = folderForTarget(meta, kind, targetId)
     if (!folder) throw new Error(kind === 'group' ? '群组不存在' : '角色不存在')
     const raw = await storage.get(chatKeyFor(kind, folder, chatId))
-    return normalizeLoadedChat(raw, kind)
+    return normalizeStoredChat(raw, kind)
   }
 
   async function saveChat(kind: LazyChatKind, targetIdRaw: any, chatRaw: any) {
@@ -185,10 +188,16 @@ export function createLazyChatStore(deps: {
     const kind = String(state.draft?.activeTargetKind || state.data?.ui?.activeTargetKind || '') === 'group' ? 'group' : 'role'
     const targetId = kind === 'group' ? String(state.draft?.activeGroupId || state.data?.ui?.activeGroupId || '') : String(state.draft?.activeRoleId || state.data?.ui?.activeRoleId || '')
     const box = targetBox(state.data, kind, targetId)
-    const chatId = String(box?.activeChatId || box?.chatMetas?.[0]?.id || '')
-    if (!chatId) return null
-    box.activeChatId = chatId
-    return ensureChatLoaded(kind, targetId, chatId)
+    const ids = [String(box?.activeChatId || ''), ...(Array.isArray(box?.chatMetas) ? box.chatMetas.map((m: any) => String(m?.id || '')) : [])]
+      .map((id) => id.trim())
+      .filter((id, index, list) => !!id && list.indexOf(id) === index)
+    for (const chatId of ids) {
+      box.activeChatId = chatId
+      const chat = await ensureChatLoaded(kind, targetId, chatId)
+      if (chat) return chat
+    }
+    box.activeChatId = ''
+    return null
   }
 
   function upsertLoadedChat(kind: LazyChatKind, targetIdRaw: any, chatRaw: any) {

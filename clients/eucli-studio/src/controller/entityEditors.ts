@@ -76,6 +76,7 @@ export function createEntityEditors(deps: {
   removeRoleEntity?: (roleId: any) => Promise<void>
   saveProviderEntity?: (provider: any) => Promise<void>
   removeProviderEntity?: (providerId: any) => Promise<void>
+  saveRoleChat?: (roleId: any, chat: any) => Promise<void>
   render: () => void
   closeModal: () => void
   showToast?: (msg: string) => void
@@ -90,7 +91,7 @@ export function createEntityEditors(deps: {
   cleanupFavoriteRefsForTarget: (kind: string, targetId: string) => void
   cleanupFavoriteRefsForChat: (targetKind: string, targetId: string, chatId: string) => void
 }) {
-  const { getState, save, saveRoleEntity, removeRoleEntity, saveProviderEntity, removeProviderEntity, render, closeModal, showToast, pickImageFiles, filesImages, ensureChatLoaded, ensureGroupChatLoaded, renameRoleChatInStore, renameGroupChatInStore, removeChatInStore, removeLoadedChat, cleanupFavoriteRefsForTarget, cleanupFavoriteRefsForChat } = deps
+  const { getState, save, saveRoleEntity, removeRoleEntity, saveProviderEntity, removeProviderEntity, saveRoleChat, render, closeModal, showToast, pickImageFiles, filesImages, ensureChatLoaded, ensureGroupChatLoaded, renameRoleChatInStore, renameGroupChatInStore, removeChatInStore, removeLoadedChat, cleanupFavoriteRefsForTarget, cleanupFavoriteRefsForChat } = deps
   const sa = createStateAccessors({ getState })
 
   function scrollToBottomSoon() {
@@ -666,45 +667,44 @@ export function createEntityEditors(deps: {
 
   // ===== Create chat for active =====
 
-  function createChatForActiveRole() {
+  async function createChatForActiveRole() {
     const state = getState()
     const role = sa.activeRole()
     if (!role) return showToast?.('请先选择角色')
     const rid = String(role.id || '')
     const t = now()
-    state.pendingChat = {
-      roleId: rid,
-      chat: { id: uid('pc'), title: '新聊天', createdAt: t, updatedAt: t, branching: createDefaultChatBranching('', t, t), messages: [], pendingLocal: true },
+    const chat = { id: uid('c'), title: '新聊天', createdAt: t, updatedAt: t, branching: createDefaultChatBranching('', t, t), messages: [] }
+    try {
+      if (typeof saveRoleChat !== 'function') throw new Error('会话保存通道不可用')
+      await saveRoleChat(rid, chat)
+      const box = sa.ensureChatsBoxBare(rid)
+      if (box) {
+        box.chats = Array.isArray(box.chats) ? box.chats.filter((c: any) => String(c?.id || '') !== String(chat.id || '')) : []
+        box.chats.unshift(chat)
+        box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chat, '新聊天'), '新聊天')
+        box.activeChatId = String(chat.id || '')
+      }
+      state.sideTab = 'chats'
+      state.draft.input = ''
+      state.draft.images = []
+      ;(state.draft as any).files = []
+      render()
+      scrollToBottomSoon()
+    } catch (e: any) {
+      showToast?.(String(e?.message || e || '新建聊天失败'))
+      render()
     }
-    state.sideTab = 'chats'
-    state.draft.input = ''
-    state.draft.images = []
-    render()
-    scrollToBottomSoon()
   }
 
   function createChatForActiveGroup() {
-    const state = getState()
     const group = sa.activeGroup()
     if (!group) return showToast?.('请先选择群组')
-    const gid = String((group as any).id || '').trim()
-    if (!gid) return showToast?.('群组无效')
-    const t = now()
-    ;(state as any).pendingGroupChat = {
-      groupId: gid,
-      chat: { id: uid('pgc'), title: '群聊', createdAt: t, updatedAt: t, branching: createDefaultChatBranching('', t, t), messages: [], pendingLocal: true },
-    }
-    state.sideTab = 'chats'
-    state.draft.input = ''
-    state.draft.images = []
-    ;(state.draft as any).files = []
-    render()
-    scrollToBottomSoon()
+    showToast?.('群组会话尚未接入 e-b 真实会话根动作，已阻止本地假会话创建')
   }
 
-  function createChatForActiveTarget() {
+  async function createChatForActiveTarget() {
     if (sa.activeTargetKind() === 'group') return createChatForActiveGroup()
-    return createChatForActiveRole()
+    return await createChatForActiveRole()
   }
 
   // ===== Pick chat for active =====
@@ -927,15 +927,6 @@ export function createEntityEditors(deps: {
     cleanupFavoriteRefsForChat('role', rid, cid)
     if (String(box.activeChatId || '') === cid) box.activeChatId = String(box.chatMetas[0]?.id || box.chats[0]?.id || '')
 
-    if (!box.chatMetas.length && !box.chats.length) {
-      const nid = uid('c')
-      const t = now()
-      const chat = { id: nid, title: '新聊天', createdAt: t, updatedAt: t, branching: createDefaultChatBranching('', t, t), messages: [] }
-      box.chats = [chat]
-      box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chat, '新聊天'), '新聊天')
-      box.activeChatId = nid
-    }
-
     removeLoadedChat?.('role', rid, cid)
     void removeChatInStore?.('role', rid, cid).catch(() => {})
     void save().catch(() => {})
@@ -959,15 +950,6 @@ export function createEntityEditors(deps: {
     box.chatMetas = removeChatMeta(box.chatMetas, cid, '群聊')
     cleanupFavoriteRefsForChat('group', gid, cid)
     if (String(box.activeChatId || '') === cid) box.activeChatId = String(box.chatMetas[0]?.id || box.chats[0]?.id || '')
-
-    if (!box.chatMetas.length && !box.chats.length) {
-      const nid = uid('gc')
-      const t = now()
-      const chat = { id: nid, title: '群聊', createdAt: t, updatedAt: t, branching: createDefaultChatBranching('', t, t), messages: [] }
-      box.chats = [chat]
-      box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chat, '群聊'), '群聊')
-      box.activeChatId = nid
-    }
 
     removeLoadedChat?.('group', gid, cid)
     void removeChatInStore?.('group', gid, cid).catch(() => {})

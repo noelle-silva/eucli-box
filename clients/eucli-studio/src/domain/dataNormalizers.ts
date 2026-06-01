@@ -147,12 +147,7 @@ export function defaultData() {
         updatedAt: now(),
       },
     ],
-    chatsByRole: {
-      [rid]: {
-        activeChatId: cid,
-        chats: [{ id: cid, title: '新聊天', createdAt: t, updatedAt: t, branching: createDefaultChatBranching('', t, t), messages: [] }],
-      },
-    },
+    chatsByRole: { [rid]: { activeChatId: '', chats: [] } },
     groups: [],
     chatsByGroup: {},
     ui: { activeTargetKind: 'role', activeRoleId: rid, activeGroupId: '' },
@@ -397,14 +392,6 @@ export function normalizeData(raw: any) {
         return out
       })
 
-    if (!box.chats.length && !box.chatMetas.length) {
-      const cid = uid('c')
-      const t = now()
-      box.chats = [{ id: cid, title: '新聊天', createdAt: t, updatedAt: t, branching: createDefaultChatBranching('', t, t), messages: [] }]
-      box.chatMetas = chatMetasFromBox(box, '新聊天')
-      box.activeChatId = cid
-    }
-
     const roleMetaIds = box.chatMetas.map((m: any) => String(m?.id || '')).filter(Boolean)
     if (!box.activeChatId || (!box.chats.some((c: any) => String(c.id) === box.activeChatId) && !roleMetaIds.includes(box.activeChatId))) {
       box.activeChatId = String(box.chats[0]?.id || roleMetaIds[0] || '')
@@ -546,13 +533,6 @@ export function normalizeData(raw: any) {
         return out
       })
 
-    if (!box.chats.length && !box.chatMetas.length) {
-      const cid = uid('gc')
-      const t = now()
-      box.chats = [{ id: cid, title: '群聊', createdAt: t, updatedAt: t, branching: createDefaultChatBranching('', t, t), messages: [] }]
-      box.chatMetas = chatMetasFromBox(box, '群聊')
-      box.activeChatId = cid
-    }
     const groupMetaIds = box.chatMetas.map((m: any) => String(m?.id || '')).filter(Boolean)
     if (!box.activeChatId || (!box.chats.some((c: any) => String(c.id) === box.activeChatId) && !groupMetaIds.includes(box.activeChatId))) {
       box.activeChatId = String(box.chats[0]?.id || groupMetaIds[0] || '')

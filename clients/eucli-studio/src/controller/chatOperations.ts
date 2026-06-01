@@ -41,6 +41,7 @@ import {
   repairBranchHeadsAfterSubtreeDeletion,
 } from '../domain/chatMessageDeletion'
 import { createAssistantArtifactCleanup } from './assistantArtifactCleanup'
+import { getRunState, isTerminalRunStatus, sleepMs, startRoleRun } from './ebRoleRun'
 
 type ChatAttachmentItem = {
   id: string
@@ -75,9 +76,11 @@ export function createChatOperations(deps: {
   filesImages?: { writeBase64?: (...args: any[]) => Promise<any>; read?: any; delete?: any }
   pickImageFiles?: (maxCount: number) => Promise<any[]>
   loadSplitMeta?: () => Promise<any>
+  netRequest?: (req: any) => Promise<any>
   showToast?: (msg: any) => void
   save: (intent?: ChatSaveIntent) => Promise<void>
   ensureActiveChatLoaded?: () => Promise<any>
+  ensureChatLoaded?: (kind: 'role' | 'group', targetId: string, chatId: string) => Promise<any>
   emit: () => void
   render: () => void
   renderComposer: () => void
@@ -86,7 +89,7 @@ export function createChatOperations(deps: {
   extractTextFromFile: (file: File, kind: string) => Promise<string>
   uiStreamCache: Map<string, any>
 }) {
-  const { getState, aiGateway, filesImages, pickImageFiles, loadSplitMeta, showToast, save, ensureActiveChatLoaded, emit, render, renderComposer, scrollToBottomSoon, readImageFileAsDataUrl, extractTextFromFile, uiStreamCache } = deps
+  const { getState, aiGateway, filesImages, pickImageFiles, loadSplitMeta, netRequest, showToast, save, ensureActiveChatLoaded, ensureChatLoaded, emit, render, renderComposer, scrollToBottomSoon, readImageFileAsDataUrl, extractTextFromFile, uiStreamCache } = deps
 
   const sa = createStateAccessors({ getState })
   const assistantArtifactCleanup = createAssistantArtifactCleanup({
@@ -137,6 +140,48 @@ export function createChatOperations(deps: {
 
   function chatHasPendingAssistantInBranch(chat: any, branchId: string, excludeMid?: any) {
     return hasActiveAssistantMessages(chat, { branchId, excludeMid })
+  }
+
+  async function refreshRoleSession(roleId: string, sessionId: string) {
+    const state = getState()
+    const rid = String(roleId || '').trim()
+    const sid = String(sessionId || '').trim()
+    if (!state.data || !rid || !sid || typeof ensureChatLoaded !== 'function') return null
+    if (!state.data.chatsByRole || typeof state.data.chatsByRole !== 'object') state.data.chatsByRole = {}
+    if (!state.data.chatsByRole[rid] || typeof state.data.chatsByRole[rid] !== 'object') state.data.chatsByRole[rid] = { activeChatId: '', chatMetas: [], chats: [] }
+    state.data.chatsByRole[rid].activeChatId = sid
+    const chat = await ensureChatLoaded('role', rid, sid)
+    if (chat) {
+      state.data.chatsByRole[rid].activeChatId = sid
+      emit()
+    }
+    return chat
+  }
+
+  async function runRoleMessageViaEb(input: { roleId: string; sessionId: string; message: string }, onAccepted?: () => void) {
+    if (typeof netRequest !== 'function') throw new Error('e-b 请求通道不可用')
+    let state = await startRoleRun(netRequest, input)
+    if (!state.id) throw new Error('e-b 未返回 run id')
+    onAccepted?.()
+    let sessionId = String(state.sessionId || input.sessionId || '').trim()
+    if (sessionId) await refreshRoleSession(input.roleId, sessionId)
+
+    const deadline = Date.now() + 120_000
+    while (!isTerminalRunStatus(state.status)) {
+      if (Date.now() > deadline) throw new Error('e-b 运行超时')
+      await sleepMs(450)
+      state = await getRunState(netRequest, state.id)
+      const nextSessionId = String(state.sessionId || sessionId || '').trim()
+      if (nextSessionId) {
+        sessionId = nextSessionId
+        await refreshRoleSession(input.roleId, sessionId)
+      }
+    }
+
+    if (sessionId) await refreshRoleSession(input.roleId, sessionId)
+    if (state.status === 'failed' || state.status === 'cancelled') throw new Error(state.reason || `e-b run ${state.status}`)
+    if (!sessionId) throw new Error('e-b 未返回会话ID')
+    return sessionId
   }
 
   function activeChatOperationTarget() {
@@ -272,8 +317,6 @@ export function createChatOperations(deps: {
     const state = getState()
     if (state.sending || state.loading || !state.data) return
 
-    await ensureActiveChatLoaded?.()
-
     if (sa.activeTargetKind() === 'group') {
       await sendGroupChat(opts)
       return
@@ -289,9 +332,11 @@ export function createChatOperations(deps: {
     const hasFiles = draftFiles.length > 0
     if (!input && !draftImages.length && !hasFiles) return showToast?.('输入不能为空')
     if (hasFiles && draftFiles.some((x: any) => !!x?.pending)) return showToast?.('文件解析中，请稍候…')
+    if (draftImages.length || hasFiles) return showToast?.('当前 e-b 发送只支持文本消息，图片/文件发送需要等 e-b 附件消息根动作接入')
 
     const rid = String(role.id || '')
-    const chatForModel = state.pendingChat && String(state.pendingChat.roleId || '') === rid ? null : sa.activeChatFromData()
+    const loadedChat = await ensureActiveChatLoaded?.().catch(() => null)
+    const chatForModel = loadedChat || sa.activeChatFromData()
     const picked = pickChatModelRef(role, chatForModel)
 
     const providerId = String(picked.providerId || '')
@@ -308,220 +353,18 @@ export function createChatOperations(deps: {
       return showToast?.(picked.overridden ? '请先为"当前会话临时模型"选择模型ID' : '请在角色设置里选择模型（供应商 + 模型ID）')
     }
 
-    let chat = null
-
-    let assistantMid = ''
+    const sessionId = String((loadedChat || sa.activeChatFromData())?.id || '').trim()
     try {
-      if (draftImages.length && typeof filesImages?.writeBase64 !== 'function') {
-        return showToast?.('未授权：files.images.writeBase64')
-      }
-
       state.sending = true
       renderComposer()
-
-      const streamEnabled = !!state.data?.settings?.streamEnabled
-      assistantMid = uid('m')
-
-      if (state.pendingChat && String(state.pendingChat.roleId || '') === rid) {
-        chat = sa.createChatForRole(rid)
-        sa.clearPendingChat()
-      } else {
-        chat = sa.activeChatFromData()
-        if (!chat) chat = sa.createChatForRole(rid)
-      }
-      if (!chat) throw new Error('创建会话失败')
-
-      const meta = typeof loadSplitMeta === 'function' ? await loadSplitMeta().catch(() => null) : null
-      const chatFolder = String(meta?.roleFolders?.[rid] || '').trim() || roleFolderName(role)
-      const savedPaths: string[] = []
-      for (const [index, img] of draftImages.slice(0, MAX_DRAFT_IMAGES).entries()) {
-        const dataUrl = String(img?.dataUrl || '')
-        if (!looksLikeImageDataUrl(dataUrl)) continue
-        const relPath = roleChatImageRelPath(chatFolder, chat.id, chatImageFileName(chat.id, index, dataUrl))
-        const saved = await filesImages!.writeBase64!({ scope: 'data', relPath, overwrite: false, dataUrlOrBase64: dataUrl })
-        const path = String(saved || '').trim()
-        if (path) savedPaths.push(path)
-      }
-
-      const messageModelRef = buildMessageModelRef(providerId, modelId)
-      const branching = ensureChatBranching(chat)
-      let activeBranchId = normalizeBranchId((branching as any)?.activeBranchId || CHAT_DEFAULT_BRANCH_ID)
-      const activeBranch = ensureChatBranch(chat, activeBranchId)
-      let parentMid = String(activeBranch?.headMid || '').trim()
-
-      const rid2 = String(role.id || '')
-      const draft0 = state.branchDraft && typeof state.branchDraft === 'object' ? (state.branchDraft as any) : null
-      const draft =
-        draft0 && String(draft0?.roleId || '') === rid2 && String(draft0?.chatId || '') === String(chat.id || '') ? draft0 : null
-
-      const forkOverride = !draft ? String(opts?.forkFromMid || '').trim() : ''
-
-      let draftForkMid = ''
-      let draftNewBranchId = ''
-      if (draft || forkOverride) {
-        draftForkMid = String((draft ? draft?.forkFromMid : forkOverride) || '').trim()
-        if (!draftForkMid) throw new Error('分支草稿无效（缺少基点）')
-        const items0 = Array.isArray(chat.messages) ? chat.messages : []
-        const ok = items0.some((m: any) => String(m?.id || '') === draftForkMid)
-        if (!ok) throw new Error('分支草稿无效（基点消息不存在）')
-
-        draftNewBranchId = genUniqueBranchId(branching)
-        activeBranchId = draftNewBranchId
-        parentMid = draftForkMid
-      } else if (!parentMid) {
-        const items0 = Array.isArray(chat.messages) ? chat.messages : []
-        parentMid = items0.length ? String(items0[items0.length - 1]?.id || '') : ''
-      }
-
-      if (chatHasPendingAssistantInBranch(chat, activeBranchId)) throw new Error('该分支正在生成中，请先停止或等待完成')
-
-      const wasEmpty = !Array.isArray(chat.messages) || chat.messages.length === 0
-      const userText = String(input || '').trim()
-      const hasUserMain = !!userText || savedPaths.length > 0
-
-      const groupId = hasFiles ? uid('g') : ''
-      const rootMid = uid('m')
-
-      const attachMsgs: any[] = []
-      if (hasFiles) {
-        for (const f of draftFiles) {
-          if (!f || f.pending) continue
-          if (String(f?.error || '')) continue
-          const name = String(f?.name || '文件')
-          const kind = String(f?.kind || 'txt') as DraftFileKind
-          const lang = kind === 'md' || kind === 'ppt' ? 'markdown' : 'text'
-          const raw = String(f?.text || '').trim()
-          const fullLen = raw.length
-          if (!raw) continue
-
-          const pct0 = Math.round(Number(f?.sendPct ?? 100))
-          const pct = clamp(pct0, 0, 100)
-          const sendLen = Math.max(0, Math.ceil((fullLen * pct) / 100))
-          const snippetRaw = sendLen >= fullLen ? raw : raw.slice(0, sendLen).trimEnd()
-          if (!snippetRaw.trim()) continue
-
-          const att: ChatAttachmentItem = {
-            id: uid('att'),
-            name,
-            kind,
-            lang,
-            text: snippetRaw,
-            fullLen,
-            sendLen,
-            sendPct: pct,
-          }
-          const mid = uid('m')
-          attachMsgs.push({
-            id: mid,
-            role: 'user',
-            content: `附件：${name}`,
-            attachments: [att],
-            groupId,
-            groupRole: 'attachment' as ChatMsgGroupRole,
-            groupParentMid: rootMid,
-            branchId: activeBranchId,
-            parentMid,
-            createdAt: now(),
-          })
-          parentMid = mid
-        }
-      }
-
-      if (!hasUserMain && !attachMsgs.length) throw new Error('没有可发送的内容（文件解析失败或为空）')
-
-      const rootMsg: any = {
-        id: rootMid,
-        role: 'user',
-        content: hasUserMain ? userText : attachMsgs.length ? '（附件）' : userText,
-        images: savedPaths,
-        branchId: activeBranchId,
-        parentMid,
-        createdAt: now(),
-      }
-      if (attachMsgs.length) {
-        rootMsg.groupId = groupId
-        rootMsg.groupRole = 'root' as ChatMsgGroupRole
-        rootMsg.groupParentMid = ''
-      }
-      parentMid = rootMid
-
-      if (draftNewBranchId && draftForkMid) {
-        const t = now()
-        const branches = Array.isArray((branching as any).branches) ? (branching as any).branches : []
-        branches.push({
-          id: draftNewBranchId,
-          name: '分支',
-          headMid: draftForkMid,
-          createdAt: t,
-          updatedAt: t,
-          forkFromMid: draftForkMid,
-        })
-        ;(branching as any).branches = branches.slice(0, 200)
-        ;(branching as any).activeBranchId = draftNewBranchId
-        ;(chat as any).branching = branching
-      }
-
-      chat.messages.push(...attachMsgs, rootMsg)
-      chat.updatedAt = now()
-      if (wasEmpty && String(chat.title || '') === '新聊天') {
-        const t = userText.replace(/\s+/g, ' ').trim()
-        const firstAttName = attachMsgs.length ? String((attachMsgs[0] as any)?.attachments?.[0]?.name || '').trim() : ''
-        const base = t || (savedPaths.length ? '图片' : firstAttName || (hasFiles ? '文件' : '新聊天'))
-        chat.title = base.length > 16 ? base.slice(0, 16) + '…' : base || '新聊天'
-      }
-
-      state.draft.input = ''
-      state.draft.images = []
-      ;(state.draft as any).files = []
-      if (draft && draftNewBranchId && draftForkMid) state.branchDraft = null
-
-      chat.messages.push({
-        id: assistantMid,
-        role: 'assistant',
-        content: ASSISTANT_RUNNING_CONTENT,
-        branchId: activeBranchId,
-        parentMid,
-        createdAt: now(),
-        modelRef: messageModelRef,
-      })
-      const assistantMsg = chat.messages[chat.messages.length - 1]
-      beginAssistantMessageRun(assistantMsg, streamEnabled, 'new')
-      const generationId = assistantGenerationId(assistantMsg)
-      chat.updatedAt = now()
-      setChatBranchHeadMid(chat, activeBranchId, assistantMid)
-      repairChatLinearBranching(chat)
-
-      await save()
-
-      const jobStub: any = {
-        kind: 'openai.chat.completions',
-        roleId: String(role.id || ''),
-        chatId: String(chat.id || ''),
-        assistantMid,
-        generationId,
-        branchId: activeBranchId,
-        stream: streamEnabled,
-      }
-      await submitChatCompletion({
-        target: {
-          kind: 'role',
-          roleId: String(role.id || ''),
-          chatId: String(chat.id || ''),
-          branchId: activeBranchId,
-          assistantMid,
-          generationId,
-        } as any,
-        stream: streamEnabled,
-        jobStub,
+      await runRoleMessageViaEb({ roleId: rid, sessionId, message: input }, () => {
+        state.draft.input = ''
+        state.draft.images = []
+        ;(state.draft as any).files = []
+        renderComposer()
       })
     } catch (e) {
       const msg = String((e as any)?.message || e || '请求失败')
-      const items = Array.isArray(chat?.messages) ? chat.messages : []
-      const am = assistantMid ? items.find((m: any) => String(m?.id || '') === assistantMid) : null
-      if (am) {
-        finishAssistantMessage(am, `（请求失败：${msg}）`, 'failed')
-      }
-      save().catch(() => {})
       showToast?.(msg)
     } finally {
       state.sending = false
@@ -534,6 +377,8 @@ export function createChatOperations(deps: {
   async function sendGroupChat(_opts?: { forkFromMid?: string }) {
     const state = getState()
     if (state.sending || state.loading || !state.data) return
+
+    return showToast?.('群组发送尚未接入 e-b 真实会话根动作，已阻止本地假会话发送')
 
     await ensureActiveChatLoaded?.()
 
@@ -703,7 +548,10 @@ export function createChatOperations(deps: {
       }
       if (!chat) throw new Error('创建会话失败')
 
-      const meta = typeof loadSplitMeta === 'function' ? await loadSplitMeta().catch(() => null) : null
+      let meta: any = null
+      if (typeof loadSplitMeta === 'function') {
+        meta = await loadSplitMeta!().catch(() => null)
+      }
       const groupFolder = String(meta?.groupFolders?.[gid] || '').trim()
       if (!groupFolder) throw new Error('群组索引损坏：groupFolders 缺失')
 
@@ -1103,119 +951,7 @@ export function createChatOperations(deps: {
   async function regenerateGroupAssistantMessage(assistantMid: string) {
     const state = getState()
     if (state.sending || state.loading || !state.data) return
-
-    await ensureActiveChatLoaded?.()
-
-    const group = sa.activeGroup()
-    const chat = sa.activeChatFromData()
-    if (!group || !chat) return
-
-    const groupId = String((group as any)?.id || '').trim()
-    const chatId = String((chat as any)?.id || '').trim()
-    const mid = String(assistantMid || '').trim()
-    if (!groupId || !chatId || !mid) return
-
-    const roles = Array.isArray(state.data.roles) ? state.data.roles : []
-    const roleById = new Map<string, any>()
-    for (const r of roles) {
-      const rid = String(r?.id || '').trim()
-      if (!rid || roleById.has(rid)) continue
-      roleById.set(rid, r)
-    }
-
-    try {
-      state.sending = true
-      renderComposer()
-
-      const msgs = Array.isArray(chat.messages) ? chat.messages : []
-      const aiIndex = msgs.findIndex((m: any) => String(m?.id || '') === mid)
-      if (aiIndex < 0) throw new Error('未找到该消息')
-
-      const target = msgs[aiIndex]
-      if (!target || target.role !== 'assistant') throw new Error('只能重新生成 AI 回复')
-      if (hasActiveAssistantMessages({ messages: [target] })) throw new Error('该消息正在生成中')
-      const branching = ensureChatBranching(chat)
-      const activeBranchId = normalizeBranchId((branching as any)?.activeBranchId || CHAT_DEFAULT_BRANCH_ID)
-      const branchId = normalizeBranchId((target as any)?.branchId || activeBranchId)
-      if (chatHasPendingAssistantInBranch(chat, branchId, mid)) throw new Error('该分支正在生成中，请先停止或等待完成')
-
-      let speakerRoleId = String((target as any)?.speakerRoleId || '').trim()
-      if (!speakerRoleId) {
-        const member0 = Array.isArray((group as any)?.memberRoleIds) ? ((group as any).memberRoleIds as any[]) : []
-        const memberRoleIds = member0.map((x: any) => String(x || '').trim()).filter((x: any) => !!x && roleById.has(x))
-        speakerRoleId = memberRoleIds[0] ? String(memberRoleIds[0]) : ''
-      }
-      if (!speakerRoleId) throw new Error('该消息缺少 speakerRoleId，无法确定由谁重新生成')
-
-      const speakerRole = roleById.get(speakerRoleId) || null
-      if (!speakerRole) throw new Error('群组成员角色不存在')
-      sa.ensureRoleDefaults(speakerRole)
-
-      const picked = pickChatModelRef(speakerRole, null)
-      const providerId = String(picked.providerId || '')
-      const modelId = String(picked.modelId || '').trim()
-      const p = sa.getProvider(providerId)
-      if (!p) throw new Error(`未找到供应商：${String((speakerRole as any).name || '角色')}`)
-      const baseUrl = trimSlash(p.baseUrl || '')
-      const apiKey = String(p.apiKey || '').trim()
-      if (!isHttpBaseUrl(baseUrl)) throw new Error(`请先为「${String((speakerRole as any).name || '角色')}」配置 Base URL（http/https）`)
-      if (!apiKey) throw new Error(`请先为「${String((speakerRole as any).name || '角色')}」配置 API Key`)
-      if (!modelId) throw new Error(`请先为「${String((speakerRole as any).name || '角色')}」选择模型ID`)
-
-      const streamEnabled = !!state.data?.settings?.streamEnabled
-      beginAssistantMessageRun(target, streamEnabled, 'regenerate')
-      const generationId = assistantGenerationId(target)
-      ;(target as any).speakerRoleId = speakerRoleId
-      ;(target as any).modelRef = buildMessageModelRef(providerId, modelId)
-      chat.updatedAt = now()
-      repairChatLinearBranching(chat)
-
-      try {
-        await aiGateway.resetAssistantRuntime(mid)
-      } catch (_) {}
-
-      await save()
-
-      const jobStub: any = {
-        kind: 'openai.chat.completions',
-        targetKind: 'group',
-        groupId,
-        roleId: String(speakerRoleId || ''),
-        chatId,
-        assistantMid: mid,
-        generationId,
-        cutoffMid: mid,
-        branchId,
-        stream: streamEnabled,
-      }
-      await submitChatCompletion({
-        target: {
-          kind: 'group',
-          groupId,
-          roleId: String(speakerRoleId || ''),
-          chatId,
-          branchId,
-          assistantMid: mid,
-          generationId,
-        } as any,
-        stream: streamEnabled,
-        jobStub,
-      })
-    } catch (e) {
-      const msg = String((e as any)?.message || e || '请求失败')
-      try {
-        const items = Array.isArray((chat as any)?.messages) ? (chat as any).messages : []
-        const am = mid ? items.find((m: any) => String(m?.id || '') === mid) : null
-        if (am) {
-          finishAssistantMessage(am, `（请求失败：${msg}）`, 'failed')
-        }
-      } catch (_) {}
-      save().catch(() => {})
-      showToast?.(msg)
-    } finally {
-      state.sending = false
-      render()
-    }
+    showToast?.('群组重生成尚未接入 e-b 真实会话根动作，已阻止本地假运行')
   }
 
   // ============ reply from user message ============
@@ -1331,231 +1067,7 @@ export function createChatOperations(deps: {
   async function replyFromUserMessageInGroup(userMid: string) {
     const state = getState()
     if (state.sending || state.loading || !state.data) return
-
-    await ensureActiveChatLoaded?.()
-
-    const group = sa.activeGroup()
-    const chat = sa.activeChatFromData()
-    if (!group || !chat) return
-
-    const groupId = String((group as any)?.id || '').trim()
-    const chatId = String((chat as any)?.id || '').trim()
-    const mid = String(userMid || '').trim()
-    if (!groupId || !chatId || !mid) return
-
-    const roles = Array.isArray(state.data.roles) ? state.data.roles : []
-    const roleById = new Map<string, any>()
-    for (const r of roles) {
-      const rid = String(r?.id || '').trim()
-      if (!rid || roleById.has(rid)) continue
-      roleById.set(rid, r)
-    }
-
-    const member0 = Array.isArray((group as any).memberRoleIds) ? ((group as any).memberRoleIds as any[]) : []
-    const memberRoleIds = member0.map((x: any) => String(x || '').trim()).filter((x: any) => !!x && roleById.has(x)).slice(0, 50)
-    if (!memberRoleIds.length) return showToast?.('该群组还没有成员角色')
-
-    const extractAtMentionNames = (text: string) => {
-      const t = String(text || '')
-      if (!t) return [] as string[]
-      const out: string[] = []
-      const re = /@\{([^\}\r\n]{1,80})\}/g
-      let m: RegExpExecArray | null = null
-      while ((m = re.exec(t))) {
-        const name = String(m[1] || '').trim()
-        if (name) out.push(name)
-      }
-      return out
-    }
-
-    const buildAtMentionSpeakerRoleIds = (text: string) => {
-      const names = extractAtMentionNames(text)
-      if (!names.length) return [] as string[]
-      const idByName = new Map<string, string>()
-      for (const rid of memberRoleIds) {
-        const r = roleById.get(rid) || null
-        const name = String((r as any)?.name || '').trim()
-        if (!name || idByName.has(name)) continue
-        idByName.set(name, rid)
-      }
-      const out: string[] = []
-      const seen = new Set<string>()
-      for (const name of names) {
-        const rid = idByName.get(name) || ''
-        if (!rid || seen.has(rid)) continue
-        seen.add(rid)
-        out.push(rid)
-      }
-      return out
-    }
-
-    const mode = String((group as any).mode || '').trim() === 'random' ? 'random' : 'roundRobin'
-
-    const pickRandomRolesOnce = () => {
-      const randomCfg = (group as any).random && typeof (group as any).random === 'object' ? (group as any).random : {}
-      const weights0 = (randomCfg as any).weightsByRoleId && typeof (randomCfg as any).weightsByRoleId === 'object' ? (randomCfg as any).weightsByRoleId : {}
-      let minCount = Number((randomCfg as any).minCount ?? 1)
-      let maxCount = Number((randomCfg as any).maxCount ?? 2)
-      if (!isFinite(minCount)) minCount = 1
-      if (!isFinite(maxCount)) maxCount = 2
-      minCount = clamp(Math.round(minCount), 1, 20)
-      maxCount = clamp(Math.round(maxCount), 1, 20)
-      if (maxCount < minCount) maxCount = minCount
-
-      const pool = memberRoleIds
-        .map((rid) => {
-          const w = Number((weights0 as any)[rid] ?? 1)
-          const weight = isFinite(w) && w >= 0 ? w : 1
-          return { rid, weight }
-        })
-        .filter((x) => x.weight > 0)
-
-      const candidates = pool.length ? pool.slice() : memberRoleIds.map((rid) => ({ rid, weight: 1 }))
-      const maxK = Math.max(1, Math.min(candidates.length, maxCount))
-      const minK = Math.max(1, Math.min(maxK, minCount))
-      const k = minK + Math.floor(Math.random() * (maxK - minK + 1))
-
-      const chosen: string[] = []
-      const bag = candidates.slice()
-      for (let i = 0; i < k && bag.length; i++) {
-        let sum = 0
-        for (const it of bag) sum += it.weight
-        if (!(sum > 0)) break
-        let r = Math.random() * sum
-        let idx = -1
-        for (let j = 0; j < bag.length; j++) {
-          r -= bag[j].weight
-          if (r <= 0) {
-            idx = j
-            break
-          }
-        }
-        if (idx < 0) idx = bag.length - 1
-        const picked = bag.splice(idx, 1)[0]
-        if (picked?.rid) chosen.push(String(picked.rid))
-      }
-      return chosen.length ? chosen : memberRoleIds.slice(0, 1)
-    }
-
-    try {
-      state.sending = true
-      renderComposer()
-
-      const msgs = Array.isArray(chat.messages) ? chat.messages : []
-      const userIndex = msgs.findIndex((m: any) => String(m?.id || '') === mid)
-      if (userIndex < 0) throw new Error('未找到该消息')
-
-      const target = msgs[userIndex]
-      if (!target || target.role !== 'user') throw new Error('只能从用户消息发起重新回复')
-
-      const userText = String((target as any)?.content || '').trim()
-      const atMentionSpeakerRoleIds = buildAtMentionSpeakerRoleIds(userText)
-
-      const speakerRoleIds = (() => {
-        if (atMentionSpeakerRoleIds.length) return atMentionSpeakerRoleIds
-        if (mode === 'random') return pickRandomRolesOnce()
-        const order0 = Array.isArray((group as any).roundRobinOrder) ? (group as any).roundRobinOrder : []
-        const order = order0.map((x: any) => String(x || '').trim()).filter((x: any) => !!x && memberRoleIds.includes(x))
-        return order.length ? order : memberRoleIds.slice()
-      })()
-
-      // 校验每个参与发言的角色是否可用（避免插入"生成中…"但后台不接单）
-      for (const rid of speakerRoleIds) {
-        const r = roleById.get(String(rid || ''))
-        if (!r) throw new Error('群组成员角色不存在')
-        sa.ensureRoleDefaults(r)
-        const picked = pickChatModelRef(r, null)
-        const providerId = String(picked.providerId || '')
-        const modelId = String(picked.modelId || '').trim()
-        const p = sa.getProvider(providerId)
-        if (!p) throw new Error(`未找到供应商：${String((r as any).name || '角色')}`)
-        const baseUrl = trimSlash(p.baseUrl || '')
-        const apiKey = String(p.apiKey || '').trim()
-        if (!isHttpBaseUrl(baseUrl)) throw new Error(`请先为「${String((r as any).name || '角色')}」配置 Base URL（http/https）`)
-        if (!apiKey) throw new Error(`请先为「${String((r as any).name || '角色')}」配置 API Key`)
-        if (!modelId) throw new Error(`请先为「${String((r as any).name || '角色')}」选择模型ID`)
-      }
-
-      const streamEnabled = !!state.data?.settings?.streamEnabled
-      const branching = ensureChatBranching(chat)
-      const activeBranchId = normalizeBranchId((branching as any)?.activeBranchId || CHAT_DEFAULT_BRANCH_ID)
-      const desiredBranchId = normalizeBranchId((target as any)?.branchId || activeBranchId)
-      if (chatHasPendingAssistantInBranch(chat, desiredBranchId)) throw new Error('该分支正在生成中，请先停止或等待完成')
-
-      const toInsert: any[] = []
-      let parentMid = mid
-      for (const rid of speakerRoleIds) {
-        const rid0 = String(rid || '')
-        const speakerRole = roleById.get(rid0)
-        const picked = pickChatModelRef(speakerRole, null)
-        const messageModelRef = buildMessageModelRef(picked.providerId, picked.modelId)
-        const assistantMid = uid('m')
-        toInsert.push({
-          id: assistantMid,
-          role: 'assistant',
-          speakerRoleId: rid0,
-          content: ASSISTANT_RUNNING_CONTENT,
-          branchId: desiredBranchId,
-          parentMid,
-          createdAt: now(),
-          modelRef: messageModelRef,
-        })
-        beginAssistantMessageRun(toInsert[toInsert.length - 1], streamEnabled, 'new')
-        parentMid = assistantMid
-      }
-
-      if (!toInsert.length) throw new Error('未选中任何发言角色')
-
-      msgs.splice(userIndex + 1, 0, ...toInsert)
-      chat.messages = msgs
-      chat.updatedAt = now()
-      setChatBranchHeadMid(chat, desiredBranchId, String(toInsert[toInsert.length - 1]?.id || ''))
-      repairChatLinearBranching(chat)
-
-      await save()
-
-      await aiGateway.submitManyChatCompletions(
-        toInsert
-          .map((am: any) => {
-            const assistantMid = String(am?.id || '').trim()
-            const roleId = String(am?.speakerRoleId || '').trim()
-            const generationId = assistantGenerationId(am)
-            if (!assistantMid || !roleId) return null
-            const jobStub: any = {
-              kind: 'openai.chat.completions',
-              targetKind: 'group',
-              groupId,
-              roleId,
-              chatId,
-              assistantMid,
-              generationId,
-              cutoffMid: assistantMid,
-              branchId: desiredBranchId,
-              stream: streamEnabled,
-            }
-            return {
-              target: {
-                kind: 'group',
-                groupId,
-                roleId,
-                chatId,
-                branchId: desiredBranchId,
-                assistantMid,
-                generationId,
-              } as any,
-              stream: streamEnabled,
-              jobStub,
-            }
-          })
-          .filter((x: any): x is any => !!x)
-      )
-    } catch (e) {
-      const msg = String((e as any)?.message || e || '请求失败')
-      showToast?.(msg)
-    } finally {
-      state.sending = false
-      render()
-    }
+    showToast?.('群组从用户消息继续回复尚未接入 e-b 真实会话根动作，已阻止本地假运行')
   }
 
   // ============ create parallel branch from assistant message ============

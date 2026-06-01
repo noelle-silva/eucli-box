@@ -6,6 +6,7 @@ import { now } from '../core/utils'
 import { chatMetaFromChat, chatMetasFromBox, upsertChatMeta } from '../domain/chatMeta'
 import { UI_CHAT_UPDATED_NOTICE_KEY } from '../runtime/runtimeKeys'
 import { splitChatKey, splitGroupChatKey } from '../domain/storageKeys'
+import { normalizeStoredChat } from '../storage/normalizeStoredChat'
 import {
   checkpointAssistantRun,
   isAssistantGenerating,
@@ -96,7 +97,7 @@ export function createUiPolling(deps: {
         const curUpdatedAt = Number(cur?.updatedAt || 0)
         if (metaUpdatedAt && metaUpdatedAt !== curUpdatedAt) {
           const c0 = await deps.storage.get(splitChatKey(folder, activeChatId))
-          const c1 = c0 && typeof c0 === 'object' ? c0 : null
+          const c1 = c0 && typeof c0 === 'object' ? normalizeStoredChat(c0, 'role') : null
           if (c1) {
             const idx0 = nextChats.findIndex((c: any) => String(c?.id || '') === activeChatId)
             if (idx0 >= 0) nextChats[idx0] = c1
@@ -134,7 +135,7 @@ export function createUiPolling(deps: {
     if (!folder) return false
 
     const raw = await deps.storage.get(splitChatKey(folder, cid))
-    const chat = raw && typeof raw === 'object' ? raw : null
+    const chat = raw && typeof raw === 'object' ? normalizeStoredChat(raw, 'role') : null
     if (!chat) return false
 
     if (!state.data.chatsByRole || typeof state.data.chatsByRole !== 'object') state.data.chatsByRole = {}
@@ -163,7 +164,7 @@ export function createUiPolling(deps: {
     if (!folder) return false
 
     const raw = await deps.storage.get(splitGroupChatKey(folder, cid))
-    const chat = raw && typeof raw === 'object' ? raw : null
+    const chat = raw && typeof raw === 'object' ? normalizeStoredChat(raw, 'group') : null
     if (!chat) return false
 
     if (!(state.data as any).chatsByGroup || typeof (state.data as any).chatsByGroup !== 'object') (state.data as any).chatsByGroup = {}

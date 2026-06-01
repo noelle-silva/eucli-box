@@ -88,16 +88,21 @@ func appendRunAssistantReply(record *runRecord, content string) {
 	}
 	record.session = appendAssistantReply(record.session, content, record.messageParent)
 	record.messageParent = lastSessionMessage(record.session)
+	record.lastMessageID = record.messageParent.ID
 }
 
 func appendRunMessage(record *runRecord, message types.Message) {
 	record.session = appendChildMessage(record.session, message, record.messageParent)
 	record.messageParent = lastSessionMessage(record.session)
+	record.lastMessageID = record.messageParent.ID
 }
 
 func appendRunFailureMessage(record *runRecord, session types.Session, reason string) types.Session {
 	if strings.TrimSpace(record.messageParent.ID) == "" {
-		return appendMessage(session, failureMessage(reason))
+		session = appendMessage(session, failureMessage(reason))
+		record.session = session
+		record.lastMessageID = lastSessionMessage(session).ID
+		return session
 	}
 	record.session = session
 	appendRunMessage(record, failureMessage(reason))

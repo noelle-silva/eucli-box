@@ -57,12 +57,14 @@ type system struct {
 }
 
 type runRecord struct {
-	runID         string
-	roleID        string
-	state         types.RunState
-	session       types.Session
-	messageParent types.Message
-	cancel        context.CancelFunc
+	runID          string
+	roleID         string
+	state          types.RunState
+	session        types.Session
+	messageParent  types.Message
+	inputMessageID string
+	lastMessageID  string
+	cancel         context.CancelFunc
 
 	pendingPlan    *types.ToolRunPlan
 	confirmationCh chan types.ToolConfirmation

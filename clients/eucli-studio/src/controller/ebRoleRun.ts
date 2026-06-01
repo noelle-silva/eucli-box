@@ -4,6 +4,8 @@ export type EbRunState = {
   id: string
   roleId: string
   sessionId: string
+  inputMessageId: string
+  lastMessageId: string
   status: string
   reason: string
 }
@@ -55,6 +57,8 @@ export function normalizeRunState(value: any): EbRunState {
     id: String(state.id || '').trim(),
     roleId: String(state.roleId || '').trim(),
     sessionId: String(state.sessionId || '').trim(),
+    inputMessageId: String(state.inputMessageId || '').trim(),
+    lastMessageId: String(state.lastMessageId || '').trim(),
     status: String(state.status || '').trim(),
     reason: String(state.reason || '').trim(),
   }

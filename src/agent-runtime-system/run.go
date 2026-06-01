@@ -74,6 +74,10 @@ func (s *system) run(ctx context.Context, record *runRecord, request types.RunRe
 		s.failRunStateOnly(record, err.Error())
 		return
 	}
+	if err := s.setRunMessageIDs(record.runID, assistantParent.ID, assistantParent.ID); err != nil {
+		s.failRun(context.Background(), record, session, err.Error())
+		return
+	}
 	if err := s.saveSession(ctx, session, types.RunStatusRunning); err != nil {
 		s.failRun(context.Background(), record, session, err.Error())
 		return
@@ -101,6 +105,10 @@ func (s *system) run(ctx context.Context, record *runRecord, request types.RunRe
 		}
 		appendRunAssistantReply(record, modelResponse.Content)
 		assistantParent = record.messageParent
+		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, assistantParent.ID); err != nil {
+			s.failRun(context.Background(), record, record.session, err.Error())
+			return
+		}
 		contextSession = appendMessage(contextSession, assistantParent)
 		s.publish(record.runID, "model_output", modelResponse)
 		if err := s.saveSession(ctx, record.session, types.RunStatusRunning); err != nil {
@@ -213,13 +221,19 @@ func (s *system) failRun(ctx context.Context, record *runRecord, session types.S
 	if err != nil {
 		if session.ID != "" {
 			session = appendRunFailureMessage(record, session, reason)
+			_ = s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID)
 			_ = s.saveSession(ctx, session, types.RunStatus(session.Status))
 		}
-		s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: reason})
+		s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, InputMessageID: record.inputMessageID, LastMessageID: record.lastMessageID, Status: types.RunStatusFailed, Reason: reason})
 		return
 	}
 	if session.ID != "" {
 		session = appendRunFailureMessage(record, session, reason)
+		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err == nil {
+			if next, ok := s.getRunState(record.runID); ok {
+				state = next
+			}
+		}
 		if err := s.saveSession(ctx, session, types.RunStatusFailed); err != nil {
 			s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: "save session failed: " + err.Error()})
 			return

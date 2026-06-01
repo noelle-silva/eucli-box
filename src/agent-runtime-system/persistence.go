@@ -2,6 +2,7 @@ package agentruntime
 
 import (
 	"context"
+	"strings"
 
 	"eucli-box/pkg/types"
 )
@@ -38,6 +39,30 @@ func (s *system) setRunSessionID(runID string, sessionID string) error {
 		return runtimeNotFound("run was not found", nil)
 	}
 	record.state.SessionID = sessionID
+	record.state.UpdatedAt = nowUTC()
+	return nil
+}
+
+func (s *system) setRunMessageIDs(runID string, inputMessageID string, lastMessageID string) error {
+	inputMessageID = strings.TrimSpace(inputMessageID)
+	lastMessageID = strings.TrimSpace(lastMessageID)
+	if inputMessageID == "" && lastMessageID == "" {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.runs[runID]
+	if !ok {
+		return runtimeNotFound("run was not found", nil)
+	}
+	if inputMessageID != "" {
+		record.inputMessageID = inputMessageID
+		record.state.InputMessageID = inputMessageID
+	}
+	if lastMessageID != "" {
+		record.lastMessageID = lastMessageID
+		record.state.LastMessageID = lastMessageID
+	}
 	record.state.UpdatedAt = nowUTC()
 	return nil
 }

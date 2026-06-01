@@ -11,6 +11,9 @@ import {
   findChatMessageById,
   findPrevAssistantMidForAssistant,
   findChatBranch,
+  collectChatMessageIds,
+  findNewestNewLeafMessageId,
+  activateChatBranchByMessage,
 } from '../domain/branching'
 import { looksLikeImageDataUrl } from '../domain/textProcessing'
 import { detectDraftFileKind, addDraftFilePlaceholder } from '../domain/draftFileUtils'
@@ -45,7 +48,7 @@ export function createChatOperations(deps: {
     return hasActiveAssistantMessages(chat)
   }
 
-  async function refreshRoleSession(roleId: string, sessionId: string) {
+  async function refreshRoleSession(roleId: string, sessionId: string, onLoaded?: (chat: any) => void) {
     const state = getState()
     const rid = String(roleId || '').trim()
     const sid = String(sessionId || '').trim()
@@ -56,9 +59,19 @@ export function createChatOperations(deps: {
     const chat = typeof reloadRoleSession === 'function' ? await reloadRoleSession(rid, sid) : await ensureChatLoaded('role', rid, sid)
     if (chat) {
       state.data.chatsByRole[rid].activeChatId = sid
+      onLoaded?.(chat)
       emit()
     }
     return chat
+  }
+
+  function followRunResultBranch(chat: any, follow: { previousMessageIds: Set<string>; ancestorMessageId?: string; messageId?: string } | null | undefined) {
+    if (!follow || !chat) return false
+    const explicitMessageId = String(follow.messageId || '').trim()
+    if (explicitMessageId && activateChatBranchByMessage(chat, explicitMessageId)) return true
+    const targetMessageId = findNewestNewLeafMessageId(chat, follow.previousMessageIds, follow.ancestorMessageId)
+    if (!targetMessageId) return false
+    return activateChatBranchByMessage(chat, targetMessageId)
   }
 
   function activeChatHeadMid(chat: any) {
@@ -86,27 +99,40 @@ export function createChatOperations(deps: {
     return activeChatHeadMid(chat)
   }
 
-  async function runRoleMessageViaEb(input: { roleId: string; sessionId: string; message?: string; parentMessageId?: string; userMessageId?: string }, onAccepted?: (run: EbRunState) => void) {
+  async function runRoleMessageViaEb(
+    input: { roleId: string; sessionId: string; message?: string; parentMessageId?: string; userMessageId?: string },
+    onAccepted?: (run: EbRunState) => void,
+    follow?: { previousMessageIds: Set<string>; ancestorMessageId?: string },
+  ) {
     if (typeof netRequest !== 'function') throw new Error('e-b 请求通道不可用')
     let state = await startRoleRun(netRequest, input)
     if (!state.id) throw new Error('e-b 未返回 run id')
     onAccepted?.(state)
     let sessionId = String(state.sessionId || input.sessionId || '').trim()
-    if (sessionId) await refreshRoleSession(input.roleId, sessionId)
+    let followMessageId = String(state.lastMessageId || '').trim()
+    if (sessionId) await refreshRoleSession(input.roleId, sessionId, (chat) => followRunResultBranch(chat, follow ? { ...follow, messageId: followMessageId } : null))
 
     const deadline = Date.now() + 120_000
     while (!isTerminalRunStatus(state.status)) {
       if (Date.now() > deadline) throw new Error('e-b 运行超时')
       await sleepMs(450)
       state = await getRunState(netRequest, state.id)
+      followMessageId = String(state.lastMessageId || followMessageId || '').trim()
+      const currentState = getState()
+      const sendingCtx = currentState.sendingCtx && typeof currentState.sendingCtx === 'object' ? currentState.sendingCtx : null
+      if (sendingCtx && String(sendingCtx.kind || '') === 'eb-role-run' && String(sendingCtx.runId || '') === String(state.id || '')) {
+        sendingCtx.inputMessageId = String(state.inputMessageId || sendingCtx.inputMessageId || '').trim()
+        sendingCtx.lastMessageId = followMessageId
+      }
       const nextSessionId = String(state.sessionId || sessionId || '').trim()
       if (nextSessionId) {
         sessionId = nextSessionId
-        await refreshRoleSession(input.roleId, sessionId)
+        await refreshRoleSession(input.roleId, sessionId, (chat) => followRunResultBranch(chat, follow ? { ...follow, messageId: followMessageId } : null))
       }
     }
 
-    if (sessionId) await refreshRoleSession(input.roleId, sessionId)
+    followMessageId = String(state.lastMessageId || followMessageId || '').trim()
+    if (sessionId) await refreshRoleSession(input.roleId, sessionId, (chat) => followRunResultBranch(chat, follow ? { ...follow, messageId: followMessageId } : null))
     if (state.status === 'failed' || state.status === 'cancelled') throw new Error(state.reason || `e-b run ${state.status}`)
     if (!sessionId) throw new Error('e-b 未返回会话ID')
     return sessionId
@@ -130,6 +156,8 @@ export function createChatOperations(deps: {
     const state = getState()
     const userMessageId = String(input.userMessageId || '').trim()
     if (!userMessageId) return false
+    const chatBeforeRun = sa.activeChatFromData()
+    const previousMessageIds = collectChatMessageIds(chatBeforeRun)
     try {
       state.sending = true
       state.sendingCtx = { kind: 'eb-role-run', runId: '', roleId: input.roleId, sessionId: input.sessionId, cancelledByUser: false }
@@ -143,8 +171,8 @@ export function createChatOperations(deps: {
           cancelledByUser: false,
         }
         renderComposer()
-      })
-      await refreshRoleSession(input.roleId, input.sessionId)
+      }, { previousMessageIds, ancestorMessageId: userMessageId })
+      await refreshRoleSession(input.roleId, input.sessionId, (chat) => followRunResultBranch(chat, { previousMessageIds, ancestorMessageId: userMessageId }))
       return true
     } catch (e) {
       const msg = String((e as any)?.message || e || `${operationText}失败`)
@@ -319,6 +347,7 @@ export function createChatOperations(deps: {
     const chat = loadedChat || currentChatBeforeLoad || sa.activeChatFromData()
     const sessionId = String(chat?.id || '').trim()
     const parentMessageId = sessionId ? selectedParentMessageId || roleMessageParentForSend(chat, opts?.forkFromMid) : ''
+    const previousMessageIds = collectChatMessageIds(chat)
     try {
       state.sending = true
       state.sendingCtx = { kind: 'eb-role-run', runId: '', roleId: rid, sessionId, cancelledByUser: false }
@@ -336,7 +365,7 @@ export function createChatOperations(deps: {
         ;(state.draft as any).files = []
         state.branchDraft = null
         renderComposer()
-      })
+      }, { previousMessageIds, ancestorMessageId: parentMessageId })
     } catch (e) {
       const msg = String((e as any)?.message || e || '请求失败')
       if ((state.sendingCtx as any)?.cancelledByUser) showToast?.('已停止')

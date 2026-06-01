@@ -56,13 +56,15 @@ type RunRequest struct {
 }
 
 type RunState struct {
-	ID        string    `json:"id"`
-	RoleID    string    `json:"roleId"`
-	SessionID string    `json:"sessionId"`
-	Status    RunStatus `json:"status"`
-	Reason    string    `json:"reason,omitempty"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID             string    `json:"id"`
+	RoleID         string    `json:"roleId"`
+	SessionID      string    `json:"sessionId"`
+	InputMessageID string    `json:"inputMessageId,omitempty"`
+	LastMessageID  string    `json:"lastMessageId,omitempty"`
+	Status         RunStatus `json:"status"`
+	Reason         string    `json:"reason,omitempty"`
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
 }
 
 type RunEvent struct {

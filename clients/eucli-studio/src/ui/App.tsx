@@ -592,6 +592,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const [treeScale, setTreeScale] = React.useState(1)
   const [treeDir, setTreeDir] = React.useState<'lr' | 'tb' | 'bt' | 'rl'>(() => savedTreeDir)
   const [treeSelectedMid, setTreeSelectedMid] = React.useState('')
+  const [sendPathAnchor, setSendPathAnchor] = React.useState<{ chatId: string; parentMid: string; nonce: number }>({ chatId: '', parentMid: '', nonce: 0 })
   const [treePop, setTreePop] = React.useState<{ id: string; at: number }>({ id: '', at: 0 })
   const [treeDragging, setTreeDragging] = React.useState(false)
   const treeDragRef = React.useRef<{ pid: number; sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null)
@@ -882,6 +883,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     setTreePan({ x: 18, y: 18 })
     setTreeScale(1)
     setTreeSelectedMid('')
+    setSendPathAnchor({ chatId: '', parentMid: '', nonce: 0 })
     treeViewRef.current = { x: 18, y: 18, scale: 1 }
   }, [String(activeChat?.id || '')])
 
@@ -1428,6 +1430,23 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     return { nodes, edges, byId, nodeW, nodeH, size }
   }, [treeLayout, treeDir])
   const activeBranchIdUi = String((activeChat as any)?.branching?.activeBranchId || '')
+  const activeSendingCtx = (() => {
+    const ctx = (s as any)?.sendingCtx && typeof (s as any).sendingCtx === 'object' ? (s as any).sendingCtx : null
+    if (!ctx || String(ctx?.kind || '') !== 'eb-role-run') return null
+    if (String(ctx?.sessionId || '').trim() !== String(activeChat?.id || '').trim()) return null
+    return ctx
+  })()
+  const activeSendPathAnchorMid =
+    activeSendingCtx && String(sendPathAnchor.chatId || '') === String(activeChat?.id || '') ? String(sendPathAnchor.parentMid || '').trim() : ''
+  const activeSendingLastMid = (() => {
+    const mid = String(activeSendingCtx?.lastMessageId || '').trim()
+    return mid && chatAllById.has(mid) ? mid : ''
+  })()
+  const activeSendingInputMid = (() => {
+    const mid = String(activeSendingCtx?.inputMessageId || '').trim()
+    return mid && chatAllById.has(mid) ? mid : ''
+  })()
+  const treeFocusMid = String(treeSelectedMid || activeSendingLastMid || activeSendingInputMid || activeSendPathAnchorMid || '').trim()
   const allMessages: any[] = (() => {
     const chat: any = activeChat
     const msgs = chatAllMessagesRaw
@@ -1438,9 +1457,13 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     const branches = Array.isArray(branching?.branches) ? branching.branches : []
     const b = branches.find((x: any) => String(x?.id || '') === activeBranchId) || null
 
-    let headMid = String(b?.headMid || '').trim()
+    const activeHeadMid = String(b?.headMid || '').trim()
+    let headMid = activeHeadMid
     if (branchDraft) headMid = String(branchDraft?.forkFromMid || '').trim() || headMid
     if (!branchDraft && treeSelectedMid) headMid = String(treeSelectedMid || '').trim() || headMid
+    else if (!branchDraft && activeSendingLastMid) headMid = activeSendingLastMid
+    else if (!branchDraft && activeSendingInputMid) headMid = activeSendingInputMid
+    else if (!branchDraft && activeSendPathAnchorMid) headMid = activeSendPathAnchorMid
     if (!headMid) headMid = String(msgs[msgs.length - 1]?.id || '').trim()
     if (!headMid) return msgs
 
@@ -1630,7 +1653,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     stopTreeFollow()
     if (!treeOpen) return
     if (!savedTreeFollowSelected) return
-    const mid = String(treeSelectedMid || '').trim()
+    const mid = String(treeFocusMid || '').trim()
     if (!mid) return
     const tr: any = treeRender
     if (!tr || !tr.byId || typeof tr.byId.get !== 'function') return
@@ -1706,7 +1729,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
 
     start()
     return () => stopTreeFollow()
-  }, [treeOpen, effectiveTreeView, savedTreeFollowSelected, treeSelectedMid, treeRender, scheduleTreeViewTransform, stopTreeFollow])
+  }, [treeOpen, effectiveTreeView, savedTreeFollowSelected, treeFocusMid, treeRender, scheduleTreeViewTransform, stopTreeFollow])
 
   // 分支树（悬浮模态窗）：键盘方向键切换选中节点（按“深度/平级/分支最深”策略）
   React.useEffect(() => {
@@ -1803,7 +1826,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
       })() as 'parent' | 'child' | 'lanePrev' | 'laneNext'
 
       const pickStartId = () => {
-        const a = String(treeSelectedMid || '').trim()
+      const a = String(treeFocusMid || '').trim()
         if (a && byId.get(a)) return a
         const b = String(lastMsgId || '').trim()
         if (b && byId.get(b)) return b
@@ -1884,7 +1907,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
 
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [treeOpen, effectiveTreeView, treeDir, treeRender, treeSelectedMid, lastMsgId, jumpToMessage])
+  }, [treeOpen, effectiveTreeView, treeDir, treeRender, treeFocusMid, lastMsgId, jumpToMessage])
 
   // 分支树（悬浮模态窗）：按 Enter 关闭
   React.useEffect(() => {
@@ -1961,7 +1984,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
 
     const pickMid = () => {
       if (branchDraft) return String((branchDraft as any)?.forkFromMid || '').trim()
-      const chosen = String(treeSelectedMid || '').trim()
+      const chosen = String(treeFocusMid || '').trim()
       if (chosen) return chosen
       const head = String(activeBranchHeadMid || '').trim()
       if (head) return head
@@ -2004,7 +2027,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
       setTreePan({ x: targetX, y: targetY })
       scheduleTreeViewTransform()
 
-      if (!String(treeSelectedMid || '').trim()) setTreeSelectedMid(mid)
+      if (!String(treeSelectedMid || treeFocusMid || '').trim()) setTreeSelectedMid(mid)
       treeNeedInitialCenterRef.current = false
       return true
     }
@@ -2035,6 +2058,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     treeRender,
     branchDraftKey,
     treeSelectedMid,
+    treeFocusMid,
     activeBranchHeadMid,
     String(activeChat?.id || ''),
     stopTreeFollow,
@@ -2204,10 +2228,18 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     stickToBottomRef.current = true
     const mid = !branchDraft ? String(treeSelectedMid || '').trim() : ''
     if (mid && activeChat) {
+      setSendPathAnchor({ chatId: String(activeChat?.id || ''), parentMid: mid, nonce: Date.now() })
       setTreeSelectedMid('')
-      controller.actions.sendFromMid?.(mid)
+      Promise.resolve(controller.actions.sendFromMid?.(mid)).finally(() => {
+        setSendPathAnchor((current) => {
+          if (String(current?.chatId || '') !== String(activeChat?.id || '')) return current
+          if (String(current?.parentMid || '') !== mid) return current
+          return { chatId: '', parentMid: '', nonce: 0 }
+        })
+      })
       return
     }
+    setSendPathAnchor({ chatId: '', parentMid: '', nonce: 0 })
     setTreeSelectedMid('')
     controller.actions.send()
   })
@@ -4335,7 +4367,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                                 const strokeW = 6
                                 const capR = strokeW / 2
                                 const aiGap = 2
-                                const selectedMid = String(treeSelectedMid || '')
+                                const selectedMid = String(treeFocusMid || '')
 
                                 const ax = Number(a.x || 0)
                                 const ay = Number(a.y || 0)
@@ -4407,7 +4439,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                             const h = Number((treeRender as any).nodeH || 44)
                             const role = String(n?.role || '')
                             const text = String(n?.text || '')
-                            const isSelected = id === String(treeSelectedMid || '')
+                            const isSelected = id === String(treeFocusMid || '')
                             const isAi = role === 'assistant'
                             const clipId = `fw-tree-clip-${svgSafeId(id)}`
                             const nodeFill = '#ffffff'
@@ -4653,7 +4685,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                                 const strokeW = 6
                                 const capR = strokeW / 2
                                 const aiGap = 2
-                                const selectedMid = String(treeSelectedMid || '')
+                                const selectedMid = String(treeFocusMid || '')
                                 const aIsAi = String(a?.role || '') === 'assistant'
                                 const bIsAi = String(b?.role || '') === 'assistant'
                                 const aDotR = aIsAi && from === selectedMid ? 10 : 8
@@ -4720,7 +4752,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                             const h = Number((treeRender as any).nodeH || 44)
                             const role = String(n?.role || '')
                             const text = String(n?.text || '')
-                            const isSelected = id === String(treeSelectedMid || '')
+                            const isSelected = id === String(treeFocusMid || '')
                             const isAi = role === 'assistant'
                             const clipId = `fw-tree-clip-${svgSafeId(id)}`
 

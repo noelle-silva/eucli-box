@@ -149,6 +149,13 @@ func TestStartRunWithParentMessageIDAppendsUserAtSelectedMessage(t *testing.T) {
 	if newAssistant.Type != "assistant" || newAssistant.ParentMessageID != newUser.ID || newAssistant.BranchID != newUser.BranchID {
 		t.Fatalf("new assistant = %#v user=%#v", newAssistant, newUser)
 	}
+	gotState, err := system.GetRun(context.Background(), state.ID)
+	if err != nil {
+		t.Fatalf("GetRun() error = %v", err)
+	}
+	if gotState.InputMessageID != newUser.ID || gotState.LastMessageID != newAssistant.ID {
+		t.Fatalf("run message ids = input %q last %q, want input %q last %q", gotState.InputMessageID, gotState.LastMessageID, newUser.ID, newAssistant.ID)
+	}
 	assertPromptMessageIDs(t, fakes.provider.lastPromptMessageIDs(), []string{"u1", "a1", newUser.ID})
 }
 

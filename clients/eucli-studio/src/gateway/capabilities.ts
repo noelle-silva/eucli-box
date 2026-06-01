@@ -1,4 +1,4 @@
-import type { AiChatNetAdapter, AiChatRuntimeStore } from '../engine'
+import type { AiChatNetAdapter, AiChatRuntimeStore } from '../engine/types'
 
 // ---- gateway interface types ----
 

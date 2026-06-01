@@ -19,23 +19,12 @@ import { detectDraftFileKind, addDraftFilePlaceholder } from '../domain/draftFil
 import type { DraftFileItem } from '../domain/draftFileUtils'
 import { normalizeChatModelOverride } from '../domain/modelRefUtils'
 import { createStateAccessors } from '../state/stateAccessors'
-import type { AiChatInternalGateway } from '../gateway/types'
-import {
-  beginAssistantRun,
-  checkpointAssistantRun,
-  finishAssistantRun,
-  isAssistantRunSignalCurrent,
-  normalizeAssistantRunSignal,
-  ASSISTANT_RUNNING_CONTENT,
-} from '../domain/assistantRunState'
 import { hasActiveAssistantMessages, listActiveAssistantMessages } from '../domain/chatRunState'
 import type { ChatSaveIntent } from '../domain/chatSaveIntent'
-import { createAssistantArtifactCleanup } from './assistantArtifactCleanup'
 import { cancelRoleRun, getRunState, isTerminalRunStatus, sleepMs, startRoleRun, type EbRunState } from './ebRoleRun'
 
 export function createChatOperations(deps: {
   getState: () => any
-  aiGateway: AiChatInternalGateway
   pickImageFiles?: (maxCount: number) => Promise<any[]>
   netRequest?: (req: any) => Promise<any>
   showToast?: (msg: any) => void
@@ -48,42 +37,12 @@ export function createChatOperations(deps: {
   scrollToBottomSoon: () => void
   readImageFileAsDataUrl: (file: File) => Promise<string>
   extractTextFromFile: (file: File, kind: string) => Promise<string>
-  uiStreamCache: Map<string, any>
 }) {
-  const { getState, aiGateway, pickImageFiles, netRequest, showToast, save, ensureActiveChatLoaded, ensureChatLoaded, emit, render, renderComposer, scrollToBottomSoon, readImageFileAsDataUrl, extractTextFromFile, uiStreamCache } = deps
+  const { getState, pickImageFiles, netRequest, showToast, save, ensureActiveChatLoaded, ensureChatLoaded, emit, render, renderComposer, scrollToBottomSoon, readImageFileAsDataUrl, extractTextFromFile } = deps
 
   const sa = createStateAccessors({ getState })
-  const assistantArtifactCleanup = createAssistantArtifactCleanup({
-    uiStreamCache,
-    resetAssistantRuntime: (messageId) => aiGateway.resetAssistantRuntime(messageId),
-  })
-
-  function beginAssistantMessageRun(message: any, streamEnabled: boolean, mode: 'new' | 'regenerate' | 'tool-followup' = 'new') {
-    return beginAssistantRun(message, {
-      mode,
-      stream: streamEnabled,
-      resetContent: true,
-    })
-  }
-
-  function assistantGenerationId(message: any) {
-    return String(message?.assistantRun?.generationId || '').trim()
-  }
-
-  function checkpointAssistantMessage(message: any, content: unknown) {
-    return checkpointAssistantRun(message, content, now())
-  }
-
-  function finishAssistantMessage(message: any, content: unknown, status: 'succeeded' | 'failed' | 'canceled' = 'succeeded') {
-    return finishAssistantRun(message, content, status, now())
-  }
-
   function chatHasPendingAssistant(chat: any) {
     return hasActiveAssistantMessages(chat)
-  }
-
-  function chatHasPendingAssistantInBranch(chat: any, branchId: string, excludeMid?: any) {
-    return hasActiveAssistantMessages(chat, { branchId, excludeMid })
   }
 
   async function refreshRoleSession(roleId: string, sessionId: string) {
@@ -344,62 +303,7 @@ export function createChatOperations(deps: {
       }
       return
     }
-
-    await ensureActiveChatLoaded?.()
-
-    const kind = sa.activeTargetKind()
-    const roleId = String(sa.activeRole()?.id || '')
-    const groupId = String((sa.activeGroup() as any)?.id || '')
-    const chatId = String(sa.activeChatFromData()?.id || '')
-    if (!state.data || !chatId || (kind === 'role' && !roleId) || (kind === 'group' && !groupId)) return
-
-    const chat = kind === 'group' ? sa.findGroupChatByIds(groupId, chatId) : sa.findChatByIds(roleId, chatId)
-    if (!chat) return
-
-    const branching = ensureChatBranching(chat)
-    const activeBranchId = normalizeBranchId((branching as any)?.activeBranchId || CHAT_DEFAULT_BRANCH_ID)
-    const activeRefs = listActiveAssistantMessages(chat, { branchId: activeBranchId })
-    const refs = activeRefs.length ? activeRefs : listActiveAssistantMessages(chat)
-    if (!refs.length) return showToast?.('当前会话没有正在生成的消息')
-
-    try {
-      await Promise.all(refs.map(({ mid }) => aiGateway.cancelAssistant(mid).catch(() => undefined)))
-
-      for (const ref of refs) {
-        const mid = ref.mid
-        const m = ref.message
-        let text = ''
-        try {
-          const s = await aiGateway.readAssistantStream(mid)
-          const signal = normalizeAssistantRunSignal(s)
-          if (signal && isAssistantRunSignalCurrent(m, signal)) text = String(signal.text || '')
-        } catch (_) {}
-
-        if (!text) {
-          try {
-            const cached = normalizeAssistantRunSignal((uiStreamCache as any)?.get?.(mid))
-            if (cached && isAssistantRunSignalCurrent(m, cached) && cached.text) text = cached.text
-          } catch (_) {}
-        }
-        if (!text) {
-          const cur = String((m as any)?.content || '').trim()
-          if (cur && cur !== ASSISTANT_RUNNING_CONTENT) text = cur
-        }
-
-        finishAssistantMessage(m, text || '（已停止）', 'canceled')
-        uiStreamCache.delete(mid)
-        await aiGateway.resetAssistantRuntime(mid).catch(() => undefined)
-      }
-
-      chat.updatedAt = now()
-      repairChatLinearBranching(chat)
-      await save()
-    } catch (e) {
-      showToast?.(String((e as any)?.message || e || '停止失败'))
-    } finally {
-      state.sending = false
-      emit()
-    }
+    showToast?.('当前没有可停止的 e-b 真实运行')
   }
 
   // ============ regenerate assistant message ============

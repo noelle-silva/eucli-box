@@ -21,7 +21,6 @@ import { normalizeFavorites } from './favorites'
 import { chatMetasFromBox } from './chatMeta'
 import { looksLikeImageDataUrl } from './textProcessing'
 import { normalizeChatModelOverride, normalizeMessageModelRef } from './modelRefUtils'
-import { normalizeAssistantRunState } from './assistantRunState'
 
 export function normalizeRenderSafetyPolicy(v0: unknown) {
   const v = String(v0 || '').trim()
@@ -62,95 +61,6 @@ export function normalizeSplitMeta(raw: any) {
     groupOrder,
     groupFolders,
     chatIndexByGroup,
-  }
-}
-
-export function defaultData() {
-  const providerName = '默认供应商（OpenAI 兼容）'
-  const pid = uid('p')
-  const rid = uid('r')
-  const cid = uid('c')
-  const t = now()
-  return {
-    version: VERSION,
-    settings: {
-      streamEnabled: true,
-      transparentChatBg: false,
-      chatBgOpacity: 0,
-      chatBgBlur: 0,
-      topbarOpacity: 100,
-      topbarBlur: 0,
-      composerOpacity: 86,
-      composerBlur: 10,
-      branchTree: { dir: 'lr', view: 'float', followSelected: true, modalHotkey: '' },
-      renderSafetyPolicy: 'original',
-      userMessageCollapseEnabled: false,
-      userMessageCollapseLines: 8,
-      attachments: {
-        sendLimitChars: DEFAULT_ATTACH_SEND_LIMIT_CHARS,
-        maxFileSizeMbByKind: {
-          txt: DEFAULT_ATTACH_MAX_FILE_MB,
-          md: DEFAULT_ATTACH_MAX_FILE_MB,
-          pdf: DEFAULT_ATTACH_MAX_FILE_MB,
-          docx: DEFAULT_ATTACH_MAX_FILE_MB,
-          ppt: DEFAULT_ATTACH_MAX_FILE_MB,
-        },
-      },
-      stickers: {
-        enabled: false,
-        categories: [],
-        map: {},
-      },
-      aiServices: {
-        mermaidFix: {
-          enabled: false,
-          providerId: pid,
-          modelId: '',
-          customModelId: '',
-          systemPrompt: DEFAULT_MERMAID_FIX_SYSTEM_PROMPT,
-        },
-        chatTitleNaming: {
-          enabled: false,
-          providerId: pid,
-          modelId: '',
-          customModelId: '',
-          systemPrompt: DEFAULT_CHAT_TITLE_NAMING_SYSTEM_PROMPT,
-        },
-        stickerNaming: {
-          enabled: false,
-          providerId: pid,
-          modelId: '',
-          customModelId: '',
-          systemPrompt: DEFAULT_STICKER_NAMING_SYSTEM_PROMPT,
-        },
-      },
-      providers: [
-        {
-          id: pid,
-          name: providerName,
-          baseUrl: 'https://api.openai.com/v1',
-          apiKey: '',
-          modelsCache: { items: [], fetchedAt: 0 },
-        },
-      ],
-    },
-    favorites: { folders: [], chatRefsByFolderId: {} },
-    roles: [
-      {
-        id: rid,
-        name: '默认角色',
-        avatar: '🤖',
-        systemPrompt: '你是一个严谨、简洁的助手。',
-        temperature: 0.7,
-        modelRef: { providerId: pid, modelId: '' },
-        createdAt: now(),
-        updatedAt: now(),
-      },
-    ],
-    chatsByRole: { [rid]: { activeChatId: '', chats: [] } },
-    groups: [],
-    chatsByGroup: {},
-    ui: { activeTargetKind: 'role', activeRoleId: rid, activeGroupId: '' },
   }
 }
 
@@ -353,13 +263,9 @@ export function normalizeData(raw: any) {
                 ...normalizeMessageGroup(m),
                 branchId: normalizeBranchId((m as any).branchId || activeBranchId),
                 parentMid: String((m as any).parentMid || '').trim(),
-                pending: !!m.pending,
-                streaming: !!m.streaming,
                 createdAt: Number(m.createdAt || now()),
                 modelRef: normalizeMessageModelRef(m),
               }
-              const assistantRun = normalizeAssistantRunState((m as any).assistantRun)
-              if (assistantRun) outMsg.assistantRun = assistantRun
               return outMsg
             }),
         }
@@ -495,12 +401,8 @@ export function normalizeData(raw: any) {
                 ...normalizeMessageGroup(m),
                 branchId: normalizeBranchId((m as any).branchId || activeBranchId),
                 parentMid: String((m as any).parentMid || '').trim(),
-                pending: !!m.pending,
-                streaming: !!m.streaming,
                 createdAt: Number(m.createdAt || now()),
               }
-              const assistantRun = normalizeAssistantRunState((m as any).assistantRun)
-              if (assistantRun) outMsg.assistantRun = assistantRun
               return outMsg
             }),
         }

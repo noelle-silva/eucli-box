@@ -6,7 +6,6 @@ import { createDirectCapabilitiesAdapter } from '../direct/createDirectCapabilit
 import { createAiChatCapabilitiesFromHostApi } from '../gateway/capabilities'
 import { AI_CHAT_DIRECT_PROTOCOL_VERSION } from '../protocol/aiChatProtocol'
 import { AI_STUDIO_APP_ID, AI_STUDIO_CONTROLLER_KEY } from '../runtime/aiStudioGlobals'
-import { createAiChatDirectGateway } from './aiChatDirectGateway'
 
 type BackendEndpoint = {
   url: string
@@ -40,8 +39,7 @@ export async function createAiChatAppRuntime(options: AiChatAppHostOptions): Pro
   const baseApi = createAiStudioHostApi(options)
   const { api, directClient } = await createDirectCapabilitiesAdapter(baseApi)
   const capabilities = createAiChatCapabilitiesFromHostApi(api, AI_STUDIO_APP_ID)
-  const aiGateway = createAiChatDirectGateway(directClient)
-  const created = createAiChatControllerV2({ capabilities, aiGateway })
+  const created = createAiChatControllerV2({ capabilities })
   const controller = created.controller
   const bootstrap = await directClient.invoke('studio.bootstrap').catch(() => null)
 

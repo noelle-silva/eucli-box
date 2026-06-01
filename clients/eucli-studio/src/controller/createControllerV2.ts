@@ -5,7 +5,6 @@ import { createDefaultAssistantRenderEngine } from '../render/assistantEngineDef
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import mammoth from 'mammoth/mammoth.browser'
 import { extractPptMarkdown } from '../core/ppt'
-import type { AiChatInternalGateway } from '../gateway/types'
 import type { AiChatCapabilities } from '../gateway/capabilities'
 import { UI_CHAT_UPDATED_NOTICE_KEY } from '../runtime/runtimeKeys'
 import { IMAGE_VIEWER_ZOOM_MAX, MERMAID_VIEWER_ZOOM_MAX, VIEWER_ZOOM_MIN } from '../core/viewerZoom'
@@ -77,7 +76,6 @@ import {
 } from '../domain/textProcessing'
 import {
   normalizeSplitMeta,
-  defaultData,
   normalizeData,
   normalizeRenderSafetyPolicy,
   normalizeMaxFileSizeMb,
@@ -108,12 +106,10 @@ import { createModelRefresh } from './modelRefresh'
 import { createFavoritesOperations } from './favoritesOperations'
 import { createEntityEditors } from './entityEditors'
 import { createChatOperations } from './chatOperations'
-import { createPatchOperations } from './patchOperations'
 import { createPersistence } from './persistence'
-import { createChatRuntimeReconciliation } from './chatRuntimeReconciliation'
 import { createRoleSession } from './ebRoleSession'
 
-export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilities; aiGateway: AiChatInternalGateway }): {
+export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilities }): {
   controller: AiChatController
   init: () => Promise<void>
 } {
@@ -400,11 +396,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   })
   const { addStickerInternal, syncRoleAvatarFile, syncGroupAvatarFile } = stickerStore
 
-  let onAssistantRunFinalHandler: (run: any, finalText: string) => Promise<void> | void = async () => {
-    throw new Error('Assistant run final handler 未初始化')
-  }
-  const aiGateway = deps.aiGateway
-
   const splitStore = createSplitStorage({
     storage,
     rtStorage: runtimeStorage,
@@ -510,44 +501,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   const { saveMeta, saveCurrentChat } = persistence
 
   // ============================================================
-  // 7.1. CHAT RUNTIME RECONCILIATION
-  // ============================================================
-  const chatRuntimeReconciliation = createChatRuntimeReconciliation({
-    aiGateway,
-    uiStreamCache,
-  })
-  const { reconcileChatRuns } = chatRuntimeReconciliation
-
-  async function reconcileLoadedChat(kindRaw: any, targetIdRaw: any, chat: any) {
-    if (!chat) return { chat, changed: false }
-    const kind = String(kindRaw || '').trim() === 'group' ? 'group' : 'role'
-    const targetId = String(targetIdRaw || '').trim()
-    if (!targetId) return { chat, changed: false }
-    const changed = await reconcileChatRuns(chat)
-    if (changed) {
-      repairChatLinearBranching(chat)
-      if (kind === 'group') await saveGroupChat(targetId, chat)
-      else await saveRoleChat(targetId, chat)
-      emit()
-    }
-    return { chat, changed }
-  }
-
-  async function ensureChatLoadedAndReconcile(kindRaw: any, targetIdRaw: any, chatIdRaw: any) {
-    const kind = String(kindRaw || '').trim() === 'group' ? 'group' : 'role'
-    const targetId = String(targetIdRaw || '').trim()
-    const chat = await ensureChatLoaded(kind, targetId, chatIdRaw)
-    return (await reconcileLoadedChat(kind, targetId, chat)).chat
-  }
-
-  async function ensureActiveChatLoadedAndReconcile() {
-    const kind = activeTargetKind()
-    const targetId = kind === 'group' ? String((state.draft as any).activeGroupId || '') : String(state.draft.activeRoleId || '')
-    const chat = await ensureActiveChatLoaded()
-    return (await reconcileLoadedChat(kind, targetId, chat)).chat
-  }
-
-  // ============================================================
   // 8.1. SAVE & LOAD (bridge to splitStorage)
   // ============================================================
   async function load() {
@@ -559,7 +512,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       state.draft.activeRoleId = String(split?.ui?.activeRoleId || '')
       state.draft.activeGroupId = String((split?.ui as any)?.activeGroupId || '')
       state.draft.activeTargetKind = String((split?.ui as any)?.activeTargetKind || 'role') === 'group' ? 'group' : 'role'
-      await ensureActiveChatLoadedAndReconcile()
+      await ensureActiveChatLoaded()
     } catch (e: any) {
       state.data = null
       state.draft.activeRoleId = ''
@@ -697,8 +650,8 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     showToast: api.ui?.showToast,
     pickImageFiles,
     filesImages: api.files?.images as any,
-    ensureChatLoaded: (rid: string, cid: string) => ensureChatLoadedAndReconcile('role', rid, cid),
-    ensureGroupChatLoaded: (gid: string, cid: string) => ensureChatLoadedAndReconcile('group', gid, cid),
+    ensureChatLoaded: (rid: string, cid: string) => ensureChatLoaded('role', rid, cid),
+    ensureGroupChatLoaded: (gid: string, cid: string) => ensureChatLoaded('group', gid, cid),
     renameRoleChatInStore: renameRoleChat,
     renameGroupChatInStore,
     removeChatInStore: (kind: 'role' | 'group', targetId: string, chatId: string) => kind === 'role' ? removeRoleChatEntry(targetId, chatId) : Promise.resolve(),
@@ -752,20 +705,18 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   // ============================================================
   const chatOps = createChatOperations({
     getState: () => state,
-    aiGateway,
     pickImageFiles,
     netRequest: capabilities.net?.request || ((() => Promise.resolve({})) as any),
     showToast: api.ui?.showToast,
     save,
-    ensureActiveChatLoaded: ensureActiveChatLoadedAndReconcile,
-    ensureChatLoaded: (kind: 'role' | 'group', targetId: string, chatId: string) => ensureChatLoadedAndReconcile(kind, targetId, chatId),
+    ensureActiveChatLoaded,
+    ensureChatLoaded: (kind: 'role' | 'group', targetId: string, chatId: string) => ensureChatLoaded(kind, targetId, chatId),
     emit,
     render,
     renderComposer,
     scrollToBottomSoon,
     readImageFileAsDataUrl: readFileAsDataUrl,
     extractTextFromFile: (file: File, kind: string) => extractTextFromFile(file, kind as DraftFileKind),
-    uiStreamCache,
   })
   const {
     pickDraftImages,
@@ -787,45 +738,21 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   } = chatOps
 
   // ============================================================
-  // 17. PATCH OPERATIONS
-  // ============================================================
-  const patchOps = createPatchOperations({
-    getState: () => state,
-    storage,
-    loadSplitMeta: loadSplitMetaCached,
-    withChatWriteLock,
-    touchChatUpdatedAt,
-    touchGroupChatUpdatedAt,
-    writeChatUpdatedNotice,
-    repairChatLinearBranching,
-  })
-  const { onAssistantRunFinal } = patchOps
-  onAssistantRunFinalHandler = onAssistantRunFinal
-
-  // ============================================================
-  // 18. UI POLLING
+  // 17. UI POLLING
   // ============================================================
   const uiPolling = createUiPolling({
     getState: () => state,
     storage,
     rtStorage: runtimeStorage,
-    aiGateway,
-    uiStreamCache,
     loadSplitMeta: loadSplitMetaCached,
     getSplitMetaCache,
     emit,
     activeTargetKind,
     activeChatFromData,
-    ensureActiveChatLoaded: ensureActiveChatLoadedAndReconcile,
+    ensureActiveChatLoaded,
     syncActiveGroupChatsFromStorage,
-    reconcileActiveChatRuns: async (chat: any) => {
-      const kind = activeTargetKind()
-      const targetId = kind === 'group' ? String((state.draft as any).activeGroupId || '') : String(state.draft.activeRoleId || '')
-      return (await reconcileLoadedChat(kind, targetId, chat)).changed
-    },
-    save,
   })
-  const { startUiPollers, stopUiPollers, uiPollTick, syncActiveRoleChatsFromStorage, syncActiveTargetChatsFromStorage, syncChatByIdFromStorage, syncGroupChatByIdFromStorage, applyChatUpdatedNoticeOnce, reapplyUiStreamCache } = uiPolling
+  const { startUiPollers, stopUiPollers, uiPollTick, syncActiveRoleChatsFromStorage, syncActiveTargetChatsFromStorage, syncChatByIdFromStorage, syncGroupChatByIdFromStorage, applyChatUpdatedNoticeOnce } = uiPolling
 
   // ============================================================
   // 19. EVENT HANDLERS
@@ -950,7 +877,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       ;(state.draft as any).activeTargetKind = 'role'
       state.draft.activeRoleId = String(roleId || '')
       ensureChatsBoxBare(state.draft.activeRoleId)
-      ensureActiveChatLoadedAndReconcile().catch(() => {}).finally(() => emit())
+      ensureActiveChatLoaded().catch(() => {}).finally(() => emit())
       saveMeta().catch(() => {})
       emit()
     },
@@ -961,7 +888,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       ;(state.draft as any).activeTargetKind = 'group'
       ;(state.draft as any).activeGroupId = String(groupId || '')
       ensureGroupChatsBoxBare((state.draft as any).activeGroupId)
-      ensureActiveChatLoadedAndReconcile().catch(() => {}).finally(() => emit())
+      ensureActiveChatLoaded().catch(() => {}).finally(() => emit())
       saveMeta().catch(() => {})
       emit()
     },
@@ -1740,7 +1667,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     },
     clearChatModelOverride: async () => {
       if (!state.data) return
-      await ensureActiveChatLoadedAndReconcile()
+      await ensureActiveChatLoaded()
       const chat = activeChatFromData()
       if (!chat) return
       if (!(chat as any).modelOverride) return
@@ -1796,7 +1723,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   async function init() {
     await ensureRenderer().catch(() => {})
     await load()
-    await aiGateway.startBackgroundWorker(350).catch(() => {})
     startUiPollers()
     render()
   }

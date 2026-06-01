@@ -7,21 +7,11 @@ import { chatMetaFromChat, chatMetasFromBox, upsertChatMeta } from '../domain/ch
 import { UI_CHAT_UPDATED_NOTICE_KEY } from '../runtime/runtimeKeys'
 import { splitChatKey, splitGroupChatKey } from '../domain/storageKeys'
 import { normalizeStoredChat } from '../storage/normalizeStoredChat'
-import {
-  checkpointAssistantRun,
-  isAssistantGenerating,
-  isAssistantRunSignalCurrent,
-  normalizeAssistantRunSignal,
-} from '../domain/assistantRunState'
 
 export function createUiPolling(deps: {
   getState: () => any
   storage: { get: (key: string) => Promise<any>; set: (key: string, value: any) => Promise<void> }
   rtStorage: { get: (key: string) => Promise<any> }
-  aiGateway: {
-    readAssistantStream: (id: string) => Promise<{ text?: string; generationId?: string; updatedAt?: number } | null>
-  }
-  uiStreamCache: Map<string, any>
   loadSplitMeta: () => Promise<any>
   getSplitMetaCache: () => any
   emit: () => void
@@ -29,13 +19,10 @@ export function createUiPolling(deps: {
   activeChatFromData: () => any
   ensureActiveChatLoaded?: () => Promise<any>
   syncActiveGroupChatsFromStorage: (meta: any) => Promise<void>
-  reconcileActiveChatRuns?: (chat: any) => Promise<boolean>
-  save: () => Promise<void>
 }) {
   let uiPollTimer = 0
   let uiLastMetaCheckMs = 0
   let uiLastMetaUpdatedAt = 0
-  const uiStreamCache = deps.uiStreamCache
   let uiChatSyncing = false
   let uiLastChatUpdatedNoticeId = ''
   let uiPollingDisposed = false
@@ -226,27 +213,6 @@ export function createUiPolling(deps: {
     return false
   }
 
-  function reapplyUiStreamCache(chatOverride?: any) {
-    const chat = chatOverride || deps.activeChatFromData()
-    if (!chat) return false
-    const items = Array.isArray(chat.messages) ? chat.messages : []
-    let changed = false
-    for (const m of items.slice(-30)) {
-      if (!m || !isAssistantGenerating(m) || !m.streaming) continue
-      const mid = String(m.id || '')
-      const cached = normalizeAssistantRunSignal(uiStreamCache.get(mid))
-      if (!cached || !isAssistantRunSignalCurrent(m, cached)) {
-        uiStreamCache.delete(mid)
-        continue
-      }
-      if (!cached.text) continue
-      if (String(m.content || '') === cached.text) continue
-      checkpointAssistantRun(m, cached.text, cached.updatedAt || now())
-      changed = true
-    }
-    return changed
-  }
-
   async function uiPollTick() {
     if (uiPollingDisposed) return
     const state = deps.getState()
@@ -259,61 +225,9 @@ export function createUiPolling(deps: {
       const changedByNotice = await applyChatUpdatedNoticeOnce()
       if (changedByNotice) {
         chat = deps.activeChatFromData()
-        reapplyUiStreamCache(chat)
         deps.emit()
       }
     } catch (_) {}
-
-    try {
-      if (await deps.reconcileActiveChatRuns?.(chat)) {
-        deps.emit()
-        chat = deps.activeChatFromData() || chat
-      }
-    } catch (_) {}
-
-    const items = Array.isArray(chat.messages) ? chat.messages : []
-    const pending = items.filter((m: any) => m && m.role === 'assistant' && isAssistantGenerating(m)).slice(-8)
-
-    if (pending.length) {
-      let changed = false
-      for (const m of pending) {
-        if (!m.streaming) continue
-        const mid = String(m.id || '')
-        const streamSignal = normalizeAssistantRunSignal(await deps.aiGateway.readAssistantStream(mid))
-        if (streamSignal && !isAssistantRunSignalCurrent(m, streamSignal)) continue
-        const text = String(streamSignal?.text || '')
-        if (!text) continue
-        const cached = normalizeAssistantRunSignal(uiStreamCache.get(mid))
-        if (cached && cached.generationId === streamSignal?.generationId && cached.text === text) continue
-        uiStreamCache.set(mid, streamSignal)
-        checkpointAssistantRun(m, text, streamSignal?.updatedAt || now())
-        changed = true
-      }
-      if (changed) {
-        deps.emit()
-        deps.save().catch(() => {})
-      }
-
-      const t = now()
-      if (t - uiLastMetaCheckMs > 350) {
-        uiLastMetaCheckMs = t
-        if (state.sending || state.pendingChat || (state as any).pendingGroupChat) return
-        try {
-          const meta = await deps.loadSplitMeta()
-          const updatedAt = Number(meta?.updatedAt || 0)
-          if (updatedAt && updatedAt !== uiLastMetaUpdatedAt) {
-            await syncActiveTargetChatsFromStorage(meta)
-            chat = deps.activeChatFromData()
-            reapplyUiStreamCache(chat)
-            deps.emit()
-          }
-        } catch (_) {}
-      }
-
-      return
-    }
-
-    uiStreamCache.clear()
 
     const t2 = now()
     if (t2 - uiLastMetaCheckMs > 900) {
@@ -324,8 +238,6 @@ export function createUiPolling(deps: {
           const updatedAt = Number(meta?.updatedAt || 0)
           if (updatedAt && updatedAt !== uiLastMetaUpdatedAt) {
             await syncActiveTargetChatsFromStorage(meta)
-            chat = deps.activeChatFromData()
-            reapplyUiStreamCache(chat)
             deps.emit()
           }
         } catch (_) {}
@@ -352,7 +264,6 @@ export function createUiPolling(deps: {
       window.clearInterval(uiPollTimer)
       uiPollTimer = 0
     }
-    uiStreamCache.clear()
   }
 
   return {
@@ -364,6 +275,5 @@ export function createUiPolling(deps: {
     syncChatByIdFromStorage,
     syncGroupChatByIdFromStorage,
     applyChatUpdatedNoticeOnce,
-    reapplyUiStreamCache,
   }
 }

@@ -69,18 +69,23 @@ func (s *system) run(ctx context.Context, record *runRecord, request types.RunRe
 			return
 		}
 	}
-	session = appendMessage(session, userMessage(request.Message))
+	session, contextSession, assistantParent, err := prepareRunSession(session, request)
+	if err != nil {
+		s.failRunStateOnly(record, err.Error())
+		return
+	}
 	if err := s.saveSession(ctx, session, types.RunStatusRunning); err != nil {
 		s.failRun(context.Background(), record, session, err.Error())
 		return
 	}
 	record.session = session
+	record.messageParent = assistantParent
 	for step := 1; step <= s.config.MaxSteps; step++ {
 		if err := ctx.Err(); err != nil {
 			s.cancelRunRecord(context.Background(), record, record.session)
 			return
 		}
-		roleContext, err := s.buildRoleContext(ctx, record.roleID, record.session)
+		roleContext, err := s.buildRoleContext(ctx, record.roleID, contextSession)
 		if err != nil {
 			s.failRun(context.Background(), record, record.session, err.Error())
 			return
@@ -94,7 +99,9 @@ func (s *system) run(ctx context.Context, record *runRecord, request types.RunRe
 			s.cancelRunRecord(context.Background(), record, record.session)
 			return
 		}
-		record.session = appendMessage(record.session, assistantMessage(modelResponse.Content))
+		appendRunAssistantReply(record, modelResponse.Content)
+		assistantParent = record.messageParent
+		contextSession = appendMessage(contextSession, assistantParent)
 		s.publish(record.runID, "model_output", modelResponse)
 		if err := s.saveSession(ctx, record.session, types.RunStatusRunning); err != nil {
 			s.failRun(context.Background(), record, record.session, err.Error())
@@ -108,11 +115,14 @@ func (s *system) run(ctx context.Context, record *runRecord, request types.RunRe
 			s.failRun(context.Background(), record, record.session, "model returned more than one tool intent")
 			return
 		}
+		sessionMessageCount := len(record.session.Messages)
 		result, err := s.handleToolIntent(ctx, record, modelResponse.ToolIntents[0])
 		if err != nil {
 			s.failRun(context.Background(), record, record.session, err.Error())
 			return
 		}
+		assistantParent = record.messageParent
+		contextSession = appendSessionMessages(contextSession, record.session.Messages[sessionMessageCount:])
 		if err := ctx.Err(); err != nil {
 			s.cancelRunRecord(context.Background(), record, record.session)
 			return
@@ -133,10 +143,56 @@ func validateRunRequest(ctx context.Context, request types.RunRequest) error {
 	if strings.TrimSpace(request.RoleID) == "" {
 		return runtimeInvalid("role id is required", nil)
 	}
-	if strings.TrimSpace(request.Message) == "" {
-		return runtimeInvalid("message is required", nil)
+	hasMessage := strings.TrimSpace(request.Message) != ""
+	hasUserMessageID := strings.TrimSpace(request.UserMessageID) != ""
+	if hasMessage == hasUserMessageID {
+		return runtimeInvalid("exactly one of message or userMessageId is required", nil)
+	}
+	if hasUserMessageID && strings.TrimSpace(request.ParentMessageID) != "" {
+		return runtimeInvalid("parentMessageId cannot be combined with userMessageId", nil)
+	}
+	if hasUserMessageID && strings.TrimSpace(request.SessionID) == "" {
+		return runtimeInvalid("session id is required when userMessageId is provided", nil)
+	}
+	if strings.TrimSpace(request.ParentMessageID) != "" && strings.TrimSpace(request.SessionID) == "" {
+		return runtimeInvalid("session id is required when parentMessageId is provided", nil)
 	}
 	return nil
+}
+
+func prepareRunSession(session types.Session, request types.RunRequest) (types.Session, types.Session, types.Message, error) {
+	if strings.TrimSpace(request.UserMessageID) == "" {
+		var err error
+		session, err = appendUserMessageForRun(session, request.Message, request.ParentMessageID)
+		if err != nil {
+			return session, types.Session{}, types.Message{}, err
+		}
+		parent := lastSessionMessage(session)
+		contextSession, _, err := sessionContextThroughMessage(session, parent.ID)
+		if err != nil {
+			return session, types.Session{}, types.Message{}, err
+		}
+		return session, contextSession, parent, nil
+	}
+	contextSession, parent, err := sessionContextThroughMessage(session, request.UserMessageID)
+	if err != nil {
+		return session, types.Session{}, types.Message{}, err
+	}
+	return session, contextSession, parent, nil
+}
+
+func lastSessionMessage(session types.Session) types.Message {
+	if len(session.Messages) == 0 {
+		return types.Message{}
+	}
+	return session.Messages[len(session.Messages)-1]
+}
+
+func appendSessionMessages(session types.Session, messages []types.Message) types.Session {
+	for _, message := range messages {
+		session = appendMessage(session, message)
+	}
+	return session
 }
 
 func (s *system) completeRun(ctx context.Context, record *runRecord, session types.Session) {
@@ -156,18 +212,27 @@ func (s *system) failRun(ctx context.Context, record *runRecord, session types.S
 	state, err := s.updateRun(record.runID, types.RunStatusFailed, reason)
 	if err != nil {
 		if session.ID != "" {
-			session = appendMessage(session, failureMessage(reason))
+			session = appendRunFailureMessage(record, session, reason)
 			_ = s.saveSession(ctx, session, types.RunStatus(session.Status))
 		}
 		s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: reason})
 		return
 	}
 	if session.ID != "" {
-		session = appendMessage(session, failureMessage(reason))
+		session = appendRunFailureMessage(record, session, reason)
 		if err := s.saveSession(ctx, session, types.RunStatusFailed); err != nil {
 			s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: "save session failed: " + err.Error()})
 			return
 		}
+	}
+	s.publish(record.runID, "run_failed", state)
+}
+
+func (s *system) failRunStateOnly(record *runRecord, reason string) {
+	state, err := s.updateRun(record.runID, types.RunStatusFailed, reason)
+	if err != nil {
+		s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: reason})
+		return
 	}
 	s.publish(record.runID, "run_failed", state)
 }

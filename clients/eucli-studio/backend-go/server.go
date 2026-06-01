@@ -43,15 +43,16 @@ func (s *directServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-	conn, err := upgrader.Upgrade(w, r, nil)
+	rawConn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}
+	conn := newDirectConnection(rawConn)
 	go s.handleConnection(conn)
 }
 
-func (s *directServer) handleConnection(conn *websocket.Conn) {
-	defer conn.Close()
+func (s *directServer) handleConnection(conn *directConnection) {
+	defer conn.close()
 	s.hub.add(conn)
 	defer s.hub.remove(conn)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -59,14 +60,14 @@ func (s *directServer) handleConnection(conn *websocket.Conn) {
 	healthChecked := false
 	for {
 		var frame requestFrame
-		if err := conn.ReadJSON(&frame); err != nil {
+		if err := conn.readJSON(&frame); err != nil {
 			return
 		}
 		if frame.ID == "" || frame.Type != "request" || frame.Method == "" {
 			continue
 		}
 		if !healthChecked && frame.Method != "aiChat.healthCheck" {
-			_ = conn.WriteJSON(errorResponseFor(frame.ID, newError("HEALTH_CHECK_REQUIRED", "请先完成 healthCheck")))
+			_ = conn.writeJSON(errorResponseFor(frame.ID, newError("HEALTH_CHECK_REQUIRED", "请先完成 healthCheck")))
 			continue
 		}
 		result, err := s.service.dispatch(ctx, frame.Method, frame.Params)
@@ -74,10 +75,10 @@ func (s *directServer) handleConnection(conn *websocket.Conn) {
 			healthChecked = true
 		}
 		if err != nil {
-			_ = conn.WriteJSON(errorResponseFor(frame.ID, err))
+			_ = conn.writeJSON(errorResponseFor(frame.ID, err))
 			continue
 		}
-		_ = conn.WriteJSON(okResponse(frame.ID, result))
+		_ = conn.writeJSON(okResponse(frame.ID, result))
 	}
 }
 

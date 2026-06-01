@@ -48,9 +48,11 @@ const (
 )
 
 type RunRequest struct {
-	RoleID    string `json:"roleId"`
-	SessionID string `json:"sessionId"`
-	Message   string `json:"message"`
+	RoleID          string `json:"roleId"`
+	SessionID       string `json:"sessionId"`
+	Message         string `json:"message"`
+	ParentMessageID string `json:"parentMessageId,omitempty"`
+	UserMessageID   string `json:"userMessageId,omitempty"`
 }
 
 type RunState struct {

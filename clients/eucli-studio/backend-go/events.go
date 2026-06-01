@@ -15,20 +15,20 @@ import (
 
 type eventHub struct {
 	mu      sync.Mutex
-	clients map[*websocket.Conn]struct{}
+	clients map[*directConnection]struct{}
 }
 
 func newEventHub() *eventHub {
-	return &eventHub{clients: map[*websocket.Conn]struct{}{}}
+	return &eventHub{clients: map[*directConnection]struct{}{}}
 }
 
-func (h *eventHub) add(conn *websocket.Conn) {
+func (h *eventHub) add(conn *directConnection) {
 	h.mu.Lock()
 	h.clients[conn] = struct{}{}
 	h.mu.Unlock()
 }
 
-func (h *eventHub) remove(conn *websocket.Conn) {
+func (h *eventHub) remove(conn *directConnection) {
 	h.mu.Lock()
 	delete(h.clients, conn)
 	h.mu.Unlock()
@@ -36,13 +36,16 @@ func (h *eventHub) remove(conn *websocket.Conn) {
 
 func (h *eventHub) broadcast(event eventFrame) {
 	h.mu.Lock()
-	clients := make([]*websocket.Conn, 0, len(h.clients))
+	clients := make([]*directConnection, 0, len(h.clients))
 	for client := range h.clients {
 		clients = append(clients, client)
 	}
 	h.mu.Unlock()
 	for _, client := range clients {
-		_ = client.WriteJSON(event)
+		if err := client.writeJSON(event); err != nil {
+			h.remove(client)
+			_ = client.close()
+		}
 	}
 }
 

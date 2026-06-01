@@ -45,8 +45,19 @@ func validateRunRequest(request types.RunRequest) error {
 	if strings.TrimSpace(request.RoleID) == "" {
 		return gatewayInvalid("roleId is required", nil)
 	}
-	if strings.TrimSpace(request.Message) == "" {
-		return gatewayInvalid("message is required", nil)
+	hasMessage := strings.TrimSpace(request.Message) != ""
+	hasUserMessageID := strings.TrimSpace(request.UserMessageID) != ""
+	if hasMessage == hasUserMessageID {
+		return gatewayInvalid("exactly one of message or userMessageId is required", nil)
+	}
+	if hasUserMessageID && strings.TrimSpace(request.ParentMessageID) != "" {
+		return gatewayInvalid("parentMessageId cannot be combined with userMessageId", nil)
+	}
+	if hasUserMessageID && strings.TrimSpace(request.SessionID) == "" {
+		return gatewayInvalid("sessionId is required when userMessageId is provided", nil)
+	}
+	if strings.TrimSpace(request.ParentMessageID) != "" && strings.TrimSpace(request.SessionID) == "" {
+		return gatewayInvalid("sessionId is required when parentMessageId is provided", nil)
 	}
 	return nil
 }

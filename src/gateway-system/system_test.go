@@ -30,6 +30,44 @@ func TestStartRunRoute(t *testing.T) {
 	}
 }
 
+func TestStartRunRouteAcceptsUserMessageID(t *testing.T) {
+	fakes := newGatewayFakes()
+	system := newTestGateway(t, fakes)
+	req := httptest.NewRequest(http.MethodPost, "/api/runs", strings.NewReader(`{"roleId":"developer","sessionId":"session-1","userMessageId":"u1"}`))
+	rec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if fakes.runtime.started.UserMessageID != "u1" || fakes.runtime.started.Message != "" || fakes.runtime.started.SessionID != "session-1" {
+		t.Fatalf("started = %#v", fakes.runtime.started)
+	}
+}
+
+func TestStartRunRouteAcceptsParentMessageID(t *testing.T) {
+	fakes := newGatewayFakes()
+	system := newTestGateway(t, fakes)
+	req := httptest.NewRequest(http.MethodPost, "/api/runs", strings.NewReader(`{"roleId":"developer","sessionId":"session-1","message":"hello","parentMessageId":"a1"}`))
+	rec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if fakes.runtime.started.Message != "hello" || fakes.runtime.started.ParentMessageID != "a1" || fakes.runtime.started.UserMessageID != "" {
+		t.Fatalf("started = %#v", fakes.runtime.started)
+	}
+}
+
+func TestStartRunRouteRejectsAmbiguousRunTarget(t *testing.T) {
+	system := newTestGateway(t, newGatewayFakes())
+	req := httptest.NewRequest(http.MethodPost, "/api/runs", strings.NewReader(`{"roleId":"developer","sessionId":"session-1","message":"hello","userMessageId":"u1"}`))
+	rec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestCreateSessionRoute(t *testing.T) {
 	fakes := newGatewayFakes()
 	if err := fakes.roles.SaveRole(context.Background(), types.Role{ID: "developer", Name: "Developer"}); err != nil {

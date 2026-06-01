@@ -26,6 +26,187 @@ func TestStartRunCompletesWithoutTool(t *testing.T) {
 	if len(session.Messages) != 2 || session.Messages[0].Type != "user" || session.Messages[1].Type != "assistant" {
 		t.Fatalf("messages = %#v", session.Messages)
 	}
+	if session.Messages[1].ParentMessageID != session.Messages[0].ID {
+		t.Fatalf("assistant parent = %q user=%q", session.Messages[1].ParentMessageID, session.Messages[0].ID)
+	}
+}
+
+func TestStartRunFromUserMessageAppendsAssistantSibling(t *testing.T) {
+	fakes := newRuntimeFakes()
+	now := time.Now().UTC()
+	fakes.storage.sessions["developer/session-1"] = types.Session{
+		ID:        "session-1",
+		RoleID:    "developer",
+		Title:     "Branching",
+		Status:    string(types.RunStatusCompleted),
+		CreatedAt: now,
+		UpdatedAt: now,
+		Messages: []types.Message{
+			{ID: "u1", Type: "user", Content: "question", BranchID: "main", CreatedAt: now, UpdatedAt: now},
+			{ID: "a1", Type: "assistant", Content: "old answer", ParentMessageID: "u1", BranchID: "main", CreatedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second)},
+		},
+		LastActive: now.Add(time.Second),
+	}
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "new answer"}}
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "u1"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	session := fakes.storage.sessions["developer/session-1"]
+	if len(session.Messages) != 3 {
+		t.Fatalf("messages = %#v", session.Messages)
+	}
+	last := session.Messages[2]
+	if last.Type != "assistant" || last.Content != "new answer" || last.ParentMessageID != "u1" {
+		t.Fatalf("last message = %#v", last)
+	}
+	if last.BranchID == "" || last.BranchID == "main" {
+		t.Fatalf("last branch id = %q", last.BranchID)
+	}
+	assertPromptMessageIDs(t, fakes.provider.lastPromptMessageIDs(), []string{"u1"})
+}
+
+func TestStartRunFromUserMessageUsesOnlyParentChainContext(t *testing.T) {
+	fakes := newRuntimeFakes()
+	now := time.Now().UTC()
+	fakes.storage.sessions["developer/session-1"] = types.Session{
+		ID:        "session-1",
+		RoleID:    "developer",
+		Title:     "Branching",
+		Status:    string(types.RunStatusCompleted),
+		CreatedAt: now,
+		UpdatedAt: now,
+		Messages: []types.Message{
+			{ID: "u1", Type: "user", Content: "question", BranchID: "main", CreatedAt: now, UpdatedAt: now},
+			{ID: "a1", Type: "assistant", Content: "old answer", ParentMessageID: "u1", BranchID: "main", CreatedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second)},
+			{ID: "a2", Type: "assistant", Content: "other answer", ParentMessageID: "u1", BranchID: "main", CreatedAt: now.Add(2 * time.Second), UpdatedAt: now.Add(2 * time.Second)},
+			{ID: "u2", Type: "user", Content: "follow up", ParentMessageID: "a1", BranchID: "main", CreatedAt: now.Add(3 * time.Second), UpdatedAt: now.Add(3 * time.Second)},
+		},
+		LastActive: now.Add(3 * time.Second),
+	}
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "reply"}}
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "u2"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	assertPromptMessageIDs(t, fakes.provider.lastPromptMessageIDs(), []string{"u1", "a1", "u2"})
+	session := fakes.storage.sessions["developer/session-1"]
+	last := session.Messages[len(session.Messages)-1]
+	if last.Type != "assistant" || last.ParentMessageID != "u2" {
+		t.Fatalf("last message = %#v", last)
+	}
+}
+
+func TestStartRunWithParentMessageIDAppendsUserAtSelectedMessage(t *testing.T) {
+	fakes := newRuntimeFakes()
+	now := time.Now().UTC()
+	fakes.storage.sessions["developer/session-1"] = types.Session{
+		ID:        "session-1",
+		RoleID:    "developer",
+		Title:     "Branching",
+		Status:    string(types.RunStatusCompleted),
+		CreatedAt: now,
+		UpdatedAt: now,
+		Messages: []types.Message{
+			{ID: "u1", Type: "user", Content: "question", BranchID: "main", CreatedAt: now, UpdatedAt: now},
+			{ID: "a1", Type: "assistant", Content: "answer", ParentMessageID: "u1", BranchID: "main", CreatedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second)},
+			{ID: "u2", Type: "user", Content: "existing follow up", ParentMessageID: "a1", BranchID: "main", CreatedAt: now.Add(2 * time.Second), UpdatedAt: now.Add(2 * time.Second)},
+		},
+		LastActive: now.Add(2 * time.Second),
+	}
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "reply"}}
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", Message: "new branch", ParentMessageID: "a1"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	session := fakes.storage.sessions["developer/session-1"]
+	if len(session.Messages) != 5 {
+		t.Fatalf("messages = %#v", session.Messages)
+	}
+	newUser := session.Messages[3]
+	newAssistant := session.Messages[4]
+	if newUser.Type != "user" || newUser.Content != "new branch" || newUser.ParentMessageID != "a1" {
+		t.Fatalf("new user = %#v", newUser)
+	}
+	if newUser.BranchID == "" || newUser.BranchID == "main" {
+		t.Fatalf("new user branch id = %q", newUser.BranchID)
+	}
+	if newAssistant.Type != "assistant" || newAssistant.ParentMessageID != newUser.ID || newAssistant.BranchID != newUser.BranchID {
+		t.Fatalf("new assistant = %#v user=%#v", newAssistant, newUser)
+	}
+	assertPromptMessageIDs(t, fakes.provider.lastPromptMessageIDs(), []string{"u1", "a1", newUser.ID})
+}
+
+func TestStartRunFromNonUserMessageFails(t *testing.T) {
+	fakes := newRuntimeFakes()
+	now := time.Now().UTC()
+	fakes.storage.sessions["developer/session-1"] = types.Session{
+		ID:     "session-1",
+		RoleID: "developer",
+		Messages: []types.Message{
+			{ID: "u1", Type: "user", Content: "question", BranchID: "main", CreatedAt: now, UpdatedAt: now},
+			{ID: "a1", Type: "assistant", Content: "answer", ParentMessageID: "u1", BranchID: "main", CreatedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second)},
+		},
+		CreatedAt: now,
+		UpdatedAt: now.Add(time.Second),
+	}
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "a1"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusFailed || final.Reason == "" {
+		t.Fatalf("final = %#v", final)
+	}
+	if calls := fakes.provider.callCount(); calls != 0 {
+		t.Fatalf("provider calls = %d", calls)
+	}
+	if got := len(fakes.storage.sessions["developer/session-1"].Messages); got != 2 {
+		t.Fatalf("messages were mutated on invalid run target: len=%d", got)
+	}
+}
+
+func TestStartRunWithMissingParentMessageDoesNotMutateSession(t *testing.T) {
+	fakes := newRuntimeFakes()
+	now := time.Now().UTC()
+	fakes.storage.sessions["developer/session-1"] = types.Session{
+		ID:        "session-1",
+		RoleID:    "developer",
+		Messages:  []types.Message{{ID: "u1", Type: "user", Content: "question", BranchID: "main", CreatedAt: now, UpdatedAt: now}},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", Message: "new branch", ParentMessageID: "missing"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusFailed || final.Reason == "" {
+		t.Fatalf("final = %#v", final)
+	}
+	if calls := fakes.provider.callCount(); calls != 0 {
+		t.Fatalf("provider calls = %d", calls)
+	}
+	if got := len(fakes.storage.sessions["developer/session-1"].Messages); got != 1 {
+		t.Fatalf("messages were mutated on missing parent: len=%d", got)
+	}
 }
 
 func TestRunWaitsForToolConfirmationThenCompletes(t *testing.T) {
@@ -116,6 +297,18 @@ func waitStatus(t *testing.T, system System, runID string, status types.RunStatu
 	return types.RunState{}
 }
 
+func assertPromptMessageIDs(t *testing.T, got []string, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("prompt ids = %#v want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("prompt ids = %#v want %#v", got, want)
+		}
+	}
+}
+
 type runtimeFakes struct {
 	storage  *fakeRuntimeStorage
 	roles    *fakeRuntimeRoles
@@ -177,12 +370,14 @@ type fakeRuntimeProvider struct {
 	responses  []types.ModelResponse
 	alwaysTool bool
 	calls      int
+	requests   []types.ModelRequest
 }
 
 func (f *fakeRuntimeProvider) Complete(ctx context.Context, request types.ModelRequest) (types.ModelResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++
+	f.requests = append(f.requests, request)
 	if f.alwaysTool {
 		return types.ModelResponse{ID: "m", Content: "tool", ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader"}}}, nil
 	}
@@ -192,6 +387,26 @@ func (f *fakeRuntimeProvider) Complete(ctx context.Context, request types.ModelR
 	response := f.responses[0]
 	f.responses = f.responses[1:]
 	return response, nil
+}
+
+func (f *fakeRuntimeProvider) lastPromptMessageIDs() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.requests) == 0 {
+		return nil
+	}
+	request := f.requests[len(f.requests)-1]
+	ids := make([]string, 0, len(request.Messages))
+	for _, message := range request.Messages {
+		ids = append(ids, message.ID)
+	}
+	return ids
+}
+
+func (f *fakeRuntimeProvider) callCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls
 }
 
 type fakeRuntimeTools struct {

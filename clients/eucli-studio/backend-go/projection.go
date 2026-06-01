@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -552,7 +553,7 @@ func fromUIProvider(value any) map[string]any {
 }
 
 func toUIChat(session map[string]any) map[string]any {
-	messages := []any{}
+	messages := []map[string]any{}
 	for _, msg := range objectList(session["messages"]) {
 		createdAt := millisFromAny(msg["createdAt"])
 		updatedAt := millisFromAnyOrZero(msg["updatedAt"])
@@ -569,7 +570,92 @@ func toUIChat(session map[string]any) map[string]any {
 	if updatedAt == 0 {
 		updatedAt = createdAt
 	}
-	return map[string]any{"id": stringField(session, "id"), "title": fallback(stringField(session, "title"), "新聊天"), "createdAt": createdAt, "updatedAt": updatedAt, "messages": messages}
+	branching := deriveUIBranching(messages, createdAt, updatedAt)
+	return map[string]any{"id": stringField(session, "id"), "title": fallback(stringField(session, "title"), "新聊天"), "createdAt": createdAt, "updatedAt": updatedAt, "branching": branching, "messages": anyList(messages)}
+}
+
+func deriveUIBranching(messages []map[string]any, createdAt int64, updatedAt int64) map[string]any {
+	if len(messages) == 0 {
+		return map[string]any{"schemaVersion": 1, "activeBranchId": "main", "branches": []any{map[string]any{"id": "main", "name": "主线", "headMid": "", "createdAt": createdAt, "updatedAt": updatedAt, "forkFromMid": ""}}}
+	}
+	byID := map[string]map[string]any{}
+	children := map[string][]string{}
+	for _, message := range messages {
+		id := stringField(message, "id")
+		if id == "" {
+			continue
+		}
+		byID[id] = message
+		parentID := stringField(message, "parentMid")
+		if parentID != "" {
+			children[parentID] = append(children[parentID], id)
+		}
+	}
+	for parentID := range children {
+		sort.SliceStable(children[parentID], func(i int, j int) bool {
+			return messageSortLess(byID[children[parentID][i]], byID[children[parentID][j]])
+		})
+	}
+	leaves := []map[string]any{}
+	for _, message := range messages {
+		id := stringField(message, "id")
+		if id == "" {
+			continue
+		}
+		if len(children[id]) == 0 {
+			leaves = append(leaves, message)
+		}
+	}
+	if len(leaves) == 0 {
+		leaves = append(leaves, messages[len(messages)-1])
+	}
+	sort.SliceStable(leaves, func(i int, j int) bool { return messageSortLess(leaves[i], leaves[j]) })
+	branches := make([]any, 0, len(leaves))
+	activeBranchID := "main"
+	usedBranchIDs := map[string]struct{}{}
+	for index, leaf := range leaves {
+		headMid := stringField(leaf, "id")
+		branchID := fallback(stringField(leaf, "branchId"), "main")
+		branchName := "主线"
+		if _, ok := usedBranchIDs[branchID]; ok {
+			branchID = "leaf_" + sanitizeBranchID(headMid)
+		}
+		if len(leaves) > 1 && branchID != "main" {
+			branchName = fmt.Sprintf("分支 %d", index+1)
+		}
+		usedBranchIDs[branchID] = struct{}{}
+		if index == len(leaves)-1 {
+			activeBranchID = branchID
+		}
+		branches = append(branches, map[string]any{"id": branchID, "name": branchName, "headMid": headMid, "createdAt": millisFromAnyOrZero(leaf["createdAt"]), "updatedAt": updatedAt, "forkFromMid": stringField(leaf, "parentMid")})
+	}
+	return map[string]any{"schemaVersion": 1, "activeBranchId": activeBranchID, "branches": branches}
+}
+
+func messageSortLess(left map[string]any, right map[string]any) bool {
+	leftTime := millisFromAnyOrZero(left["createdAt"])
+	rightTime := millisFromAnyOrZero(right["createdAt"])
+	if leftTime != rightTime {
+		return leftTime < rightTime
+	}
+	return stringField(left, "id") < stringField(right, "id")
+}
+
+func sanitizeBranchID(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "main"
+	}
+	replacer := strings.NewReplacer(" ", "_", "/", "_", "\\", "_", ":", "_", "*", "_", "?", "_", "\"", "_", "<", "_", ">", "_", "|", "_")
+	return replacer.Replace(value)
+}
+
+func anyList(items []map[string]any) []any {
+	out := make([]any, 0, len(items))
+	for _, item := range items {
+		out = append(out, item)
+	}
+	return out
 }
 
 func fromUIChat(value any, roleID string) map[string]any {
@@ -721,6 +807,12 @@ func millisFromAny(value any) int64 {
 	if n, ok := value.(float64); ok {
 		return int64(n)
 	}
+	if n, ok := value.(int64); ok {
+		return n
+	}
+	if n, ok := value.(int); ok {
+		return int64(n)
+	}
 	return nowMillis()
 }
 func millisFromAnyOrZero(value any) int64 {
@@ -730,6 +822,12 @@ func millisFromAnyOrZero(value any) int64 {
 		}
 	}
 	if n, ok := value.(float64); ok {
+		return int64(n)
+	}
+	if n, ok := value.(int64); ok {
+		return n
+	}
+	if n, ok := value.(int); ok {
 		return int64(n)
 	}
 	return 0

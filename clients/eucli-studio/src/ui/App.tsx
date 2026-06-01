@@ -2203,8 +2203,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const sendFromComposer = useEvent(() => {
     stickToBottomRef.current = true
     const mid = !branchDraft ? String(treeSelectedMid || '').trim() : ''
-    const canFork = !!mid && !!activeChat && mid !== String(activeBranchHeadMid || '').trim()
-    if (canFork) {
+    if (mid && activeChat) {
       setTreeSelectedMid('')
       controller.actions.sendFromMid?.(mid)
       return
@@ -4127,7 +4126,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                 <DialogTitle>确认重新回复？</DialogTitle>
                 <DialogContent>
                   <Typography variant="body2" color="text.secondary">
-                    {regen.role === 'assistant' ? '这会用新内容覆盖当前 AI 回复。' : '这会基于该用户消息生成一条新的 AI 回复。'}
+                    {regen.role === 'assistant' ? '这会基于同一条用户消息生成一个新的 AI 回复版本。' : '这会基于该用户消息生成一条新的 AI 回复。'}
                   </Typography>
                 </DialogContent>
                 <DialogActions>

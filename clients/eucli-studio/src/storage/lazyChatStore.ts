@@ -1,6 +1,7 @@
 import { normalizeData } from '../domain/dataNormalizers'
 import { VERSION, STICKERS_KEY } from '../domain/constants'
 import { chatMetaFromChat, chatMetasFromBox, removeChatMeta, upsertChatMeta } from '../domain/chatMeta'
+import { preserveLocalBranchSelection } from '../domain/branching'
 import {
   splitChatKey,
   splitGroupChatKey,
@@ -145,10 +146,11 @@ export function createLazyChatStore(deps: {
     }
 
     const index = box.chats.findIndex((c: any) => String(c?.id || '') === chatId)
-    if (index >= 0) box.chats[index] = chat
-    else box.chats.unshift(chat)
-    box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chat, kind === 'group' ? '群聊' : '新聊天'), kind === 'group' ? '群聊' : '新聊天')
-    return chat
+    const nextChat = preserveLocalBranchSelection(chat, index >= 0 ? box.chats[index] : null)
+    if (index >= 0) box.chats[index] = nextChat
+    else box.chats.unshift(nextChat)
+    box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(nextChat, kind === 'group' ? '群聊' : '新聊天'), kind === 'group' ? '群聊' : '新聊天')
+    return nextChat
   }
 
   async function loadChat(kind: LazyChatKind, targetIdRaw: any, chatIdRaw: any) {
@@ -209,10 +211,11 @@ export function createLazyChatStore(deps: {
     const box = targetBox(state.data, kind, targetId)
     if (!box) return null
     const index = box.chats.findIndex((c: any) => String(c?.id || '') === chatId)
-    if (index >= 0) box.chats[index] = chatRaw
-    else box.chats.unshift(chatRaw)
-    box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chatRaw, kind === 'group' ? '群聊' : '新聊天'), kind === 'group' ? '群聊' : '新聊天')
-    return chatRaw
+    const nextChat = preserveLocalBranchSelection(chatRaw, index >= 0 ? box.chats[index] : null)
+    if (index >= 0) box.chats[index] = nextChat
+    else box.chats.unshift(nextChat)
+    box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(nextChat, kind === 'group' ? '群聊' : '新聊天'), kind === 'group' ? '群聊' : '新聊天')
+    return nextChat
   }
 
   function removeLoadedChat(kind: LazyChatKind, targetIdRaw: any, chatIdRaw: any) {

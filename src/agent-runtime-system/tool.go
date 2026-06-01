@@ -12,7 +12,7 @@ func (s *system) handleToolIntent(ctx context.Context, record *runRecord, intent
 	if err != nil {
 		return types.ToolResult{}, runtimeToolFailed("failed to normalize tool intent", err)
 	}
-	record.session = appendMessage(record.session, toolRequestMessage(action))
+	appendRunMessage(record, toolRequestMessage(action))
 	plan, err := s.tools.Prepare(ctx, record.roleID, action)
 	if err != nil {
 		return types.ToolResult{}, runtimeToolFailed("failed to prepare tool run plan", err)
@@ -20,21 +20,21 @@ func (s *system) handleToolIntent(ctx context.Context, record *runRecord, intent
 	s.publish(record.runID, "tool_requested", plan)
 	if plan.Decision.Status == types.PermissionStatusDenied {
 		result := types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: action.ID, ToolName: action.ToolName, Status: types.ToolStatusDenied, Error: plan.Decision.Reason, CreatedAt: time.Now().UTC()}
-		record.session = appendMessage(record.session, toolMessage(result))
+		appendRunMessage(record, toolMessage(result))
 		return result, nil
 	}
 	if plan.Decision.Status == types.PermissionStatusNeedsConfirmation {
 		confirmed, err := s.waitForConfirmation(ctx, record, plan)
 		if err != nil {
 			result := types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: action.ID, ToolName: action.ToolName, Status: types.ToolStatusCancelled, Error: err.Error(), CreatedAt: time.Now().UTC()}
-			record.session = appendMessage(record.session, toolMessage(result))
+			appendRunMessage(record, toolMessage(result))
 			return result, err
 		}
 		plan = confirmed
-		record.session = appendMessage(record.session, toolConfirmationMessage(plan.Decision))
+		appendRunMessage(record, toolConfirmationMessage(plan.Decision))
 		if plan.Decision.Status == types.PermissionStatusDenied {
 			result := types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: action.ID, ToolName: action.ToolName, Status: types.ToolStatusDenied, Error: plan.Decision.Reason, CreatedAt: time.Now().UTC()}
-			record.session = appendMessage(record.session, toolMessage(result))
+			appendRunMessage(record, toolMessage(result))
 			return result, nil
 		}
 	}
@@ -43,10 +43,10 @@ func (s *system) handleToolIntent(ctx context.Context, record *runRecord, intent
 	result, err := s.tools.Execute(toolCtx, plan)
 	if err != nil {
 		failedResult := types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: action.ID, ToolName: action.ToolName, Status: types.ToolStatusFailed, Error: err.Error(), CreatedAt: time.Now().UTC()}
-		record.session = appendMessage(record.session, toolMessage(failedResult))
+		appendRunMessage(record, toolMessage(failedResult))
 		return failedResult, runtimeToolFailed("failed to execute tool", err)
 	}
-	record.session = appendMessage(record.session, toolMessage(result))
+	appendRunMessage(record, toolMessage(result))
 	return result, nil
 }
 

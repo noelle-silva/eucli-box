@@ -187,6 +187,32 @@ export function setChatBranchHeadMid(chat: any, branchId: string, headMid: strin
   b.updatedAt = Number((chat as any)?.updatedAt || now())
 }
 
+export function preserveLocalBranchSelection(nextChat: any, currentChat: any) {
+  const next = nextChat && typeof nextChat === 'object' ? nextChat : null
+  const current = currentChat && typeof currentChat === 'object' ? currentChat : null
+  const currentBranching = current?.branching && typeof current.branching === 'object' ? current.branching : null
+  const nextBranching = next?.branching && typeof next.branching === 'object' ? next.branching : null
+  if (!next || !currentBranching || !nextBranching) return nextChat
+
+  const activeBranchId = String(currentBranching.activeBranchId || '').trim()
+  if (!activeBranchId) return nextChat
+
+  const nextBranches = Array.isArray(nextBranching.branches) ? nextBranching.branches : []
+  const currentBranches = Array.isArray(currentBranching.branches) ? currentBranching.branches : []
+  const existsInNext = nextBranches.some((branch: any) => String(branch?.id || '').trim() === activeBranchId)
+  if (!existsInNext) return nextChat
+
+  const currentBranch = currentBranches.find((branch: any) => String(branch?.id || '').trim() === activeBranchId) || null
+  const nextBranch = nextBranches.find((branch: any) => String(branch?.id || '').trim() === activeBranchId) || null
+  if (nextBranch && currentBranch && !String(nextBranch?.headMid || '').trim() && String(currentBranch?.headMid || '').trim()) {
+    nextBranch.headMid = String(currentBranch.headMid || '')
+  }
+
+  nextBranching.activeBranchId = activeBranchId
+  next.branching = nextBranching
+  return next
+}
+
 export function genUniqueBranchId(branching: any) {
   const branches = Array.isArray(branching?.branches) ? branching.branches : []
   const used = new Set<string>(branches.map((b: any) => normalizeBranchId(b?.id)))

@@ -61,7 +61,32 @@ export function createChatOperations(deps: {
     return chat
   }
 
-  async function runRoleMessageViaEb(input: { roleId: string; sessionId: string; message: string }, onAccepted?: (run: EbRunState) => void) {
+  function activeChatHeadMid(chat: any) {
+    const branching = chat && typeof chat === 'object' ? (chat as any).branching : null
+    const activeBranchId = String(branching?.activeBranchId || 'main').trim() || 'main'
+    const branches = Array.isArray(branching?.branches) ? branching.branches : []
+    const branch = branches.find((item: any) => String(item?.id || '').trim() === activeBranchId) || null
+    const headMid = String(branch?.headMid || '').trim()
+    if (headMid) return headMid
+    const messages = Array.isArray(chat?.messages) ? chat.messages : []
+    return messages.length ? String(messages[messages.length - 1]?.id || '').trim() : ''
+  }
+
+  function roleMessageParentForSend(chat: any, explicitParentMid?: string) {
+    const explicit = String(explicitParentMid || '').trim()
+    if (explicit) return explicit
+    const state = getState()
+    const draft = state.branchDraft && typeof state.branchDraft === 'object' ? state.branchDraft : null
+    const role = sa.activeRole()
+    const chatId = String(chat?.id || '').trim()
+    if (draft && String(draft?.roleId || '') === String(role?.id || '') && String(draft?.chatId || '') === chatId) {
+      const forkFromMid = String(draft?.forkFromMid || '').trim()
+      if (forkFromMid) return forkFromMid
+    }
+    return activeChatHeadMid(chat)
+  }
+
+  async function runRoleMessageViaEb(input: { roleId: string; sessionId: string; message?: string; parentMessageId?: string; userMessageId?: string }, onAccepted?: (run: EbRunState) => void) {
     if (typeof netRequest !== 'function') throw new Error('e-b 请求通道不可用')
     let state = await startRoleRun(netRequest, input)
     if (!state.id) throw new Error('e-b 未返回 run id')
@@ -85,6 +110,53 @@ export function createChatOperations(deps: {
     if (state.status === 'failed' || state.status === 'cancelled') throw new Error(state.reason || `e-b run ${state.status}`)
     if (!sessionId) throw new Error('e-b 未返回会话ID')
     return sessionId
+  }
+
+  async function activeRoleRunTarget(operationText: string) {
+    if (sa.activeTargetKind() === 'group') return null
+    const role = sa.activeRole()
+    const chat = await ensureActiveChatLoaded?.().catch(() => null) || sa.activeChatFromData()
+    if (chatHasPendingAssistant(chat)) {
+      showToast?.(`该会话正在生成中，无法${operationText}`)
+      return null
+    }
+    const roleId = String(role?.id || '').trim()
+    const sessionId = String(chat?.id || '').trim()
+    if (!roleId || !sessionId || !chat) return null
+    return { roleId, sessionId, chat }
+  }
+
+  async function runRoleFromUserMessage(input: { roleId: string; sessionId: string; userMessageId: string }, operationText: string) {
+    const state = getState()
+    const userMessageId = String(input.userMessageId || '').trim()
+    if (!userMessageId) return false
+    try {
+      state.sending = true
+      state.sendingCtx = { kind: 'eb-role-run', runId: '', roleId: input.roleId, sessionId: input.sessionId, cancelledByUser: false }
+      renderComposer()
+      await runRoleMessageViaEb({ roleId: input.roleId, sessionId: input.sessionId, userMessageId }, (run) => {
+        state.sendingCtx = {
+          kind: 'eb-role-run',
+          runId: String(run.id || '').trim(),
+          roleId: input.roleId,
+          sessionId: String(run.sessionId || input.sessionId || '').trim(),
+          cancelledByUser: false,
+        }
+        renderComposer()
+      })
+      await refreshRoleSession(input.roleId, input.sessionId)
+      return true
+    } catch (e) {
+      const msg = String((e as any)?.message || e || `${operationText}失败`)
+      if ((state.sendingCtx as any)?.cancelledByUser) showToast?.('已停止')
+      else showToast?.(msg)
+      return false
+    } finally {
+      state.sendingCtx = null
+      state.sending = false
+      render()
+      scrollToBottomSoon()
+    }
   }
 
   async function activeRoleSessionMutationTarget(operationText: string) {
@@ -236,18 +308,22 @@ export function createChatOperations(deps: {
     if (draftImages.length || hasFiles) return showToast?.('当前 e-b 发送只支持文本消息，图片/文件发送需要等 e-b 附件消息根动作接入')
 
     const rid = String(role.id || '')
+    const currentChatBeforeLoad = sa.activeChatFromData()
+    const selectedParentMessageId = roleMessageParentForSend(currentChatBeforeLoad, opts?.forkFromMid)
     const loadedChat = await ensureActiveChatLoaded?.().catch(() => null)
-    const chatForModel = loadedChat || sa.activeChatFromData()
+    const chatForModel = loadedChat || currentChatBeforeLoad || sa.activeChatFromData()
     if (normalizeChatModelOverride(chatForModel)) {
       return showToast?.('当前会话临时模型尚未接入 e-b 真实根动作，请先清除当前会话临时模型')
     }
 
-    const sessionId = String((loadedChat || sa.activeChatFromData())?.id || '').trim()
+    const chat = loadedChat || currentChatBeforeLoad || sa.activeChatFromData()
+    const sessionId = String(chat?.id || '').trim()
+    const parentMessageId = sessionId ? selectedParentMessageId || roleMessageParentForSend(chat, opts?.forkFromMid) : ''
     try {
       state.sending = true
       state.sendingCtx = { kind: 'eb-role-run', runId: '', roleId: rid, sessionId, cancelledByUser: false }
       renderComposer()
-      await runRoleMessageViaEb({ roleId: rid, sessionId, message: input }, (run) => {
+      await runRoleMessageViaEb({ roleId: rid, sessionId, message: input, parentMessageId }, (run) => {
         state.sendingCtx = {
           kind: 'eb-role-run',
           runId: String(run.id || '').trim(),
@@ -258,6 +334,7 @@ export function createChatOperations(deps: {
         state.draft.input = ''
         state.draft.images = []
         ;(state.draft as any).files = []
+        state.branchDraft = null
         renderComposer()
       })
     } catch (e) {
@@ -314,7 +391,15 @@ export function createChatOperations(deps: {
       await regenerateGroupAssistantMessage(String(assistantMid || ''))
       return
     }
-    showToast?.('角色重生成尚未接入 e-b 真实会话根动作，已阻止旧本地运行链')
+    const target = await activeRoleRunTarget('重新回复')
+    const mid = String(assistantMid || '').trim()
+    if (!target || !mid) return false
+    const assistant = findChatMessageById(target.chat, mid)
+    if (!assistant || String((assistant as any).role || '') !== 'assistant') return showToast?.('只能重新生成 AI 消息')
+    const userMessageId = String((assistant as any).parentMid || '').trim()
+    const userMessage = userMessageId ? findChatMessageById(target.chat, userMessageId) : null
+    if (!userMessage || String((userMessage as any).role || '') !== 'user') return showToast?.('未找到对应的用户消息')
+    return runRoleFromUserMessage({ roleId: target.roleId, sessionId: target.sessionId, userMessageId }, '重新回复')
   }
 
   // ============ regenerate group assistant message ============
@@ -335,7 +420,12 @@ export function createChatOperations(deps: {
       await replyFromUserMessageInGroup(String(userMid || ''))
       return
     }
-    showToast?.('角色从用户消息继续回复尚未接入 e-b 真实会话根动作，已阻止旧本地运行链')
+    const target = await activeRoleRunTarget('继续回复')
+    const userMessageId = String(userMid || '').trim()
+    if (!target || !userMessageId) return false
+    const userMessage = findChatMessageById(target.chat, userMessageId)
+    if (!userMessage || String((userMessage as any).role || '') !== 'user') return showToast?.('只能从用户消息继续回复')
+    return runRoleFromUserMessage({ roleId: target.roleId, sessionId: target.sessionId, userMessageId }, '继续回复')
   }
 
   // ============ reply from user message in group ============

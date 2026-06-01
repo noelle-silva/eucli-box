@@ -7,6 +7,7 @@ import { chatMetaFromChat, chatMetasFromBox, upsertChatMeta } from '../domain/ch
 import { UI_CHAT_UPDATED_NOTICE_KEY } from '../runtime/runtimeKeys'
 import { splitChatKey, splitGroupChatKey } from '../domain/storageKeys'
 import { normalizeStoredChat } from '../storage/normalizeStoredChat'
+import { preserveLocalBranchSelection } from '../domain/branching'
 
 export function createUiPolling(deps: {
   getState: () => any
@@ -87,7 +88,7 @@ export function createUiPolling(deps: {
           const c1 = c0 && typeof c0 === 'object' ? normalizeStoredChat(c0, 'role') : null
           if (c1) {
             const idx0 = nextChats.findIndex((c: any) => String(c?.id || '') === activeChatId)
-            if (idx0 >= 0) nextChats[idx0] = c1
+            if (idx0 >= 0) nextChats[idx0] = preserveLocalBranchSelection(c1, nextChats[idx0])
             else nextChats.unshift(c1)
           }
         }
@@ -131,9 +132,10 @@ export function createUiPolling(deps: {
     if (!Array.isArray(box.chats)) box.chats = []
 
     const idx = box.chats.findIndex((c: any) => String(c?.id || '') === cid)
-    if (idx >= 0) box.chats[idx] = chat
-    else box.chats.unshift(chat)
-    box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chat, '新聊天'), '新聊天')
+    const nextChat = preserveLocalBranchSelection(chat, idx >= 0 ? box.chats[idx] : null)
+    if (idx >= 0) box.chats[idx] = nextChat
+    else box.chats.unshift(nextChat)
+    box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(nextChat, '新聊天'), '新聊天')
 
     return true
   }
@@ -160,9 +162,10 @@ export function createUiPolling(deps: {
     if (!Array.isArray(box.chats)) box.chats = []
 
     const idx = box.chats.findIndex((c: any) => String(c?.id || '') === cid)
-    if (idx >= 0) box.chats[idx] = chat
-    else box.chats.unshift(chat)
-    box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chat, '群聊'), '群聊')
+    const nextChat = preserveLocalBranchSelection(chat, idx >= 0 ? box.chats[idx] : null)
+    if (idx >= 0) box.chats[idx] = nextChat
+    else box.chats.unshift(nextChat)
+    box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(nextChat, '群聊'), '群聊')
 
     return true
   }
@@ -195,8 +198,8 @@ export function createUiPolling(deps: {
         : String(state.draft.activeRoleId || state.data?.ui?.activeRoleId || '').trim()
     if (!activeTid || kind !== activeKind || tid !== activeTid) return false
 
-      const activeBox = kind === 'group' ? (state.data as any)?.chatsByGroup?.[tid] : state.data?.chatsByRole?.[tid]
-      const activeChatId = String(deps.activeChatFromData()?.id || activeBox?.activeChatId || '').trim()
+    const activeBox = kind === 'group' ? (state.data as any)?.chatsByGroup?.[tid] : state.data?.chatsByRole?.[tid]
+    const activeChatId = String(deps.activeChatFromData()?.id || activeBox?.activeChatId || '').trim()
     if (activeChatId && cid === activeChatId) {
       const ok = kind === 'group' ? await syncGroupChatByIdFromStorage(tid, cid) : await syncChatByIdFromStorage(tid, cid)
       return !!ok

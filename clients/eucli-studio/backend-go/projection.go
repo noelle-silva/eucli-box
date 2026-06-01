@@ -554,10 +554,21 @@ func fromUIProvider(value any) map[string]any {
 func toUIChat(session map[string]any) map[string]any {
 	messages := []any{}
 	for _, msg := range objectList(session["messages"]) {
-		messages = append(messages, map[string]any{"id": stringField(msg, "id"), "role": messageRole(msg), "content": stringField(msg, "content"), "createdAt": millisFromAny(msg["createdAt"])})
+		createdAt := millisFromAny(msg["createdAt"])
+		updatedAt := millisFromAnyOrZero(msg["updatedAt"])
+		if updatedAt == 0 {
+			updatedAt = createdAt
+		}
+		messages = append(messages, map[string]any{"id": stringField(msg, "id"), "role": messageRole(msg), "content": stringField(msg, "content"), "parentMid": stringField(msg, "parentMessageId"), "branchId": fallback(stringField(msg, "branchId"), "main"), "createdAt": createdAt, "updatedAt": updatedAt})
 	}
 	createdAt := millisFromAny(session["createdAt"])
-	updatedAt := millisFromAny(session["lastActive"])
+	updatedAt := millisFromAnyOrZero(session["updatedAt"])
+	if updatedAt == 0 {
+		updatedAt = millisFromAnyOrZero(session["lastActive"])
+	}
+	if updatedAt == 0 {
+		updatedAt = createdAt
+	}
 	return map[string]any{"id": stringField(session, "id"), "title": fallback(stringField(session, "title"), "新聊天"), "createdAt": createdAt, "updatedAt": updatedAt, "messages": messages}
 }
 
@@ -565,9 +576,10 @@ func fromUIChat(value any, roleID string) map[string]any {
 	chat := objectMap(value)
 	messages := []any{}
 	for _, msg := range objectList(chat["messages"]) {
-		messages = append(messages, map[string]any{"id": stringField(msg, "id"), "type": messageRole(msg), "content": stringField(msg, "content"), "createdAt": timeFromMillis(msg["createdAt"])})
+		messages = append(messages, map[string]any{"id": stringField(msg, "id"), "type": messageRole(msg), "content": stringField(msg, "content"), "parentMessageId": stringField(msg, "parentMid"), "branchId": fallback(stringField(msg, "branchId"), "main"), "createdAt": timeFromMillis(msg["createdAt"]), "updatedAt": timeFromMillis(msg["updatedAt"])})
 	}
-	return map[string]any{"id": stringField(chat, "id"), "roleId": roleID, "title": fallback(stringField(chat, "title"), "新聊天"), "status": "created", "messages": messages, "createdAt": timeFromMillis(chat["createdAt"]), "lastActive": timeFromMillis(chat["updatedAt"])}
+	updatedAt := timeFromMillis(chat["updatedAt"])
+	return map[string]any{"id": stringField(chat, "id"), "roleId": roleID, "title": fallback(stringField(chat, "title"), "新聊天"), "status": "created", "messages": messages, "createdAt": timeFromMillis(chat["createdAt"]), "updatedAt": updatedAt, "lastActive": updatedAt}
 }
 
 func mergeSettings(settings map[string]any, providers []map[string]any) map[string]any {
@@ -710,6 +722,17 @@ func millisFromAny(value any) int64 {
 		return int64(n)
 	}
 	return nowMillis()
+}
+func millisFromAnyOrZero(value any) int64 {
+	if s, ok := value.(string); ok {
+		if t, err := time.Parse(time.RFC3339, s); err == nil {
+			return t.UnixMilli()
+		}
+	}
+	if n, ok := value.(float64); ok {
+		return int64(n)
+	}
+	return 0
 }
 func timeFromMillis(value any) string {
 	ms := millisFromAny(value)

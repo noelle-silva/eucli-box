@@ -51,6 +51,55 @@ func TestCreateSessionRoute(t *testing.T) {
 	}
 }
 
+func TestSessionMessageRoutes(t *testing.T) {
+	fakes := newGatewayFakes()
+	now := time.Now().UTC()
+	fakes.sessions.sessions["developer/session-1"] = types.Session{
+		ID:        "session-1",
+		RoleID:    "developer",
+		Title:     "Old title",
+		Status:    string(types.RunStatusCreated),
+		CreatedAt: now,
+		UpdatedAt: now,
+		Messages: []types.Message{
+			{ID: "m1", Type: "user", Content: "hello", BranchID: "main", CreatedAt: now, UpdatedAt: now},
+			{ID: "m2", Type: "assistant", Content: "hi", ParentMessageID: "m1", BranchID: "main", CreatedAt: now, UpdatedAt: now},
+		},
+		LastActive: now,
+	}
+	system := newTestGateway(t, fakes)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/roles/developer/sessions/session-1/title", strings.NewReader(`{"title":"New title"}`))
+	rec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("title status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := fakes.sessions.sessions["developer/session-1"].Title; got != "New title" {
+		t.Fatalf("title = %q", got)
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "/api/roles/developer/sessions/session-1/messages/m1", strings.NewReader(`{"content":"updated"}`))
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("message status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := fakes.sessions.sessions["developer/session-1"].Messages[0].Content; got != "updated" {
+		t.Fatalf("message content = %q", got)
+	}
+
+	req = httptest.NewRequest(http.MethodDelete, "/api/roles/developer/sessions/session-1/messages/m1", nil)
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(fakes.sessions.sessions["developer/session-1"].Messages) != 1 {
+		t.Fatalf("messages = %#v", fakes.sessions.sessions["developer/session-1"].Messages)
+	}
+}
+
 func TestRoleRoutes(t *testing.T) {
 	fakes := newGatewayFakes()
 	system := newTestGateway(t, fakes)
@@ -180,6 +229,43 @@ func (f *fakeGatewaySessions) ListSessions(ctx context.Context, roleID string) (
 func (f *fakeGatewaySessions) DeleteSession(ctx context.Context, roleID string, sessionID string) error {
 	delete(f.sessions, roleID+"/"+sessionID)
 	return nil
+}
+
+func (f *fakeGatewaySessions) UpdateSessionTitle(ctx context.Context, roleID string, sessionID string, title string) (types.Session, error) {
+	session := f.sessions[roleID+"/"+sessionID]
+	session.Title = title
+	session.UpdatedAt = time.Now().UTC()
+	f.sessions[roleID+"/"+sessionID] = session
+	return session, nil
+}
+
+func (f *fakeGatewaySessions) UpdateSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string, content string) (types.Session, error) {
+	session := f.sessions[roleID+"/"+sessionID]
+	for i := range session.Messages {
+		if session.Messages[i].ID == messageID {
+			session.Messages[i].Content = content
+			session.Messages[i].UpdatedAt = time.Now().UTC()
+		}
+	}
+	f.sessions[roleID+"/"+sessionID] = session
+	return session, nil
+}
+
+func (f *fakeGatewaySessions) DeleteSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error) {
+	session := f.sessions[roleID+"/"+sessionID]
+	next := make([]types.Message, 0, len(session.Messages))
+	for _, message := range session.Messages {
+		if message.ID != messageID {
+			next = append(next, message)
+		}
+	}
+	session.Messages = next
+	f.sessions[roleID+"/"+sessionID] = session
+	return session, nil
+}
+
+func (f *fakeGatewaySessions) DeleteSessionMessageSubtree(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error) {
+	return f.DeleteSessionMessage(ctx, roleID, sessionID, messageID)
 }
 
 type fakeGatewayRuntime struct {

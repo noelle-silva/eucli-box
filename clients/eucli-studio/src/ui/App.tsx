@@ -2353,6 +2353,15 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     text: '',
   })
 
+  const closeEditingChatTitle = useEvent(() => setEditingChatTitle({ targetKind: 'role', targetId: '', chatId: '', text: '' }))
+  const saveEditingChatTitle = useEvent(async () => {
+    const { targetKind, targetId, chatId, text } = editingChatTitle
+    if (!targetId || !chatId || s.loading) return
+    const action = targetKind === 'group' ? controller.actions.renameGroupChat : controller.actions.renameChat
+    const ok = await Promise.resolve(action?.(targetId, chatId, String(text ?? '')))
+    if (ok === true) closeEditingChatTitle()
+  })
+
   React.useEffect(() => {
     setEditingMsg({ mid: '', text: '' })
   }, [page, activeRole?.id, activeChat?.id, activeBranchIdUi, branchDraftKey])
@@ -2650,12 +2659,12 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     setEditingMsg({ mid, text: String(text ?? '') })
   })
   const cancelEditMessage = useEvent(() => setEditingMsg({ mid: '', text: '' }))
-  const saveEditMessage = useEvent(() => {
+  const saveEditMessage = useEvent(async () => {
     const mid = String(editingMsg.mid || '')
     if (!mid) return
     if (s.loading || uiBusy || chatLocked) return
-    controller.actions.editMessage?.(mid, String(editingMsg.text ?? ''))
-    setEditingMsg({ mid: '', text: '' })
+    const ok = await Promise.resolve(controller.actions.editMessage?.(mid, String(editingMsg.text ?? '')))
+    if (ok === true) setEditingMsg({ mid: '', text: '' })
   })
 
   const openRolePicker = useEvent((e: React.MouseEvent<HTMLElement>) => {
@@ -4068,11 +4077,11 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                  <Button
                    variant="contained"
                    color="error"
-                   onClick={() => {
-                     const mid = confirmDelMsg.mid
-                     setConfirmDelMsg({ mid: '', role: 'assistant' })
-                     controller.actions.deleteMessage?.(mid)
-                   }}
+                    onClick={async () => {
+                      const mid = confirmDelMsg.mid
+                      const ok = await Promise.resolve(controller.actions.deleteMessage?.(mid))
+                      if (ok === true) setConfirmDelMsg({ mid: '', role: 'assistant' })
+                    }}
                   disabled={!confirmDelMsg.mid || s.loading || uiBusy || chatLocked}
                  >
                    删除
@@ -4097,10 +4106,10 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                   <Button
                     variant="contained"
                     color="error"
-                    onClick={() => {
+                    onClick={async () => {
                       const mid = confirmDelTree.mid
-                      setConfirmDelTree({ mid: '', role: 'assistant' })
-                      controller.actions.deleteMessageSubtree?.(mid)
+                      const ok = await Promise.resolve(controller.actions.deleteMessageSubtree?.(mid))
+                      if (ok === true) setConfirmDelTree({ mid: '', role: 'assistant' })
                     }}
                     disabled={!confirmDelTree.mid || s.loading || uiBusy || chatLocked}
                   >
@@ -6160,7 +6169,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
 
         <Dialog
           open={!!editingChatTitle.chatId}
-          onClose={() => setEditingChatTitle({ targetKind: 'role', targetId: '', chatId: '', text: '' })}
+          onClose={closeEditingChatTitle}
           maxWidth="xs"
           fullWidth
         >
@@ -6175,30 +6184,20 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
               value={String(editingChatTitle.text ?? '')}
               onChange={(e) => setEditingChatTitle((p) => ({ ...p, text: e.target.value }))}
               onKeyDown={(e) => {
-                if (e.key === 'Escape') setEditingChatTitle({ targetKind: 'role', targetId: '', chatId: '', text: '' })
+                if (e.key === 'Escape') closeEditingChatTitle()
                 if (e.key === 'Enter') {
                   e.preventDefault()
-                  const { targetKind, targetId, chatId, text } = editingChatTitle
-                  if (!targetId || !chatId || s.loading) return
-                  setEditingChatTitle({ targetKind: 'role', targetId: '', chatId: '', text: '' })
-                  if (targetKind === 'group') controller.actions.renameGroupChat?.(targetId, chatId, String(text ?? ''))
-                  else controller.actions.renameChat?.(targetId, chatId, String(text ?? ''))
+                  void saveEditingChatTitle()
                 }
               }}
               sx={{ mt: 1 }}
             />
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setEditingChatTitle({ targetKind: 'role', targetId: '', chatId: '', text: '' })}>取消</Button>
+            <Button onClick={closeEditingChatTitle}>取消</Button>
             <Button
               variant="contained"
-              onClick={() => {
-                const { targetKind, targetId, chatId, text } = editingChatTitle
-                if (!targetId || !chatId || s.loading) return
-                setEditingChatTitle({ targetKind: 'role', targetId: '', chatId: '', text: '' })
-                if (targetKind === 'group') controller.actions.renameGroupChat?.(targetId, chatId, String(text ?? ''))
-                else controller.actions.renameChat?.(targetId, chatId, String(text ?? ''))
-              }}
+              onClick={() => { void saveEditingChatTitle() }}
               disabled={!editingChatTitle.targetId || !editingChatTitle.chatId || s.loading}
             >
               保存

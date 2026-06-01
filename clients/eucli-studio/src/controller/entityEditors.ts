@@ -83,14 +83,13 @@ export function createEntityEditors(deps: {
   ensureChatLoaded?: (rid: string, cid: string) => Promise<any>
   ensureGroupChatLoaded?: (gid: string, cid: string) => Promise<any>
   renameRoleChatInStore?: (rid: string, cid: string, title: string) => Promise<void>
-  renameGroupChatInStore?: (gid: string, cid: string, title: string) => Promise<void>
   removeChatInStore?: (kind: 'role' | 'group', targetId: string, chatId: string) => Promise<void>
   setRoleActiveChatSelection?: (roleId: string, chatId: string) => Promise<void>
   removeLoadedChat?: (kind: 'role' | 'group', targetId: string, chatId: string) => void
   cleanupFavoriteRefsForTarget: (kind: string, targetId: string) => void
   cleanupFavoriteRefsForChat: (targetKind: string, targetId: string, chatId: string) => void
 }) {
-  const { getState, save, saveRoleEntity, removeRoleEntity, saveProviderEntity, removeProviderEntity, createRoleSession, render, closeModal, showToast, pickImageFiles, filesImages, ensureChatLoaded, ensureGroupChatLoaded, renameRoleChatInStore, renameGroupChatInStore, removeChatInStore, setRoleActiveChatSelection, removeLoadedChat, cleanupFavoriteRefsForTarget, cleanupFavoriteRefsForChat } = deps
+  const { getState, save, saveRoleEntity, removeRoleEntity, saveProviderEntity, removeProviderEntity, createRoleSession, render, closeModal, showToast, pickImageFiles, filesImages, ensureChatLoaded, ensureGroupChatLoaded, renameRoleChatInStore, removeChatInStore, setRoleActiveChatSelection, removeLoadedChat, cleanupFavoriteRefsForTarget, cleanupFavoriteRefsForChat } = deps
   const sa = createStateAccessors({ getState })
 
   function scrollToBottomSoon() {
@@ -559,18 +558,28 @@ export function createEntityEditors(deps: {
 
   // ===== Rename =====
 
-  function renameChatTitle(roleId: any, chatId: any, title: any) {
+  async function renameChatTitle(roleId: any, chatId: any, title: any) {
     const state = getState()
-    if (!state.data) return
+    if (!state.data) return false
     const rid = String(roleId || '')
     const cid = String(chatId || '')
-    if (!rid || !cid) return
+    if (!rid || !cid) return false
 
     const box = sa.ensureChatsBoxBare(rid)
-    if (!box) return
+    if (!box) return false
     let t = String(title ?? '').replace(/\s+/g, ' ').trim()
     if (t.length > 80) t = t.slice(0, 80).trim()
     t = t || '新聊天'
+
+    try {
+      if (typeof renameRoleChatInStore !== 'function') throw new Error('会话标题保存通道不可用')
+      await renameRoleChatInStore(rid, cid, t)
+    } catch (e: any) {
+      showToast?.(String(e?.message || e || '会话标题保存失败'))
+      render()
+      return false
+    }
+
     const chats = Array.isArray(box.chats) ? box.chats : []
     const chat = chats.find((c: any) => String(c?.id) === cid) || null
     if (chat) {
@@ -590,43 +599,19 @@ export function createEntityEditors(deps: {
       }, '新聊天')
     }
 
-    ;(renameRoleChatInStore?.(rid, cid, t) || save()).catch(() => {})
     render()
+    return true
   }
 
-  function renameGroupChatTitle(groupId: any, chatId: any, title: any) {
+  async function renameGroupChatTitle(groupId: any, chatId: any, _title: any) {
     const state = getState()
-    if (!state.data) return
+    if (!state.data) return false
     const gid = String(groupId || '').trim()
     const cid = String(chatId || '').trim()
-    if (!gid || !cid) return
+    if (!gid || !cid) return false
 
-    const box = sa.ensureGroupChatsBoxBare(gid)
-    if (!box) return
-    let t = String(title ?? '').replace(/\s+/g, ' ').trim()
-    if (t.length > 80) t = t.slice(0, 80).trim()
-    t = t || '群聊'
-    const chats = Array.isArray(box.chats) ? box.chats : []
-    const chat = chats.find((c: any) => String(c?.id) === cid) || null
-    if (chat) {
-      chat.title = t
-      chat.updatedAt = now()
-      box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chat, '群聊'), '群聊')
-    } else {
-      const old = Array.isArray(box.chatMetas) ? box.chatMetas.find((m: any) => String(m?.id || '') === cid) : null
-      box.chatMetas = upsertChatMeta(box.chatMetas, {
-        id: cid,
-        title: t,
-        createdAt: Number(old?.createdAt || now()),
-        updatedAt: now(),
-        lastMessagePreview: String(old?.lastMessagePreview || ''),
-        messageCount: Number(old?.messageCount || 0),
-        hasPending: !!old?.hasPending,
-      }, '群聊')
-    }
-
-    ;(renameGroupChatInStore?.(gid, cid, t) || save()).catch(() => {})
-    render()
+    showToast?.('群组会话标题尚未接入 e-b 真实群组会话根动作，已阻止本地假修改')
+    return false
   }
 
   // ===== Image path collection =====

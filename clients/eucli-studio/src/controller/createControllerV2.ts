@@ -15,9 +15,7 @@ import type { ChatSaveIntent } from '../domain/chatSaveIntent'
 import {
   CHAT_ATTACHMENT_KINDS,
   CHAT_MSG_GROUP_ROLES,
-  CHAT_BRANCHING_SCHEMA_VERSION,
   CHAT_DEFAULT_BRANCH_ID,
-  CHAT_DEFAULT_BRANCH_NAME,
   VERSION,
   SPLIT_SCHEMA_VERSION,
   SPLIT_META_KEY,
@@ -34,25 +32,7 @@ import {
   DEFAULT_STICKER_NAMING_SYSTEM_PROMPT,
 } from '../domain/constants'
 import { splitRoleKey, splitChatKey, splitGroupKey, splitGroupChatKey } from '../domain/storageKeys'
-import {
-  normalizeBranchId,
-  normalizeBranchName,
-  createDefaultChatBranching,
-  normalizeChatBranching,
-  rebuildLinearBranchingMessages,
-  fillMissingBranchIdsOnly,
-  touchActiveBranchHead,
-  repairChatLinearBranching,
-  ensureChatBranching,
-  ensureChatBranch,
-  setChatActiveBranchId,
-  setChatBranchHeadMid,
-  genUniqueBranchId,
-  findChatMessageById,
-  findPrevAssistantMidForAssistant,
-  findAssistantSiblingsByUserMid,
-  findChatBranch,
-} from '../domain/branching'
+import { normalizeBranchId } from '../domain/branching'
 import { normalizeMessageAttachments, normalizeMessageGroup } from '../domain/message'
 import { validateFavoriteFolderName } from '../domain/favoriteValidator'
 import { normalizeChatModelOverride, normalizeMessageModelRef, buildMessageModelRef } from '../domain/modelRefUtils'
@@ -107,7 +87,7 @@ import { createFavoritesOperations } from './favoritesOperations'
 import { createEntityEditors } from './entityEditors'
 import { createChatOperations } from './chatOperations'
 import { createPersistence } from './persistence'
-import { createRoleSession } from './ebRoleSession'
+import { createRoleSession, updateRoleSessionTitle } from './ebRoleSession'
 
 export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilities }): {
   controller: AiChatController
@@ -418,8 +398,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     removeRoleChatEntry,
     saveRoleOrder,
     saveGroupChat,
-    renameRoleChat,
-    renameGroupChat: renameGroupChatInStore,
     saveMetaOnly,
     saveStickersOnly,
     saveRoleEntity,
@@ -444,7 +422,16 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     getState: () => state,
     loadSplitMeta: loadSplitMetaCached,
   })
-  const { loadShell, ensureChatLoaded, ensureActiveChatLoaded, removeChat, removeLoadedChat } = lazyChatStore
+  const { loadShell, loadChat, ensureChatLoaded, ensureActiveChatLoaded, removeChat, upsertLoadedChat, removeLoadedChat } = lazyChatStore
+
+  async function reloadRoleSession(roleIdRaw: any, sessionIdRaw: any) {
+    const roleId = String(roleIdRaw || '').trim()
+    const sessionId = String(sessionIdRaw || '').trim()
+    if (!roleId || !sessionId) return null
+    const chat = await loadChat('role', roleId, sessionId)
+    if (!chat) return null
+    return upsertLoadedChat('role', roleId, chat)
+  }
 
   // ============================================================
   // 6.1. UI RUNTIME CACHES
@@ -590,9 +577,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     return { kind, targetId, chat, pendingChat, target: targetMessage }
   }
 
-  // placeholder for aiGenerateChatTitle, filled after aiServices is created
-  let aiGenerateChatTitleFn: ((rid: string, cid: string) => Promise<any>) | undefined
-
   const mermaidUi = createMermaidUi({
     getState: () => state,
     assistantRenderer,
@@ -622,17 +606,10 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   // ============================================================
   // 14. AI SERVICES (first pass with placeholders)
   // ============================================================
-  // Placeholder functions that will be filled after entityEditors is created
-  let renameChatTitleFn: (rid: string, cid: string, title: string) => void = () => {}
-  let renameGroupChatTitleFn: (gid: string, cid: string, title: string) => void = () => {}
-
   const aiServices = createAiServices({
     // AI microservices are intentionally blocked until e-b exposes real roots.
   })
   const { aiFixMermaidInMessage, aiGenerateChatTitle, aiGenerateGroupChatTitle, aiGenerateStickerName } = aiServices
-
-  // Fill the placeholder
-  aiGenerateChatTitleFn = aiGenerateChatTitle
 
   // ============================================================
   // 15. ENTITY EDITORS
@@ -652,8 +629,10 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     filesImages: api.files?.images as any,
     ensureChatLoaded: (rid: string, cid: string) => ensureChatLoaded('role', rid, cid),
     ensureGroupChatLoaded: (gid: string, cid: string) => ensureChatLoaded('group', gid, cid),
-    renameRoleChatInStore: renameRoleChat,
-    renameGroupChatInStore,
+    renameRoleChatInStore: async (rid: string, cid: string, title: string) => {
+      await updateRoleSessionTitle(capabilities.net?.request || ((() => Promise.resolve({})) as any), { roleId: rid, sessionId: cid, title })
+      await reloadRoleSession(rid, cid)
+    },
     removeChatInStore: (kind: 'role' | 'group', targetId: string, chatId: string) => kind === 'role' ? removeRoleChatEntry(targetId, chatId) : Promise.resolve(),
     setRoleActiveChatSelection: (roleId: string, chatId: string) => setActiveRoleChatSelection(roleId, chatId),
     removeLoadedChat,
@@ -696,10 +675,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     deleteChatForGroup,
   } = entityEditors
 
-  // Fill placeholder
-  renameChatTitleFn = renameChatTitle
-  renameGroupChatTitleFn = renameGroupChatTitle
-
   // ============================================================
   // 16. CHAT OPERATIONS
   // ============================================================
@@ -711,6 +686,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     save,
     ensureActiveChatLoaded,
     ensureChatLoaded: (kind: 'role' | 'group', targetId: string, chatId: string) => ensureChatLoaded(kind, targetId, chatId),
+    reloadRoleSession,
     emit,
     render,
     renderComposer,

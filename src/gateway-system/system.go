@@ -55,6 +55,10 @@ type SessionSystem interface {
 	LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error)
 	ListSessions(ctx context.Context, roleID string) ([]types.SessionSummary, error)
 	DeleteSession(ctx context.Context, roleID string, sessionID string) error
+	UpdateSessionTitle(ctx context.Context, roleID string, sessionID string, title string) (types.Session, error)
+	UpdateSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string, content string) (types.Session, error)
+	DeleteSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error)
+	DeleteSessionMessageSubtree(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error)
 }
 
 type Config struct {

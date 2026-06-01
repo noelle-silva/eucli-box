@@ -488,38 +488,6 @@ export function createSplitStorage(deps: {
     })
   }
 
-  async function renameChatEntry(kind: ChatIndexKind, targetId: any, chatId: any, title: any) {
-    const tid = String(targetId || '').trim()
-    const cid = String(chatId || '').trim()
-    if (!tid || !cid) return
-    const fallbackTitle = kind === 'group' ? '群聊' : '新聊天'
-    let nextTitle = String(title ?? '').replace(/\s+/g, ' ').trim()
-    if (nextTitle.length > 80) nextTitle = nextTitle.slice(0, 80).trim()
-    nextTitle = nextTitle || fallbackTitle
-    await updateChatIndexEntry(kind, tid, cid, { title: nextTitle, updatedAt: now() })
-
-    const meta = (await loadSplitMeta()) || splitMetaCache
-    const folder = kind === 'group' ? String((meta as any)?.groupFolders?.[tid] || '').trim() : String(meta?.roleFolders?.[tid] || '').trim()
-    if (!folder) return
-    const key = kind === 'group' ? splitGroupChatKey(folder, cid) : splitChatKey(folder, cid)
-    await withChatWriteLock(kind, tid, cid, async () => {
-      const raw = await storage.get(key)
-      const chat = raw && typeof raw === 'object' ? raw : null
-      if (!chat) return
-      ;(chat as any).title = nextTitle
-      ;(chat as any).updatedAt = now()
-      await storage.set(key, chat)
-    })
-  }
-
-  async function renameRoleChat(roleId: any, chatId: any, title: any) {
-    await renameChatEntry('role', roleId, chatId, title)
-  }
-
-  async function renameGroupChat(groupId: any, chatId: any, title: any) {
-    await renameChatEntry('group', groupId, chatId, title)
-  }
-
   async function loadSplitData() {
     const meta = (await loadSplitMeta()) || splitMetaCache
     if (!meta) return null
@@ -731,8 +699,6 @@ export function createSplitStorage(deps: {
     removeRoleChatEntry,
     saveRoleOrder,
     saveGroupChat,
-    renameRoleChat,
-    renameGroupChat,
     touchGroupChatUpdatedAt,
     saveMetaOnly,
     saveStickersOnly,

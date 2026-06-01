@@ -10,6 +10,14 @@ type createSessionRequest struct {
 	Title string `json:"title"`
 }
 
+type updateSessionTitleRequest struct {
+	Title string `json:"title"`
+}
+
+type updateSessionMessageRequest struct {
+	Content string `json:"content"`
+}
+
 func (s *system) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	roleID, err := pathValue(r, "roleID")
 	if err != nil {
@@ -104,4 +112,105 @@ func (s *system) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeNoContent(w)
+}
+
+func (s *system) handleUpdateSessionTitle(w http.ResponseWriter, r *http.Request) {
+	roleID, err := pathValue(r, "roleID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	sessionID, err := pathValue(r, "sessionID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	request, err := decodeJSON[updateSessionTitleRequest](r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	session, err := s.sessions.UpdateSessionTitle(r.Context(), roleID, sessionID, request.Title)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, session)
+}
+
+func (s *system) handleUpdateSessionMessage(w http.ResponseWriter, r *http.Request) {
+	roleID, err := pathValue(r, "roleID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	sessionID, err := pathValue(r, "sessionID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	messageID, err := pathValue(r, "messageID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	request, err := decodeJSON[updateSessionMessageRequest](r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	session, err := s.sessions.UpdateSessionMessage(r.Context(), roleID, sessionID, messageID, request.Content)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, session)
+}
+
+func (s *system) handleDeleteSessionMessage(w http.ResponseWriter, r *http.Request) {
+	roleID, err := pathValue(r, "roleID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	sessionID, err := pathValue(r, "sessionID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	messageID, err := pathValue(r, "messageID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	session, err := s.sessions.DeleteSessionMessage(r.Context(), roleID, sessionID, messageID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, session)
+}
+
+func (s *system) handleDeleteSessionMessageSubtree(w http.ResponseWriter, r *http.Request) {
+	roleID, err := pathValue(r, "roleID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	sessionID, err := pathValue(r, "sessionID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	messageID, err := pathValue(r, "messageID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	session, err := s.sessions.DeleteSessionMessageSubtree(r.Context(), roleID, sessionID, messageID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, session)
 }

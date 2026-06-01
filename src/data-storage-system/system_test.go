@@ -130,6 +130,60 @@ func TestCreateSessionCreatesCanonicalSession(t *testing.T) {
 	assertFile(t, filepath.Join(system.paths.root, "sessions", "developer", session.ID, "data.json"))
 }
 
+func TestSessionMessageRootActions(t *testing.T) {
+	system := newTestSystem(t)
+	now := time.Date(2026, 5, 30, 9, 0, 0, 0, time.UTC)
+	session := types.Session{
+		ID:        "session-1",
+		RoleID:    "developer",
+		Title:     "Original",
+		Status:    string(types.RunStatusCreated),
+		CreatedAt: now,
+		UpdatedAt: now,
+		Messages: []types.Message{
+			{ID: "m1", Type: "user", Content: "hello", BranchID: "main", CreatedAt: now, UpdatedAt: now},
+			{ID: "m2", Type: "assistant", Content: "hi", ParentMessageID: "m1", BranchID: "main", CreatedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second)},
+			{ID: "m3", Type: "user", Content: "again", ParentMessageID: "m2", BranchID: "main", CreatedAt: now.Add(2 * time.Second), UpdatedAt: now.Add(2 * time.Second)},
+		},
+		LastActive: now.Add(2 * time.Second),
+	}
+	if err := system.SaveSession(context.Background(), session); err != nil {
+		t.Fatalf("SaveSession() error = %v", err)
+	}
+
+	updatedTitle, err := system.UpdateSessionTitle(context.Background(), "developer", "session-1", "  Renamed  chat  ")
+	if err != nil {
+		t.Fatalf("UpdateSessionTitle() error = %v", err)
+	}
+	if updatedTitle.Title != "Renamed chat" {
+		t.Fatalf("title = %q", updatedTitle.Title)
+	}
+
+	updatedMessage, err := system.UpdateSessionMessage(context.Background(), "developer", "session-1", "m2", "changed")
+	if err != nil {
+		t.Fatalf("UpdateSessionMessage() error = %v", err)
+	}
+	if got := updatedMessage.Messages[1].Content; got != "changed" {
+		t.Fatalf("message content = %q", got)
+	}
+
+	deletedSingle, err := system.DeleteSessionMessage(context.Background(), "developer", "session-1", "m2")
+	if err != nil {
+		t.Fatalf("DeleteSessionMessage() error = %v", err)
+	}
+	if len(deletedSingle.Messages) != 2 || deletedSingle.Messages[1].ID != "m3" || deletedSingle.Messages[1].ParentMessageID != "m1" {
+		t.Fatalf("messages after single delete = %#v", deletedSingle.Messages)
+	}
+
+	deletedSubtree, err := system.DeleteSessionMessageSubtree(context.Background(), "developer", "session-1", "m1")
+	if err != nil {
+		t.Fatalf("DeleteSessionMessageSubtree() error = %v", err)
+	}
+	if len(deletedSubtree.Messages) != 0 {
+		t.Fatalf("messages after subtree delete = %#v", deletedSubtree.Messages)
+	}
+}
+
 func TestProviderAndToolStores(t *testing.T) {
 	system := newTestSystem(t)
 	provider := types.Provider{ID: "openai-main", Name: "OpenAI", Protocol: types.ProviderProtocolOpenAI, UpdatedAt: time.Date(2026, 5, 30, 10, 0, 0, 0, time.UTC)}

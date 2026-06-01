@@ -24,10 +24,11 @@ func (s *system) CreateSession(ctx context.Context, roleID string, title string)
 	session := types.Session{
 		ID:         utils.NewID("session"),
 		RoleID:     roleID,
-		Title:      sessionTitle,
+		Title:      normalizeSessionTitle(sessionTitle),
 		Status:     string(types.RunStatusCreated),
 		Messages:   []types.Message{},
 		CreatedAt:  now,
+		UpdatedAt:  now,
 		LastActive: now,
 	}
 	if err := s.SaveSession(ctx, session); err != nil {
@@ -37,6 +38,7 @@ func (s *system) CreateSession(ctx context.Context, roleID string, title string)
 }
 
 func (s *system) SaveSession(ctx context.Context, session types.Session) error {
+	session = normalizeSessionForStorage(session, time.Now().UTC())
 	if _, err := cleanID(session.RoleID); err != nil {
 		return err
 	}
@@ -65,7 +67,11 @@ func (s *system) LoadSession(ctx context.Context, roleID string, sessionID strin
 	if err != nil {
 		return types.Session{}, err
 	}
-	return readJSON[types.Session](ctx, target)
+	session, err := readJSON[types.Session](ctx, target)
+	if err != nil {
+		return types.Session{}, err
+	}
+	return normalizeSessionForStorage(session, time.Now().UTC()), nil
 }
 
 func (s *system) ListSessions(ctx context.Context, roleID string) ([]types.SessionSummary, error) {
@@ -79,7 +85,8 @@ func (s *system) ListSessions(ctx context.Context, roleID string) ([]types.Sessi
 	}
 	summaries := make([]types.SessionSummary, 0, len(sessions))
 	for _, session := range sessions {
-		summaries = append(summaries, types.SessionSummary{ID: session.ID, RoleID: session.RoleID, Title: session.Title, Status: session.Status, LastActive: session.LastActive})
+		session = normalizeSessionForStorage(session, time.Now().UTC())
+		summaries = append(summaries, types.SessionSummary{ID: session.ID, RoleID: session.RoleID, Title: session.Title, Status: session.Status, UpdatedAt: session.UpdatedAt, LastActive: session.LastActive})
 	}
 	sort.Slice(summaries, func(i, j int) bool {
 		return summaries[i].LastActive.After(summaries[j].LastActive)

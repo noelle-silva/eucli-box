@@ -8,8 +8,6 @@ import {
   normalizeBranchId,
   ensureChatBranching,
   ensureChatBranch,
-  setChatBranchHeadMid,
-  repairChatLinearBranching,
   findChatMessageById,
   findPrevAssistantMidForAssistant,
   findChatBranch,
@@ -19,9 +17,10 @@ import { detectDraftFileKind, addDraftFilePlaceholder } from '../domain/draftFil
 import type { DraftFileItem } from '../domain/draftFileUtils'
 import { normalizeChatModelOverride } from '../domain/modelRefUtils'
 import { createStateAccessors } from '../state/stateAccessors'
-import { hasActiveAssistantMessages, listActiveAssistantMessages } from '../domain/chatRunState'
+import { hasActiveAssistantMessages } from '../domain/chatRunState'
 import type { ChatSaveIntent } from '../domain/chatSaveIntent'
 import { cancelRoleRun, getRunState, isTerminalRunStatus, sleepMs, startRoleRun, type EbRunState } from './ebRoleRun'
+import { deleteRoleSessionMessage, deleteRoleSessionMessageSubtree, updateRoleSessionMessage } from './ebRoleSession'
 
 export function createChatOperations(deps: {
   getState: () => any
@@ -31,6 +30,7 @@ export function createChatOperations(deps: {
   save: (intent?: ChatSaveIntent) => Promise<void>
   ensureActiveChatLoaded?: () => Promise<any>
   ensureChatLoaded?: (kind: 'role' | 'group', targetId: string, chatId: string) => Promise<any>
+  reloadRoleSession?: (roleId: string, sessionId: string) => Promise<any>
   emit: () => void
   render: () => void
   renderComposer: () => void
@@ -38,7 +38,7 @@ export function createChatOperations(deps: {
   readImageFileAsDataUrl: (file: File) => Promise<string>
   extractTextFromFile: (file: File, kind: string) => Promise<string>
 }) {
-  const { getState, pickImageFiles, netRequest, showToast, save, ensureActiveChatLoaded, ensureChatLoaded, emit, render, renderComposer, scrollToBottomSoon, readImageFileAsDataUrl, extractTextFromFile } = deps
+  const { getState, pickImageFiles, netRequest, showToast, save, ensureActiveChatLoaded, ensureChatLoaded, reloadRoleSession, emit, render, renderComposer, scrollToBottomSoon, readImageFileAsDataUrl, extractTextFromFile } = deps
 
   const sa = createStateAccessors({ getState })
   function chatHasPendingAssistant(chat: any) {
@@ -53,7 +53,7 @@ export function createChatOperations(deps: {
     if (!state.data.chatsByRole || typeof state.data.chatsByRole !== 'object') state.data.chatsByRole = {}
     if (!state.data.chatsByRole[rid] || typeof state.data.chatsByRole[rid] !== 'object') state.data.chatsByRole[rid] = { activeChatId: '', chatMetas: [], chats: [] }
     state.data.chatsByRole[rid].activeChatId = sid
-    const chat = await ensureChatLoaded('role', rid, sid)
+    const chat = typeof reloadRoleSession === 'function' ? await reloadRoleSession(rid, sid) : await ensureChatLoaded('role', rid, sid)
     if (chat) {
       state.data.chatsByRole[rid].activeChatId = sid
       emit()
@@ -87,23 +87,21 @@ export function createChatOperations(deps: {
     return sessionId
   }
 
-  function activeChatOperationTarget() {
-    const state = getState()
-    const kind = sa.activeTargetKind() === 'group' ? 'group' : 'role'
-    const target = kind === 'group' ? sa.activeGroup() : sa.activeRole()
-    const targetId = String((target as any)?.id || '').trim()
-    if (!targetId) return null
-    const pendingChat =
-      kind === 'group'
-        ? state.pendingGroupChat && String(state.pendingGroupChat.groupId || '') === targetId
-          ? state.pendingGroupChat.chat
-          : null
-        : state.pendingChat && String(state.pendingChat.roleId || '') === targetId
-          ? state.pendingChat.chat
-          : null
-    const chat = pendingChat || sa.activeChatFromData()
-    if (!chat) return null
-    return { kind, target, targetId, chat, pendingChat }
+  async function activeRoleSessionMutationTarget(operationText: string) {
+    if (sa.activeTargetKind() === 'group') {
+      showToast?.(`群组消息${operationText}尚未接入 e-b 真实会话消息根动作，已阻止本地假修改`)
+      return null
+    }
+    const role = sa.activeRole()
+    const chat = await ensureActiveChatLoaded?.().catch(() => null) || sa.activeChatFromData()
+    if (chatHasPendingAssistant(chat)) {
+      showToast?.(`该会话正在生成中，无法${operationText}`)
+      return null
+    }
+    const roleId = String(role?.id || '').trim()
+    const sessionId = String(chat?.id || '').trim()
+    if (!roleId || !sessionId) return null
+    return { roleId, sessionId }
   }
 
   // ============ draft image ============
@@ -530,8 +528,20 @@ export function createChatOperations(deps: {
     const state = getState()
     if (state.loading || !state.data) return
     if (state.sending) return showToast?.('操作中，请稍后重试')
-    void messageId
-    showToast?.('消息删除尚未接入 e-b 真实会话消息根动作，已阻止本地假修改')
+    const target = await activeRoleSessionMutationTarget('删除')
+    const mid = String(messageId || '').trim()
+    if (!target || !mid) return false
+    if (typeof netRequest !== 'function') { showToast?.('e-b 请求通道不可用'); return false }
+    try {
+      await deleteRoleSessionMessage(netRequest, { roleId: target.roleId, sessionId: target.sessionId, messageId: mid })
+      await refreshRoleSession(target.roleId, target.sessionId)
+      render()
+      return true
+    } catch (e: any) {
+      showToast?.(String(e?.message || e || '消息删除失败'))
+      render()
+      return false
+    }
   }
 
   // ============ delete message subtree ============
@@ -540,8 +550,20 @@ export function createChatOperations(deps: {
     const state = getState()
     if (state.loading || !state.data) return
     if (state.sending) return showToast?.('操作中，请稍后重试')
-    void messageId
-    showToast?.('消息删除尚未接入 e-b 真实会话消息根动作，已阻止本地假修改')
+    const target = await activeRoleSessionMutationTarget('删除')
+    const mid = String(messageId || '').trim()
+    if (!target || !mid) return false
+    if (typeof netRequest !== 'function') { showToast?.('e-b 请求通道不可用'); return false }
+    try {
+      await deleteRoleSessionMessageSubtree(netRequest, { roleId: target.roleId, sessionId: target.sessionId, messageId: mid })
+      await refreshRoleSession(target.roleId, target.sessionId)
+      render()
+      return true
+    } catch (e: any) {
+      showToast?.(String(e?.message || e || '消息删除失败'))
+      render()
+      return false
+    }
   }
 
   // ============ edit message ============
@@ -550,9 +572,20 @@ export function createChatOperations(deps: {
     const state = getState()
     if (state.loading || !state.data) return
     if (state.sending) return showToast?.('操作中，请稍后重试')
-    void messageId
-    void content
-    showToast?.('消息编辑尚未接入 e-b 真实会话消息根动作，已阻止本地假修改')
+    const target = await activeRoleSessionMutationTarget('编辑')
+    const mid = String(messageId || '').trim()
+    if (!target || !mid) return false
+    if (typeof netRequest !== 'function') { showToast?.('e-b 请求通道不可用'); return false }
+    try {
+      await updateRoleSessionMessage(netRequest, { roleId: target.roleId, sessionId: target.sessionId, messageId: mid, content: String(content ?? '') })
+      await refreshRoleSession(target.roleId, target.sessionId)
+      render()
+      return true
+    } catch (e: any) {
+      showToast?.(String(e?.message || e || '消息编辑失败'))
+      render()
+      return false
+    }
   }
 
   return {

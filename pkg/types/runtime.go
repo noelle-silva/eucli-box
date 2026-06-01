@@ -3,13 +3,16 @@ package types
 import "time"
 
 type Message struct {
-	ID        string    `json:"id"`
-	Type      string    `json:"type"`
-	Content   string    `json:"content"`
-	ToolID    string    `json:"toolId,omitempty"`
-	ToolName  string    `json:"toolName,omitempty"`
-	Reason    string    `json:"reason,omitempty"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID              string    `json:"id"`
+	Type            string    `json:"type"`
+	Content         string    `json:"content"`
+	ParentMessageID string    `json:"parentMessageId,omitempty"`
+	BranchID        string    `json:"branchId,omitempty"`
+	ToolID          string    `json:"toolId,omitempty"`
+	ToolName        string    `json:"toolName,omitempty"`
+	Reason          string    `json:"reason,omitempty"`
+	CreatedAt       time.Time `json:"createdAt"`
+	UpdatedAt       time.Time `json:"updatedAt"`
 }
 
 type Session struct {
@@ -20,6 +23,7 @@ type Session struct {
 	Messages   []Message         `json:"messages"`
 	Metadata   map[string]string `json:"metadata,omitempty"`
 	CreatedAt  time.Time         `json:"createdAt"`
+	UpdatedAt  time.Time         `json:"updatedAt"`
 	LastActive time.Time         `json:"lastActive"`
 }
 
@@ -28,6 +32,7 @@ type SessionSummary struct {
 	RoleID     string    `json:"roleId"`
 	Title      string    `json:"title"`
 	Status     string    `json:"status"`
+	UpdatedAt  time.Time `json:"updatedAt"`
 	LastActive time.Time `json:"lastActive"`
 }
 

@@ -113,6 +113,7 @@ import { createPatchOperations } from './patchOperations'
 import { createBuildOpenAiReq } from './buildOpenAiReq'
 import { createPersistence } from './persistence'
 import { createChatRuntimeReconciliation } from './chatRuntimeReconciliation'
+import { createRoleSession } from './ebRoleSession'
 
 export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilities; aiGateway?: AiChatInternalGateway }): {
   controller: AiChatController
@@ -437,10 +438,14 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     touchGroupChatUpdatedAt,
     ensureSplitStoreReady,
     saveRoleChat,
+    setActiveRoleChatSelection,
+    removeRoleChatEntry,
+    saveRoleOrder,
     saveGroupChat,
     renameRoleChat,
     renameGroupChat: renameGroupChatInStore,
     saveMetaOnly,
+    saveStickersOnly,
     saveSplitData,
     saveRoleEntity,
     removeRoleEntity,
@@ -493,8 +498,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     ensureGroupChatsBoxBare,
     ensureChatsBox,
     ensureChatsBoxBare,
-    createChatForRole,
-    createChatForGroup,
     findChatByIds,
     findGroupChatByIds,
     pickChatModelRef,
@@ -689,12 +692,9 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
 
   const aiServices = createAiServices({
     getState: () => state,
-    netRequest: capabilities.net?.request || ((() => Promise.resolve({})) as any),
     filesImagesRead: (api.files?.images?.read as any) || ((() => Promise.resolve('')) as any),
-    aiGateway,
     save: saveDataTree,
     emit,
-    getProvider,
     getGroupById,
     ensureChatLoaded: (rid: string, cid: string) => ensureChatLoadedAndReconcile('role', rid, cid),
     ensureGroupChatLoaded: (gid: string, cid: string) => ensureChatLoadedAndReconcile('group', gid, cid),
@@ -716,12 +716,12 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   // ============================================================
   const entityEditors = createEntityEditors({
     getState: () => state,
-    save: saveDataTree,
     saveRoleEntity,
     removeRoleEntity,
     saveProviderEntity,
     removeProviderEntity,
-    saveRoleChat,
+    createRoleSession: (roleId: string, title?: string) => createRoleSession(capabilities.net?.request || ((() => Promise.resolve({})) as any), { roleId, title }),
+    save: saveMeta,
     render,
     closeModal,
     showToast: api.ui?.showToast,
@@ -731,7 +731,8 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     ensureGroupChatLoaded: (gid: string, cid: string) => ensureChatLoadedAndReconcile('group', gid, cid),
     renameRoleChatInStore: renameRoleChat,
     renameGroupChatInStore,
-    removeChatInStore: removeChat,
+    removeChatInStore: (kind: 'role' | 'group', targetId: string, chatId: string) => kind === 'role' ? removeRoleChatEntry(targetId, chatId) : Promise.resolve(),
+    setRoleActiveChatSelection: (roleId: string, chatId: string) => setActiveRoleChatSelection(roleId, chatId),
     removeLoadedChat,
     cleanupFavoriteRefsForTarget: favOps.cleanupFavoriteRefsForTarget,
     cleanupFavoriteRefsForChat: favOps.cleanupFavoriteRefsForChat,
@@ -782,9 +783,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   const chatOps = createChatOperations({
     getState: () => state,
     aiGateway,
-    filesImages: api.files?.images as any,
     pickImageFiles,
-    loadSplitMeta: loadSplitMetaCached,
     netRequest: capabilities.net?.request || ((() => Promise.resolve({})) as any),
     showToast: api.ui?.showToast,
     save,
@@ -950,7 +949,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       } catch (_) { bad++ }
     }
 
-    if (ok) { saveDataTree().catch(() => {}); emit() }
+      if (ok) { saveStickersOnly().catch(() => {}); emit() }
     if (dup) api.ui?.showToast?.(`跳过重名：${dup} 个`)
     if (!ok && bad) api.ui?.showToast?.('导入失败')
   }
@@ -1146,7 +1145,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       if (!state.data) return
       if (!state.data.settings.stickers || typeof state.data.settings.stickers !== 'object') state.data.settings.stickers = { enabled: false, categories: [], map: {} }
       state.data.settings.stickers.enabled = !state.data.settings.stickers.enabled
-      saveDataTree().catch(() => {})
+      saveStickersOnly().catch(() => {})
       emit()
     },
     createStickerCategory: (categoryName: any) => {
@@ -1162,7 +1161,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       st.categories = st.categories.concat([name]).slice(0, 200)
       if (!st.map || typeof st.map !== 'object') st.map = {}
       if (!st.map[name] || typeof st.map[name] !== 'object') st.map[name] = {}
-      saveDataTree().catch(() => {})
+      saveStickersOnly().catch(() => {})
       emit()
     },
     createFavoriteFolder: (name: any, parentId: any) => favOps.createFavoriteFolder(name, parentId),
@@ -1195,7 +1194,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       if (st.map && typeof st.map === 'object') {
         try { delete st.map[name] } catch (_) {}
       }
-      saveDataTree().catch(() => {})
+      saveStickersOnly().catch(() => {})
       emit()
     },
     addSticker: async (categoryName: any, stickerName: any, dataUrl: any) => {
@@ -1218,7 +1217,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
         return api.ui?.showToast?.(String((r as any)?.error?.message || (r as any)?.error || '保存失败'))
       }
 
-      saveDataTree().catch(() => {})
+      saveStickersOnly().catch(() => {})
       emit()
     },
     pickStickerImages: (categoryName: any) => pickStickerImages(categoryName),
@@ -1243,7 +1242,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
         try { delete box[name] } catch (_) {}
       }
 
-      saveDataTree().catch(() => {})
+      saveStickersOnly().catch(() => {})
       emit()
     },
     renameSticker: (categoryName: any, oldStickerName: any, newStickerName: any) => {
@@ -1281,7 +1280,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       box[name] = next
       try { delete box[oldName] } catch (_) {}
 
-      saveDataTree().catch(() => {})
+      saveStickersOnly().catch(() => {})
       emit()
     },
     setMermaidFixEnabled: (on: any) => {
@@ -1460,7 +1459,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       if (nextRoles === state.data.roles) return
 
       state.data.roles = nextRoles
-      saveDataTree().catch(() => {})
+      saveRoleOrder(state.data.roles.map((role: any) => String(role?.id || ''))).catch(() => {})
       emit()
     },
     askDeleteProvider: (providerId: any) => {
@@ -1501,7 +1500,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       const nextRenderSafetyPolicy = String((state.draft as any).renderSafetyPolicyTarget || '').trim() === 'unsafe' ? 'unsafe' : ''
       let ok = true
       if (rid) ok = await deleteRole(rid)
-      if (gid) deleteGroup(gid)
+      if (gid) ok = deleteGroup(gid)
       if (pid) ok = await deleteProvider(pid)
       if (nextRenderSafetyPolicy && state.data) {
         ;(state.data.settings as any).renderSafetyPolicy = nextRenderSafetyPolicy
@@ -1764,35 +1763,22 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     switchBranchSibling: (assistantMid: any, delta: any) => switchBranchByAssistantSibling(String(assistantMid || ''), Number(delta || 0)).catch(() => {}),
     setActiveBranch: (branchId: any) => setActiveBranch(String(branchId || '')).catch(() => {}),
     setChatModelOverride: async (providerId: any, modelId: any) => {
-      if (!state.data) return
-      await ensureActiveChatLoadedAndReconcile()
-      const role = activeRole()
-      const chat = activeChatFromData()
-      if (!role || !chat) return
-
       const pid = String(providerId || '').trim()
       const mid = String(modelId || '').trim()
       if (!pid || !mid) return api.ui?.showToast?.('供应商/模型 不能为空')
-
-      const p = getProvider(pid)
-      if (!p) return api.ui?.showToast?.('未找到该供应商')
-
-      chat.modelOverride = { providerId: pid, modelId: mid }
-      chat.updatedAt = now()
-      save().catch(() => {})
-      emit()
-      api.ui?.showToast?.('已设置当前会话临时模型')
+      api.ui?.showToast?.('当前会话临时模型尚未接入 e-b 真实根动作，已阻止本地假覆盖')
     },
     clearChatModelOverride: async () => {
       if (!state.data) return
       await ensureActiveChatLoadedAndReconcile()
       const chat = activeChatFromData()
       if (!chat) return
+      if (!(chat as any).modelOverride) return
       try { delete chat.modelOverride } catch (_e) { chat.modelOverride = null }
       chat.updatedAt = now()
       save().catch(() => {})
       emit()
-      api.ui?.showToast?.('已清除当前会话临时模型')
+      api.ui?.showToast?.('已清除未接入 e-b 的本地临时模型覆盖')
     },
     deleteMessage: (messageId: any) => deleteMessage(String(messageId || '')),
     deleteMessageSubtree: (messageId: any) => deleteMessageSubtree(String(messageId || '')),

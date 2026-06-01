@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -109,6 +110,24 @@ func TestSessionsAreListedByLastActive(t *testing.T) {
 	if len(index.Folders) != 1 || index.Folders[0].ID != "developer" {
 		t.Fatalf("session root index = %#v", index)
 	}
+}
+
+func TestCreateSessionCreatesCanonicalSession(t *testing.T) {
+	system := newTestSystem(t)
+	session, err := system.CreateSession(context.Background(), "developer", "Fresh chat")
+	if err != nil {
+		t.Fatalf("CreateSession() error = %v", err)
+	}
+	if !strings.HasPrefix(session.ID, "session-") {
+		t.Fatalf("session id = %q", session.ID)
+	}
+	if session.RoleID != "developer" || session.Title != "Fresh chat" || session.Status != string(types.RunStatusCreated) {
+		t.Fatalf("session = %#v", session)
+	}
+	if len(session.Messages) != 0 || session.CreatedAt.IsZero() || session.LastActive.IsZero() {
+		t.Fatalf("session timestamps/messages = %#v", session)
+	}
+	assertFile(t, filepath.Join(system.paths.root, "sessions", "developer", session.ID, "data.json"))
 }
 
 func TestProviderAndToolStores(t *testing.T) {

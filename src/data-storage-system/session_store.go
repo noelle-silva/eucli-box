@@ -4,9 +4,37 @@ import (
 	"context"
 	"path/filepath"
 	"sort"
+	"strings"
+	"time"
 
 	"eucli-box/pkg/types"
+	"eucli-box/pkg/utils"
 )
+
+func (s *system) CreateSession(ctx context.Context, roleID string, title string) (types.Session, error) {
+	roleID = strings.TrimSpace(roleID)
+	if _, err := cleanID(roleID); err != nil {
+		return types.Session{}, err
+	}
+	sessionTitle := strings.TrimSpace(title)
+	if sessionTitle == "" {
+		sessionTitle = "新聊天"
+	}
+	now := time.Now().UTC()
+	session := types.Session{
+		ID:         utils.NewID("session"),
+		RoleID:     roleID,
+		Title:      sessionTitle,
+		Status:     string(types.RunStatusCreated),
+		Messages:   []types.Message{},
+		CreatedAt:  now,
+		LastActive: now,
+	}
+	if err := s.SaveSession(ctx, session); err != nil {
+		return types.Session{}, err
+	}
+	return session, nil
+}
 
 func (s *system) SaveSession(ctx context.Context, session types.Session) error {
 	if _, err := cleanID(session.RoleID); err != nil {

@@ -11,6 +11,7 @@ import (
 type System interface {
 	Initialize(ctx context.Context) error
 
+	CreateSession(ctx context.Context, roleID string, title string) (types.Session, error)
 	SaveSession(ctx context.Context, session types.Session) error
 	LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error)
 	ListSessions(ctx context.Context, roleID string) ([]types.SessionSummary, error)

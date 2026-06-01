@@ -1,6 +1,4 @@
-import { now, uid } from '../core/utils'
-import { createDefaultChatBranching } from '../domain/branching'
-import { chatMetaFromChat, chatMetasFromBox, upsertChatMeta } from '../domain/chatMeta'
+import { chatMetasFromBox } from '../domain/chatMeta'
 import { normalizeChatModelOverride } from '../domain/modelRefUtils'
 
 function ensureBoxShape(box: any, fallbackTitle: string) {
@@ -157,45 +155,11 @@ export function createStateAccessors(deps: {
   }
 
   function ensureGroupChatsBox(groupId: any) {
-    const s = getState()
-    if (!s.data) return null
-    ensureGroupsList()
-    const gid = String(groupId || '').trim()
-    if (!gid) return null
-    if (!s.data.chatsByGroup[gid] || typeof s.data.chatsByGroup[gid] !== 'object') s.data.chatsByGroup[gid] = { activeChatId: '', chatMetas: [], chats: [] }
-    const box = ensureBoxShape(s.data.chatsByGroup[gid], '群聊')
-    box.activeChatId = String(box.activeChatId || '')
-    if (!box.chats.length && !box.chatMetas.length) {
-      const cid = uid('gc')
-      const t = now()
-      const chat = { id: cid, title: '群聊', createdAt: t, updatedAt: t, branching: createDefaultChatBranching('', t, t), messages: [] }
-      box.chats = [chat]
-      box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chat, '群聊'), '群聊')
-      box.activeChatId = cid
-    }
-    if (!box.activeChatId || !chatIdExistsInBox(box, box.activeChatId)) box.activeChatId = firstChatIdInBox(box)
-    return box
+    return ensureGroupChatsBoxBare(groupId)
   }
 
   function ensureChatsBox(roleId: any) {
-    const s = getState()
-    if (!s.data) return null
-    const rid = String(roleId || '')
-    if (!rid) return null
-    if (!s.data.chatsByRole || typeof s.data.chatsByRole !== 'object') s.data.chatsByRole = {}
-    if (!s.data.chatsByRole[rid] || typeof s.data.chatsByRole[rid] !== 'object') s.data.chatsByRole[rid] = { activeChatId: '', chatMetas: [], chats: [] }
-    const box = ensureBoxShape(s.data.chatsByRole[rid], '新聊天')
-    box.activeChatId = String(box.activeChatId || '')
-    if (!box.chats.length && !box.chatMetas.length) {
-      const cid = uid('c')
-      const t = now()
-      const chat = { id: cid, title: '新聊天', createdAt: t, updatedAt: t, branching: createDefaultChatBranching('', t, t), messages: [] }
-      box.chats = [chat]
-      box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chat, '新聊天'), '新聊天')
-      box.activeChatId = cid
-    }
-    if (!box.activeChatId || !chatIdExistsInBox(box, box.activeChatId)) box.activeChatId = firstChatIdInBox(box)
-    return box
+    return ensureChatsBoxBare(roleId)
   }
 
   function ensureChatsBoxBare(roleId: any) {
@@ -209,32 +173,6 @@ export function createStateAccessors(deps: {
     if (box.activeChatId && !chatIdExistsInBox(box, box.activeChatId)) box.activeChatId = ''
     if (!box.activeChatId) box.activeChatId = firstChatIdInBox(box)
     return box
-  }
-
-  function createChatForRole(roleId: any) {
-    const rid = String(roleId || '')
-    const box = ensureChatsBoxBare(rid)
-    if (!box) return null
-    const cid = uid('c')
-    const t = now()
-    const chat = { id: cid, title: '新聊天', createdAt: t, updatedAt: t, branching: createDefaultChatBranching('', t, t), messages: [] }
-    box.chats.unshift(chat)
-    box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chat, '新聊天'), '新聊天')
-    box.activeChatId = cid
-    return chat
-  }
-
-  function createChatForGroup(groupId: any) {
-    const gid = String(groupId || '').trim()
-    const box = ensureGroupChatsBox(gid)
-    if (!box) return null
-    const cid = uid('gc')
-    const t = now()
-    const chat = { id: cid, title: '群聊', createdAt: t, updatedAt: t, branching: createDefaultChatBranching('', t, t), messages: [] }
-    box.chats.unshift(chat)
-    box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chat, '群聊'), '群聊')
-    box.activeChatId = cid
-    return chat
   }
 
   function findChatByIds(roleId: any, chatId: any) {
@@ -290,8 +228,6 @@ export function createStateAccessors(deps: {
     ensureGroupChatsBox,
     ensureChatsBox,
     ensureChatsBoxBare,
-    createChatForRole,
-    createChatForGroup,
     findChatByIds,
     findGroupChatByIds,
     pickChatModelRef,

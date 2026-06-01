@@ -1,10 +1,8 @@
 import { now, uid, clamp, clampTemp, normImagePaths } from '../core/utils'
 import { createStateAccessors } from '../state/stateAccessors'
-import { createDefaultChatBranching } from '../domain/branching'
 import { chatMetaFromChat, removeChatMeta, upsertChatMeta } from '../domain/chatMeta'
-import { NEW_ROLE_ID, NEW_GROUP_ID } from '../domain/constants'
+import { NEW_ROLE_ID } from '../domain/constants'
 import { isAssistantGenerating } from '../domain/assistantRunState'
-import { defaultData } from '../domain/dataNormalizers'
 
 function looksLikeImageDataUrl(s: any): boolean {
   const t = String(s || '')
@@ -72,11 +70,11 @@ function imageBasename(p: string): string {
 export function createEntityEditors(deps: {
   getState: () => any
   save: () => Promise<void>
-  saveRoleEntity?: (role: any, box?: any) => Promise<void>
+  saveRoleEntity?: (role: any) => Promise<void>
   removeRoleEntity?: (roleId: any) => Promise<void>
   saveProviderEntity?: (provider: any) => Promise<void>
   removeProviderEntity?: (providerId: any) => Promise<void>
-  saveRoleChat?: (roleId: any, chat: any) => Promise<void>
+  createRoleSession?: (roleId: string, title?: string) => Promise<{ id: string; title?: string }>
   render: () => void
   closeModal: () => void
   showToast?: (msg: string) => void
@@ -87,11 +85,12 @@ export function createEntityEditors(deps: {
   renameRoleChatInStore?: (rid: string, cid: string, title: string) => Promise<void>
   renameGroupChatInStore?: (gid: string, cid: string, title: string) => Promise<void>
   removeChatInStore?: (kind: 'role' | 'group', targetId: string, chatId: string) => Promise<void>
+  setRoleActiveChatSelection?: (roleId: string, chatId: string) => Promise<void>
   removeLoadedChat?: (kind: 'role' | 'group', targetId: string, chatId: string) => void
   cleanupFavoriteRefsForTarget: (kind: string, targetId: string) => void
   cleanupFavoriteRefsForChat: (targetKind: string, targetId: string, chatId: string) => void
 }) {
-  const { getState, save, saveRoleEntity, removeRoleEntity, saveProviderEntity, removeProviderEntity, saveRoleChat, render, closeModal, showToast, pickImageFiles, filesImages, ensureChatLoaded, ensureGroupChatLoaded, renameRoleChatInStore, renameGroupChatInStore, removeChatInStore, removeLoadedChat, cleanupFavoriteRefsForTarget, cleanupFavoriteRefsForChat } = deps
+  const { getState, save, saveRoleEntity, removeRoleEntity, saveProviderEntity, removeProviderEntity, createRoleSession, render, closeModal, showToast, pickImageFiles, filesImages, ensureChatLoaded, ensureGroupChatLoaded, renameRoleChatInStore, renameGroupChatInStore, removeChatInStore, setRoleActiveChatSelection, removeLoadedChat, cleanupFavoriteRefsForTarget, cleanupFavoriteRefsForChat } = deps
   const sa = createStateAccessors({ getState })
 
   function scrollToBottomSoon() {
@@ -240,9 +239,6 @@ export function createEntityEditors(deps: {
 
     if (rid === NEW_ROLE_ID) {
       const newRid = uid('r')
-      const cid = uid('c')
-      const t = now()
-      const previousActiveRoleId = String(state.draft.activeRoleId || '')
       const role = {
         id: newRid,
         name,
@@ -254,23 +250,16 @@ export function createEntityEditors(deps: {
         createdAt: now(),
         updatedAt: now(),
       }
-      sa.ensureRoleDefaults(role)
-      state.data.roles.unshift(role)
-      if (!state.data.chatsByRole || typeof state.data.chatsByRole !== 'object') state.data.chatsByRole = {}
-      state.data.chatsByRole[newRid] = {
-        activeChatId: cid,
-        chatMetas: [{ id: cid, title: '新聊天', createdAt: t, updatedAt: t, lastMessagePreview: '', messageCount: 0, hasPending: false }],
-        chats: [{ id: cid, title: '新聊天', createdAt: t, updatedAt: t, branching: createDefaultChatBranching('', t, t), messages: [] }],
-      }
-      state.draft.activeRoleId = newRid
       try {
-        await saveRoleEntity?.(role, state.data.chatsByRole[newRid])
+        if (typeof saveRoleEntity !== 'function') throw new Error('角色保存通道不可用')
+        await saveRoleEntity(role)
+        state.data.roles.unshift(role)
+        if (!state.data.chatsByRole || typeof state.data.chatsByRole !== 'object') state.data.chatsByRole = {}
+        state.data.chatsByRole[newRid] = { activeChatId: '', chatMetas: [], chats: [] }
+        state.draft.activeRoleId = newRid
         showToast?.('角色已保存')
         closeModal()
       } catch (e: any) {
-        state.data.roles = state.data.roles.filter((item: any) => String(item?.id || '') !== newRid)
-        if (state.data.chatsByRole && typeof state.data.chatsByRole === 'object') delete state.data.chatsByRole[newRid]
-        state.draft.activeRoleId = previousActiveRoleId
         showToast?.(String(e?.message || e || '角色保存失败'))
         render()
       }
@@ -290,7 +279,7 @@ export function createEntityEditors(deps: {
     role.updatedAt = now()
 
     try {
-      await saveRoleEntity?.(role, state.data.chatsByRole?.[rid])
+      await saveRoleEntity?.(role)
       showToast?.('角色已保存')
       closeModal()
     } catch (e: any) {
@@ -339,25 +328,7 @@ export function createEntityEditors(deps: {
   // ===== Group CRUD =====
 
   function openNewGroupEditor() {
-    const state = getState()
-    if (!state.data) return
-    sa.ensureGroupsList()
-
-    ;(state.draft as any).editGroupId = NEW_GROUP_ID
-    ;(state.draft as any).groupName = '新群组'
-    ;(state.draft as any).groupAvatar = '👥'
-    ;(state.draft as any).groupAvatarImage = ''
-    ;(state.draft as any).groupAvatarImageCropSrc = ''
-    ;(state.draft as any).groupPrompt = ''
-    ;(state.draft as any).groupMode = 'roundRobin'
-    ;(state.draft as any).groupMemberRoleIds = []
-    ;(state.draft as any).groupRoundRobinOrder = []
-    ;(state.draft as any).groupRandomWeights = {}
-    ;(state.draft as any).groupRandomMinCount = 1
-    ;(state.draft as any).groupRandomMaxCount = 2
-
-    state.modal = 'group'
-    render()
+    showToast?.('群组编辑尚未接入 e-b 真实群组根动作，已阻止本地假群组创建')
   }
 
   function createGroup() {
@@ -365,172 +336,19 @@ export function createEntityEditors(deps: {
   }
 
   function openGroupEditor(groupId: any) {
-    const state = getState()
-    if (!state.data) return
-    sa.ensureGroupsList()
-
-    const gid = String(groupId || '').trim()
-    if (!gid) return
-    const group = ((state.data as any).groups as any[]).find((g: any) => String(g?.id || '') === gid) || null
-    if (!group) return
-
-    ;(state.draft as any).editGroupId = gid
-    ;(state.draft as any).groupName = String(group?.name || '')
-    ;(state.draft as any).groupAvatar = String(group?.avatar || '')
-    ;(state.draft as any).groupAvatarImage = looksLikeImageDataUrl(group?.avatarImage) ? String(group?.avatarImage || '') : ''
-    ;(state.draft as any).groupAvatarImageCropSrc = ''
-    ;(state.draft as any).groupPrompt = String(group?.prompt || '')
-    ;(state.draft as any).groupMode = String(group?.mode || 'roundRobin') === 'random' ? 'random' : 'roundRobin'
-    ;(state.draft as any).groupMemberRoleIds = Array.isArray(group?.memberRoleIds) ? group.memberRoleIds.slice(0, 50) : []
-    ;(state.draft as any).groupRoundRobinOrder = Array.isArray(group?.roundRobinOrder) ? group.roundRobinOrder.slice(0, 80) : []
-
-    const randomCfg = group?.random && typeof group.random === 'object' ? group.random : {}
-    ;(state.draft as any).groupRandomWeights = randomCfg.weightsByRoleId && typeof randomCfg.weightsByRoleId === 'object' ? { ...randomCfg.weightsByRoleId } : {}
-    ;(state.draft as any).groupRandomMinCount = clamp(Math.round(Number(randomCfg.minCount ?? 1)), 1, 20)
-    ;(state.draft as any).groupRandomMaxCount = clamp(Math.round(Number(randomCfg.maxCount ?? 2)), 1, 20)
-
-    state.modal = 'group'
-    render()
+    if (!String(groupId || '').trim()) return
+    showToast?.('群组编辑尚未接入 e-b 真实群组根动作，已阻止本地假群组编辑')
   }
 
   async function saveGroupEditor() {
-    const state = getState()
-    if (!state.data) return
-    sa.ensureGroupsList()
-
-    const gid = String((state.draft as any).editGroupId || '').trim()
-    const name = String((state.draft as any).groupName || '').replace(/\s+/g, ' ').trim() || '未命名群组'
-    const avatar = String((state.draft as any).groupAvatar || '').trim() || '👥'
-    const avatarImage = looksLikeImageDataUrl((state.draft as any).groupAvatarImage) ? String((state.draft as any).groupAvatarImage || '') : ''
-    const prompt = String((state.draft as any).groupPrompt || '').trim()
-    const mode = String((state.draft as any).groupMode || '').trim() === 'random' ? 'random' : 'roundRobin'
-
-    const roles = Array.isArray(state.data.roles) ? state.data.roles : []
-    const roleIdSet = new Set(roles.map((r: any) => String(r?.id || '')).filter(Boolean))
-    const members0 = Array.isArray((state.draft as any).groupMemberRoleIds) ? (state.draft as any).groupMemberRoleIds : []
-    const memberRoleIds: string[] = (Array.from(new Set(members0.map((x: any) => String(x || '').trim()).filter((x: any) => !!x && roleIdSet.has(x)))) as string[]).slice(0, 50)
-    if (!memberRoleIds.length) return showToast?.('请至少选择 1 个群组成员角色')
-
-    const order0 = Array.isArray((state.draft as any).groupRoundRobinOrder) ? (state.draft as any).groupRoundRobinOrder : []
-    const order = order0.map((x: any) => String(x || '').trim()).filter((x: any) => !!x && memberRoleIds.includes(x))
-    const roundRobinOrder = order.length ? order : memberRoleIds.slice()
-
-    const weights0 = (state.draft as any).groupRandomWeights && typeof (state.draft as any).groupRandomWeights === 'object' ? (state.draft as any).groupRandomWeights : {}
-    const weightsByRoleId: any = {}
-    for (const rid of memberRoleIds) {
-      const w = Number((weights0 as any)[rid] ?? 1)
-      weightsByRoleId[rid] = isFinite(w) && w >= 0 ? w : 1
-    }
-    let minCount = Number((state.draft as any).groupRandomMinCount ?? 1)
-    let maxCount = Number((state.draft as any).groupRandomMaxCount ?? 2)
-    if (!isFinite(minCount)) minCount = 1
-    if (!isFinite(maxCount)) maxCount = 2
-    minCount = clamp(Math.round(minCount), 1, 20)
-    maxCount = clamp(Math.round(maxCount), 1, 20)
-    if (maxCount < minCount) maxCount = minCount
-
-    const nowT = now()
-    const groups = (state.data as any).groups as any[]
-
-    if (gid === NEW_GROUP_ID) {
-      const newGid = uid('g')
-      const chatId = uid('gc')
-      const previousGroups = groups.slice()
-      const previousChatsByGroup = (state.data as any).chatsByGroup && typeof (state.data as any).chatsByGroup === 'object' ? { ...(state.data as any).chatsByGroup } : {}
-      const previousActiveTargetKind = String((state.draft as any).activeTargetKind || '')
-      const previousActiveGroupId = String((state.draft as any).activeGroupId || '')
-      const group = {
-        id: newGid,
-        name,
-        avatar,
-        avatarImage,
-        prompt,
-        mode,
-        memberRoleIds,
-        roundRobinOrder,
-        random: { weightsByRoleId, minCount, maxCount },
-        createdAt: nowT,
-        updatedAt: nowT,
-      }
-      groups.unshift(group)
-      if (!(state.data as any).chatsByGroup || typeof (state.data as any).chatsByGroup !== 'object') (state.data as any).chatsByGroup = {}
-      ;(state.data as any).chatsByGroup[newGid] = {
-        activeChatId: chatId,
-        chatMetas: [{ id: chatId, title: '群聊', createdAt: nowT, updatedAt: nowT, lastMessagePreview: '', messageCount: 0, hasPending: false }],
-        chats: [{ id: chatId, title: '群聊', createdAt: nowT, updatedAt: nowT, branching: createDefaultChatBranching('', nowT, nowT), messages: [] }],
-      }
-      ;(state.draft as any).activeTargetKind = 'group'
-      ;(state.draft as any).activeGroupId = newGid
-      try {
-        await save()
-        showToast?.('群组已保存')
-        closeModal()
-      } catch (e: any) {
-        ;(state.data as any).groups = previousGroups
-        ;(state.data as any).chatsByGroup = previousChatsByGroup
-        ;(state.draft as any).activeTargetKind = previousActiveTargetKind
-        ;(state.draft as any).activeGroupId = previousActiveGroupId
-        showToast?.(String(e?.message || e || '群组保存失败'))
-        render()
-      }
-      return
-    }
-
-    const group = groups.find((g: any) => String(g?.id || '') === gid) || null
-    if (!group) return
-    const previous = {
-      ...group,
-      memberRoleIds: Array.isArray(group.memberRoleIds) ? group.memberRoleIds.slice() : group.memberRoleIds,
-      roundRobinOrder: Array.isArray(group.roundRobinOrder) ? group.roundRobinOrder.slice() : group.roundRobinOrder,
-      random: group.random && typeof group.random === 'object' ? { ...group.random, weightsByRoleId: group.random.weightsByRoleId && typeof group.random.weightsByRoleId === 'object' ? { ...group.random.weightsByRoleId } : group.random.weightsByRoleId } : group.random,
-    }
-
-    group.name = name
-    group.avatar = avatar
-    group.avatarImage = avatarImage
-    group.prompt = prompt
-    group.mode = mode
-    group.memberRoleIds = memberRoleIds
-    group.roundRobinOrder = roundRobinOrder
-    group.random = { weightsByRoleId, minCount, maxCount }
-    group.updatedAt = nowT
-
-    try {
-      await save()
-      showToast?.('群组已保存')
-      closeModal()
-    } catch (e: any) {
-      Object.assign(group, previous)
-      showToast?.(String(e?.message || e || '群组保存失败'))
-      render()
-    }
+    showToast?.('群组保存尚未接入 e-b 真实群组根动作，已阻止本地假群组保存')
   }
 
   function deleteGroup(groupId: any) {
-    const state = getState()
-    if (!state.data) return
-    sa.ensureGroupsList()
     const gid = String(groupId || '').trim()
-    if (!gid) return
-
-    ;(state.data as any).groups = ((state.data as any).groups as any[]).filter((g: any) => String(g?.id || '') !== gid)
-    if ((state.data as any).chatsByGroup && typeof (state.data as any).chatsByGroup === 'object') delete (state.data as any).chatsByGroup[gid]
-    cleanupFavoriteRefsForTarget('group', gid)
-
-    const curKind = sa.activeTargetKind()
-    const curGid = String((state.draft as any).activeGroupId || '')
-    if (curKind === 'group' && curGid === gid) {
-      const next = Array.isArray((state.data as any).groups) ? (state.data as any).groups[0] : null
-      if (next) {
-        ;(state.draft as any).activeGroupId = String(next?.id || '')
-      } else {
-        ;(state.draft as any).activeTargetKind = 'role'
-        ;(state.draft as any).activeGroupId = ''
-      }
-    }
-
-    save().catch(() => {})
-    render()
+    if (!gid) return false
+    showToast?.('群组删除尚未接入 e-b 真实群组根动作，已阻止本地假群组删除')
+    return false
   }
 
   // ===== Provider CRUD =====
@@ -639,17 +457,7 @@ export function createEntityEditors(deps: {
     }
 
     const previousProviders = Array.isArray(state.data.settings.providers) ? state.data.settings.providers.slice() : []
-    const previousRoles = Array.isArray(state.data.roles)
-      ? state.data.roles.map((role: any) => ({ ...role, modelRef: role?.modelRef && typeof role.modelRef === 'object' ? { ...role.modelRef } : role?.modelRef }))
-      : []
-
     state.data.settings.providers = state.data.settings.providers.filter((p: any) => String(p?.id) !== pid)
-
-    const fallback = String(state.data.settings.providers[0]?.id || '')
-    for (const r of state.data.roles) {
-      if (!r?.modelRef) continue
-      if (String(r.modelRef.providerId) === pid) r.modelRef.providerId = fallback
-    }
 
     try {
       await removeProviderEntity?.(pid)
@@ -658,7 +466,6 @@ export function createEntityEditors(deps: {
       return true
     } catch (e: any) {
       state.data.settings.providers = previousProviders
-      state.data.roles = previousRoles
       showToast?.(String(e?.message || e || '供应商删除失败'))
       render()
       return false
@@ -672,17 +479,15 @@ export function createEntityEditors(deps: {
     const role = sa.activeRole()
     if (!role) return showToast?.('请先选择角色')
     const rid = String(role.id || '')
-    const t = now()
-    const chat = { id: uid('c'), title: '新聊天', createdAt: t, updatedAt: t, branching: createDefaultChatBranching('', t, t), messages: [] }
     try {
-      if (typeof saveRoleChat !== 'function') throw new Error('会话保存通道不可用')
-      await saveRoleChat(rid, chat)
+      if (typeof createRoleSession !== 'function') throw new Error('会话创建通道不可用')
+      const session = await createRoleSession(rid, '新聊天')
+      const cid = String(session.id || '').trim()
+      if (!cid) throw new Error('e-b 未返回会话ID')
       const box = sa.ensureChatsBoxBare(rid)
       if (box) {
-        box.chats = Array.isArray(box.chats) ? box.chats.filter((c: any) => String(c?.id || '') !== String(chat.id || '')) : []
-        box.chats.unshift(chat)
-        box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chat, '新聊天'), '新聊天')
-        box.activeChatId = String(chat.id || '')
+        box.activeChatId = cid
+        await ensureChatLoaded?.(rid, cid)
       }
       state.sideTab = 'chats'
       state.draft.input = ''
@@ -723,7 +528,7 @@ export function createEntityEditors(deps: {
     if (!cid || !exists) return
     await ensureChatLoaded?.(String(role.id || ''), cid)
     box.activeChatId = cid
-    save().catch(() => {})
+    ;(setRoleActiveChatSelection?.(String(role.id || ''), cid) || save()).catch(() => {})
     render()
     scrollToBottomSoon()
   }
@@ -929,7 +734,7 @@ export function createEntityEditors(deps: {
 
     removeLoadedChat?.('role', rid, cid)
     void removeChatInStore?.('role', rid, cid).catch(() => {})
-    void save().catch(() => {})
+    void (setRoleActiveChatSelection?.(rid, String(box.activeChatId || '')) || save()).catch(() => {})
     render()
   }
 

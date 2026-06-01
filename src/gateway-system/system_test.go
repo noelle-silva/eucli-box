@@ -30,6 +30,27 @@ func TestStartRunRoute(t *testing.T) {
 	}
 }
 
+func TestCreateSessionRoute(t *testing.T) {
+	fakes := newGatewayFakes()
+	if err := fakes.roles.SaveRole(context.Background(), types.Role{ID: "developer", Name: "Developer"}); err != nil {
+		t.Fatalf("SaveRole() error = %v", err)
+	}
+	system := newTestGateway(t, fakes)
+	req := httptest.NewRequest(http.MethodPost, "/api/roles/developer/sessions/create", strings.NewReader(`{"title":"Fresh chat"}`))
+	rec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	session := decodeResponseData[types.Session](t, rec.Body.String())
+	if session.ID == "" || session.RoleID != "developer" || session.Title != "Fresh chat" {
+		t.Fatalf("session = %#v", session)
+	}
+	if _, ok := fakes.sessions.sessions["developer/"+session.ID]; !ok {
+		t.Fatalf("session was not stored: %#v", fakes.sessions.sessions)
+	}
+}
+
 func TestRoleRoutes(t *testing.T) {
 	fakes := newGatewayFakes()
 	system := newTestGateway(t, fakes)
@@ -127,6 +148,13 @@ type fakeGatewaySessions struct{ sessions map[string]types.Session }
 
 func newFakeGatewaySessions() *fakeGatewaySessions {
 	return &fakeGatewaySessions{sessions: map[string]types.Session{}}
+}
+
+func (f *fakeGatewaySessions) CreateSession(ctx context.Context, roleID string, title string) (types.Session, error) {
+	now := time.Now().UTC()
+	session := types.Session{ID: "session-created", RoleID: roleID, Title: title, Status: string(types.RunStatusCreated), Messages: []types.Message{}, CreatedAt: now, LastActive: now}
+	f.sessions[session.RoleID+"/"+session.ID] = session
+	return session, nil
 }
 
 func (f *fakeGatewaySessions) SaveSession(ctx context.Context, session types.Session) error {

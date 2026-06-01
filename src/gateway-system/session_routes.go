@@ -6,6 +6,10 @@ import (
 	"eucli-box/pkg/types"
 )
 
+type createSessionRequest struct {
+	Title string `json:"title"`
+}
+
 func (s *system) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	roleID, err := pathValue(r, "roleID")
 	if err != nil {
@@ -37,6 +41,29 @@ func (s *system) handleLoadSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeData(w, http.StatusOK, session)
+}
+
+func (s *system) handleCreateSession(w http.ResponseWriter, r *http.Request) {
+	roleID, err := pathValue(r, "roleID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	request, err := decodeJSON[createSessionRequest](r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if _, err := s.roles.LoadRole(r.Context(), roleID); err != nil {
+		writeError(w, err)
+		return
+	}
+	session, err := s.sessions.CreateSession(r.Context(), roleID, request.Title)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusCreated, session)
 }
 
 func (s *system) handleSaveSession(w http.ResponseWriter, r *http.Request) {

@@ -32,6 +32,12 @@ export async function getRunState(netRequest: EbNetRequest, runId: string) {
   return normalizeRunState(response?.body)
 }
 
+export async function cancelRoleRun(netRequest: EbNetRequest, runId: string) {
+  const id = String(runId || '').trim()
+  if (!id) throw new Error('run id 无效')
+  await netRequest({ method: 'POST', path: `/api/runs/${encodeURIComponent(id)}/cancel`, timeoutMs: 15000 })
+}
+
 export function normalizeRunState(value: any): EbRunState {
   const state = value && typeof value === 'object' ? value : {}
   return {

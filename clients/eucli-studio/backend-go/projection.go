@@ -36,7 +36,11 @@ func (p *projectionService) get(ctx context.Context, key string) (any, error) {
 	case "meta/index":
 		return p.meta(ctx)
 	case "stickers/index":
-		return map[string]any{}, nil
+		cfg, err := p.config.load()
+		if err != nil {
+			return nil, err
+		}
+		return objectMap(cfg.Projection.Settings["stickers"]), nil
 	case "chats/index":
 		return p.chatsIndex(ctx)
 	case "providers/index":
@@ -56,13 +60,6 @@ func (p *projectionService) get(ctx context.Context, key string) (any, error) {
 	if match := chatKeyPattern.FindStringSubmatch(key); match != nil {
 		return p.chatByFolder(ctx, match[1], match[2])
 	}
-	cfg, err := p.config.load()
-	if err != nil {
-		return nil, err
-	}
-	if value, ok := cfg.Projection.ClientObjects[key]; ok {
-		return value, nil
-	}
 	return nil, nil
 }
 
@@ -79,20 +76,25 @@ func (p *projectionService) set(ctx context.Context, key string, value any) erro
 	if match := roleChatIndexPattern.FindStringSubmatch(key); match != nil {
 		return p.saveRoleChatIndex(ctx, match[1], value)
 	}
+	if key == "meta/index" {
+		return p.saveMeta(value)
+	}
+	if key == "chats/index" {
+		return p.saveChatsIndex(value)
+	}
 	if key == "providers/index" {
 		return nil
 	}
-	_, err := p.config.updateProjection(func(projection *projectionConfig) {
-		projection.ClientObjects[key] = value
-		if key == "meta/index" {
-			if meta, ok := value.(map[string]any); ok {
-				projection.UI = objectMap(meta["ui"])
-				projection.Settings = objectMap(meta["settings"])
-				projection.Favorites = objectMap(meta["favorites"])
-			}
-		}
-	})
-	return err
+	if key == "stickers/index" {
+		return p.saveStickers(value)
+	}
+	if key == "groups/index" {
+		return nil
+	}
+	if strings.HasPrefix(key, "groups/") || strings.HasPrefix(key, "runtime/") {
+		return newError("NOT_IMPLEMENTED", "storage key 未接入 e-b 根动作："+key)
+	}
+	return newError("NOT_IMPLEMENTED", "未知 storage key："+key)
 }
 
 func (p *projectionService) remove(ctx context.Context, key string) error {
@@ -134,8 +136,40 @@ func (p *projectionService) remove(ctx context.Context, key string) error {
 		_, err = p.eb.request(ctx, ebRequest{Method: "DELETE", Path: fmt.Sprintf("/api/roles/%s/sessions/%s", roleID, match[2])})
 		return err
 	}
+	if key == "meta/index" || key == "chats/index" || key == "providers/index" || key == "groups/index" || strings.HasPrefix(key, "groups/") || strings.HasPrefix(key, "runtime/") {
+		return newError("NOT_IMPLEMENTED", "storage key 未接入 e-b 根动作："+key)
+	}
+	if key == "stickers/index" {
+		return p.saveStickers(map[string]any{})
+	}
+	return newError("NOT_IMPLEMENTED", "未知 storage key："+key)
+}
+
+func (p *projectionService) saveMeta(value any) error {
+	meta := objectMap(value)
 	_, err := p.config.updateProjection(func(projection *projectionConfig) {
-		delete(projection.ClientObjects, key)
+		projection.UI = objectMap(meta["ui"])
+		projection.Settings = objectMap(meta["settings"])
+		projection.Favorites = objectMap(meta["favorites"])
+	})
+	return err
+}
+
+func (p *projectionService) saveChatsIndex(value any) error {
+	index := objectMap(value)
+	roleOrder := stringSlice(index["roleOrder"])
+	_, err := p.config.updateProjection(func(projection *projectionConfig) {
+		projection.RoleOrder = roleOrder
+	})
+	return err
+}
+
+func (p *projectionService) saveStickers(value any) error {
+	stickers := objectMap(value)
+	_, err := p.config.updateProjection(func(projection *projectionConfig) {
+		settings := objectMap(projection.Settings)
+		settings["stickers"] = stickers
+		projection.Settings = settings
 	})
 	return err
 }
@@ -157,11 +191,16 @@ func (p *projectionService) meta(ctx context.Context) (any, error) {
 	roleOrder := []string{}
 	roleFolders := map[string]string{}
 	chatIndexByRole := map[string]any{}
+	roleByID := map[string]map[string]any{}
 	for _, role := range roles {
 		id := stringField(role, "id")
 		if id == "" {
 			continue
 		}
+		roleByID[id] = role
+	}
+	for _, id := range orderedIDs(projection.RoleOrder, mapKeys(roleByID)) {
+		role := roleByID[id]
 		folder := folderFor(projection.RoleFolders, id, stringField(role, "name"), "角色")
 		roleOrder = append(roleOrder, id)
 		roleFolders[id] = folder
@@ -567,6 +606,77 @@ func objectList(value any) []map[string]any {
 		if m, ok := item.(map[string]any); ok {
 			out = append(out, m)
 		}
+	}
+	return out
+}
+
+func stringSlice(value any) []string {
+	items, ok := value.([]any)
+	if !ok {
+		if typed, ok := value.([]string); ok {
+			return append([]string(nil), typed...)
+		}
+		return []string{}
+	}
+	out := []string{}
+	seen := map[string]struct{}{}
+	for _, item := range items {
+		id := strings.TrimSpace(fmt.Sprint(item))
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+func mapKeys[T any](value map[string]T) []string {
+	out := make([]string, 0, len(value))
+	for key := range value {
+		out = append(out, key)
+	}
+	return out
+}
+
+func orderedIDs(preferred []string, actual []string) []string {
+	actualSet := map[string]struct{}{}
+	for _, id := range actual {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		actualSet[id] = struct{}{}
+	}
+	out := []string{}
+	seen := map[string]struct{}{}
+	for _, id := range preferred {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := actualSet[id]; !ok {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	for _, id := range actual {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
 	}
 	return out
 }

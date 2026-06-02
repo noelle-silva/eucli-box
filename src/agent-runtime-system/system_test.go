@@ -53,6 +53,63 @@ func TestStartRunPersistsInputMessageBeforeReturning(t *testing.T) {
 	waitRun(t, system, state.ID)
 }
 
+func TestStartRunStreamCreatesAssistantAndPublishesDeltas(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.streamEvents = []types.ModelStreamEvent{
+		{Type: types.ModelStreamEventContentDelta, ContentDelta: "he", Content: "he", CreatedAt: time.Now().UTC()},
+		{Type: types.ModelStreamEventContentDelta, ContentDelta: "llo", Content: "hello", CreatedAt: time.Now().UTC()},
+	}
+	fakes.provider.streamResponse = types.ModelResponse{ID: "stream-1", Content: "hello"}
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	events, unsubscribe, err := system.Subscribe(context.Background())
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	defer unsubscribe()
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello", Stream: true})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	if !state.Stream {
+		t.Fatalf("state stream = false")
+	}
+	if state.InputMessageID == "" || state.LastMessageID == "" || state.InputMessageID == state.LastMessageID {
+		t.Fatalf("initial stream message ids = input %q last %q", state.InputMessageID, state.LastMessageID)
+	}
+	sessionBeforeModel := fakes.storage.lastSession()
+	if len(sessionBeforeModel.Messages) != 2 || sessionBeforeModel.Messages[1].Type != "assistant" || sessionBeforeModel.Messages[1].Content != "" {
+		t.Fatalf("stream initial messages = %#v", sessionBeforeModel.Messages)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted || final.LastMessageID != state.LastMessageID {
+		t.Fatalf("final = %#v initial=%#v", final, state)
+	}
+	session := fakes.storage.lastSession()
+	if len(session.Messages) != 2 || session.Messages[1].Content != "hello" || session.Messages[1].ID != state.LastMessageID {
+		t.Fatalf("final stream messages = %#v", session.Messages)
+	}
+	gotDeltas := []string{}
+	deadline := time.After(2 * time.Second)
+	for len(gotDeltas) < 2 {
+		select {
+		case event := <-events:
+			if event.Type != "model_stream_delta" {
+				continue
+			}
+			payload, ok := event.Payload.(types.RunStreamDelta)
+			if !ok {
+				t.Fatalf("stream payload = %#v", event.Payload)
+			}
+			gotDeltas = append(gotDeltas, payload.Content)
+		case <-deadline:
+			t.Fatalf("stream deltas = %#v", gotDeltas)
+		}
+	}
+	if gotDeltas[0] != "he" || gotDeltas[1] != "hello" {
+		t.Fatalf("stream deltas = %#v", gotDeltas)
+	}
+}
+
 func TestStartRunFromUserMessageAppendsAssistantSibling(t *testing.T) {
 	fakes := newRuntimeFakes()
 	now := time.Now().UTC()
@@ -395,12 +452,14 @@ func (f *fakeRuntimeRoles) GetToolPolicy(ctx context.Context, roleID string) (ty
 }
 
 type fakeRuntimeProvider struct {
-	mu         sync.Mutex
-	responses  []types.ModelResponse
-	alwaysTool bool
-	calls      int
-	requests   []types.ModelRequest
-	block      chan struct{}
+	mu             sync.Mutex
+	responses      []types.ModelResponse
+	streamEvents   []types.ModelStreamEvent
+	streamResponse types.ModelResponse
+	alwaysTool     bool
+	calls          int
+	requests       []types.ModelRequest
+	block          chan struct{}
 }
 
 func (f *fakeRuntimeProvider) Complete(ctx context.Context, request types.ModelRequest) (types.ModelResponse, error) {
@@ -423,6 +482,33 @@ func (f *fakeRuntimeProvider) Complete(ctx context.Context, request types.ModelR
 	}
 	response := f.responses[0]
 	f.responses = f.responses[1:]
+	return response, nil
+}
+
+func (f *fakeRuntimeProvider) CompleteStream(ctx context.Context, request types.ModelRequest, onEvent types.ModelStreamHandler) (types.ModelResponse, error) {
+	if f.block != nil {
+		select {
+		case <-f.block:
+		case <-ctx.Done():
+			return types.ModelResponse{}, ctx.Err()
+		}
+	}
+	f.mu.Lock()
+	f.calls++
+	f.requests = append(f.requests, request)
+	events := append([]types.ModelStreamEvent(nil), f.streamEvents...)
+	response := f.streamResponse
+	if response.ID == "" && response.Content == "" && len(response.ToolIntents) == 0 {
+		response = types.ModelResponse{ID: "default-stream", Content: "done"}
+	}
+	f.mu.Unlock()
+	for _, event := range events {
+		if onEvent != nil {
+			if err := onEvent(event); err != nil {
+				return types.ModelResponse{}, err
+			}
+		}
+	}
 	return response, nil
 }
 

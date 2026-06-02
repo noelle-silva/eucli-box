@@ -43,6 +43,7 @@ type ModelRequest struct {
 	Messages    []PromptMessage  `json:"messages"`
 	Temperature float64          `json:"temperature"`
 	Tools       []ToolDefinition `json:"tools,omitempty"`
+	Stream      bool             `json:"stream,omitempty"`
 }
 
 type ModelResponse struct {
@@ -52,6 +53,21 @@ type ModelResponse struct {
 	Raw         []byte       `json:"raw,omitempty"`
 	CreatedAt   time.Time    `json:"createdAt"`
 }
+
+type ModelStreamEventType string
+
+const (
+	ModelStreamEventContentDelta ModelStreamEventType = "content_delta"
+)
+
+type ModelStreamEvent struct {
+	Type         ModelStreamEventType `json:"type"`
+	ContentDelta string               `json:"contentDelta,omitempty"`
+	Content      string               `json:"content,omitempty"`
+	CreatedAt    time.Time            `json:"createdAt"`
+}
+
+type ModelStreamHandler func(event ModelStreamEvent) error
 
 type CallRecord struct {
 	ID         string    `json:"id"`

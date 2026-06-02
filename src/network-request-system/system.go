@@ -9,6 +9,7 @@ import (
 
 type System interface {
 	Do(ctx context.Context, req types.HTTPRequest) (types.HTTPResponse, error)
+	DoStream(ctx context.Context, req types.HTTPRequest, onChunk types.HTTPStreamHandler) (types.HTTPResponse, error)
 }
 
 type Config struct {
@@ -36,6 +37,14 @@ func (s *system) Do(ctx context.Context, req types.HTTPRequest) (types.HTTPRespo
 		return types.HTTPResponse{}, err
 	}
 	return s.client.do(prepared)
+}
+
+func (s *system) DoStream(ctx context.Context, req types.HTTPRequest, onChunk types.HTTPStreamHandler) (types.HTTPResponse, error) {
+	prepared, err := buildRequest(ctx, req, s.config)
+	if err != nil {
+		return types.HTTPResponse{}, err
+	}
+	return s.client.doStream(prepared, onChunk)
 }
 
 func normalizeConfig(config Config) (Config, error) {

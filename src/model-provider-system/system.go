@@ -17,10 +17,12 @@ type System interface {
 	RefreshModels(ctx context.Context, providerID string) ([]types.ModelInfo, error)
 	ResolveModel(ctx context.Context, coordinate types.ModelCoordinate) (types.Provider, types.ModelInfo, error)
 	Complete(ctx context.Context, request types.ModelRequest) (types.ModelResponse, error)
+	CompleteStream(ctx context.Context, request types.ModelRequest, onEvent types.ModelStreamHandler) (types.ModelResponse, error)
 }
 
 type NetworkSystem interface {
 	Do(ctx context.Context, req types.HTTPRequest) (types.HTTPResponse, error)
+	DoStream(ctx context.Context, req types.HTTPRequest, onChunk types.HTTPStreamHandler) (types.HTTPResponse, error)
 }
 
 type StorageSystem interface {

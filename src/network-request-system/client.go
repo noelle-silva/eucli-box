@@ -36,6 +36,19 @@ func (c *client) do(prepared preparedRequest) (types.HTTPResponse, error) {
 	return normalizeResponse(resp, prepared.started)
 }
 
+func (c *client) doStream(prepared preparedRequest, onChunk types.HTTPStreamHandler) (types.HTTPResponse, error) {
+	defer prepared.cancel()
+	resp, err := c.httpClient.Do(prepared.request)
+	if err != nil {
+		if isTimeout(err) || errors.Is(prepared.request.Context().Err(), context.DeadlineExceeded) {
+			return types.HTTPResponse{}, requestTimeout("http request timed out", err)
+		}
+		return types.HTTPResponse{}, requestFailed("http request failed", err)
+	}
+	defer resp.Body.Close()
+	return normalizeStreamResponse(resp, prepared.started, onChunk)
+}
+
 func isTimeout(err error) bool {
 	var netErr net.Error
 	return errors.As(err, &netErr) && netErr.Timeout()

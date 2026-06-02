@@ -1,6 +1,7 @@
 package networkrequest
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -24,6 +25,34 @@ func normalizeResponse(resp *http.Response, started int64) (types.HTTPResponse, 
 		Body:       body,
 		Duration:   time.Since(time.Unix(0, started)),
 	}, nil
+}
+
+func normalizeStreamResponse(resp *http.Response, started int64, onChunk types.HTTPStreamHandler) (types.HTTPResponse, error) {
+	var body bytes.Buffer
+	buffer := make([]byte, 32*1024)
+	streamChunks := onChunk != nil && resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices
+	for {
+		n, err := resp.Body.Read(buffer)
+		if n > 0 {
+			data := append([]byte(nil), buffer[:n]...)
+			_, _ = body.Write(data)
+			if streamChunks {
+				if handlerErr := onChunk(types.HTTPStreamChunk{Data: data, Duration: time.Since(time.Unix(0, started))}); handlerErr != nil {
+					return types.HTTPResponse{}, handlerErr
+				}
+			}
+		}
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(resp.Request.Context().Err(), context.DeadlineExceeded) {
+				return types.HTTPResponse{}, requestTimeout("http request timed out", err)
+			}
+			return types.HTTPResponse{}, requestFailed("failed to read http response body", err)
+		}
+	}
+	return types.HTTPResponse{StatusCode: resp.StatusCode, Headers: cloneHeaders(resp.Header), Body: body.Bytes(), Duration: time.Since(time.Unix(0, started))}, nil
 }
 
 func cloneHeaders(headers http.Header) map[string][]string {

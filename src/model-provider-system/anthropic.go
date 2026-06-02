@@ -2,6 +2,8 @@ package modelprovider
 
 import (
 	"encoding/json"
+	"strconv"
+	"strings"
 	"time"
 
 	"eucli-box/pkg/types"
@@ -25,6 +27,42 @@ type anthropicCompleteResponse struct {
 		Name  string         `json:"name"`
 		Input map[string]any `json:"input"`
 	} `json:"content"`
+}
+
+type anthropicStreamPayload struct {
+	Type    string `json:"type"`
+	Message struct {
+		ID string `json:"id"`
+	} `json:"message"`
+	Index        int `json:"index"`
+	ContentBlock struct {
+		Type  string         `json:"type"`
+		Text  string         `json:"text"`
+		ID    string         `json:"id"`
+		Name  string         `json:"name"`
+		Input map[string]any `json:"input"`
+	} `json:"content_block"`
+	Delta struct {
+		Type        string `json:"type"`
+		Text        string `json:"text"`
+		PartialJSON string `json:"partial_json"`
+	} `json:"delta"`
+}
+
+type anthropicToolUseBuilder struct {
+	ID          string
+	Name        string
+	Input       map[string]any
+	PartialJSON strings.Builder
+}
+
+type anthropicStreamParser struct {
+	sse       *sseParser
+	onEvent   types.ModelStreamHandler
+	id        string
+	content   strings.Builder
+	toolUses  map[int]*anthropicToolUseBuilder
+	createdAt time.Time
 }
 
 func (anthropicAdapter) BuildListModelsRequest(provider types.Provider, timeout int64) (types.HTTPRequest, error) {
@@ -71,6 +109,9 @@ func (anthropicAdapter) BuildCompleteRequest(provider types.Provider, request ty
 		"temperature": request.Temperature,
 		"max_tokens":  4096,
 	}
+	if request.Stream {
+		body["stream"] = true
+	}
 	if systemText != "" {
 		body["system"] = systemText
 	}
@@ -93,6 +134,111 @@ func (anthropicAdapter) BuildCompleteRequest(provider types.Provider, request ty
 		Body:     payload,
 		Timeout:  time.Duration(timeout),
 	}, nil
+}
+
+func (anthropicAdapter) NewCompleteStreamParser(onEvent types.ModelStreamHandler) completeStreamParser {
+	parser := &anthropicStreamParser{onEvent: onEvent, toolUses: map[int]*anthropicToolUseBuilder{}, createdAt: time.Now().UTC()}
+	parser.sse = newSSEParser(parser.acceptEvent)
+	return parser
+}
+
+func (p *anthropicStreamParser) Accept(data []byte) error {
+	return p.sse.Accept(data)
+}
+
+func (p *anthropicStreamParser) Finish(response types.HTTPResponse) (types.ModelResponse, error) {
+	if err := requireSuccess(response); err != nil {
+		return types.ModelResponse{}, err
+	}
+	if err := p.sse.Finish(); err != nil {
+		return types.ModelResponse{}, err
+	}
+	result := types.ModelResponse{ID: p.id, Content: p.content.String(), Raw: response.Body, CreatedAt: p.createdAt}
+	indexes := make([]int, 0, len(p.toolUses))
+	for index := range p.toolUses {
+		indexes = append(indexes, index)
+	}
+	sortInts(indexes)
+	for _, index := range indexes {
+		builder := p.toolUses[index]
+		if builder == nil || strings.TrimSpace(builder.Name) == "" {
+			continue
+		}
+		argsRaw := strings.TrimSpace(builder.PartialJSON.String())
+		args := builder.Input
+		if argsRaw != "" {
+			parsed, err := parseToolArguments(argsRaw)
+			if err != nil {
+				return types.ModelResponse{}, err
+			}
+			args = parsed
+		} else if args == nil {
+			var err error
+			args, err = parseToolArguments(argsRaw)
+			if err != nil {
+				return types.ModelResponse{}, err
+			}
+		}
+		id := strings.TrimSpace(builder.ID)
+		if id == "" {
+			id = "tool-use-" + strconv.Itoa(index)
+		}
+		result.ToolIntents = append(result.ToolIntents, types.ToolIntent{ID: id, ToolName: builder.Name, Arguments: args, Raw: argsRaw, CreatedAt: result.CreatedAt})
+	}
+	return result, nil
+}
+
+func (p *anthropicStreamParser) acceptEvent(event sseEvent) error {
+	if strings.TrimSpace(event.Data) == "" {
+		return nil
+	}
+	var payload anthropicStreamPayload
+	if err := json.Unmarshal([]byte(event.Data), &payload); err != nil {
+		return providerParseFailed("failed to parse Anthropic stream event", err)
+	}
+	if p.id == "" {
+		p.id = payload.Message.ID
+	}
+	switch payload.Type {
+	case "content_block_start":
+		if payload.ContentBlock.Type == "text" && payload.ContentBlock.Text != "" {
+			return p.appendText(payload.ContentBlock.Text)
+		}
+		if payload.ContentBlock.Type == "tool_use" {
+			builder := p.toolUses[payload.Index]
+			if builder == nil {
+				builder = &anthropicToolUseBuilder{}
+				p.toolUses[payload.Index] = builder
+			}
+			builder.ID = payload.ContentBlock.ID
+			builder.Name = payload.ContentBlock.Name
+			builder.Input = payload.ContentBlock.Input
+		}
+	case "content_block_delta":
+		switch payload.Delta.Type {
+		case "text_delta":
+			return p.appendText(payload.Delta.Text)
+		case "input_json_delta":
+			builder := p.toolUses[payload.Index]
+			if builder == nil {
+				builder = &anthropicToolUseBuilder{}
+				p.toolUses[payload.Index] = builder
+			}
+			builder.PartialJSON.WriteString(payload.Delta.PartialJSON)
+		}
+	}
+	return nil
+}
+
+func (p *anthropicStreamParser) appendText(delta string) error {
+	if delta == "" {
+		return nil
+	}
+	p.content.WriteString(delta)
+	if p.onEvent == nil {
+		return nil
+	}
+	return p.onEvent(types.ModelStreamEvent{Type: types.ModelStreamEventContentDelta, ContentDelta: delta, Content: p.content.String(), CreatedAt: time.Now().UTC()})
 }
 
 func (anthropicAdapter) ParseCompleteResponse(response types.HTTPResponse) (types.ModelResponse, error) {

@@ -2,6 +2,8 @@ package modelprovider
 
 import (
 	"encoding/json"
+	"strconv"
+	"strings"
 	"time"
 
 	"eucli-box/pkg/types"
@@ -30,6 +32,38 @@ type openAICompleteResponse struct {
 			} `json:"tool_calls"`
 		} `json:"message"`
 	} `json:"choices"`
+}
+
+type openAIStreamResponse struct {
+	ID      string `json:"id"`
+	Choices []struct {
+		Delta struct {
+			Content   string `json:"content"`
+			ToolCalls []struct {
+				Index    int    `json:"index"`
+				ID       string `json:"id"`
+				Function struct {
+					Name      string `json:"name"`
+					Arguments string `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
+		} `json:"delta"`
+	} `json:"choices"`
+}
+
+type openAIToolCallBuilder struct {
+	ID        string
+	Name      string
+	Arguments strings.Builder
+}
+
+type openAIStreamParser struct {
+	sse       *sseParser
+	onEvent   types.ModelStreamHandler
+	id        string
+	content   strings.Builder
+	toolCalls map[int]*openAIToolCallBuilder
+	createdAt time.Time
 }
 
 func (openAIAdapter) BuildListModelsRequest(provider types.Provider, timeout int64) (types.HTTPRequest, error) {
@@ -68,6 +102,9 @@ func (openAIAdapter) BuildCompleteRequest(provider types.Provider, request types
 		"messages":    openAIMessages(request.Messages),
 		"temperature": request.Temperature,
 	}
+	if request.Stream {
+		body["stream"] = true
+	}
 	if len(request.Tools) > 0 {
 		body["tools"] = openAITools(request.Tools)
 	}
@@ -83,6 +120,88 @@ func (openAIAdapter) BuildCompleteRequest(provider types.Provider, request types
 		Body:     payload,
 		Timeout:  time.Duration(timeout),
 	}, nil
+}
+
+func (openAIAdapter) NewCompleteStreamParser(onEvent types.ModelStreamHandler) completeStreamParser {
+	parser := &openAIStreamParser{onEvent: onEvent, toolCalls: map[int]*openAIToolCallBuilder{}, createdAt: time.Now().UTC()}
+	parser.sse = newSSEParser(parser.acceptEvent)
+	return parser
+}
+
+func (p *openAIStreamParser) Accept(data []byte) error {
+	return p.sse.Accept(data)
+}
+
+func (p *openAIStreamParser) Finish(response types.HTTPResponse) (types.ModelResponse, error) {
+	if err := requireSuccess(response); err != nil {
+		return types.ModelResponse{}, err
+	}
+	if err := p.sse.Finish(); err != nil {
+		return types.ModelResponse{}, err
+	}
+	result := types.ModelResponse{ID: p.id, Content: p.content.String(), Raw: response.Body, CreatedAt: p.createdAt}
+	indexes := make([]int, 0, len(p.toolCalls))
+	for index := range p.toolCalls {
+		indexes = append(indexes, index)
+	}
+	sortInts(indexes)
+	for _, index := range indexes {
+		builder := p.toolCalls[index]
+		if builder == nil || strings.TrimSpace(builder.Name) == "" {
+			continue
+		}
+		argsRaw := builder.Arguments.String()
+		args, err := parseToolArguments(argsRaw)
+		if err != nil {
+			return types.ModelResponse{}, err
+		}
+		id := strings.TrimSpace(builder.ID)
+		if id == "" {
+			id = "tool-call-" + strconv.Itoa(index)
+		}
+		result.ToolIntents = append(result.ToolIntents, types.ToolIntent{ID: id, ToolName: builder.Name, Arguments: args, Raw: argsRaw, CreatedAt: result.CreatedAt})
+	}
+	return result, nil
+}
+
+func (p *openAIStreamParser) acceptEvent(event sseEvent) error {
+	if strings.TrimSpace(event.Data) == "[DONE]" {
+		return nil
+	}
+	var payload openAIStreamResponse
+	if err := json.Unmarshal([]byte(event.Data), &payload); err != nil {
+		return providerParseFailed("failed to parse OpenAI stream event", err)
+	}
+	if p.id == "" {
+		p.id = payload.ID
+	}
+	for _, choice := range payload.Choices {
+		if choice.Delta.Content != "" {
+			p.content.WriteString(choice.Delta.Content)
+			if p.onEvent != nil {
+				if err := p.onEvent(types.ModelStreamEvent{Type: types.ModelStreamEventContentDelta, ContentDelta: choice.Delta.Content, Content: p.content.String(), CreatedAt: time.Now().UTC()}); err != nil {
+					return err
+				}
+			}
+		}
+		for _, toolCall := range choice.Delta.ToolCalls {
+			builder := p.toolCalls[toolCall.Index]
+			if builder == nil {
+				builder = &openAIToolCallBuilder{}
+				p.toolCalls[toolCall.Index] = builder
+			}
+			if toolCall.ID != "" {
+				builder.ID = toolCall.ID
+			}
+			if toolCall.Function.Name != "" {
+				builder.Name = toolCall.Function.Name
+			}
+			if toolCall.Function.Arguments != "" {
+				builder.Arguments.WriteString(toolCall.Function.Arguments)
+			}
+		}
+	}
+	return nil
 }
 
 func (openAIAdapter) ParseCompleteResponse(response types.HTTPResponse) (types.ModelResponse, error) {

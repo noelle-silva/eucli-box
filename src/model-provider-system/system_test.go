@@ -122,6 +122,83 @@ func TestCompleteAnthropicSeparatesSystemPrompt(t *testing.T) {
 	}
 }
 
+func TestCompleteStreamOpenAIEmitsDeltasAndAssemblesResponse(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["openai-main"] = types.Provider{ID: "openai-main", Name: "OpenAI", BaseURL: "https://api.example.test/v1", Key: "secret", Protocol: types.ProviderProtocolOpenAI, Models: []types.ModelInfo{{ID: "gpt-4.1"}}}
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`data: {"id":"chatcmpl-stream","choices":[{"delta":{"content":"he"}}]}
+
+data: {"id":"chatcmpl-stream","choices":[{"delta":{"content":"llo"}}]}
+
+data: {"id":"chatcmpl-stream","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"file-reader","arguments":"{\"path\":"}}]}}]}
+
+data: {"id":"chatcmpl-stream","choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"README.md\"}"}}]}}]}
+
+data: [DONE]
+
+`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	events := []string{}
+	response, err := system.CompleteStream(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}, Temperature: 0.7, Tools: []types.ToolDefinition{{Name: "file-reader", Description: "Read file", InputSchema: map[string]any{"type": "object"}}}}, func(event types.ModelStreamEvent) error {
+		events = append(events, event.Content)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("CompleteStream() error = %v", err)
+	}
+	if response.ID != "chatcmpl-stream" || response.Content != "hello" {
+		t.Fatalf("response = %#v", response)
+	}
+	if len(events) != 2 || events[0] != "he" || events[1] != "hello" {
+		t.Fatalf("events = %#v", events)
+	}
+	if len(response.ToolIntents) != 1 || response.ToolIntents[0].ToolName != "file-reader" || response.ToolIntents[0].Arguments["path"] != "README.md" {
+		t.Fatalf("tool intents = %#v", response.ToolIntents)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(network.lastRequest.Body, &body); err != nil {
+		t.Fatalf("request body is invalid json: %v", err)
+	}
+	if body["stream"] != true {
+		t.Fatalf("stream flag = %#v body=%s", body["stream"], string(network.lastRequest.Body))
+	}
+}
+
+func TestCompleteStreamAnthropicEmitsDeltas(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["anthropic-main"] = types.Provider{ID: "anthropic-main", Name: "Anthropic", BaseURL: "https://api.anthropic.test/v1", Key: "secret", Protocol: types.ProviderProtocolAnthropic, Models: []types.ModelInfo{{ID: "claude-3-5-sonnet"}}}
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`data: {"type":"message_start","message":{"id":"msg-stream"}}
+
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"he"}}
+
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"llo"}}
+
+`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	events := []string{}
+	response, err := system.CompleteStream(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}, Temperature: 0.2}, func(event types.ModelStreamEvent) error {
+		events = append(events, event.Content)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("CompleteStream() error = %v", err)
+	}
+	if response.ID != "msg-stream" || response.Content != "hello" {
+		t.Fatalf("response = %#v", response)
+	}
+	if len(events) != 2 || events[0] != "he" || events[1] != "hello" {
+		t.Fatalf("events = %#v", events)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(network.lastRequest.Body, &body); err != nil {
+		t.Fatalf("request body is invalid json: %v", err)
+	}
+	if body["stream"] != true {
+		t.Fatalf("stream flag = %#v body=%s", body["stream"], string(network.lastRequest.Body))
+	}
+}
+
 func newTestProviderSystem(t *testing.T, network NetworkSystem, storage StorageSystem) System {
 	t.Helper()
 	system, err := NewSystem(Config{RequestTimeout: time.Second}, network, storage)
@@ -141,6 +218,19 @@ func (f *fakeNetwork) Do(ctx context.Context, req types.HTTPRequest) (types.HTTP
 	f.lastRequest = req
 	if f.err != nil {
 		return types.HTTPResponse{}, f.err
+	}
+	return f.response, nil
+}
+
+func (f *fakeNetwork) DoStream(ctx context.Context, req types.HTTPRequest, onChunk types.HTTPStreamHandler) (types.HTTPResponse, error) {
+	f.lastRequest = req
+	if f.err != nil {
+		return types.HTTPResponse{}, f.err
+	}
+	if onChunk != nil && len(f.response.Body) > 0 {
+		if err := onChunk(types.HTTPStreamChunk{Data: f.response.Body}); err != nil {
+			return types.HTTPResponse{}, err
+		}
 	}
 	return f.response, nil
 }

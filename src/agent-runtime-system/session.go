@@ -91,6 +91,34 @@ func appendRunAssistantReply(record *runRecord, content string) {
 	record.lastMessageID = record.messageParent.ID
 }
 
+func ensureRunAssistantMessage(record *runRecord) {
+	if record.messageParent.Type == "assistant" && strings.TrimSpace(record.messageParent.ID) != "" {
+		return
+	}
+	appendRunAssistantReply(record, "")
+}
+
+func updateRunAssistantContent(record *runRecord, content string) {
+	if record.messageParent.Type != "assistant" || strings.TrimSpace(record.messageParent.ID) == "" {
+		appendRunAssistantReply(record, content)
+		return
+	}
+	now := time.Now().UTC()
+	record.messageParent.Content = content
+	record.messageParent.UpdatedAt = now
+	for index := range record.session.Messages {
+		if record.session.Messages[index].ID != record.messageParent.ID {
+			continue
+		}
+		record.session.Messages[index].Content = content
+		record.session.Messages[index].UpdatedAt = now
+		break
+	}
+	record.session.UpdatedAt = now
+	record.session.LastActive = now
+	record.lastMessageID = record.messageParent.ID
+}
+
 func appendRunMessage(record *runRecord, message types.Message) {
 	record.session = appendChildMessage(record.session, message, record.messageParent)
 	record.messageParent = lastSessionMessage(record.session)

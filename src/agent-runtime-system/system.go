@@ -28,6 +28,7 @@ type RoleSystem interface {
 
 type ProviderSystem interface {
 	Complete(ctx context.Context, request types.ModelRequest) (types.ModelResponse, error)
+	CompleteStream(ctx context.Context, request types.ModelRequest, onEvent types.ModelStreamHandler) (types.ModelResponse, error)
 }
 
 type ToolSystem interface {
@@ -64,6 +65,7 @@ type runRecord struct {
 	messageParent  types.Message
 	inputMessageID string
 	lastMessageID  string
+	stream         bool
 	cancel         context.CancelFunc
 
 	pendingPlan    *types.ToolRunPlan

@@ -53,6 +53,7 @@ type RunRequest struct {
 	Message         string `json:"message"`
 	ParentMessageID string `json:"parentMessageId,omitempty"`
 	UserMessageID   string `json:"userMessageId,omitempty"`
+	Stream          bool   `json:"stream,omitempty"`
 }
 
 type RunState struct {
@@ -61,10 +62,23 @@ type RunState struct {
 	SessionID      string    `json:"sessionId"`
 	InputMessageID string    `json:"inputMessageId,omitempty"`
 	LastMessageID  string    `json:"lastMessageId,omitempty"`
+	Stream         bool      `json:"stream,omitempty"`
 	Status         RunStatus `json:"status"`
 	Reason         string    `json:"reason,omitempty"`
 	CreatedAt      time.Time `json:"createdAt"`
 	UpdatedAt      time.Time `json:"updatedAt"`
+}
+
+type RunStreamDelta struct {
+	RunID           string    `json:"runId"`
+	RoleID          string    `json:"roleId"`
+	SessionID       string    `json:"sessionId"`
+	MessageID       string    `json:"messageId"`
+	ParentMessageID string    `json:"parentMessageId,omitempty"`
+	BranchID        string    `json:"branchId,omitempty"`
+	ContentDelta    string    `json:"contentDelta"`
+	Content         string    `json:"content"`
+	CreatedAt       time.Time `json:"createdAt"`
 }
 
 type RunEvent struct {

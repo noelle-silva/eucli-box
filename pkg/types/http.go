@@ -27,3 +27,10 @@ type HTTPResponse struct {
 	Body       []byte              `json:"body,omitempty"`
 	Duration   time.Duration       `json:"duration"`
 }
+
+type HTTPStreamChunk struct {
+	Data     []byte        `json:"data,omitempty"`
+	Duration time.Duration `json:"duration"`
+}
+
+type HTTPStreamHandler func(chunk HTTPStreamChunk) error

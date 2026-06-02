@@ -15,6 +15,100 @@ type protocolAdapter interface {
 	ParseListModelsResponse(response types.HTTPResponse) ([]types.ModelInfo, error)
 	BuildCompleteRequest(provider types.Provider, request types.ModelRequest, timeout int64) (types.HTTPRequest, error)
 	ParseCompleteResponse(response types.HTTPResponse) (types.ModelResponse, error)
+	NewCompleteStreamParser(onEvent types.ModelStreamHandler) completeStreamParser
+}
+
+type completeStreamParser interface {
+	Accept(data []byte) error
+	Finish(response types.HTTPResponse) (types.ModelResponse, error)
+}
+
+type sseEvent struct {
+	Event string
+	Data  string
+}
+
+type sseParser struct {
+	buffer    string
+	eventName string
+	dataLines []string
+	onEvent   func(event sseEvent) error
+}
+
+func newSSEParser(onEvent func(event sseEvent) error) *sseParser {
+	return &sseParser{onEvent: onEvent}
+}
+
+func (p *sseParser) Accept(data []byte) error {
+	p.buffer += string(data)
+	for {
+		index := strings.IndexByte(p.buffer, '\n')
+		if index < 0 {
+			return nil
+		}
+		line := strings.TrimSuffix(p.buffer[:index], "\r")
+		p.buffer = p.buffer[index+1:]
+		if err := p.acceptLine(line); err != nil {
+			return err
+		}
+	}
+}
+
+func (p *sseParser) Finish() error {
+	if strings.TrimSpace(p.buffer) != "" {
+		if err := p.acceptLine(strings.TrimSuffix(p.buffer, "\r")); err != nil {
+			return err
+		}
+	}
+	p.buffer = ""
+	return p.dispatch()
+}
+
+func (p *sseParser) acceptLine(line string) error {
+	if line == "" {
+		return p.dispatch()
+	}
+	if strings.HasPrefix(line, ":") {
+		return nil
+	}
+	name, value, ok := strings.Cut(line, ":")
+	if !ok {
+		return nil
+	}
+	value = strings.TrimPrefix(value, " ")
+	switch name {
+	case "event":
+		p.eventName = value
+	case "data":
+		p.dataLines = append(p.dataLines, value)
+	}
+	return nil
+}
+
+func (p *sseParser) dispatch() error {
+	if len(p.dataLines) == 0 {
+		p.eventName = ""
+		return nil
+	}
+	event := sseEvent{Event: p.eventName, Data: strings.Join(p.dataLines, "\n")}
+	p.eventName = ""
+	p.dataLines = nil
+	if p.onEvent == nil {
+		return nil
+	}
+	return p.onEvent(event)
+}
+
+func sortInts(values []int) {
+	for i := 1; i < len(values); i++ {
+		value := values[i]
+		j := i - 1
+		for j >= 0 && values[j] > value {
+			values[j+1] = values[j]
+			j--
+		}
+		values[j+1] = value
+	}
 }
 
 func adapterFor(protocol types.ProviderProtocol) (protocolAdapter, error) {

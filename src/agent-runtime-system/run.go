@@ -15,8 +15,8 @@ func (s *system) StartRun(ctx context.Context, request types.RunRequest) (types.
 	}
 	runCtx, cancel := context.WithCancel(context.Background())
 	now := nowUTC()
-	state := types.RunState{ID: utils.NewID("run"), RoleID: request.RoleID, SessionID: request.SessionID, Status: types.RunStatusCreated, CreatedAt: now, UpdatedAt: now}
-	record := &runRecord{runID: state.ID, roleID: request.RoleID, state: state, cancel: cancel}
+	state := types.RunState{ID: utils.NewID("run"), RoleID: request.RoleID, SessionID: request.SessionID, Stream: request.Stream, Status: types.RunStatusCreated, CreatedAt: now, UpdatedAt: now}
+	record := &runRecord{runID: state.ID, roleID: request.RoleID, state: state, stream: request.Stream, cancel: cancel}
 	s.mu.Lock()
 	s.runs[state.ID] = record
 	s.mu.Unlock()
@@ -80,14 +80,20 @@ func (s *system) startRun(ctx context.Context, record *runRecord, request types.
 	if err != nil {
 		return state, types.Session{}, err
 	}
-	if err := s.setRunMessageIDs(record.runID, assistantParent.ID, assistantParent.ID); err != nil {
+	record.session = session
+	record.messageParent = assistantParent
+	lastMessageID := assistantParent.ID
+	if record.stream {
+		ensureRunAssistantMessage(record)
+		session = record.session
+		lastMessageID = record.lastMessageID
+	}
+	if err := s.setRunMessageIDs(record.runID, assistantParent.ID, lastMessageID); err != nil {
 		return state, types.Session{}, err
 	}
 	if err := s.saveSession(ctx, session, types.RunStatusRunning); err != nil {
 		return state, types.Session{}, err
 	}
-	record.session = session
-	record.messageParent = assistantParent
 	state, _ = s.getRunState(record.runID)
 	return state, contextSession, nil
 }
@@ -104,7 +110,7 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 			s.failRun(context.Background(), record, record.session, err.Error())
 			return
 		}
-		modelResponse, err := s.callModel(ctx, roleContext)
+		modelResponse, err := s.callModel(ctx, record, roleContext)
 		if err != nil {
 			s.failRun(context.Background(), record, record.session, err.Error())
 			return
@@ -113,7 +119,11 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 			s.cancelRunRecord(context.Background(), record, record.session)
 			return
 		}
-		appendRunAssistantReply(record, modelResponse.Content)
+		if record.messageParent.Type != "assistant" {
+			appendRunAssistantReply(record, modelResponse.Content)
+		} else {
+			updateRunAssistantContent(record, modelResponse.Content)
+		}
 		assistantParent = record.messageParent
 		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, assistantParent.ID); err != nil {
 			s.failRun(context.Background(), record, record.session, err.Error())

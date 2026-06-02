@@ -1,26 +1,17 @@
 package datastorage
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 )
 
-var imageDataURLPattern = regexp.MustCompile(`^data:(image/(png|jpeg|webp));base64,([A-Za-z0-9+/=\r\n]+)$`)
-
-type roleAvatarImage struct {
-	Mime    string
-	Ext     string
-	Payload []byte
-}
-
 var roleAvatarFiles = []string{"avatar.png", "avatar.jpg", "avatar.webp", "avatar.bin", "avatar.json"}
+
+var roleAvatarAllowedImageMIMEs = map[string]string{"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
 
 func (s *system) SaveRoleAvatar(ctx context.Context, roleID string, dataURL string) error {
 	if err := ctx.Err(); err != nil {
@@ -29,7 +20,7 @@ func (s *system) SaveRoleAvatar(ctx context.Context, roleID string, dataURL stri
 	if err := s.requireRoleExists(roleID); err != nil {
 		return err
 	}
-	image, err := decodeImageDataURL(dataURL)
+	image, err := decodeImageDataURL(dataURL, roleAvatarAllowedImageMIMEs)
 	if err != nil {
 		return storageInvalid("avatar image must be a png, jpg, or webp data url", err)
 	}
@@ -107,45 +98,7 @@ func (s *system) roleAvatarDir(roleID string) (string, error) {
 	return filepath.Join(dir, "attachments", "avatar"), nil
 }
 
-func decodeImageDataURL(dataURL string) (roleAvatarImage, error) {
-	match := imageDataURLPattern.FindStringSubmatch(strings.TrimSpace(dataURL))
-	if match == nil {
-		return roleAvatarImage{}, fmt.Errorf("invalid image data url")
-	}
-	payload, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(strings.ReplaceAll(match[3], "\r", ""), "\n", ""))
-	if err != nil {
-		return roleAvatarImage{}, err
-	}
-	if len(payload) == 0 {
-		return roleAvatarImage{}, fmt.Errorf("empty image data")
-	}
-	mime := match[1]
-	if !isValidImagePayload(mime, payload) {
-		return roleAvatarImage{}, fmt.Errorf("image payload does not match mime type")
-	}
-	ext := "png"
-	if mime == "image/jpeg" {
-		ext = "jpg"
-	} else if mime == "image/webp" {
-		ext = "webp"
-	}
-	return roleAvatarImage{Mime: mime, Ext: ext, Payload: payload}, nil
-}
-
-func isValidImagePayload(mime string, payload []byte) bool {
-	switch mime {
-	case "image/png":
-		return bytes.HasPrefix(payload, []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'})
-	case "image/jpeg":
-		return len(payload) >= 3 && payload[0] == 0xff && payload[1] == 0xd8 && payload[2] == 0xff
-	case "image/webp":
-		return len(payload) >= 12 && string(payload[0:4]) == "RIFF" && string(payload[8:12]) == "WEBP"
-	default:
-		return false
-	}
-}
-
-func writeRoleAvatarFile(ctx context.Context, dir string, image roleAvatarImage) error {
+func writeRoleAvatarFile(ctx context.Context, dir string, image storedImage) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}

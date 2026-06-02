@@ -21,17 +21,20 @@ func newPaths(root string) (paths, error) {
 }
 
 func (p paths) baseDirs() []string {
-	return []string{p.root, p.sessionsRoot(), p.rolesRoot(), p.providersRoot(), p.toolsRoot(), p.recycleRoot(), p.metaRoot()}
+	return []string{p.root, p.sessionsRoot(), p.rolesRoot(), p.providersRoot(), p.toolsRoot(), p.stickersRoot(), p.recycleRoot(), p.metaRoot()}
 }
 
 func (p paths) sessionsRoot() string  { return filepath.Join(p.root, "sessions") }
 func (p paths) rolesRoot() string     { return filepath.Join(p.root, "roles") }
 func (p paths) providersRoot() string { return filepath.Join(p.root, "providers") }
 func (p paths) toolsRoot() string     { return filepath.Join(p.root, "tools") }
+func (p paths) stickersRoot() string  { return filepath.Join(p.root, "stickers") }
 func (p paths) recycleRoot() string   { return filepath.Join(p.root, "recycle") }
 func (p paths) metaRoot() string      { return filepath.Join(p.root, "meta") }
 
 func (p paths) metaVersionFile() string { return filepath.Join(p.metaRoot(), "version.json") }
+
+func (p paths) stickerNamingConfigFile() string { return filepath.Join(p.metaRoot(), "sticker-naming.json") }
 
 func (p paths) roleDir(roleID string) (string, error) {
 	return p.safeJoin(p.rolesRoot(), roleID)
@@ -83,6 +86,34 @@ func (p paths) toolDir(toolID string) (string, error) {
 
 func (p paths) toolDataFile(toolID string) (string, error) {
 	dir, err := p.toolDir(toolID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "data.json"), nil
+}
+
+func (p paths) stickerCategoryDir(categoryName string) (string, error) {
+	name, err := cleanStickerCategoryName(categoryName)
+	if err != nil {
+		return "", err
+	}
+	joined := filepath.Join(p.stickersRoot(), name)
+	if !isWithin(p.stickersRoot(), joined) {
+		return "", storageInvalid("path escapes stickers root", nil)
+	}
+	return joined, nil
+}
+
+func (p paths) stickerItemDir(categoryName string, stickerID string) (string, error) {
+	categoryDir, err := p.stickerCategoryDir(categoryName)
+	if err != nil {
+		return "", err
+	}
+	return p.safeJoin(categoryDir, stickerID)
+}
+
+func (p paths) stickerItemDataFile(categoryName string, stickerID string) (string, error) {
+	dir, err := p.stickerItemDir(categoryName, stickerID)
 	if err != nil {
 		return "", err
 	}

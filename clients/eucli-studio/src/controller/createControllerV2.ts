@@ -40,19 +40,15 @@ import { isAssistantGenerating } from '../domain/assistantRunState'
 import { moveListItemById, type ListMovePosition } from '../domain/listOrdering'
 import { detectDraftFileKind, addDraftFilePlaceholder, removeDraftFile, removeDraftImage as removeDraftImageFromList, fileExtLower } from '../domain/draftFileUtils'
 import type { DraftFileKind, DraftFileItem, DraftImageItem } from '../domain/draftFileUtils'
-import { validateStickerCategoryName, validateStickerName, imageExtFromDataUrl } from '../domain/stickerValidator'
+import { validateStickerCategoryName, validateStickerName } from '../domain/stickerValidator'
 import { favoriteChatRefKey, normalizeFavorites, collectFavoriteFolderSubtreeIds } from '../domain/favorites'
 import {
   limitHistory,
   looksLikeImageDataUrl,
   escapeFence,
-  buildUserTextForOpenAi,
   extractMermaidCodeFromAiReply,
   tokenizeFencesForReplace,
   replaceMermaidFenceOnce,
-  normalizeAiGeneratedChatTitle,
-  normalizeAiGeneratedStickerName,
-  buildChatTranscriptForTitle,
 } from '../domain/textProcessing'
 import {
   normalizeSplitMeta,
@@ -373,9 +369,21 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
 
   const stickerStore = createStickerStorage({
     filesImages: api.files?.images as any,
+    storage,
+    netRequest: capabilities.net?.request || ((() => Promise.resolve({})) as any),
     getState: () => state.data,
   })
-  const { addStickerInternal, syncRoleAvatarFile, syncGroupAvatarFile } = stickerStore
+  const {
+    addStickerInternal,
+    createStickerCategoryInternal,
+    deleteStickerCategoryInternal,
+    deleteStickerInternal,
+    renameStickerInternal,
+    loadStickersFromSource,
+    setStickersEnabled,
+    syncRoleAvatarFile,
+    syncGroupAvatarFile,
+  } = stickerStore
 
   const splitStore = createSplitStorage({
     storage,
@@ -400,7 +408,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     saveRoleOrder,
     saveGroupChat,
     saveMetaOnly,
-    saveStickersOnly,
     saveRoleEntity,
     removeRoleEntity,
     saveProviderEntity,
@@ -610,7 +617,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   // 14. AI SERVICES (first pass with placeholders)
   // ============================================================
   const aiServices = createAiServices({
-    // AI microservices are intentionally blocked until e-b exposes real roots.
+    netRequest: capabilities.net?.request || ((() => Promise.resolve({})) as any),
   })
   const { aiFixMermaidInMessage, aiGenerateChatTitle, aiGenerateGroupChatTitle, aiGenerateStickerName } = aiServices
 
@@ -816,6 +823,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     let ok = 0
     let dup = 0
     let bad = 0
+    let firstError = ''
 
     for (const it of list) {
       const fn = String(it?.name || '').trim()
@@ -824,16 +832,28 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       const name = vName.ok ? vName.name : `表情_${uid('n')}`
       const dataUrl = String(it?.dataUrl || '')
       try {
-        const r = await addStickerInternal(cat, name, dataUrl).catch(() => ({ ok: false, kind: 'bad' as const }))
+        const r = await addStickerInternal(cat, name, dataUrl).catch((e: any) => ({ ok: false, kind: 'err' as const, error: e }))
         if (r && (r as any).ok) ok++
         else if ((r as any)?.kind === 'dup') dup++
-        else bad++
-      } catch (_) { bad++ }
+        else {
+          bad++
+          if (!firstError) {
+            if ((r as any)?.kind === 'bad-image') firstError = '图片格式不支持（仅支持 png/jpg/webp/gif）'
+            else firstError = String((r as any)?.error?.message || (r as any)?.error || '导入失败')
+          }
+        }
+      } catch (e: any) {
+        bad++
+        if (!firstError) firstError = String(e?.message || e || '导入失败')
+      }
     }
 
-      if (ok) { saveStickersOnly().catch(() => {}); emit() }
+    if (ok) {
+      await loadStickersFromSource()
+      emit()
+    }
     if (dup) api.ui?.showToast?.(`跳过重名：${dup} 个`)
-    if (!ok && bad) api.ui?.showToast?.('导入失败')
+    if (!ok && bad) api.ui?.showToast?.(firstError || '导入失败')
   }
 
   async function pickStickerImages(categoryName: any) {
@@ -1026,25 +1046,25 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     toggleStickersEnabled: () => {
       if (!state.data) return
       if (!state.data.settings.stickers || typeof state.data.settings.stickers !== 'object') state.data.settings.stickers = { enabled: false, categories: [], map: {} }
-      state.data.settings.stickers.enabled = !state.data.settings.stickers.enabled
-      saveStickersOnly().catch(() => {})
-      emit()
+      const next = !state.data.settings.stickers.enabled
+      setStickersEnabled(next)
+        .then(() => emit())
+        .catch((e: any) => api.ui?.showToast?.(String(e?.message || e || '保存表情包开关失败')))
     },
-    createStickerCategory: (categoryName: any) => {
+    createStickerCategory: async (categoryName: any) => {
       if (!state.data) return
-      if (!state.data.settings.stickers || typeof state.data.settings.stickers !== 'object') state.data.settings.stickers = { enabled: false, categories: [], map: {} }
-      const st = state.data.settings.stickers
       const v = validateStickerCategoryName(categoryName)
       if (!v.ok) return api.ui?.showToast?.(v.error || '分类名无效')
 
       const name = v.name
-      if (!Array.isArray(st.categories)) st.categories = []
-      if (st.categories.some((x: any) => String(x || '') === name)) return api.ui?.showToast?.('分类已存在')
-      st.categories = st.categories.concat([name]).slice(0, 200)
-      if (!st.map || typeof st.map !== 'object') st.map = {}
-      if (!st.map[name] || typeof st.map[name] !== 'object') st.map[name] = {}
-      saveStickersOnly().catch(() => {})
-      emit()
+      try {
+        await createStickerCategoryInternal(name)
+        emit()
+        return true
+      } catch (e: any) {
+        api.ui?.showToast?.(String(e?.message || e || '创建分类失败'))
+        return false
+      }
     },
     createFavoriteFolder: (name: any, parentId: any) => favOps.createFavoriteFolder(name, parentId),
     renameFavoriteFolder: (folderId: any, name: any) => favOps.renameFavoriteFolder(folderId, name),
@@ -1056,28 +1076,16 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     getChatFavoriteFolderIds: (targetKind: any, targetId: any, chatId: any) => favOps.getFavoriteFolderIdsForChat(targetKind, targetId, chatId),
     deleteStickerCategory: async (categoryName: any) => {
       if (!state.data) return
-      const st = state.data.settings?.stickers
-      if (!st || typeof st !== 'object') return
-
       const name = String(categoryName || '').trim()
       if (!name) return
-
-      const box = st.map && typeof st.map === 'object' ? st.map[name] : null
-      if (box && typeof box === 'object' && typeof api?.files?.images?.delete === 'function') {
-        for (const v of Object.values(box)) {
-          try {
-            const relPath = v && typeof v === 'object' ? String((v as any).relPath || '').trim() : ''
-            if (relPath) await api.files.images.delete({ scope: 'data', path: relPath }).catch(() => {})
-          } catch (_) {}
-        }
+      try {
+        await deleteStickerCategoryInternal(name)
+        emit()
+        return true
+      } catch (e: any) {
+        api.ui?.showToast?.(String(e?.message || e || '删除分类失败'))
+        return false
       }
-
-      st.categories = Array.isArray(st.categories) ? st.categories.filter((x: any) => String(x || '').trim() !== name) : []
-      if (st.map && typeof st.map === 'object') {
-        try { delete st.map[name] } catch (_) {}
-      }
-      saveStickersOnly().catch(() => {})
-      emit()
     },
     addSticker: async (categoryName: any, stickerName: any, dataUrl: any) => {
       if (!state.data) return
@@ -1094,43 +1102,28 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       const r = await addStickerInternal(cat, name, dataUrl).catch((e: any) => ({ ok: false, kind: 'err' as const, error: e }))
       if (!r || !r.ok) {
         if (r?.kind === 'dup') return api.ui?.showToast?.('重名：该分类下已存在同名表情')
-        if (r?.kind === 'no-perm') return api.ui?.showToast?.('未授权：files.images.writeBase64')
-        if (r?.kind === 'bad-image') return api.ui?.showToast?.('图片格式不支持（仅支持 png/jpg/webp）')
+        if (r?.kind === 'bad-image') return api.ui?.showToast?.('图片格式不支持（仅支持 png/jpg/webp/gif）')
         return api.ui?.showToast?.(String((r as any)?.error?.message || (r as any)?.error || '保存失败'))
       }
 
-      saveStickersOnly().catch(() => {})
+      await loadStickersFromSource().catch(() => {})
       emit()
     },
     pickStickerImages: (categoryName: any) => pickStickerImages(categoryName),
     deleteSticker: async (categoryName: any, stickerName: any) => {
       if (!state.data) return
-      const st = state.data.settings?.stickers
-      if (!st || typeof st !== 'object') return
-
       const cat = String(categoryName || '').trim()
       const name = String(stickerName || '').trim()
       if (!cat || !name) return
-
-      const box = st.map && typeof st.map === 'object' ? st.map[cat] : null
-      const it = box && typeof box === 'object' ? box[name] : null
-      const relPath = it && typeof it === 'object' ? String(it.relPath || '').trim() : ''
-
-      if (relPath && typeof api?.files?.images?.delete === 'function') {
-        await api.files.images.delete({ scope: 'data', path: relPath }).catch(() => {})
+      try {
+        await deleteStickerInternal(cat, name)
+        emit()
+      } catch (e: any) {
+        api.ui?.showToast?.(String(e?.message || e || '删除表情包失败'))
       }
-
-      if (box && typeof box === 'object') {
-        try { delete box[name] } catch (_) {}
-      }
-
-      saveStickersOnly().catch(() => {})
-      emit()
     },
-    renameSticker: (categoryName: any, oldStickerName: any, newStickerName: any) => {
+    renameSticker: async (categoryName: any, oldStickerName: any, newStickerName: any) => {
       if (!state.data) return
-      const st = state.data.settings?.stickers
-      if (!st || typeof st !== 'object') return
 
       const vCat = validateStickerCategoryName(categoryName)
       if (!vCat.ok) return api.ui?.showToast?.(vCat.error || '分类名无效')
@@ -1144,26 +1137,14 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       const name = vName.name
 
       if (name === oldName) return api.ui?.showToast?.('名称未变化')
-
-      const box = st.map && typeof st.map === 'object' ? st.map[cat] : null
-      if (!box || typeof box !== 'object') return api.ui?.showToast?.('分类不存在')
-
-      const it = box[oldName]
-      if (!it || typeof it !== 'object') return api.ui?.showToast?.('表情不存在')
-
-      if (box[name]) return api.ui?.showToast?.('重名：该分类下已存在同名表情')
-
-      const relPath = String((it as any).relPath || '').trim()
-      if (!relPath) return api.ui?.showToast?.('映射损坏：缺少 relPath')
-
-      const t = now()
-      const createdAt = Number((it as any).createdAt || t)
-      const next = { relPath, createdAt, updatedAt: t }
-      box[name] = next
-      try { delete box[oldName] } catch (_) {}
-
-      saveStickersOnly().catch(() => {})
-      emit()
+      try {
+        await renameStickerInternal(cat, oldName, name)
+        emit()
+        return true
+      } catch (e: any) {
+        api.ui?.showToast?.(String(e?.message || e || '表情包改名失败'))
+        return false
+      }
     },
     setMermaidFixEnabled: (on: any) => {
       if (!state.data) return
@@ -1573,11 +1554,17 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
           return aiGenerateStickerName(String(categoryName || ''), String(stickerName || ''))
         })
         .then((name: any) => {
-          api.ui?.showToast?.(`已更新表情名（${cost()}s）：${String(name || '').trim() || '（空）'}`)
-          return name
+          const nextName = String((name as any)?.name || name || '').trim()
+          return loadStickersFromSource().then(() => {
+            emit()
+            api.ui?.showToast?.(`已更新表情名（${cost()}s）：${nextName || '（空）'}`)
+            return name
+          })
         })
         .catch((e: any) => {
-          const msg = String(e?.message || e || 'AI 取名失败')
+          let msg = String(e?.message || e || 'AI 取名失败')
+          if (msg.includes('sticker naming is disabled')) msg = '请先在“设置 > AI 微服务”中启用表情包取名服务'
+          else if (msg.includes('model coordinate is required')) msg = '请先在“设置 > AI 微服务”中配置表情包取名的供应商和模型'
           api.ui?.showToast?.(`AI 取名失败（${cost()}s）：${msg}`)
           throw e
         })

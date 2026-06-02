@@ -3,12 +3,17 @@ package types
 import "time"
 
 type PromptMessage struct {
-	ID        string    `json:"id"`
-	Role      string    `json:"role"`
-	Content   string    `json:"content"`
-	Order     int       `json:"order"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID        string        `json:"id"`
+	Role      string        `json:"role"`
+	Content   string        `json:"content"`
+	Images    []PromptImage `json:"images,omitempty"`
+	Order     int           `json:"order"`
+	CreatedAt time.Time     `json:"createdAt"`
+	UpdatedAt time.Time     `json:"updatedAt"`
+}
+
+type PromptImage struct {
+	DataURL string `json:"dataUrl"`
 }
 
 type ToolPolicyMode string

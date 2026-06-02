@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 )
 
@@ -81,6 +82,9 @@ func (s *service) handleImageRead(ctx context.Context, params json.RawMessage) (
 	req, err := imagePayload(params)
 	if err != nil {
 		return nil, err
+	}
+	if strings.HasPrefix(filepath.ToSlash(req.Path), "stickers/") {
+		return s.eb.request(ctx, ebRequest{Method: "GET", Path: "/api/stickers/image", Query: mustJSON(map[string]any{"path": filepath.ToSlash(req.Path)})})
 	}
 	roleID, err := s.projection.roleIDByAvatarPath(ctx, req.Path)
 	if err != nil {

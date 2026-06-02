@@ -15,7 +15,7 @@ import (
 
 func TestInitializeCreatesStorageLayout(t *testing.T) {
 	system := newTestSystem(t)
-	for _, dir := range []string{"sessions", "roles", "providers", "tools", "recycle", "meta"} {
+	for _, dir := range []string{"sessions", "roles", "providers", "tools", "stickers", "recycle", "meta"} {
 		assertDir(t, filepath.Join(system.paths.root, dir))
 	}
 	assertFile(t, filepath.Join(system.paths.root, "meta", "version.json"))

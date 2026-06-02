@@ -12,6 +12,7 @@ import (
 	"time"
 
 	agentruntime "eucli-box/src/agent-runtime-system"
+	aiassist "eucli-box/src/ai-assist-system"
 	datastorage "eucli-box/src/data-storage-system"
 	gateway "eucli-box/src/gateway-system"
 	modelprovider "eucli-box/src/model-provider-system"
@@ -75,17 +76,23 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("start agent runtime system: %w", err)
 	}
-	log.Printf("[7/8] agent-runtime-system     ✓")
+	log.Printf("[7/9] agent-runtime-system     ✓")
+
+	assistSystem, err := aiassist.NewSystem(aiassist.Config{}, storageSystem, providerSystem)
+	if err != nil {
+		return fmt.Errorf("start ai assist system: %w", err)
+	}
+	log.Printf("[8/9] ai-assist-system         ✓")
 
 	busyKey := ""
 	if readBoxKey(dataDir) != "" {
 		busyKey = " (key: active)"
 	}
-	gatewaySystem, err := gateway.NewSystem(gateway.Config{Addr: envOrDefault("EUCLI_BOX_ADDR", "127.0.0.1:8765"), Key: readBoxKey(dataDir)}, runtimeSystem, roleSystem, providerSystem, toolSystem, storageSystem)
+	gatewaySystem, err := gateway.NewSystem(gateway.Config{Addr: envOrDefault("EUCLI_BOX_ADDR", "127.0.0.1:8765"), Key: readBoxKey(dataDir)}, runtimeSystem, roleSystem, providerSystem, toolSystem, storageSystem, storageSystem, assistSystem)
 	if err != nil {
 		return fmt.Errorf("start gateway system: %w", err)
 	}
-	log.Printf("[8/8] gateway-system           ✓%s", busyKey)
+	log.Printf("[9/9] gateway-system           ✓%s", busyKey)
 
 	log.Printf("eucli-box is starting on %s ...", envOrDefault("EUCLI_BOX_ADDR", "127.0.0.1:8765"))
 	if err := gatewaySystem.Start(ctx); err != nil {

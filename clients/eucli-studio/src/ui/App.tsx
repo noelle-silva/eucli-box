@@ -6307,6 +6307,19 @@ function StickersSettingsPanel(props: { controller: any; loading: boolean; data:
   const api = controller?.capabilities
 
   const cfg = data?.settings?.stickers && typeof data.settings.stickers === 'object' ? data.settings.stickers : {}
+  const stickerNamingCfg = (data?.settings?.aiServices?.stickerNaming && typeof (data.settings.aiServices as any).stickerNaming === 'object')
+    ? (data.settings.aiServices as any).stickerNaming
+    : {}
+  const stickerNamingEnabled = !!stickerNamingCfg.enabled
+  const stickerNamingProviderId = String(stickerNamingCfg.providerId || '').trim()
+  const stickerNamingModelId = String(stickerNamingCfg.modelId || '').trim()
+  const stickerNamingCustomModelId = String(stickerNamingCfg.customModelId || '').trim()
+  const stickerNamingReady = stickerNamingEnabled && !!stickerNamingProviderId && (!!stickerNamingModelId || !!stickerNamingCustomModelId)
+  const stickerNamingDisabledReason = !stickerNamingEnabled
+    ? '请先在“设置 > AI 微服务”中启用表情包取名服务'
+    : !stickerNamingProviderId || (!stickerNamingModelId && !stickerNamingCustomModelId)
+      ? '请先在“设置 > AI 微服务”中配置表情包取名的供应商和模型'
+      : ''
   const enabled = !!cfg.enabled
   const categories = Array.isArray(cfg.categories) ? (cfg.categories as any[]).map((x) => String(x || '')).filter((x) => !!x) : []
   const stickerMap = cfg.map && typeof cfg.map === 'object' ? cfg.map : {}
@@ -6379,11 +6392,11 @@ function StickersSettingsPanel(props: { controller: any; loading: boolean; data:
 
   const closeCreateCat = useEvent(() => setCreateCat({ open: false, name: '' }))
 
-  const onConfirmCreateCat = useEvent(() => {
+  const onConfirmCreateCat = useEvent(async () => {
     const name = String(createCat.name || '').trim()
     if (!name) return api?.ui?.showToast?.('请输入分类名')
-    closeCreateCat()
-    controller.actions.createStickerCategory?.(name)
+    const ok = await Promise.resolve(controller.actions.createStickerCategory?.(name)).catch(() => false)
+    if (ok) closeCreateCat()
   })
 
   const onPickStickerImages = useEvent(() => {
@@ -6397,13 +6410,13 @@ function StickersSettingsPanel(props: { controller: any; loading: boolean; data:
     setRename({ open: true, oldName: n, nextName: n })
   })
 
-  const onConfirmRename = useEvent(() => {
+  const onConfirmRename = useEvent(async () => {
     if (!rename.open) return
     const oldName = String(rename.oldName || '').trim()
     const nextName = String(rename.nextName || '').trim()
-    setRename({ open: false, oldName: '', nextName: '' })
     if (!cat || !oldName || !nextName) return
-    controller.actions.renameSticker?.(cat, oldName, nextName)
+    const ok = await Promise.resolve(controller.actions.renameSticker?.(cat, oldName, nextName)).catch(() => false)
+    if (ok) setRename({ open: false, oldName: '', nextName: '' })
   })
 
   const box = stickerMap && typeof stickerMap === 'object' ? (stickerMap as any)[String(cat || '')] : null
@@ -6512,18 +6525,22 @@ function StickersSettingsPanel(props: { controller: any; loading: boolean; data:
                       >
                         复制 token
                       </Button>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        onClick={() => {
-                          Promise.resolve()
-                            .then(() => controller.actions.aiGenerateStickerName?.(cat, name))
-                            .catch(() => {})
-                        }}
-                        disabled={loading}
-                      >
-                        AI 取名
-                      </Button>
+                      <Tooltip title={stickerNamingDisabledReason || '使用当前配置的 AI 服务为该表情包自动取名'}>
+                        <span>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => {
+                              Promise.resolve()
+                                .then(() => controller.actions.aiGenerateStickerName?.(cat, name))
+                                .catch(() => {})
+                            }}
+                            disabled={loading || !stickerNamingReady}
+                          >
+                            AI 取名
+                          </Button>
+                        </span>
+                      </Tooltip>
                       <Button size="small" variant="outlined" onClick={() => onOpenRename(name)} disabled={loading}>
                         改名
                       </Button>
@@ -6553,8 +6570,9 @@ function StickersSettingsPanel(props: { controller: any; loading: boolean; data:
             variant="contained"
             onClick={() => {
               const name = String(confirmDelCat || '')
-              setConfirmDelCat('')
-              controller.actions.deleteStickerCategory?.(name)
+              Promise.resolve(controller.actions.deleteStickerCategory?.(name))
+                .then((ok) => { if (ok) setConfirmDelCat('') })
+                .catch(() => {})
             }}
             disabled={!confirmDelCat || loading}
           >

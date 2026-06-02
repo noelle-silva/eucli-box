@@ -39,6 +39,18 @@ type System interface {
 	ListTools(ctx context.Context) ([]types.ToolSummary, error)
 	DeleteTool(ctx context.Context, toolID string) error
 
+	CreateStickerCategory(ctx context.Context, categoryName string) (types.StickerCategory, error)
+	ListStickerCategories(ctx context.Context) ([]types.StickerCategorySummary, error)
+	LoadStickerCategory(ctx context.Context, categoryName string) (types.StickerCategory, error)
+	LoadStickerLibrary(ctx context.Context) (types.StickerLibrary, error)
+	AddSticker(ctx context.Context, categoryName string, stickerName string, dataURL string) (types.StickerItem, error)
+	RenameSticker(ctx context.Context, categoryName string, oldStickerName string, newStickerName string) (types.StickerItem, error)
+	DeleteSticker(ctx context.Context, categoryName string, stickerName string) error
+	DeleteStickerCategory(ctx context.Context, categoryName string) error
+	LoadStickerImage(ctx context.Context, relPath string) (string, error)
+	LoadStickerNamingConfig(ctx context.Context) (types.StickerNamingConfig, error)
+	SaveStickerNamingConfig(ctx context.Context, config types.StickerNamingConfig) (types.StickerNamingConfig, error)
+
 	SaveCallRecord(ctx context.Context, record types.CallRecord) error
 
 	RebuildIndexes(ctx context.Context) error

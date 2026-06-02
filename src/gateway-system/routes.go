@@ -34,5 +34,18 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("POST /api/tools", s.authWrap(s.handleSaveTool))
 	s.mux.HandleFunc("GET /api/tools/{toolID}", s.authWrap(s.handleLoadTool))
 
+	s.mux.HandleFunc("GET /api/stickers", s.authWrap(s.handleLoadStickerLibrary))
+	s.mux.HandleFunc("GET /api/stickers/image", s.authWrap(s.handleLoadStickerImage))
+	s.mux.HandleFunc("POST /api/stickers/categories", s.authWrap(s.handleCreateStickerCategory))
+	s.mux.HandleFunc("GET /api/stickers/categories", s.authWrap(s.handleListStickerCategories))
+	s.mux.HandleFunc("GET /api/stickers/categories/{categoryName}", s.authWrap(s.handleLoadStickerCategory))
+	s.mux.HandleFunc("DELETE /api/stickers/categories/{categoryName}", s.authWrap(s.handleDeleteStickerCategory))
+	s.mux.HandleFunc("POST /api/stickers/items", s.authWrap(s.handleAddSticker))
+	s.mux.HandleFunc("PATCH /api/stickers/items/name", s.authWrap(s.handleRenameSticker))
+	s.mux.HandleFunc("DELETE /api/stickers/items", s.authWrap(s.handleDeleteSticker))
+	s.mux.HandleFunc("GET /api/assist/stickers/name/config", s.authWrap(s.handleLoadStickerNamingConfig))
+	s.mux.HandleFunc("PUT /api/assist/stickers/name/config", s.authWrap(s.handleSaveStickerNamingConfig))
+	s.mux.HandleFunc("POST /api/assist/stickers/name", s.authWrap(s.handleGenerateStickerName))
+
 	s.mux.HandleFunc("GET /ws/events", s.handleEventsWebSocket)
 }

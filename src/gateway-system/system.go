@@ -61,6 +61,24 @@ type SessionSystem interface {
 	DeleteSessionMessageSubtree(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error)
 }
 
+type StickerSystem interface {
+	CreateStickerCategory(ctx context.Context, categoryName string) (types.StickerCategory, error)
+	ListStickerCategories(ctx context.Context) ([]types.StickerCategorySummary, error)
+	LoadStickerCategory(ctx context.Context, categoryName string) (types.StickerCategory, error)
+	LoadStickerLibrary(ctx context.Context) (types.StickerLibrary, error)
+	AddSticker(ctx context.Context, categoryName string, stickerName string, dataURL string) (types.StickerItem, error)
+	RenameSticker(ctx context.Context, categoryName string, oldStickerName string, newStickerName string) (types.StickerItem, error)
+	DeleteSticker(ctx context.Context, categoryName string, stickerName string) error
+	DeleteStickerCategory(ctx context.Context, categoryName string) error
+	LoadStickerImage(ctx context.Context, relPath string) (string, error)
+	LoadStickerNamingConfig(ctx context.Context) (types.StickerNamingConfig, error)
+	SaveStickerNamingConfig(ctx context.Context, config types.StickerNamingConfig) (types.StickerNamingConfig, error)
+}
+
+type AIAssistSystem interface {
+	GenerateStickerName(ctx context.Context, request types.StickerNameRequest) (types.StickerNameResult, error)
+}
+
 type Config struct {
 	Addr         string
 	Key          string
@@ -75,6 +93,8 @@ type system struct {
 	providers ProviderSystem
 	tools     ToolSystem
 	sessions  SessionSystem
+	stickers  StickerSystem
+	assist    AIAssistSystem
 	mux       *http.ServeMux
 	server    *http.Server
 	upgrader  websocket.Upgrader
@@ -83,7 +103,7 @@ type system struct {
 	connections map[*websocket.Conn]struct{}
 }
 
-func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, providers ProviderSystem, tools ToolSystem, sessions SessionSystem) (System, error) {
+func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, providers ProviderSystem, tools ToolSystem, sessions SessionSystem, stickers StickerSystem, assist AIAssistSystem) (System, error) {
 	if runtime == nil {
 		return nil, gatewayInvalid("runtime system dependency is required", nil)
 	}
@@ -98,6 +118,12 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, providers
 	}
 	if sessions == nil {
 		return nil, gatewayInvalid("session system dependency is required", nil)
+	}
+	if stickers == nil {
+		return nil, gatewayInvalid("sticker system dependency is required", nil)
+	}
+	if assist == nil {
+		return nil, gatewayInvalid("ai assist system dependency is required", nil)
 	}
 	if config.Addr == "" {
 		config.Addr = "127.0.0.1:8765"
@@ -118,6 +144,8 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, providers
 		providers:   providers,
 		tools:       tools,
 		sessions:    sessions,
+		stickers:    stickers,
+		assist:      assist,
 		mux:         http.NewServeMux(),
 		upgrader:    websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
 		connections: map[*websocket.Conn]struct{}{},

@@ -266,8 +266,8 @@ func (anthropicAdapter) ParseCompleteResponse(response types.HTTPResponse) (type
 	return result, nil
 }
 
-func anthropicMessages(messages []types.PromptMessage) ([]map[string]string, string, error) {
-	converted := make([]map[string]string, 0, len(messages))
+func anthropicMessages(messages []types.PromptMessage) ([]map[string]any, string, error) {
+	converted := make([]map[string]any, 0, len(messages))
 	systemText := ""
 	for _, message := range messages {
 		switch message.Role {
@@ -278,12 +278,37 @@ func anthropicMessages(messages []types.PromptMessage) ([]map[string]string, str
 				systemText += "\n\n" + message.Content
 			}
 		case "user", "assistant":
-			converted = append(converted, map[string]string{"role": message.Role, "content": message.Content})
+			content, err := anthropicMessageContent(message)
+			if err != nil {
+				return nil, "", err
+			}
+			converted = append(converted, map[string]any{"role": message.Role, "content": content})
 		default:
 			return nil, "", providerInvalid("Anthropic messages only support system, user, and assistant roles", nil)
 		}
 	}
 	return converted, systemText, nil
+}
+
+func anthropicMessageContent(message types.PromptMessage) (any, error) {
+	if len(message.Images) == 0 {
+		return message.Content, nil
+	}
+	parts := []map[string]any{}
+	if strings.TrimSpace(message.Content) != "" {
+		parts = append(parts, map[string]any{"type": "text", "text": message.Content})
+	}
+	for _, image := range message.Images {
+		parsed, err := parsePromptImageDataURL(image.DataURL)
+		if err != nil {
+			return nil, err
+		}
+		parts = append(parts, map[string]any{"type": "image", "source": map[string]any{"type": "base64", "media_type": parsed.MediaType, "data": parsed.Base64}})
+	}
+	if len(parts) == 0 {
+		return message.Content, nil
+	}
+	return parts, nil
 }
 
 func anthropicTools(tools []types.ToolDefinition) []map[string]any {

@@ -5,10 +5,12 @@ import "time"
 type StorageItemKind string
 
 const (
-	StorageItemSession  StorageItemKind = "session"
-	StorageItemRole     StorageItemKind = "role"
-	StorageItemProvider StorageItemKind = "provider"
-	StorageItemTool     StorageItemKind = "tool"
+	StorageItemSession         StorageItemKind = "session"
+	StorageItemRole            StorageItemKind = "role"
+	StorageItemProvider        StorageItemKind = "provider"
+	StorageItemTool            StorageItemKind = "tool"
+	StorageItemStickerCategory StorageItemKind = "sticker_category"
+	StorageItemSticker         StorageItemKind = "sticker"
 )
 
 type RecycleRecord struct {

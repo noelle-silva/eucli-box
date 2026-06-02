@@ -37,6 +37,9 @@ func (s *system) RebuildIndexes(ctx context.Context) error {
 	if err := s.rebuildToolIndex(ctx); err != nil {
 		return err
 	}
+	if err := s.rebuildStickerIndexes(ctx); err != nil {
+		return err
+	}
 	if err := s.rebuildAllSessionIndexes(ctx); err != nil {
 		return err
 	}

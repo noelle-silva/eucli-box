@@ -228,12 +228,33 @@ func (openAIAdapter) ParseCompleteResponse(response types.HTTPResponse) (types.M
 	return result, nil
 }
 
-func openAIMessages(messages []types.PromptMessage) []map[string]string {
-	converted := make([]map[string]string, 0, len(messages))
+func openAIMessages(messages []types.PromptMessage) []map[string]any {
+	converted := make([]map[string]any, 0, len(messages))
 	for _, message := range messages {
-		converted = append(converted, map[string]string{"role": message.Role, "content": message.Content})
+		converted = append(converted, map[string]any{"role": message.Role, "content": openAIMessageContent(message)})
 	}
 	return converted
+}
+
+func openAIMessageContent(message types.PromptMessage) any {
+	if len(message.Images) == 0 {
+		return message.Content
+	}
+	parts := []map[string]any{}
+	if strings.TrimSpace(message.Content) != "" {
+		parts = append(parts, map[string]any{"type": "text", "text": message.Content})
+	}
+	for _, image := range message.Images {
+		dataURL := strings.TrimSpace(image.DataURL)
+		if dataURL == "" {
+			continue
+		}
+		parts = append(parts, map[string]any{"type": "image_url", "image_url": map[string]any{"url": dataURL}})
+	}
+	if len(parts) == 0 {
+		return message.Content
+	}
+	return parts
 }
 
 func openAITools(tools []types.ToolDefinition) []map[string]any {

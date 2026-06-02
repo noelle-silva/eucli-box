@@ -37,11 +37,7 @@ func (p *projectionService) get(ctx context.Context, key string) (any, error) {
 	case "meta/index":
 		return p.meta(ctx)
 	case "stickers/index":
-		cfg, err := p.config.load()
-		if err != nil {
-			return nil, err
-		}
-		return objectMap(cfg.Projection.Settings["stickers"]), nil
+		return p.stickers(ctx)
 	case "chats/index":
 		return p.chatsIndex(ctx)
 	case "providers/index":
@@ -78,7 +74,7 @@ func (p *projectionService) set(ctx context.Context, key string, value any) erro
 		return p.saveRoleChatIndex(ctx, match[1], value)
 	}
 	if key == "meta/index" {
-		return p.saveMeta(value)
+		return p.saveMeta(ctx, value)
 	}
 	if key == "chats/index" {
 		return p.saveChatsIndex(value)
@@ -146,14 +142,47 @@ func (p *projectionService) remove(ctx context.Context, key string) error {
 	return newError("NOT_IMPLEMENTED", "未知 storage key："+key)
 }
 
-func (p *projectionService) saveMeta(value any) error {
+func (p *projectionService) saveMeta(ctx context.Context, value any) error {
 	meta := objectMap(value)
+	settings := objectMap(meta["settings"])
+	if err := p.saveStickerNamingConfig(ctx, settings); err != nil {
+		return err
+	}
+	settings = stripStickerNamingSettings(settings)
 	_, err := p.config.updateProjection(func(projection *projectionConfig) {
 		projection.UI = objectMap(meta["ui"])
-		projection.Settings = objectMap(meta["settings"])
+		projection.Settings = settings
 		projection.Favorites = objectMap(meta["favorites"])
 	})
 	return err
+}
+
+func (p *projectionService) saveStickerNamingConfig(ctx context.Context, settings map[string]any) error {
+	services := objectMap(settings["aiServices"])
+	stickerNaming := objectMap(services["stickerNaming"])
+	if len(stickerNaming) == 0 {
+		return nil
+	}
+	providerID := stringField(stickerNaming, "providerId")
+	modelPick := stringField(stickerNaming, "modelId")
+	customModelID := stringField(stickerNaming, "customModelId")
+	modelID := modelPick
+	if modelPick == "__custom__" {
+		modelID = customModelID
+	}
+	_, err := p.eb.request(ctx, ebRequest{Method: "PUT", Path: "/api/assist/stickers/name/config", Body: mustJSON(map[string]any{"enabled": boolField(stickerNaming, "enabled", false), "modelPick": modelPick, "customModelId": customModelID, "coordinate": map[string]any{"providerId": providerID, "modelId": modelID}, "systemPrompt": stringField(stickerNaming, "systemPrompt"), "temperature": 0.2})})
+	return err
+}
+
+func stripStickerNamingSettings(settings map[string]any) map[string]any {
+	settings = objectMap(settings)
+	services := objectMap(settings["aiServices"])
+	if len(services) == 0 {
+		return settings
+	}
+	delete(services, "stickerNaming")
+	settings["aiServices"] = services
+	return settings
 }
 
 func (p *projectionService) saveChatsIndex(value any) error {
@@ -169,10 +198,76 @@ func (p *projectionService) saveStickers(value any) error {
 	stickers := objectMap(value)
 	_, err := p.config.updateProjection(func(projection *projectionConfig) {
 		settings := objectMap(projection.Settings)
-		settings["stickers"] = stickers
+		settings["stickers"] = map[string]any{"enabled": boolField(stickers, "enabled", false)}
 		projection.Settings = settings
 	})
 	return err
+}
+
+func (p *projectionService) stickers(ctx context.Context) (any, error) {
+	library, err := p.eb.request(ctx, ebRequest{Method: "GET", Path: "/api/stickers"})
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := p.config.load()
+	if err != nil {
+		return nil, err
+	}
+	enabled := boolField(objectMap(cfg.Projection.Settings["stickers"]), "enabled", false)
+	libraryMap := objectMap(library)
+	categories := []string{}
+	stickerMap := map[string]any{}
+	for _, summary := range objectList(libraryMap["categories"]) {
+		name := stringField(summary, "name")
+		if name == "" {
+			continue
+		}
+		categories = append(categories, name)
+		stickerMap[name] = map[string]any{}
+	}
+	itemsByCategory := objectMap(libraryMap["map"])
+	for _, category := range categories {
+		box := map[string]any{}
+		for _, item := range objectList(itemsByCategory[category]) {
+			name := stringField(item, "name")
+			relPath := stringField(item, "relPath")
+			if name == "" || relPath == "" {
+				continue
+			}
+			createdAt := millisFromAny(item["createdAt"])
+			updatedAt := millisFromAnyOrZero(item["updatedAt"])
+			if updatedAt == 0 {
+				updatedAt = createdAt
+			}
+			box[name] = map[string]any{"relPath": relPath, "createdAt": createdAt, "updatedAt": updatedAt}
+		}
+		stickerMap[category] = box
+	}
+	return map[string]any{"enabled": enabled, "categories": categories, "map": stickerMap, "updatedAt": millisFromAny(libraryMap["updatedAt"])}, nil
+}
+
+func (p *projectionService) loadStickerNamingConfig(ctx context.Context) (map[string]any, error) {
+	data, err := p.eb.request(ctx, ebRequest{Method: "GET", Path: "/api/assist/stickers/name/config"})
+	if err != nil {
+		return nil, err
+	}
+	config := objectMap(data)
+	modelID := stringField(objectMap(config["coordinate"]), "modelId")
+	modelPick := stringField(config, "modelPick")
+	customModelID := stringField(config, "customModelId")
+	if modelPick == "" {
+		modelPick = modelID
+	}
+	if modelPick == "__custom__" && customModelID == "" {
+		customModelID = modelID
+	}
+	return map[string]any{
+		"enabled":       boolField(config, "enabled", false),
+		"providerId":    stringField(objectMap(config["coordinate"]), "providerId"),
+		"modelId":       modelPick,
+		"customModelId": customModelID,
+		"systemPrompt":  stringField(config, "systemPrompt"),
+	}, nil
 }
 
 func (p *projectionService) meta(ctx context.Context) (any, error) {
@@ -181,6 +276,10 @@ func (p *projectionService) meta(ctx context.Context) (any, error) {
 		return nil, err
 	}
 	providers, err := p.listProviders(ctx)
+	if err != nil {
+		return nil, err
+	}
+	stickerNaming, err := p.loadStickerNamingConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +322,7 @@ func (p *projectionService) meta(ctx context.Context) (any, error) {
 		"dataVersion":      uiVersion,
 		"updatedAt":        nowMillis(),
 		"ui":               projection.UI,
-		"settings":         mergeSettings(projection.Settings, providers),
+		"settings":         mergeSettings(projection.Settings, providers, stickerNaming),
 		"favorites":        projection.Favorites,
 		"roleOrder":        roleOrder,
 		"roleFolders":      roleFolders,
@@ -668,7 +767,7 @@ func fromUIChat(value any, roleID string) map[string]any {
 	return map[string]any{"id": stringField(chat, "id"), "roleId": roleID, "title": fallback(stringField(chat, "title"), "新聊天"), "status": "created", "messages": messages, "createdAt": timeFromMillis(chat["createdAt"]), "updatedAt": updatedAt, "lastActive": updatedAt}
 }
 
-func mergeSettings(settings map[string]any, providers []map[string]any) map[string]any {
+func mergeSettings(settings map[string]any, providers []map[string]any, stickerNaming map[string]any) map[string]any {
 	out := map[string]any{"streamEnabled": true, "transparentChatBg": false, "chatBgOpacity": 0, "chatBgBlur": 0, "topbarOpacity": 100, "topbarBlur": 0, "composerOpacity": 86, "composerBlur": 10, "branchTree": map[string]any{"dir": "lr", "view": "float", "followSelected": true, "modalHotkey": ""}, "renderSafetyPolicy": "original", "userMessageCollapseEnabled": false, "userMessageCollapseLines": 8, "attachments": map[string]any{"sendLimitChars": 80000, "maxFileSizeMbByKind": map[string]any{"txt": 10, "md": 10, "pdf": 10, "docx": 10, "ppt": 10}}, "stickers": map[string]any{"enabled": false, "categories": []any{}, "map": map[string]any{}}, "providers": []any{}}
 	for k, v := range settings {
 		out[k] = v
@@ -678,6 +777,9 @@ func mergeSettings(settings map[string]any, providers []map[string]any) map[stri
 		uiProviders = append(uiProviders, toUIProvider(provider))
 	}
 	out["providers"] = uiProviders
+	aiServices := objectMap(out["aiServices"])
+	aiServices["stickerNaming"] = stickerNaming
+	out["aiServices"] = aiServices
 	return out
 }
 
@@ -788,6 +890,12 @@ func stringField(m map[string]any, key string) string {
 func numberField(m map[string]any, key string, fallback float64) float64 {
 	if n, ok := m[key].(float64); ok {
 		return n
+	}
+	return fallback
+}
+func boolField(m map[string]any, key string, fallback bool) bool {
+	if v, ok := m[key].(bool); ok {
+		return v
 	}
 	return fallback
 }

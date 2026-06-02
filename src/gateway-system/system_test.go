@@ -188,6 +188,53 @@ func TestProviderAndToolRoutes(t *testing.T) {
 	}
 }
 
+func TestStickerRoutes(t *testing.T) {
+	fakes := newGatewayFakes()
+	system := newTestGateway(t, fakes)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/assist/stickers/name/config", nil)
+	rec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "openai-main") {
+		t.Fatalf("load config status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPut, "/api/assist/stickers/name/config", strings.NewReader(`{"enabled":true,"coordinate":{"providerId":"anthropic-main","modelId":"claude-3-5-sonnet"},"systemPrompt":"test","temperature":0.3}`))
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "anthropic-main") {
+		t.Fatalf("save config status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/stickers/categories", strings.NewReader(`{"categoryName":"通用"}`))
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create category status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/stickers/items", strings.NewReader(`{"categoryName":"通用","stickerName":"开心","dataUrl":"data:image/png;base64,ok"}`))
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("add sticker status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/stickers", nil)
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "开心") {
+		t.Fatalf("library status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/assist/stickers/name", strings.NewReader(`{"categoryName":"通用","stickerName":"开心"}`))
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "AI 命名") {
+		t.Fatalf("assist status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestWebSocketForwardsRuntimeEvents(t *testing.T) {
 	fakes := newGatewayFakes()
 	system := newTestGateway(t, fakes)
@@ -212,7 +259,7 @@ func TestWebSocketForwardsRuntimeEvents(t *testing.T) {
 
 func newTestGateway(t *testing.T, fakes *gatewayFakes) System {
 	t.Helper()
-	system, err := NewSystem(Config{}, fakes.runtime, fakes.roles, fakes.providers, fakes.tools, fakes.sessions)
+	system, err := NewSystem(Config{}, fakes.runtime, fakes.roles, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.assist)
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -225,10 +272,13 @@ type gatewayFakes struct {
 	providers *fakeGatewayProviders
 	tools     *fakeGatewayTools
 	sessions  *fakeGatewaySessions
+	stickers  *fakeGatewayStickers
+	assist    *fakeGatewayAssist
 }
 
 func newGatewayFakes() *gatewayFakes {
-	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions()}
+	stickers := newFakeGatewayStickers()
+	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, assist: &fakeGatewayAssist{stickers: stickers}}
 }
 
 type fakeGatewaySessions struct{ sessions map[string]types.Session }
@@ -460,6 +510,113 @@ func (f *fakeGatewayTools) ListTools(ctx context.Context) ([]types.ToolSummary, 
 		tools = append(tools, types.ToolSummary{ID: tool.ID, Name: tool.Name, Description: tool.Description, Type: tool.Type})
 	}
 	return tools, nil
+}
+
+type fakeGatewayStickers struct {
+	categories map[string]map[string]types.StickerItem
+	images     map[string]string
+	config     types.StickerNamingConfig
+}
+
+func newFakeGatewayStickers() *fakeGatewayStickers {
+	return &fakeGatewayStickers{categories: map[string]map[string]types.StickerItem{}, images: map[string]string{}, config: types.StickerNamingConfig{Enabled: true, Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, SystemPrompt: types.DefaultStickerNamingSystemPrompt, Temperature: 0.2, UpdatedAt: time.Now().UTC()}}
+}
+
+func (f *fakeGatewayStickers) CreateStickerCategory(ctx context.Context, categoryName string) (types.StickerCategory, error) {
+	name := strings.TrimSpace(categoryName)
+	if name == "" {
+		return types.StickerCategory{}, errors.New("category missing")
+	}
+	if f.categories[name] == nil {
+		f.categories[name] = map[string]types.StickerItem{}
+	}
+	return types.StickerCategory{Name: name, Items: []types.StickerItem{}, UpdatedAt: time.Now().UTC()}, nil
+}
+
+func (f *fakeGatewayStickers) ListStickerCategories(ctx context.Context) ([]types.StickerCategorySummary, error) {
+	summaries := make([]types.StickerCategorySummary, 0, len(f.categories))
+	for name, items := range f.categories {
+		summaries = append(summaries, types.StickerCategorySummary{Name: name, Count: len(items), UpdatedAt: time.Now().UTC()})
+	}
+	return summaries, nil
+}
+
+func (f *fakeGatewayStickers) LoadStickerCategory(ctx context.Context, categoryName string) (types.StickerCategory, error) {
+	name := strings.TrimSpace(categoryName)
+	itemsByName := f.categories[name]
+	items := make([]types.StickerItem, 0, len(itemsByName))
+	for _, item := range itemsByName {
+		items = append(items, item)
+	}
+	return types.StickerCategory{Name: name, Items: items, UpdatedAt: time.Now().UTC()}, nil
+}
+
+func (f *fakeGatewayStickers) LoadStickerLibrary(ctx context.Context) (types.StickerLibrary, error) {
+	summaries, _ := f.ListStickerCategories(ctx)
+	library := types.StickerLibrary{Categories: summaries, Map: map[string][]types.StickerItem{}, UpdatedAt: time.Now().UTC()}
+	for _, summary := range summaries {
+		category, _ := f.LoadStickerCategory(ctx, summary.Name)
+		library.Map[summary.Name] = category.Items
+	}
+	return library, nil
+}
+
+func (f *fakeGatewayStickers) AddSticker(ctx context.Context, categoryName string, stickerName string, dataURL string) (types.StickerItem, error) {
+	categoryName = strings.TrimSpace(categoryName)
+	stickerName = strings.TrimSpace(stickerName)
+	if f.categories[categoryName] == nil {
+		f.categories[categoryName] = map[string]types.StickerItem{}
+	}
+	item := types.StickerItem{ID: "sticker-1", Name: stickerName, RelPath: "stickers/" + categoryName + "/sticker-1/image.png", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
+	f.categories[categoryName][stickerName] = item
+	f.images[item.RelPath] = dataURL
+	return item, nil
+}
+
+func (f *fakeGatewayStickers) RenameSticker(ctx context.Context, categoryName string, oldStickerName string, newStickerName string) (types.StickerItem, error) {
+	items := f.categories[strings.TrimSpace(categoryName)]
+	item := items[strings.TrimSpace(oldStickerName)]
+	delete(items, strings.TrimSpace(oldStickerName))
+	item.Name = strings.TrimSpace(newStickerName)
+	item.UpdatedAt = time.Now().UTC()
+	items[item.Name] = item
+	return item, nil
+}
+
+func (f *fakeGatewayStickers) DeleteSticker(ctx context.Context, categoryName string, stickerName string) error {
+	delete(f.categories[strings.TrimSpace(categoryName)], strings.TrimSpace(stickerName))
+	return nil
+}
+
+func (f *fakeGatewayStickers) DeleteStickerCategory(ctx context.Context, categoryName string) error {
+	delete(f.categories, strings.TrimSpace(categoryName))
+	return nil
+}
+
+func (f *fakeGatewayStickers) LoadStickerImage(ctx context.Context, relPath string) (string, error) {
+	return f.images[strings.TrimSpace(relPath)], nil
+}
+
+func (f *fakeGatewayStickers) LoadStickerNamingConfig(ctx context.Context) (types.StickerNamingConfig, error) {
+	return f.config, nil
+}
+
+func (f *fakeGatewayStickers) SaveStickerNamingConfig(ctx context.Context, config types.StickerNamingConfig) (types.StickerNamingConfig, error) {
+	f.config = config
+	return f.config, nil
+}
+
+type fakeGatewayAssist struct{ stickers *fakeGatewayStickers }
+
+func (f *fakeGatewayAssist) GenerateStickerName(ctx context.Context, request types.StickerNameRequest) (types.StickerNameResult, error) {
+	if !f.stickers.config.Enabled {
+		return types.StickerNameResult{}, errors.New("disabled")
+	}
+	item, err := f.stickers.RenameSticker(ctx, request.CategoryName, request.StickerName, "AI 命名")
+	if err != nil {
+		return types.StickerNameResult{}, err
+	}
+	return types.StickerNameResult{Name: item.Name, Sticker: item, Changed: true}, nil
 }
 
 func decodeResponseData[T any](t *testing.T, body string) T {

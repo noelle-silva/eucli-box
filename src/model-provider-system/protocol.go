@@ -2,6 +2,7 @@ package modelprovider
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -21,6 +22,11 @@ type protocolAdapter interface {
 type completeStreamParser interface {
 	Accept(data []byte) error
 	Finish(response types.HTTPResponse) (types.ModelResponse, error)
+}
+
+type promptImageData struct {
+	MediaType string
+	Base64    string
 }
 
 type sseEvent struct {
@@ -170,6 +176,35 @@ func parseToolArguments(raw string) (map[string]any, error) {
 		return nil, providerParseFailed("failed to parse tool arguments", err)
 	}
 	return args, nil
+}
+
+func parsePromptImageDataURL(dataURL string) (promptImageData, error) {
+	dataURL = strings.TrimSpace(dataURL)
+	if !strings.HasPrefix(dataURL, "data:") {
+		return promptImageData{}, providerInvalid("image must be a data url", nil)
+	}
+	header, payload, ok := strings.Cut(strings.TrimPrefix(dataURL, "data:"), ",")
+	if !ok || strings.TrimSpace(payload) == "" {
+		return promptImageData{}, providerInvalid("image data url is invalid", nil)
+	}
+	mediaType, suffix, ok := strings.Cut(header, ";")
+	if !ok || strings.ToLower(strings.TrimSpace(suffix)) != "base64" {
+		return promptImageData{}, providerInvalid("image data url must be base64", nil)
+	}
+	mediaType = strings.ToLower(strings.TrimSpace(mediaType))
+	if mediaType == "image/jpg" {
+		mediaType = "image/jpeg"
+	}
+	switch mediaType {
+	case "image/png", "image/jpeg", "image/webp", "image/gif":
+		cleanPayload := strings.ReplaceAll(strings.ReplaceAll(strings.TrimSpace(payload), "\r", ""), "\n", "")
+		if _, err := base64.StdEncoding.DecodeString(cleanPayload); err != nil {
+			return promptImageData{}, providerInvalid("image data url base64 is invalid", err)
+		}
+		return promptImageData{MediaType: mediaType, Base64: cleanPayload}, nil
+	default:
+		return promptImageData{}, providerInvalid("image media type is unsupported", nil)
+	}
 }
 
 func toolSchema(schema map[string]any) map[string]any {

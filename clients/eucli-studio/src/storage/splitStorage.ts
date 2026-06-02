@@ -647,7 +647,7 @@ export function createSplitStorage(deps: {
     const state = getState?.()
     if (!state?.data) return
     const stickers = state.data.settings && typeof state.data.settings === 'object' ? (state.data.settings as any).stickers : null
-    await storage.set(STICKERS_KEY, stickers && typeof stickers === 'object' ? stickers : {})
+    await storage.set(STICKERS_KEY, { enabled: !!(stickers && typeof stickers === 'object' && (stickers as any).enabled) })
   }
 
   async function load() {

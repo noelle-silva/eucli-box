@@ -88,6 +88,7 @@ import { createEntityEditors } from './entityEditors'
 import { createChatOperations } from './chatOperations'
 import { createPersistence } from './persistence'
 import { createRoleSession, updateRoleSessionTitle } from './ebRoleSession'
+import { createEbRunEventConsumer } from './ebRunEvents'
 
 export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilities }): {
   controller: AiChatController
@@ -430,7 +431,9 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     if (!roleId || !sessionId) return null
     const chat = await loadChat('role', roleId, sessionId)
     if (!chat) return null
-    return upsertLoadedChat('role', roleId, chat)
+    const loaded = upsertLoadedChat('role', roleId, chat)
+    ebRunEvents.flushSession(roleId, sessionId)
+    return loaded
   }
 
   // ============================================================
@@ -716,6 +719,12 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   // ============================================================
   // 17. UI POLLING
   // ============================================================
+  const ebRunEvents = createEbRunEventConsumer({
+    getState: () => state,
+    emit,
+    subscribeDirectEvents: (capabilities.host as any)?.directEvents?.subscribe,
+  })
+
   const uiPolling = createUiPolling({
     getState: () => state,
     storage,
@@ -1699,11 +1708,13 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   async function init() {
     await ensureRenderer().catch(() => {})
     await load()
+    ebRunEvents.start()
     startUiPollers()
     render()
   }
 
   function dispose() {
+    ebRunEvents.stop()
     stopUiPollers()
     uiCore.dispose()
   }

@@ -79,6 +79,9 @@ export async function createDirectCapabilitiesAdapter(baseApi: unknown): Promise
 
     host: {
       ...(host || {}),
+      directEvents: {
+        subscribe: directClient.subscribe,
+      },
       background: {
         endpoint: typeof (baseApi as any)?.background?.endpoint === 'function'
           ? () => (baseApi as any).background.endpoint()

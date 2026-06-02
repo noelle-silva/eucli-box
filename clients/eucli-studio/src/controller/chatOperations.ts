@@ -120,7 +120,7 @@ export function createChatOperations(deps: {
   }
 
   async function runRoleMessageViaEb(
-    input: { roleId: string; sessionId: string; message?: string; parentMessageId?: string; userMessageId?: string },
+    input: { roleId: string; sessionId: string; message?: string; parentMessageId?: string; userMessageId?: string; stream?: boolean },
     onAccepted?: (run: EbRunState) => void,
     follow?: { previousMessageIds: Set<string>; ancestorMessageId?: string },
   ) {
@@ -151,7 +151,7 @@ export function createChatOperations(deps: {
       const nextSessionId = String(state.sessionId || sessionId || '').trim()
       if (nextSessionId) {
         sessionId = nextSessionId
-        await refreshRunSession()
+        if (!state.stream) await refreshRunSession()
       }
     }
 
@@ -186,7 +186,7 @@ export function createChatOperations(deps: {
       state.sending = true
       state.sendingCtx = { kind: 'eb-role-run', runId: '', roleId: input.roleId, sessionId: input.sessionId, cancelledByUser: false }
       renderComposer()
-      await runRoleMessageViaEb({ roleId: input.roleId, sessionId: input.sessionId, userMessageId }, (run) => {
+      await runRoleMessageViaEb({ roleId: input.roleId, sessionId: input.sessionId, userMessageId, stream: !!state.data?.settings?.streamEnabled }, (run) => {
         syncEbRoleRunSendingCtx(run, { roleId: input.roleId, sessionId: input.sessionId })
         renderComposer()
       }, { previousMessageIds, ancestorMessageId: userMessageId })
@@ -370,7 +370,7 @@ export function createChatOperations(deps: {
       state.sending = true
       state.sendingCtx = { kind: 'eb-role-run', runId: '', roleId: rid, sessionId, cancelledByUser: false }
       renderComposer()
-      await runRoleMessageViaEb({ roleId: rid, sessionId, message: input, parentMessageId }, (run) => {
+      await runRoleMessageViaEb({ roleId: rid, sessionId, message: input, parentMessageId, stream: !!state.data?.settings?.streamEnabled }, (run) => {
         syncEbRoleRunSendingCtx(run, { roleId: rid, sessionId })
         state.draft.input = ''
         state.draft.images = []

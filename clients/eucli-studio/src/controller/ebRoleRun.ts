@@ -6,6 +6,7 @@ export type EbRunState = {
   sessionId: string
   inputMessageId: string
   lastMessageId: string
+  stream: boolean
   status: string
   reason: string
 }
@@ -15,13 +16,14 @@ export function isTerminalRunStatus(status: unknown) {
   return value === 'completed' || value === 'failed' || value === 'cancelled'
 }
 
-export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: string; sessionId?: string; message?: string; parentMessageId?: string; userMessageId?: string }) {
+export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: string; sessionId?: string; message?: string; parentMessageId?: string; userMessageId?: string; stream?: boolean }) {
   const body = {
     roleId: String(input.roleId || '').trim(),
     sessionId: String(input.sessionId || '').trim(),
     message: String(input.message || '').trim(),
     parentMessageId: String(input.parentMessageId || '').trim(),
     userMessageId: String(input.userMessageId || '').trim(),
+    stream: !!input.stream,
   }
   if (!body.roleId) throw new Error('角色无效')
   const hasMessage = !!body.message
@@ -59,6 +61,7 @@ export function normalizeRunState(value: any): EbRunState {
     sessionId: String(state.sessionId || '').trim(),
     inputMessageId: String(state.inputMessageId || '').trim(),
     lastMessageId: String(state.lastMessageId || '').trim(),
+    stream: !!state.stream,
     status: String(state.status || '').trim(),
     reason: String(state.reason || '').trim(),
   }

@@ -25,6 +25,7 @@ export const AI_CHAT_DIRECT_EVENT = {
   runProgress: 'aiChat.run.progress',
   runFinal: 'aiChat.run.final',
   chatUpdated: 'aiChat.chat.updated',
+  eucliBoxRunEvent: 'eucliBox.run.event',
 } as const
 
 export type AiChatDirectMethod = (typeof AI_CHAT_DIRECT_METHOD)[keyof typeof AI_CHAT_DIRECT_METHOD]

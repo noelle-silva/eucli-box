@@ -25,6 +25,7 @@ func (s *system) callModel(ctx context.Context, record *runRecord, roleContext t
 }
 
 func (s *system) callModelStream(ctx context.Context, record *runRecord, request types.ModelRequest) (types.ModelResponse, error) {
+	record.streamContent = ""
 	ensureRunAssistantMessage(record)
 	if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
 		return types.ModelResponse{}, err
@@ -36,11 +37,20 @@ func (s *system) callModelStream(ctx context.Context, record *runRecord, request
 		if event.Type != types.ModelStreamEventContentDelta {
 			return nil
 		}
-		updateRunAssistantContent(record, event.Content)
+		content, err := s.tools.VisibleTextToolContent(ctx, event.Content)
+		if err != nil {
+			return err
+		}
+		if content == record.streamContent {
+			return nil
+		}
+		contentDelta := streamContentDelta(record.streamContent, content)
+		record.streamContent = content
+		updateRunAssistantContent(record, content)
 		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
 			return err
 		}
-		s.publish(record.runID, "model_stream_delta", types.RunStreamDelta{RunID: record.runID, RoleID: record.roleID, SessionID: record.session.ID, MessageID: record.messageParent.ID, ParentMessageID: record.messageParent.ParentMessageID, BranchID: record.messageParent.BranchID, ContentDelta: event.ContentDelta, Content: event.Content, CreatedAt: event.CreatedAt})
+		s.publish(record.runID, "model_stream_delta", types.RunStreamDelta{RunID: record.runID, RoleID: record.roleID, SessionID: record.session.ID, MessageID: record.messageParent.ID, ParentMessageID: record.messageParent.ParentMessageID, BranchID: record.messageParent.BranchID, ContentDelta: contentDelta, Content: content, CreatedAt: event.CreatedAt})
 		return nil
 	})
 	if err != nil {
@@ -49,9 +59,26 @@ func (s *system) callModelStream(ctx context.Context, record *runRecord, request
 	return response, nil
 }
 
+func streamContentDelta(previous string, current string) string {
+	if previous == "" {
+		return current
+	}
+	if strings.HasPrefix(current, previous) {
+		return strings.TrimPrefix(current, previous)
+	}
+	return current
+}
+
 func (s *system) modelMessages(ctx context.Context, roleContext types.RoleContext) ([]types.PromptMessage, error) {
 	messages := make([]types.PromptMessage, 0, len(roleContext.Prompts)+len(roleContext.Messages))
 	messages = append(messages, roleContext.Prompts...)
+	toolInstructions, err := s.tools.TextToolInstructions(ctx, roleContext.Tools)
+	if err != nil {
+		return nil, runtimeToolFailed("failed to build text tool instructions", err)
+	}
+	if strings.TrimSpace(toolInstructions.Content) != "" {
+		messages = append(messages, toolInstructions)
+	}
 	for index, message := range roleContext.Messages {
 		prompt, err := s.runtimeMessageToPrompt(ctx, message, index)
 		if err != nil {

@@ -23,3 +23,7 @@ func toolPermissionFailed(message string, cause error) error {
 func toolExecutionInvalid(message string, cause error) error {
 	return apperrors.Wrap(systemName, "tool.execution_invalid", message, cause)
 }
+
+func toolProtocolInvalid(message string, cause error) error {
+	return apperrors.Wrap(systemName, "tool.protocol_invalid", message, cause)
+}

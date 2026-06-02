@@ -115,21 +115,33 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 			s.failRun(context.Background(), record, record.session, err.Error())
 			return
 		}
+		modelResponse, err = s.mergeTextToolRequests(ctx, modelResponse)
+		if err != nil {
+			s.failRun(context.Background(), record, record.session, err.Error())
+			return
+		}
 		if err := ctx.Err(); err != nil {
 			s.cancelRunRecord(context.Background(), record, record.session)
 			return
 		}
-		if record.messageParent.Type != "assistant" {
-			appendRunAssistantReply(record, modelResponse.Content)
+		assistantOutputRecorded := shouldRecordAssistantOutput(modelResponse)
+		if assistantOutputRecorded {
+			if record.messageParent.Type != "assistant" {
+				appendRunAssistantReply(record, modelResponse.Content)
+			} else {
+				updateRunAssistantContent(record, modelResponse.Content)
+			}
 		} else {
-			updateRunAssistantContent(record, modelResponse.Content)
+			dropEmptyAssistantOutput(record)
 		}
 		assistantParent = record.messageParent
 		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, assistantParent.ID); err != nil {
 			s.failRun(context.Background(), record, record.session, err.Error())
 			return
 		}
-		contextSession = appendMessage(contextSession, assistantParent)
+		if assistantOutputRecorded {
+			contextSession = appendMessage(contextSession, assistantParent)
+		}
 		s.publish(record.runID, "model_output", modelResponse)
 		if err := s.saveSession(ctx, record.session, types.RunStatusRunning); err != nil {
 			s.failRun(context.Background(), record, record.session, err.Error())
@@ -139,15 +151,14 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 			s.completeRun(context.Background(), record, record.session)
 			return
 		}
-		if len(modelResponse.ToolIntents) > 1 {
-			s.failRun(context.Background(), record, record.session, "model returned more than one tool intent")
-			return
-		}
 		sessionMessageCount := len(record.session.Messages)
-		result, err := s.handleToolIntent(ctx, record, modelResponse.ToolIntents[0])
-		if err != nil {
-			s.failRun(context.Background(), record, record.session, err.Error())
-			return
+		for _, intent := range modelResponse.ToolIntents {
+			result, err := s.handleToolIntent(ctx, record, intent)
+			if err != nil {
+				s.failRun(context.Background(), record, record.session, err.Error())
+				return
+			}
+			s.publish(record.runID, "tool_result", result)
 		}
 		assistantParent = record.messageParent
 		contextSession = appendSessionMessages(contextSession, record.session.Messages[sessionMessageCount:])
@@ -155,13 +166,28 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 			s.cancelRunRecord(context.Background(), record, record.session)
 			return
 		}
-		s.publish(record.runID, "tool_result", result)
 		if err := s.saveSession(ctx, record.session, types.RunStatusRunning); err != nil {
 			s.failRun(context.Background(), record, record.session, err.Error())
 			return
 		}
 	}
 	s.failRun(context.Background(), record, record.session, "run exceeded max steps")
+}
+
+func shouldRecordAssistantOutput(response types.ModelResponse) bool {
+	return strings.TrimSpace(response.Content) != "" || len(response.ToolIntents) == 0
+}
+
+func (s *system) mergeTextToolRequests(ctx context.Context, response types.ModelResponse) (types.ModelResponse, error) {
+	content, textIntents, err := s.tools.ParseTextToolRequests(ctx, response.Content)
+	if err != nil {
+		return types.ModelResponse{}, runtimeToolFailed("failed to parse text tool requests", err)
+	}
+	response.Content = content
+	if len(textIntents) > 0 {
+		response.ToolIntents = append(response.ToolIntents, textIntents...)
+	}
+	return response, nil
 }
 
 func validateRunRequest(ctx context.Context, request types.RunRequest) error {

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,6 +25,113 @@ func TestNormalizeIntentCreatesStandardAction(t *testing.T) {
 	if action.ToolName != "file-reader" || action.ID == "" || action.Arguments["path"] != "README.md" {
 		t.Fatalf("action = %#v", action)
 	}
+}
+
+func TestParseTextToolRequestsExtractsCleanContentAndIntent(t *testing.T) {
+	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{})
+	content, intents, err := system.ParseTextToolRequests(context.Background(), `I will check it.
+
+<<<TOOL_REQUEST>>>
+[tool]: web-search
+[query]: 东京明天天气
+[limit]: 5
+<<<END_TOOL_REQUEST>>>
+
+I will continue after the result.`)
+	if err != nil {
+		t.Fatalf("ParseTextToolRequests() error = %v", err)
+	}
+	if content != "I will check it.\n\nI will continue after the result." {
+		t.Fatalf("content = %q", content)
+	}
+	if len(intents) != 1 || intents[0].ToolName != "web-search" || intents[0].Arguments["query"] != "东京明天天气" || intents[0].Arguments["limit"] != "5" {
+		t.Fatalf("intents = %#v", intents)
+	}
+	if intents[0].ID == "" || intents[0].Raw == "" {
+		t.Fatalf("intent metadata = %#v", intents[0])
+	}
+}
+
+func TestTextToolInstructionsDescribeProtocolAndTools(t *testing.T) {
+	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{})
+	prompt, err := system.TextToolInstructions(context.Background(), []types.ToolDefinition{{ID: "web-search", Name: "web-search", Description: "Search the web", InputSchema: map[string]any{"type": "object", "properties": map[string]any{"query": map[string]any{"type": "string"}}}}})
+	if err != nil {
+		t.Fatalf("TextToolInstructions() error = %v", err)
+	}
+	if prompt.Role != "system" || !strings.Contains(prompt.Content, "<<<TOOL_REQUEST>>>") || !strings.Contains(prompt.Content, "[tool]: tool-name") || !strings.Contains(prompt.Content, "web-search") || !strings.Contains(prompt.Content, "query") {
+		t.Fatalf("prompt = %#v", prompt)
+	}
+}
+
+func TestParseTextToolRequestsExtractsMultipleBlocks(t *testing.T) {
+	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{})
+	_, intents, err := system.ParseTextToolRequests(context.Background(), `<<<TOOL_REQUEST>>>
+[tool]: web-search
+[query]: 东京明天天气
+<<<END_TOOL_REQUEST>>>
+
+<<<TOOL_REQUEST>>>
+[tool]: read-file
+[path]: README.md
+<<<END_TOOL_REQUEST>>>`)
+	if err != nil {
+		t.Fatalf("ParseTextToolRequests() error = %v", err)
+	}
+	if len(intents) != 2 || intents[0].ToolName != "web-search" || intents[1].ToolName != "read-file" || intents[1].Arguments["path"] != "README.md" {
+		t.Fatalf("intents = %#v", intents)
+	}
+}
+
+func TestVisibleTextToolContentHidesCompleteAndPartialBlocks(t *testing.T) {
+	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{})
+	content, err := system.VisibleTextToolContent(context.Background(), "I will check.\n<<<TOOL_REQUEST>>>\n[tool]: web-search\n[query]: 东京明天天气")
+	if err != nil {
+		t.Fatalf("VisibleTextToolContent() error = %v", err)
+	}
+	if content != "I will check." {
+		t.Fatalf("partial content = %q", content)
+	}
+	content, err = system.VisibleTextToolContent(context.Background(), "I will check.\n<<<TOOL_REQUEST>>>\n[tool]: web-search\n[query]: 东京明天天气\n<<<END_TOOL_REQUEST>>>\nDone.")
+	if err != nil {
+		t.Fatalf("VisibleTextToolContent() error = %v", err)
+	}
+	if content != "I will check.\nDone." {
+		t.Fatalf("complete content = %q", content)
+	}
+	content, err = system.VisibleTextToolContent(context.Background(), "I will check.\n<<<TOOL")
+	if err != nil {
+		t.Fatalf("VisibleTextToolContent() error = %v", err)
+	}
+	if content != "I will check." {
+		t.Fatalf("marker prefix content = %q", content)
+	}
+}
+
+func TestTextToolProtocolIgnoresMarkersInsideMarkdownFence(t *testing.T) {
+	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{})
+	source := "Example:\n```text\n<<<TOOL_REQUEST>>>\n[tool]: web-search\n[query]: 东京明天天气\n<<<END_TOOL_REQUEST>>>\n```"
+	content, intents, err := system.ParseTextToolRequests(context.Background(), source)
+	if err != nil {
+		t.Fatalf("ParseTextToolRequests() error = %v", err)
+	}
+	if content != source || len(intents) != 0 {
+		t.Fatalf("content=%q intents=%#v", content, intents)
+	}
+	visible, err := system.VisibleTextToolContent(context.Background(), source)
+	if err != nil {
+		t.Fatalf("VisibleTextToolContent() error = %v", err)
+	}
+	if visible != source {
+		t.Fatalf("visible = %q", visible)
+	}
+}
+
+func TestParseTextToolRequestsFailsOnBadProtocol(t *testing.T) {
+	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{})
+	_, _, err := system.ParseTextToolRequests(context.Background(), `<<<TOOL_REQUEST>>>
+[query]: 东京明天天气
+<<<END_TOOL_REQUEST>>>`)
+	assertAppErrorCode(t, err, "tool.protocol_invalid")
 }
 
 func TestPrepareReturnsDeniedPlanWhenPermissionDenies(t *testing.T) {

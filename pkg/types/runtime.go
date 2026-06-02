@@ -3,16 +3,42 @@ package types
 import "time"
 
 type Message struct {
-	ID              string    `json:"id"`
-	Type            string    `json:"type"`
-	Content         string    `json:"content"`
-	ParentMessageID string    `json:"parentMessageId,omitempty"`
-	BranchID        string    `json:"branchId,omitempty"`
-	ToolID          string    `json:"toolId,omitempty"`
-	ToolName        string    `json:"toolName,omitempty"`
-	Reason          string    `json:"reason,omitempty"`
-	CreatedAt       time.Time `json:"createdAt"`
-	UpdatedAt       time.Time `json:"updatedAt"`
+	ID              string              `json:"id"`
+	Type            string              `json:"type"`
+	Content         string              `json:"content"`
+	Attachments     []MessageAttachment `json:"attachments,omitempty"`
+	ParentMessageID string              `json:"parentMessageId,omitempty"`
+	BranchID        string              `json:"branchId,omitempty"`
+	ToolID          string              `json:"toolId,omitempty"`
+	ToolName        string              `json:"toolName,omitempty"`
+	Reason          string              `json:"reason,omitempty"`
+	CreatedAt       time.Time           `json:"createdAt"`
+	UpdatedAt       time.Time           `json:"updatedAt"`
+}
+
+type MessageAttachment struct {
+	ID      string `json:"id"`
+	Kind    string `json:"kind"`
+	Name    string `json:"name"`
+	Mime    string `json:"mime,omitempty"`
+	Path    string `json:"path,omitempty"`
+	Lang    string `json:"lang,omitempty"`
+	Text    string `json:"text,omitempty"`
+	FullLen int    `json:"fullLen,omitempty"`
+	SendLen int    `json:"sendLen,omitempty"`
+	SendPct int    `json:"sendPct,omitempty"`
+}
+
+type RunAttachment struct {
+	Kind    string `json:"kind"`
+	Name    string `json:"name"`
+	Mime    string `json:"mime,omitempty"`
+	DataURL string `json:"dataUrl,omitempty"`
+	Lang    string `json:"lang,omitempty"`
+	Text    string `json:"text,omitempty"`
+	FullLen int    `json:"fullLen,omitempty"`
+	SendLen int    `json:"sendLen,omitempty"`
+	SendPct int    `json:"sendPct,omitempty"`
 }
 
 type Session struct {
@@ -48,12 +74,13 @@ const (
 )
 
 type RunRequest struct {
-	RoleID          string `json:"roleId"`
-	SessionID       string `json:"sessionId"`
-	Message         string `json:"message"`
-	ParentMessageID string `json:"parentMessageId,omitempty"`
-	UserMessageID   string `json:"userMessageId,omitempty"`
-	Stream          bool   `json:"stream,omitempty"`
+	RoleID          string          `json:"roleId"`
+	SessionID       string          `json:"sessionId"`
+	Message         string          `json:"message"`
+	Attachments     []RunAttachment `json:"attachments,omitempty"`
+	ParentMessageID string          `json:"parentMessageId,omitempty"`
+	UserMessageID   string          `json:"userMessageId,omitempty"`
+	Stream          bool            `json:"stream,omitempty"`
 }
 
 type RunState struct {

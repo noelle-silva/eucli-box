@@ -3,12 +3,17 @@ package agentruntime
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"eucli-box/pkg/types"
 )
 
 func (s *system) callModel(ctx context.Context, record *runRecord, roleContext types.RoleContext) (types.ModelResponse, error) {
-	request := types.ModelRequest{Coordinate: roleContext.ModelConfig.Coordinate, Temperature: roleContext.ModelConfig.Temperature, Messages: modelMessages(roleContext), Tools: roleContext.Tools, Stream: record.stream}
+	messages, err := s.modelMessages(ctx, roleContext)
+	if err != nil {
+		return types.ModelResponse{}, err
+	}
+	request := types.ModelRequest{Coordinate: roleContext.ModelConfig.Coordinate, Temperature: roleContext.ModelConfig.Temperature, Messages: messages, Tools: roleContext.Tools, Stream: record.stream}
 	if record.stream {
 		return s.callModelStream(ctx, record, request)
 	}
@@ -44,18 +49,22 @@ func (s *system) callModelStream(ctx context.Context, record *runRecord, request
 	return response, nil
 }
 
-func modelMessages(roleContext types.RoleContext) []types.PromptMessage {
+func (s *system) modelMessages(ctx context.Context, roleContext types.RoleContext) ([]types.PromptMessage, error) {
 	messages := make([]types.PromptMessage, 0, len(roleContext.Prompts)+len(roleContext.Messages))
 	messages = append(messages, roleContext.Prompts...)
 	for index, message := range roleContext.Messages {
-		messages = append(messages, runtimeMessageToPrompt(message, index))
+		prompt, err := s.runtimeMessageToPrompt(ctx, message, index)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, prompt)
 	}
-	return messages
+	return messages, nil
 }
 
-func runtimeMessageToPrompt(message types.Message, index int) types.PromptMessage {
+func (s *system) runtimeMessageToPrompt(ctx context.Context, message types.Message, index int) (types.PromptMessage, error) {
 	role := message.Type
-	content := message.Content
+	content := messagePromptContent(message)
 	switch message.Type {
 	case "user", "assistant":
 	case "tool":
@@ -67,5 +76,67 @@ func runtimeMessageToPrompt(message types.Message, index int) types.PromptMessag
 	default:
 		role = "user"
 	}
-	return types.PromptMessage{ID: message.ID, Role: role, Content: content, Order: index}
+	images, err := s.promptImagesForMessage(ctx, message)
+	if err != nil {
+		return types.PromptMessage{}, err
+	}
+	return types.PromptMessage{ID: message.ID, Role: role, Content: content, Images: images, Order: index, CreatedAt: message.CreatedAt, UpdatedAt: message.UpdatedAt}, nil
+}
+
+func messagePromptContent(message types.Message) string {
+	content := message.Content
+	blocks := []string{}
+	for _, attachment := range message.Attachments {
+		if attachment.Kind == "image" || strings.TrimSpace(attachment.Text) == "" {
+			continue
+		}
+		name := strings.TrimSpace(attachment.Name)
+		if name == "" {
+			name = "文件"
+		}
+		lang := strings.TrimSpace(attachment.Lang)
+		if lang == "" {
+			lang = "text"
+		}
+		fullLen := attachment.FullLen
+		if fullLen <= 0 {
+			fullLen = len([]rune(attachment.Text))
+		}
+		sendLen := attachment.SendLen
+		if sendLen <= 0 {
+			sendLen = len([]rune(attachment.Text))
+		}
+		sendPct := attachment.SendPct
+		if sendPct <= 0 {
+			sendPct = 100
+		}
+		blocks = append(blocks, fmt.Sprintf("附件：%s（发送 %d%%：%d/%d 字符）\n```%s\n%s\n```", name, sendPct, sendLen, fullLen, lang, escapePromptFence(attachment.Text)))
+	}
+	if len(blocks) == 0 {
+		return content
+	}
+	extra := strings.Join(blocks, "\n\n")
+	if strings.TrimSpace(content) == "" {
+		return extra
+	}
+	return strings.TrimSpace(content) + "\n\n" + extra
+}
+
+func (s *system) promptImagesForMessage(ctx context.Context, message types.Message) ([]types.PromptImage, error) {
+	images := []types.PromptImage{}
+	for _, attachment := range message.Attachments {
+		if attachment.Kind != "image" || strings.TrimSpace(attachment.Path) == "" {
+			continue
+		}
+		dataURL, err := s.storage.LoadSessionAttachmentImage(ctx, attachment.Path)
+		if err != nil {
+			return nil, runtimeStorageFailed("failed to load message image attachment", err)
+		}
+		images = append(images, types.PromptImage{DataURL: dataURL})
+	}
+	return images, nil
+}
+
+func escapePromptFence(value string) string {
+	return strings.ReplaceAll(value, "```", "``\u200b`")
 }

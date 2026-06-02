@@ -214,3 +214,13 @@ func (s *system) handleDeleteSessionMessageSubtree(w http.ResponseWriter, r *htt
 	}
 	writeData(w, http.StatusOK, session)
 }
+
+func (s *system) handleLoadSessionAttachmentImage(w http.ResponseWriter, r *http.Request) {
+	relPath := r.URL.Query().Get("path")
+	dataURL, err := s.sessions.LoadSessionAttachmentImage(r.Context(), relPath)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, dataURL)
+}

@@ -19,6 +19,8 @@ type System interface {
 type StorageSystem interface {
 	SaveSession(ctx context.Context, session types.Session) error
 	LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error)
+	SaveSessionMessageAttachment(ctx context.Context, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
+	LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error)
 }
 
 type RoleSystem interface {

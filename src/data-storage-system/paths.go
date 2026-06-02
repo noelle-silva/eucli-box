@@ -34,11 +34,15 @@ func (p paths) metaRoot() string      { return filepath.Join(p.root, "meta") }
 
 func (p paths) metaVersionFile() string { return filepath.Join(p.metaRoot(), "version.json") }
 
-func (p paths) stickerNamingConfigFile() string { return filepath.Join(p.metaRoot(), "sticker-naming.json") }
+func (p paths) stickerNamingConfigFile() string {
+	return filepath.Join(p.metaRoot(), "sticker-naming.json")
+}
 
 func (p paths) mermaidFixConfigFile() string { return filepath.Join(p.metaRoot(), "mermaid-fix.json") }
 
-func (p paths) chatTitleNamingConfigFile() string { return filepath.Join(p.metaRoot(), "chat-title-naming.json") }
+func (p paths) chatTitleNamingConfigFile() string {
+	return filepath.Join(p.metaRoot(), "chat-title-naming.json")
+}
 
 func (p paths) roleDir(roleID string) (string, error) {
 	return p.safeJoin(p.rolesRoot(), roleID)
@@ -70,6 +74,22 @@ func (p paths) sessionDataFile(roleID string, sessionID string) (string, error) 
 		return "", err
 	}
 	return filepath.Join(dir, "data.json"), nil
+}
+
+func (p paths) sessionAttachmentsDir(roleID string, sessionID string) (string, error) {
+	dir, err := p.sessionDir(roleID, sessionID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "attachments"), nil
+}
+
+func (p paths) sessionAttachmentDir(roleID string, sessionID string, attachmentID string) (string, error) {
+	dir, err := p.sessionAttachmentsDir(roleID, sessionID)
+	if err != nil {
+		return "", err
+	}
+	return p.safeJoin(dir, attachmentID)
 }
 
 func (p paths) providerDir(providerID string) (string, error) {

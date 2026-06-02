@@ -59,6 +59,7 @@ type SessionSystem interface {
 	UpdateSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string, content string) (types.Session, error)
 	DeleteSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error)
 	DeleteSessionMessageSubtree(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error)
+	LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error)
 }
 
 type StickerSystem interface {

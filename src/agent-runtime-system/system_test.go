@@ -3,6 +3,7 @@ package agentruntime
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -28,6 +29,32 @@ func TestStartRunCompletesWithoutTool(t *testing.T) {
 	}
 	if session.Messages[1].ParentMessageID != session.Messages[0].ID {
 		t.Fatalf("assistant parent = %q user=%q", session.Messages[1].ParentMessageID, session.Messages[0].ID)
+	}
+}
+
+func TestStartRunSavesAttachmentsAndPassesThemToModel(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	imageDataURL := "data:image/png;base64,iVBORw0KGgo="
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Attachments: []types.RunAttachment{{Kind: "image", Name: "shot.png", DataURL: imageDataURL}, {Kind: "md", Name: "note.md", Lang: "markdown", Text: "# hello", FullLen: 7, SendLen: 7, SendPct: 100}}})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	session := fakes.storage.lastSession()
+	if len(session.Messages) != 2 || len(session.Messages[0].Attachments) != 2 {
+		t.Fatalf("messages = %#v", session.Messages)
+	}
+	request := fakes.provider.lastRequest()
+	if len(request.Messages) != 1 || len(request.Messages[0].Images) != 1 || request.Messages[0].Images[0].DataURL != imageDataURL {
+		t.Fatalf("model request messages = %#v", request.Messages)
+	}
+	if !strings.Contains(request.Messages[0].Content, "附件：note.md") || !strings.Contains(request.Messages[0].Content, "# hello") {
+		t.Fatalf("prompt content = %q", request.Messages[0].Content)
 	}
 }
 
@@ -409,10 +436,11 @@ func newRuntimeFakes() *runtimeFakes {
 type fakeRuntimeStorage struct {
 	mu       sync.Mutex
 	sessions map[string]types.Session
+	images   map[string]string
 }
 
 func newFakeRuntimeStorage() *fakeRuntimeStorage {
-	return &fakeRuntimeStorage{sessions: map[string]types.Session{}}
+	return &fakeRuntimeStorage{sessions: map[string]types.Session{}, images: map[string]string{}}
 }
 
 func (f *fakeRuntimeStorage) SaveSession(ctx context.Context, session types.Session) error {
@@ -439,6 +467,27 @@ func (f *fakeRuntimeStorage) lastSession() types.Session {
 		return session
 	}
 	return types.Session{}
+}
+
+func (f *fakeRuntimeStorage) SaveSessionMessageAttachment(ctx context.Context, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if attachment.Kind == "image" {
+		path := "sessions/" + roleID + "/" + sessionID + "/attachments/att-image/image.png"
+		f.images[path] = attachment.DataURL
+		return types.MessageAttachment{ID: "att-image", Kind: "image", Name: attachment.Name, Mime: "image/png", Path: path}, nil
+	}
+	return types.MessageAttachment{ID: "att-text", Kind: attachment.Kind, Name: attachment.Name, Lang: attachment.Lang, Text: attachment.Text, FullLen: attachment.FullLen, SendLen: attachment.SendLen, SendPct: attachment.SendPct}, nil
+}
+
+func (f *fakeRuntimeStorage) LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	dataURL := f.images[relPath]
+	if dataURL == "" {
+		return "", errors.New("image missing")
+	}
+	return dataURL, nil
 }
 
 type fakeRuntimeRoles struct{}
@@ -524,6 +573,15 @@ func (f *fakeRuntimeProvider) lastPromptMessageIDs() []string {
 		ids = append(ids, message.ID)
 	}
 	return ids
+}
+
+func (f *fakeRuntimeProvider) lastRequest() types.ModelRequest {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.requests) == 0 {
+		return types.ModelRequest{}
+	}
+	return f.requests[len(f.requests)-1]
 }
 
 func (f *fakeRuntimeProvider) callCount() int {

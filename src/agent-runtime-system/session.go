@@ -20,7 +20,7 @@ func (s *system) loadOrCreateSession(ctx context.Context, request types.RunReque
 		return session, nil
 	}
 	now := time.Now().UTC()
-	return types.Session{ID: utils.NewID("session"), RoleID: request.RoleID, Title: firstTitle(request.Message), Status: string(types.RunStatusCreated), Messages: []types.Message{}, CreatedAt: now, UpdatedAt: now, LastActive: now}, nil
+	return types.Session{ID: utils.NewID("session"), RoleID: request.RoleID, Title: firstTitle(request), Status: string(types.RunStatusCreated), Messages: []types.Message{}, CreatedAt: now, UpdatedAt: now, LastActive: now}, nil
 }
 
 func appendMessage(session types.Session, message types.Message) types.Session {
@@ -53,9 +53,14 @@ func appendMessage(session types.Session, message types.Message) types.Session {
 	return session
 }
 
-func appendUserMessageForRun(session types.Session, content string, parentMessageID string) (types.Session, error) {
-	message := userMessage(content)
-	parentMessageID = strings.TrimSpace(parentMessageID)
+func (s *system) appendUserMessageForRun(ctx context.Context, session types.Session, request types.RunRequest) (types.Session, error) {
+	attachments, err := s.saveRunAttachments(ctx, session.RoleID, session.ID, request.Attachments)
+	if err != nil {
+		return session, err
+	}
+	message := userMessage(request.Message)
+	message.Attachments = attachments
+	parentMessageID := strings.TrimSpace(request.ParentMessageID)
 	if parentMessageID == "" {
 		return appendMessage(session, message), nil
 	}
@@ -65,6 +70,21 @@ func appendUserMessageForRun(session types.Session, content string, parentMessag
 	}
 	message.BranchID = userMessageBranchID(session, parent, message.ID)
 	return appendChildMessage(session, message, parent), nil
+}
+
+func (s *system) saveRunAttachments(ctx context.Context, roleID string, sessionID string, attachments []types.RunAttachment) ([]types.MessageAttachment, error) {
+	if len(attachments) == 0 {
+		return nil, nil
+	}
+	stored := make([]types.MessageAttachment, 0, len(attachments))
+	for _, attachment := range attachments {
+		saved, err := s.storage.SaveSessionMessageAttachment(ctx, roleID, sessionID, attachment)
+		if err != nil {
+			return nil, runtimeStorageFailed("failed to save message attachment", err)
+		}
+		stored = append(stored, saved)
+	}
+	return stored, nil
 }
 
 func appendAssistantReply(session types.Session, content string, parent types.Message) types.Session {
@@ -323,9 +343,12 @@ func toolConfirmationMessage(decision types.PermissionDecision) types.Message {
 	return types.Message{ID: utils.NewID("message"), Type: "tool_confirmation", Content: content, ToolName: decision.ToolName, Reason: decision.Reason, CreatedAt: now, UpdatedAt: now}
 }
 
-func firstTitle(message string) string {
-	message = strings.TrimSpace(message)
+func firstTitle(request types.RunRequest) string {
+	message := strings.TrimSpace(request.Message)
 	if message == "" {
+		if len(request.Attachments) > 0 {
+			return "附件消息"
+		}
 		return "New session"
 	}
 	runes := []rune(message)

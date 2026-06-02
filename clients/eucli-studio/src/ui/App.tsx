@@ -3570,7 +3570,12 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                     const roleModelText = !isUser ? formatModelRefText((m as any)?.modelRef) : ''
                     const time = controller.fmtTime(Number(m?.createdAt || 0))
                     const imgPaths = isUser ? (Array.isArray(m?.images) ? m.images : []) : []
-                    const attMsgs = isUser ? (groupedAttMsgsByRootMid.get(String(m?.id || '').trim()) || []) : []
+                    const rootAttachments = isUser && Array.isArray(m?.attachments) ? m.attachments : []
+                    const legacyAttMsgs = isUser ? (groupedAttMsgsByRootMid.get(String(m?.id || '').trim()) || []) : []
+                    const fileAttachmentItems = [
+                      ...rootAttachments.map((a: any, idx: number) => ({ mid, idx, attachment: a })),
+                      ...legacyAttMsgs.map((am: any) => ({ mid: String(am?.id || '').trim(), idx: 0, attachment: am && Array.isArray(am.attachments) ? am.attachments[0] : null })),
+                    ].filter((item: any) => item.mid && item.attachment)
                     const messageGenerating = isAssistantGenerating(m)
                     const canEdit = !isEditing && !messageGenerating && !s.loading && !uiBusy && !chatLocked && !!mid
                     const contentLines = userMessageCollapseEnabled && isUser ? content.split(/\r?\n/) : []
@@ -3680,7 +3685,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                                 ) : (
                                   <Typography sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{shownContent}</Typography>
                                 )
-                              ) : attMsgs.length ? (
+                              ) : fileAttachmentItems.length ? (
                                 <Typography variant="body2" color="text.secondary">
                                   （附件）
                                 </Typography>
@@ -3699,13 +3704,12 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                                   </Button>
                                 </Box>
                               ) : null}
-                              {attMsgs.length ? (
+                              {fileAttachmentItems.length ? (
                                 <Stack direction="row" spacing={0.75} sx={{ mt: 0.75, flexWrap: 'wrap' }}>
-                                  {attMsgs.slice(0, 20).map((am: any) => {
-                                    const a = am && Array.isArray(am.attachments) ? am.attachments[0] : null
-                                    if (!a) return null
-                                    const childMid = String(am?.id || '').trim()
-                                    if (!childMid) return null
+                                  {fileAttachmentItems.slice(0, 20).map((item: any) => {
+                                    const a = item.attachment
+                                    const targetMid = String(item.mid || '').trim()
+                                    if (!a || !targetMid) return null
                                     const name = String(a?.name || '文件')
                                     const pct = clampNum(Math.round(Number(a?.sendPct ?? 100)), 0, 100)
                                     const fullLen = clampNum(Math.round(Number(a?.fullLen ?? 0)), 0, 10_000_000)
@@ -3713,12 +3717,12 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                                     const label = `${name}（${pct}%：${sendLen}/${fullLen}）`
                                     return (
                                       <Chip
-                                        key={String(a?.id || childMid)}
+                                        key={`${targetMid}:${String(a?.id || item.idx || 0)}`}
                                         size="small"
                                         icon={<AttachFileIcon fontSize="small" />}
                                         label={label}
                                         variant="outlined"
-                                        onClick={(e) => openAttachView(e as any, childMid, 0)}
+                                        onClick={(e) => openAttachView(e as any, targetMid, Number(item.idx || 0))}
                                         sx={{ maxWidth: 520 }}
                                       />
                                     )

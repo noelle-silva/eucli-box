@@ -20,6 +20,8 @@ type System interface {
 	UpdateSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string, content string) (types.Session, error)
 	DeleteSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error)
 	DeleteSessionMessageSubtree(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error)
+	SaveSessionMessageAttachment(ctx context.Context, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
+	LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error)
 
 	SaveRole(ctx context.Context, role types.Role) error
 	LoadRole(ctx context.Context, roleID string) (types.Role, error)

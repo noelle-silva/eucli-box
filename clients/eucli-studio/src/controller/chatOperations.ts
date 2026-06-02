@@ -1,8 +1,9 @@
-import { now, uid } from '../core/utils'
+import { clamp, now, uid } from '../core/utils'
 import {
   MAX_DRAFT_IMAGES,
   MAX_DRAFT_FILES,
   CHAT_DEFAULT_BRANCH_ID,
+  DEFAULT_ATTACH_SEND_LIMIT_CHARS,
 } from '../domain/constants'
 import {
   normalizeBranchId,
@@ -120,7 +121,7 @@ export function createChatOperations(deps: {
   }
 
   async function runRoleMessageViaEb(
-    input: { roleId: string; sessionId: string; message?: string; parentMessageId?: string; userMessageId?: string; stream?: boolean },
+    input: { roleId: string; sessionId: string; message?: string; attachments?: any[]; parentMessageId?: string; userMessageId?: string; stream?: boolean },
     onAccepted?: (run: EbRunState) => void,
     follow?: { previousMessageIds: Set<string>; ancestorMessageId?: string },
   ) {
@@ -330,6 +331,42 @@ export function createChatOperations(deps: {
     emit()
   }
 
+  function currentAttachSendLimitChars() {
+    const value = Number(stateDataSettings()?.attachments?.sendLimitChars ?? DEFAULT_ATTACH_SEND_LIMIT_CHARS)
+    return clamp(Math.round(value), 1000, 2_000_000)
+  }
+
+  function stateDataSettings() {
+    const state = getState()
+    return state?.data?.settings && typeof state.data.settings === 'object' ? state.data.settings : {}
+  }
+
+  function buildRunAttachments(draftImages: any[], draftFiles: DraftFileItem[]) {
+    const attachments: any[] = []
+    for (const image of draftImages) {
+      const dataUrl = String(image?.dataUrl || '').trim()
+      if (!looksLikeImageDataUrl(dataUrl)) throw new Error(`图片无效：${String(image?.name || '图片')}`)
+      attachments.push({ kind: 'image', name: String(image?.name || '图片'), dataUrl })
+    }
+
+    const sendLimit = currentAttachSendLimitChars()
+    for (const file of draftFiles) {
+      const name = String(file?.name || '文件')
+      if (file?.pending) throw new Error('文件解析中，请稍候…')
+      const error = String(file?.error || '').trim()
+      if (error) throw new Error(`${name} 解析失败：${error}`)
+      const raw = String(file?.text || '').trim()
+      if (!raw) throw new Error(`${name} 未提取到可发送文本`)
+      const sendPct = clamp(Math.round(Number(file?.sendPct ?? 100)), 0, 100)
+      const fullLen = raw.length
+      const sendLen = Math.max(0, Math.ceil((fullLen * sendPct) / 100))
+      if (sendLen <= 0) throw new Error(`${name} 的发送内容为空`)
+      if (sendLen > sendLimit) throw new Error(`${name} 发送内容超过限制，请在附件设置里调低发送比例`)
+      attachments.push({ kind: String(file?.kind || 'txt'), name, lang: String(file?.kind || '') === 'md' ? 'markdown' : 'text', text: raw.slice(0, sendLen), fullLen, sendLen, sendPct })
+    }
+    return attachments
+  }
+
   // ============ send chat ============
 
   async function sendChat(opts?: { forkFromMid?: string }) {
@@ -350,8 +387,12 @@ export function createChatOperations(deps: {
     const draftFiles: DraftFileItem[] = Array.isArray((state.draft as any).files) ? ((state.draft as any).files as any[]) : []
     const hasFiles = draftFiles.length > 0
     if (!input && !draftImages.length && !hasFiles) return showToast?.('输入不能为空')
-    if (hasFiles && draftFiles.some((x: any) => !!x?.pending)) return showToast?.('文件解析中，请稍候…')
-    if (draftImages.length || hasFiles) return showToast?.('当前 e-b 发送只支持文本消息，图片/文件发送需要等 e-b 附件消息根动作接入')
+    let attachments: any[] = []
+    try {
+      attachments = buildRunAttachments(draftImages, draftFiles)
+    } catch (e) {
+      return showToast?.(String((e as any)?.message || e || '附件无效'))
+    }
 
     const rid = String(role.id || '')
     const currentChatBeforeLoad = sa.activeChatFromData()
@@ -370,7 +411,7 @@ export function createChatOperations(deps: {
       state.sending = true
       state.sendingCtx = { kind: 'eb-role-run', runId: '', roleId: rid, sessionId, cancelledByUser: false }
       renderComposer()
-      await runRoleMessageViaEb({ roleId: rid, sessionId, message: input, parentMessageId, stream: !!state.data?.settings?.streamEnabled }, (run) => {
+      await runRoleMessageViaEb({ roleId: rid, sessionId, message: input, attachments, parentMessageId, stream: !!state.data?.settings?.streamEnabled }, (run) => {
         syncEbRoleRunSendingCtx(run, { roleId: rid, sessionId })
         state.draft.input = ''
         state.draft.images = []

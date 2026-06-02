@@ -86,6 +86,9 @@ func (s *service) handleImageRead(ctx context.Context, params json.RawMessage) (
 	if strings.HasPrefix(filepath.ToSlash(req.Path), "stickers/") {
 		return s.eb.request(ctx, ebRequest{Method: "GET", Path: "/api/stickers/image", Query: mustJSON(map[string]any{"path": filepath.ToSlash(req.Path)})})
 	}
+	if strings.HasPrefix(filepath.ToSlash(req.Path), "sessions/") {
+		return s.eb.request(ctx, ebRequest{Method: "GET", Path: "/api/session-attachments/image", Query: mustJSON(map[string]any{"path": filepath.ToSlash(req.Path)})})
+	}
 	roleID, err := s.projection.roleIDByAvatarPath(ctx, req.Path)
 	if err != nil {
 		return nil, err

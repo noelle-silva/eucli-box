@@ -76,7 +76,7 @@ func (s *system) startRun(ctx context.Context, record *runRecord, request types.
 			return state, types.Session{}, err
 		}
 	}
-	session, contextSession, assistantParent, err := prepareRunSession(session, request)
+	session, contextSession, assistantParent, err := s.prepareRunSession(ctx, session, request)
 	if err != nil {
 		return state, types.Session{}, err
 	}
@@ -171,13 +171,17 @@ func validateRunRequest(ctx context.Context, request types.RunRequest) error {
 	if strings.TrimSpace(request.RoleID) == "" {
 		return runtimeInvalid("role id is required", nil)
 	}
-	hasMessage := strings.TrimSpace(request.Message) != ""
+	hasAttachments := len(request.Attachments) > 0
+	hasMessage := strings.TrimSpace(request.Message) != "" || hasAttachments
 	hasUserMessageID := strings.TrimSpace(request.UserMessageID) != ""
 	if hasMessage == hasUserMessageID {
 		return runtimeInvalid("exactly one of message or userMessageId is required", nil)
 	}
 	if hasUserMessageID && strings.TrimSpace(request.ParentMessageID) != "" {
 		return runtimeInvalid("parentMessageId cannot be combined with userMessageId", nil)
+	}
+	if hasUserMessageID && hasAttachments {
+		return runtimeInvalid("attachments cannot be combined with userMessageId", nil)
 	}
 	if hasUserMessageID && strings.TrimSpace(request.SessionID) == "" {
 		return runtimeInvalid("session id is required when userMessageId is provided", nil)
@@ -188,10 +192,10 @@ func validateRunRequest(ctx context.Context, request types.RunRequest) error {
 	return nil
 }
 
-func prepareRunSession(session types.Session, request types.RunRequest) (types.Session, types.Session, types.Message, error) {
+func (s *system) prepareRunSession(ctx context.Context, session types.Session, request types.RunRequest) (types.Session, types.Session, types.Message, error) {
 	if strings.TrimSpace(request.UserMessageID) == "" {
 		var err error
-		session, err = appendUserMessageForRun(session, request.Message, request.ParentMessageID)
+		session, err = s.appendUserMessageForRun(ctx, session, request)
 		if err != nil {
 			return session, types.Session{}, types.Message{}, err
 		}

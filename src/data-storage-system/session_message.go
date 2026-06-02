@@ -69,6 +69,7 @@ func normalizeSessionMessages(messages []types.Message, now time.Time) []types.M
 		seen[message.ID] = struct{}{}
 
 		message.Type = normalizeMessageType(message.Type)
+		message.Attachments = normalizeSessionMessageAttachments(message.Attachments)
 		message.BranchID = normalizeBranchID(message.BranchID)
 		message.ParentMessageID = strings.TrimSpace(message.ParentMessageID)
 		if message.ParentMessageID == "" {
@@ -119,6 +120,68 @@ func normalizeMessageType(messageType string) string {
 	default:
 		return "user"
 	}
+}
+
+func normalizeSessionMessageAttachments(attachments []types.MessageAttachment) []types.MessageAttachment {
+	result := make([]types.MessageAttachment, 0, len(attachments))
+	seen := map[string]struct{}{}
+	for _, attachment := range attachments {
+		attachment.ID = strings.TrimSpace(attachment.ID)
+		if attachment.ID == "" {
+			attachment.ID = utils.NewID("att")
+		}
+		if _, ok := seen[attachment.ID]; ok {
+			attachment.ID = utils.NewID("att")
+		}
+		seen[attachment.ID] = struct{}{}
+
+		kind := normalizeMessageAttachmentKind(attachment.Kind)
+		if kind == "image" {
+			attachment.Path = filepathToSlashTrimmed(attachment.Path)
+			if attachment.Path == "" {
+				continue
+			}
+			attachment.Kind = "image"
+			attachment.Name = normalizeAttachmentName(attachment.Name, "图片")
+			attachment.Mime = strings.TrimSpace(attachment.Mime)
+			attachment.Lang = ""
+			attachment.Text = ""
+			attachment.FullLen = 0
+			attachment.SendLen = 0
+			attachment.SendPct = 0
+			result = append(result, attachment)
+			continue
+		}
+
+		attachment.Text = strings.TrimSpace(attachment.Text)
+		if attachment.Text == "" {
+			continue
+		}
+		attachment.Kind = kind
+		attachment.Name = normalizeAttachmentName(attachment.Name, "文件")
+		attachment.Mime = strings.TrimSpace(attachment.Mime)
+		attachment.Path = ""
+		attachment.Lang = normalizeAttachmentLang(attachment.Lang, kind)
+		textLen := len([]rune(attachment.Text))
+		if attachment.FullLen <= 0 {
+			attachment.FullLen = textLen
+		}
+		if attachment.SendLen <= 0 || attachment.SendLen > attachment.FullLen {
+			attachment.SendLen = textLen
+		}
+		if attachment.SendPct <= 0 {
+			attachment.SendPct = 100
+		}
+		if attachment.SendPct > 100 {
+			attachment.SendPct = 100
+		}
+		result = append(result, attachment)
+	}
+	return result
+}
+
+func filepathToSlashTrimmed(path string) string {
+	return strings.ReplaceAll(strings.TrimSpace(path), "\\", "/")
 }
 
 func normalizeBranchID(branchID string) string {

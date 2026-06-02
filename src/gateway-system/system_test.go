@@ -30,6 +30,20 @@ func TestStartRunRoute(t *testing.T) {
 	}
 }
 
+func TestStartRunRouteAcceptsAttachmentsOnlyMessage(t *testing.T) {
+	fakes := newGatewayFakes()
+	system := newTestGateway(t, fakes)
+	req := httptest.NewRequest(http.MethodPost, "/api/runs", strings.NewReader(`{"roleId":"developer","attachments":[{"kind":"txt","name":"note.txt","text":"hello","fullLen":5,"sendLen":5,"sendPct":100}]}`))
+	rec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if fakes.runtime.started.Message != "" || len(fakes.runtime.started.Attachments) != 1 || fakes.runtime.started.Attachments[0].Name != "note.txt" {
+		t.Fatalf("started = %#v", fakes.runtime.started)
+	}
+}
+
 func TestStartRunRouteAcceptsUserMessageID(t *testing.T) {
 	fakes := newGatewayFakes()
 	system := newTestGateway(t, fakes)
@@ -390,6 +404,13 @@ func (f *fakeGatewaySessions) DeleteSessionMessage(ctx context.Context, roleID s
 
 func (f *fakeGatewaySessions) DeleteSessionMessageSubtree(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error) {
 	return f.DeleteSessionMessage(ctx, roleID, sessionID, messageID)
+}
+
+func (f *fakeGatewaySessions) LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error) {
+	if strings.TrimSpace(relPath) == "" {
+		return "", errors.New("path missing")
+	}
+	return "data:image/png;base64,iVBORw0KGgo=", nil
 }
 
 type fakeGatewayRuntime struct {

@@ -680,7 +680,15 @@ func toUIChat(session map[string]any) map[string]any {
 		if updatedAt == 0 {
 			updatedAt = createdAt
 		}
-		messages = append(messages, map[string]any{"id": stringField(msg, "id"), "role": messageRole(msg), "content": stringField(msg, "content"), "parentMid": stringField(msg, "parentMessageId"), "branchId": fallback(stringField(msg, "branchId"), "main"), "createdAt": createdAt, "updatedAt": updatedAt})
+		uiMessage := map[string]any{"id": stringField(msg, "id"), "role": messageRole(msg), "content": stringField(msg, "content"), "parentMid": stringField(msg, "parentMessageId"), "branchId": fallback(stringField(msg, "branchId"), "main"), "createdAt": createdAt, "updatedAt": updatedAt}
+		images, attachments := toUIMessageAttachments(objectList(msg["attachments"]))
+		if len(images) > 0 {
+			uiMessage["images"] = images
+		}
+		if len(attachments) > 0 {
+			uiMessage["attachments"] = attachments
+		}
+		messages = append(messages, uiMessage)
 	}
 	createdAt := millisFromAny(session["createdAt"])
 	updatedAt := millisFromAnyOrZero(session["updatedAt"])
@@ -782,10 +790,58 @@ func fromUIChat(value any, roleID string) map[string]any {
 	chat := objectMap(value)
 	messages := []any{}
 	for _, msg := range objectList(chat["messages"]) {
-		messages = append(messages, map[string]any{"id": stringField(msg, "id"), "type": messageRole(msg), "content": stringField(msg, "content"), "parentMessageId": stringField(msg, "parentMid"), "branchId": fallback(stringField(msg, "branchId"), "main"), "createdAt": timeFromMillis(msg["createdAt"]), "updatedAt": timeFromMillis(msg["updatedAt"])})
+		message := map[string]any{"id": stringField(msg, "id"), "type": messageRole(msg), "content": stringField(msg, "content"), "parentMessageId": stringField(msg, "parentMid"), "branchId": fallback(stringField(msg, "branchId"), "main"), "createdAt": timeFromMillis(msg["createdAt"]), "updatedAt": timeFromMillis(msg["updatedAt"])}
+		attachments := fromUIMessageAttachments(objectList(msg["attachments"]), stringSlice(msg["images"]))
+		if len(attachments) > 0 {
+			message["attachments"] = attachments
+		}
+		messages = append(messages, message)
 	}
 	updatedAt := timeFromMillis(chat["updatedAt"])
 	return map[string]any{"id": stringField(chat, "id"), "roleId": roleID, "title": fallback(stringField(chat, "title"), "新聊天"), "status": "created", "messages": messages, "createdAt": timeFromMillis(chat["createdAt"]), "updatedAt": updatedAt, "lastActive": updatedAt}
+}
+
+func toUIMessageAttachments(attachments []map[string]any) ([]any, []any) {
+	images := []any{}
+	files := []any{}
+	for _, attachment := range attachments {
+		kind := strings.TrimSpace(strings.ToLower(stringField(attachment, "kind")))
+		if kind == "image" {
+			path := stringField(attachment, "path")
+			if path != "" {
+				images = append(images, path)
+			}
+			continue
+		}
+		text := stringField(attachment, "text")
+		if text == "" {
+			continue
+		}
+		fullLen := int(numberField(attachment, "fullLen", float64(len([]rune(text)))))
+		sendLen := int(numberField(attachment, "sendLen", float64(len([]rune(text)))))
+		sendPct := int(numberField(attachment, "sendPct", 100))
+		files = append(files, map[string]any{"id": stringField(attachment, "id"), "name": fallback(stringField(attachment, "name"), "文件"), "kind": fallback(kind, "txt"), "lang": fallback(stringField(attachment, "lang"), "text"), "text": text, "fullLen": fullLen, "sendLen": sendLen, "sendPct": sendPct})
+	}
+	return images, files
+}
+
+func fromUIMessageAttachments(files []map[string]any, images []string) []any {
+	attachments := []any{}
+	for _, imagePath := range images {
+		imagePath = strings.TrimSpace(imagePath)
+		if imagePath == "" {
+			continue
+		}
+		attachments = append(attachments, map[string]any{"kind": "image", "name": "图片", "path": imagePath})
+	}
+	for _, file := range files {
+		text := stringField(file, "text")
+		if text == "" {
+			continue
+		}
+		attachments = append(attachments, map[string]any{"id": stringField(file, "id"), "kind": fallback(stringField(file, "kind"), "txt"), "name": fallback(stringField(file, "name"), "文件"), "lang": fallback(stringField(file, "lang"), "text"), "text": text, "fullLen": int(numberField(file, "fullLen", float64(len([]rune(text))))), "sendLen": int(numberField(file, "sendLen", float64(len([]rune(text))))), "sendPct": int(numberField(file, "sendPct", 100))})
+	}
+	return attachments
 }
 
 func mergeSettings(settings map[string]any, providers []map[string]any, mermaidFix map[string]any, chatTitleNaming map[string]any, stickerNaming map[string]any) map[string]any {

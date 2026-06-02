@@ -11,7 +11,7 @@ import (
 	"eucli-box/pkg/types"
 )
 
-const maxRequestBodyBytes = 4 << 20
+const maxRequestBodyBytes = 64 << 20
 
 func decodeJSON[T any](r *http.Request) (T, error) {
 	var value T
@@ -45,13 +45,17 @@ func validateRunRequest(request types.RunRequest) error {
 	if strings.TrimSpace(request.RoleID) == "" {
 		return gatewayInvalid("roleId is required", nil)
 	}
-	hasMessage := strings.TrimSpace(request.Message) != ""
+	hasAttachments := len(request.Attachments) > 0
+	hasMessage := strings.TrimSpace(request.Message) != "" || hasAttachments
 	hasUserMessageID := strings.TrimSpace(request.UserMessageID) != ""
 	if hasMessage == hasUserMessageID {
 		return gatewayInvalid("exactly one of message or userMessageId is required", nil)
 	}
 	if hasUserMessageID && strings.TrimSpace(request.ParentMessageID) != "" {
 		return gatewayInvalid("parentMessageId cannot be combined with userMessageId", nil)
+	}
+	if hasUserMessageID && hasAttachments {
+		return gatewayInvalid("attachments cannot be combined with userMessageId", nil)
 	}
 	if hasUserMessageID && strings.TrimSpace(request.SessionID) == "" {
 		return gatewayInvalid("sessionId is required when userMessageId is provided", nil)

@@ -158,7 +158,7 @@ func (s *system) AddSticker(ctx context.Context, categoryName string, stickerNam
 		return types.StickerItem{}, storageWriteFailed("failed to create sticker item directory", err)
 	}
 	imageName := "image." + image.Ext
-	if err := writeStoredImageFile(ctx, itemDir, imageName, image); err != nil {
+	if err := writeSingleImageFile(ctx, itemDir, imageName, image); err != nil {
 		_ = os.RemoveAll(itemDir)
 		return types.StickerItem{}, storageWriteFailed("failed to write sticker image", err)
 	}
@@ -398,7 +398,7 @@ func writeStickerCategoryIndex(ctx context.Context, dir string, category types.S
 	return writeIndex(ctx, filepath.Join(dir, "index.json"), stickerCategoryIndex{Name: category.Name, Items: category.Items, UpdatedAt: category.UpdatedAt})
 }
 
-func writeStoredImageFile(ctx context.Context, dir string, fileName string, image storedImage) error {
+func writeSingleImageFile(ctx context.Context, dir string, fileName string, image storedImage) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -420,13 +420,13 @@ func writeStoredImageFile(ctx context.Context, dir string, fileName string, imag
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if err := removeStickerImageFiles(dir, filepath.Base(tmpName)); err != nil {
+	if err := removeImageFilesExcept(dir, filepath.Base(tmpName)); err != nil {
 		return err
 	}
 	return os.Rename(tmpName, target)
 }
 
-func removeStickerImageFiles(dir string, preserveFile string) error {
+func removeImageFilesExcept(dir string, preserveFile string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

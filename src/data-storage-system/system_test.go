@@ -130,6 +130,39 @@ func TestCreateSessionCreatesCanonicalSession(t *testing.T) {
 	assertFile(t, filepath.Join(system.paths.root, "sessions", "developer", session.ID, "data.json"))
 }
 
+func TestSaveSessionMessageAttachmentStoresImagesAndText(t *testing.T) {
+	system := newTestSystem(t)
+	session := types.Session{ID: "session-1", RoleID: "developer", Title: "Attachments"}
+	if err := system.SaveSession(context.Background(), session); err != nil {
+		t.Fatalf("SaveSession() error = %v", err)
+	}
+
+	imageDataURL := "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lz2YNgAAAABJRU5ErkJggg=="
+	image, err := system.SaveSessionMessageAttachment(context.Background(), "developer", "session-1", types.RunAttachment{Kind: "image", Name: "shot.png", DataURL: imageDataURL})
+	if err != nil {
+		t.Fatalf("SaveSessionMessageAttachment(image) error = %v", err)
+	}
+	if image.Kind != "image" || image.Path == "" || image.Mime != "image/png" {
+		t.Fatalf("image attachment = %#v", image)
+	}
+	assertFile(t, filepath.Join(system.paths.root, filepath.FromSlash(image.Path)))
+	loaded, err := system.LoadSessionAttachmentImage(context.Background(), image.Path)
+	if err != nil {
+		t.Fatalf("LoadSessionAttachmentImage() error = %v", err)
+	}
+	if loaded != imageDataURL {
+		t.Fatalf("loaded image = %q want %q", loaded, imageDataURL)
+	}
+
+	text, err := system.SaveSessionMessageAttachment(context.Background(), "developer", "session-1", types.RunAttachment{Kind: "md", Name: "note.md", Text: "# hello", FullLen: 7, SendLen: 7, SendPct: 100})
+	if err != nil {
+		t.Fatalf("SaveSessionMessageAttachment(text) error = %v", err)
+	}
+	if text.Kind != "md" || text.Lang != "markdown" || text.Text != "# hello" || text.Path != "" {
+		t.Fatalf("text attachment = %#v", text)
+	}
+}
+
 func TestSessionMessageRootActions(t *testing.T) {
 	system := newTestSystem(t)
 	now := time.Date(2026, 5, 30, 9, 0, 0, 0, time.UTC)

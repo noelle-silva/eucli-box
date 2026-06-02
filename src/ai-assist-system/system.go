@@ -11,9 +11,16 @@ import (
 
 type System interface {
 	GenerateStickerName(ctx context.Context, request types.StickerNameRequest) (types.StickerNameResult, error)
+	GenerateChatTitle(ctx context.Context, request types.ChatTitleRequest) (types.ChatTitleResult, error)
+	FixMermaidInMessage(ctx context.Context, request types.MermaidFixRequest) (types.MermaidFixResult, error)
 }
 
 type StickerStorage interface {
+	LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error)
+	UpdateSessionTitle(ctx context.Context, roleID string, sessionID string, title string) (types.Session, error)
+	UpdateSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string, content string) (types.Session, error)
+	LoadMermaidFixConfig(ctx context.Context) (types.MermaidFixConfig, error)
+	LoadChatTitleNamingConfig(ctx context.Context) (types.ChatTitleNamingConfig, error)
 	LoadStickerCategory(ctx context.Context, categoryName string) (types.StickerCategory, error)
 	LoadStickerImage(ctx context.Context, relPath string) (string, error)
 	RenameSticker(ctx context.Context, categoryName string, oldStickerName string, newStickerName string) (types.StickerItem, error)
@@ -105,6 +112,121 @@ func (s *system) GenerateStickerName(ctx context.Context, request types.StickerN
 		return types.StickerNameResult{}, err
 	}
 	return types.StickerNameResult{Name: generated, Sticker: renamed, Changed: true}, nil
+}
+
+func (s *system) GenerateChatTitle(ctx context.Context, request types.ChatTitleRequest) (types.ChatTitleResult, error) {
+	roleID := strings.TrimSpace(request.RoleID)
+	sessionID := strings.TrimSpace(request.SessionID)
+	if roleID == "" || sessionID == "" {
+		return types.ChatTitleResult{}, assistInvalid("roleId and sessionId are required", nil)
+	}
+	config, err := s.storage.LoadChatTitleNamingConfig(ctx)
+	if err != nil {
+		return types.ChatTitleResult{}, err
+	}
+	if !config.Enabled {
+		return types.ChatTitleResult{}, assistInvalid("chat title naming is disabled", nil)
+	}
+	if config.ModelPick == "__custom__" && strings.TrimSpace(config.CustomModelID) != "" {
+		config.Coordinate.ModelID = strings.TrimSpace(config.CustomModelID)
+	}
+	if strings.TrimSpace(config.Coordinate.ProviderID) == "" || strings.TrimSpace(config.Coordinate.ModelID) == "" {
+		return types.ChatTitleResult{}, assistInvalid("model coordinate is required", nil)
+	}
+	session, err := s.storage.LoadSession(ctx, roleID, sessionID)
+	if err != nil {
+		return types.ChatTitleResult{}, err
+	}
+	parts := make([]string, 0, len(session.Messages))
+	for _, message := range session.Messages {
+		role := "用户"
+		if strings.TrimSpace(message.Type) == "assistant" {
+			role = "助手"
+		}
+		content := strings.TrimSpace(message.Content)
+		if content == "" {
+			continue
+		}
+		if len([]rune(content)) > 1800 {
+			content = string([]rune(content)[:1800]) + "…"
+		}
+		parts = append(parts, role+"："+content)
+	}
+	transcript := buildChatTranscriptForTitle(parts)
+	if transcript == "" {
+		return types.ChatTitleResult{}, assistInvalid("chat transcript is empty", nil)
+	}
+	response, err := s.models.Complete(ctx, types.ModelRequest{Coordinate: config.Coordinate, Temperature: config.Temperature, Messages: []types.PromptMessage{{Role: "system", Content: config.SystemPrompt, Order: 0, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}, {Role: "user", Content: transcript, Order: 1, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}}})
+	if err != nil {
+		return types.ChatTitleResult{}, assistFailed("failed to generate chat title", err)
+	}
+	title := normalizeGeneratedChatTitle(response.Content)
+	if title == "" {
+		return types.ChatTitleResult{}, assistInvalid("generated chat title is empty", nil)
+	}
+	if _, err := s.storage.UpdateSessionTitle(ctx, roleID, sessionID, title); err != nil {
+		return types.ChatTitleResult{}, err
+	}
+	return types.ChatTitleResult{Title: title}, nil
+}
+
+func (s *system) FixMermaidInMessage(ctx context.Context, request types.MermaidFixRequest) (types.MermaidFixResult, error) {
+	roleID := strings.TrimSpace(request.RoleID)
+	sessionID := strings.TrimSpace(request.SessionID)
+	messageID := strings.TrimSpace(request.MessageID)
+	oldCode := strings.TrimSpace(request.MermaidSource)
+	if roleID == "" || sessionID == "" || messageID == "" || oldCode == "" {
+		return types.MermaidFixResult{}, assistInvalid("roleId, sessionId, messageId, and mermaidSource are required", nil)
+	}
+	config, err := s.storage.LoadMermaidFixConfig(ctx)
+	if err != nil {
+		return types.MermaidFixResult{}, err
+	}
+	if !config.Enabled {
+		return types.MermaidFixResult{}, assistInvalid("mermaid fix is disabled", nil)
+	}
+	if config.ModelPick == "__custom__" && strings.TrimSpace(config.CustomModelID) != "" {
+		config.Coordinate.ModelID = strings.TrimSpace(config.CustomModelID)
+	}
+	if strings.TrimSpace(config.Coordinate.ProviderID) == "" || strings.TrimSpace(config.Coordinate.ModelID) == "" {
+		return types.MermaidFixResult{}, assistInvalid("model coordinate is required", nil)
+	}
+	session, err := s.storage.LoadSession(ctx, roleID, sessionID)
+	if err != nil {
+		return types.MermaidFixResult{}, err
+	}
+	message := types.Message{}
+	found := false
+	for _, item := range session.Messages {
+		if item.ID == messageID {
+			message = item
+			found = true
+			break
+		}
+	}
+	if !found {
+		return types.MermaidFixResult{}, assistInvalid("message does not exist", nil)
+	}
+	userContent := "请修复下面这段 Mermaid 源码，使其可以正确渲染。\n\n" + oldCode
+	if text := strings.TrimSpace(request.RenderErrorMsg); text != "" {
+		userContent += "\n\n渲染错误信息：\n" + text
+	}
+	response, err := s.models.Complete(ctx, types.ModelRequest{Coordinate: config.Coordinate, Temperature: config.Temperature, Messages: []types.PromptMessage{{Role: "system", Content: config.SystemPrompt, Order: 0, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}, {Role: "user", Content: userContent, Order: 1, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}}})
+	if err != nil {
+		return types.MermaidFixResult{}, assistFailed("failed to fix mermaid", err)
+	}
+	newCode := normalizeGeneratedMermaidCode(response.Content)
+	if newCode == "" {
+		return types.MermaidFixResult{}, assistInvalid("generated mermaid is empty", nil)
+	}
+	updatedContent, replaced := replaceMermaidFenceOnce(message.Content, oldCode, newCode)
+	if !replaced {
+		return types.MermaidFixResult{}, assistInvalid("target mermaid block was not found in message content", nil)
+	}
+	if _, err := s.storage.UpdateSessionMessage(ctx, roleID, sessionID, messageID, updatedContent); err != nil {
+		return types.MermaidFixResult{}, err
+	}
+	return types.MermaidFixResult{MessageID: messageID, MermaidSource: newCode, UpdatedContent: updatedContent}, nil
 }
 
 func (s *system) loadStickerByName(ctx context.Context, categoryName string, stickerName string) (types.StickerItem, error) {

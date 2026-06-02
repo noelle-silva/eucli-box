@@ -235,6 +235,42 @@ func TestStickerRoutes(t *testing.T) {
 	}
 }
 
+func TestAssistRoutes(t *testing.T) {
+	fakes := newGatewayFakes()
+	fakes.sessions.sessions["developer/session-1"] = types.Session{
+		ID:         "session-1",
+		RoleID:     "developer",
+		Title:      "旧标题",
+		Status:     string(types.RunStatusCreated),
+		Messages:   []types.Message{{ID: "m1", Type: "assistant", Content: "```mermaid\ngraph TD\nA-->C\n```", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}},
+		CreatedAt:  time.Now().UTC(),
+		UpdatedAt:  time.Now().UTC(),
+		LastActive: time.Now().UTC(),
+	}
+	system := newTestGateway(t, fakes)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/assist/mermaid-fix/config", nil)
+	rec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "openai-main") {
+		t.Fatalf("mermaid config status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/assist/chat-title", strings.NewReader(`{"roleId":"developer","sessionId":"session-1"}`))
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "AI 标题") {
+		t.Fatalf("chat title status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/assist/mermaid-fix", strings.NewReader(`{"roleId":"developer","sessionId":"session-1","messageId":"m1","mermaidSource":"graph TD\nA-->C"}`))
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "graph TD") {
+		t.Fatalf("mermaid fix status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestWebSocketForwardsRuntimeEvents(t *testing.T) {
 	fakes := newGatewayFakes()
 	system := newTestGateway(t, fakes)
@@ -516,10 +552,19 @@ type fakeGatewayStickers struct {
 	categories map[string]map[string]types.StickerItem
 	images     map[string]string
 	config     types.StickerNamingConfig
+	mermaid    types.MermaidFixConfig
+	title      types.ChatTitleNamingConfig
 }
 
 func newFakeGatewayStickers() *fakeGatewayStickers {
-	return &fakeGatewayStickers{categories: map[string]map[string]types.StickerItem{}, images: map[string]string{}, config: types.StickerNamingConfig{Enabled: true, Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, SystemPrompt: types.DefaultStickerNamingSystemPrompt, Temperature: 0.2, UpdatedAt: time.Now().UTC()}}
+	now := time.Now().UTC()
+	return &fakeGatewayStickers{
+		categories: map[string]map[string]types.StickerItem{},
+		images:     map[string]string{},
+		config:     types.StickerNamingConfig{Enabled: true, Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, SystemPrompt: types.DefaultStickerNamingSystemPrompt, Temperature: 0.2, UpdatedAt: now},
+		mermaid:    types.MermaidFixConfig{Enabled: true, Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, SystemPrompt: types.DefaultMermaidFixSystemPrompt, Temperature: 0.2, UpdatedAt: now},
+		title:      types.ChatTitleNamingConfig{Enabled: true, Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, SystemPrompt: types.DefaultChatTitleNamingSystemPrompt, Temperature: 0.2, UpdatedAt: now},
+	}
 }
 
 func (f *fakeGatewayStickers) CreateStickerCategory(ctx context.Context, categoryName string) (types.StickerCategory, error) {
@@ -606,6 +651,24 @@ func (f *fakeGatewayStickers) SaveStickerNamingConfig(ctx context.Context, confi
 	return f.config, nil
 }
 
+func (f *fakeGatewayStickers) LoadMermaidFixConfig(ctx context.Context) (types.MermaidFixConfig, error) {
+	return f.mermaid, nil
+}
+
+func (f *fakeGatewayStickers) SaveMermaidFixConfig(ctx context.Context, config types.MermaidFixConfig) (types.MermaidFixConfig, error) {
+	f.mermaid = config
+	return f.mermaid, nil
+}
+
+func (f *fakeGatewayStickers) LoadChatTitleNamingConfig(ctx context.Context) (types.ChatTitleNamingConfig, error) {
+	return f.title, nil
+}
+
+func (f *fakeGatewayStickers) SaveChatTitleNamingConfig(ctx context.Context, config types.ChatTitleNamingConfig) (types.ChatTitleNamingConfig, error) {
+	f.title = config
+	return f.title, nil
+}
+
 type fakeGatewayAssist struct{ stickers *fakeGatewayStickers }
 
 func (f *fakeGatewayAssist) GenerateStickerName(ctx context.Context, request types.StickerNameRequest) (types.StickerNameResult, error) {
@@ -617,6 +680,20 @@ func (f *fakeGatewayAssist) GenerateStickerName(ctx context.Context, request typ
 		return types.StickerNameResult{}, err
 	}
 	return types.StickerNameResult{Name: item.Name, Sticker: item, Changed: true}, nil
+}
+
+func (f *fakeGatewayAssist) GenerateChatTitle(ctx context.Context, request types.ChatTitleRequest) (types.ChatTitleResult, error) {
+	if !f.stickers.title.Enabled {
+		return types.ChatTitleResult{}, errors.New("disabled")
+	}
+	return types.ChatTitleResult{Title: "AI 标题"}, nil
+}
+
+func (f *fakeGatewayAssist) FixMermaidInMessage(ctx context.Context, request types.MermaidFixRequest) (types.MermaidFixResult, error) {
+	if !f.stickers.mermaid.Enabled {
+		return types.MermaidFixResult{}, errors.New("disabled")
+	}
+	return types.MermaidFixResult{MessageID: request.MessageID, MermaidSource: "graph TD\nA-->B", UpdatedContent: "```mermaid\ngraph TD\nA-->B\n```"}, nil
 }
 
 func decodeResponseData[T any](t *testing.T, body string) T {

@@ -178,3 +178,77 @@ func (s *system) handleSaveStickerNamingConfig(w http.ResponseWriter, r *http.Re
 	}
 	writeData(w, http.StatusOK, saved)
 }
+
+func (s *system) handleLoadMermaidFixConfig(w http.ResponseWriter, r *http.Request) {
+	config, err := s.stickers.LoadMermaidFixConfig(r.Context())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, config)
+}
+
+func (s *system) handleSaveMermaidFixConfig(w http.ResponseWriter, r *http.Request) {
+	config, err := decodeJSON[types.MermaidFixConfig](r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	saved, err := s.stickers.SaveMermaidFixConfig(r.Context(), config)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, saved)
+}
+
+func (s *system) handleLoadChatTitleNamingConfig(w http.ResponseWriter, r *http.Request) {
+	config, err := s.stickers.LoadChatTitleNamingConfig(r.Context())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, config)
+}
+
+func (s *system) handleSaveChatTitleNamingConfig(w http.ResponseWriter, r *http.Request) {
+	config, err := decodeJSON[types.ChatTitleNamingConfig](r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	saved, err := s.stickers.SaveChatTitleNamingConfig(r.Context(), config)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, saved)
+}
+
+func (s *system) handleGenerateChatTitle(w http.ResponseWriter, r *http.Request) {
+	request, err := decodeJSON[types.ChatTitleRequest](r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	result, err := s.assist.GenerateChatTitle(r.Context(), request)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, result)
+}
+
+func (s *system) handleFixMermaidInMessage(w http.ResponseWriter, r *http.Request) {
+	request, err := decodeJSON[types.MermaidFixRequest](r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	result, err := s.assist.FixMermaidInMessage(r.Context(), request)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, result)
+}

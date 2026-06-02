@@ -1382,11 +1382,26 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       const cost = () => ((now() - t0) / 1000).toFixed(1)
       return Promise.resolve()
         .then(() => {
+	        const located = locateMessageInActiveChat(String(messageId || ''))
+	        if (!located || String(located.kind || '') !== 'role') throw new Error('仅角色会话已接入 Mermaid AI 修复根动作')
+	        const sessionId = String(located.chat?.id || '').trim()
+	        const roleId = String(located.targetId || '').trim()
+	        const mid = String(messageId || '').trim()
+	        if (!roleId || !sessionId || !mid) throw new Error('Mermaid 修复上下文不完整')
           t0 = now()
           api.ui?.showToast?.('AI 修复 Mermaid 中…')
-          return aiFixMermaidInMessage(String(messageId || ''), String(mermaidSrc || ''), String(renderErrorMsg || ''))
+	        return aiFixMermaidInMessage(roleId, sessionId, mid, String(mermaidSrc || ''), String(renderErrorMsg || ''))
         })
         .then((fixed: any) => {
+	        const updatedContent = String((fixed as any)?.updatedContent || '').trim()
+	        const nextMermaid = String((fixed as any)?.mermaidSource || '').trim()
+	        if (updatedContent) {
+	          return patchMessageContentSilent(String(messageId || ''), updatedContent)
+	            .then(() => {
+	              api.ui?.showToast?.(`Mermaid 已修复（${cost()}s）`)
+	              return nextMermaid || fixed
+	            })
+	        }
           api.ui?.showToast?.(`Mermaid 已修复（${cost()}s）`)
           return fixed
         })
@@ -1516,8 +1531,13 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
           return aiGenerateChatTitle(String(roleId || ''), String(chatId || ''))
         })
         .then((title: any) => {
-          api.ui?.showToast?.(`已更新标题（${cost()}s）：${String(title || '').trim() || '（空）'}`)
-          return title
+	          const nextTitle = String((title as any)?.title || title || '').trim()
+	          return reloadRoleSession(String(roleId || ''), String(chatId || ''))
+	            .then(() => {
+	              emit()
+	              api.ui?.showToast?.(`已更新标题（${cost()}s）：${nextTitle || '（空）'}`)
+	              return title
+	            })
         })
         .catch((e: any) => {
           const msg = String(e?.message || e || 'AI 生成标题失败')

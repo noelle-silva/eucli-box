@@ -36,6 +36,10 @@ func (p paths) metaVersionFile() string { return filepath.Join(p.metaRoot(), "ve
 
 func (p paths) stickerNamingConfigFile() string { return filepath.Join(p.metaRoot(), "sticker-naming.json") }
 
+func (p paths) mermaidFixConfigFile() string { return filepath.Join(p.metaRoot(), "mermaid-fix.json") }
+
+func (p paths) chatTitleNamingConfigFile() string { return filepath.Join(p.metaRoot(), "chat-title-naming.json") }
+
 func (p paths) roleDir(roleID string) (string, error) {
 	return p.safeJoin(p.rolesRoot(), roleID)
 }

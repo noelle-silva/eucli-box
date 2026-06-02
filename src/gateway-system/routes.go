@@ -46,6 +46,12 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("GET /api/assist/stickers/name/config", s.authWrap(s.handleLoadStickerNamingConfig))
 	s.mux.HandleFunc("PUT /api/assist/stickers/name/config", s.authWrap(s.handleSaveStickerNamingConfig))
 	s.mux.HandleFunc("POST /api/assist/stickers/name", s.authWrap(s.handleGenerateStickerName))
+	s.mux.HandleFunc("GET /api/assist/mermaid-fix/config", s.authWrap(s.handleLoadMermaidFixConfig))
+	s.mux.HandleFunc("PUT /api/assist/mermaid-fix/config", s.authWrap(s.handleSaveMermaidFixConfig))
+	s.mux.HandleFunc("POST /api/assist/mermaid-fix", s.authWrap(s.handleFixMermaidInMessage))
+	s.mux.HandleFunc("GET /api/assist/chat-title/config", s.authWrap(s.handleLoadChatTitleNamingConfig))
+	s.mux.HandleFunc("PUT /api/assist/chat-title/config", s.authWrap(s.handleSaveChatTitleNamingConfig))
+	s.mux.HandleFunc("POST /api/assist/chat-title", s.authWrap(s.handleGenerateChatTitle))
 
 	s.mux.HandleFunc("GET /ws/events", s.handleEventsWebSocket)
 }

@@ -50,6 +50,10 @@ type System interface {
 	LoadStickerImage(ctx context.Context, relPath string) (string, error)
 	LoadStickerNamingConfig(ctx context.Context) (types.StickerNamingConfig, error)
 	SaveStickerNamingConfig(ctx context.Context, config types.StickerNamingConfig) (types.StickerNamingConfig, error)
+	LoadMermaidFixConfig(ctx context.Context) (types.MermaidFixConfig, error)
+	SaveMermaidFixConfig(ctx context.Context, config types.MermaidFixConfig) (types.MermaidFixConfig, error)
+	LoadChatTitleNamingConfig(ctx context.Context) (types.ChatTitleNamingConfig, error)
+	SaveChatTitleNamingConfig(ctx context.Context, config types.ChatTitleNamingConfig) (types.ChatTitleNamingConfig, error)
 
 	SaveCallRecord(ctx context.Context, record types.CallRecord) error
 

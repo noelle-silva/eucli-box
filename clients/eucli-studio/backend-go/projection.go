@@ -145,10 +145,10 @@ func (p *projectionService) remove(ctx context.Context, key string) error {
 func (p *projectionService) saveMeta(ctx context.Context, value any) error {
 	meta := objectMap(value)
 	settings := objectMap(meta["settings"])
-	if err := p.saveStickerNamingConfig(ctx, settings); err != nil {
+	if err := p.saveAssistConfigs(ctx, settings); err != nil {
 		return err
 	}
-	settings = stripStickerNamingSettings(settings)
+	settings = stripAssistSettings(settings)
 	_, err := p.config.updateProjection(func(projection *projectionConfig) {
 		projection.UI = objectMap(meta["ui"])
 		projection.Settings = settings
@@ -157,30 +157,43 @@ func (p *projectionService) saveMeta(ctx context.Context, value any) error {
 	return err
 }
 
-func (p *projectionService) saveStickerNamingConfig(ctx context.Context, settings map[string]any) error {
+func (p *projectionService) saveAssistConfigs(ctx context.Context, settings map[string]any) error {
 	services := objectMap(settings["aiServices"])
-	stickerNaming := objectMap(services["stickerNaming"])
-	if len(stickerNaming) == 0 {
-		return nil
+	requests := []struct {
+		config map[string]any
+		path   string
+	}{
+		{config: objectMap(services["stickerNaming"]), path: "/api/assist/stickers/name/config"},
+		{config: objectMap(services["mermaidFix"]), path: "/api/assist/mermaid-fix/config"},
+		{config: objectMap(services["chatTitleNaming"]), path: "/api/assist/chat-title/config"},
 	}
-	providerID := stringField(stickerNaming, "providerId")
-	modelPick := stringField(stickerNaming, "modelId")
-	customModelID := stringField(stickerNaming, "customModelId")
-	modelID := modelPick
-	if modelPick == "__custom__" {
-		modelID = customModelID
+	for _, req := range requests {
+		if len(req.config) == 0 {
+			continue
+		}
+		providerID := stringField(req.config, "providerId")
+		modelPick := stringField(req.config, "modelId")
+		customModelID := stringField(req.config, "customModelId")
+		modelID := modelPick
+		if modelPick == "__custom__" {
+			modelID = customModelID
+		}
+		if _, err := p.eb.request(ctx, ebRequest{Method: "PUT", Path: req.path, Body: mustJSON(map[string]any{"enabled": boolField(req.config, "enabled", false), "modelPick": modelPick, "customModelId": customModelID, "coordinate": map[string]any{"providerId": providerID, "modelId": modelID}, "systemPrompt": stringField(req.config, "systemPrompt"), "temperature": 0.2})}); err != nil {
+			return err
+		}
 	}
-	_, err := p.eb.request(ctx, ebRequest{Method: "PUT", Path: "/api/assist/stickers/name/config", Body: mustJSON(map[string]any{"enabled": boolField(stickerNaming, "enabled", false), "modelPick": modelPick, "customModelId": customModelID, "coordinate": map[string]any{"providerId": providerID, "modelId": modelID}, "systemPrompt": stringField(stickerNaming, "systemPrompt"), "temperature": 0.2})})
-	return err
+	return nil
 }
 
-func stripStickerNamingSettings(settings map[string]any) map[string]any {
+func stripAssistSettings(settings map[string]any) map[string]any {
 	settings = objectMap(settings)
 	services := objectMap(settings["aiServices"])
 	if len(services) == 0 {
 		return settings
 	}
 	delete(services, "stickerNaming")
+	delete(services, "mermaidFix")
+	delete(services, "chatTitleNaming")
 	settings["aiServices"] = services
 	return settings
 }
@@ -246,8 +259,8 @@ func (p *projectionService) stickers(ctx context.Context) (any, error) {
 	return map[string]any{"enabled": enabled, "categories": categories, "map": stickerMap, "updatedAt": millisFromAny(libraryMap["updatedAt"])}, nil
 }
 
-func (p *projectionService) loadStickerNamingConfig(ctx context.Context) (map[string]any, error) {
-	data, err := p.eb.request(ctx, ebRequest{Method: "GET", Path: "/api/assist/stickers/name/config"})
+func (p *projectionService) loadAssistConfig(ctx context.Context, path string) (map[string]any, error) {
+	data, err := p.eb.request(ctx, ebRequest{Method: "GET", Path: path})
 	if err != nil {
 		return nil, err
 	}
@@ -279,7 +292,15 @@ func (p *projectionService) meta(ctx context.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	stickerNaming, err := p.loadStickerNamingConfig(ctx)
+	mermaidFix, err := p.loadAssistConfig(ctx, "/api/assist/mermaid-fix/config")
+	if err != nil {
+		return nil, err
+	}
+	chatTitleNaming, err := p.loadAssistConfig(ctx, "/api/assist/chat-title/config")
+	if err != nil {
+		return nil, err
+	}
+	stickerNaming, err := p.loadAssistConfig(ctx, "/api/assist/stickers/name/config")
 	if err != nil {
 		return nil, err
 	}
@@ -322,7 +343,7 @@ func (p *projectionService) meta(ctx context.Context) (any, error) {
 		"dataVersion":      uiVersion,
 		"updatedAt":        nowMillis(),
 		"ui":               projection.UI,
-		"settings":         mergeSettings(projection.Settings, providers, stickerNaming),
+		"settings":         mergeSettings(projection.Settings, providers, mermaidFix, chatTitleNaming, stickerNaming),
 		"favorites":        projection.Favorites,
 		"roleOrder":        roleOrder,
 		"roleFolders":      roleFolders,
@@ -767,7 +788,7 @@ func fromUIChat(value any, roleID string) map[string]any {
 	return map[string]any{"id": stringField(chat, "id"), "roleId": roleID, "title": fallback(stringField(chat, "title"), "新聊天"), "status": "created", "messages": messages, "createdAt": timeFromMillis(chat["createdAt"]), "updatedAt": updatedAt, "lastActive": updatedAt}
 }
 
-func mergeSettings(settings map[string]any, providers []map[string]any, stickerNaming map[string]any) map[string]any {
+func mergeSettings(settings map[string]any, providers []map[string]any, mermaidFix map[string]any, chatTitleNaming map[string]any, stickerNaming map[string]any) map[string]any {
 	out := map[string]any{"streamEnabled": true, "transparentChatBg": false, "chatBgOpacity": 0, "chatBgBlur": 0, "topbarOpacity": 100, "topbarBlur": 0, "composerOpacity": 86, "composerBlur": 10, "branchTree": map[string]any{"dir": "lr", "view": "float", "followSelected": true, "modalHotkey": ""}, "renderSafetyPolicy": "original", "userMessageCollapseEnabled": false, "userMessageCollapseLines": 8, "attachments": map[string]any{"sendLimitChars": 80000, "maxFileSizeMbByKind": map[string]any{"txt": 10, "md": 10, "pdf": 10, "docx": 10, "ppt": 10}}, "stickers": map[string]any{"enabled": false, "categories": []any{}, "map": map[string]any{}}, "providers": []any{}}
 	for k, v := range settings {
 		out[k] = v
@@ -778,6 +799,8 @@ func mergeSettings(settings map[string]any, providers []map[string]any, stickerN
 	}
 	out["providers"] = uiProviders
 	aiServices := objectMap(out["aiServices"])
+	aiServices["mermaidFix"] = mermaidFix
+	aiServices["chatTitleNaming"] = chatTitleNaming
 	aiServices["stickerNaming"] = stickerNaming
 	out["aiServices"] = aiServices
 	return out

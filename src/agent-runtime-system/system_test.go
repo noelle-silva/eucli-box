@@ -31,6 +31,28 @@ func TestStartRunCompletesWithoutTool(t *testing.T) {
 	}
 }
 
+func TestStartRunPersistsInputMessageBeforeReturning(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.block = make(chan struct{})
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	if state.InputMessageID == "" || state.LastMessageID != state.InputMessageID {
+		t.Fatalf("initial run message ids = input %q last %q", state.InputMessageID, state.LastMessageID)
+	}
+	session := fakes.storage.lastSession()
+	if len(session.Messages) != 1 {
+		t.Fatalf("messages before model response = %#v", session.Messages)
+	}
+	if session.Messages[0].ID != state.InputMessageID || session.Messages[0].Type != "user" || session.Messages[0].Content != "hello" {
+		t.Fatalf("input message = %#v state=%#v", session.Messages[0], state)
+	}
+	close(fakes.provider.block)
+	waitRun(t, system, state.ID)
+}
+
 func TestStartRunFromUserMessageAppendsAssistantSibling(t *testing.T) {
 	fakes := newRuntimeFakes()
 	now := time.Now().UTC()
@@ -378,9 +400,17 @@ type fakeRuntimeProvider struct {
 	alwaysTool bool
 	calls      int
 	requests   []types.ModelRequest
+	block      chan struct{}
 }
 
 func (f *fakeRuntimeProvider) Complete(ctx context.Context, request types.ModelRequest) (types.ModelResponse, error) {
+	if f.block != nil {
+		select {
+		case <-f.block:
+		case <-ctx.Done():
+			return types.ModelResponse{}, ctx.Err()
+		}
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++

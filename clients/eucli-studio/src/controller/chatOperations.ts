@@ -48,6 +48,26 @@ export function createChatOperations(deps: {
     return hasActiveAssistantMessages(chat)
   }
 
+  function syncEbRoleRunSendingCtx(run: EbRunState, fallback: { roleId: string; sessionId?: string; lastMessageId?: string }) {
+    const runId = String(run?.id || '').trim()
+    const state = getState()
+    const current = state.sendingCtx && typeof state.sendingCtx === 'object' ? state.sendingCtx : null
+    if (current && String(current?.kind || '') !== 'eb-role-run') return
+    if (current && String(current?.runId || '').trim() && runId && String(current?.runId || '').trim() !== runId) return
+
+    const inputMessageId = String(run?.inputMessageId || current?.inputMessageId || '').trim()
+    const lastMessageId = String(run?.lastMessageId || fallback.lastMessageId || current?.lastMessageId || inputMessageId || '').trim()
+    state.sendingCtx = {
+      kind: 'eb-role-run',
+      runId: runId || String(current?.runId || '').trim(),
+      roleId: String(run?.roleId || fallback.roleId || current?.roleId || '').trim(),
+      sessionId: String(run?.sessionId || fallback.sessionId || current?.sessionId || '').trim(),
+      inputMessageId,
+      lastMessageId,
+      cancelledByUser: !!current?.cancelledByUser,
+    }
+  }
+
   async function refreshRoleSession(roleId: string, sessionId: string, onLoaded?: (chat: any) => void) {
     const state = getState()
     const rid = String(roleId || '').trim()
@@ -110,7 +130,16 @@ export function createChatOperations(deps: {
     onAccepted?.(state)
     let sessionId = String(state.sessionId || input.sessionId || '').trim()
     let followMessageId = String(state.lastMessageId || '').trim()
-    if (sessionId) await refreshRoleSession(input.roleId, sessionId, (chat) => followRunResultBranch(chat, follow ? { ...follow, messageId: followMessageId } : null))
+    syncEbRoleRunSendingCtx(state, { roleId: input.roleId, sessionId, lastMessageId: followMessageId })
+
+    const refreshRunSession = async () => {
+      if (!sessionId) return
+      await refreshRoleSession(input.roleId, sessionId, (chat) => {
+        followRunResultBranch(chat, follow ? { ...follow, messageId: followMessageId } : null)
+      })
+    }
+
+    await refreshRunSession()
 
     const deadline = Date.now() + 120_000
     while (!isTerminalRunStatus(state.status)) {
@@ -118,21 +147,16 @@ export function createChatOperations(deps: {
       await sleepMs(450)
       state = await getRunState(netRequest, state.id)
       followMessageId = String(state.lastMessageId || followMessageId || '').trim()
-      const currentState = getState()
-      const sendingCtx = currentState.sendingCtx && typeof currentState.sendingCtx === 'object' ? currentState.sendingCtx : null
-      if (sendingCtx && String(sendingCtx.kind || '') === 'eb-role-run' && String(sendingCtx.runId || '') === String(state.id || '')) {
-        sendingCtx.inputMessageId = String(state.inputMessageId || sendingCtx.inputMessageId || '').trim()
-        sendingCtx.lastMessageId = followMessageId
-      }
+      syncEbRoleRunSendingCtx(state, { roleId: input.roleId, sessionId, lastMessageId: followMessageId })
       const nextSessionId = String(state.sessionId || sessionId || '').trim()
       if (nextSessionId) {
         sessionId = nextSessionId
-        await refreshRoleSession(input.roleId, sessionId, (chat) => followRunResultBranch(chat, follow ? { ...follow, messageId: followMessageId } : null))
+        await refreshRunSession()
       }
     }
 
     followMessageId = String(state.lastMessageId || followMessageId || '').trim()
-    if (sessionId) await refreshRoleSession(input.roleId, sessionId, (chat) => followRunResultBranch(chat, follow ? { ...follow, messageId: followMessageId } : null))
+    await refreshRunSession()
     if (state.status === 'failed' || state.status === 'cancelled') throw new Error(state.reason || `e-b run ${state.status}`)
     if (!sessionId) throw new Error('e-b 未返回会话ID')
     return sessionId
@@ -163,13 +187,7 @@ export function createChatOperations(deps: {
       state.sendingCtx = { kind: 'eb-role-run', runId: '', roleId: input.roleId, sessionId: input.sessionId, cancelledByUser: false }
       renderComposer()
       await runRoleMessageViaEb({ roleId: input.roleId, sessionId: input.sessionId, userMessageId }, (run) => {
-        state.sendingCtx = {
-          kind: 'eb-role-run',
-          runId: String(run.id || '').trim(),
-          roleId: input.roleId,
-          sessionId: String(run.sessionId || input.sessionId || '').trim(),
-          cancelledByUser: false,
-        }
+        syncEbRoleRunSendingCtx(run, { roleId: input.roleId, sessionId: input.sessionId })
         renderComposer()
       }, { previousMessageIds, ancestorMessageId: userMessageId })
       await refreshRoleSession(input.roleId, input.sessionId, (chat) => followRunResultBranch(chat, { previousMessageIds, ancestorMessageId: userMessageId }))
@@ -353,13 +371,7 @@ export function createChatOperations(deps: {
       state.sendingCtx = { kind: 'eb-role-run', runId: '', roleId: rid, sessionId, cancelledByUser: false }
       renderComposer()
       await runRoleMessageViaEb({ roleId: rid, sessionId, message: input, parentMessageId }, (run) => {
-        state.sendingCtx = {
-          kind: 'eb-role-run',
-          runId: String(run.id || '').trim(),
-          roleId: rid,
-          sessionId: String(run.sessionId || sessionId || '').trim(),
-          cancelledByUser: false,
-        }
+        syncEbRoleRunSendingCtx(run, { roleId: rid, sessionId })
         state.draft.input = ''
         state.draft.images = []
         ;(state.draft as any).files = []

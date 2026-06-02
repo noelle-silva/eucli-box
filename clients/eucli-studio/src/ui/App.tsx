@@ -2226,7 +2226,9 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const closeSendWarn = useEvent(() => setSendWarn({ open: false, items: [] }))
   const sendFromComposer = useEvent(() => {
     stickToBottomRef.current = true
-    const mid = !branchDraft ? String(treeSelectedMid || '').trim() : ''
+    const selectedMid = String(treeSelectedMid || '').trim()
+    const branchDraftMid = String((branchDraft as any)?.forkFromMid || '').trim()
+    const mid = selectedMid || branchDraftMid
     if (mid && activeChat) {
       setSendPathAnchor({ chatId: String(activeChat?.id || ''), parentMid: mid, nonce: Date.now() })
       setTreeSelectedMid('')

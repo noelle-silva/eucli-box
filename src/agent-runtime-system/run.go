@@ -20,7 +20,16 @@ func (s *system) StartRun(ctx context.Context, request types.RunRequest) (types.
 	s.mu.Lock()
 	s.runs[state.ID] = record
 	s.mu.Unlock()
-	go s.run(runCtx, record, request)
+	state, contextSession, err := s.startRun(ctx, record, request)
+	if err != nil {
+		cancel()
+		s.failRunStateOnly(record, err.Error())
+		if failed, ok := s.getRunState(record.runID); ok {
+			return failed, nil
+		}
+		return state, nil
+	}
+	go s.continueRun(runCtx, record, contextSession)
 	return state, nil
 }
 
@@ -52,38 +61,39 @@ func (s *system) CancelRun(ctx context.Context, runID string) error {
 	return nil
 }
 
-func (s *system) run(ctx context.Context, record *runRecord, request types.RunRequest) {
+func (s *system) startRun(ctx context.Context, record *runRecord, request types.RunRequest) (types.RunState, types.Session, error) {
 	state, err := s.updateRun(record.runID, types.RunStatusRunning, "")
 	if err != nil {
-		return
+		return state, types.Session{}, err
 	}
 	s.publish(record.runID, "run_started", state)
 	session, err := s.loadOrCreateSession(ctx, request)
 	if err != nil {
-		s.failRun(context.Background(), record, session, err.Error())
-		return
+		return state, types.Session{}, err
 	}
 	if record.state.SessionID == "" {
 		if err := s.setRunSessionID(record.runID, session.ID); err != nil {
-			s.failRun(context.Background(), record, session, err.Error())
-			return
+			return state, types.Session{}, err
 		}
 	}
 	session, contextSession, assistantParent, err := prepareRunSession(session, request)
 	if err != nil {
-		s.failRunStateOnly(record, err.Error())
-		return
+		return state, types.Session{}, err
 	}
 	if err := s.setRunMessageIDs(record.runID, assistantParent.ID, assistantParent.ID); err != nil {
-		s.failRun(context.Background(), record, session, err.Error())
-		return
+		return state, types.Session{}, err
 	}
 	if err := s.saveSession(ctx, session, types.RunStatusRunning); err != nil {
-		s.failRun(context.Background(), record, session, err.Error())
-		return
+		return state, types.Session{}, err
 	}
 	record.session = session
 	record.messageParent = assistantParent
+	state, _ = s.getRunState(record.runID)
+	return state, contextSession, nil
+}
+
+func (s *system) continueRun(ctx context.Context, record *runRecord, contextSession types.Session) {
+	assistantParent := record.messageParent
 	for step := 1; step <= s.config.MaxSteps; step++ {
 		if err := ctx.Err(); err != nil {
 			s.cancelRunRecord(context.Background(), record, record.session)

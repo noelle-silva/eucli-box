@@ -18,13 +18,12 @@ type clientConfig struct {
 }
 
 type projectionConfig struct {
-	UI               map[string]any       `json:"ui,omitempty"`
-	Settings         map[string]any       `json:"settings,omitempty"`
-	Favorites        map[string]any       `json:"favorites,omitempty"`
-	RoleOrder        []string             `json:"roleOrder,omitempty"`
-	RoleFolders      map[string]string    `json:"roleFolders,omitempty"`
-	ProviderFolders  map[string]string    `json:"providerFolders,omitempty"`
-	ActiveChatByRole map[string]string    `json:"activeChatByRole,omitempty"`
+	UI               map[string]any    `json:"ui,omitempty"`
+	Settings         map[string]any    `json:"settings,omitempty"`
+	RoleOrder        []string          `json:"roleOrder,omitempty"`
+	RoleFolders      map[string]string `json:"roleFolders,omitempty"`
+	ProviderFolders  map[string]string `json:"providerFolders,omitempty"`
+	ActiveChatByRole map[string]string `json:"activeChatByRole,omitempty"`
 }
 
 type configStore struct {
@@ -111,9 +110,6 @@ func normalizeProjection(value projectionConfig) projectionConfig {
 	}
 	if value.Settings == nil {
 		value.Settings = map[string]any{}
-	}
-	if value.Favorites == nil {
-		value.Favorites = map[string]any{"folders": []any{}, "chatRefsByFolderId": map[string]any{}}
 	}
 	if value.RoleOrder == nil {
 		value.RoleOrder = []string{}

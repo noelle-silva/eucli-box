@@ -60,6 +60,8 @@ type SessionSystem interface {
 	DeleteSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error)
 	DeleteSessionMessageSubtree(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error)
 	LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error)
+	LoadSessionFavorites(ctx context.Context) (types.SessionFavorites, error)
+	SaveSessionFavorites(ctx context.Context, favorites types.SessionFavorites) (types.SessionFavorites, error)
 }
 
 type StickerSystem interface {

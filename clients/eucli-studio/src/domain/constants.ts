@@ -1,6 +1,7 @@
 export const VERSION = 7
 export const SPLIT_SCHEMA_VERSION = 1
 export const SPLIT_META_KEY = 'meta/index'
+export const SESSION_FAVORITES_KEY = 'sessions/favorites'
 export const STICKERS_KEY = 'stickers/index'
 
 export const MAX_DRAFT_IMAGES = 8

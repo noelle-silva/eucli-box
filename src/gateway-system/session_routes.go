@@ -215,6 +215,29 @@ func (s *system) handleDeleteSessionMessageSubtree(w http.ResponseWriter, r *htt
 	writeData(w, http.StatusOK, session)
 }
 
+func (s *system) handleLoadSessionFavorites(w http.ResponseWriter, r *http.Request) {
+	favorites, err := s.sessions.LoadSessionFavorites(r.Context())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, favorites)
+}
+
+func (s *system) handleSaveSessionFavorites(w http.ResponseWriter, r *http.Request) {
+	favorites, err := decodeJSON[types.SessionFavorites](r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	saved, err := s.sessions.SaveSessionFavorites(r.Context(), favorites)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, saved)
+}
+
 func (s *system) handleLoadSessionAttachmentImage(w http.ResponseWriter, r *http.Request) {
 	relPath := r.URL.Query().Get("path")
 	dataURL, err := s.sessions.LoadSessionAttachmentImage(r.Context(), relPath)

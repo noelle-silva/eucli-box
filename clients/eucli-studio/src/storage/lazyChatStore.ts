@@ -1,5 +1,6 @@
 import { normalizeData } from '../domain/dataNormalizers'
-import { VERSION, STICKERS_KEY } from '../domain/constants'
+import { VERSION, SESSION_FAVORITES_KEY, STICKERS_KEY } from '../domain/constants'
+import { normalizeFavorites } from '../domain/favorites'
 import { chatMetaFromChat, chatMetasFromBox, removeChatMeta, upsertChatMeta } from '../domain/chatMeta'
 import { preserveLocalBranchSelection } from '../domain/branching'
 import {
@@ -70,11 +71,18 @@ export function createLazyChatStore(deps: {
       stickers = null
     }
 
+    let favorites = null
+    try {
+      favorites = await storage.get(SESSION_FAVORITES_KEY)
+    } catch (_) {
+      favorites = null
+    }
+
     const providers = await loadProvidersFromStorage(storage, meta)
     const d: any = {
       version: VERSION,
       settings: meta.settings && typeof meta.settings === 'object' ? meta.settings : {},
-      favorites: (meta as any).favorites,
+      favorites: normalizeFavorites(favorites),
       roles: [],
       chatsByRole: {},
       groups: [],

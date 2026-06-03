@@ -435,6 +435,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     saveRoleOrder,
     saveGroupChat,
     saveMetaOnly,
+    saveFavoritesOnly,
     saveRoleEntity,
     removeRoleEntity,
     saveProviderEntity,
@@ -588,7 +589,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   // ============================================================
   const favOps = createFavoritesOperations({
     getState: () => state,
-    save: saveMeta,
+    save: saveFavoritesOnly,
     emit,
     showToast: api.ui?.showToast,
     activeTargetKind,

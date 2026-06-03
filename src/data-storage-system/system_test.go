@@ -19,6 +19,7 @@ func TestInitializeCreatesStorageLayout(t *testing.T) {
 		assertDir(t, filepath.Join(system.paths.root, dir))
 	}
 	assertFile(t, filepath.Join(system.paths.root, "meta", "version.json"))
+	assertFile(t, filepath.Join(system.paths.root, "sessions", "favorites.json"))
 }
 
 func TestSaveLoadListAndDeleteRole(t *testing.T) {
@@ -160,6 +161,33 @@ func TestSaveSessionMessageAttachmentStoresImagesAndText(t *testing.T) {
 	}
 	if text.Kind != "md" || text.Lang != "markdown" || text.Text != "# hello" || text.Path != "" {
 		t.Fatalf("text attachment = %#v", text)
+	}
+}
+
+func TestSessionFavoritesStore(t *testing.T) {
+	system := newTestSystem(t)
+	favorites := types.SessionFavorites{
+		Folders: []types.SessionFavoriteFolder{{ID: "favf-1", Name: "Important", CreatedAt: 1, UpdatedAt: 1}},
+		ChatRefsByFolderID: map[string][]types.SessionFavoriteChatRef{
+			"favf-1": {{TargetKind: "role", TargetID: "developer", ChatID: "session-1", AddedAt: 2}},
+		},
+	}
+
+	saved, err := system.SaveSessionFavorites(context.Background(), favorites)
+	if err != nil {
+		t.Fatalf("SaveSessionFavorites() error = %v", err)
+	}
+	if len(saved.Folders) != 1 || saved.Folders[0].ID != "favf-1" || len(saved.ChatRefsByFolderID["favf-1"]) != 1 {
+		t.Fatalf("saved favorites = %#v", saved)
+	}
+	assertFile(t, filepath.Join(system.paths.root, "sessions", "favorites.json"))
+
+	loaded, err := system.LoadSessionFavorites(context.Background())
+	if err != nil {
+		t.Fatalf("LoadSessionFavorites() error = %v", err)
+	}
+	if len(loaded.Folders) != 1 || loaded.ChatRefsByFolderID["favf-1"][0].ChatID != "session-1" {
+		t.Fatalf("loaded favorites = %#v", loaded)
 	}
 }
 

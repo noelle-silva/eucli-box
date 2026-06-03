@@ -55,7 +55,6 @@ export function normalizeSplitMeta(raw: any) {
     updatedAt: Number(raw.updatedAt || 0),
     ui: raw.ui && typeof raw.ui === 'object' ? raw.ui : {},
     settings: raw.settings && typeof raw.settings === 'object' ? raw.settings : {},
-    favorites: normalizeFavorites((raw as any).favorites),
     roleOrder,
     roleFolders,
     chatIndexByRole,

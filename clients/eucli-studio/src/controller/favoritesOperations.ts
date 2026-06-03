@@ -13,6 +13,10 @@ export function createFavoritesOperations(deps: {
 }) {
   const { getState, save, emit, showToast } = deps
 
+  function persistFavorites() {
+    save().catch((e: any) => showToast?.(String(e?.message || e || '保存收藏失败')))
+  }
+
   function ensureFavoritesBare() {
     const data = getState().data
     if (!data) return null
@@ -90,7 +94,7 @@ export function createFavoritesOperations(deps: {
     const id = uid('favf')
     fav.folders = fav.folders.concat([{ id, name: v.name, parentId: pid, createdAt: t, updatedAt: t }])
     fav.chatRefsByFolderId = { ...(fav.chatRefsByFolderId || {}), [id]: [] }
-    save().catch(() => {})
+    persistFavorites()
     emit()
     return id
   }
@@ -106,7 +110,7 @@ export function createFavoritesOperations(deps: {
     if (!v.ok) return showToast?.(v.error || '文件夹名无效')
     if (favoriteFolderNameExists(v.name, fid)) return showToast?.('文件夹已存在')
     fav.folders = fav.folders.map((f: any) => (String(f?.id || '') === fid ? { ...f, name: v.name, updatedAt: now() } : f))
-    save().catch(() => {})
+    persistFavorites()
     emit()
   }
 
@@ -146,7 +150,7 @@ export function createFavoritesOperations(deps: {
       delete nextRefs[fid]
     } catch (_) {}
     fav.chatRefsByFolderId = nextRefs
-    save().catch(() => {})
+    persistFavorites()
     emit()
   }
 
@@ -163,7 +167,7 @@ export function createFavoritesOperations(deps: {
       } catch (_) {}
     }
     fav.chatRefsByFolderId = nextRefs
-    save().catch(() => {})
+    persistFavorites()
     emit()
   }
 
@@ -174,7 +178,7 @@ export function createFavoritesOperations(deps: {
     if (!fid) return
     if (!fav.folders.some((f: any) => String(f?.id || '').trim() === fid)) return
     fav.chatRefsByFolderId = { ...(fav.chatRefsByFolderId || {}), [fid]: [] }
-    save().catch(() => {})
+    persistFavorites()
     emit()
   }
 
@@ -199,7 +203,7 @@ export function createFavoritesOperations(deps: {
     if (curParentId === pid) return
 
     fav.folders = fav.folders.map((f: any) => (String(f?.id || '').trim() === fid ? { ...f, parentId: pid, updatedAt: now() } : f))
-    save().catch(() => {})
+    persistFavorites()
     emit()
   }
 
@@ -225,7 +229,7 @@ export function createFavoritesOperations(deps: {
       if (validFolderIds.has(fid)) next.push({ targetKind: kind, targetId: tid, chatId: cid, addedAt })
       fav.chatRefsByFolderId[fid] = next
     }
-    save().catch(() => {})
+    persistFavorites()
     emit()
   }
 

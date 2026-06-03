@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	uiVersion          = 7
-	splitSchemaVersion = 1
+	uiVersion           = 7
+	splitSchemaVersion  = 1
+	sessionFavoritesKey = "sessions/favorites"
 )
 
 var (
@@ -44,6 +45,8 @@ func (p *projectionService) get(ctx context.Context, key string) (any, error) {
 		return p.providersIndex(ctx)
 	case "groups/index":
 		return map[string]any{"groupOrder": []any{}, "groupFolders": map[string]any{}, "updatedAt": nowMillis()}, nil
+	case sessionFavoritesKey:
+		return p.loadFavorites(ctx)
 	}
 	if match := roleKeyPattern.FindStringSubmatch(key); match != nil {
 		return p.roleByFolder(ctx, match[1])
@@ -75,6 +78,9 @@ func (p *projectionService) set(ctx context.Context, key string, value any) erro
 	}
 	if key == "meta/index" {
 		return p.saveMeta(ctx, value)
+	}
+	if key == sessionFavoritesKey {
+		return p.saveFavorites(ctx, objectMap(value))
 	}
 	if key == "chats/index" {
 		return p.saveChatsIndex(value)
@@ -133,6 +139,9 @@ func (p *projectionService) remove(ctx context.Context, key string) error {
 		_, err = p.eb.request(ctx, ebRequest{Method: "DELETE", Path: fmt.Sprintf("/api/roles/%s/sessions/%s", roleID, match[2])})
 		return err
 	}
+	if key == sessionFavoritesKey {
+		return p.saveFavorites(ctx, map[string]any{"folders": []any{}, "chatRefsByFolderId": map[string]any{}})
+	}
 	if key == "meta/index" || key == "chats/index" || key == "providers/index" || key == "groups/index" || strings.HasPrefix(key, "groups/") || strings.HasPrefix(key, "runtime/") {
 		return newError("NOT_IMPLEMENTED", "storage key 未接入 e-b 根动作："+key)
 	}
@@ -152,8 +161,24 @@ func (p *projectionService) saveMeta(ctx context.Context, value any) error {
 	_, err := p.config.updateProjection(func(projection *projectionConfig) {
 		projection.UI = objectMap(meta["ui"])
 		projection.Settings = settings
-		projection.Favorites = objectMap(meta["favorites"])
 	})
+	return err
+}
+
+func (p *projectionService) loadFavorites(ctx context.Context) (map[string]any, error) {
+	data, err := p.eb.request(ctx, ebRequest{Method: "GET", Path: "/api/sessions/favorites"})
+	if err != nil {
+		return nil, err
+	}
+	favorites, ok := data.(map[string]any)
+	if !ok {
+		return nil, newError("BAD_RESPONSE", "favorites response must be an object")
+	}
+	return favorites, nil
+}
+
+func (p *projectionService) saveFavorites(ctx context.Context, favorites map[string]any) error {
+	_, err := p.eb.request(ctx, ebRequest{Method: "PUT", Path: "/api/sessions/favorites", Body: mustJSON(favorites)})
 	return err
 }
 
@@ -344,7 +369,6 @@ func (p *projectionService) meta(ctx context.Context) (any, error) {
 		"updatedAt":        nowMillis(),
 		"ui":               projection.UI,
 		"settings":         mergeSettings(projection.Settings, providers, mermaidFix, chatTitleNaming, stickerNaming),
-		"favorites":        projection.Favorites,
 		"roleOrder":        roleOrder,
 		"roleFolders":      roleFolders,
 		"chatIndexByRole":  chatIndexByRole,

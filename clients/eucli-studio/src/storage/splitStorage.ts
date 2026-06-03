@@ -1,5 +1,5 @@
 import { now, uid } from '../core/utils'
-import { VERSION, SPLIT_SCHEMA_VERSION, SPLIT_META_KEY, STICKERS_KEY } from '../domain/constants'
+import { VERSION, SPLIT_SCHEMA_VERSION, SPLIT_META_KEY, SESSION_FAVORITES_KEY, STICKERS_KEY } from '../domain/constants'
 import { chatMetaFromChat, chatMetaIds, chatMetaUpdatedAtMap, chatMetasFromBox, upsertChatMeta } from '../domain/chatMeta'
 import { normalizeData } from '../domain/dataNormalizers'
 import { normalizeFavorites } from '../domain/favorites'
@@ -25,6 +25,7 @@ import { updateStoredChatIndexEntry, type ChatIndexKind } from './chatIndexUpdat
 
 let splitMetaCache: any = null
 let splitMetaWriteChain: Promise<void> = Promise.resolve()
+let sessionFavoritesWriteChain: Promise<void> = Promise.resolve()
 
 function normalizeMessageIdSet(raw: any) {
   const out = new Set<string>()
@@ -499,12 +500,19 @@ export function createSplitStorage(deps: {
       stickers = null
     }
 
+    let favorites = null
+    try {
+      favorites = await storage.get(SESSION_FAVORITES_KEY)
+    } catch (_) {
+      favorites = null
+    }
+
     const providers = await loadProvidersFromStorage(storage, meta)
 
     const d = {
       version: VERSION,
       settings: meta.settings && typeof meta.settings === 'object' ? meta.settings : {},
-      favorites: normalizeFavorites((meta as any).favorites),
+      favorites: normalizeFavorites(favorites),
       roles: [] as any[],
       chatsByRole: {} as Record<string, any>,
       groups: [] as any[],
@@ -578,6 +586,7 @@ export function createSplitStorage(deps: {
     if (meta) return
     const updatedAt = now()
     await storage.set(STICKERS_KEY, {})
+    await storage.set(SESSION_FAVORITES_KEY, { folders: [], chatRefsByFolderId: {} })
     await writeRequired(storage, splitChatsIndexKey(), {
       schemaVersion: SPLIT_SCHEMA_VERSION,
       updatedAt,
@@ -602,7 +611,6 @@ export function createSplitStorage(deps: {
       updatedAt,
       ui: {},
       settings: {},
-      favorites: { folders: [], chatRefsByFolderId: {} },
       roleOrder: [],
       roleFolders: {},
       chatIndexByRole: {},
@@ -636,11 +644,23 @@ export function createSplitStorage(deps: {
       updatedAt: now(),
       ui: state.data.ui && typeof state.data.ui === 'object' ? state.data.ui : {},
       settings: settingsMeta,
-      favorites: normalizeFavorites((state.data as any).favorites),
     }
 
     await storage.set(SPLIT_META_KEY, meta)
     splitMetaCache = { ...old, ...meta }
+  }
+
+  async function saveFavoritesOnly() {
+    const state = getState?.()
+    if (!state?.data) return
+    const favorites = normalizeFavorites((state.data as any).favorites)
+    const run = () => storage.set(SESSION_FAVORITES_KEY, favorites)
+    const next = sessionFavoritesWriteChain.then(run, run)
+    sessionFavoritesWriteChain = next.then(
+      () => undefined,
+      () => undefined,
+    )
+    await next
   }
 
   async function saveStickersOnly() {
@@ -701,6 +721,7 @@ export function createSplitStorage(deps: {
     saveGroupChat,
     touchGroupChatUpdatedAt,
     saveMetaOnly,
+    saveFavoritesOnly,
     saveStickersOnly,
     load,
     save,

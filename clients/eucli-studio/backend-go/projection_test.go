@@ -1,6 +1,12 @@
 package main
 
-import "testing"
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
 
 func TestChatProjectionPreservesMessageParts(t *testing.T) {
 	session := map[string]any{
@@ -60,5 +66,53 @@ func TestLegacyToolMessageProjectsAsAssistantSide(t *testing.T) {
 	}
 	if typ := messageStorageType(message); typ != "tool" {
 		t.Fatalf("type = %q", typ)
+	}
+}
+
+func TestSessionFavoritesStorageKeyUsesRootAction(t *testing.T) {
+	stored := map[string]any{"folders": []any{}, "chatRefsByFolderId": map[string]any{}}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/sessions/favorites" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		switch r.Method {
+		case http.MethodGet:
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": stored})
+		case http.MethodPut:
+			var next map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&next); err != nil {
+				t.Fatalf("decode favorites request: %v", err)
+			}
+			stored = next
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": stored})
+		default:
+			t.Fatalf("unexpected method %s", r.Method)
+		}
+	}))
+	defer server.Close()
+
+	store, err := newConfigStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("newConfigStore() error = %v", err)
+	}
+	if _, err := store.save(clientConfig{EucliBoxURL: server.URL}); err != nil {
+		t.Fatalf("save config error = %v", err)
+	}
+	projection := newProjectionService(store, newEBClient(store))
+	favorites := map[string]any{
+		"folders":            []any{map[string]any{"id": "favf-1", "name": "Important", "parentId": "", "createdAt": float64(1), "updatedAt": float64(1)}},
+		"chatRefsByFolderId": map[string]any{"favf-1": []any{map[string]any{"targetKind": "role", "targetId": "developer", "chatId": "session-1", "addedAt": float64(2)}}},
+	}
+
+	if err := projection.set(context.Background(), sessionFavoritesKey, favorites); err != nil {
+		t.Fatalf("projection.set() error = %v", err)
+	}
+	loaded, err := projection.get(context.Background(), sessionFavoritesKey)
+	if err != nil {
+		t.Fatalf("projection.get() error = %v", err)
+	}
+	loadedMap := objectMap(loaded)
+	if refs := objectMap(loadedMap["chatRefsByFolderId"]); refs["favf-1"] == nil {
+		t.Fatalf("loaded favorites = %#v", loadedMap)
 	}
 }

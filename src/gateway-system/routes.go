@@ -23,6 +23,8 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("PATCH /api/roles/{roleID}/sessions/{sessionID}/messages/{messageID}", s.authWrap(s.handleUpdateSessionMessage))
 	s.mux.HandleFunc("DELETE /api/roles/{roleID}/sessions/{sessionID}/messages/{messageID}", s.authWrap(s.handleDeleteSessionMessage))
 	s.mux.HandleFunc("DELETE /api/roles/{roleID}/sessions/{sessionID}/messages/{messageID}/subtree", s.authWrap(s.handleDeleteSessionMessageSubtree))
+	s.mux.HandleFunc("GET /api/sessions/favorites", s.authWrap(s.handleLoadSessionFavorites))
+	s.mux.HandleFunc("PUT /api/sessions/favorites", s.authWrap(s.handleSaveSessionFavorites))
 	s.mux.HandleFunc("GET /api/session-attachments/image", s.authWrap(s.handleLoadSessionAttachmentImage))
 
 	s.mux.HandleFunc("GET /api/providers", s.authWrap(s.handleListProviders))

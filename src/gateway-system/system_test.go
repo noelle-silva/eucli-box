@@ -152,6 +152,28 @@ func TestSessionMessageRoutes(t *testing.T) {
 	}
 }
 
+func TestSessionFavoritesRoutes(t *testing.T) {
+	fakes := newGatewayFakes()
+	system := newTestGateway(t, fakes)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/sessions/favorites", strings.NewReader(`{"folders":[{"id":"favf-1","name":"Important","parentId":"","createdAt":1,"updatedAt":1}],"chatRefsByFolderId":{"favf-1":[{"targetKind":"role","targetId":"developer","chatId":"session-1","addedAt":2}]}}`))
+	rec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("save favorites status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(fakes.sessions.favorites.Folders) != 1 || fakes.sessions.favorites.ChatRefsByFolderID["favf-1"][0].ChatID != "session-1" {
+		t.Fatalf("favorites = %#v", fakes.sessions.favorites)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/sessions/favorites", nil)
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "favf-1") {
+		t.Fatalf("load favorites status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestRoleRoutes(t *testing.T) {
 	fakes := newGatewayFakes()
 	system := newTestGateway(t, fakes)
@@ -331,10 +353,13 @@ func newGatewayFakes() *gatewayFakes {
 	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, assist: &fakeGatewayAssist{stickers: stickers}}
 }
 
-type fakeGatewaySessions struct{ sessions map[string]types.Session }
+type fakeGatewaySessions struct {
+	sessions  map[string]types.Session
+	favorites types.SessionFavorites
+}
 
 func newFakeGatewaySessions() *fakeGatewaySessions {
-	return &fakeGatewaySessions{sessions: map[string]types.Session{}}
+	return &fakeGatewaySessions{sessions: map[string]types.Session{}, favorites: types.SessionFavorites{Folders: []types.SessionFavoriteFolder{}, ChatRefsByFolderID: map[string][]types.SessionFavoriteChatRef{}}}
 }
 
 func (f *fakeGatewaySessions) CreateSession(ctx context.Context, roleID string, title string) (types.Session, error) {
@@ -411,6 +436,15 @@ func (f *fakeGatewaySessions) LoadSessionAttachmentImage(ctx context.Context, re
 		return "", errors.New("path missing")
 	}
 	return "data:image/png;base64,iVBORw0KGgo=", nil
+}
+
+func (f *fakeGatewaySessions) LoadSessionFavorites(ctx context.Context) (types.SessionFavorites, error) {
+	return f.favorites, nil
+}
+
+func (f *fakeGatewaySessions) SaveSessionFavorites(ctx context.Context, favorites types.SessionFavorites) (types.SessionFavorites, error) {
+	f.favorites = favorites
+	return f.favorites, nil
 }
 
 type fakeGatewayRuntime struct {

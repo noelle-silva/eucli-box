@@ -22,6 +22,8 @@ type System interface {
 	DeleteSessionMessageSubtree(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error)
 	SaveSessionMessageAttachment(ctx context.Context, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
 	LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error)
+	LoadSessionFavorites(ctx context.Context) (types.SessionFavorites, error)
+	SaveSessionFavorites(ctx context.Context, favorites types.SessionFavorites) (types.SessionFavorites, error)
 
 	SaveRole(ctx context.Context, role types.Role) error
 	LoadRole(ctx context.Context, roleID string) (types.Role, error)
@@ -101,6 +103,9 @@ func (s *system) Initialize(ctx context.Context) error {
 	}
 	if err := writeJSON(ctx, s.paths.metaVersionFile(), version); err != nil {
 		return storageInitFailed("failed to write storage version", err)
+	}
+	if err := s.ensureSessionFavoritesFile(ctx); err != nil {
+		return err
 	}
 	return s.RebuildIndexes(ctx)
 }

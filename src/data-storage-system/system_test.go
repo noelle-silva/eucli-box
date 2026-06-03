@@ -243,6 +243,22 @@ func TestProviderAndToolStores(t *testing.T) {
 	}
 }
 
+func TestLoadToolResolvesRelativeDirectoryAgainstToolFolder(t *testing.T) {
+	system := newTestSystem(t)
+	tool := types.ToolDefinition{ID: "shell_command", Name: "shell_command", Description: "Run shell command", Type: "local", Directory: ".", Binaries: []types.ToolBinary{{GOOS: "windows", GOARCH: "amd64", Path: "binary/windows-amd64/shell_command.exe"}}}
+	if err := system.SaveTool(context.Background(), tool); err != nil {
+		t.Fatalf("SaveTool() error = %v", err)
+	}
+	loaded, err := system.LoadTool(context.Background(), tool.ID)
+	if err != nil {
+		t.Fatalf("LoadTool() error = %v", err)
+	}
+	want := filepath.Join(system.paths.root, "tools", tool.ID)
+	if loaded.Directory != want {
+		t.Fatalf("directory = %q, want %q", loaded.Directory, want)
+	}
+}
+
 func TestRebuildIndexesRestoresDeletedIndexes(t *testing.T) {
 	system := newTestSystem(t)
 	role := types.Role{ID: "developer", Name: "Developer"}

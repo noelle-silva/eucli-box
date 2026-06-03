@@ -1,0 +1,44 @@
+{
+  "defaultProvider": "git-bash",
+  "allowModelProviderSelection": true,
+  "providers": [
+    {
+      "id": "git-bash",
+      "kind": "git-bash",
+      "mode": "bundled",
+      "enabled": true,
+      "priority": 10,
+      "encoding": "utf-8",
+      "executables": [
+        { "goos": "windows", "goarch": "amd64", "path": "providers/git-bash/bin/bash.exe" }
+      ]
+    },
+    {
+      "id": "powershell",
+      "kind": "powershell-core",
+      "mode": "bundled",
+      "enabled": true,
+      "priority": 20,
+      "encoding": "utf-8",
+      "executables": [
+        { "goos": "windows", "goarch": "amd64", "path": "providers/powershell/pwsh.exe" }
+      ]
+    },
+    {
+      "id": "nushell",
+      "kind": "nushell",
+      "mode": "bundled",
+      "enabled": true,
+      "priority": 30,
+      "encoding": "utf-8",
+      "executables": [
+        { "goos": "windows", "goarch": "amd64", "path": "providers/nushell/nu.exe" }
+      ]
+    }
+  ],
+  "limits": {
+    "defaultTimeoutMs": 30000,
+    "maxTimeoutMs": 120000,
+    "maxOutputChars": 20000
+  }
+}

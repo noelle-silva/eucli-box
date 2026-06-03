@@ -186,6 +186,55 @@ func main() { fmt.Print(`+"`"+`{"status":"success","content":"ok","metadata":{"s
 	}
 }
 
+func TestExecutePassesSharedToolExecutionInput(t *testing.T) {
+	executable := buildTool(t, `package main
+import (
+  "encoding/json"
+  "os"
+)
+type input struct {
+  DefaultConfig map[string]any `+"`json:\"defaultConfig\"`"+`
+  HostWorkingDirectory string `+"`json:\"hostWorkingDirectory\"`"+`
+}
+func main() {
+  var in input
+  if err := json.NewDecoder(os.Stdin).Decode(&in); err != nil { panic(err) }
+  json.NewEncoder(os.Stdout).Encode(map[string]any{"status":"success","content":"ok","metadata":map[string]any{"hostWorkingDirectory":in.HostWorkingDirectory,"defaultMode":in.DefaultConfig["mode"]}})
+}
+`)
+	tool := testTool(t, executable)
+	tool.DefaultConfig = map[string]any{"mode": "test"}
+	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{})
+	result, err := system.Execute(context.Background(), allowedPlan(tool, executable))
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if result.Metadata["hostWorkingDirectory"] == "" || result.Metadata["defaultMode"] != "test" {
+		t.Fatalf("metadata = %#v", result.Metadata)
+	}
+}
+
+func TestExecutePreservesFailedToolMetadata(t *testing.T) {
+	executable := buildTool(t, `package main
+import (
+  "encoding/json"
+  "os"
+)
+func main() {
+  json.NewEncoder(os.Stdout).Encode(map[string]any{"status":"failed","content":"bad output","error":"bad exit","metadata":map[string]any{"stdout":"x","exitCode":7}})
+}
+`)
+	tool := testTool(t, executable)
+	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{})
+	result, err := system.Execute(context.Background(), allowedPlan(tool, executable))
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if result.Status != types.ToolStatusFailed || result.Error != "bad exit" || result.Content != "bad output" || result.Metadata["stdout"] != "x" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
 func TestExecuteNormalizesDamagedOutput(t *testing.T) {
 	executable := buildTool(t, `package main
 import "fmt"

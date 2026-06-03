@@ -1,0 +1,40 @@
+{
+  "id": "shell_command",
+  "name": "shell_command",
+  "description": "Run one non-interactive shell command through an enabled bundled shell provider and return stdout, stderr, exit code, timeout state, and execution metadata.",
+  "type": "local",
+  "directory": ".",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "command": {
+        "type": "string",
+        "description": "Command to run."
+      },
+      "workdir": {
+        "type": "string",
+        "description": "Working directory. Relative paths resolve from the e-b host working directory."
+      },
+      "timeoutMs": {
+        "type": "integer",
+        "description": "Command timeout in milliseconds. Values above the configured maximum are clamped."
+      },
+      "description": {
+        "type": "string",
+        "description": "Short human-readable reason for running the command."
+      },
+      "maxOutputChars": {
+        "type": "integer",
+        "description": "Maximum captured characters per output field. Values above the configured maximum are clamped."
+      },
+      "provider": {
+        "type": "string",
+        "enum": ["git-bash", "powershell", "nushell"],
+        "description": "Optional enabled provider id. Defaults to git-bash."
+      }
+    },
+    "required": ["command"],
+    "additionalProperties": false
+  },
+  "binaries": []
+}

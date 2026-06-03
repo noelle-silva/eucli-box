@@ -1,0 +1,23 @@
+{
+  "assetRoots": [
+    {
+      "name": "git-bash-root",
+      "target": "providers/git-bash",
+      "requiredFile": "bin/bash.exe"
+    },
+    {
+      "name": "powershell-root",
+      "target": "providers/powershell",
+      "requiredFile": "pwsh.exe"
+    },
+    {
+      "name": "nushell-root",
+      "target": "providers/nushell",
+      "requiredFile": "nu.exe"
+    }
+  ],
+  "runtimeConfig": {
+    "source": "config.json",
+    "providerArgument": "provider"
+  }
+}

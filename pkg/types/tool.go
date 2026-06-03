@@ -22,6 +22,23 @@ type ToolBinary struct {
 	Path   string `json:"path"`
 }
 
+type ToolExecutionInput struct {
+	ActionID             string         `json:"actionId"`
+	ToolName             string         `json:"toolName"`
+	Arguments            map[string]any `json:"arguments"`
+	UserConfig           map[string]any `json:"userConfig"`
+	DefaultConfig        map[string]any `json:"defaultConfig"`
+	ToolDirectory        string         `json:"toolDirectory"`
+	HostWorkingDirectory string         `json:"hostWorkingDirectory"`
+}
+
+type ToolExecutionOutput struct {
+	Status   ToolStatus     `json:"status"`
+	Content  string         `json:"content"`
+	Error    string         `json:"error,omitempty"`
+	Metadata map[string]any `json:"metadata"`
+}
+
 type ToolSummary struct {
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`

@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"eucli-box/pkg/types"
 )
@@ -34,7 +35,16 @@ func (s *system) LoadTool(ctx context.Context, toolID string) (types.ToolDefinit
 	if err != nil {
 		return types.ToolDefinition{}, err
 	}
-	return readJSON[types.ToolDefinition](ctx, target)
+	tool, err := readJSON[types.ToolDefinition](ctx, target)
+	if err != nil {
+		return types.ToolDefinition{}, err
+	}
+	directory, err := s.resolveToolDirectory(tool.ID, tool.Directory)
+	if err != nil {
+		return types.ToolDefinition{}, err
+	}
+	tool.Directory = directory
+	return tool, nil
 }
 
 func (s *system) ListTools(ctx context.Context) ([]types.ToolSummary, error) {
@@ -59,4 +69,26 @@ func (s *system) DeleteTool(ctx context.Context, toolID string) error {
 		return err
 	}
 	return s.rebuildToolIndex(ctx)
+}
+
+func (s *system) resolveToolDirectory(toolID string, directory string) (string, error) {
+	directory = strings.TrimSpace(directory)
+	if directory == "" {
+		return "", nil
+	}
+	if filepath.IsAbs(directory) {
+		return filepath.Clean(directory), nil
+	}
+	if filepath.VolumeName(directory) != "" {
+		return "", storageInvalid("relative tool directory cannot include volume name", nil)
+	}
+	toolDir, err := s.paths.toolDir(toolID)
+	if err != nil {
+		return "", err
+	}
+	resolved := filepath.Clean(filepath.Join(toolDir, directory))
+	if !isWithin(toolDir, resolved) {
+		return "", storageInvalid("relative tool directory escapes tool package", nil)
+	}
+	return resolved, nil
 }

@@ -5,26 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"os/exec"
 	"time"
 
 	"eucli-box/pkg/types"
 )
-
-type toolInput struct {
-	ActionID      string         `json:"actionId"`
-	ToolName      string         `json:"toolName"`
-	Arguments     map[string]any `json:"arguments"`
-	UserConfig    map[string]any `json:"userConfig"`
-	ToolDirectory string         `json:"toolDirectory"`
-}
-
-type toolOutput struct {
-	Status   types.ToolStatus `json:"status"`
-	Content  string           `json:"content"`
-	Error    string           `json:"error,omitempty"`
-	Metadata map[string]any   `json:"metadata"`
-}
 
 func (s *system) Execute(ctx context.Context, plan types.ToolRunPlan) (types.ToolResult, error) {
 	if plan.PlanStatus == types.ToolPlanStatusDenied {
@@ -51,7 +37,11 @@ func (s *system) Execute(ctx context.Context, plan types.ToolRunPlan) (types.Too
 	if executableErr != nil {
 		return types.ToolResult{}, executableErr
 	}
-	input, err := json.Marshal(toolInput{ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Arguments: plan.Action.Arguments, UserConfig: plan.Tool.UserConfig, ToolDirectory: plan.Tool.Directory})
+	hostWorkingDirectory, err := os.Getwd()
+	if err != nil {
+		return types.ToolResult{}, toolExecutionInvalid("failed to resolve host working directory", err)
+	}
+	input, err := json.Marshal(types.ToolExecutionInput{ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Arguments: plan.Action.Arguments, UserConfig: plan.Tool.UserConfig, DefaultConfig: plan.Tool.DefaultConfig, ToolDirectory: plan.Tool.Directory, HostWorkingDirectory: hostWorkingDirectory})
 	if err != nil {
 		return types.ToolResult{}, toolExecutionInvalid("failed to encode tool input", err)
 	}
@@ -92,7 +82,7 @@ func validatePlan(plan types.ToolRunPlan) error {
 }
 
 func parseToolOutput(plan types.ToolRunPlan, raw []byte) types.ToolResult {
-	var output toolOutput
+	var output types.ToolExecutionOutput
 	if err := json.Unmarshal(bytes.TrimSpace(raw), &output); err != nil {
 		return failedResult(plan, "tool output is not valid json")
 	}
@@ -104,7 +94,7 @@ func parseToolOutput(plan types.ToolRunPlan, raw []byte) types.ToolResult {
 		if errMsg == "" {
 			errMsg = output.Content
 		}
-		return types.ToolResult{ID: newToolResultID(), ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Status: output.Status, Error: errMsg, CreatedAt: time.Now().UTC()}
+		return types.ToolResult{ID: newToolResultID(), ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Status: output.Status, Content: output.Content, Metadata: output.Metadata, Error: errMsg, CreatedAt: time.Now().UTC()}
 	default:
 		return failedResult(plan, "tool output status is invalid")
 	}

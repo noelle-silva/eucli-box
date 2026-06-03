@@ -100,6 +100,8 @@ func upsertMessageToolPart(message *types.Message, action types.ToolAction, call
 
 func applyToolPart(part *types.MessagePart, action types.ToolAction, callID string, state string, decision *types.PermissionDecision, result *types.ToolResult, now time.Time) {
 	part.Type = "tool"
+	part.Source = strings.TrimSpace(action.Source)
+	part.Raw = action.Raw
 	part.CallID = callID
 	part.ToolName = action.ToolName
 	part.Input = cloneToolArguments(action.Arguments)

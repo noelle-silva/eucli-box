@@ -37,10 +37,7 @@ func (s *system) callModelStream(ctx context.Context, record *runRecord, request
 		if event.Type != types.ModelStreamEventContentDelta {
 			return nil
 		}
-		content, err := s.tools.VisibleTextToolContent(ctx, event.Content)
-		if err != nil {
-			return err
-		}
+		content := event.Content
 		if content == record.streamContent {
 			return nil
 		}

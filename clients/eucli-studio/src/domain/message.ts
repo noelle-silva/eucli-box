@@ -50,9 +50,11 @@ export function normalizeMessageParts(input: any) {
     if (type !== 'tool') continue
     const callId = String((raw as any).callId || '').trim()
     const toolName = String((raw as any).toolName || '').trim()
+    const source = String((raw as any).source || '').trim()
+    const rawText = String((raw as any).raw || '')
     const state = String((raw as any).state || '').trim()
     const inputValue = (raw as any).input && typeof (raw as any).input === 'object' && !Array.isArray((raw as any).input) ? (raw as any).input : {}
-    const part: any = { id, type: 'tool', callId, toolName, state, input: inputValue, createdAt: (raw as any).createdAt, updatedAt: (raw as any).updatedAt }
+    const part: any = { id, type: 'tool', source, raw: rawText, callId, toolName, state, input: inputValue, createdAt: (raw as any).createdAt, updatedAt: (raw as any).updatedAt }
     const decision = (raw as any).decision && typeof (raw as any).decision === 'object' ? (raw as any).decision : null
     if (decision) {
       part.decision = {

@@ -183,7 +183,7 @@ func (p *anthropicStreamParser) Finish(response types.HTTPResponse) (types.Model
 		if id == "" {
 			id = "tool-use-" + strconv.Itoa(index)
 		}
-		result.ToolIntents = append(result.ToolIntents, types.ToolIntent{ID: id, ToolName: builder.Name, Arguments: args, Raw: argsRaw, CreatedAt: result.CreatedAt})
+		result.ToolIntents = append(result.ToolIntents, types.ToolIntent{ID: id, ToolName: builder.Name, Arguments: args, Source: types.ToolCallSourceNative, Raw: argsRaw, CreatedAt: result.CreatedAt})
 	}
 	return result, nil
 }
@@ -260,7 +260,7 @@ func (anthropicAdapter) ParseCompleteResponse(response types.HTTPResponse) (type
 				result.Content += "\n" + item.Text
 			}
 		case "tool_use":
-			result.ToolIntents = append(result.ToolIntents, types.ToolIntent{ID: item.ID, ToolName: item.Name, Arguments: item.Input, CreatedAt: createdAt})
+			result.ToolIntents = append(result.ToolIntents, types.ToolIntent{ID: item.ID, ToolName: item.Name, Arguments: item.Input, Source: types.ToolCallSourceNative, CreatedAt: createdAt})
 		}
 	}
 	return result, nil

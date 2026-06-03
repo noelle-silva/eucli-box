@@ -378,10 +378,13 @@ function AssistantToolParts(props: { parts: any[] }) {
       {toolParts.map((part: any, index: number) => {
         const id = String(part?.id || `${part?.callId || 'tool'}:${index}`)
         const name = String(part?.toolName || 'tool')
+        const source = String(part?.source || '').trim()
+        const isTextProtocol = source === 'text_protocol'
         const state = String(part?.state || '')
         const result = part?.result && typeof part.result === 'object' ? part.result : null
         const decision = part?.decision && typeof part.decision === 'object' ? part.decision : null
         const resultText = result ? String(result?.content || result?.error || '') : ''
+        const rawText = String(part?.raw || '')
         return (
           <Paper
             key={id}
@@ -391,9 +394,10 @@ function AssistantToolParts(props: { parts: any[] }) {
             <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.75, minWidth: 0 }}>
               <StorageIcon sx={{ fontSize: 18, color: 'rgba(2, 132, 199, .9)' }} />
               <Typography variant="body2" sx={{ fontWeight: 900 }}>
-                工具调用
+                {isTextProtocol ? '文本协议工具调用' : '原生工具调用'}
               </Typography>
               <Chip size="small" label={name} variant="outlined" sx={{ maxWidth: 260 }} />
+              {source ? <Chip size="small" label={source} variant="outlined" /> : null}
               <Chip size="small" label={toolPartStateText(state)} color={state === 'completed' ? 'success' : state === 'error' || state === 'denied' ? 'error' : 'default'} />
               <Box sx={{ flex: 1 }} />
               {part?.callId ? (
@@ -403,6 +407,16 @@ function AssistantToolParts(props: { parts: any[] }) {
               ) : null}
             </Stack>
             <Stack spacing={0.75}>
+              {isTextProtocol && rawText.trim() ? (
+                <Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 900 }}>
+                    原始 TOOL_REQUEST
+                  </Typography>
+                  <Box component="pre" sx={{ m: 0, mt: 0.25, p: 0.75, borderRadius: 1.5, bgcolor: 'rgba(88, 28, 135, .08)', border: '1px solid rgba(126, 34, 206, .18)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: 12, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}>
+                    {rawText}
+                  </Box>
+                </Box>
+              ) : null}
               <Box>
                 <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 900 }}>
                   输入参数

@@ -47,7 +47,7 @@ I will continue after the result.`)
 	if len(intents) != 1 || intents[0].ToolName != "web-search" || intents[0].Arguments["query"] != "东京明天天气" || intents[0].Arguments["limit"] != "5" {
 		t.Fatalf("intents = %#v", intents)
 	}
-	if intents[0].ID == "" || intents[0].Raw == "" {
+	if intents[0].ID == "" || intents[0].Raw == "" || intents[0].Source != types.ToolCallSourceTextProtocol {
 		t.Fatalf("intent metadata = %#v", intents[0])
 	}
 }

@@ -234,7 +234,7 @@ func TestSessionMessagePartsAreNormalized(t *testing.T) {
 			BranchID:  "main",
 			CreatedAt: now,
 			UpdatedAt: now,
-			Parts:     []types.MessagePart{{Type: "tool", CallID: "call-1", ToolName: "shell_command", State: "completed", Input: map[string]any{"command": "pwd"}, Result: &types.ToolPartResult{ID: "result-1", ActionID: "call-1", ToolName: "shell_command", Status: types.ToolStatusSuccess, Content: "ok"}}},
+			Parts:     []types.MessagePart{{Type: "tool", Source: types.ToolCallSourceTextProtocol, Raw: "<<<TOOL_REQUEST>>>\n[tool]: shell_command\n[command]: pwd\n<<<END_TOOL_REQUEST>>>", CallID: "call-1", ToolName: "shell_command", State: "completed", Input: map[string]any{"command": "pwd"}, Result: &types.ToolPartResult{ID: "result-1", ActionID: "call-1", ToolName: "shell_command", Status: types.ToolStatusSuccess, Content: "ok"}}},
 		}},
 		LastActive: now,
 	}
@@ -251,7 +251,7 @@ func TestSessionMessagePartsAreNormalized(t *testing.T) {
 	if loaded.Messages[0].Parts[0].Type != "text" || loaded.Messages[0].Parts[0].Text != "checking" {
 		t.Fatalf("text part = %#v", loaded.Messages[0].Parts[0])
 	}
-	if loaded.Messages[0].Parts[1].Type != "tool" || loaded.Messages[0].Parts[1].CallID != "call-1" || loaded.Messages[0].Parts[1].Result == nil {
+	if loaded.Messages[0].Parts[1].Type != "tool" || loaded.Messages[0].Parts[1].Source != types.ToolCallSourceTextProtocol || loaded.Messages[0].Parts[1].Raw == "" || loaded.Messages[0].Parts[1].CallID != "call-1" || loaded.Messages[0].Parts[1].Result == nil {
 		t.Fatalf("tool part = %#v", loaded.Messages[0].Parts[1])
 	}
 }

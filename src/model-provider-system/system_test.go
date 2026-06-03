@@ -77,7 +77,7 @@ func TestCompleteOpenAIWritesToolsIntoRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Complete() error = %v", err)
 	}
-	if response.Content != "hello" || len(response.ToolIntents) != 1 || response.ToolIntents[0].ToolName != "file-reader" {
+	if response.Content != "hello" || len(response.ToolIntents) != 1 || response.ToolIntents[0].ToolName != "file-reader" || response.ToolIntents[0].Source != types.ToolCallSourceNative {
 		t.Fatalf("response = %#v", response)
 	}
 	var body map[string]any
@@ -157,7 +157,7 @@ func TestCompleteAnthropicSeparatesSystemPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Complete() error = %v", err)
 	}
-	if response.Content != "hello" || len(response.ToolIntents) != 1 || response.ToolIntents[0].ToolName != "search" {
+	if response.Content != "hello" || len(response.ToolIntents) != 1 || response.ToolIntents[0].ToolName != "search" || response.ToolIntents[0].Source != types.ToolCallSourceNative {
 		t.Fatalf("response = %#v", response)
 	}
 	var body map[string]any
@@ -243,7 +243,7 @@ data: [DONE]
 	if len(events) != 2 || events[0] != "he" || events[1] != "hello" {
 		t.Fatalf("events = %#v", events)
 	}
-	if len(response.ToolIntents) != 1 || response.ToolIntents[0].ToolName != "file-reader" || response.ToolIntents[0].Arguments["path"] != "README.md" {
+	if len(response.ToolIntents) != 1 || response.ToolIntents[0].ToolName != "file-reader" || response.ToolIntents[0].Source != types.ToolCallSourceNative || response.ToolIntents[0].Arguments["path"] != "README.md" {
 		t.Fatalf("tool intents = %#v", response.ToolIntents)
 	}
 	var body map[string]any

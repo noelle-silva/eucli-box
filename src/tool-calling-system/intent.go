@@ -29,5 +29,9 @@ func (s *system) NormalizeIntent(ctx context.Context, intent types.ToolIntent) (
 		}
 		arguments[trimmed] = value
 	}
-	return types.ToolAction{ID: actionID, ToolName: toolName, Arguments: arguments, CreatedAt: time.Now().UTC()}, nil
+	source := strings.TrimSpace(intent.Source)
+	if source == "" {
+		source = types.ToolCallSourceNative
+	}
+	return types.ToolAction{ID: actionID, ToolName: toolName, Arguments: arguments, Source: source, Raw: intent.Raw, CreatedAt: time.Now().UTC()}, nil
 }

@@ -126,7 +126,7 @@ func parseToolRequestBlock(blockLines []string, startLine int) (types.ToolIntent
 	for _, entry := range entries[1:] {
 		arguments[entry.key] = strings.TrimSpace(entry.value)
 	}
-	return types.ToolIntent{ID: utils.NewID("tool-intent"), ToolName: toolName, Arguments: arguments, Raw: strings.Join(blockLines, "\n"), CreatedAt: time.Now().UTC()}, nil
+	return types.ToolIntent{ID: utils.NewID("tool-intent"), ToolName: toolName, Arguments: arguments, Source: types.ToolCallSourceTextProtocol, Raw: strings.Join(blockLines, "\n"), CreatedAt: time.Now().UTC()}, nil
 }
 
 func parseToolRequestLine(line string, lineNumber int) (toolRequestEntry, error) {

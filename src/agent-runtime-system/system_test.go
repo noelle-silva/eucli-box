@@ -374,7 +374,8 @@ func TestRunParsesTextToolRequestsIntoUnifiedToolFlow(t *testing.T) {
 		{ID: "m2", Content: "final"},
 	}
 	fakes.tool.parsedContent = "I will check."
-	fakes.tool.parsedIntents = []types.ToolIntent{{ID: "text-intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}}}
+	rawRequest := "<<<TOOL_REQUEST>>>\n[tool]: file-reader\n[path]: README.md\n<<<END_TOOL_REQUEST>>>"
+	fakes.tool.parsedIntents = []types.ToolIntent{{ID: "text-intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}, Source: types.ToolCallSourceTextProtocol, Raw: rawRequest}}
 	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use text tool"})
 	if err != nil {
@@ -388,10 +389,10 @@ func TestRunParsesTextToolRequestsIntoUnifiedToolFlow(t *testing.T) {
 		t.Fatalf("tool flow execute=%d intents=%#v", fakes.tool.executeCount, fakes.tool.normalizedIntents)
 	}
 	session := fakes.storage.lastSession()
-	if len(session.Messages) < 2 || session.Messages[1].Content != "I will check." || strings.Contains(session.Messages[1].Content, "TOOL_REQUEST") {
+	if len(session.Messages) < 2 || !strings.Contains(session.Messages[1].Content, rawRequest) {
 		t.Fatalf("assistant message = %#v", session.Messages)
 	}
-	if got := toolPartByCallID(session.Messages[1], "text-intent-1"); got == nil || got.State != "completed" || got.Result == nil || got.Result.Content != "tool ok" {
+	if got := toolPartByCallID(session.Messages[1], "text-intent-1"); got == nil || got.State != "completed" || got.Source != types.ToolCallSourceTextProtocol || got.Raw != rawRequest || got.Result == nil || got.Result.Content != "tool ok" {
 		t.Fatalf("tool part = %#v", session.Messages[1].Parts)
 	}
 }
@@ -403,7 +404,8 @@ func TestRunDoesNotPersistEmptyAssistantForPureTextToolRequest(t *testing.T) {
 		{ID: "m2", Content: "final"},
 	}
 	fakes.tool.parsedContent = ""
-	fakes.tool.parsedIntents = []types.ToolIntent{{ID: "text-intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}}}
+	rawRequest := "<<<TOOL_REQUEST>>>\n[tool]: file-reader\n[path]: README.md\n<<<END_TOOL_REQUEST>>>"
+	fakes.tool.parsedIntents = []types.ToolIntent{{ID: "text-intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}, Source: types.ToolCallSourceTextProtocol, Raw: rawRequest}}
 	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use pure text tool"})
 	if err != nil {
@@ -417,10 +419,11 @@ func TestRunDoesNotPersistEmptyAssistantForPureTextToolRequest(t *testing.T) {
 	if len(session.Messages) < 3 {
 		t.Fatalf("messages = %#v", session.Messages)
 	}
-	if session.Messages[1].Type == "assistant" && strings.TrimSpace(session.Messages[1].Content) == "" {
-		if got := toolPartByCallID(session.Messages[1], "text-intent-1"); got == nil || got.State != "completed" || got.Result == nil {
-			t.Fatalf("empty assistant lacks completed tool part: %#v", session.Messages)
-		}
+	if session.Messages[1].Type != "assistant" || session.Messages[1].Content != rawRequest {
+		t.Fatalf("assistant raw content = %#v", session.Messages)
+	}
+	if got := toolPartByCallID(session.Messages[1], "text-intent-1"); got == nil || got.State != "completed" || got.Source != types.ToolCallSourceTextProtocol || got.Raw != rawRequest || got.Result == nil {
+		t.Fatalf("assistant lacks completed text protocol tool part: %#v", session.Messages)
 	}
 }
 
@@ -743,13 +746,9 @@ func (f *fakeRuntimeTools) TextToolInstructions(ctx context.Context, tools []typ
 	return types.PromptMessage{}, nil
 }
 
-func (f *fakeRuntimeTools) VisibleTextToolContent(ctx context.Context, content string) (string, error) {
-	return content, nil
-}
-
 func (f *fakeRuntimeTools) NormalizeIntent(ctx context.Context, intent types.ToolIntent) (types.ToolAction, error) {
 	f.normalizedIntents = append(f.normalizedIntents, intent)
-	return types.ToolAction{ID: intent.ID, ToolName: intent.ToolName, Arguments: intent.Arguments}, nil
+	return types.ToolAction{ID: intent.ID, ToolName: intent.ToolName, Arguments: intent.Arguments, Source: intent.Source, Raw: intent.Raw}, nil
 }
 
 func (f *fakeRuntimeTools) Prepare(ctx context.Context, roleID string, action types.ToolAction) (types.ToolRunPlan, error) {

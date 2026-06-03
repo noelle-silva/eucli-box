@@ -21,6 +21,8 @@ type MessagePart struct {
 	ID        string          `json:"id"`
 	Type      string          `json:"type"`
 	Text      string          `json:"text,omitempty"`
+	Source    string          `json:"source,omitempty"`
+	Raw       string          `json:"raw,omitempty"`
 	CallID    string          `json:"callId,omitempty"`
 	ToolName  string          `json:"toolName,omitempty"`
 	Input     map[string]any  `json:"input,omitempty"`

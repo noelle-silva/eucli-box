@@ -20,6 +20,8 @@ func TestChatProjectionPreservesMessageParts(t *testing.T) {
 			"parts": []any{map[string]any{
 				"id":       "part-1",
 				"type":     "tool",
+				"source":   "text_protocol",
+				"raw":      "<<<TOOL_REQUEST>>>\n[tool]: shell_command\n[command]: pwd\n<<<END_TOOL_REQUEST>>>",
 				"callId":   "call-1",
 				"toolName": "shell_command",
 				"state":    "completed",
@@ -37,7 +39,7 @@ func TestChatProjectionPreservesMessageParts(t *testing.T) {
 	if messages[0]["role"] != "assistant" || messages[0]["type"] != "assistant" {
 		t.Fatalf("ui message role/type = %#v", messages[0])
 	}
-	if parts := objectList(messages[0]["parts"]); len(parts) != 1 || stringField(parts[0], "callId") != "call-1" {
+	if parts := objectList(messages[0]["parts"]); len(parts) != 1 || stringField(parts[0], "source") != "text_protocol" || stringField(parts[0], "raw") == "" || stringField(parts[0], "callId") != "call-1" {
 		t.Fatalf("ui parts = %#v", messages[0]["parts"])
 	}
 
@@ -46,7 +48,7 @@ func TestChatProjectionPreservesMessageParts(t *testing.T) {
 	if len(backMessages) != 1 {
 		t.Fatalf("back messages = %#v", back["messages"])
 	}
-	if parts := objectList(backMessages[0]["parts"]); len(parts) != 1 || stringField(parts[0], "toolName") != "shell_command" {
+	if parts := objectList(backMessages[0]["parts"]); len(parts) != 1 || stringField(parts[0], "source") != "text_protocol" || stringField(parts[0], "raw") == "" || stringField(parts[0], "toolName") != "shell_command" {
 		t.Fatalf("back parts = %#v", backMessages[0]["parts"])
 	}
 }

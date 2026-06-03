@@ -179,11 +179,10 @@ func shouldRecordAssistantOutput(response types.ModelResponse) bool {
 }
 
 func (s *system) mergeTextToolRequests(ctx context.Context, response types.ModelResponse) (types.ModelResponse, error) {
-	content, textIntents, err := s.tools.ParseTextToolRequests(ctx, response.Content)
+	_, textIntents, err := s.tools.ParseTextToolRequests(ctx, response.Content)
 	if err != nil {
 		return types.ModelResponse{}, runtimeToolFailed("failed to parse text tool requests", err)
 	}
-	response.Content = content
 	if len(textIntents) > 0 {
 		response.ToolIntents = append(response.ToolIntents, textIntents...)
 	}

@@ -7,7 +7,7 @@ import { chatMetaFromChat, chatMetasFromBox, upsertChatMeta } from '../domain/ch
 import { UI_CHAT_UPDATED_NOTICE_KEY } from '../runtime/runtimeKeys'
 import { splitChatKey, splitGroupChatKey } from '../domain/storageKeys'
 import { normalizeStoredChat } from '../storage/normalizeStoredChat'
-import { preserveLocalBranchSelection } from '../domain/branching'
+import { isStoredChatNewerThanCurrent, mergeChatFromStorage } from '../domain/chatStorageSync'
 
 export function createUiPolling(deps: {
   getState: () => any
@@ -75,7 +75,7 @@ export function createUiPolling(deps: {
         }
 
         const metaUpdatedAt = Number((wantUpdatedAt as any)?.[cid] || 0)
-        if (metaUpdatedAt && cid !== activeChatId) cur.updatedAt = metaUpdatedAt
+        if (metaUpdatedAt && cid !== activeChatId && isStoredChatNewerThanCurrent(metaUpdatedAt, cur.updatedAt)) cur.updatedAt = metaUpdatedAt
         nextChats.push(cur)
       }
 
@@ -83,12 +83,12 @@ export function createUiPolling(deps: {
         const metaUpdatedAt = Number((wantUpdatedAt as any)?.[activeChatId] || 0)
         const cur = curById.get(activeChatId) || null
         const curUpdatedAt = Number(cur?.updatedAt || 0)
-        if (metaUpdatedAt && metaUpdatedAt !== curUpdatedAt) {
+        if (isStoredChatNewerThanCurrent(metaUpdatedAt, curUpdatedAt)) {
           const c0 = await deps.storage.get(splitChatKey(folder, activeChatId))
           const c1 = c0 && typeof c0 === 'object' ? normalizeStoredChat(c0, 'role') : null
           if (c1) {
             const idx0 = nextChats.findIndex((c: any) => String(c?.id || '') === activeChatId)
-            if (idx0 >= 0) nextChats[idx0] = preserveLocalBranchSelection(c1, nextChats[idx0])
+            if (idx0 >= 0) nextChats[idx0] = mergeChatFromStorage(c1, nextChats[idx0])
             else nextChats.unshift(c1)
           }
         }
@@ -132,7 +132,7 @@ export function createUiPolling(deps: {
     if (!Array.isArray(box.chats)) box.chats = []
 
     const idx = box.chats.findIndex((c: any) => String(c?.id || '') === cid)
-    const nextChat = preserveLocalBranchSelection(chat, idx >= 0 ? box.chats[idx] : null)
+    const nextChat = mergeChatFromStorage(chat, idx >= 0 ? box.chats[idx] : null)
     if (idx >= 0) box.chats[idx] = nextChat
     else box.chats.unshift(nextChat)
     box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(nextChat, '新聊天'), '新聊天')
@@ -162,7 +162,7 @@ export function createUiPolling(deps: {
     if (!Array.isArray(box.chats)) box.chats = []
 
     const idx = box.chats.findIndex((c: any) => String(c?.id || '') === cid)
-    const nextChat = preserveLocalBranchSelection(chat, idx >= 0 ? box.chats[idx] : null)
+    const nextChat = mergeChatFromStorage(chat, idx >= 0 ? box.chats[idx] : null)
     if (idx >= 0) box.chats[idx] = nextChat
     else box.chats.unshift(nextChat)
     box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(nextChat, '群聊'), '群聊')
@@ -201,6 +201,8 @@ export function createUiPolling(deps: {
     const activeBox = kind === 'group' ? (state.data as any)?.chatsByGroup?.[tid] : state.data?.chatsByRole?.[tid]
     const activeChatId = String(deps.activeChatFromData()?.id || activeBox?.activeChatId || '').trim()
     if (activeChatId && cid === activeChatId) {
+      const currentUpdatedAt = Number(deps.activeChatFromData()?.updatedAt || 0)
+      if (updatedAt && currentUpdatedAt && updatedAt <= currentUpdatedAt) return false
       const ok = kind === 'group' ? await syncGroupChatByIdFromStorage(tid, cid) : await syncChatByIdFromStorage(tid, cid)
       return !!ok
     }
@@ -247,10 +249,6 @@ export function createUiPolling(deps: {
       }
     }
 
-    if (state.sending) {
-      state.sending = false
-      deps.emit()
-    }
   }
 
   function startUiPollers() {

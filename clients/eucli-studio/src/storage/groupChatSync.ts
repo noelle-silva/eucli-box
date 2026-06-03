@@ -1,6 +1,8 @@
 import { now } from '../core/utils'
 import { chatMetaUpdatedAtMap, chatMetasFromBox, upsertChatMeta } from '../domain/chatMeta'
-import { splitGroupChatIndexKey } from '../domain/storageKeys'
+import { isStoredChatNewerThanCurrent, mergeChatFromStorage } from '../domain/chatStorageSync'
+import { splitGroupChatIndexKey, splitGroupChatKey } from '../domain/storageKeys'
+import { normalizeStoredChat } from './normalizeStoredChat'
 
 export function createGroupChatSync(deps: {
   storage: { get: (k: string) => Promise<any>; set: (k: string, v: any) => Promise<void> }
@@ -95,8 +97,23 @@ export function createGroupChatSync(deps: {
         }
 
         const metaUpdatedAt = Number((wantUpdatedAt as any)?.[cid] || 0)
-        if (metaUpdatedAt && cid !== activeChatId) cur.updatedAt = metaUpdatedAt
+        if (metaUpdatedAt && cid !== activeChatId && isStoredChatNewerThanCurrent(metaUpdatedAt, cur.updatedAt)) cur.updatedAt = metaUpdatedAt
         nextChats.push(cur)
+      }
+
+      if (activeChatId) {
+        const metaUpdatedAt = Number((wantUpdatedAt as any)?.[activeChatId] || 0)
+        const cur = curById.get(activeChatId) || null
+        const curUpdatedAt = Number(cur?.updatedAt || 0)
+        if (isStoredChatNewerThanCurrent(metaUpdatedAt, curUpdatedAt)) {
+          const c0 = await storage.get(splitGroupChatKey(folder, activeChatId))
+          const c1 = c0 && typeof c0 === 'object' ? normalizeStoredChat(c0, 'group') : null
+          if (c1) {
+            const idx0 = nextChats.findIndex((c: any) => String(c?.id || '') === activeChatId)
+            if (idx0 >= 0) nextChats[idx0] = mergeChatFromStorage(c1, nextChats[idx0])
+            else nextChats.unshift(c1)
+          }
+        }
       }
 
       box.chats = nextChats

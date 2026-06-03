@@ -278,8 +278,12 @@ export function normalizeData(raw: any) {
                 branchId: normalizeBranchId((m as any).branchId || activeBranchId),
                 parentMid: String((m as any).parentMid || '').trim(),
                 createdAt: Number(m.createdAt || now()),
+                updatedAt: Number((m as any).updatedAt || m.createdAt || now()),
                 modelRef: normalizeMessageModelRef(m),
               }
+              if (typeof (m as any).pending === 'boolean') outMsg.pending = !!(m as any).pending
+              if (typeof (m as any).streaming === 'boolean') outMsg.streaming = !!(m as any).streaming
+              if ((m as any).assistantRun && typeof (m as any).assistantRun === 'object') outMsg.assistantRun = { ...(m as any).assistantRun }
               return outMsg
             }),
         }
@@ -416,7 +420,11 @@ export function normalizeData(raw: any) {
                 branchId: normalizeBranchId((m as any).branchId || activeBranchId),
                 parentMid: String((m as any).parentMid || '').trim(),
                 createdAt: Number(m.createdAt || now()),
+                updatedAt: Number((m as any).updatedAt || m.createdAt || now()),
               }
+              if (typeof (m as any).pending === 'boolean') outMsg.pending = !!(m as any).pending
+              if (typeof (m as any).streaming === 'boolean') outMsg.streaming = !!(m as any).streaming
+              if ((m as any).assistantRun && typeof (m as any).assistantRun === 'object') outMsg.assistantRun = { ...(m as any).assistantRun }
               return outMsg
             }),
         }

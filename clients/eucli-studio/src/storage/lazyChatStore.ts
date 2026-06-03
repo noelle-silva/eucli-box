@@ -2,7 +2,7 @@ import { normalizeData } from '../domain/dataNormalizers'
 import { VERSION, SESSION_FAVORITES_KEY, STICKERS_KEY } from '../domain/constants'
 import { normalizeFavorites } from '../domain/favorites'
 import { chatMetaFromChat, chatMetasFromBox, removeChatMeta, upsertChatMeta } from '../domain/chatMeta'
-import { preserveLocalBranchSelection } from '../domain/branching'
+import { mergeChatFromStorage } from '../domain/chatStorageSync'
 import {
   splitChatKey,
   splitGroupChatKey,
@@ -154,7 +154,7 @@ export function createLazyChatStore(deps: {
     }
 
     const index = box.chats.findIndex((c: any) => String(c?.id || '') === chatId)
-    const nextChat = preserveLocalBranchSelection(chat, index >= 0 ? box.chats[index] : null)
+    const nextChat = mergeChatFromStorage(chat, index >= 0 ? box.chats[index] : null)
     if (index >= 0) box.chats[index] = nextChat
     else box.chats.unshift(nextChat)
     box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(nextChat, kind === 'group' ? '群聊' : '新聊天'), kind === 'group' ? '群聊' : '新聊天')
@@ -219,7 +219,7 @@ export function createLazyChatStore(deps: {
     const box = targetBox(state.data, kind, targetId)
     if (!box) return null
     const index = box.chats.findIndex((c: any) => String(c?.id || '') === chatId)
-    const nextChat = preserveLocalBranchSelection(chatRaw, index >= 0 ? box.chats[index] : null)
+    const nextChat = mergeChatFromStorage(chatRaw, index >= 0 ? box.chats[index] : null)
     if (index >= 0) box.chats[index] = nextChat
     else box.chats.unshift(nextChat)
     box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(nextChat, kind === 'group' ? '群聊' : '新聊天'), kind === 'group' ? '群聊' : '新聊天')

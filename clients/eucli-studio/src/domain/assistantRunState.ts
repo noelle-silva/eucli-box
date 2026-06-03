@@ -41,6 +41,10 @@ function finiteTime(value: unknown, fallback: number) {
   return isFinite(n) && n > 0 ? n : fallback
 }
 
+function messageUpdatedAt(value: any) {
+  return finiteTime(value?.updatedAt, finiteTime(value?.createdAt, 0))
+}
+
 export function normalizeAssistantRunState(raw: unknown): AssistantRunState | null {
   const r = raw && typeof raw === 'object' ? (raw as any) : null
   if (!r) return null
@@ -200,7 +204,15 @@ export function resolveAssistantMessageForMerge(localMessage: any, storedMessage
   }
 
   if (localActive && !storedActive) {
-    return localRun ? local : stored
+    if (!localRun) return stored
+
+    const localText = String(local.content ?? '')
+    const storedText = String(stored.content ?? '')
+    const storedUpdatedAt = messageUpdatedAt(stored)
+    const localRunUpdatedAt = finiteTime(localRun.updatedAt, messageUpdatedAt(local))
+    if (storedUpdatedAt > localRunUpdatedAt) return stored
+    if (storedText && storedText === localText) return stored
+    return local
   }
   if (!localActive && storedActive) return local
 

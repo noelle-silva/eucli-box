@@ -18,6 +18,7 @@ type clientConfig struct {
 }
 
 type projectionConfig struct {
+	UpdatedAt        int64             `json:"updatedAt,omitempty"`
 	UI               map[string]any    `json:"ui,omitempty"`
 	Settings         map[string]any    `json:"settings,omitempty"`
 	RoleOrder        []string          `json:"roleOrder,omitempty"`
@@ -69,10 +70,12 @@ func (s *configStore) loadLocked() (clientConfig, error) {
 func (s *configStore) save(next clientConfig) (clientConfig, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	projection := normalizeProjection(next.Projection)
+	projection.UpdatedAt = nowMillis()
 	cfg := clientConfig{
 		EucliBoxURL: normalizeBaseURL(next.EucliBoxURL),
 		EucliBoxKey: strings.TrimSpace(next.EucliBoxKey),
-		Projection:  normalizeProjection(next.Projection),
+		Projection:  projection,
 	}
 	payload, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
@@ -93,7 +96,9 @@ func (s *configStore) updateProjection(fn func(*projectionConfig)) (projectionCo
 	}
 	projection := normalizeProjection(cfg.Projection)
 	fn(&projection)
-	cfg.Projection = normalizeProjection(projection)
+	projection = normalizeProjection(projection)
+	projection.UpdatedAt = nowMillis()
+	cfg.Projection = projection
 	payload, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return projectionConfig{}, err

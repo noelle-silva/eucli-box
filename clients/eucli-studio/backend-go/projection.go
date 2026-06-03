@@ -14,6 +14,8 @@ const (
 	uiVersion           = 7
 	splitSchemaVersion  = 1
 	sessionFavoritesKey = "sessions/favorites"
+	runStatusRunning    = "running"
+	runStatusWaiting    = "waiting_confirmation"
 )
 
 var (
@@ -44,7 +46,11 @@ func (p *projectionService) get(ctx context.Context, key string) (any, error) {
 	case "providers/index":
 		return p.providersIndex(ctx)
 	case "groups/index":
-		return map[string]any{"groupOrder": []any{}, "groupFolders": map[string]any{}, "updatedAt": nowMillis()}, nil
+		cfg, err := p.config.load()
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"groupOrder": []any{}, "groupFolders": map[string]any{}, "updatedAt": stableUpdatedAt(cfg.Projection.UpdatedAt)}, nil
 	case sessionFavoritesKey:
 		return p.loadFavorites(ctx)
 	}
@@ -338,12 +344,14 @@ func (p *projectionService) meta(ctx context.Context) (any, error) {
 	roleFolders := map[string]string{}
 	chatIndexByRole := map[string]any{}
 	roleByID := map[string]map[string]any{}
+	updatedAt := stableUpdatedAt(projection.UpdatedAt)
 	for _, role := range roles {
 		id := stringField(role, "id")
 		if id == "" {
 			continue
 		}
 		roleByID[id] = role
+		updatedAt = stableUpdatedAt(updatedAt, millisFromAnyOrZero(role["updatedAt"]), millisFromAnyOrZero(role["createdAt"]))
 	}
 	for _, id := range orderedIDs(projection.RoleOrder, mapKeys(roleByID)) {
 		role := roleByID[id]
@@ -352,6 +360,7 @@ func (p *projectionService) meta(ctx context.Context) (any, error) {
 		roleFolders[id] = folder
 		index, _ := p.sessionsIndexForRole(ctx, id)
 		chatIndexByRole[id] = index
+		updatedAt = stableUpdatedAt(updatedAt, millisFromAnyOrZero(objectMap(index)["updatedAt"]))
 	}
 	providerOrder := []string{}
 	providerFolders := map[string]string{}
@@ -362,11 +371,13 @@ func (p *projectionService) meta(ctx context.Context) (any, error) {
 		}
 		providerOrder = append(providerOrder, id)
 		providerFolders[id] = folderFor(projection.ProviderFolders, id, stringField(provider, "name"), "供应商")
+		updatedAt = stableUpdatedAt(updatedAt, millisFromAnyOrZero(provider["updatedAt"]), millisFromAnyOrZero(provider["createdAt"]))
 	}
+	updatedAt = stableUpdatedAt(updatedAt, millisFromAnyOrZero(mermaidFix["updatedAt"]), millisFromAnyOrZero(chatTitleNaming["updatedAt"]), millisFromAnyOrZero(stickerNaming["updatedAt"]))
 	return map[string]any{
 		"schemaVersion":    splitSchemaVersion,
 		"dataVersion":      uiVersion,
-		"updatedAt":        nowMillis(),
+		"updatedAt":        updatedAt,
 		"ui":               projection.UI,
 		"settings":         mergeSettings(projection.Settings, providers, mermaidFix, chatTitleNaming, stickerNaming),
 		"roleOrder":        roleOrder,
@@ -386,7 +397,7 @@ func (p *projectionService) chatsIndex(ctx context.Context) (any, error) {
 		return nil, err
 	}
 	m := meta.(map[string]any)
-	return map[string]any{"roleOrder": m["roleOrder"], "roleFolders": m["roleFolders"], "updatedAt": nowMillis()}, nil
+	return map[string]any{"roleOrder": m["roleOrder"], "roleFolders": m["roleFolders"], "updatedAt": stableUpdatedAt(millisFromAnyOrZero(m["updatedAt"]))}, nil
 }
 
 func (p *projectionService) providersIndex(ctx context.Context) (any, error) {
@@ -395,7 +406,7 @@ func (p *projectionService) providersIndex(ctx context.Context) (any, error) {
 		return nil, err
 	}
 	m := meta.(map[string]any)
-	return map[string]any{"providerOrder": m["providerOrder"], "providerFolders": m["providerFolders"], "updatedAt": nowMillis()}, nil
+	return map[string]any{"providerOrder": m["providerOrder"], "providerFolders": m["providerFolders"], "updatedAt": stableUpdatedAt(millisFromAnyOrZero(m["updatedAt"]))}, nil
 }
 
 func (p *projectionService) roleChatIndex(ctx context.Context, folder string) (any, error) {
@@ -407,9 +418,11 @@ func (p *projectionService) roleChatIndex(ctx context.Context, folder string) (a
 }
 
 func (p *projectionService) sessionsIndexForRole(ctx context.Context, roleID string) (any, error) {
+	cfg, _ := p.config.load()
+	indexUpdatedAt := stableUpdatedAt(cfg.Projection.UpdatedAt)
 	sessions, err := p.listSessions(ctx, roleID)
 	if err != nil {
-		return map[string]any{"activeChatId": "", "chatIds": []any{}, "chatUpdatedAt": map[string]any{}, "chatMetas": []any{}, "updatedAt": nowMillis()}, err
+		return map[string]any{"activeChatId": "", "chatIds": []any{}, "chatUpdatedAt": map[string]any{}, "chatMetas": []any{}, "updatedAt": indexUpdatedAt}, err
 	}
 	chatIds := []string{}
 	chatUpdatedAt := map[string]any{}
@@ -419,12 +432,12 @@ func (p *projectionService) sessionsIndexForRole(ctx context.Context, roleID str
 		if id == "" {
 			continue
 		}
-		updatedAt := millisFromAny(session["lastActive"])
+		updatedAt := stableUpdatedAt(millisFromAnyOrZero(session["lastActive"]), millisFromAnyOrZero(session["updatedAt"]), millisFromAnyOrZero(session["createdAt"]))
 		chatIds = append(chatIds, id)
 		chatUpdatedAt[id] = updatedAt
 		chatMetas = append(chatMetas, map[string]any{"id": id, "title": fallback(stringField(session, "title"), "新聊天"), "updatedAt": updatedAt, "createdAt": updatedAt})
+		indexUpdatedAt = stableUpdatedAt(indexUpdatedAt, updatedAt)
 	}
-	cfg, _ := p.config.load()
 	active := cfg.Projection.ActiveChatByRole[roleID]
 	if active != "" {
 		found := false
@@ -441,7 +454,7 @@ func (p *projectionService) sessionsIndexForRole(ctx context.Context, roleID str
 	if active == "" && len(chatIds) > 0 {
 		active = chatIds[0]
 	}
-	return map[string]any{"activeChatId": active, "chatIds": chatIds, "chatUpdatedAt": chatUpdatedAt, "chatMetas": chatMetas, "updatedAt": nowMillis()}, nil
+	return map[string]any{"activeChatId": active, "chatIds": chatIds, "chatUpdatedAt": chatUpdatedAt, "chatMetas": chatMetas, "updatedAt": indexUpdatedAt}, nil
 }
 
 func (p *projectionService) roleByFolder(ctx context.Context, folder string) (any, error) {
@@ -723,6 +736,7 @@ func fromUIProvider(value any) map[string]any {
 
 func toUIChat(session map[string]any) map[string]any {
 	messages := []map[string]any{}
+	activeAssistantID := activeSessionAssistantMessageID(session)
 	for _, msg := range objectList(session["messages"]) {
 		createdAt := millisFromAny(msg["createdAt"])
 		updatedAt := millisFromAnyOrZero(msg["updatedAt"])
@@ -730,6 +744,10 @@ func toUIChat(session map[string]any) map[string]any {
 			updatedAt = createdAt
 		}
 		uiMessage := map[string]any{"id": stringField(msg, "id"), "type": messageStorageType(msg), "role": messageRole(msg), "content": stringField(msg, "content"), "parentMid": stringField(msg, "parentMessageId"), "branchId": fallback(stringField(msg, "branchId"), "main"), "createdAt": createdAt, "updatedAt": updatedAt}
+		if activeAssistantID != "" && stringField(uiMessage, "id") == activeAssistantID {
+			uiMessage["pending"] = true
+			uiMessage["streaming"] = true
+		}
 		if parts := objectList(msg["parts"]); len(parts) > 0 {
 			uiMessage["parts"] = anyList(parts)
 		}
@@ -1040,6 +1058,18 @@ func fallback(value string, fallback string) string {
 	return strings.TrimSpace(value)
 }
 func nowMillis() int64 { return time.Now().UnixMilli() }
+func stableUpdatedAt(values ...int64) int64 {
+	out := int64(0)
+	for _, value := range values {
+		if value > out {
+			out = value
+		}
+	}
+	if out <= 0 {
+		return 1
+	}
+	return out
+}
 func millisFromAny(value any) int64 {
 	if s, ok := value.(string); ok {
 		if t, err := time.Parse(time.RFC3339, s); err == nil {
@@ -1096,6 +1126,30 @@ func promptText(prompts []map[string]any) string {
 	}
 	return ""
 }
+
+func isSessionRunActive(session map[string]any) bool {
+	switch stringField(session, "status") {
+	case runStatusRunning, runStatusWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
+func activeSessionAssistantMessageID(session map[string]any) string {
+	if !isSessionRunActive(session) {
+		return ""
+	}
+	messages := objectList(session["messages"])
+	for i := len(messages) - 1; i >= 0; i-- {
+		message := messages[i]
+		if messageStorageType(message) == "assistant" {
+			return stringField(message, "id")
+		}
+	}
+	return ""
+}
+
 func messageRole(message map[string]any) string {
 	switch messageStorageType(message) {
 	case "assistant", "tool", "tool_request", "tool_confirmation":

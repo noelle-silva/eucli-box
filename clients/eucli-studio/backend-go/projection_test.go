@@ -116,3 +116,37 @@ func TestSessionFavoritesStorageKeyUsesRootAction(t *testing.T) {
 		t.Fatalf("loaded favorites = %#v", loadedMap)
 	}
 }
+
+func TestRunningSessionMarksLatestAssistantPending(t *testing.T) {
+	session := map[string]any{
+		"id":        "session-1",
+		"roleId":    "developer",
+		"title":     "Streaming",
+		"status":    runStatusRunning,
+		"createdAt": "2026-06-03T10:00:00Z",
+		"updatedAt": "2026-06-03T10:00:00Z",
+		"messages": []any{
+			map[string]any{"id": "u1", "type": "user", "content": "hi", "createdAt": "2026-06-03T10:00:00Z", "updatedAt": "2026-06-03T10:00:00Z"},
+			map[string]any{"id": "a1", "type": "assistant", "content": "", "parentMessageId": "u1", "createdAt": "2026-06-03T10:00:01Z", "updatedAt": "2026-06-03T10:00:01Z"},
+		},
+	}
+
+	ui := toUIChat(session)
+	messages := objectList(ui["messages"])
+	if len(messages) != 2 {
+		t.Fatalf("messages = %#v", ui["messages"])
+	}
+	assistant := messages[1]
+	if assistant["pending"] != true || assistant["streaming"] != true {
+		t.Fatalf("assistant pending/streaming = %#v", assistant)
+	}
+}
+
+func TestStableUpdatedAtUsesMaxPositiveValue(t *testing.T) {
+	if got := stableUpdatedAt(0, -1); got != 1 {
+		t.Fatalf("empty stable updatedAt = %d", got)
+	}
+	if got := stableUpdatedAt(10, 42, 20); got != 42 {
+		t.Fatalf("stable updatedAt = %d", got)
+	}
+}

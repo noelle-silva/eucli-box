@@ -89,6 +89,17 @@ func TestCompleteOpenAIWritesToolsIntoRequest(t *testing.T) {
 	}
 }
 
+func TestModelToolDescriptionPrefersPromptDescription(t *testing.T) {
+	tool := types.ToolDefinition{Description: "Short description", PromptDescription: "Detailed prompt usage"}
+	if got := modelToolDescription(tool); got != "Detailed prompt usage" {
+		t.Fatalf("description = %q", got)
+	}
+	tool.PromptDescription = ""
+	if got := modelToolDescription(tool); got != "Short description" {
+		t.Fatalf("fallback description = %q", got)
+	}
+}
+
 func TestCompleteAnthropicSeparatesSystemPrompt(t *testing.T) {
 	storage := newFakeProviderStorage()
 	storage.providers["anthropic-main"] = types.Provider{ID: "anthropic-main", Name: "Anthropic", BaseURL: "https://api.anthropic.test/v1", Key: "secret", Protocol: types.ProviderProtocolAnthropic, Models: []types.ModelInfo{{ID: "claude-3-5-sonnet"}}}

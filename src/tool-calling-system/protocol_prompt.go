@@ -44,7 +44,7 @@ func buildTextToolInstructions(tools []types.ToolDefinition) string {
 		if name == "" {
 			continue
 		}
-		description := strings.TrimSpace(tool.Description)
+		description := toolPromptDescription(tool)
 		if description == "" {
 			description = "No description provided."
 		}
@@ -61,4 +61,11 @@ func buildTextToolInstructions(tools []types.ToolDefinition) string {
 		builder.WriteString("\n")
 	}
 	return strings.TrimSpace(builder.String())
+}
+
+func toolPromptDescription(tool types.ToolDefinition) string {
+	if promptDescription := strings.TrimSpace(tool.PromptDescription); promptDescription != "" {
+		return promptDescription
+	}
+	return strings.TrimSpace(tool.Description)
 }

@@ -63,6 +63,17 @@ func TestTextToolInstructionsDescribeProtocolAndTools(t *testing.T) {
 	}
 }
 
+func TestTextToolInstructionsPreferPromptDescription(t *testing.T) {
+	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{})
+	prompt, err := system.TextToolInstructions(context.Background(), []types.ToolDefinition{{ID: "shell_command", Name: "shell_command", Description: "Short description", PromptDescription: "Detailed prompt usage"}})
+	if err != nil {
+		t.Fatalf("TextToolInstructions() error = %v", err)
+	}
+	if !strings.Contains(prompt.Content, "Detailed prompt usage") || strings.Contains(prompt.Content, "Short description") {
+		t.Fatalf("prompt = %s", prompt.Content)
+	}
+}
+
 func TestParseTextToolRequestsExtractsMultipleBlocks(t *testing.T) {
 	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{})
 	_, intents, err := system.ParseTextToolRequests(context.Background(), `<<<TOOL_REQUEST>>>

@@ -264,7 +264,7 @@ func openAITools(tools []types.ToolDefinition) []map[string]any {
 			"type": "function",
 			"function": map[string]any{
 				"name":        tool.Name,
-				"description": tool.Description,
+				"description": modelToolDescription(tool),
 				"parameters":  toolSchema(tool.InputSchema),
 			},
 		})

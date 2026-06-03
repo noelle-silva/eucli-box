@@ -3,17 +3,18 @@ package types
 import "time"
 
 type ToolDefinition struct {
-	ID            string         `json:"id"`
-	Name          string         `json:"name"`
-	Description   string         `json:"description"`
-	Type          string         `json:"type"`
-	InputSchema   map[string]any `json:"inputSchema,omitempty"`
-	UserConfig    map[string]any `json:"userConfig,omitempty"`
-	DefaultConfig map[string]any `json:"defaultConfig,omitempty"`
-	Directory     string         `json:"directory,omitempty"`
-	Binaries      []ToolBinary   `json:"binaries,omitempty"`
-	CreatedAt     time.Time      `json:"createdAt"`
-	UpdatedAt     time.Time      `json:"updatedAt"`
+	ID                string         `json:"id"`
+	Name              string         `json:"name"`
+	Description       string         `json:"description"`
+	PromptDescription string         `json:"promptDescription,omitempty"`
+	Type              string         `json:"type"`
+	InputSchema       map[string]any `json:"inputSchema,omitempty"`
+	UserConfig        map[string]any `json:"userConfig,omitempty"`
+	DefaultConfig     map[string]any `json:"defaultConfig,omitempty"`
+	Directory         string         `json:"directory,omitempty"`
+	Binaries          []ToolBinary   `json:"binaries,omitempty"`
+	CreatedAt         time.Time      `json:"createdAt"`
+	UpdatedAt         time.Time      `json:"updatedAt"`
 }
 
 type ToolBinary struct {

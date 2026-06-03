@@ -316,7 +316,7 @@ func anthropicTools(tools []types.ToolDefinition) []map[string]any {
 	for _, tool := range tools {
 		converted = append(converted, map[string]any{
 			"name":         tool.Name,
-			"description":  tool.Description,
+			"description":  modelToolDescription(tool),
 			"input_schema": toolSchema(tool.InputSchema),
 		})
 	}

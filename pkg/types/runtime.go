@@ -6,6 +6,7 @@ type Message struct {
 	ID              string              `json:"id"`
 	Type            string              `json:"type"`
 	Content         string              `json:"content"`
+	Parts           []MessagePart       `json:"parts,omitempty"`
 	Attachments     []MessageAttachment `json:"attachments,omitempty"`
 	ParentMessageID string              `json:"parentMessageId,omitempty"`
 	BranchID        string              `json:"branchId,omitempty"`
@@ -14,6 +15,40 @@ type Message struct {
 	Reason          string              `json:"reason,omitempty"`
 	CreatedAt       time.Time           `json:"createdAt"`
 	UpdatedAt       time.Time           `json:"updatedAt"`
+}
+
+type MessagePart struct {
+	ID        string          `json:"id"`
+	Type      string          `json:"type"`
+	Text      string          `json:"text,omitempty"`
+	CallID    string          `json:"callId,omitempty"`
+	ToolName  string          `json:"toolName,omitempty"`
+	Input     map[string]any  `json:"input,omitempty"`
+	State     string          `json:"state,omitempty"`
+	Decision  *ToolDecision   `json:"decision,omitempty"`
+	Result    *ToolPartResult `json:"result,omitempty"`
+	CreatedAt time.Time       `json:"createdAt,omitempty"`
+	UpdatedAt time.Time       `json:"updatedAt,omitempty"`
+}
+
+type ToolDecision struct {
+	ID        string    `json:"id"`
+	ActionID  string    `json:"actionId"`
+	ToolName  string    `json:"toolName"`
+	Status    string    `json:"status"`
+	Reason    string    `json:"reason,omitempty"`
+	CreatedAt time.Time `json:"createdAt,omitempty"`
+}
+
+type ToolPartResult struct {
+	ID        string         `json:"id"`
+	ActionID  string         `json:"actionId"`
+	ToolName  string         `json:"toolName"`
+	Status    ToolStatus     `json:"status"`
+	Content   string         `json:"content,omitempty"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+	Error     string         `json:"error,omitempty"`
+	CreatedAt time.Time      `json:"createdAt,omitempty"`
 }
 
 type MessageAttachment struct {

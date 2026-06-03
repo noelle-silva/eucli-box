@@ -6,6 +6,7 @@ type PromptMessage struct {
 	ID        string        `json:"id"`
 	Role      string        `json:"role"`
 	Content   string        `json:"content"`
+	Parts     []MessagePart `json:"parts,omitempty"`
 	Images    []PromptImage `json:"images,omitempty"`
 	Order     int           `json:"order"`
 	CreatedAt time.Time     `json:"createdAt"`

@@ -16,7 +16,7 @@ import {
   rebuildLinearBranchingMessages,
   fillMissingBranchIdsOnly,
 } from './branching'
-import { normalizeMessageAttachments, normalizeMessageGroup } from './message'
+import { normalizeMessageAttachments, normalizeMessageGroup, normalizeMessageParts } from './message'
 import { normalizeFavorites } from './favorites'
 import { chatMetasFromBox } from './chatMeta'
 import { looksLikeImageDataUrl } from './textProcessing'
@@ -255,11 +255,24 @@ export function normalizeData(raw: any) {
           messages: messages
             .filter((m: any) => m && typeof m === 'object')
             .map((m: any) => {
+              const messageType0 = String((m as any).type || (m as any).role || '').trim()
+              const messageType = ['assistant', 'tool', 'tool_request', 'tool_confirmation', 'failure'].includes(messageType0) ? messageType0 : 'user'
+              const role0 = String((m as any).role || '').trim()
+              const role =
+                role0 === 'assistant'
+                  ? role0
+                  : messageType === 'assistant'
+                    ? 'assistant'
+                    : messageType === 'tool' || messageType === 'tool_request' || messageType === 'tool_confirmation'
+                      ? 'assistant'
+                      : 'user'
               const outMsg: any = {
                 id: String(m.id || uid('m')),
-                role: m.role === 'assistant' ? 'assistant' : 'user',
+                type: messageType,
+                role,
                 speakerRoleId: String((m as any).speakerRoleId || '').trim(),
                 content: String(m.content || ''),
+                parts: normalizeMessageParts((m as any).parts),
                 images: normImagePaths(m.images),
                 attachments: normalizeMessageAttachments((m as any).attachments),
                 ...normalizeMessageGroup(m),

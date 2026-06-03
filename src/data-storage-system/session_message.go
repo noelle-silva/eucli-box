@@ -70,6 +70,10 @@ func normalizeSessionMessages(messages []types.Message, now time.Time) []types.M
 
 		message.Type = normalizeMessageType(message.Type)
 		message.Attachments = normalizeSessionMessageAttachments(message.Attachments)
+		if message.Content == "" {
+			message.Content = textProjectionFromParts(message.Parts)
+		}
+		message.Parts = normalizeSessionMessageParts(message, now)
 		message.BranchID = normalizeBranchID(message.BranchID)
 		message.ParentMessageID = strings.TrimSpace(message.ParentMessageID)
 		if message.ParentMessageID == "" {
@@ -91,6 +95,107 @@ func normalizeSessionMessages(messages []types.Message, now time.Time) []types.M
 	}
 
 	return result
+}
+
+func normalizeSessionMessageParts(message types.Message, now time.Time) []types.MessagePart {
+	parts := make([]types.MessagePart, 0, len(message.Parts)+1)
+	seen := map[string]struct{}{}
+	if (message.Type == "user" || message.Type == "assistant") && message.Content != "" {
+		parts = append(parts, normalizeTextPart(firstPartOfType(message.Parts, "text"), message.Content, now, seen))
+	}
+	for _, part := range message.Parts {
+		if strings.TrimSpace(part.Type) != "tool" {
+			continue
+		}
+		parts = append(parts, normalizeToolPart(part, now, seen))
+	}
+	return parts
+}
+
+func firstPartOfType(parts []types.MessagePart, partType string) types.MessagePart {
+	for _, part := range parts {
+		if strings.TrimSpace(part.Type) == partType {
+			return part
+		}
+	}
+	return types.MessagePart{}
+}
+
+func normalizeTextPart(part types.MessagePart, text string, now time.Time, seen map[string]struct{}) types.MessagePart {
+	part.Type = "text"
+	part.Text = text
+	part.ID = normalizeMessagePartID(part.ID, seen)
+	if part.CreatedAt.IsZero() {
+		part.CreatedAt = now
+	}
+	if part.UpdatedAt.IsZero() {
+		part.UpdatedAt = part.CreatedAt
+	}
+	part.CallID = ""
+	part.ToolName = ""
+	part.Input = nil
+	part.State = ""
+	part.Decision = nil
+	part.Result = nil
+	return part
+}
+
+func normalizeToolPart(part types.MessagePart, now time.Time, seen map[string]struct{}) types.MessagePart {
+	part.Type = "tool"
+	part.ID = normalizeMessagePartID(part.ID, seen)
+	part.CallID = strings.TrimSpace(part.CallID)
+	part.ToolName = strings.TrimSpace(part.ToolName)
+	part.State = strings.TrimSpace(part.State)
+	part.Text = ""
+	if part.Input == nil {
+		part.Input = map[string]any{}
+	}
+	if part.Decision != nil {
+		part.Decision.ID = strings.TrimSpace(part.Decision.ID)
+		part.Decision.ActionID = strings.TrimSpace(part.Decision.ActionID)
+		part.Decision.ToolName = strings.TrimSpace(part.Decision.ToolName)
+		part.Decision.Status = strings.TrimSpace(part.Decision.Status)
+		part.Decision.Reason = strings.TrimSpace(part.Decision.Reason)
+	}
+	if part.Result != nil {
+		part.Result.ID = strings.TrimSpace(part.Result.ID)
+		part.Result.ActionID = strings.TrimSpace(part.Result.ActionID)
+		part.Result.ToolName = strings.TrimSpace(part.Result.ToolName)
+		part.Result.Error = strings.TrimSpace(part.Result.Error)
+		if part.Result.Metadata == nil {
+			part.Result.Metadata = map[string]any{}
+		}
+	}
+	if part.CreatedAt.IsZero() {
+		part.CreatedAt = now
+	}
+	if part.UpdatedAt.IsZero() {
+		part.UpdatedAt = part.CreatedAt
+	}
+	return part
+}
+
+func normalizeMessagePartID(id string, seen map[string]struct{}) string {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		id = utils.NewID("part")
+	}
+	if _, ok := seen[id]; ok {
+		id = utils.NewID("part")
+	}
+	seen[id] = struct{}{}
+	return id
+}
+
+func textProjectionFromParts(parts []types.MessagePart) string {
+	blocks := []string{}
+	for _, part := range parts {
+		if strings.TrimSpace(part.Type) != "text" || part.Text == "" {
+			continue
+		}
+		blocks = append(blocks, part.Text)
+	}
+	return strings.Join(blocks, "\n\n")
 }
 
 func normalizeSessionTitle(title string) string {

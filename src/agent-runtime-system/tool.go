@@ -12,7 +12,7 @@ func (s *system) handleToolIntent(ctx context.Context, record *runRecord, intent
 	if err != nil {
 		return types.ToolResult{}, runtimeToolFailed("failed to normalize tool intent", err)
 	}
-	appendRunMessage(record, toolRequestMessage(action))
+	upsertRunToolPart(record, action, "requested", nil, nil)
 	if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
 		return types.ToolResult{}, err
 	}
@@ -23,48 +23,58 @@ func (s *system) handleToolIntent(ctx context.Context, record *runRecord, intent
 	s.publish(record.runID, "tool_requested", plan)
 	if plan.Decision.Status == types.PermissionStatusDenied {
 		result := types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: action.ID, ToolName: action.ToolName, Status: types.ToolStatusDenied, Error: plan.Decision.Reason, CreatedAt: time.Now().UTC()}
-		appendRunMessage(record, toolMessage(result))
+		upsertRunToolPart(record, action, "denied", &plan.Decision, &result)
 		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
 			return types.ToolResult{}, err
 		}
 		return result, nil
 	}
 	if plan.Decision.Status == types.PermissionStatusNeedsConfirmation {
+		upsertRunToolPart(record, action, "needs_confirmation", &plan.Decision, nil)
+		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
+			return types.ToolResult{}, err
+		}
+		if err := s.saveSession(ctx, record.session, types.RunStatusWaitingConfirmation); err != nil {
+			return types.ToolResult{}, err
+		}
 		confirmed, err := s.waitForConfirmation(ctx, record, plan)
 		if err != nil {
 			result := types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: action.ID, ToolName: action.ToolName, Status: types.ToolStatusCancelled, Error: err.Error(), CreatedAt: time.Now().UTC()}
-			appendRunMessage(record, toolMessage(result))
+			upsertRunToolPart(record, action, "cancelled", &plan.Decision, &result)
 			if stateErr := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); stateErr != nil {
 				return types.ToolResult{}, stateErr
 			}
 			return result, err
 		}
 		plan = confirmed
-		appendRunMessage(record, toolConfirmationMessage(plan.Decision))
-		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
-			return types.ToolResult{}, err
-		}
 		if plan.Decision.Status == types.PermissionStatusDenied {
 			result := types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: action.ID, ToolName: action.ToolName, Status: types.ToolStatusDenied, Error: plan.Decision.Reason, CreatedAt: time.Now().UTC()}
-			appendRunMessage(record, toolMessage(result))
+			upsertRunToolPart(record, action, "denied", &plan.Decision, &result)
 			if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
 				return types.ToolResult{}, err
 			}
 			return result, nil
 		}
 	}
+	upsertRunToolPart(record, action, "running", &plan.Decision, nil)
+	if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
+		return types.ToolResult{}, err
+	}
+	if err := s.saveSession(ctx, record.session, types.RunStatusRunning); err != nil {
+		return types.ToolResult{}, err
+	}
 	toolCtx, cancel := context.WithTimeout(ctx, s.config.ToolTimeout)
 	defer cancel()
 	result, err := s.tools.Execute(toolCtx, plan)
 	if err != nil {
 		failedResult := types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: action.ID, ToolName: action.ToolName, Status: types.ToolStatusFailed, Error: err.Error(), CreatedAt: time.Now().UTC()}
-		appendRunMessage(record, toolMessage(failedResult))
+		upsertRunToolPart(record, action, "error", &plan.Decision, &failedResult)
 		if stateErr := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); stateErr != nil {
 			return types.ToolResult{}, stateErr
 		}
 		return failedResult, runtimeToolFailed("failed to execute tool", err)
 	}
-	appendRunMessage(record, toolMessage(result))
+	upsertRunToolPart(record, action, "completed", &plan.Decision, &result)
 	if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
 		return types.ToolResult{}, err
 	}

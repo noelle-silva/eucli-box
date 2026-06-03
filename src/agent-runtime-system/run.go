@@ -151,7 +151,6 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 			s.completeRun(context.Background(), record, record.session)
 			return
 		}
-		sessionMessageCount := len(record.session.Messages)
 		for _, intent := range modelResponse.ToolIntents {
 			result, err := s.handleToolIntent(ctx, record, intent)
 			if err != nil {
@@ -161,7 +160,8 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 			s.publish(record.runID, "tool_result", result)
 		}
 		assistantParent = record.messageParent
-		contextSession = appendSessionMessages(contextSession, record.session.Messages[sessionMessageCount:])
+		contextSession = upsertSessionMessage(contextSession, assistantParent)
+		record.activeAssistantID = ""
 		if err := ctx.Err(); err != nil {
 			s.cancelRunRecord(context.Background(), record, record.session)
 			return
@@ -251,6 +251,20 @@ func appendSessionMessages(session types.Session, messages []types.Message) type
 		session = appendMessage(session, message)
 	}
 	return session
+}
+
+func upsertSessionMessage(session types.Session, message types.Message) types.Session {
+	if strings.TrimSpace(message.ID) == "" {
+		return session
+	}
+	for index := range session.Messages {
+		if session.Messages[index].ID != message.ID {
+			continue
+		}
+		session.Messages[index] = message
+		return session
+	}
+	return appendMessage(session, message)
 }
 
 func (s *system) completeRun(ctx context.Context, record *runRecord, session types.Session) {

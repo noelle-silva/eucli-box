@@ -100,6 +100,46 @@ func TestModelToolDescriptionPrefersPromptDescription(t *testing.T) {
 	}
 }
 
+func TestCompleteOpenAISendsStructuredToolHistory(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["openai-main"] = types.Provider{ID: "openai-main", Name: "OpenAI", BaseURL: "https://api.example.test/v1", Key: "secret", Protocol: types.ProviderProtocolOpenAI, Models: []types.ModelInfo{{ID: "gpt-4.1"}}}
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"done"}}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	_, err := system.Complete(context.Background(), types.ModelRequest{
+		Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"},
+		Messages:   []types.PromptMessage{{Role: "assistant", Content: "checking", Parts: []types.MessagePart{{Type: "text", Text: "checking"}, {Type: "tool", CallID: "call-1", ToolName: "shell_command", Input: map[string]any{"command": "pwd"}, Result: &types.ToolPartResult{Status: types.ToolStatusSuccess, Content: "ok"}}}}},
+	})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(network.lastRequest.Body, &body); err != nil {
+		t.Fatalf("request body is invalid json: %v", err)
+	}
+	messages := body["messages"].([]any)
+	if len(messages) != 2 {
+		t.Fatalf("messages = %#v body=%s", messages, string(network.lastRequest.Body))
+	}
+	assistant := messages[0].(map[string]any)
+	if _, ok := assistant["tool_calls"]; !ok {
+		t.Fatalf("assistant missing tool_calls: %#v", assistant)
+	}
+	toolMessage := messages[1].(map[string]any)
+	if toolMessage["role"] != "tool" || toolMessage["tool_call_id"] != "call-1" {
+		t.Fatalf("tool message = %#v", toolMessage)
+	}
+}
+
+func TestCompleteOpenAIRejectsToolHistoryWithoutResult(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["openai-main"] = types.Provider{ID: "openai-main", Name: "OpenAI", BaseURL: "https://api.example.test/v1", Key: "secret", Protocol: types.ProviderProtocolOpenAI, Models: []types.ModelInfo{{ID: "gpt-4.1"}}}
+	system := newTestProviderSystem(t, &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"done"}}]}`)}}, storage)
+
+	_, err := system.Complete(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Messages: []types.PromptMessage{{Role: "assistant", Parts: []types.MessagePart{{Type: "tool", CallID: "call-1", ToolName: "shell_command", Input: map[string]any{"command": "pwd"}}}}}})
+	assertAppErrorCode(t, err, "provider.invalid_request")
+}
+
 func TestCompleteAnthropicSeparatesSystemPrompt(t *testing.T) {
 	storage := newFakeProviderStorage()
 	storage.providers["anthropic-main"] = types.Provider{ID: "anthropic-main", Name: "Anthropic", BaseURL: "https://api.anthropic.test/v1", Key: "secret", Protocol: types.ProviderProtocolAnthropic, Models: []types.ModelInfo{{ID: "claude-3-5-sonnet"}}}
@@ -131,6 +171,46 @@ func TestCompleteAnthropicSeparatesSystemPrompt(t *testing.T) {
 	if len(messages) != 1 || !strings.Contains(string(network.lastRequest.Body), `"role":"user"`) {
 		t.Fatalf("messages = %#v body=%s", messages, string(network.lastRequest.Body))
 	}
+}
+
+func TestCompleteAnthropicSendsStructuredToolHistory(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["anthropic-main"] = types.Provider{ID: "anthropic-main", Name: "Anthropic", BaseURL: "https://api.anthropic.test/v1", Key: "secret", Protocol: types.ProviderProtocolAnthropic, Models: []types.ModelInfo{{ID: "claude-3-5-sonnet"}}}
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"msg-1","content":[{"type":"text","text":"done"}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	_, err := system.Complete(context.Background(), types.ModelRequest{
+		Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"},
+		Messages:   []types.PromptMessage{{Role: "assistant", Content: "checking", Parts: []types.MessagePart{{Type: "tool", CallID: "toolu-1", ToolName: "shell_command", Input: map[string]any{"command": "pwd"}, Result: &types.ToolPartResult{Status: types.ToolStatusSuccess, Content: "ok"}}}}},
+	})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(network.lastRequest.Body, &body); err != nil {
+		t.Fatalf("request body is invalid json: %v", err)
+	}
+	messages := body["messages"].([]any)
+	if len(messages) != 2 {
+		t.Fatalf("messages = %#v body=%s", messages, string(network.lastRequest.Body))
+	}
+	assistant := messages[0].(map[string]any)
+	if assistant["role"] != "assistant" || !strings.Contains(string(network.lastRequest.Body), `"type":"tool_use"`) {
+		t.Fatalf("assistant message = %#v body=%s", assistant, string(network.lastRequest.Body))
+	}
+	toolResult := messages[1].(map[string]any)
+	if toolResult["role"] != "user" || !strings.Contains(string(network.lastRequest.Body), `"type":"tool_result"`) {
+		t.Fatalf("tool result message = %#v body=%s", toolResult, string(network.lastRequest.Body))
+	}
+}
+
+func TestCompleteAnthropicRejectsToolHistoryWithoutResult(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["anthropic-main"] = types.Provider{ID: "anthropic-main", Name: "Anthropic", BaseURL: "https://api.anthropic.test/v1", Key: "secret", Protocol: types.ProviderProtocolAnthropic, Models: []types.ModelInfo{{ID: "claude-3-5-sonnet"}}}
+	system := newTestProviderSystem(t, &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"msg-1","content":[{"type":"text","text":"done"}]}`)}}, storage)
+
+	_, err := system.Complete(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"}, Messages: []types.PromptMessage{{Role: "assistant", Parts: []types.MessagePart{{Type: "tool", CallID: "toolu-1", ToolName: "shell_command", Input: map[string]any{"command": "pwd"}}}}}})
+	assertAppErrorCode(t, err, "provider.invalid_request")
 }
 
 func TestCompleteStreamOpenAIEmitsDeltasAndAssemblesResponse(t *testing.T) {

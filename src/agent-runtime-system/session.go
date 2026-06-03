@@ -104,34 +104,45 @@ func appendChildMessage(session types.Session, message types.Message, parent typ
 func appendRunAssistantReply(record *runRecord, content string) {
 	if strings.TrimSpace(record.messageParent.ID) == "" {
 		appendRunMessage(record, assistantMessage(content))
+		record.activeAssistantID = record.messageParent.ID
 		return
 	}
 	record.session = appendAssistantReply(record.session, content, record.messageParent)
 	record.messageParent = lastSessionMessage(record.session)
 	record.lastMessageID = record.messageParent.ID
+	record.activeAssistantID = record.messageParent.ID
 }
 
 func ensureRunAssistantMessage(record *runRecord) {
-	if record.messageParent.Type == "assistant" && strings.TrimSpace(record.messageParent.ID) != "" {
+	if assistant, ok := activeRunAssistant(record); ok {
+		record.messageParent = assistant
+		record.lastMessageID = assistant.ID
 		return
 	}
 	appendRunAssistantReply(record, "")
 }
 
 func updateRunAssistantContent(record *runRecord, content string) {
-	if record.messageParent.Type != "assistant" || strings.TrimSpace(record.messageParent.ID) == "" {
+	if _, ok := activeRunAssistant(record); !ok {
 		appendRunAssistantReply(record, content)
 		return
 	}
 	now := time.Now().UTC()
+	messageID := strings.TrimSpace(record.activeAssistantID)
+	if messageID == "" {
+		messageID = record.messageParent.ID
+	}
 	record.messageParent.Content = content
 	record.messageParent.UpdatedAt = now
+	setMessageTextPart(&record.messageParent, content, now)
 	for index := range record.session.Messages {
-		if record.session.Messages[index].ID != record.messageParent.ID {
+		if record.session.Messages[index].ID != messageID {
 			continue
 		}
 		record.session.Messages[index].Content = content
 		record.session.Messages[index].UpdatedAt = now
+		setMessageTextPart(&record.session.Messages[index], content, now)
+		record.messageParent = record.session.Messages[index]
 		break
 	}
 	record.session.UpdatedAt = now
@@ -140,7 +151,7 @@ func updateRunAssistantContent(record *runRecord, content string) {
 }
 
 func dropEmptyAssistantOutput(record *runRecord) {
-	if record.messageParent.Type != "assistant" || strings.TrimSpace(record.messageParent.ID) == "" || strings.TrimSpace(record.messageParent.Content) != "" {
+	if record.messageParent.Type != "assistant" || strings.TrimSpace(record.messageParent.ID) == "" || strings.TrimSpace(record.messageParent.Content) != "" || hasToolParts(record.messageParent) {
 		return
 	}
 	if len(record.session.Messages) == 0 || record.session.Messages[len(record.session.Messages)-1].ID != record.messageParent.ID {
@@ -152,11 +163,13 @@ func dropEmptyAssistantOutput(record *runRecord) {
 		if parent, ok := messageByID(record.session.Messages, parentID); ok {
 			record.messageParent = parent
 			record.lastMessageID = parent.ID
+			record.activeAssistantID = ""
 			return
 		}
 	}
 	record.messageParent = lastSessionMessage(record.session)
 	record.lastMessageID = record.messageParent.ID
+	record.activeAssistantID = ""
 }
 
 func appendRunMessage(record *runRecord, message types.Message) {

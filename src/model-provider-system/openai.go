@@ -97,9 +97,13 @@ func (openAIAdapter) ParseListModelsResponse(response types.HTTPResponse) ([]typ
 }
 
 func (openAIAdapter) BuildCompleteRequest(provider types.Provider, request types.ModelRequest, timeout int64) (types.HTTPRequest, error) {
+	messages, err := openAIMessages(request.Messages)
+	if err != nil {
+		return types.HTTPRequest{}, err
+	}
 	body := map[string]any{
 		"model":       request.Coordinate.ModelID,
-		"messages":    openAIMessages(request.Messages),
+		"messages":    messages,
 		"temperature": request.Temperature,
 	}
 	if request.Stream {
@@ -228,12 +232,36 @@ func (openAIAdapter) ParseCompleteResponse(response types.HTTPResponse) (types.M
 	return result, nil
 }
 
-func openAIMessages(messages []types.PromptMessage) []map[string]any {
+func openAIMessages(messages []types.PromptMessage) ([]map[string]any, error) {
 	converted := make([]map[string]any, 0, len(messages))
 	for _, message := range messages {
+		toolParts := promptToolParts(message)
+		if message.Role == "assistant" && len(toolParts) > 0 {
+			if err := requireToolResults(toolParts); err != nil {
+				return nil, err
+			}
+			assistant := map[string]any{"role": "assistant", "content": openAIMessageContent(message)}
+			toolCalls := make([]map[string]any, 0, len(toolParts))
+			for _, part := range toolParts {
+				arguments, err := toolArgumentsJSON(part)
+				if err != nil {
+					return nil, err
+				}
+				toolCalls = append(toolCalls, map[string]any{"id": part.CallID, "type": "function", "function": map[string]any{"name": part.ToolName, "arguments": arguments}})
+			}
+			assistant["tool_calls"] = toolCalls
+			converted = append(converted, assistant)
+			for _, part := range toolParts {
+				if part.Result == nil {
+					continue
+				}
+				converted = append(converted, map[string]any{"role": "tool", "tool_call_id": part.CallID, "content": toolResultText(part)})
+			}
+			continue
+		}
 		converted = append(converted, map[string]any{"role": message.Role, "content": openAIMessageContent(message)})
 	}
-	return converted
+	return converted, nil
 }
 
 func openAIMessageContent(message types.PromptMessage) any {

@@ -217,6 +217,45 @@ func TestSessionMessageRootActions(t *testing.T) {
 	}
 }
 
+func TestSessionMessagePartsAreNormalized(t *testing.T) {
+	system := newTestSystem(t)
+	now := time.Date(2026, 5, 30, 9, 0, 0, 0, time.UTC)
+	session := types.Session{
+		ID:        "session-parts",
+		RoleID:    "developer",
+		Title:     "Parts",
+		Status:    string(types.RunStatusCreated),
+		CreatedAt: now,
+		UpdatedAt: now,
+		Messages: []types.Message{{
+			ID:        "m1",
+			Type:      "assistant",
+			Content:   "checking",
+			BranchID:  "main",
+			CreatedAt: now,
+			UpdatedAt: now,
+			Parts:     []types.MessagePart{{Type: "tool", CallID: "call-1", ToolName: "shell_command", State: "completed", Input: map[string]any{"command": "pwd"}, Result: &types.ToolPartResult{ID: "result-1", ActionID: "call-1", ToolName: "shell_command", Status: types.ToolStatusSuccess, Content: "ok"}}},
+		}},
+		LastActive: now,
+	}
+	if err := system.SaveSession(context.Background(), session); err != nil {
+		t.Fatalf("SaveSession() error = %v", err)
+	}
+	loaded, err := system.LoadSession(context.Background(), "developer", "session-parts")
+	if err != nil {
+		t.Fatalf("LoadSession() error = %v", err)
+	}
+	if len(loaded.Messages) != 1 || len(loaded.Messages[0].Parts) != 2 {
+		t.Fatalf("parts = %#v", loaded.Messages)
+	}
+	if loaded.Messages[0].Parts[0].Type != "text" || loaded.Messages[0].Parts[0].Text != "checking" {
+		t.Fatalf("text part = %#v", loaded.Messages[0].Parts[0])
+	}
+	if loaded.Messages[0].Parts[1].Type != "tool" || loaded.Messages[0].Parts[1].CallID != "call-1" || loaded.Messages[0].Parts[1].Result == nil {
+		t.Fatalf("tool part = %#v", loaded.Messages[0].Parts[1])
+	}
+}
+
 func TestProviderAndToolStores(t *testing.T) {
 	system := newTestSystem(t)
 	provider := types.Provider{ID: "openai-main", Name: "OpenAI", Protocol: types.ProviderProtocolOpenAI, UpdatedAt: time.Date(2026, 5, 30, 10, 0, 0, 0, time.UTC)}

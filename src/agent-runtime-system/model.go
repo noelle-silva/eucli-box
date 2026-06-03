@@ -107,7 +107,16 @@ func (s *system) runtimeMessageToPrompt(ctx context.Context, message types.Messa
 	if err != nil {
 		return types.PromptMessage{}, err
 	}
-	return types.PromptMessage{ID: message.ID, Role: role, Content: content, Images: images, Order: index, CreatedAt: message.CreatedAt, UpdatedAt: message.UpdatedAt}, nil
+	return types.PromptMessage{ID: message.ID, Role: role, Content: content, Parts: cloneMessageParts(message.Parts), Images: images, Order: index, CreatedAt: message.CreatedAt, UpdatedAt: message.UpdatedAt}, nil
+}
+
+func cloneMessageParts(parts []types.MessagePart) []types.MessagePart {
+	if len(parts) == 0 {
+		return nil
+	}
+	result := make([]types.MessagePart, len(parts))
+	copy(result, parts)
+	return result
 }
 
 func messagePromptContent(message types.Message) string {

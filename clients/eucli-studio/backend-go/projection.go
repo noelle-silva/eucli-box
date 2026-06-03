@@ -705,7 +705,10 @@ func toUIChat(session map[string]any) map[string]any {
 		if updatedAt == 0 {
 			updatedAt = createdAt
 		}
-		uiMessage := map[string]any{"id": stringField(msg, "id"), "role": messageRole(msg), "content": stringField(msg, "content"), "parentMid": stringField(msg, "parentMessageId"), "branchId": fallback(stringField(msg, "branchId"), "main"), "createdAt": createdAt, "updatedAt": updatedAt}
+		uiMessage := map[string]any{"id": stringField(msg, "id"), "type": messageStorageType(msg), "role": messageRole(msg), "content": stringField(msg, "content"), "parentMid": stringField(msg, "parentMessageId"), "branchId": fallback(stringField(msg, "branchId"), "main"), "createdAt": createdAt, "updatedAt": updatedAt}
+		if parts := objectList(msg["parts"]); len(parts) > 0 {
+			uiMessage["parts"] = anyList(parts)
+		}
 		images, attachments := toUIMessageAttachments(objectList(msg["attachments"]))
 		if len(images) > 0 {
 			uiMessage["images"] = images
@@ -815,7 +818,10 @@ func fromUIChat(value any, roleID string) map[string]any {
 	chat := objectMap(value)
 	messages := []any{}
 	for _, msg := range objectList(chat["messages"]) {
-		message := map[string]any{"id": stringField(msg, "id"), "type": messageRole(msg), "content": stringField(msg, "content"), "parentMessageId": stringField(msg, "parentMid"), "branchId": fallback(stringField(msg, "branchId"), "main"), "createdAt": timeFromMillis(msg["createdAt"]), "updatedAt": timeFromMillis(msg["updatedAt"])}
+		message := map[string]any{"id": stringField(msg, "id"), "type": messageStorageType(msg), "content": stringField(msg, "content"), "parentMessageId": stringField(msg, "parentMid"), "branchId": fallback(stringField(msg, "branchId"), "main"), "createdAt": timeFromMillis(msg["createdAt"]), "updatedAt": timeFromMillis(msg["updatedAt"])}
+		if parts := objectList(msg["parts"]); len(parts) > 0 {
+			message["parts"] = anyList(parts)
+		}
 		attachments := fromUIMessageAttachments(objectList(msg["attachments"]), stringSlice(msg["images"]))
 		if len(attachments) > 0 {
 			message["attachments"] = attachments
@@ -1067,14 +1073,24 @@ func promptText(prompts []map[string]any) string {
 	return ""
 }
 func messageRole(message map[string]any) string {
-	role := stringField(message, "role")
-	if role == "" {
-		role = stringField(message, "type")
-	}
-	if role == "assistant" {
+	switch messageStorageType(message) {
+	case "assistant", "tool", "tool_request", "tool_confirmation":
 		return "assistant"
 	}
 	return "user"
+}
+
+func messageStorageType(message map[string]any) string {
+	messageType := stringField(message, "type")
+	if messageType == "" {
+		messageType = stringField(message, "role")
+	}
+	switch messageType {
+	case "assistant", "tool", "tool_request", "tool_confirmation", "failure":
+		return messageType
+	default:
+		return "user"
+	}
 }
 
 func isNotFoundError(err error) bool { return err != nil && strings.Contains(err.Error(), "不存在") }

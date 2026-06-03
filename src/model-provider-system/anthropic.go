@@ -278,6 +278,22 @@ func anthropicMessages(messages []types.PromptMessage) ([]map[string]any, string
 				systemText += "\n\n" + message.Content
 			}
 		case "user", "assistant":
+			toolParts := promptToolParts(message)
+			if message.Role == "assistant" && len(toolParts) > 0 {
+				if err := requireToolResults(toolParts); err != nil {
+					return nil, "", err
+				}
+				content, err := anthropicAssistantToolContent(message, toolParts)
+				if err != nil {
+					return nil, "", err
+				}
+				converted = append(converted, map[string]any{"role": "assistant", "content": content})
+				resultBlocks := anthropicToolResultBlocks(toolParts)
+				if len(resultBlocks) > 0 {
+					converted = append(converted, map[string]any{"role": "user", "content": resultBlocks})
+				}
+				continue
+			}
 			content, err := anthropicMessageContent(message)
 			if err != nil {
 				return nil, "", err
@@ -288,6 +304,35 @@ func anthropicMessages(messages []types.PromptMessage) ([]map[string]any, string
 		}
 	}
 	return converted, systemText, nil
+}
+
+func anthropicAssistantToolContent(message types.PromptMessage, toolParts []types.MessagePart) ([]map[string]any, error) {
+	content := []map[string]any{}
+	if strings.TrimSpace(message.Content) != "" {
+		content = append(content, map[string]any{"type": "text", "text": message.Content})
+	}
+	for _, part := range toolParts {
+		content = append(content, map[string]any{"type": "tool_use", "id": part.CallID, "name": part.ToolName, "input": part.Input})
+	}
+	if len(content) == 0 {
+		return nil, providerInvalid("assistant tool message has no content", nil)
+	}
+	return content, nil
+}
+
+func anthropicToolResultBlocks(toolParts []types.MessagePart) []map[string]any {
+	blocks := []map[string]any{}
+	for _, part := range toolParts {
+		if part.Result == nil {
+			continue
+		}
+		block := map[string]any{"type": "tool_result", "tool_use_id": part.CallID, "content": toolResultText(part)}
+		if part.Result.Status != types.ToolStatusSuccess {
+			block["is_error"] = true
+		}
+		blocks = append(blocks, block)
+	}
+	return blocks
 }
 
 func anthropicMessageContent(message types.PromptMessage) (any, error) {

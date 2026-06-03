@@ -391,6 +391,9 @@ func TestRunParsesTextToolRequestsIntoUnifiedToolFlow(t *testing.T) {
 	if len(session.Messages) < 2 || session.Messages[1].Content != "I will check." || strings.Contains(session.Messages[1].Content, "TOOL_REQUEST") {
 		t.Fatalf("assistant message = %#v", session.Messages)
 	}
+	if got := toolPartByCallID(session.Messages[1], "text-intent-1"); got == nil || got.State != "completed" || got.Result == nil || got.Result.Content != "tool ok" {
+		t.Fatalf("tool part = %#v", session.Messages[1].Parts)
+	}
 }
 
 func TestRunDoesNotPersistEmptyAssistantForPureTextToolRequest(t *testing.T) {
@@ -411,14 +414,13 @@ func TestRunDoesNotPersistEmptyAssistantForPureTextToolRequest(t *testing.T) {
 		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
 	}
 	session := fakes.storage.lastSession()
-	if len(session.Messages) < 4 {
+	if len(session.Messages) < 3 {
 		t.Fatalf("messages = %#v", session.Messages)
 	}
 	if session.Messages[1].Type == "assistant" && strings.TrimSpace(session.Messages[1].Content) == "" {
-		t.Fatalf("empty assistant persisted before tool request: %#v", session.Messages)
-	}
-	if session.Messages[1].Type != "tool_request" || session.Messages[1].ParentMessageID != session.Messages[0].ID {
-		t.Fatalf("tool request parent = %#v", session.Messages)
+		if got := toolPartByCallID(session.Messages[1], "text-intent-1"); got == nil || got.State != "completed" || got.Result == nil {
+			t.Fatalf("empty assistant lacks completed tool part: %#v", session.Messages)
+		}
 	}
 }
 
@@ -440,6 +442,29 @@ func TestRunExecutesMultipleToolIntentsFromOneModelResponse(t *testing.T) {
 	if fakes.tool.executeCount != 2 || len(fakes.tool.normalizedIntents) != 2 {
 		t.Fatalf("tool flow execute=%d intents=%#v", fakes.tool.executeCount, fakes.tool.normalizedIntents)
 	}
+	session := fakes.storage.lastSession()
+	if got := completedToolPartCount(session.Messages[1]); got != 2 {
+		t.Fatalf("completed tool part count = %d messages=%#v", got, session.Messages)
+	}
+}
+
+func toolPartByCallID(message types.Message, callID string) *types.MessagePart {
+	for index := range message.Parts {
+		if message.Parts[index].Type == "tool" && message.Parts[index].CallID == callID {
+			return &message.Parts[index]
+		}
+	}
+	return nil
+}
+
+func completedToolPartCount(message types.Message) int {
+	count := 0
+	for _, part := range message.Parts {
+		if part.Type == "tool" && part.State == "completed" && part.Result != nil {
+			count++
+		}
+	}
+	return count
 }
 
 func TestRunFailsWhenMaxStepsExceeded(t *testing.T) {

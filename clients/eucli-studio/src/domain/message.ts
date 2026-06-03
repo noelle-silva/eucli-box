@@ -32,3 +32,52 @@ export function normalizeMessageGroup(m: any) {
   if (groupRole === 'attachment' && !groupParentMid) return { groupId: '', groupRole: '', groupParentMid: '' }
   return { groupId, groupRole, groupParentMid }
 }
+
+export function normalizeMessageParts(input: any) {
+  const list = Array.isArray(input) ? input : []
+  const out: any[] = []
+  for (const raw of list) {
+    if (!raw || typeof raw !== 'object') continue
+    const type = String((raw as any).type || '').trim()
+    const id = String((raw as any).id || uid('part')).trim()
+    if (!id) continue
+    if (type === 'text') {
+      const text = String((raw as any).text || '')
+      if (!text) continue
+      out.push({ id, type: 'text', text, createdAt: (raw as any).createdAt, updatedAt: (raw as any).updatedAt })
+      continue
+    }
+    if (type !== 'tool') continue
+    const callId = String((raw as any).callId || '').trim()
+    const toolName = String((raw as any).toolName || '').trim()
+    const state = String((raw as any).state || '').trim()
+    const inputValue = (raw as any).input && typeof (raw as any).input === 'object' && !Array.isArray((raw as any).input) ? (raw as any).input : {}
+    const part: any = { id, type: 'tool', callId, toolName, state, input: inputValue, createdAt: (raw as any).createdAt, updatedAt: (raw as any).updatedAt }
+    const decision = (raw as any).decision && typeof (raw as any).decision === 'object' ? (raw as any).decision : null
+    if (decision) {
+      part.decision = {
+        id: String((decision as any).id || '').trim(),
+        actionId: String((decision as any).actionId || '').trim(),
+        toolName: String((decision as any).toolName || '').trim(),
+        status: String((decision as any).status || '').trim(),
+        reason: String((decision as any).reason || '').trim(),
+        createdAt: (decision as any).createdAt,
+      }
+    }
+    const result = (raw as any).result && typeof (raw as any).result === 'object' ? (raw as any).result : null
+    if (result) {
+      part.result = {
+        id: String((result as any).id || '').trim(),
+        actionId: String((result as any).actionId || '').trim(),
+        toolName: String((result as any).toolName || '').trim(),
+        status: String((result as any).status || '').trim(),
+        content: String((result as any).content || ''),
+        error: String((result as any).error || '').trim(),
+        metadata: (result as any).metadata && typeof (result as any).metadata === 'object' && !Array.isArray((result as any).metadata) ? (result as any).metadata : {},
+        createdAt: (result as any).createdAt,
+      }
+    }
+    out.push(part)
+  }
+  return out
+}

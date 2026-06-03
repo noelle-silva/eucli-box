@@ -139,6 +139,26 @@ function svgSafeId(raw: any) {
   return s.replace(/[^a-zA-Z0-9\-_:.]/g, '_').slice(0, 80) || 'x'
 }
 
+function safePrettyJson(value: any) {
+  try {
+    return JSON.stringify(value ?? {}, null, 2)
+  } catch (_) {
+    return String(value ?? '')
+  }
+}
+
+function toolPartStateText(state0: any) {
+  const state = String(state0 || '').trim()
+  if (state === 'requested') return '已请求'
+  if (state === 'needs_confirmation') return '等待确认'
+  if (state === 'running') return '运行中'
+  if (state === 'completed') return '已完成'
+  if (state === 'error') return '失败'
+  if (state === 'denied') return '已拒绝'
+  if (state === 'cancelled') return '已取消'
+  return state || '未知状态'
+}
+
 function normalizeHotkeyString(raw: any) {
   const s0 = typeof raw === 'string' ? raw : String(raw ?? '')
   const s = s0.trim()
@@ -348,6 +368,70 @@ function AssistantContent(props: {
   })
 
   return <div className={className} data-mid={mid} ref={ref} onClick={onClick} />
+}
+
+function AssistantToolParts(props: { parts: any[] }) {
+  const toolParts = (Array.isArray(props.parts) ? props.parts : []).filter((part: any) => String(part?.type || '') === 'tool')
+  if (!toolParts.length) return null
+  return (
+    <Stack spacing={0.75} sx={{ mt: 1 }}>
+      {toolParts.map((part: any, index: number) => {
+        const id = String(part?.id || `${part?.callId || 'tool'}:${index}`)
+        const name = String(part?.toolName || 'tool')
+        const state = String(part?.state || '')
+        const result = part?.result && typeof part.result === 'object' ? part.result : null
+        const decision = part?.decision && typeof part.decision === 'object' ? part.decision : null
+        const resultText = result ? String(result?.content || result?.error || '') : ''
+        return (
+          <Paper
+            key={id}
+            variant="outlined"
+            sx={{ borderRadius: 2, borderColor: 'rgba(2, 132, 199, .22)', bgcolor: 'rgba(2, 132, 199, .045)', px: 1.25, py: 1 }}
+          >
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.75, minWidth: 0 }}>
+              <StorageIcon sx={{ fontSize: 18, color: 'rgba(2, 132, 199, .9)' }} />
+              <Typography variant="body2" sx={{ fontWeight: 900 }}>
+                工具调用
+              </Typography>
+              <Chip size="small" label={name} variant="outlined" sx={{ maxWidth: 260 }} />
+              <Chip size="small" label={toolPartStateText(state)} color={state === 'completed' ? 'success' : state === 'error' || state === 'denied' ? 'error' : 'default'} />
+              <Box sx={{ flex: 1 }} />
+              {part?.callId ? (
+                <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}>
+                  {String(part.callId)}
+                </Typography>
+              ) : null}
+            </Stack>
+            <Stack spacing={0.75}>
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 900 }}>
+                  输入参数
+                </Typography>
+                <Box component="pre" sx={{ m: 0, mt: 0.25, p: 0.75, borderRadius: 1.5, bgcolor: 'rgba(15, 23, 42, .06)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: 12, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}>
+                  {safePrettyJson(part?.input || {})}
+                </Box>
+              </Box>
+              {decision ? (
+                <Typography variant="caption" color="text.secondary">
+                  权限：{String(decision?.status || '') || '未知'}{decision?.reason ? `，原因：${String(decision.reason)}` : ''}
+                </Typography>
+              ) : null}
+              {result ? (
+                <Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 900 }}>
+                    返回结果（{String(result?.status || '') || 'unknown'}）
+                  </Typography>
+                  <Box component="pre" sx={{ m: 0, mt: 0.25, p: 0.75, borderRadius: 1.5, bgcolor: 'rgba(15, 23, 42, .06)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 260, overflow: 'auto', fontSize: 12, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}>
+                    {resultText || safePrettyJson(result)}
+                  </Box>
+                </Box>
+              ) : null}
+            </Stack>
+          </Paper>
+        )
+      })}
+    </Stack>
+  )
 }
 
 function RefImageThumb(props: { controller: any; path: string }) {
@@ -3731,14 +3815,19 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                               ) : null}
                             </Box>
                           ) : (
-                            <AssistantContent
-                              controller={controller}
-                              className="prose"
-                              text={content}
-                              mid={mid}
-                              renderSafetyPolicyKey={renderSafetyPolicy}
-                              chatRootRef={chatRootRef}
-                            />
+                            <Box>
+                              {content ? (
+                                <AssistantContent
+                                  controller={controller}
+                                  className="prose"
+                                  text={content}
+                                  mid={mid}
+                                  renderSafetyPolicyKey={renderSafetyPolicy}
+                                  chatRootRef={chatRootRef}
+                                />
+                              ) : null}
+                              <AssistantToolParts parts={Array.isArray((m as any)?.parts) ? (m as any).parts : []} />
+                            </Box>
                           )}
 
                           {isEditing ? (

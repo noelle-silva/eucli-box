@@ -186,6 +186,58 @@ func TestClearUsesGitSemanticsForRestoredOriginalPaths(t *testing.T) {
 	assertCleanGitStatus(t, root)
 }
 
+func TestClearAcceptsOverlayCommittedIntoTargetHead(t *testing.T) {
+	root := newGitFixture(t)
+	source := addWorktree(t, root, "demo", "feature/demo")
+	writeFile(t, filepath.Join(source, "app.txt"), "feature\n")
+	writeFile(t, filepath.Join(source, "new.txt"), "new\n")
+	removeFile(t, filepath.Join(source, "delete.txt"))
+	if err := Run(context.Background(), []string{"apply", "demo"}, Options{WorkDir: root, Stdout: &bytes.Buffer{}}); err != nil {
+		t.Fatalf("apply error = %v", err)
+	}
+	runGit(t, root, "add", ".")
+	runGit(t, root, "commit", "-m", "accept overlay")
+
+	var output bytes.Buffer
+	if err := Run(context.Background(), []string{"status"}, Options{WorkDir: root, Stdout: &output}); err != nil {
+		t.Fatalf("status error = %v", err)
+	}
+	if !strings.Contains(output.String(), "state: accepted") {
+		t.Fatalf("status output = %q", output.String())
+	}
+	if !strings.Contains(output.String(), "accepted by target HEAD paths: 3") {
+		t.Fatalf("status output = %q", output.String())
+	}
+
+	output.Reset()
+	if err := Run(context.Background(), []string{"clear"}, Options{WorkDir: root, Stdout: &output}); err != nil {
+		t.Fatalf("clear error = %v", err)
+	}
+	assertFileContent(t, filepath.Join(root, "app.txt"), "feature\n")
+	assertFileContent(t, filepath.Join(root, "new.txt"), "new\n")
+	assertNoFile(t, filepath.Join(root, "delete.txt"))
+	assertCleanGitStatus(t, root)
+}
+
+func TestRefreshSwitchesSourceAfterOverlayCommittedIntoTargetHead(t *testing.T) {
+	root := newGitFixture(t)
+	sourceA := addWorktree(t, root, "demo-a", "feature/demo-a")
+	writeFile(t, filepath.Join(sourceA, "app.txt"), "feature a\n")
+	if err := Run(context.Background(), []string{"apply", "demo-a"}, Options{WorkDir: root, Stdout: &bytes.Buffer{}}); err != nil {
+		t.Fatalf("apply error = %v", err)
+	}
+	runGit(t, root, "add", ".")
+	runGit(t, root, "commit", "-m", "accept demo a")
+
+	sourceB := addWorktree(t, root, "demo-b", "feature/demo-b")
+	writeFile(t, filepath.Join(sourceB, "other.txt"), "feature b\n")
+	if err := Run(context.Background(), []string{"refresh", "demo-b"}, Options{WorkDir: root, Stdout: &bytes.Buffer{}}); err != nil {
+		t.Fatalf("refresh error = %v", err)
+	}
+	assertFileContent(t, filepath.Join(root, "app.txt"), "feature a\n")
+	assertFileContent(t, filepath.Join(root, "other.txt"), "feature b\n")
+}
+
 func newGitFixture(t *testing.T) string {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {

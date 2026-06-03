@@ -54,12 +54,14 @@ type entryState string
 const (
 	entryStateOverlay  entryState = "overlay"
 	entryStateOriginal entryState = "original"
+	entryStateAccepted entryState = "accepted"
 	entryStateChanged  entryState = "changed"
 )
 
 type stateInspection struct {
 	Overlay  []StateEntry
 	Original []StateEntry
+	Accepted []StateEntry
 	Changed  []StateEntry
 }
 
@@ -166,7 +168,11 @@ func (rt *runtimeContext) Status(output io.Writer) error {
 		return err
 	}
 	stateName := "active"
-	if len(inspection.Overlay) == 0 {
+	if len(inspection.Changed) > 0 {
+		stateName = "blocked"
+	} else if len(inspection.Accepted) == len(state.Entries) {
+		stateName = "accepted"
+	} else if len(inspection.Overlay) == 0 {
 		stateName = "restored"
 	} else if len(inspection.Original) > 0 {
 		stateName = "mixed"
@@ -179,6 +185,7 @@ func (rt *runtimeContext) Status(output io.Writer) error {
 	fmt.Fprintf(output, "  state: %s\n", stateName)
 	fmt.Fprintf(output, "  overlaid paths: %d\n", len(inspection.Overlay))
 	fmt.Fprintf(output, "  already restored paths: %d\n", len(inspection.Original))
+	fmt.Fprintf(output, "  accepted by target HEAD paths: %d\n", len(inspection.Accepted))
 	fmt.Fprintf(output, "  changed paths: %d\n", len(inspection.Changed))
 	fmt.Fprintf(output, "  appliedAt: %s\n", state.AppliedAt.Format(time.RFC3339))
 	if len(inspection.Changed) > 0 {
@@ -399,6 +406,8 @@ func (rt *runtimeContext) inspectState(state State) (stateInspection, error) {
 			inspection.Overlay = append(inspection.Overlay, entry)
 		case entryStateOriginal:
 			inspection.Original = append(inspection.Original, entry)
+		case entryStateAccepted:
+			inspection.Accepted = append(inspection.Accepted, entry)
 		case entryStateChanged:
 			inspection.Changed = append(inspection.Changed, entry)
 		}
@@ -416,6 +425,13 @@ func (rt *runtimeContext) inspectEntry(state State, entry StateEntry) (entryStat
 		return "", fmt.Errorf("inspect overlay %s: %w", entry.Path, err)
 	}
 	if entryMatchesOverlay(entry, current) {
+		matchesTargetHead, err := rt.entryMatchesTargetHead(entry, current)
+		if err != nil {
+			return "", err
+		}
+		if matchesTargetHead {
+			return entryStateAccepted, nil
+		}
 		return entryStateOverlay, nil
 	}
 	matchesOriginal, err := rt.entryMatchesOriginal(state, entry, current)
@@ -424,6 +440,13 @@ func (rt *runtimeContext) inspectEntry(state State, entry StateEntry) (entryStat
 	}
 	if matchesOriginal {
 		return entryStateOriginal, nil
+	}
+	matchesTargetHead, err := rt.entryMatchesTargetHead(entry, current)
+	if err != nil {
+		return "", err
+	}
+	if matchesTargetHead {
+		return entryStateAccepted, nil
 	}
 	return entryStateChanged, nil
 }
@@ -530,6 +553,29 @@ func (rt *runtimeContext) entryMatchesOriginal(state State, entry StateEntry, cu
 		return matches, nil
 	}
 	return !current.Exists, nil
+}
+
+func (rt *runtimeContext) entryMatchesTargetHead(entry StateEntry, current fileSnapshot) (bool, error) {
+	pathExists, err := rt.pathExistsInCommit(rt.target.Head, entry.Path)
+	if err != nil {
+		return false, err
+	}
+	if current.Exists != pathExists {
+		return false, nil
+	}
+	matches, err := gitQuiet(rt.ctx, rt.target.Root, "diff", "--quiet", rt.target.Head, "--", entry.Path)
+	if err != nil {
+		return false, fmt.Errorf("compare %s with current target HEAD: %w", entry.Path, err)
+	}
+	return matches, nil
+}
+
+func (rt *runtimeContext) pathExistsInCommit(commit string, repoPath string) (bool, error) {
+	paths, err := gitList(rt.ctx, rt.target.Root, "ls-tree", "--name-only", "-z", commit, "--", repoPath)
+	if err != nil {
+		return false, fmt.Errorf("inspect %s in %s: %w", repoPath, commit, err)
+	}
+	return len(paths) > 0, nil
 }
 
 func changedEntriesError(entries []StateEntry) error {

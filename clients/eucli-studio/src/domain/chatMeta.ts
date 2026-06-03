@@ -20,10 +20,94 @@ function clampPreview(value: unknown): string {
   return text.length > 80 ? `${text.slice(0, 80).trim()}...` : text
 }
 
+function toolStateText(value: unknown): string {
+  const state = String(value || '').trim()
+  if (state === 'requested') return '已请求'
+  if (state === 'needs_confirmation') return '等待确认'
+  if (state === 'running') return '运行中'
+  if (state === 'completed') return '已完成'
+  if (state === 'error') return '失败'
+  if (state === 'denied') return '已拒绝'
+  if (state === 'cancelled') return '已取消'
+  return state
+}
+
+function toolResultStatusText(value: unknown): string {
+  const status = String(value || '').trim()
+  const lower = status.toLowerCase()
+  if (lower === 'success' || lower === 'completed' || lower === 'ok') return '成功'
+  if (lower === 'error' || lower === 'failed' || lower === 'failure') return '失败'
+  return status
+}
+
+function toolSourceText(value: unknown): string {
+  const source = String(value || '').trim()
+  if (source === 'native') return '原生工具调用'
+  if (source === 'text_protocol') return '文本协议工具调用'
+  return '工具调用'
+}
+
+function toolPartPreview(part: any): string {
+  if (!part || typeof part !== 'object') return ''
+  const result = (part as any).result && typeof (part as any).result === 'object' ? (part as any).result : null
+  const name = normalizeWhitespace((part as any).toolName || result?.toolName) || 'tool'
+  if (result) {
+    const status = toolResultStatusText(result.status)
+    return `工具返回：${name}${status ? `（${status}）` : ''}`
+  }
+  const state = toolStateText((part as any).state)
+  return `${toolSourceText((part as any).source)}：${name}${state ? `（${state}）` : ''}`
+}
+
+function legacyToolResponsePreview(content: string): string {
+  if (!content.startsWith('<<<[TOOL_RESPONSE]>>>')) return ''
+  const resultTags = content.match(/<<\[RESULT-\d+\]>>/g) || []
+  const names = Array.from(content.matchAll(/tool_name:「start」([\s\S]*?)「end」/g))
+    .map((x) => normalizeWhitespace(x?.[1] || ''))
+    .filter(Boolean)
+  const statuses = Array.from(content.matchAll(/status:「start」([\s\S]*?)「end」/g))
+    .map((x) => toolResultStatusText(x?.[1] || ''))
+    .filter(Boolean)
+  const pairs = names.slice(0, 3).map((name, index) => {
+    const status = statuses[index] || ''
+    return status ? `${name}（${status}）` : name
+  })
+  const count = resultTags.length
+  if (count) return `工具返回：${count}项${pairs.length ? `：${pairs.join('，')}${count > 3 ? '...' : ''}` : ''}`
+  return pairs.length ? `工具返回：${pairs.join('，')}` : '工具返回结果'
+}
+
+function contentPreview(message: any, parts: any[]): string {
+  const content = String(message?.content ?? '')
+  const legacyToolPreview = legacyToolResponsePreview(content)
+  if (legacyToolPreview) return clampPreview(legacyToolPreview)
+
+  let text = content
+  for (const part of parts) {
+    if (!part || typeof part !== 'object' || String((part as any).type || '') !== 'tool') continue
+    const raw = String((part as any).raw || '')
+    if (raw) text = text.split(raw).join(' ')
+  }
+  return clampPreview(text)
+}
+
+function partPreview(part: any): string {
+  if (!part || typeof part !== 'object') return ''
+  const type = String((part as any).type || '').trim()
+  if (type === 'text') return clampPreview((part as any).text)
+  if (type === 'tool') return clampPreview(toolPartPreview(part))
+  return ''
+}
+
 function messagePreview(message: any): string {
   if (!message || typeof message !== 'object') return ''
-  const text = clampPreview(message.content)
+  const parts = Array.isArray(message.parts) ? message.parts : []
+  const text = contentPreview(message, parts)
   if (text) return text
+  for (const part of parts) {
+    const preview = partPreview(part)
+    if (preview) return preview
+  }
   const images = Array.isArray(message.images) ? message.images : []
   if (images.length) return '图片'
   const attachments = Array.isArray(message.attachments) ? message.attachments : []
@@ -103,13 +187,17 @@ export function normalizeChatMetas(raw: any, chatIdsRaw: any, chatUpdatedAtRaw: 
 export function chatMetasFromBox(box: any, fallbackTitle = '新聊天'): ChatMeta[] {
   const metas = normalizeChatMetas(box?.chatMetas, box?.chatIds, box?.chatUpdatedAt, fallbackTitle)
   const out = metas.slice()
-  const seen = new Set(out.map((m) => m.id))
+  const indexById = new Map(out.map((m, index) => [m.id, index]))
   const chats = Array.isArray(box?.chats) ? box.chats : []
   for (const chat of chats) {
     const meta = chatMetaFromChat(chat, fallbackTitle)
-    if (!meta || seen.has(meta.id)) continue
-    seen.add(meta.id)
-    out.push(meta)
+    if (!meta) continue
+    const index = indexById.get(meta.id)
+    if (typeof index === 'number') out[index] = meta
+    else {
+      indexById.set(meta.id, out.length)
+      out.push(meta)
+    }
   }
   return out
 }

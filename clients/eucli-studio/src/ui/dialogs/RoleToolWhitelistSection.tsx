@@ -29,11 +29,22 @@ type RoleToolWhitelistSectionProps = {
   tools: any
 }
 
+type ToolCatalogItem = {
+  id?: unknown
+  name?: unknown
+  description?: unknown
+  type?: unknown
+}
+
+function toolCatalogItems(tools: any): ToolCatalogItem[] {
+  return Array.isArray(tools?.items) ? tools.items.filter((tool: any) => tool && typeof tool === 'object') : []
+}
+
 export function RoleToolWhitelistSection(props: RoleToolWhitelistSectionProps) {
   const { controller, draft, tools } = props
   const policy = normalizeRoleToolPolicy(draft?.roleToolPolicy)
-  const catalogItems = Array.isArray(tools?.items) ? tools.items : []
-  const catalogByName = React.useMemo(() => new Map(catalogItems.map((tool: any) => [String(tool?.name || tool?.id || ''), tool])), [catalogItems])
+  const catalogItems = toolCatalogItems(tools)
+  const catalogByName = React.useMemo<Map<string, ToolCatalogItem>>(() => new Map(catalogItems.map((tool) => [String(tool.name || tool.id || ''), tool])), [catalogItems])
   const [menuAnchor, setMenuAnchor] = React.useState<HTMLElement | null>(null)
 
   const openToolMenu = (event: React.MouseEvent<HTMLElement>, toolName: string) => {
@@ -161,7 +172,7 @@ export function RoleToolWhitelistSection(props: RoleToolWhitelistSectionProps) {
 
 function AddRoleToolsDialog(props: { controller: any; draft: any; tools: any; policy: ReturnType<typeof normalizeRoleToolPolicy> }) {
   const { controller, draft, tools, policy } = props
-  const catalogItems = Array.isArray(tools?.items) ? tools.items : []
+  const catalogItems = toolCatalogItems(tools)
   const selected = Array.isArray(draft?.roleToolAddSelected) ? draft.roleToolAddSelected.map((item: any) => String(item || '').trim()).filter(Boolean) : []
   const selectedSet = new Set(selected)
   const policySet = new Set(policy.tools)
@@ -238,7 +249,7 @@ function AddRoleToolsDialog(props: { controller: any; draft: any; tools: any; po
   )
 }
 
-function RoleToolPermissionDialog(props: { controller: any; draft: any; policy: ReturnType<typeof normalizeRoleToolPolicy>; catalogByName: Map<string, any> }) {
+function RoleToolPermissionDialog(props: { controller: any; draft: any; policy: ReturnType<typeof normalizeRoleToolPolicy>; catalogByName: Map<string, ToolCatalogItem> }) {
   const { controller, draft, policy, catalogByName } = props
   const toolName = String(draft?.roleToolPermissionName || '').trim()
   const tool = catalogByName.get(toolName) || null

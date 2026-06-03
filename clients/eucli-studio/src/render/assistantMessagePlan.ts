@@ -1,17 +1,17 @@
-export type AssistantToolRenderSegment =
+export type AssistantMessageRenderSegment =
   | { type: 'text'; id: string; text: string }
   | { type: 'tool'; id: string; part: any }
 
-export type AssistantToolRenderPlan = {
-  segments: AssistantToolRenderSegment[]
-  trailingToolParts: any[]
-  diagnostics: AssistantToolRenderDiagnostic[]
-}
-
-export type AssistantToolRenderDiagnostic = {
+export type AssistantMessageRenderDiagnostic = {
   id: string
   part: any
   reason: string
+}
+
+export type AssistantMessageRenderPlan = {
+  segments: AssistantMessageRenderSegment[]
+  trailingToolParts: any[]
+  diagnostics: AssistantMessageRenderDiagnostic[]
 }
 
 type IndexedText = {
@@ -68,16 +68,16 @@ function findToolRawRange(content: string, raw: string, start: number): { start:
   }
 }
 
-export function assistantToolParts(parts: any[]) {
+function assistantToolParts(parts: any[]) {
   return (Array.isArray(parts) ? parts : []).filter((part: any) => String(part?.type || '') === 'tool')
 }
 
-export function buildAssistantToolRenderPlan(contentRaw: unknown, partsRaw: any[]): AssistantToolRenderPlan {
+export function planAssistantMessageRender(contentRaw: unknown, partsRaw: any[]): AssistantMessageRenderPlan {
   const content = String(contentRaw ?? '')
   const toolParts = assistantToolParts(partsRaw)
-  const segments: AssistantToolRenderSegment[] = []
+  const segments: AssistantMessageRenderSegment[] = []
   const trailingToolParts: any[] = []
-  const diagnostics: AssistantToolRenderDiagnostic[] = []
+  const diagnostics: AssistantMessageRenderDiagnostic[] = []
   let cursor = 0
 
   toolParts.forEach((part: any, index: number) => {

@@ -9,23 +9,23 @@ import { createHtmlSanitizer, sanitizeSvg } from './sanitize'
 import { hydrateStickerSizes } from './stickers'
 import type { BoolRef } from './types'
 import { enhanceMathCopyButtons } from './mathCopy'
+import { planAssistantMessageRender } from './assistantMessagePlan'
+import { renderAssistantToolDiagnosticHtml, renderAssistantToolHtml } from './assistantToolHtml'
 import type { AiChatCapabilities } from '../gateway/capabilities'
 
 type RenderSafetyPolicy = 'original' | 'baseline' | 'unsafe'
+type AssistantRenderOptions = {
+  stickersEnabled?: boolean
+  getStickerPath?: (category: string, name: string) => string
+  renderSafetyPolicy?: RenderSafetyPolicy
+}
 
 export type AssistantRenderEngine = {
   ensureRenderer: () => Promise<void>
   sanitizeHtml: (html: unknown, policy?: RenderSafetyPolicy) => string
   sanitizeSvg: (svg: unknown, policy?: RenderSafetyPolicy) => string
-  renderAssistantInto: (
-    el: unknown,
-    text: unknown,
-    options?: {
-      stickersEnabled?: boolean
-      getStickerPath?: (category: string, name: string) => string
-      renderSafetyPolicy?: RenderSafetyPolicy
-    },
-  ) => void
+  renderAssistantInto: (el: unknown, text: unknown, options?: AssistantRenderOptions) => void
+  renderAssistantMessageInto: (el: unknown, text: unknown, parts: any[], options?: AssistantRenderOptions) => void
 }
 
 export function createDefaultAssistantRenderEngine(capabilities: AiChatCapabilities): AssistantRenderEngine {
@@ -54,21 +54,14 @@ export function createDefaultAssistantRenderEngine(capabilities: AiChatCapabilit
     return rendererPromise
   }
 
-  function renderAssistantInto(
-    el: unknown,
-    text: unknown,
-    options?: {
-      stickersEnabled?: boolean
-      getStickerPath?: (category: string, name: string) => string
-      renderSafetyPolicy?: RenderSafetyPolicy
-    },
-  ) {
-    if (!(el instanceof HTMLElement)) return
-    ensureRenderer().catch(() => {})
+  function normalizeRenderSafetyPolicy(options?: AssistantRenderOptions): RenderSafetyPolicy {
+    return options?.renderSafetyPolicy === 'unsafe' ? 'unsafe' : options?.renderSafetyPolicy === 'baseline' ? 'baseline' : 'original'
+  }
+
+  function renderAssistantTextHtml(text: unknown, options?: AssistantRenderOptions) {
     const raw = String(text || '')
     let html = ''
-    const renderSafetyPolicy: RenderSafetyPolicy =
-      options?.renderSafetyPolicy === 'unsafe' ? 'unsafe' : options?.renderSafetyPolicy === 'baseline' ? 'baseline' : 'original'
+    const renderSafetyPolicy = normalizeRenderSafetyPolicy(options)
 
     const noIndent = preprocessHtmlIndentation(raw)
     const pre = preprocessAssistantContent(noIndent, { stickersEnabled: !!options?.stickersEnabled })
@@ -108,7 +101,10 @@ export function createDefaultAssistantRenderEngine(capabilities: AiChatCapabilit
       })
     }
 
-    el.innerHTML = safe
+    return safe
+  }
+
+  function enhanceAssistantDom(el: HTMLElement, renderSafetyPolicy: RenderSafetyPolicy) {
     enhanceCodeBlocks(el)
     mermaidSupport.ensureMermaidBlockCopyHandlerOnce(el)
     mermaidSupport.ensureMermaidErrorCopyHandlerOnce(el)
@@ -142,10 +138,48 @@ export function createDefaultAssistantRenderEngine(capabilities: AiChatCapabilit
     mermaidSupport.renderMermaidInto(el, renderSafetyPolicy).catch(() => {})
   }
 
+  function renderAssistantInto(el: unknown, text: unknown, options?: AssistantRenderOptions) {
+    if (!(el instanceof HTMLElement)) return
+    ensureRenderer().catch(() => {})
+    const renderSafetyPolicy = normalizeRenderSafetyPolicy(options)
+    el.innerHTML = renderAssistantTextHtml(text, options)
+    enhanceAssistantDom(el, renderSafetyPolicy)
+  }
+
+  function renderAssistantMessageInto(el: unknown, text: unknown, parts: any[], options?: AssistantRenderOptions) {
+    if (!(el instanceof HTMLElement)) return
+    ensureRenderer().catch(() => {})
+    const renderSafetyPolicy = normalizeRenderSafetyPolicy(options)
+    const plan = planAssistantMessageRender(text, parts)
+    const html: string[] = []
+
+    for (const segment of plan.segments) {
+      if (segment.type === 'text') {
+        const rendered = renderAssistantTextHtml(segment.text, options)
+        if (rendered.trim()) html.push(rendered)
+        continue
+      }
+      html.push(renderAssistantToolHtml(segment.part))
+    }
+
+    for (const diagnostic of plan.diagnostics) {
+      html.push(renderAssistantToolDiagnosticHtml(diagnostic.reason))
+      html.push(renderAssistantToolHtml(diagnostic.part))
+    }
+
+    for (const part of plan.trailingToolParts) {
+      html.push(renderAssistantToolHtml(part))
+    }
+
+    el.innerHTML = html.join('')
+    enhanceAssistantDom(el, renderSafetyPolicy)
+  }
+
   return {
     ensureRenderer,
     sanitizeHtml: htmlSanitizer.sanitizeHtml,
     sanitizeSvg,
     renderAssistantInto,
+    renderAssistantMessageInto,
   }
 }

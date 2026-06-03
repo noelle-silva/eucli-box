@@ -183,7 +183,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   // 4. ASSISTANT RENDERER
   // ============================================================
   const assistantRenderer = createDefaultAssistantRenderEngine(capabilities)
-  const { ensureRenderer, renderAssistantInto: renderAssistantIntoRaw, sanitizeHtml, sanitizeSvg } = assistantRenderer
+  const { ensureRenderer, renderAssistantInto: renderAssistantIntoRaw, renderAssistantMessageInto: renderAssistantMessageIntoRaw, sanitizeHtml, sanitizeSvg } = assistantRenderer
 
   // ============================================================
   // 5. INLINE HELPERS
@@ -369,6 +369,17 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     const enabled = !!state.data?.settings?.stickers?.enabled
     const renderSafetyPolicy = currentRenderSafetyPolicy()
     renderAssistantIntoRaw(el, text, {
+      ...(options || {}),
+      stickersEnabled: enabled,
+      getStickerPath: getStickerRelPath,
+      renderSafetyPolicy,
+    })
+  }
+
+  function renderAssistantMessageInto(el: unknown, text: unknown, parts: any[], options?: any) {
+    const enabled = !!state.data?.settings?.stickers?.enabled
+    const renderSafetyPolicy = currentRenderSafetyPolicy()
+    renderAssistantMessageIntoRaw(el, text, Array.isArray(parts) ? parts : [], {
       ...(options || {}),
       stickersEnabled: enabled,
       getStickerPath: getStickerRelPath,
@@ -1840,6 +1851,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     activeChat,
     getProvider,
     renderAssistantInto,
+    renderAssistantMessageInto,
     actions,
     dispose,
   }

@@ -81,7 +81,7 @@ import { MermaidDialog } from './dialogs/MermaidDialog'
 import { ImageDialog } from './dialogs/ImageDialog'
 import { RoleAvatarCropper } from './components/avatar/RoleAvatarCropper'
 import { StandaloneWindowControls, type WindowControlActions } from './components/StandaloneWindowControls'
-import { AssistantMessageRenderer } from './components/assistant/AssistantMessageRenderer'
+import { AssistantMessageHost } from '../render/assistantMessageHost'
 import { RolesSettingsPanel } from './settings/RolesSettingsPanel'
 import { AI_STUDIO_CHAT_ROOT_ID } from '../runtime/aiStudioGlobals'
 import { isAssistantGenerating } from '../domain/assistantRunState'
@@ -3128,10 +3128,149 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
              whiteSpace: 'pre-wrap',
              wordBreak: 'break-word',
            },
-           '.mermaid-error-src': { display: 'none' },
-           '.mermaid-error-err': { display: 'none' },
-         }}
-       />
+            '.mermaid-error-src': { display: 'none' },
+            '.mermaid-error-err': { display: 'none' },
+            '.fw-tool-block': {
+              margin: '10px 0',
+              border: '1px solid rgba(2,132,199,.22)',
+              borderRadius: 16,
+              background: 'rgba(2,132,199,.045)',
+              padding: '10px 12px',
+              overflow: 'hidden',
+            },
+            '.fw-tool-result': {
+              borderColor: 'rgba(22,163,74,.24)',
+              background: 'rgba(22,163,74,.055)',
+            },
+            '.fw-tool-header': {
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              minWidth: 0,
+              marginBottom: 8,
+            },
+            '.fw-tool-title': {
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              minWidth: 0,
+              fontSize: 14,
+              fontWeight: 900,
+              color: 'rgba(15,23,42,.92)',
+            },
+            '.fw-tool-glyph': {
+              width: 18,
+              height: 18,
+              borderRadius: 4,
+              background: 'linear-gradient(135deg,#0284c7,#38bdf8)',
+              boxShadow: '0 6px 14px rgba(2,132,199,.18)',
+              flex: '0 0 auto',
+            },
+            '.fw-tool-glyph-result': {
+              background: 'linear-gradient(135deg,#16a34a,#86efac)',
+              boxShadow: '0 6px 14px rgba(22,163,74,.18)',
+            },
+            '.fw-tool-spacer': { flex: 1, minWidth: 8 },
+            '.fw-tool-call-id': {
+              maxWidth: '50%',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              fontFamily: 'ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace',
+              fontSize: 12,
+              color: 'rgba(15,23,42,.58)',
+              background: 'transparent',
+            },
+            '.fw-tool-chip-row': {
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 8,
+              marginBottom: 8,
+            },
+            '.fw-tool-chip': {
+              display: 'inline-flex',
+              alignItems: 'center',
+              maxWidth: 280,
+              minHeight: 24,
+              padding: '2px 10px',
+              borderRadius: 999,
+              border: '1px solid rgba(15,23,42,.16)',
+              background: 'rgba(255,255,255,.72)',
+              color: 'rgba(15,23,42,.84)',
+              fontSize: 12,
+              lineHeight: 1.45,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            },
+            '.fw-tool-chip-success': {
+              borderColor: 'rgba(22,163,74,.28)',
+              background: 'rgba(22,163,74,.13)',
+              color: '#166534',
+              fontWeight: 800,
+            },
+            '.fw-tool-chip-danger': {
+              borderColor: 'rgba(220,38,38,.26)',
+              background: 'rgba(220,38,38,.10)',
+              color: '#991b1b',
+              fontWeight: 800,
+            },
+            '.fw-tool-chip-warning': {
+              borderColor: 'rgba(217,119,6,.28)',
+              background: 'rgba(217,119,6,.12)',
+              color: '#92400e',
+              fontWeight: 800,
+            },
+            '.fw-tool-field': { marginTop: 8 },
+            '.fw-tool-field-label': {
+              marginBottom: 4,
+              color: 'rgba(15,23,42,.62)',
+              fontSize: 12,
+              fontWeight: 900,
+            },
+            '.prose .fw-tool-pre': {
+              margin: 0,
+              padding: '9px 10px',
+              borderRadius: 14,
+              background: 'rgba(15,23,42,.06)',
+              color: 'rgba(15,23,42,.92)',
+              whiteSpace: 'pre-wrap',
+              overflowWrap: 'anywhere',
+              maxHeight: 260,
+              overflow: 'auto',
+              fontSize: 12,
+              lineHeight: 1.55,
+              fontFamily: 'ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace',
+            },
+            '.prose .fw-tool-pre-raw': {
+              background: 'rgba(88,28,135,.08)',
+              border: '1px solid rgba(126,34,206,.18)',
+            },
+            '.fw-tool-meta-line': {
+              marginTop: 8,
+              fontSize: 12,
+              color: 'rgba(15,23,42,.62)',
+            },
+            '.fw-tool-diagnostic': {
+              margin: '10px 0',
+              border: '1px solid rgba(220,38,38,.24)',
+              borderRadius: 16,
+              background: 'rgba(220,38,38,.055)',
+              padding: '10px 12px',
+            },
+            '.fw-tool-diagnostic-title': {
+              fontWeight: 900,
+              color: '#991b1b',
+              fontSize: 13,
+            },
+            '.fw-tool-diagnostic-text': {
+              marginTop: 4,
+              color: 'rgba(127,29,29,.82)',
+              fontSize: 12,
+              lineHeight: 1.6,
+            },
+          }}
+        />
 
       <Box sx={{ height: '100%', minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }}>
         <AppBar
@@ -3703,7 +3842,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                               ) : null}
                             </Box>
                           ) : (
-                            <AssistantMessageRenderer
+                            <AssistantMessageHost
                               controller={controller}
                               className="prose"
                               text={content}

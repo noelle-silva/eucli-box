@@ -35,11 +35,7 @@ func (s *system) availableTools(ctx context.Context, roleID string) ([]types.Too
 	for _, summary := range summaries {
 		_, idOk := filter[summary.ID]
 		_, nameOk := filter[summary.Name]
-		matched := idOk || nameOk
-		if policy.Mode == types.ToolPolicyBlacklist {
-			matched = !matched
-		}
-		if !matched {
+		if !idOk && !nameOk {
 			continue
 		}
 		tool, err := s.tools.LoadTool(ctx, summary.ID)

@@ -11,7 +11,7 @@ import (
 
 func TestDecideAllowsWhitelistedDirectTool(t *testing.T) {
 	system := newTestPermissionSystem(t, &fakeRoleSystem{
-		policy:   types.ToolPolicy{Mode: types.ToolPolicyWhitelist, Tools: []string{"file-reader"}},
+		policy:   types.ToolPolicy{Tools: []string{"file-reader"}},
 		runModes: map[string]types.ToolRunMode{"file-reader": types.ToolRunDirect},
 	})
 	decision, err := system.Decide(context.Background(), "developer", action("file-reader"))
@@ -24,19 +24,8 @@ func TestDecideAllowsWhitelistedDirectTool(t *testing.T) {
 }
 
 func TestDecideDeniesToolOutsideWhitelist(t *testing.T) {
-	system := newTestPermissionSystem(t, &fakeRoleSystem{policy: types.ToolPolicy{Mode: types.ToolPolicyWhitelist, Tools: []string{"file-reader"}}})
+	system := newTestPermissionSystem(t, &fakeRoleSystem{policy: types.ToolPolicy{Tools: []string{"file-reader"}}})
 	decision, err := system.Decide(context.Background(), "developer", action("web-search"))
-	if err != nil {
-		t.Fatalf("Decide() error = %v", err)
-	}
-	if decision.Status != types.PermissionStatusDenied {
-		t.Fatalf("status = %s", decision.Status)
-	}
-}
-
-func TestDecideDeniesBlacklistedTool(t *testing.T) {
-	system := newTestPermissionSystem(t, &fakeRoleSystem{policy: types.ToolPolicy{Mode: types.ToolPolicyBlacklist, Tools: []string{"shell"}}})
-	decision, err := system.Decide(context.Background(), "developer", action("shell"))
 	if err != nil {
 		t.Fatalf("Decide() error = %v", err)
 	}
@@ -47,7 +36,7 @@ func TestDecideDeniesBlacklistedTool(t *testing.T) {
 
 func TestDecideAsksForConfirmation(t *testing.T) {
 	system := newTestPermissionSystem(t, &fakeRoleSystem{
-		policy:   types.ToolPolicy{Mode: types.ToolPolicyBlacklist},
+		policy:   types.ToolPolicy{Tools: []string{"web-search"}},
 		runModes: map[string]types.ToolRunMode{"web-search": types.ToolRunAsk},
 	})
 	decision, err := system.Decide(context.Background(), "developer", action("web-search"))

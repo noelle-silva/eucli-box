@@ -16,13 +16,6 @@ type PromptImage struct {
 	DataURL string `json:"dataUrl"`
 }
 
-type ToolPolicyMode string
-
-const (
-	ToolPolicyWhitelist ToolPolicyMode = "whitelist"
-	ToolPolicyBlacklist ToolPolicyMode = "blacklist"
-)
-
 type ToolRunMode string
 
 const (
@@ -31,7 +24,6 @@ const (
 )
 
 type ToolPolicy struct {
-	Mode     ToolPolicyMode         `json:"mode"`
 	Tools    []string               `json:"tools,omitempty"`
 	RunModes map[string]ToolRunMode `json:"runModes,omitempty"`
 }

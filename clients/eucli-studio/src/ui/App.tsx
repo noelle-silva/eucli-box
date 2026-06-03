@@ -6296,7 +6296,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
         </Box>
 
         <ProvidersDialog open={s.modal === 'providers'} controller={controller} providers={providers} draft={s.draft} />
-        <RoleDialog open={s.modal === 'role'} controller={controller} providers={providers} draft={s.draft} models={s.models} />
+        <RoleDialog open={s.modal === 'role'} controller={controller} providers={providers} draft={s.draft} models={s.models} tools={(s as any).tools} />
         <GroupDialog open={s.modal === 'group'} controller={controller} roles={roles} draft={s.draft} />
         <ConfirmDialog open={s.modal === 'confirm'} controller={controller} draft={s.draft} roles={roles} groups={groups} providers={providers} />
         <MermaidDialog open={s.modal === 'mermaid'} controller={controller} mermaid={s.mermaid} />

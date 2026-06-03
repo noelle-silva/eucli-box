@@ -21,6 +21,7 @@ import { normalizeFavorites } from './favorites'
 import { chatMetasFromBox } from './chatMeta'
 import { looksLikeImageDataUrl } from './textProcessing'
 import { normalizeChatModelOverride, normalizeMessageModelRef } from './modelRefUtils'
+import { normalizeRoleToolPolicy } from './toolPolicy'
 
 export function normalizeRenderSafetyPolicy(v0: unknown) {
   const v = String(v0 || '').trim()
@@ -217,6 +218,7 @@ export function normalizeData(raw: any) {
     if (typeof r.modelRef.modelId !== 'string') r.modelRef.modelId = ''
     const pid = String(r.modelRef.providerId || '')
     if (!d.settings.providers.some((p: any) => String(p?.id || '') === pid)) r.modelRef.providerId = String(d.settings.providers[0]?.id || '')
+    r.toolPolicy = normalizeRoleToolPolicy((r as any).toolPolicy)
     r.createdAt = Number(r.createdAt || now())
     r.updatedAt = Number(r.updatedAt || now())
   }

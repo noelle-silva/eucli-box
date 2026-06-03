@@ -3,6 +3,7 @@ import { createStateAccessors } from '../state/stateAccessors'
 import { chatMetaFromChat, removeChatMeta, upsertChatMeta } from '../domain/chatMeta'
 import { NEW_ROLE_ID } from '../domain/constants'
 import { isAssistantGenerating } from '../domain/assistantRunState'
+import { emptyRoleToolPolicy, normalizeRoleToolPolicy } from '../domain/toolPolicy'
 
 function looksLikeImageDataUrl(s: any): boolean {
   const t = String(s || '')
@@ -173,6 +174,13 @@ export function createEntityEditors(deps: {
     state.draft.roleSystemPrompt = ''
     state.draft.roleTemperature = '0.7'
     state.draft.roleProviderId = fallbackPid
+    state.draft.roleToolPolicy = emptyRoleToolPolicy()
+    state.draft.roleToolWhitelistOpen = false
+    state.draft.roleToolAddOpen = false
+    state.draft.roleToolSearch = ''
+    state.draft.roleToolAddSelected = []
+    state.draft.roleToolMenuName = ''
+    state.draft.roleToolPermissionName = ''
 
     const p = sa.getProvider(fallbackPid)
     const cachedItems = Array.isArray(p?.modelsCache?.items) ? p.modelsCache.items : []
@@ -204,6 +212,13 @@ export function createEntityEditors(deps: {
     state.draft.roleSystemPrompt = String(role.systemPrompt || '')
     state.draft.roleTemperature = String(role.temperature ?? 0.7)
     state.draft.roleProviderId = String(role.modelRef?.providerId || '')
+    state.draft.roleToolPolicy = normalizeRoleToolPolicy(role.toolPolicy)
+    state.draft.roleToolWhitelistOpen = false
+    state.draft.roleToolAddOpen = false
+    state.draft.roleToolSearch = ''
+    state.draft.roleToolAddSelected = []
+    state.draft.roleToolMenuName = ''
+    state.draft.roleToolPermissionName = ''
     const curModelId = String(role.modelRef?.modelId || '').trim()
 
     const p = sa.getProvider(state.draft.roleProviderId)
@@ -235,6 +250,7 @@ export function createEntityEditors(deps: {
     if (!sys) return showToast?.('请填写角色系统提示词')
     if (!providerId) return showToast?.('请选择角色供应商')
     if (!modelId) return showToast?.('请选择或填写角色模型')
+    const toolPolicy = normalizeRoleToolPolicy(state.draft.roleToolPolicy)
 
     if (rid === NEW_ROLE_ID) {
       const newRid = uid('r')
@@ -246,6 +262,7 @@ export function createEntityEditors(deps: {
         systemPrompt: sys,
         temperature,
         modelRef: { providerId, modelId },
+        toolPolicy,
         createdAt: now(),
         updatedAt: now(),
       }
@@ -275,6 +292,7 @@ export function createEntityEditors(deps: {
     role.systemPrompt = sys
     role.temperature = temperature
     role.modelRef = { providerId, modelId }
+    role.toolPolicy = toolPolicy
     role.updatedAt = now()
 
     try {

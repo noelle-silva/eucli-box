@@ -587,11 +587,11 @@ func (f *fakeRuntimeStorage) LoadSessionAttachmentImage(ctx context.Context, rel
 type fakeRuntimeRoles struct{}
 
 func (f *fakeRuntimeRoles) BuildContext(ctx context.Context, roleID string, session types.Session, tools []types.ToolDefinition) (types.RoleContext, error) {
-	return types.RoleContext{RoleID: roleID, RoleName: "Developer", ModelConfig: types.ModelConfig{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Temperature: 0.7}, Messages: session.Messages, Tools: tools, ToolPolicy: types.ToolPolicy{Mode: types.ToolPolicyWhitelist, Tools: []string{"file-reader"}}}, nil
+	return types.RoleContext{RoleID: roleID, RoleName: "Developer", ModelConfig: types.ModelConfig{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Temperature: 0.7}, Messages: session.Messages, Tools: tools, ToolPolicy: types.ToolPolicy{Tools: []string{"file-reader"}}}, nil
 }
 
 func (f *fakeRuntimeRoles) GetToolPolicy(ctx context.Context, roleID string) (types.ToolPolicy, error) {
-	return types.ToolPolicy{Mode: types.ToolPolicyWhitelist, Tools: []string{"file-reader"}}, nil
+	return types.ToolPolicy{Tools: []string{"file-reader"}}, nil
 }
 
 type fakeRuntimeProvider struct {

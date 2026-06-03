@@ -21,9 +21,10 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import SettingsIcon from '@mui/icons-material/Settings'
 import { RoleAvatarCropper } from '../components/avatar/RoleAvatarCropper'
+import { RoleToolWhitelistSection } from './RoleToolWhitelistSection'
 
-export function RoleDialog(props: { open: boolean; controller: any; providers: any[]; draft: any; models: any }) {
-  const { open, controller, providers, draft, models } = props
+export function RoleDialog(props: { open: boolean; controller: any; providers: any[]; draft: any; models: any; tools: any }) {
+  const { open, controller, providers, draft, models, tools } = props
 
   const editRoleId = String(draft?.editRoleId || '')
   const isNew = editRoleId === '__new__'
@@ -144,6 +145,8 @@ export function RoleDialog(props: { open: boolean; controller: any; providers: a
               {String(models.error || '')}
             </Typography>
           ) : null}
+
+          <RoleToolWhitelistSection controller={controller} draft={draft} tools={tools} />
         </Stack>
       </DialogContent>
       <DialogActions sx={{ justifyContent: 'space-between' }}>

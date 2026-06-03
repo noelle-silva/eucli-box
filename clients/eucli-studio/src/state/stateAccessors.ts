@@ -1,5 +1,6 @@
 import { chatMetasFromBox } from '../domain/chatMeta'
 import { normalizeChatModelOverride } from '../domain/modelRefUtils'
+import { normalizeRoleToolPolicy } from '../domain/toolPolicy'
 
 function ensureBoxShape(box: any, fallbackTitle: string) {
   if (!box || typeof box !== 'object') return { activeChatId: '', chatMetas: [], chats: [] }
@@ -132,6 +133,7 @@ export function createStateAccessors(deps: {
     if (!role.modelRef || typeof role.modelRef !== 'object') role.modelRef = { providerId: fallbackPid, modelId: '' }
     if (!role.modelRef.providerId) role.modelRef.providerId = fallbackPid
     if (typeof role.modelRef.modelId !== 'string') role.modelRef.modelId = ''
+    role.toolPolicy = normalizeRoleToolPolicy(role.toolPolicy)
   }
 
   function ensureGroupsList() {

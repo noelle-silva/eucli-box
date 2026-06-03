@@ -26,18 +26,8 @@ func isAllowedByPolicy(policy types.ToolPolicy, toolName string) (bool, string, 
 		tools[name] = struct{}{}
 	}
 	_, listed := tools[toolName]
-	switch policy.Mode {
-	case types.ToolPolicyWhitelist:
-		if !listed {
-			return false, "tool is not in role whitelist", nil
-		}
-		return true, "tool is allowed by role whitelist", nil
-	case types.ToolPolicyBlacklist:
-		if listed {
-			return false, "tool is blocked by role blacklist", nil
-		}
-		return true, "tool is not blocked by role blacklist", nil
-	default:
-		return false, "permission internal error", permissionInvalid("tool policy mode is invalid", nil)
+	if !listed {
+		return false, "tool is not in role whitelist", nil
 	}
+	return true, "tool is allowed by role whitelist", nil
 }

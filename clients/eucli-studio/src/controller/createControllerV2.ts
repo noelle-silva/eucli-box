@@ -85,6 +85,8 @@ import { createChatOperations } from './chatOperations'
 import { createPersistence } from './persistence'
 import { createRoleSession, updateRoleSessionTitle } from './ebRoleSession'
 import { createEbRunEventConsumer } from './ebRunEvents'
+import { createToolCatalog } from './toolCatalog'
+import { addToolsToPolicy, removeToolFromPolicy, setToolRunMode } from '../domain/toolPolicy'
 
 export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilities }): {
   controller: AiChatController
@@ -108,6 +110,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     imageViewer: { items: [] as any[], index: 0, scale: 1 },
     sideTab: 'roles' as string,
     models: { loading: false, error: '', items: [] as any[] },
+    tools: { loading: false, error: '', items: [] as any[], fetchedAt: 0 },
     pendingChat: null as any,
     pendingGroupChat: null as any,
     branchDraft: null as any,
@@ -129,6 +132,13 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       roleModelId: '',
       roleCustomModelId: '',
       roleTemperature: '0.7',
+      roleToolPolicy: { tools: [] as string[], runModes: {} as Record<string, string> },
+      roleToolWhitelistOpen: false,
+      roleToolAddOpen: false,
+      roleToolSearch: '',
+      roleToolAddSelected: [] as string[],
+      roleToolMenuName: '',
+      roleToolPermissionName: '',
 
       editGroupId: '',
       groupName: '',
@@ -215,6 +225,12 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     state.draft.deleteRoleId = ''
     ;(state.draft as any).deleteGroupId = ''
     state.draft.deleteProviderId = ''
+    state.draft.roleToolWhitelistOpen = false
+    state.draft.roleToolAddOpen = false
+    state.draft.roleToolSearch = ''
+    state.draft.roleToolAddSelected = []
+    state.draft.roleToolMenuName = ''
+    state.draft.roleToolPermissionName = ''
     ;(state.draft as any).renderSafetyPolicyTarget = ''
     state.draft.roleAvatarImageCropSrc = ''
     ;(state.draft as any).groupAvatarImageCropSrc = ''
@@ -547,6 +563,14 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     showToast: api.ui?.showToast,
   })
   const { refreshModels, resolveAiModelId } = modelRefresh
+
+  const toolCatalog = createToolCatalog({
+    getState: () => state,
+    netRequest: capabilities.net?.request || ((() => Promise.resolve({})) as any),
+    emit,
+    showToast: api.ui?.showToast,
+  })
+  const { refreshTools } = toolCatalog
 
   // ============================================================
   // 12. FAVORITES OPERATIONS
@@ -1335,6 +1359,78 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     openRoleEditor: (roleId: any) => openRoleEditor(String(roleId || '')),
     createRole: () => createRole(),
     saveRole: () => saveRoleEditor(),
+    refreshTools: (force: any) => refreshTools(!!force),
+    openRoleToolWhitelist: () => {
+      state.draft.roleToolWhitelistOpen = true
+      refreshTools(false).catch(() => {})
+      emit()
+    },
+    closeRoleToolWhitelist: () => {
+      state.draft.roleToolWhitelistOpen = false
+      state.draft.roleToolMenuName = ''
+      state.draft.roleToolPermissionName = ''
+      emit()
+    },
+    openRoleToolAdd: () => {
+      state.draft.roleToolAddOpen = true
+      state.draft.roleToolSearch = ''
+      state.draft.roleToolAddSelected = []
+      refreshTools(false).catch(() => {})
+      emit()
+    },
+    closeRoleToolAdd: () => {
+      state.draft.roleToolAddOpen = false
+      state.draft.roleToolSearch = ''
+      state.draft.roleToolAddSelected = []
+      emit()
+    },
+    setRoleToolSearch: (value: any) => {
+      state.draft.roleToolSearch = String(value || '')
+      emit()
+    },
+    toggleRoleToolAddSelection: (toolName: any) => {
+      const name = String(toolName || '').trim()
+      if (!name) return
+      const selected = Array.isArray(state.draft.roleToolAddSelected) ? state.draft.roleToolAddSelected.map((x: any) => String(x || '').trim()).filter(Boolean) : []
+      state.draft.roleToolAddSelected = selected.includes(name) ? selected.filter((item: string) => item !== name) : selected.concat(name)
+      emit()
+    },
+    addSelectedRoleTools: () => {
+      const selected = Array.isArray(state.draft.roleToolAddSelected) ? state.draft.roleToolAddSelected : []
+      state.draft.roleToolPolicy = addToolsToPolicy(state.draft.roleToolPolicy, selected)
+      state.draft.roleToolAddOpen = false
+      state.draft.roleToolSearch = ''
+      state.draft.roleToolAddSelected = []
+      emit()
+    },
+    openRoleToolMenu: (toolName: any) => {
+      state.draft.roleToolMenuName = String(toolName || '').trim()
+      emit()
+    },
+    closeRoleToolMenu: () => {
+      state.draft.roleToolMenuName = ''
+      emit()
+    },
+    openRoleToolPermission: (toolName: any) => {
+      state.draft.roleToolPermissionName = String(toolName || '').trim()
+      state.draft.roleToolMenuName = ''
+      emit()
+    },
+    closeRoleToolPermission: () => {
+      state.draft.roleToolPermissionName = ''
+      emit()
+    },
+    setRoleToolRunMode: (toolName: any, mode: any) => {
+      state.draft.roleToolPolicy = setToolRunMode(state.draft.roleToolPolicy, String(toolName || ''), mode)
+      state.draft.roleToolPermissionName = ''
+      emit()
+    },
+    removeRoleTool: (toolName: any) => {
+      state.draft.roleToolPolicy = removeToolFromPolicy(state.draft.roleToolPolicy, String(toolName || ''))
+      state.draft.roleToolMenuName = ''
+      state.draft.roleToolPermissionName = ''
+      emit()
+    },
     openGroupEditor: (groupId: any) => openGroupEditor(String(groupId || '')),
     createGroup: () => createGroup(),
     saveGroup: () => saveGroupEditor(),

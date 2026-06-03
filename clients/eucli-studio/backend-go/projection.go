@@ -634,6 +634,7 @@ func toUIRole(role map[string]any) map[string]any {
 		"systemPrompt": promptText(objectList(role["prompts"])),
 		"temperature":  numberField(modelConfig, "temperature", 0.7),
 		"modelRef":     map[string]any{"providerId": stringField(coordinate, "providerId"), "modelId": stringField(coordinate, "modelId")},
+		"toolPolicy":   normalizeUIToolPolicy(role["toolPolicy"]),
 		"createdAt":    millisFromAny(role["createdAt"]),
 		"updatedAt":    millisFromAny(role["updatedAt"]),
 	}
@@ -650,10 +651,34 @@ func fromUIRole(value any) map[string]any {
 		"description": stringField(role, "description"),
 		"prompts":     []any{map[string]any{"id": "system", "role": "system", "content": stringField(role, "systemPrompt"), "order": 0, "createdAt": now, "updatedAt": now}},
 		"modelConfig": map[string]any{"coordinate": map[string]any{"providerId": stringField(modelRef, "providerId"), "modelId": stringField(modelRef, "modelId")}, "temperature": numberField(role, "temperature", 0.7)},
-		"toolPolicy":  map[string]any{"mode": "whitelist", "tools": []any{}},
+		"toolPolicy":  normalizeUIToolPolicy(role["toolPolicy"]),
 		"createdAt":   timeFromMillis(role["createdAt"]),
 		"updatedAt":   time.Now().UTC().Format(time.RFC3339),
 	}
+}
+
+func normalizeUIToolPolicy(value any) map[string]any {
+	policy := objectMap(value)
+	runModeSource := objectMap(policy["runModes"])
+	tools := []any{}
+	runModes := map[string]any{}
+	seen := map[string]struct{}{}
+	for _, tool := range stringSlice(policy["tools"]) {
+		tool = strings.TrimSpace(tool)
+		if tool == "" {
+			continue
+		}
+		if _, ok := seen[tool]; ok {
+			continue
+		}
+		mode := strings.TrimSpace(fmt.Sprint(runModeSource[tool]))
+		seen[tool] = struct{}{}
+		tools = append(tools, tool)
+		if mode == "ask" || mode == "direct" {
+			runModes[tool] = mode
+		}
+	}
+	return map[string]any{"tools": tools, "runModes": runModes}
 }
 
 func toUIProvider(provider map[string]any) map[string]any {

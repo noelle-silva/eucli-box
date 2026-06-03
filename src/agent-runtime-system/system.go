@@ -45,8 +45,9 @@ type ToolSystem interface {
 }
 
 type Config struct {
-	MaxSteps    int
-	ToolTimeout time.Duration
+	MaxSteps         int
+	ToolTimeout      time.Duration
+	MaxParallelTools int
 }
 
 type system struct {
@@ -74,7 +75,7 @@ type runRecord struct {
 	streamContent     string
 	cancel            context.CancelFunc
 
-	pendingPlan    *types.ToolRunPlan
+	pendingPlans   map[string]types.ToolRunPlan
 	confirmationCh chan types.ToolConfirmation
 }
 
@@ -99,6 +100,12 @@ func NewSystem(config Config, storage StorageSystem, roles RoleSystem, providers
 	}
 	if config.ToolTimeout == 0 {
 		config.ToolTimeout = 120 * time.Second
+	}
+	if config.MaxParallelTools < 0 {
+		return nil, runtimeInvalid("max parallel tools cannot be negative", nil)
+	}
+	if config.MaxParallelTools == 0 {
+		config.MaxParallelTools = 4
 	}
 	return &system{config: config, storage: storage, roles: roles, providers: providers, tools: tools, runs: map[string]*runRecord{}, subscribers: map[chan types.RunEvent]struct{}{}}, nil
 }

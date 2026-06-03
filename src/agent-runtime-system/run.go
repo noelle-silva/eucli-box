@@ -151,13 +151,13 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 			s.completeRun(context.Background(), record, record.session)
 			return
 		}
-		for _, intent := range modelResponse.ToolIntents {
-			result, err := s.handleToolIntent(ctx, record, intent)
-			if err != nil {
-				s.failRun(context.Background(), record, record.session, err.Error())
-				return
-			}
+		results, err := s.handleToolIntents(ctx, record, modelResponse.ToolIntents)
+		for _, result := range results {
 			s.publish(record.runID, "tool_result", result)
+		}
+		if err != nil {
+			s.failRun(context.Background(), record, record.session, err.Error())
+			return
 		}
 		assistantParent = record.messageParent
 		contextSession = upsertSessionMessage(contextSession, assistantParent)

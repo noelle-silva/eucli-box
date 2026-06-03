@@ -58,7 +58,7 @@ func TestTextToolInstructionsDescribeProtocolAndTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TextToolInstructions() error = %v", err)
 	}
-	if prompt.Role != "system" || !strings.Contains(prompt.Content, "<<<TOOL_REQUEST>>>") || !strings.Contains(prompt.Content, "[tool]: tool-name") || !strings.Contains(prompt.Content, "web-search") || !strings.Contains(prompt.Content, "query") {
+	if prompt.Role != "system" || !strings.Contains(prompt.Content, "<<<TOOL_REQUEST>>>") || !strings.Contains(prompt.Content, "[tool]: tool-name") || !strings.Contains(prompt.Content, "web-search") || !strings.Contains(prompt.Content, "query") || !strings.Contains(prompt.Content, "execute independent tools in parallel") {
 		t.Fatalf("prompt = %#v", prompt)
 	}
 }

@@ -2,85 +2,22 @@ package agentruntime
 
 import (
 	"context"
-	"time"
 
 	"eucli-box/pkg/types"
+	"eucli-box/pkg/utils"
 )
 
 func (s *system) handleToolIntent(ctx context.Context, record *runRecord, intent types.ToolIntent) (types.ToolResult, error) {
-	action, err := s.tools.NormalizeIntent(ctx, intent)
+	results, err := s.handleToolIntents(ctx, record, []types.ToolIntent{intent})
 	if err != nil {
-		return types.ToolResult{}, runtimeToolFailed("failed to normalize tool intent", err)
-	}
-	upsertRunToolPart(record, action, "requested", nil, nil)
-	if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
 		return types.ToolResult{}, err
 	}
-	plan, err := s.tools.Prepare(ctx, record.roleID, action)
-	if err != nil {
-		return types.ToolResult{}, runtimeToolFailed("failed to prepare tool run plan", err)
+	if len(results) != 1 {
+		return types.ToolResult{}, runtimeStateInvalid("tool result count mismatch", nil)
 	}
-	s.publish(record.runID, "tool_requested", plan)
-	if plan.Decision.Status == types.PermissionStatusDenied {
-		result := types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: action.ID, ToolName: action.ToolName, Status: types.ToolStatusDenied, Error: plan.Decision.Reason, CreatedAt: time.Now().UTC()}
-		upsertRunToolPart(record, action, "denied", &plan.Decision, &result)
-		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
-			return types.ToolResult{}, err
-		}
-		return result, nil
-	}
-	if plan.Decision.Status == types.PermissionStatusNeedsConfirmation {
-		upsertRunToolPart(record, action, "needs_confirmation", &plan.Decision, nil)
-		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
-			return types.ToolResult{}, err
-		}
-		if err := s.saveSession(ctx, record.session, types.RunStatusWaitingConfirmation); err != nil {
-			return types.ToolResult{}, err
-		}
-		confirmed, err := s.waitForConfirmation(ctx, record, plan)
-		if err != nil {
-			result := types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: action.ID, ToolName: action.ToolName, Status: types.ToolStatusCancelled, Error: err.Error(), CreatedAt: time.Now().UTC()}
-			upsertRunToolPart(record, action, "cancelled", &plan.Decision, &result)
-			if stateErr := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); stateErr != nil {
-				return types.ToolResult{}, stateErr
-			}
-			return result, err
-		}
-		plan = confirmed
-		if plan.Decision.Status == types.PermissionStatusDenied {
-			result := types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: action.ID, ToolName: action.ToolName, Status: types.ToolStatusDenied, Error: plan.Decision.Reason, CreatedAt: time.Now().UTC()}
-			upsertRunToolPart(record, action, "denied", &plan.Decision, &result)
-			if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
-				return types.ToolResult{}, err
-			}
-			return result, nil
-		}
-	}
-	upsertRunToolPart(record, action, "running", &plan.Decision, nil)
-	if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
-		return types.ToolResult{}, err
-	}
-	if err := s.saveSession(ctx, record.session, types.RunStatusRunning); err != nil {
-		return types.ToolResult{}, err
-	}
-	toolCtx, cancel := context.WithTimeout(ctx, s.config.ToolTimeout)
-	defer cancel()
-	result, err := s.tools.Execute(toolCtx, plan)
-	if err != nil {
-		failedResult := types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: action.ID, ToolName: action.ToolName, Status: types.ToolStatusFailed, Error: err.Error(), CreatedAt: time.Now().UTC()}
-		upsertRunToolPart(record, action, "error", &plan.Decision, &failedResult)
-		if stateErr := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); stateErr != nil {
-			return types.ToolResult{}, stateErr
-		}
-		return failedResult, runtimeToolFailed("failed to execute tool", err)
-	}
-	upsertRunToolPart(record, action, "completed", &plan.Decision, &result)
-	if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
-		return types.ToolResult{}, err
-	}
-	return result, nil
+	return results[0], nil
 }
 
 func newRuntimeID(prefix string) string {
-	return prefix + "-" + time.Now().UTC().Format("20060102150405.000000000")
+	return utils.NewID(prefix)
 }

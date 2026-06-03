@@ -451,6 +451,92 @@ func TestRunExecutesMultipleToolIntentsFromOneModelResponse(t *testing.T) {
 	}
 }
 
+func TestRunExecutesToolBatchWithParallelLimit(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{
+		{ID: "m1", Content: "need tools", ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}}, {ID: "intent-2", ToolName: "file-reader", Arguments: map[string]any{"path": "CHANGELOG.md"}}, {ID: "intent-3", ToolName: "file-reader", Arguments: map[string]any{"path": "LICENSE"}}}},
+		{ID: "m2", Content: "final"},
+	}
+	fakes.tool.executeDelay = 80 * time.Millisecond
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3, MaxParallelTools: 2})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tools"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	if fakes.tool.executeCount != 3 || fakes.tool.maxActiveExecutions != 2 {
+		t.Fatalf("tool execution count=%d maxActive=%d", fakes.tool.executeCount, fakes.tool.maxActiveExecutions)
+	}
+}
+
+func TestRunWaitsForMultipleToolConfirmationsThenExecutesBatch(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{
+		{ID: "m1", Content: "need tools", ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}}, {ID: "intent-2", ToolName: "file-reader", Arguments: map[string]any{"path": "CHANGELOG.md"}}}},
+		{ID: "m2", Content: "final"},
+	}
+	fakes.tool.prepareDecisions = map[string]types.PermissionDecision{
+		"intent-1": {ID: "decision-1", ActionID: "intent-1", ToolName: "file-reader", Status: types.PermissionStatusNeedsConfirmation},
+		"intent-2": {ID: "decision-2", ActionID: "intent-2", ToolName: "file-reader", Status: types.PermissionStatusNeedsConfirmation},
+	}
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tools"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	waitStatus(t, system, state.ID, types.RunStatusWaitingConfirmation)
+	if err := system.SubmitToolConfirmation(context.Background(), types.ToolConfirmation{DecisionID: "decision-2", Approved: true}); err != nil {
+		t.Fatalf("SubmitToolConfirmation(decision-2) error = %v", err)
+	}
+	interim, err := system.GetRun(context.Background(), state.ID)
+	if err != nil {
+		t.Fatalf("GetRun() error = %v", err)
+	}
+	if interim.Status != types.RunStatusWaitingConfirmation {
+		t.Fatalf("interim status = %s", interim.Status)
+	}
+	if err := system.SubmitToolConfirmation(context.Background(), types.ToolConfirmation{DecisionID: "decision-1", Approved: true}); err != nil {
+		t.Fatalf("SubmitToolConfirmation(decision-1) error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	if fakes.tool.executeCount != 2 {
+		t.Fatalf("executeCount = %d", fakes.tool.executeCount)
+	}
+	session := fakes.storage.lastSession()
+	if got := completedToolPartCount(session.Messages[1]); got != 2 {
+		t.Fatalf("completed tool part count = %d messages=%#v", got, session.Messages)
+	}
+}
+
+func TestRunPreservesNonErrorToolResultStates(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{
+		{ID: "m1", Content: "need tool", ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}}}},
+		{ID: "m2", Content: "final"},
+	}
+	fakes.tool.executeResult = types.ToolResult{ID: "result-cancelled", ActionID: "intent-1", ToolName: "file-reader", Status: types.ToolStatusCancelled, Error: "cancelled by tool", CreatedAt: time.Now().UTC()}
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tool"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	session := fakes.storage.lastSession()
+	part := toolPartByCallID(session.Messages[1], "intent-1")
+	if part == nil || part.State != "cancelled" || part.Result == nil || part.Result.Status != types.ToolStatusCancelled {
+		t.Fatalf("tool part = %#v", part)
+	}
+}
+
 func toolPartByCallID(message types.Message, callID string) *types.MessagePart {
 	for index := range message.Parts {
 		if message.Parts[index].Type == "tool" && message.Parts[index].CallID == callID {
@@ -713,14 +799,20 @@ func (f *fakeRuntimeProvider) callCount() int {
 }
 
 type fakeRuntimeTools struct {
-	prepareDecision    types.PermissionDecision
-	confirmedDecision  types.PermissionDecision
-	executeCount       int
-	instructionContent string
-	parsedContent      string
-	parsedIntents      []types.ToolIntent
-	parseErr           error
-	normalizedIntents  []types.ToolIntent
+	mu                  sync.Mutex
+	prepareDecision     types.PermissionDecision
+	prepareDecisions    map[string]types.PermissionDecision
+	confirmedDecision   types.PermissionDecision
+	executeCount        int
+	activeExecutions    int
+	maxActiveExecutions int
+	executeDelay        time.Duration
+	executeResult       types.ToolResult
+	instructionContent  string
+	parsedContent       string
+	parsedIntents       []types.ToolIntent
+	parseErr            error
+	normalizedIntents   []types.ToolIntent
 }
 
 func newFakeRuntimeTools() *fakeRuntimeTools {
@@ -753,6 +845,14 @@ func (f *fakeRuntimeTools) NormalizeIntent(ctx context.Context, intent types.Too
 
 func (f *fakeRuntimeTools) Prepare(ctx context.Context, roleID string, action types.ToolAction) (types.ToolRunPlan, error) {
 	decision := f.prepareDecision
+	if f.prepareDecisions != nil {
+		if configured, ok := f.prepareDecisions[action.ID]; ok {
+			decision = configured
+		}
+	}
+	if decision.ID == "" {
+		decision.ID = "decision-" + action.ID
+	}
 	decision.ActionID = action.ID
 	decision.ToolName = action.ToolName
 	planStatus := types.ToolPlanStatusReady
@@ -770,11 +870,42 @@ func (f *fakeRuntimeTools) ApplyConfirmation(ctx context.Context, plan types.Too
 		decision = types.PermissionDecision{ID: plan.Decision.ID, ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Status: types.PermissionStatusAllowed}
 	}
 	plan.Decision = decision
+	if decision.Status == types.PermissionStatusDenied {
+		plan.PlanStatus = types.ToolPlanStatusDenied
+	} else {
+		plan.PlanStatus = types.ToolPlanStatusReady
+	}
 	return plan, nil
 }
 
 func (f *fakeRuntimeTools) Execute(ctx context.Context, plan types.ToolRunPlan) (types.ToolResult, error) {
+	f.mu.Lock()
 	f.executeCount++
+	f.activeExecutions++
+	if f.activeExecutions > f.maxActiveExecutions {
+		f.maxActiveExecutions = f.activeExecutions
+	}
+	delay := f.executeDelay
+	f.mu.Unlock()
+	if delay > 0 {
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			f.mu.Lock()
+			f.activeExecutions--
+			f.mu.Unlock()
+			return types.ToolResult{}, ctx.Err()
+		}
+	}
+	f.mu.Lock()
+	f.activeExecutions--
+	f.mu.Unlock()
+	if f.executeResult.ID != "" {
+		result := f.executeResult
+		result.ActionID = plan.Action.ID
+		result.ToolName = plan.Action.ToolName
+		return result, nil
+	}
 	return types.ToolResult{ID: "result-1", ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Status: types.ToolStatusSuccess, Content: "tool ok", CreatedAt: time.Now().UTC()}, nil
 }
 

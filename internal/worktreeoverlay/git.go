@@ -3,6 +3,7 @@ package worktreeoverlay
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -136,4 +137,23 @@ func gitBytes(ctx context.Context, dir string, args ...string) ([]byte, error) {
 
 func cleanStatus(ctx context.Context, root string) (string, error) {
 	return gitOutput(ctx, root, "status", "--porcelain", "--untracked-files=normal")
+}
+
+func gitQuiet(ctx context.Context, dir string, args ...string) (bool, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return false, nil
+		}
+		message := strings.TrimSpace(stderr.String())
+		if message == "" {
+			return false, fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+		}
+		return false, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, message)
+	}
+	return true, nil
 }

@@ -75,6 +75,17 @@ func copyFile(source string, target string, mode os.FileMode) error {
 	return nil
 }
 
+func copyFilePreservingMode(source string, target string) error {
+	info, err := os.Lstat(source)
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", source, err)
+	}
+	if info.IsDir() || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return fmt.Errorf("%s is not a regular file", source)
+	}
+	return copyFile(source, target, info.Mode().Perm())
+}
+
 func removeFileAndEmptyParents(root string, filePath string) error {
 	if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove %s: %w", filePath, err)

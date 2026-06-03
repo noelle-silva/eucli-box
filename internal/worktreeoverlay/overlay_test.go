@@ -97,6 +97,95 @@ func TestClearRejectsEditedOverlay(t *testing.T) {
 	}
 }
 
+func TestClearAcceptsManuallyRestoredOverlayPaths(t *testing.T) {
+	root := newGitFixture(t)
+	source := addWorktree(t, root, "demo", "feature/demo")
+	writeFile(t, filepath.Join(source, "app.txt"), "feature\n")
+	writeFile(t, filepath.Join(source, "new.txt"), "new\n")
+	removeFile(t, filepath.Join(source, "delete.txt"))
+	if err := Run(context.Background(), []string{"apply", "demo"}, Options{WorkDir: root, Stdout: &bytes.Buffer{}}); err != nil {
+		t.Fatalf("apply error = %v", err)
+	}
+
+	writeFile(t, filepath.Join(root, "app.txt"), "base\n")
+	removeFile(t, filepath.Join(root, "new.txt"))
+
+	if err := Run(context.Background(), []string{"clear"}, Options{WorkDir: root, Stdout: &bytes.Buffer{}}); err != nil {
+		t.Fatalf("clear error = %v", err)
+	}
+	assertFileContent(t, filepath.Join(root, "app.txt"), "base\n")
+	assertFileContent(t, filepath.Join(root, "delete.txt"), "delete me\n")
+	assertNoFile(t, filepath.Join(root, "new.txt"))
+	assertCleanGitStatus(t, root)
+}
+
+func TestRefreshSwitchesSourceAfterManualRestore(t *testing.T) {
+	root := newGitFixture(t)
+	sourceA := addWorktree(t, root, "demo-a", "feature/demo-a")
+	writeFile(t, filepath.Join(sourceA, "app.txt"), "feature a\n")
+	if err := Run(context.Background(), []string{"apply", "demo-a"}, Options{WorkDir: root, Stdout: &bytes.Buffer{}}); err != nil {
+		t.Fatalf("apply error = %v", err)
+	}
+	writeFile(t, filepath.Join(root, "app.txt"), "base\n")
+
+	sourceB := addWorktree(t, root, "demo-b", "feature/demo-b")
+	writeFile(t, filepath.Join(sourceB, "app.txt"), "feature b\n")
+	if err := Run(context.Background(), []string{"refresh", "demo-b"}, Options{WorkDir: root, Stdout: &bytes.Buffer{}}); err != nil {
+		t.Fatalf("refresh error = %v", err)
+	}
+	assertFileContent(t, filepath.Join(root, "app.txt"), "feature b\n")
+}
+
+func TestStatusReportsManuallyRestoredOverlayPaths(t *testing.T) {
+	root := newGitFixture(t)
+	source := addWorktree(t, root, "demo", "feature/demo")
+	writeFile(t, filepath.Join(source, "app.txt"), "feature\n")
+	if err := Run(context.Background(), []string{"apply", "demo"}, Options{WorkDir: root, Stdout: &bytes.Buffer{}}); err != nil {
+		t.Fatalf("apply error = %v", err)
+	}
+	writeFile(t, filepath.Join(root, "app.txt"), "base\n")
+
+	var output bytes.Buffer
+	if err := Run(context.Background(), []string{"status"}, Options{WorkDir: root, Stdout: &output}); err != nil {
+		t.Fatalf("status error = %v", err)
+	}
+	if !strings.Contains(output.String(), "already restored paths: 1") {
+		t.Fatalf("status output = %q", output.String())
+	}
+}
+
+func TestClearUsesGitSemanticsForRestoredOriginalPaths(t *testing.T) {
+	root := newGitFixture(t)
+	source := addWorktree(t, root, "demo", "feature/demo")
+	writeFile(t, filepath.Join(source, "app.txt"), "feature\n")
+	if err := Run(context.Background(), []string{"apply", "demo"}, Options{WorkDir: root, Stdout: &bytes.Buffer{}}); err != nil {
+		t.Fatalf("apply error = %v", err)
+	}
+	writeFile(t, filepath.Join(root, "app.txt"), "base\n")
+
+	runtime, err := newRuntime(context.Background(), root)
+	if err != nil {
+		t.Fatalf("newRuntime() error = %v", err)
+	}
+	state, exists, err := runtime.readState()
+	if err != nil {
+		t.Fatalf("readState() error = %v", err)
+	}
+	if !exists || len(state.Entries) != 1 {
+		t.Fatalf("state entries = %#v", state.Entries)
+	}
+	state.Entries[0].OriginalHash = "stale-raw-hash"
+	if err := runtime.writeState(state); err != nil {
+		t.Fatalf("writeState() error = %v", err)
+	}
+
+	if err := Run(context.Background(), []string{"clear"}, Options{WorkDir: root, Stdout: &bytes.Buffer{}}); err != nil {
+		t.Fatalf("clear error = %v", err)
+	}
+	assertFileContent(t, filepath.Join(root, "app.txt"), "base\n")
+	assertCleanGitStatus(t, root)
+}
+
 func newGitFixture(t *testing.T) string {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {

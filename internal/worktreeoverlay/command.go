@@ -85,5 +85,6 @@ Notes:
   - Bare names resolve to .worktrees/<name> first.
   - The target worktree must be clean before applying.
   - refresh replaces the active overlay internally; manual clear is not required.
+  - clear accepts files that are still overlaid or already restored to original content.
 `)
 }

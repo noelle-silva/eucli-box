@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -41,17 +42,32 @@ type overlayPlan struct {
 
 type plannedEntry struct {
 	StateEntry
-	SourcePath string
-	TargetPath string
-	BackupPath string
-	Mode       os.FileMode
+	SourcePath   string
+	TargetPath   string
+	BackupPath   string
+	Mode         os.FileMode
+	OriginalMode os.FileMode
+}
+
+type entryState string
+
+const (
+	entryStateOverlay  entryState = "overlay"
+	entryStateOriginal entryState = "original"
+	entryStateChanged  entryState = "changed"
+)
+
+type stateInspection struct {
+	Overlay  []StateEntry
+	Original []StateEntry
+	Changed  []StateEntry
 }
 
 func (rt *runtimeContext) Apply(sourceSpec string, output io.Writer) error {
 	if _, exists, err := rt.readState(); err != nil {
 		return err
 	} else if exists {
-		return fmt.Errorf("overlay is already active; use refresh or clear")
+		return fmt.Errorf("overlay is already active; use refresh <worktree-name-or-path> to switch source or clear to remove it")
 	}
 	if err := rt.requireCleanTarget(); err != nil {
 		return err
@@ -145,15 +161,30 @@ func (rt *runtimeContext) Status(output io.Writer) error {
 		fmt.Fprintln(output, "no active overlay")
 		return nil
 	}
-	if err := rt.verifyState(state); err != nil {
+	inspection, err := rt.inspectState(state)
+	if err != nil {
 		return err
+	}
+	stateName := "active"
+	if len(inspection.Overlay) == 0 {
+		stateName = "restored"
+	} else if len(inspection.Original) > 0 {
+		stateName = "mixed"
 	}
 	fmt.Fprintf(output, "active overlay\n")
 	fmt.Fprintf(output, "  source: %s\n", state.SourceSpec)
 	fmt.Fprintf(output, "  sourceRoot: %s\n", state.SourceRoot)
 	fmt.Fprintf(output, "  targetRoot: %s\n", state.TargetRoot)
 	fmt.Fprintf(output, "  paths: %d\n", len(state.Entries))
+	fmt.Fprintf(output, "  state: %s\n", stateName)
+	fmt.Fprintf(output, "  overlaid paths: %d\n", len(inspection.Overlay))
+	fmt.Fprintf(output, "  already restored paths: %d\n", len(inspection.Original))
+	fmt.Fprintf(output, "  changed paths: %d\n", len(inspection.Changed))
 	fmt.Fprintf(output, "  appliedAt: %s\n", state.AppliedAt.Format(time.RFC3339))
+	if len(inspection.Changed) > 0 {
+		fmt.Fprintf(output, "  integrity: blocked\n")
+		return changedEntriesError(inspection.Changed)
+	}
 	fmt.Fprintf(output, "  integrity: ok\n")
 	return nil
 }
@@ -286,10 +317,11 @@ func (rt *runtimeContext) planEntry(source repository, session string, repoPath 
 			OverlayExists:  sourceSnapshot.Exists,
 			OverlayHash:    sourceSnapshot.Hash,
 		},
-		SourcePath: sourcePath,
-		TargetPath: targetPath,
-		BackupPath: backupAbs,
-		Mode:       sourceSnapshot.Mode,
+		SourcePath:   sourcePath,
+		TargetPath:   targetPath,
+		BackupPath:   backupAbs,
+		Mode:         sourceSnapshot.Mode,
+		OriginalMode: targetSnapshot.Mode,
 	}
 	return entry, true, nil
 }
@@ -301,7 +333,7 @@ func (rt *runtimeContext) applyPlan(plan overlayPlan) error {
 	}
 	for _, entry := range plan.Entries {
 		if entry.OriginalExists {
-			if err := copyFile(entry.TargetPath, entry.BackupPath, 0o644); err != nil {
+			if err := copyFilePreservingMode(entry.TargetPath, entry.BackupPath); err != nil {
 				os.RemoveAll(sessionDir)
 				return fmt.Errorf("backup %s: %w", entry.Path, err)
 			}
@@ -337,42 +369,63 @@ func (rt *runtimeContext) rollback(entries []StateEntry, state State) {
 }
 
 func (rt *runtimeContext) restoreState(state State) error {
-	if err := rt.verifyState(state); err != nil {
+	inspection, err := rt.inspectState(state)
+	if err != nil {
 		return err
 	}
-	return rt.restoreStateWithoutVerify(state)
+	if len(inspection.Changed) > 0 {
+		return changedEntriesError(inspection.Changed)
+	}
+	restoreState := state
+	restoreState.Entries = inspection.Overlay
+	return rt.restoreStateWithoutVerify(restoreState)
 }
 
-func (rt *runtimeContext) verifyState(state State) error {
+func (rt *runtimeContext) inspectState(state State) (stateInspection, error) {
 	if state.Version != stateVersion {
-		return fmt.Errorf("unsupported overlay state version %d", state.Version)
+		return stateInspection{}, fmt.Errorf("unsupported overlay state version %d", state.Version)
 	}
 	if !samePath(state.TargetRoot, rt.target.Root) {
-		return fmt.Errorf("overlay belongs to %s, current target is %s", state.TargetRoot, rt.target.Root)
+		return stateInspection{}, fmt.Errorf("overlay belongs to %s, current target is %s", state.TargetRoot, rt.target.Root)
 	}
+	inspection := stateInspection{}
 	for _, entry := range state.Entries {
-		targetPath, err := repoFile(rt.target.Root, entry.Path)
+		state, err := rt.inspectEntry(state, entry)
 		if err != nil {
-			return err
+			return stateInspection{}, err
 		}
-		current, err := snapshotFile(targetPath)
-		if err != nil {
-			return fmt.Errorf("verify overlay %s: %w", entry.Path, err)
-		}
-		if entry.OverlayExists {
-			if !current.Exists {
-				return fmt.Errorf("overlay path %s is missing", entry.Path)
-			}
-			if current.Hash != entry.OverlayHash {
-				return fmt.Errorf("overlay path %s changed after apply; refusing to modify it", entry.Path)
-			}
-			continue
-		}
-		if current.Exists {
-			return fmt.Errorf("overlay path %s was recreated after deletion; refusing to modify it", entry.Path)
+		switch state {
+		case entryStateOverlay:
+			inspection.Overlay = append(inspection.Overlay, entry)
+		case entryStateOriginal:
+			inspection.Original = append(inspection.Original, entry)
+		case entryStateChanged:
+			inspection.Changed = append(inspection.Changed, entry)
 		}
 	}
-	return nil
+	return inspection, nil
+}
+
+func (rt *runtimeContext) inspectEntry(state State, entry StateEntry) (entryState, error) {
+	targetPath, err := repoFile(rt.target.Root, entry.Path)
+	if err != nil {
+		return "", err
+	}
+	current, err := snapshotFile(targetPath)
+	if err != nil {
+		return "", fmt.Errorf("inspect overlay %s: %w", entry.Path, err)
+	}
+	if entryMatchesOverlay(entry, current) {
+		return entryStateOverlay, nil
+	}
+	matchesOriginal, err := rt.entryMatchesOriginal(state, entry, current)
+	if err != nil {
+		return "", err
+	}
+	if matchesOriginal {
+		return entryStateOriginal, nil
+	}
+	return entryStateChanged, nil
 }
 
 func (rt *runtimeContext) restoreStateWithoutVerify(state State) error {
@@ -387,7 +440,7 @@ func (rt *runtimeContext) restoreStateWithoutVerify(state State) error {
 		}
 		if entry.OriginalExists {
 			backupPath := filepath.Join(rt.stateRoot, filepath.FromSlash(entry.BackupPath))
-			if err := copyFile(backupPath, targetPath, 0o644); err != nil {
+			if err := copyFilePreservingMode(backupPath, targetPath); err != nil {
 				return fmt.Errorf("restore %s: %w", entry.Path, err)
 			}
 			continue
@@ -453,6 +506,39 @@ func sameSnapshot(left fileSnapshot, right fileSnapshot) bool {
 		return true
 	}
 	return left.Hash == right.Hash
+}
+
+func entryMatchesOverlay(entry StateEntry, current fileSnapshot) bool {
+	if entry.OverlayExists {
+		return current.Exists && current.Hash == entry.OverlayHash
+	}
+	return !current.Exists
+}
+
+func (rt *runtimeContext) entryMatchesOriginal(state State, entry StateEntry, current fileSnapshot) (bool, error) {
+	if entry.OriginalExists {
+		if !current.Exists {
+			return false, nil
+		}
+		if current.Hash == entry.OriginalHash {
+			return true, nil
+		}
+		matches, err := gitQuiet(rt.ctx, rt.target.Root, "diff", "--quiet", state.TargetHead, "--", entry.Path)
+		if err != nil {
+			return false, fmt.Errorf("compare %s with target HEAD: %w", entry.Path, err)
+		}
+		return matches, nil
+	}
+	return !current.Exists, nil
+}
+
+func changedEntriesError(entries []StateEntry) error {
+	paths := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		paths = append(paths, entry.Path)
+	}
+	sort.Strings(paths)
+	return fmt.Errorf("overlay paths changed after apply; refusing to modify them: %s", strings.Join(paths, ", "))
 }
 
 func overlappingPaths(left []string, right []string) []string {

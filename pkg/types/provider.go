@@ -46,6 +46,27 @@ type ModelRequest struct {
 	Stream      bool             `json:"stream,omitempty"`
 }
 
+const (
+	ModelRequestListModelsTimeoutDefaultMs = 30_000
+	ModelRequestListModelsTimeoutMinMs     = 5_000
+	ModelRequestListModelsTimeoutMaxMs     = 120_000
+
+	ModelRequestCompletionTimeoutDefaultMs = 300_000
+	ModelRequestCompletionTimeoutMinMs     = 30_000
+	ModelRequestCompletionTimeoutMaxMs     = 600_000
+
+	ModelRequestStreamIdleTimeoutDefaultMs = 120_000
+	ModelRequestStreamIdleTimeoutMinMs     = 15_000
+	ModelRequestStreamIdleTimeoutMaxMs     = 300_000
+)
+
+type ModelRequestConfig struct {
+	ListModelsTimeoutMs int       `json:"listModelsTimeoutMs"`
+	CompletionTimeoutMs int       `json:"completionTimeoutMs"`
+	StreamIdleTimeoutMs int       `json:"streamIdleTimeoutMs"`
+	UpdatedAt           time.Time `json:"updatedAt"`
+}
+
 type ModelResponse struct {
 	ID          string       `json:"id"`
 	Content     string       `json:"content"`

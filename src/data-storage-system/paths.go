@@ -48,6 +48,10 @@ func (p paths) chatTitleNamingConfigFile() string {
 	return filepath.Join(p.metaRoot(), "chat-title-naming.json")
 }
 
+func (p paths) modelRequestConfigFile() string {
+	return filepath.Join(p.metaRoot(), "model-request.json")
+}
+
 func (p paths) roleDir(roleID string) (string, error) {
 	return p.safeJoin(p.rolesRoot(), roleID)
 }

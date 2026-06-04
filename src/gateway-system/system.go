@@ -40,6 +40,8 @@ type ProviderSystem interface {
 	LoadProvider(ctx context.Context, providerID string) (types.Provider, error)
 	ListProviders(ctx context.Context) ([]types.ProviderSummary, error)
 	DeleteProvider(ctx context.Context, providerID string) error
+	LoadModelRequestConfig(ctx context.Context) (types.ModelRequestConfig, error)
+	SaveModelRequestConfig(ctx context.Context, config types.ModelRequestConfig) (types.ModelRequestConfig, error)
 	RefreshModels(ctx context.Context, providerID string) ([]types.ModelInfo, error)
 }
 

@@ -59,10 +59,9 @@ func TestStartRunSavesAttachmentsAndPassesThemToModel(t *testing.T) {
 	}
 }
 
-func TestStartRunAddsTextToolInstructionsToModelContext(t *testing.T) {
+func TestStartRunDoesNotAutoInjectToolInstructionsOrNativeTools(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
-	fakes.tool.instructionContent = "Tool calling instructions:\n<<<TOOL_REQUEST>>>\n[tool]: tool-name\n<<<END_TOOL_REQUEST>>>"
 	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
 	if err != nil {
@@ -73,7 +72,39 @@ func TestStartRunAddsTextToolInstructionsToModelContext(t *testing.T) {
 		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
 	}
 	request := fakes.provider.lastRequest()
-	if len(request.Messages) < 2 || request.Messages[0].Role != "system" || !strings.Contains(request.Messages[0].Content, "<<<TOOL_REQUEST>>>") {
+	if len(request.Tools) != 0 {
+		t.Fatalf("native tools = %#v", request.Tools)
+	}
+	for _, message := range request.Messages {
+		if strings.Contains(message.Content, "<<<TOOL_REQUEST>>>") {
+			t.Fatalf("tool instructions were auto injected: %#v", request.Messages)
+		}
+	}
+}
+
+func TestStartRunPassesOnlyNativeToolsToProvider(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.roles.policy = types.ToolPolicy{
+		Tools:       []string{"file-reader", "web-search"},
+		NativeTools: []string{"web-search"},
+		RunModes:    map[string]types.ToolRunMode{"file-reader": types.ToolRunAsk, "web-search": types.ToolRunAsk},
+	}
+	fakes.tool.toolSummaries = []types.ToolSummary{{ID: "file-reader", Name: "file-reader", Description: "Read files", Type: "local"}, {ID: "web-search", Name: "web-search", Description: "Search web", Type: "network"}}
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	request := fakes.provider.lastRequest()
+	if len(request.Tools) != 1 || request.Tools[0].Name != "web-search" {
+		t.Fatalf("native tools = %#v", request.Tools)
+	}
+	if len(request.Messages) != 1 || request.Messages[0].Role != "user" {
 		t.Fatalf("model messages = %#v", request.Messages)
 	}
 }
@@ -725,14 +756,46 @@ func (f *fakeRuntimeStorage) LoadSessionAttachmentImage(ctx context.Context, rel
 	return dataURL, nil
 }
 
-type fakeRuntimeRoles struct{}
+type fakeRuntimeRoles struct {
+	policy types.ToolPolicy
+}
 
 func (f *fakeRuntimeRoles) BuildContext(ctx context.Context, roleID string, session types.Session, tools []types.ToolDefinition) (types.RoleContext, error) {
-	return types.RoleContext{RoleID: roleID, RoleName: "Developer", ModelConfig: types.ModelConfig{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Temperature: 0.7}, Messages: session.Messages, Tools: tools, ToolPolicy: types.ToolPolicy{Tools: []string{"file-reader"}}}, nil
+	policy := f.currentPolicy()
+	return types.RoleContext{RoleID: roleID, RoleName: "Developer", ModelConfig: types.ModelConfig{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Temperature: 0.7}, Messages: session.Messages, Tools: tools, NativeTools: fakeRuntimeNativeTools(tools, policy.NativeTools), ToolPolicy: policy}, nil
 }
 
 func (f *fakeRuntimeRoles) GetToolPolicy(ctx context.Context, roleID string) (types.ToolPolicy, error) {
-	return types.ToolPolicy{Tools: []string{"file-reader"}}, nil
+	return f.currentPolicy(), nil
+}
+
+func (f *fakeRuntimeRoles) currentPolicy() types.ToolPolicy {
+	if len(f.policy.Tools) > 0 || len(f.policy.NativeTools) > 0 || len(f.policy.RunModes) > 0 {
+		return f.policy
+	}
+	return types.ToolPolicy{Tools: []string{"file-reader"}, RunModes: map[string]types.ToolRunMode{"file-reader": types.ToolRunAsk}}
+}
+
+func fakeRuntimeNativeTools(tools []types.ToolDefinition, names []string) []types.ToolDefinition {
+	if len(tools) == 0 || len(names) == 0 {
+		return nil
+	}
+	byName := map[string]types.ToolDefinition{}
+	for _, tool := range tools {
+		if tool.ID != "" {
+			byName[tool.ID] = tool
+		}
+		if tool.Name != "" {
+			byName[tool.Name] = tool
+		}
+	}
+	nativeTools := make([]types.ToolDefinition, 0, len(names))
+	for _, name := range names {
+		if tool, ok := byName[name]; ok {
+			nativeTools = append(nativeTools, tool)
+		}
+	}
+	return nativeTools
 }
 
 type fakeRuntimeProvider struct {
@@ -842,7 +905,7 @@ type fakeRuntimeTools struct {
 	maxActiveExecutions int
 	executeDelay        time.Duration
 	executeResult       types.ToolResult
-	instructionContent  string
+	toolSummaries       []types.ToolSummary
 	parsedContent       string
 	parsedIntents       []types.ToolIntent
 	parseErr            error
@@ -873,13 +936,6 @@ func (f *fakeRuntimeTools) VisibleTextToolContent(ctx context.Context, content s
 		return f.parsedContent, nil
 	}
 	return content, nil
-}
-
-func (f *fakeRuntimeTools) TextToolInstructions(ctx context.Context, tools []types.ToolDefinition) (types.PromptMessage, error) {
-	if strings.TrimSpace(f.instructionContent) != "" {
-		return types.PromptMessage{Role: "system", Content: f.instructionContent, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}, nil
-	}
-	return types.PromptMessage{}, nil
 }
 
 func (f *fakeRuntimeTools) NormalizeIntent(ctx context.Context, intent types.ToolIntent) (types.ToolAction, error) {
@@ -954,9 +1010,21 @@ func (f *fakeRuntimeTools) Execute(ctx context.Context, plan types.ToolRunPlan) 
 }
 
 func (f *fakeRuntimeTools) LoadTool(ctx context.Context, toolID string) (types.ToolDefinition, error) {
+	for _, summary := range f.listToolSummaries() {
+		if summary.ID == toolID {
+			return types.ToolDefinition{ID: summary.ID, Name: summary.Name, Description: summary.Description, Type: summary.Type}, nil
+		}
+	}
 	return types.ToolDefinition{ID: toolID, Name: toolID, Description: "tool", Type: "local"}, nil
 }
 
 func (f *fakeRuntimeTools) ListTools(ctx context.Context) ([]types.ToolSummary, error) {
-	return []types.ToolSummary{{ID: "file-reader", Name: "file-reader", Description: "Read files", Type: "local"}}, nil
+	return f.listToolSummaries(), nil
+}
+
+func (f *fakeRuntimeTools) listToolSummaries() []types.ToolSummary {
+	if len(f.toolSummaries) > 0 {
+		return append([]types.ToolSummary(nil), f.toolSummaries...)
+	}
+	return []types.ToolSummary{{ID: "file-reader", Name: "file-reader", Description: "Read files", Type: "local"}}
 }

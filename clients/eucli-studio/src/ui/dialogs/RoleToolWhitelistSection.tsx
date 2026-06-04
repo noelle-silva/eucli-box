@@ -22,6 +22,7 @@ import CloseIcon from '@mui/icons-material/Close'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import SecurityIcon from '@mui/icons-material/Security'
 import { normalizeRoleToolPolicy } from '../../domain/toolPolicy'
+import { toolCatalogByName, toolCatalogItems, toolDisplayName, type ToolCatalogItem } from '../../domain/toolCatalog'
 
 type RoleToolWhitelistSectionProps = {
   controller: any
@@ -29,22 +30,11 @@ type RoleToolWhitelistSectionProps = {
   tools: any
 }
 
-type ToolCatalogItem = {
-  id?: unknown
-  name?: unknown
-  description?: unknown
-  type?: unknown
-}
-
-function toolCatalogItems(tools: any): ToolCatalogItem[] {
-  return Array.isArray(tools?.items) ? tools.items.filter((tool: any) => tool && typeof tool === 'object') : []
-}
-
 export function RoleToolWhitelistSection(props: RoleToolWhitelistSectionProps) {
   const { controller, draft, tools } = props
   const policy = normalizeRoleToolPolicy(draft?.roleToolPolicy)
   const catalogItems = toolCatalogItems(tools)
-  const catalogByName = React.useMemo<Map<string, ToolCatalogItem>>(() => new Map(catalogItems.map((tool) => [String(tool.name || tool.id || ''), tool])), [catalogItems])
+  const catalogByName = React.useMemo<Map<string, ToolCatalogItem>>(() => toolCatalogByName(catalogItems), [catalogItems])
   const [menuAnchor, setMenuAnchor] = React.useState<HTMLElement | null>(null)
 
   const openToolMenu = (event: React.MouseEvent<HTMLElement>, toolName: string) => {
@@ -66,10 +56,10 @@ export function RoleToolWhitelistSection(props: RoleToolWhitelistSectionProps) {
               <SecurityIcon fontSize="small" />
             </Box>
             <Box sx={{ minWidth: 0 }}>
-              <Typography sx={{ fontWeight: 900 }}>工具白名单</Typography>
-              <Typography variant="body2" color="text.secondary">
-                只有加入白名单的工具才能被该角色调用。
-              </Typography>
+                <Typography sx={{ fontWeight: 900 }}>工具白名单</Typography>
+                <Typography variant="body2" color="text.secondary">
+                只有加入白名单的工具才能被该角色调用；是否传入原生 tools 字段单独配置。
+                </Typography>
             </Box>
           </Stack>
           <Stack direction="row" spacing={1} alignItems="center" justifyContent="flex-end" sx={{ flexWrap: 'wrap' }}>
@@ -130,9 +120,9 @@ export function RoleToolWhitelistSection(props: RoleToolWhitelistSectionProps) {
             ) : (
               <Paper variant="outlined" sx={{ p: 3, borderRadius: 2.5, textAlign: 'center', bgcolor: 'grey.50' }}>
                 <Typography sx={{ fontWeight: 900 }}>该角色尚未加入任何工具</Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                  未加入白名单的工具不会暴露给模型，也不能被该角色调用。
-                </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                  未加入白名单的工具不能被该角色调用，也不能加入原生 tools 传递名单。
+                  </Typography>
                 <Button startIcon={<AddIcon />} variant="contained" sx={{ mt: 1.5 }} onClick={() => controller.actions.openRoleToolAdd()}>
                   添加工具
                 </Button>
@@ -210,7 +200,7 @@ function AddRoleToolsDialog(props: { controller: any; draft: any; tools: any; po
           <Stack spacing={1}>
             {candidates.length ? (
               candidates.map((tool: any) => {
-                const name = String(tool?.name || tool?.id || '').trim()
+                const name = toolDisplayName(tool)
                 return (
                   <Paper key={name} variant="outlined" sx={{ p: 1.25, borderRadius: 2, cursor: 'pointer' }} onClick={() => controller.actions.toggleRoleToolAddSelection(name)}>
                     <Stack direction="row" spacing={1.25} alignItems="flex-start">

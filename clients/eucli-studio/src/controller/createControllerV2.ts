@@ -86,7 +86,8 @@ import { createPersistence } from './persistence'
 import { createRoleSession, updateRoleSessionTitle } from './ebRoleSession'
 import { createEbRunEventConsumer } from './ebRunEvents'
 import { createToolCatalog } from './toolCatalog'
-import { addToolsToPolicy, removeToolFromPolicy, setToolRunMode } from '../domain/toolPolicy'
+import { createModelRequestConfigController, defaultModelRequestConfigState } from './modelRequestConfig'
+import { addNativeToolsToPolicy, addToolsToPolicy, emptyRoleToolPolicy, removeNativeToolFromPolicy, removeToolFromPolicy, setToolRunMode } from '../domain/toolPolicy'
 
 export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilities }): {
   controller: AiChatController
@@ -111,6 +112,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     sideTab: 'roles' as string,
     models: { loading: false, error: '', items: [] as any[] },
     tools: { loading: false, error: '', items: [] as any[], fetchedAt: 0, detailLoading: false, detailError: '', selectedToolId: '', selectedTool: null as any, configDraft: {} as Record<string, any>, saving: false, saveError: '' },
+    modelRequestConfig: defaultModelRequestConfigState(),
     pendingChat: null as any,
     pendingGroupChat: null as any,
     branchDraft: null as any,
@@ -132,13 +134,14 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       roleModelId: '',
       roleCustomModelId: '',
       roleTemperature: '0.7',
-      roleToolPolicy: { tools: [] as string[], runModes: {} as Record<string, string> },
+      roleToolPolicy: emptyRoleToolPolicy(),
       roleToolWhitelistOpen: false,
       roleToolAddOpen: false,
       roleToolSearch: '',
       roleToolAddSelected: [] as string[],
       roleToolMenuName: '',
       roleToolPermissionName: '',
+      roleNativeToolAddOpen: false,
 
       editGroupId: '',
       groupName: '',
@@ -231,6 +234,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     state.draft.roleToolAddSelected = []
     state.draft.roleToolMenuName = ''
     state.draft.roleToolPermissionName = ''
+    state.draft.roleNativeToolAddOpen = false
     ;(state.draft as any).renderSafetyPolicyTarget = ''
     state.draft.roleAvatarImageCropSrc = ''
     ;(state.draft as any).groupAvatarImageCropSrc = ''
@@ -245,6 +249,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       state.draft.roleModelId = ''
       state.draft.roleCustomModelId = ''
       state.draft.roleTemperature = '0.7'
+      state.draft.roleToolPolicy = emptyRoleToolPolicy()
     }
     if (String((state.draft as any).editGroupId || '') === NEW_GROUP_ID) {
       ;(state.draft as any).editGroupId = ''
@@ -583,6 +588,14 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     showToast: api.ui?.showToast,
   })
   const { refreshTools, openToolConfig, closeToolConfig, setToolConfigValue, removeToolConfigValue, saveSelectedToolConfig } = toolCatalog
+
+  const modelRequestConfigController = createModelRequestConfigController({
+    getState: () => state,
+    netRequest: capabilities.net?.request || ((() => Promise.resolve({})) as any),
+    emit,
+    showToast: api.ui?.showToast,
+  })
+  const { refreshModelRequestConfig, setModelRequestConfigDraft, resetModelRequestConfigDraftToDefaults, saveModelRequestConfig } = modelRequestConfigController
 
   // ============================================================
   // 12. FAVORITES OPERATIONS
@@ -1379,6 +1392,10 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     setToolConfigValue: (path: any, value: any) => setToolConfigValue(path, value),
     removeToolConfigValue: (path: any) => removeToolConfigValue(path),
     saveSelectedToolConfig: () => saveSelectedToolConfig(),
+    refreshModelRequestConfig: (force: any) => refreshModelRequestConfig(!!force),
+    setModelRequestConfigDraft: (key: any, value: any) => setModelRequestConfigDraft(key, value),
+    resetModelRequestConfigDraftToDefaults: () => resetModelRequestConfigDraftToDefaults(),
+    saveModelRequestConfig: () => saveModelRequestConfig(),
     openRoleToolWhitelist: () => {
       state.draft.roleToolWhitelistOpen = true
       refreshTools(false).catch(() => {})
@@ -1448,6 +1465,24 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       state.draft.roleToolPolicy = removeToolFromPolicy(state.draft.roleToolPolicy, String(toolName || ''))
       state.draft.roleToolMenuName = ''
       state.draft.roleToolPermissionName = ''
+      emit()
+    },
+    openRoleNativeToolAdd: () => {
+      state.draft.roleNativeToolAddOpen = true
+      refreshTools(false).catch(() => {})
+      emit()
+    },
+    closeRoleNativeToolAdd: () => {
+      state.draft.roleNativeToolAddOpen = false
+      emit()
+    },
+    addRoleNativeTool: (toolName: any) => {
+      state.draft.roleToolPolicy = addNativeToolsToPolicy(state.draft.roleToolPolicy, [String(toolName || '')])
+      state.draft.roleNativeToolAddOpen = false
+      emit()
+    },
+    removeRoleNativeTool: (toolName: any) => {
+      state.draft.roleToolPolicy = removeNativeToolFromPolicy(state.draft.roleToolPolicy, String(toolName || ''))
       emit()
     },
     openGroupEditor: (groupId: any) => openGroupEditor(String(groupId || '')),

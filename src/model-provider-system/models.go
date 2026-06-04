@@ -16,7 +16,11 @@ func (s *system) RefreshModels(ctx context.Context, providerID string) ([]types.
 	if err != nil {
 		return nil, err
 	}
-	req, err := adapter.BuildListModelsRequest(provider, int64(s.config.RequestTimeout))
+	requestConfig, err := s.modelRequestConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	req, err := adapter.BuildListModelsRequest(provider, int64(timeoutFromMs(requestConfig.ListModelsTimeoutMs)))
 	if err != nil {
 		return nil, err
 	}

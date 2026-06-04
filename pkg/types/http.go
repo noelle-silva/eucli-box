@@ -18,7 +18,8 @@ type HTTPRequest struct {
 	Headers  map[string]string `json:"headers,omitempty"`
 	BodyKind HTTPBodyKind      `json:"bodyKind"`
 	Body     []byte            `json:"body,omitempty"`
-	Timeout  time.Duration     `json:"timeout"`
+	// Timeout is a total budget for normal requests and an idle budget for streams.
+	Timeout time.Duration `json:"timeout"`
 }
 
 type HTTPResponse struct {

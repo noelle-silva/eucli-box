@@ -54,6 +54,22 @@ func TestRefreshModelsUsesNetworkSystemAndSavesModels(t *testing.T) {
 	}
 }
 
+func TestRefreshModelsUsesConfiguredTimeout(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.modelRequestConfig = types.ModelRequestConfig{ListModelsTimeoutMs: 45_000, CompletionTimeoutMs: types.ModelRequestCompletionTimeoutDefaultMs, StreamIdleTimeoutMs: types.ModelRequestStreamIdleTimeoutDefaultMs}
+	storage.providers["openai-main"] = types.Provider{ID: "openai-main", Name: "OpenAI", BaseURL: "https://api.example.test/v1", Key: "secret", Protocol: types.ProviderProtocolOpenAI}
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"data":[{"id":"gpt-4.1"}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	_, err := system.RefreshModels(context.Background(), "openai-main")
+	if err != nil {
+		t.Fatalf("RefreshModels() error = %v", err)
+	}
+	if network.lastRequest.Timeout != 45*time.Second {
+		t.Fatalf("timeout = %s", network.lastRequest.Timeout)
+	}
+}
+
 func TestResolveModelFailsWhenModelMissing(t *testing.T) {
 	storage := newFakeProviderStorage()
 	storage.providers["openai-main"] = types.Provider{ID: "openai-main", Name: "OpenAI", BaseURL: "https://api.example.test/v1", Key: "secret", Protocol: types.ProviderProtocolOpenAI, Models: []types.ModelInfo{{ID: "gpt-4.1"}}}
@@ -86,6 +102,22 @@ func TestCompleteOpenAIWritesToolsIntoRequest(t *testing.T) {
 	}
 	if _, ok := body["tools"]; !ok {
 		t.Fatalf("request body missing tools: %s", string(network.lastRequest.Body))
+	}
+}
+
+func TestCompleteUsesConfiguredTimeout(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.modelRequestConfig = types.ModelRequestConfig{ListModelsTimeoutMs: types.ModelRequestListModelsTimeoutDefaultMs, CompletionTimeoutMs: 180_000, StreamIdleTimeoutMs: types.ModelRequestStreamIdleTimeoutDefaultMs}
+	storage.providers["openai-main"] = types.Provider{ID: "openai-main", Name: "OpenAI", BaseURL: "https://api.example.test/v1", Key: "secret", Protocol: types.ProviderProtocolOpenAI, Models: []types.ModelInfo{{ID: "gpt-4.1"}}}
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"done"}}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	_, err := system.Complete(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	if network.lastRequest.Timeout != 180*time.Second {
+		t.Fatalf("timeout = %s", network.lastRequest.Timeout)
 	}
 }
 
@@ -296,6 +328,28 @@ data: [DONE]
 	}
 }
 
+func TestCompleteStreamUsesConfiguredIdleTimeout(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.modelRequestConfig = types.ModelRequestConfig{ListModelsTimeoutMs: types.ModelRequestListModelsTimeoutDefaultMs, CompletionTimeoutMs: types.ModelRequestCompletionTimeoutDefaultMs, StreamIdleTimeoutMs: 90_000}
+	storage.providers["openai-main"] = types.Provider{ID: "openai-main", Name: "OpenAI", BaseURL: "https://api.example.test/v1", Key: "secret", Protocol: types.ProviderProtocolOpenAI, Models: []types.ModelInfo{{ID: "gpt-4.1"}}}
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte("data: {\"id\":\"chatcmpl-stream\",\"choices\":[{\"delta\":{\"content\":\"done\"}}]}\n\ndata: [DONE]\n\n")}}
+	system := newTestProviderSystem(t, network, storage)
+
+	_, err := system.CompleteStream(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}}, nil)
+	if err != nil {
+		t.Fatalf("CompleteStream() error = %v", err)
+	}
+	if network.lastRequest.Timeout != 90*time.Second {
+		t.Fatalf("timeout = %s", network.lastRequest.Timeout)
+	}
+}
+
+func TestSaveModelRequestConfigRejectsOutOfRangeTimeout(t *testing.T) {
+	system := newTestProviderSystem(t, &fakeNetwork{}, newFakeProviderStorage())
+	_, err := system.SaveModelRequestConfig(context.Background(), types.ModelRequestConfig{ListModelsTimeoutMs: 1, CompletionTimeoutMs: types.ModelRequestCompletionTimeoutDefaultMs, StreamIdleTimeoutMs: types.ModelRequestStreamIdleTimeoutDefaultMs})
+	assertAppErrorCode(t, err, "provider.invalid_request")
+}
+
 func TestCompleteStreamAnthropicEmitsDeltas(t *testing.T) {
 	storage := newFakeProviderStorage()
 	storage.providers["anthropic-main"] = types.Provider{ID: "anthropic-main", Name: "Anthropic", BaseURL: "https://api.anthropic.test/v1", Key: "secret", Protocol: types.ProviderProtocolAnthropic, Models: []types.ModelInfo{{ID: "claude-3-5-sonnet"}}}
@@ -368,8 +422,9 @@ func (f *fakeNetwork) DoStream(ctx context.Context, req types.HTTPRequest, onChu
 }
 
 type fakeProviderStorage struct {
-	providers   map[string]types.Provider
-	callRecords []types.CallRecord
+	providers          map[string]types.Provider
+	callRecords        []types.CallRecord
+	modelRequestConfig types.ModelRequestConfig
 }
 
 func newFakeProviderStorage() *fakeProviderStorage {
@@ -400,6 +455,15 @@ func (f *fakeProviderStorage) ListProviders(ctx context.Context) ([]types.Provid
 func (f *fakeProviderStorage) DeleteProvider(ctx context.Context, providerID string) error {
 	delete(f.providers, providerID)
 	return nil
+}
+
+func (f *fakeProviderStorage) LoadModelRequestConfig(ctx context.Context) (types.ModelRequestConfig, error) {
+	return f.modelRequestConfig, nil
+}
+
+func (f *fakeProviderStorage) SaveModelRequestConfig(ctx context.Context, config types.ModelRequestConfig) (types.ModelRequestConfig, error) {
+	f.modelRequestConfig = config
+	return f.modelRequestConfig, nil
 }
 
 func (f *fakeProviderStorage) SaveCallRecord(ctx context.Context, record types.CallRecord) error {

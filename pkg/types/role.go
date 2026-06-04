@@ -25,8 +25,9 @@ const (
 )
 
 type ToolPolicy struct {
-	Tools    []string               `json:"tools,omitempty"`
-	RunModes map[string]ToolRunMode `json:"runModes,omitempty"`
+	Tools       []string               `json:"tools,omitempty"`
+	NativeTools []string               `json:"nativeTools,omitempty"`
+	RunModes    map[string]ToolRunMode `json:"runModes,omitempty"`
 }
 
 type ModelConfig struct {
@@ -62,4 +63,5 @@ type RoleContext struct {
 	Messages    []Message        `json:"messages"`
 	ToolPolicy  ToolPolicy       `json:"toolPolicy"`
 	Tools       []ToolDefinition `json:"tools,omitempty"`
+	NativeTools []ToolDefinition `json:"nativeTools,omitempty"`
 }

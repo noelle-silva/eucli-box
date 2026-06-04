@@ -2,6 +2,7 @@ package agentruntime
 
 import (
 	"context"
+	"strings"
 
 	"eucli-box/pkg/types"
 )
@@ -29,6 +30,10 @@ func (s *system) availableTools(ctx context.Context, roleID string) ([]types.Too
 	}
 	filter := make(map[string]struct{}, len(policy.Tools))
 	for _, tool := range policy.Tools {
+		tool = strings.TrimSpace(tool)
+		if tool == "" {
+			continue
+		}
 		filter[tool] = struct{}{}
 	}
 	tools := make([]types.ToolDefinition, 0, len(summaries))

@@ -84,13 +84,14 @@ import { StandaloneWindowControls, type WindowControlActions } from './component
 import { AssistantMessageBlocks } from './components/AssistantMessageBlocks'
 import { RolesSettingsPanel } from './settings/RolesSettingsPanel'
 import { AiToolsSettingsPanel } from './settings/AiToolsSettingsPanel'
+import { EbSettingsPanel } from './settings/EbSettingsPanel'
 import { AI_STUDIO_CHAT_ROOT_ID } from '../runtime/aiStudioGlobals'
 import { isAssistantAwaitingFirstOutput, isAssistantGenerating } from '../domain/assistantRunState'
 import { formatModelRefDisplayText } from '../domain/modelRefUtils'
 import { AssistantReplyPendingIndicator } from './components/AssistantReplyPendingIndicator'
 import { AssistantErrorNotice } from './components/AssistantErrorNotice'
 
-type SettingsTab = 'appearance' | 'attachments' | 'data' | 'groups' | 'roles' | 'providers' | 'services' | 'tools' | 'stickers'
+type SettingsTab = 'appearance' | 'attachments' | 'data' | 'groups' | 'roles' | 'providers' | 'services' | 'tools' | 'stickers' | 'eb'
 
 const SETTINGS_TAB_ITEMS: { value: SettingsTab; label: string }[] = [
   { value: 'appearance', label: '外观' },
@@ -100,6 +101,7 @@ const SETTINGS_TAB_ITEMS: { value: SettingsTab; label: string }[] = [
   { value: 'roles', label: '角色管理' },
   { value: 'providers', label: '供应商管理' },
   { value: 'services', label: 'AI 微服务' },
+  { value: 'eb', label: 'e-b' },
   { value: 'tools', label: 'AI 工具' },
   { value: 'stickers', label: '表情包' },
 ]
@@ -6398,6 +6400,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
             providers={providers}
             models={s.models}
             tools={(s as any).tools}
+            modelRequestConfig={(s as any).modelRequestConfig}
             draft={s.draft}
             activeRoleId={String(s.draft?.activeRoleId || '')}
             tab={settingsTab}
@@ -6789,12 +6792,13 @@ function PluginSettingsPage(props: {
   providers: any[]
   models: any
   tools: any
+  modelRequestConfig: any
   draft: any
   activeRoleId: string
   tab: SettingsTab
   dataDirectory?: AiChatDataDirectory
 }) {
-  const { controller, loading, data, roles, groups, providers, models, tools, draft, activeRoleId, tab, dataDirectory } = props
+  const { controller, loading, data, roles, groups, providers, models, tools, modelRequestConfig, draft, activeRoleId, tab, dataDirectory } = props
   const [treeHotkeyRecording, setTreeHotkeyRecording] = React.useState(false)
 
   React.useEffect(() => {
@@ -7377,6 +7381,10 @@ function PluginSettingsPage(props: {
 
   if (tab === 'tools') {
     return <AiToolsSettingsPanel controller={controller} loading={loading} tools={tools} topbarHeight={TOPBAR_H} />
+  }
+
+  if (tab === 'eb') {
+    return <EbSettingsPanel controller={controller} loading={loading} modelRequestConfig={modelRequestConfig} topbarHeight={TOPBAR_H} />
   }
 
   if (tab === 'stickers') {

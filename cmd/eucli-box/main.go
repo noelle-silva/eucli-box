@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"eucli-box/pkg/types"
 	agentruntime "eucli-box/src/agent-runtime-system"
 	aiassist "eucli-box/src/ai-assist-system"
 	datastorage "eucli-box/src/data-storage-system"
@@ -32,7 +33,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	networkSystem, err := networkrequest.NewSystem(networkrequest.Config{MaxTimeout: 120 * time.Second})
+	networkSystem, err := networkrequest.NewSystem(networkrequest.Config{MaxTimeout: time.Duration(types.ModelRequestCompletionTimeoutMaxMs) * time.Millisecond})
 	if err != nil {
 		return fmt.Errorf("start network request system: %w", err)
 	}

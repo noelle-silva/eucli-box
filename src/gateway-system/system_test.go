@@ -243,6 +243,20 @@ func TestProviderAndToolRoutes(t *testing.T) {
 	if configRec.Code != http.StatusOK || !strings.Contains(configRec.Body.String(), "\"limit\":20") {
 		t.Fatalf("tool config status = %d body=%s", configRec.Code, configRec.Body.String())
 	}
+
+	modelRequestConfigReq := httptest.NewRequest(http.MethodPut, "/api/providers/model-request-config", strings.NewReader(`{"listModelsTimeoutMs":30000,"completionTimeoutMs":180000,"streamIdleTimeoutMs":90000}`))
+	modelRequestConfigRec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(modelRequestConfigRec, modelRequestConfigReq)
+	if modelRequestConfigRec.Code != http.StatusOK || !strings.Contains(modelRequestConfigRec.Body.String(), "streamIdleTimeoutMs") {
+		t.Fatalf("model request config save status = %d body=%s", modelRequestConfigRec.Code, modelRequestConfigRec.Body.String())
+	}
+
+	modelRequestConfigReq = httptest.NewRequest(http.MethodGet, "/api/providers/model-request-config", nil)
+	modelRequestConfigRec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(modelRequestConfigRec, modelRequestConfigReq)
+	if modelRequestConfigRec.Code != http.StatusOK || !strings.Contains(modelRequestConfigRec.Body.String(), "180000") {
+		t.Fatalf("model request config load status = %d body=%s", modelRequestConfigRec.Code, modelRequestConfigRec.Body.String())
+	}
 }
 
 func TestStickerRoutes(t *testing.T) {
@@ -582,7 +596,10 @@ func (f *fakeGatewayRoles) DeleteRoleAvatar(ctx context.Context, roleID string) 
 	return nil
 }
 
-type fakeGatewayProviders struct{ providers map[string]types.Provider }
+type fakeGatewayProviders struct {
+	providers          map[string]types.Provider
+	modelRequestConfig types.ModelRequestConfig
+}
 
 func newFakeGatewayProviders() *fakeGatewayProviders {
 	return &fakeGatewayProviders{providers: map[string]types.Provider{}}
@@ -604,6 +621,13 @@ func (f *fakeGatewayProviders) ListProviders(ctx context.Context) ([]types.Provi
 func (f *fakeGatewayProviders) DeleteProvider(ctx context.Context, providerID string) error {
 	delete(f.providers, providerID)
 	return nil
+}
+func (f *fakeGatewayProviders) LoadModelRequestConfig(ctx context.Context) (types.ModelRequestConfig, error) {
+	return f.modelRequestConfig, nil
+}
+func (f *fakeGatewayProviders) SaveModelRequestConfig(ctx context.Context, config types.ModelRequestConfig) (types.ModelRequestConfig, error) {
+	f.modelRequestConfig = config
+	return f.modelRequestConfig, nil
 }
 func (f *fakeGatewayProviders) RefreshModels(ctx context.Context, providerID string) ([]types.ModelInfo, error) {
 	return []types.ModelInfo{{ID: "gpt-4.1", Name: "GPT-4.1"}}, nil

@@ -93,6 +93,55 @@ func TestDoReportsTimeout(t *testing.T) {
 	assertAppErrorCode(t, err, "network.timeout")
 }
 
+func TestDoStreamUsesIdleTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		flusher, _ := w.(http.Flusher)
+		parts := []string{"a", "b", "c", "d"}
+		for index, part := range parts {
+			_, _ = w.Write([]byte(part))
+			if flusher != nil {
+				flusher.Flush()
+			}
+			if index < len(parts)-1 {
+				time.Sleep(15 * time.Millisecond)
+			}
+		}
+	}))
+	defer server.Close()
+
+	system, err := NewSystem(Config{DefaultTimeout: time.Second, MaxTimeout: time.Second})
+	if err != nil {
+		t.Fatalf("NewSystem() error = %v", err)
+	}
+	response, err := system.DoStream(context.Background(), types.HTTPRequest{Method: http.MethodGet, URL: server.URL, Timeout: 30 * time.Millisecond}, nil)
+	if err != nil {
+		t.Fatalf("DoStream() error = %v", err)
+	}
+	if string(response.Body) != "abcd" {
+		t.Fatalf("body = %q", string(response.Body))
+	}
+}
+
+func TestDoStreamReportsIdleTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		flusher, _ := w.(http.Flusher)
+		_, _ = w.Write([]byte("a"))
+		if flusher != nil {
+			flusher.Flush()
+		}
+		time.Sleep(80 * time.Millisecond)
+		_, _ = w.Write([]byte("b"))
+	}))
+	defer server.Close()
+
+	system, err := NewSystem(Config{DefaultTimeout: time.Second, MaxTimeout: time.Second})
+	if err != nil {
+		t.Fatalf("NewSystem() error = %v", err)
+	}
+	_, err = system.DoStream(context.Background(), types.HTTPRequest{Method: http.MethodGet, URL: server.URL, Timeout: 20 * time.Millisecond}, nil)
+	assertAppErrorCode(t, err, "network.timeout")
+}
+
 func TestNewSystemRejectsZeroMaxTimeout(t *testing.T) {
 	_, err := NewSystem(Config{MaxTimeout: 0, DefaultTimeout: time.Second})
 	if err == nil {

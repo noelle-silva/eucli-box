@@ -698,8 +698,10 @@ func normalizeUIToolPolicy(value any) map[string]any {
 	policy := objectMap(value)
 	runModeSource := objectMap(policy["runModes"])
 	tools := []any{}
+	nativeTools := []any{}
 	runModes := map[string]any{}
 	seen := map[string]struct{}{}
+	toolSet := map[string]struct{}{}
 	for _, tool := range stringSlice(policy["tools"]) {
 		tool = strings.TrimSpace(tool)
 		if tool == "" {
@@ -710,12 +712,28 @@ func normalizeUIToolPolicy(value any) map[string]any {
 		}
 		mode := strings.TrimSpace(fmt.Sprint(runModeSource[tool]))
 		seen[tool] = struct{}{}
+		toolSet[tool] = struct{}{}
 		tools = append(tools, tool)
 		if mode == "ask" || mode == "direct" {
 			runModes[tool] = mode
 		}
 	}
-	return map[string]any{"tools": tools, "runModes": runModes}
+	nativeSeen := map[string]struct{}{}
+	for _, tool := range stringSlice(policy["nativeTools"]) {
+		tool = strings.TrimSpace(tool)
+		if tool == "" {
+			continue
+		}
+		if _, ok := toolSet[tool]; !ok {
+			continue
+		}
+		if _, ok := nativeSeen[tool]; ok {
+			continue
+		}
+		nativeSeen[tool] = struct{}{}
+		nativeTools = append(nativeTools, tool)
+	}
+	return map[string]any{"tools": tools, "nativeTools": nativeTools, "runModes": runModes}
 }
 
 func toUIProvider(provider map[string]any) map[string]any {

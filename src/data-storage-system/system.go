@@ -59,6 +59,8 @@ type System interface {
 	SaveMermaidFixConfig(ctx context.Context, config types.MermaidFixConfig) (types.MermaidFixConfig, error)
 	LoadChatTitleNamingConfig(ctx context.Context) (types.ChatTitleNamingConfig, error)
 	SaveChatTitleNamingConfig(ctx context.Context, config types.ChatTitleNamingConfig) (types.ChatTitleNamingConfig, error)
+	LoadModelRequestConfig(ctx context.Context) (types.ModelRequestConfig, error)
+	SaveModelRequestConfig(ctx context.Context, config types.ModelRequestConfig) (types.ModelRequestConfig, error)
 
 	SaveCallRecord(ctx context.Context, record types.CallRecord) error
 

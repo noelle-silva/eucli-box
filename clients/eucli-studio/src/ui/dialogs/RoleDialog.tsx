@@ -21,6 +21,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import SettingsIcon from '@mui/icons-material/Settings'
 import { RoleAvatarCropper } from '../components/avatar/RoleAvatarCropper'
+import { RoleNativeToolsSection } from './RoleNativeToolsSection'
 import { RoleToolWhitelistSection } from './RoleToolWhitelistSection'
 
 export function RoleDialog(props: { open: boolean; controller: any; providers: any[]; draft: any; models: any; tools: any }) {
@@ -79,15 +80,19 @@ export function RoleDialog(props: { open: boolean; controller: any; providers: a
 
           {avatarCropSrc ? <RoleAvatarCropper controller={controller} src={avatarCropSrc} /> : null}
 
-          <TextField
-            label="系统提示词"
-            value={String(draft?.roleSystemPrompt || '')}
-            onChange={(e) => controller.actions.setDraft('roleSystemPrompt', e.target.value)}
-            fullWidth
-            multiline
-            minRows={5}
-            placeholder="写入系统提示词…"
-          />
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems="stretch">
+            <TextField
+              label="系统提示词"
+              value={String(draft?.roleSystemPrompt || '')}
+              onChange={(e) => controller.actions.setDraft('roleSystemPrompt', e.target.value)}
+              fullWidth
+              multiline
+              minRows={7}
+              placeholder="写入系统提示词…文本协议工具说明也写在这里。"
+              sx={{ flex: 1 }}
+            />
+            <RoleNativeToolsSection controller={controller} draft={draft} tools={tools} />
+          </Stack>
 
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems="flex-start">
             <FormControl fullWidth>

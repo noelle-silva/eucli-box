@@ -34,7 +34,6 @@ type ProviderSystem interface {
 }
 
 type ToolSystem interface {
-	TextToolInstructions(ctx context.Context, tools []types.ToolDefinition) (types.PromptMessage, error)
 	VisibleTextToolContent(ctx context.Context, content string) (string, error)
 	ParseTextToolRequests(ctx context.Context, content string) (string, []types.ToolIntent, error)
 	NormalizeIntent(ctx context.Context, intent types.ToolIntent) (types.ToolAction, error)

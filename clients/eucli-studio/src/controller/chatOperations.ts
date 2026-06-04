@@ -144,9 +144,7 @@ export function createChatOperations(deps: {
 
     await refreshRunSession()
 
-    const deadline = Date.now() + 120_000
     while (!isTerminalRunStatus(state.status)) {
-      if (Date.now() > deadline) throw new Error('e-b 运行超时')
       await sleepMs(450)
       state = await getRunState(netRequest, state.id)
       followMessageId = String(state.lastMessageId || followMessageId || '').trim()

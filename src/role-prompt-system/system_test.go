@@ -46,10 +46,11 @@ func TestBuildContextUsesOnlyRoleSessionAndPassedTools(t *testing.T) {
 		{ID: "2", Role: "system", Content: "second", Order: 2},
 		{ID: "1", Role: "system", Content: "first", Order: 1},
 	}
+	role.ToolPolicy = types.ToolPolicy{Tools: []string{"file-reader", "web-search"}, NativeTools: []string{"file-reader"}, RunModes: map[string]types.ToolRunMode{"file-reader": types.ToolRunAsk, "web-search": types.ToolRunAsk}}
 	storage.roles[role.ID] = role
 	system := newTestRoleSystem(t, storage, providers)
 	session := types.Session{ID: "session-1", RoleID: role.ID, Messages: []types.Message{{ID: "m1", Type: "user", Content: "hello"}}}
-	tools := []types.ToolDefinition{{ID: "file-reader", Name: "file-reader", Description: "Read"}}
+	tools := []types.ToolDefinition{{ID: "file-reader", Name: "file-reader", Description: "Read"}, {ID: "web-search", Name: "web-search", Description: "Search"}}
 	ctx, err := system.BuildContext(context.Background(), role.ID, session, tools)
 	if err != nil {
 		t.Fatalf("BuildContext() error = %v", err)
@@ -60,8 +61,11 @@ func TestBuildContextUsesOnlyRoleSessionAndPassedTools(t *testing.T) {
 	if len(ctx.Messages) != 1 || ctx.Messages[0].Content != "hello" {
 		t.Fatalf("messages = %#v", ctx.Messages)
 	}
-	if len(ctx.Tools) != 1 || ctx.Tools[0].Name != "file-reader" {
+	if len(ctx.Tools) != 2 || ctx.Tools[0].Name != "file-reader" || ctx.Tools[1].Name != "web-search" {
 		t.Fatalf("tools = %#v", ctx.Tools)
+	}
+	if len(ctx.NativeTools) != 1 || ctx.NativeTools[0].Name != "file-reader" {
+		t.Fatalf("native tools = %#v", ctx.NativeTools)
 	}
 }
 

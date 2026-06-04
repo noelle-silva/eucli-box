@@ -2,17 +2,19 @@ export type RoleToolRunMode = 'ask' | 'direct'
 
 export type RoleToolPolicy = {
   tools: string[]
+  nativeTools: string[]
   runModes: Record<string, RoleToolRunMode>
 }
 
 export function emptyRoleToolPolicy(): RoleToolPolicy {
-  return { tools: [], runModes: {} }
+  return { tools: [], nativeTools: [], runModes: {} }
 }
 
 export function normalizeRoleToolPolicy(value: any): RoleToolPolicy {
   const source = value && typeof value === 'object' ? value : {}
   const runModesSource = source.runModes && typeof source.runModes === 'object' && !Array.isArray(source.runModes) ? source.runModes : {}
   const tools: string[] = []
+  const nativeTools: string[] = []
   const runModes: Record<string, RoleToolRunMode> = {}
   const seen = new Set<string>()
 
@@ -25,7 +27,16 @@ export function normalizeRoleToolPolicy(value: any): RoleToolPolicy {
     if (mode) runModes[name] = mode
   }
 
-  return { tools, runModes }
+  const toolSet = new Set(tools)
+  const nativeSeen = new Set<string>()
+  for (const item of Array.isArray(source.nativeTools) ? source.nativeTools : []) {
+    const name = String(item || '').trim()
+    if (!name || nativeSeen.has(name) || !toolSet.has(name)) continue
+    nativeSeen.add(name)
+    nativeTools.push(name)
+  }
+
+  return { tools, nativeTools, runModes }
 }
 
 export function addToolsToPolicy(policy: any, toolNames: string[]): RoleToolPolicy {
@@ -46,7 +57,29 @@ export function removeToolFromPolicy(policy: any, toolName: string): RoleToolPol
   const next = normalizeRoleToolPolicy(policy)
   if (!name) return next
   next.tools = next.tools.filter((item) => item !== name)
+  next.nativeTools = next.nativeTools.filter((item) => item !== name)
   delete next.runModes[name]
+  return next
+}
+
+export function addNativeToolsToPolicy(policy: any, toolNames: string[]): RoleToolPolicy {
+  const next = normalizeRoleToolPolicy(policy)
+  const whitelist = new Set(next.tools)
+  const seen = new Set(next.nativeTools)
+  for (const item of toolNames) {
+    const name = String(item || '').trim()
+    if (!name || seen.has(name) || !whitelist.has(name)) continue
+    seen.add(name)
+    next.nativeTools.push(name)
+  }
+  return next
+}
+
+export function removeNativeToolFromPolicy(policy: any, toolName: string): RoleToolPolicy {
+  const name = String(toolName || '').trim()
+  const next = normalizeRoleToolPolicy(policy)
+  if (!name) return next
+  next.nativeTools = next.nativeTools.filter((item) => item !== name)
   return next
 }
 

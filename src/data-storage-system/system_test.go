@@ -87,6 +87,30 @@ func TestSaveLoadAndDeleteRoleAvatarImageFile(t *testing.T) {
 	assertNoFile(t, filepath.Join(avatarDir, "avatar.png"))
 }
 
+func TestSaveLoadModelRequestConfig(t *testing.T) {
+	system := newTestSystem(t)
+	config, err := system.LoadModelRequestConfig(context.Background())
+	if err != nil {
+		t.Fatalf("LoadModelRequestConfig(default) error = %v", err)
+	}
+	if config.ListModelsTimeoutMs != types.ModelRequestListModelsTimeoutDefaultMs || config.CompletionTimeoutMs != types.ModelRequestCompletionTimeoutDefaultMs || config.StreamIdleTimeoutMs != types.ModelRequestStreamIdleTimeoutDefaultMs {
+		t.Fatalf("default config = %#v", config)
+	}
+
+	saved, err := system.SaveModelRequestConfig(context.Background(), types.ModelRequestConfig{ListModelsTimeoutMs: 45_000, CompletionTimeoutMs: 180_000, StreamIdleTimeoutMs: 90_000})
+	if err != nil {
+		t.Fatalf("SaveModelRequestConfig() error = %v", err)
+	}
+	loaded, err := system.LoadModelRequestConfig(context.Background())
+	if err != nil {
+		t.Fatalf("LoadModelRequestConfig(saved) error = %v", err)
+	}
+	if loaded.ListModelsTimeoutMs != saved.ListModelsTimeoutMs || loaded.CompletionTimeoutMs != saved.CompletionTimeoutMs || loaded.StreamIdleTimeoutMs != saved.StreamIdleTimeoutMs {
+		t.Fatalf("loaded config = %#v saved=%#v", loaded, saved)
+	}
+	assertFile(t, filepath.Join(system.paths.root, "meta", "model-request.json"))
+}
+
 func TestSessionsAreListedByLastActive(t *testing.T) {
 	system := newTestSystem(t)
 	oldSession := types.Session{ID: "old", RoleID: "developer", Title: "old", LastActive: time.Date(2026, 5, 30, 8, 0, 0, 0, time.UTC)}

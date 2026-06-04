@@ -181,6 +181,7 @@ export function createEntityEditors(deps: {
     state.draft.roleToolAddSelected = []
     state.draft.roleToolMenuName = ''
     state.draft.roleToolPermissionName = ''
+    state.draft.roleNativeToolAddOpen = false
 
     const p = sa.getProvider(fallbackPid)
     const cachedItems = Array.isArray(p?.modelsCache?.items) ? p.modelsCache.items : []
@@ -219,6 +220,7 @@ export function createEntityEditors(deps: {
     state.draft.roleToolAddSelected = []
     state.draft.roleToolMenuName = ''
     state.draft.roleToolPermissionName = ''
+    state.draft.roleNativeToolAddOpen = false
     const curModelId = String(role.modelRef?.modelId || '').trim()
 
     const p = sa.getProvider(state.draft.roleProviderId)

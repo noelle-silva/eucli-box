@@ -13,7 +13,7 @@ func (s *system) callModel(ctx context.Context, record *runRecord, roleContext t
 	if err != nil {
 		return types.ModelResponse{}, err
 	}
-	request := types.ModelRequest{Coordinate: roleContext.ModelConfig.Coordinate, Temperature: roleContext.ModelConfig.Temperature, Messages: messages, Tools: roleContext.Tools, Stream: record.stream}
+	request := types.ModelRequest{Coordinate: roleContext.ModelConfig.Coordinate, Temperature: roleContext.ModelConfig.Temperature, Messages: messages, Tools: roleContext.NativeTools, Stream: record.stream}
 	if record.stream {
 		return s.callModelStream(ctx, record, request)
 	}
@@ -69,13 +69,6 @@ func streamContentDelta(previous string, current string) string {
 func (s *system) modelMessages(ctx context.Context, roleContext types.RoleContext) ([]types.PromptMessage, error) {
 	messages := make([]types.PromptMessage, 0, len(roleContext.Prompts)+len(roleContext.Messages))
 	messages = append(messages, roleContext.Prompts...)
-	toolInstructions, err := s.tools.TextToolInstructions(ctx, roleContext.Tools)
-	if err != nil {
-		return nil, runtimeToolFailed("failed to build text tool instructions", err)
-	}
-	if strings.TrimSpace(toolInstructions.Content) != "" {
-		messages = append(messages, toolInstructions)
-	}
 	for index, message := range roleContext.Messages {
 		prompt, err := s.runtimeMessageToPrompt(ctx, message, index)
 		if err != nil {

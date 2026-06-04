@@ -11,7 +11,7 @@ import (
 )
 
 func (s *system) LoadMermaidFixConfig(ctx context.Context) (types.MermaidFixConfig, error) {
-	return loadAssistConfig(ctx, s.paths.mermaidFixConfigFile(), defaultMermaidFixConfig(), normalizeMermaidFixConfig)
+	return loadMetaConfig(ctx, s.paths.mermaidFixConfigFile(), defaultMermaidFixConfig(), normalizeMermaidFixConfig)
 }
 
 func (s *system) SaveMermaidFixConfig(ctx context.Context, config types.MermaidFixConfig) (types.MermaidFixConfig, error) {
@@ -24,7 +24,7 @@ func (s *system) SaveMermaidFixConfig(ctx context.Context, config types.MermaidF
 }
 
 func (s *system) LoadChatTitleNamingConfig(ctx context.Context) (types.ChatTitleNamingConfig, error) {
-	return loadAssistConfig(ctx, s.paths.chatTitleNamingConfigFile(), defaultChatTitleNamingConfig(), normalizeChatTitleNamingConfig)
+	return loadMetaConfig(ctx, s.paths.chatTitleNamingConfigFile(), defaultChatTitleNamingConfig(), normalizeChatTitleNamingConfig)
 }
 
 func (s *system) SaveChatTitleNamingConfig(ctx context.Context, config types.ChatTitleNamingConfig) (types.ChatTitleNamingConfig, error) {
@@ -36,7 +36,7 @@ func (s *system) SaveChatTitleNamingConfig(ctx context.Context, config types.Cha
 	return config, nil
 }
 
-func loadAssistConfig[T any](ctx context.Context, target string, fallback T, normalize func(T) T) (T, error) {
+func loadMetaConfig[T any](ctx context.Context, target string, fallback T, normalize func(T) T) (T, error) {
 	if !dataFileExists(target) {
 		return normalize(fallback), nil
 	}

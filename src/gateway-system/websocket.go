@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/gorilla/websocket"
 
@@ -19,6 +20,7 @@ func (s *system) handleEventsWebSocket(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
+	clearWebSocketDeadlines(conn)
 	s.addConnection(conn)
 	defer func() {
 		s.removeConnection(conn)
@@ -45,6 +47,11 @@ func (s *system) handleEventsWebSocket(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+func clearWebSocketDeadlines(conn *websocket.Conn) {
+	_ = conn.SetReadDeadline(time.Time{})
+	_ = conn.SetWriteDeadline(time.Time{})
 }
 
 func (s *system) addConnection(conn *websocket.Conn) {

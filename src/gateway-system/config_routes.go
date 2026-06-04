@@ -159,6 +159,29 @@ func (s *system) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 	writeNoContent(w)
 }
 
+func (s *system) handleLoadModelRequestConfig(w http.ResponseWriter, r *http.Request) {
+	config, err := s.providers.LoadModelRequestConfig(r.Context())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, config)
+}
+
+func (s *system) handleSaveModelRequestConfig(w http.ResponseWriter, r *http.Request) {
+	config, err := decodeJSON[types.ModelRequestConfig](r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	saved, err := s.providers.SaveModelRequestConfig(r.Context(), config)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, saved)
+}
+
 func (s *system) handleRefreshProviderModels(w http.ResponseWriter, r *http.Request) {
 	providerID, err := pathValue(r, "providerID")
 	if err != nil {

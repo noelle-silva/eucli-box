@@ -72,14 +72,29 @@ func validateToolPolicy(policy types.ToolPolicy) error {
 			return roleInvalid("tool policy tool has no run mode configured", nil)
 		}
 	}
+	nativeSeen := map[string]struct{}{}
+	for _, tool := range policy.NativeTools {
+		tool = strings.TrimSpace(tool)
+		if tool == "" {
+			return roleInvalid("tool policy contains empty native tool name", nil)
+		}
+		if _, ok := nativeSeen[tool]; ok {
+			return roleInvalid("tool policy contains duplicate native tool name", nil)
+		}
+		if _, ok := tools[tool]; !ok {
+			return roleInvalid("tool policy native tool references a tool not in the whitelist", nil)
+		}
+		nativeSeen[tool] = struct{}{}
+	}
 	return nil
 }
 
 func cloneToolPolicy(policy types.ToolPolicy) types.ToolPolicy {
 	tools := slices.Clone(policy.Tools)
+	nativeTools := slices.Clone(policy.NativeTools)
 	runModes := make(map[string]types.ToolRunMode, len(policy.RunModes))
 	for key, value := range policy.RunModes {
 		runModes[key] = value
 	}
-	return types.ToolPolicy{Tools: tools, RunModes: runModes}
+	return types.ToolPolicy{Tools: tools, NativeTools: nativeTools, RunModes: runModes}
 }

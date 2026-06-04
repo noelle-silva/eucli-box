@@ -34,7 +34,14 @@ func (s *system) Complete(ctx context.Context, request types.ModelRequest) (type
 		_ = s.storage.SaveCallRecord(ctx, record)
 		return types.ModelResponse{}, err
 	}
-	httpReq, err := adapter.BuildCompleteRequest(provider, request, int64(s.config.RequestTimeout))
+	requestConfig, err := s.modelRequestConfig(ctx)
+	if err != nil {
+		record.Success = false
+		record.ErrorCode = errCode(err)
+		_ = s.storage.SaveCallRecord(ctx, record)
+		return types.ModelResponse{}, err
+	}
+	httpReq, err := adapter.BuildCompleteRequest(provider, request, int64(timeoutFromMs(requestConfig.CompletionTimeoutMs)))
 	if err != nil {
 		record.Success = false
 		record.ErrorCode = errCode(err)
@@ -78,7 +85,14 @@ func (s *system) CompleteStream(ctx context.Context, request types.ModelRequest,
 		_ = s.storage.SaveCallRecord(ctx, record)
 		return types.ModelResponse{}, err
 	}
-	httpReq, err := adapter.BuildCompleteRequest(provider, request, int64(s.config.RequestTimeout))
+	requestConfig, err := s.modelRequestConfig(ctx)
+	if err != nil {
+		record.Success = false
+		record.ErrorCode = errCode(err)
+		_ = s.storage.SaveCallRecord(ctx, record)
+		return types.ModelResponse{}, err
+	}
+	httpReq, err := adapter.BuildCompleteRequest(provider, request, int64(timeoutFromMs(requestConfig.StreamIdleTimeoutMs)))
 	if err != nil {
 		record.Success = false
 		record.ErrorCode = errCode(err)

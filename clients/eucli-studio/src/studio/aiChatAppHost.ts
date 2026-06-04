@@ -3,7 +3,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createAiChatControllerV2 } from '../controller/createControllerV2'
 import type { AiChatController } from '../controller/types'
 import { createDirectCapabilitiesAdapter } from '../direct/createDirectCapabilitiesAdapter'
-import { createAiChatCapabilitiesFromHostApi } from '../gateway/capabilities'
+import { createAiChatCapabilitiesFromHostApi, type AiChatShowToast } from '../gateway/capabilities'
 import { AI_CHAT_DIRECT_PROTOCOL_VERSION } from '../protocol/aiChatProtocol'
 import { AI_STUDIO_APP_ID, AI_STUDIO_CONTROLLER_KEY } from '../runtime/aiStudioGlobals'
 
@@ -31,7 +31,7 @@ export type EucliBoxConfigInput = {
 }
 
 export type AiChatAppHostOptions = {
-  showToast: (message: unknown) => void
+  showToast: AiChatShowToast
   onBack: () => Promise<void> | void
 }
 

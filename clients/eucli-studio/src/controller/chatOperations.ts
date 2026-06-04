@@ -25,6 +25,7 @@ import { createStateAccessors } from '../state/stateAccessors'
 import { hasActiveAssistantMessages } from '../domain/chatRunState'
 import type { ChatSaveIntent } from '../domain/chatSaveIntent'
 import { deleteAssistantMessageBlock, editAssistantMessageBlock } from '../domain/assistantMessageBlockMutations'
+import type { AiChatShowToast } from '../gateway/capabilities'
 import { cancelRoleRun, getRunState, isTerminalRunStatus, runStateFailureError, sleepMs, startRoleRun, type EbRunState } from './ebRoleRun'
 import { deleteRoleSessionMessage, deleteRoleSessionMessageSubtree, updateRoleSessionMessage } from './ebRoleSession'
 
@@ -32,7 +33,7 @@ export function createChatOperations(deps: {
   getState: () => any
   pickImageFiles?: (maxCount: number) => Promise<any[]>
   netRequest?: (req: any) => Promise<any>
-  showToast?: (msg: any) => void
+  showToast?: AiChatShowToast
   save: (intent?: ChatSaveIntent) => Promise<void>
   ensureActiveChatLoaded?: () => Promise<any>
   ensureChatLoaded?: (kind: 'role' | 'group', targetId: string, chatId: string) => Promise<any>
@@ -170,7 +171,7 @@ export function createChatOperations(deps: {
     const role = sa.activeRole()
     const chat = await ensureActiveChatLoaded?.().catch(() => null) || sa.activeChatFromData()
     if (chatHasPendingAssistant(chat)) {
-      showToast?.(`该会话正在生成中，无法${operationText}`)
+      showToast?.(`该会话正在生成中，无法${operationText}`, { kind: 'error' })
       return null
     }
     const roleId = String(role?.id || '').trim()
@@ -197,8 +198,8 @@ export function createChatOperations(deps: {
       return true
     } catch (e) {
       const msg = String((e as any)?.message || e || `${operationText}失败`)
-      if ((state.sendingCtx as any)?.cancelledByUser) showToast?.('已停止')
-      else showToast?.(msg)
+      if ((state.sendingCtx as any)?.cancelledByUser) showToast?.('已停止', { kind: 'success' })
+      else showToast?.(msg, { kind: 'error' })
       return false
     } finally {
       state.sendingCtx = null
@@ -210,13 +211,13 @@ export function createChatOperations(deps: {
 
   async function activeRoleSessionMutationTarget(operationText: string) {
     if (sa.activeTargetKind() === 'group') {
-      showToast?.(`群组消息${operationText}尚未接入 e-b 真实会话消息根动作，已阻止本地假修改`)
+      showToast?.(`群组消息${operationText}尚未接入 e-b 真实会话消息根动作，已阻止本地假修改`, { kind: 'error' })
       return null
     }
     const role = sa.activeRole()
     const chat = await ensureActiveChatLoaded?.().catch(() => null) || sa.activeChatFromData()
     if (chatHasPendingAssistant(chat)) {
-      showToast?.(`该会话正在生成中，无法${operationText}`)
+      showToast?.(`该会话正在生成中，无法${operationText}`, { kind: 'error' })
       return null
     }
     const roleId = String(role?.id || '').trim()
@@ -229,7 +230,7 @@ export function createChatOperations(deps: {
     const state = getState()
     if (state.loading || !state.data) return false
     if (state.sending) {
-      showToast?.('操作中，请稍后重试')
+      showToast?.('操作中，请稍后重试', { kind: 'error' })
       return false
     }
     const target = await activeRoleSessionMutationTarget(operationText)
@@ -238,7 +239,7 @@ export function createChatOperations(deps: {
     const messages = Array.isArray(target.chat?.messages) ? target.chat.messages : []
     const message = messages.find((item: any) => String(item?.id || '').trim() === mid) || null
     if (!message) {
-      showToast?.('消息不存在')
+      showToast?.('消息不存在', { kind: 'error' })
       return false
     }
     const messageIndex = messages.indexOf(message)
@@ -246,13 +247,13 @@ export function createChatOperations(deps: {
     const beforeChatUpdatedAt = target.chat.updatedAt
     const result = mutate(message)
     if (!result.ok) {
-      showToast?.(result.error)
+      showToast?.(result.error, { kind: 'error' })
       return false
     }
     message.updatedAt = now()
     target.chat.updatedAt = message.updatedAt
     if (typeof netRequest !== 'function') {
-      showToast?.('e-b 请求通道不可用')
+      showToast?.('e-b 请求通道不可用', { kind: 'error' })
       if (messageIndex >= 0) messages[messageIndex] = beforeMessage
       target.chat.updatedAt = beforeChatUpdatedAt
       render()
@@ -263,7 +264,7 @@ export function createChatOperations(deps: {
     } catch (e: any) {
       if (messageIndex >= 0) messages[messageIndex] = beforeMessage
       target.chat.updatedAt = beforeChatUpdatedAt
-      showToast?.(String(e?.message || e || `消息块${operationText}失败`))
+      showToast?.(String(e?.message || e || `消息块${operationText}失败`), { kind: 'error' })
       render()
       return false
     }
@@ -287,10 +288,10 @@ export function createChatOperations(deps: {
   async function pickDraftImages() {
     const state = getState()
     if (state.loading) return
-    if (typeof pickImageFiles !== 'function') return showToast?.('未授权：files.pickImages')
+    if (typeof pickImageFiles !== 'function') return showToast?.('未授权：files.pickImages', { kind: 'error' })
 
     const left = Math.max(0, MAX_DRAFT_IMAGES - (Array.isArray(state.draft.images) ? state.draft.images.length : 0))
-    if (!left) return showToast?.(`最多选择 ${MAX_DRAFT_IMAGES} 张图片`)
+    if (!left) return showToast?.(`最多选择 ${MAX_DRAFT_IMAGES} 张图片`, { kind: 'error' })
 
     try {
       const items = await pickImageFiles(left)
@@ -301,9 +302,9 @@ export function createChatOperations(deps: {
         const dataUrl = String(it?.dataUrl || '')
         if (addDraftImage(name, dataUrl)) added++
       }
-      if (!added) showToast?.('未选择图片')
+      if (!added) showToast?.('未选择图片', { kind: 'error' })
     } catch (e) {
-      showToast?.(String((e as any)?.message || e || '选择图片失败'))
+      showToast?.(String((e as any)?.message || e || '选择图片失败'), { kind: 'error' })
     } finally {
       renderComposer()
     }
@@ -316,11 +317,11 @@ export function createChatOperations(deps: {
     const list = Array.isArray(files)
       ? files.filter((f) => f instanceof File && String(f.type || '').startsWith('image/'))
       : []
-    if (!list.length) return showToast?.('未识别到图片')
+    if (!list.length) return showToast?.('未识别到图片', { kind: 'error' })
 
     if (!Array.isArray(state.draft.images)) state.draft.images = []
     const left = Math.max(0, MAX_DRAFT_IMAGES - state.draft.images.length)
-    if (!left) return showToast?.(`最多选择 ${MAX_DRAFT_IMAGES} 张图片`)
+    if (!left) return showToast?.(`最多选择 ${MAX_DRAFT_IMAGES} 张图片`, { kind: 'error' })
 
     let added = 0
     for (const f of list.slice(0, left)) {
@@ -330,7 +331,7 @@ export function createChatOperations(deps: {
       } catch (_) {}
     }
 
-    if (!added) showToast?.('未识别到图片')
+    if (!added) showToast?.('未识别到图片', { kind: 'error' })
     renderComposer()
   }
 
@@ -344,13 +345,13 @@ export function createChatOperations(deps: {
     if (!Array.isArray(state.draft.files)) state.draft.files = []
 
     const left = Math.max(0, MAX_DRAFT_FILES - state.draft.files.length)
-    if (!left) return showToast?.(`最多选择 ${MAX_DRAFT_FILES} 个文件`)
+    if (!left) return showToast?.(`最多选择 ${MAX_DRAFT_FILES} 个文件`, { kind: 'error' })
 
     let added = 0
     for (const f of list.slice(0, left)) {
       const kind = detectDraftFileKind(f)
       if (!kind) {
-        showToast?.(`不支持的文件：${String(f?.name || '文件')}`)
+        showToast?.(`不支持的文件：${String(f?.name || '文件')}`, { kind: 'error' })
         continue
       }
       const it = addDraftFilePlaceholder(state.draft.files, f, kind)
@@ -375,7 +376,7 @@ export function createChatOperations(deps: {
         }
       })().catch(() => {})
     }
-    if (!added) showToast?.('未选择文件')
+    if (!added) showToast?.('未选择文件', { kind: 'error' })
     emit()
   }
 
@@ -434,12 +435,12 @@ export function createChatOperations(deps: {
     const draftImages = Array.isArray(state.draft.images) ? state.draft.images : []
     const draftFiles: DraftFileItem[] = Array.isArray((state.draft as any).files) ? ((state.draft as any).files as any[]) : []
     const hasFiles = draftFiles.length > 0
-    if (!input && !draftImages.length && !hasFiles) return showToast?.('输入不能为空')
+    if (!input && !draftImages.length && !hasFiles) return showToast?.('输入不能为空', { kind: 'error' })
     let attachments: any[] = []
     try {
       attachments = buildRunAttachments(draftImages, draftFiles)
     } catch (e) {
-      return showToast?.(String((e as any)?.message || e || '附件无效'))
+      return showToast?.(String((e as any)?.message || e || '附件无效'), { kind: 'error' })
     }
 
     const rid = String(role.id || '')
@@ -448,7 +449,7 @@ export function createChatOperations(deps: {
     const loadedChat = await ensureActiveChatLoaded?.().catch(() => null)
     const chatForModel = loadedChat || currentChatBeforeLoad || sa.activeChatFromData()
     if (normalizeChatModelOverride(chatForModel)) {
-      return showToast?.('当前会话临时模型尚未接入 e-b 真实根动作，请先清除当前会话临时模型')
+      return showToast?.('当前会话临时模型尚未接入 e-b 真实根动作，请先清除当前会话临时模型', { kind: 'error' })
     }
 
     const chat = loadedChat || currentChatBeforeLoad || sa.activeChatFromData()
@@ -469,8 +470,8 @@ export function createChatOperations(deps: {
       }, { previousMessageIds, ancestorMessageId: parentMessageId })
     } catch (e) {
       const msg = String((e as any)?.message || e || '请求失败')
-      if ((state.sendingCtx as any)?.cancelledByUser) showToast?.('已停止')
-      else showToast?.(msg)
+      if ((state.sendingCtx as any)?.cancelledByUser) showToast?.('已停止', { kind: 'success' })
+      else showToast?.(msg, { kind: 'error' })
     } finally {
       state.sendingCtx = null
       state.sending = false
@@ -484,7 +485,7 @@ export function createChatOperations(deps: {
     const state = getState()
     if (state.sending || state.loading || !state.data) return
 
-    return showToast?.('群组发送尚未接入 e-b 真实会话根动作，已阻止本地假会话发送')
+    return showToast?.('群组发送尚未接入 e-b 真实会话根动作，已阻止本地假会话发送', { kind: 'error' })
   }
 
   // ============ stop sending ============
@@ -496,19 +497,19 @@ export function createChatOperations(deps: {
     const sendingCtx = state.sendingCtx && typeof state.sendingCtx === 'object' ? state.sendingCtx : null
     if (sendingCtx && String(sendingCtx.kind || '') === 'eb-role-run') {
       const runId = String(sendingCtx.runId || '').trim()
-      if (!runId) return showToast?.('当前运行尚未拿到 e-b run id，请稍候再试')
-      if (typeof netRequest !== 'function') return showToast?.('e-b 请求通道不可用')
+      if (!runId) return showToast?.('当前运行尚未拿到 e-b run id，请稍候再试', { kind: 'error' })
+      if (typeof netRequest !== 'function') return showToast?.('e-b 请求通道不可用', { kind: 'error' })
       try {
         sendingCtx.cancelledByUser = true
         await cancelRoleRun(netRequest, runId)
-        showToast?.('已请求停止')
+        showToast?.('已请求停止', { kind: 'success' })
         renderComposer()
       } catch (e) {
-        showToast?.(String((e as any)?.message || e || '停止失败'))
+        showToast?.(String((e as any)?.message || e || '停止失败'), { kind: 'error' })
       }
       return
     }
-    showToast?.('当前没有可停止的 e-b 真实运行')
+    showToast?.('当前没有可停止的 e-b 真实运行', { kind: 'error' })
   }
 
   // ============ regenerate assistant message ============
@@ -525,10 +526,10 @@ export function createChatOperations(deps: {
     const mid = String(assistantMid || '').trim()
     if (!target || !mid) return false
     const assistant = findChatMessageById(target.chat, mid)
-    if (!assistant || String((assistant as any).role || '') !== 'assistant') return showToast?.('只能重新生成 AI 消息')
+    if (!assistant || String((assistant as any).role || '') !== 'assistant') return showToast?.('只能重新生成 AI 消息', { kind: 'error' })
     const userMessageId = String((assistant as any).parentMid || '').trim()
     const userMessage = userMessageId ? findChatMessageById(target.chat, userMessageId) : null
-    if (!userMessage || String((userMessage as any).role || '') !== 'user') return showToast?.('未找到对应的用户消息')
+    if (!userMessage || String((userMessage as any).role || '') !== 'user') return showToast?.('未找到对应的用户消息', { kind: 'error' })
     return runRoleFromUserMessage({ roleId: target.roleId, sessionId: target.sessionId, userMessageId }, '重新回复')
   }
 
@@ -537,7 +538,7 @@ export function createChatOperations(deps: {
   async function regenerateGroupAssistantMessage(assistantMid: string) {
     const state = getState()
     if (state.sending || state.loading || !state.data) return
-    showToast?.('群组重生成尚未接入 e-b 真实会话根动作，已阻止本地假运行')
+    showToast?.('群组重生成尚未接入 e-b 真实会话根动作，已阻止本地假运行', { kind: 'error' })
   }
 
   // ============ reply from user message ============
@@ -554,7 +555,7 @@ export function createChatOperations(deps: {
     const userMessageId = String(userMid || '').trim()
     if (!target || !userMessageId) return false
     const userMessage = findChatMessageById(target.chat, userMessageId)
-    if (!userMessage || String((userMessage as any).role || '') !== 'user') return showToast?.('只能从用户消息继续回复')
+    if (!userMessage || String((userMessage as any).role || '') !== 'user') return showToast?.('只能从用户消息继续回复', { kind: 'error' })
     return runRoleFromUserMessage({ roleId: target.roleId, sessionId: target.sessionId, userMessageId }, '继续回复')
   }
 
@@ -563,7 +564,7 @@ export function createChatOperations(deps: {
   async function replyFromUserMessageInGroup(userMid: string) {
     const state = getState()
     if (state.sending || state.loading || !state.data) return
-    showToast?.('群组从用户消息继续回复尚未接入 e-b 真实会话根动作，已阻止本地假运行')
+    showToast?.('群组从用户消息继续回复尚未接入 e-b 真实会话根动作，已阻止本地假运行', { kind: 'error' })
   }
 
   // ============ create parallel branch from assistant message ============
@@ -584,12 +585,12 @@ export function createChatOperations(deps: {
 
     const msgs = Array.isArray(chat.messages) ? chat.messages : []
     const target = msgs.find((m: any) => String(m?.id || '') === mid) || null
-    if (!target || target.role !== 'assistant') return showToast?.('只能从 AI 消息新建分支')
-    if (hasActiveAssistantMessages({ messages: [target] })) return showToast?.('该消息正在生成中')
+    if (!target || target.role !== 'assistant') return showToast?.('只能从 AI 消息新建分支', { kind: 'error' })
+    if (hasActiveAssistantMessages({ messages: [target] })) return showToast?.('该消息正在生成中', { kind: 'error' })
 
     const userMid0 = String((target as any)?.parentMid || '').trim()
     const userMsg = userMid0 ? msgs.find((m: any) => String(m?.id || '') === userMid0) || null : null
-    if (!userMsg || userMsg.role !== 'user') return showToast?.('未找到对应的用户消息')
+    if (!userMsg || userMsg.role !== 'user') return showToast?.('未找到对应的用户消息', { kind: 'error' })
 
     let prevAiMid = ''
     const p0 = String((userMsg as any)?.parentMid || '').trim()
@@ -608,7 +609,7 @@ export function createChatOperations(deps: {
       }
     }
 
-    if (!prevAiMid) return showToast?.('未找到上一条 AI 消息，无法新建分支')
+    if (!prevAiMid) return showToast?.('未找到上一条 AI 消息，无法新建分支', { kind: 'error' })
 
     state.branchDraft = {
       roleId: String(role.id || ''),
@@ -747,18 +748,18 @@ export function createChatOperations(deps: {
   async function deleteMessage(messageId: any) {
     const state = getState()
     if (state.loading || !state.data) return
-    if (state.sending) return showToast?.('操作中，请稍后重试')
+    if (state.sending) return showToast?.('操作中，请稍后重试', { kind: 'error' })
     const target = await activeRoleSessionMutationTarget('删除')
     const mid = String(messageId || '').trim()
     if (!target || !mid) return false
-    if (typeof netRequest !== 'function') { showToast?.('e-b 请求通道不可用'); return false }
+    if (typeof netRequest !== 'function') { showToast?.('e-b 请求通道不可用', { kind: 'error' }); return false }
     try {
       await deleteRoleSessionMessage(netRequest, { roleId: target.roleId, sessionId: target.sessionId, messageId: mid })
       await refreshRoleSession(target.roleId, target.sessionId)
       render()
       return true
     } catch (e: any) {
-      showToast?.(String(e?.message || e || '消息删除失败'))
+      showToast?.(String(e?.message || e || '消息删除失败'), { kind: 'error' })
       render()
       return false
     }
@@ -769,18 +770,18 @@ export function createChatOperations(deps: {
   async function deleteMessageSubtree(messageId: any) {
     const state = getState()
     if (state.loading || !state.data) return
-    if (state.sending) return showToast?.('操作中，请稍后重试')
+    if (state.sending) return showToast?.('操作中，请稍后重试', { kind: 'error' })
     const target = await activeRoleSessionMutationTarget('删除')
     const mid = String(messageId || '').trim()
     if (!target || !mid) return false
-    if (typeof netRequest !== 'function') { showToast?.('e-b 请求通道不可用'); return false }
+    if (typeof netRequest !== 'function') { showToast?.('e-b 请求通道不可用', { kind: 'error' }); return false }
     try {
       await deleteRoleSessionMessageSubtree(netRequest, { roleId: target.roleId, sessionId: target.sessionId, messageId: mid })
       await refreshRoleSession(target.roleId, target.sessionId)
       render()
       return true
     } catch (e: any) {
-      showToast?.(String(e?.message || e || '消息删除失败'))
+      showToast?.(String(e?.message || e || '消息删除失败'), { kind: 'error' })
       render()
       return false
     }

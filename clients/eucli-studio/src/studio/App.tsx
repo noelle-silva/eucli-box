@@ -5,6 +5,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { AiChatApp } from '../ui/App'
 import { StandaloneWindowControls, type WindowControlActions } from '../ui/components/StandaloneWindowControls'
 import type { AiChatController } from '../controller/types'
+import type { AiChatToastKind, AiChatToastOptions } from '../gateway/capabilities'
 import { AI_STUDIO_CHAT_ROOT_ID } from '../runtime/aiStudioGlobals'
 import { createAiChatAppRuntime, type AiChatAppRuntime, type EucliBoxConfig } from './aiChatAppHost'
 
@@ -20,6 +21,7 @@ type BootStatus = 'booting' | 'ready' | 'error'
 type ToastMessage = {
   id: number
   text: string
+  kind: AiChatToastKind
 }
 
 type FwLaunchInfo = {
@@ -83,10 +85,11 @@ export function App() {
   const mountedRef = React.useRef(false)
   const toastSeqRef = React.useRef(0)
 
-  const showToast = React.useCallback((message: unknown) => {
+  const showToast = React.useCallback((message: unknown, options?: AiChatToastOptions) => {
     const text = String((message as any)?.message || message || '').trim()
     if (!text) return
-    setToast({ id: ++toastSeqRef.current, text })
+    const kind = options?.kind === 'success' || options?.kind === 'error' ? options.kind : 'info'
+    setToast({ id: ++toastSeqRef.current, text, kind })
   }, [])
 
   const refreshDataDirStatus = React.useCallback(async (isCancelled: () => boolean = () => false) => {
@@ -155,15 +158,15 @@ export function App() {
 
     if (command === 'open-studio') return
     if (command === 'new-chat') {
-      Promise.resolve(controller.actions.createChat?.()).catch(error => showToast(error))
+      Promise.resolve(controller.actions.createChat?.()).catch(error => showToast(error, { kind: 'error' }))
       return
     }
     if (command === 'provider-settings' || command === 'open-settings') {
-      Promise.resolve(controller.actions.openProviders?.()).catch(error => showToast(error))
+      Promise.resolve(controller.actions.openProviders?.()).catch(error => showToast(error, { kind: 'error' }))
       return
     }
 
-    showToast(`未知命令：${command}`)
+    showToast(`未知命令：${command}`, { kind: 'error' })
   }, [bootStatus, controller, pendingCommand, showToast])
 
   React.useEffect(() => {
@@ -248,7 +251,7 @@ export function App() {
     const eucliBoxUrl = eucliBoxUrlDraft.trim().replace(/\/+$/, '')
     const eucliBoxKey = eucliBoxKeyDraft.trim()
     if (!eucliBoxUrl) {
-      showToast('请填写 eucli-box 地址')
+      showToast('请填写 eucli-box 地址', { kind: 'error' })
       return
     }
     try {
@@ -257,10 +260,10 @@ export function App() {
       setEucliBoxConfig(config)
       setEucliBoxUrlDraft(config.eucliBoxUrl || eucliBoxUrl)
       setEucliBoxKeyDraft(config.eucliBoxKey || '')
-      showToast('eucli-box 连接配置已保存')
+      showToast('eucli-box 连接配置已保存', { kind: 'success' })
       await connectMountedBackend()
     } catch (error: any) {
-      showToast(String(error?.message || error || '保存 eucli-box 连接配置失败'))
+      showToast(String(error?.message || error || '保存 eucli-box 连接配置失败'), { kind: 'error' })
     } finally {
       if (mountedRef.current) setEucliBoxConfigBusy(false)
     }
@@ -314,7 +317,7 @@ export function App() {
           onPickDataDir={pickDataDir}
         />
       )}
-      {toast ? <div className="toast" role="status" aria-live="polite">{toast.text}</div> : null}
+      {toast ? <div className="toast" data-kind={toast.kind} role={toast.kind === 'error' ? 'alert' : 'status'} aria-live={toast.kind === 'error' ? 'assertive' : 'polite'}>{toast.text}</div> : null}
     </div>
   )
 }

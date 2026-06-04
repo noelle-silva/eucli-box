@@ -169,7 +169,7 @@ export function createMermaidSupport(opts: { mermaidInited: BoolRef; mermaidSvgC
         const writeImage = capabilities.clipboard?.writeImage
         if (typeof writeImage !== 'function') {
           setMermaidImageCopyBtnState(btn, 'fail')
-          capabilities.ui.showToast?.('未授权：clipboard.writeImage')
+          capabilities.ui.showToast?.('未授权：clipboard.writeImage', { kind: 'error' })
           resetMermaidCopyButton(btn, () => setMermaidImageCopyBtnState(btn, 'copy'))
           return
         }
@@ -179,11 +179,11 @@ export function createMermaidSupport(opts: { mermaidInited: BoolRef; mermaidSvgC
           .then((dataUrl) => writeImage(dataUrl))
           .then(() => {
             setMermaidImageCopyBtnState(btn, 'ok')
-            capabilities.ui.showToast?.('已复制 Mermaid 图片')
+            capabilities.ui.showToast?.('已复制 Mermaid 图片', { kind: 'success' })
           })
           .catch((err) => {
             setMermaidImageCopyBtnState(btn, 'fail')
-            capabilities.ui.showToast?.(`复制图片失败：${String(err?.message || err || '未知错误')}`)
+            capabilities.ui.showToast?.(`复制图片失败：${String(err?.message || err || '未知错误')}`, { kind: 'error' })
           })
           .finally(() => {
             resetMermaidCopyButton(btn, () => setMermaidImageCopyBtnState(btn, 'copy'))
@@ -198,7 +198,7 @@ export function createMermaidSupport(opts: { mermaidInited: BoolRef; mermaidSvgC
       copyTextToClipboard(text)
         .then((ok) => {
           setMermaidSourceCopyBtnState(btn, ok ? 'ok' : 'fail')
-          if (ok) capabilities.ui.showToast?.('已复制 Mermaid 源码')
+          if (ok) capabilities.ui.showToast?.('已复制 Mermaid 源码', { kind: 'success' })
         })
         .catch(() => {
           setMermaidSourceCopyBtnState(btn, 'fail')
@@ -231,7 +231,7 @@ export function createMermaidSupport(opts: { mermaidInited: BoolRef; mermaidSvgC
       const controller = (window as any)[AI_STUDIO_CONTROLLER_KEY]
       const fn = controller?.actions?.aiFixMermaid
       if (typeof fn !== 'function') {
-        capabilities.ui.showToast?.('未找到 aiFixMermaid 接口（请更新 AI Studio）')
+        capabilities.ui.showToast?.('未找到 aiFixMermaid 接口（请更新 AI Studio）', { kind: 'error' })
           return
       }
 
@@ -249,7 +249,7 @@ export function createMermaidSupport(opts: { mermaidInited: BoolRef; mermaidSvgC
           } catch (_) {}
 
           setMermaidFixBtnState(btn, 'ok')
-          capabilities.ui.showToast?.('Mermaid 已替换')
+          capabilities.ui.showToast?.('Mermaid 已替换', { kind: 'success' })
 
           try {
             if (midEl instanceof HTMLElement && messageId) {
@@ -262,7 +262,7 @@ export function createMermaidSupport(opts: { mermaidInited: BoolRef; mermaidSvgC
         })
         .catch((err) => {
           setMermaidFixBtnState(btn, 'fail')
-          capabilities.ui.showToast?.(String(err?.message || err || 'AI 修复失败'))
+          capabilities.ui.showToast?.(String(err?.message || err || 'AI 修复失败'), { kind: 'error' })
         })
         .finally(() => {
           window.setTimeout(() => {

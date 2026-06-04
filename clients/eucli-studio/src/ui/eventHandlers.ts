@@ -4,13 +4,14 @@
 
 import { clamp } from '../core/utils'
 import { VIEWER_ZOOM_MIN, MERMAID_VIEWER_ZOOM_MAX } from '../core/viewerZoom'
+import type { AiChatShowToast } from '../gateway/capabilities'
 
 export function createEventHandlers(deps: {
   getState: () => any
   actions: Record<string, any>
   emit: () => void
   render: () => void
-  showToast?: (msg: any) => void
+  showToast?: AiChatShowToast
   clipboard?: { writeText?: (text: string) => Promise<void>; writeImage?: (...args: any[]) => void; readText?: () => Promise<string> }
 }) {
   let mermaidDrag: any = null
@@ -192,8 +193,8 @@ export function createEventHandlers(deps: {
       const m = chat?.messages?.find((x: any) => String(x?.id) === id)
       if (!m) return
       deps.clipboard?.writeText?.(String(m.content || '')).then(
-        () => deps.showToast?.('已复制'),
-        () => deps.showToast?.('复制失败'),
+        () => deps.showToast?.('已复制', { kind: 'success' }),
+        () => deps.showToast?.('复制失败', { kind: 'error' }),
       )
       return
     }

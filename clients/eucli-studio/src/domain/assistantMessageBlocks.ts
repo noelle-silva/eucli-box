@@ -1,3 +1,11 @@
+import {
+  assistantToolPartId,
+  assistantToolParts,
+  isTextProtocolToolPart,
+  planTextProtocolToolRanges,
+  textProtocolToolParts,
+} from './textProtocolTools'
+
 export type AssistantMessageRenderSegment =
   | { type: 'text'; id: string; text: string; start: number; end: number }
   | { type: 'tool'; id: string; part: any; start: number; end: number }
@@ -5,7 +13,7 @@ export type AssistantMessageRenderSegment =
 export type AssistantMessageBlockKind = 'text' | 'tool_invocation' | 'tool_result' | 'diagnostic'
 
 export type AssistantMessageBlock =
-  | { kind: 'text'; id: string; text: string; start: number; end: number }
+  | { kind: 'text'; id: string; text: string; start: number; end: number; parts: any[] }
   | { kind: 'tool_invocation'; id: string; part: any; start?: number; end?: number }
   | { kind: 'tool_result'; id: string; part: any; start?: number; end?: number }
   | { kind: 'diagnostic'; id: string; reason: string; part?: any }
@@ -18,71 +26,10 @@ export type AssistantMessageRenderDiagnostic = {
 
 export type AssistantMessageRenderPlan = {
   segments: AssistantMessageRenderSegment[]
-  trailingToolParts: any[]
   diagnostics: AssistantMessageRenderDiagnostic[]
 }
 
-type IndexedText = {
-  text: string
-  originalIndexByNormalizedIndex: number[]
-}
-
-function normalizeLineEndingsWithIndex(input: string): IndexedText {
-  let text = ''
-  const originalIndexByNormalizedIndex: number[] = []
-
-  for (let i = 0; i < input.length;) {
-    const ch = input[i]
-    if (ch === '\r') {
-      text += '\n'
-      originalIndexByNormalizedIndex.push(i)
-      i += input[i + 1] === '\n' ? 2 : 1
-      continue
-    }
-    text += ch
-    originalIndexByNormalizedIndex.push(i)
-    i++
-  }
-
-  return { text, originalIndexByNormalizedIndex }
-}
-
-function originalEndFromNormalizedEnd(source: string, indexed: IndexedText, normalizedEnd: number) {
-  if (normalizedEnd >= indexed.originalIndexByNormalizedIndex.length) return source.length
-  return indexed.originalIndexByNormalizedIndex[normalizedEnd]
-}
-
-function findToolRawRange(content: string, raw: string, start: number): { start: number; end: number } | null {
-  if (!raw) return null
-
-  const exactStart = content.indexOf(raw, start)
-  if (exactStart >= 0) return { start: exactStart, end: exactStart + raw.length }
-
-  if (!content.includes('\r') && !raw.includes('\r')) return null
-
-  const indexedContent = normalizeLineEndingsWithIndex(content)
-  const indexedRaw = normalizeLineEndingsWithIndex(raw)
-  if (!indexedRaw.text) return null
-
-  let searchFrom = 0
-  for (;;) {
-    const normalizedStart = indexedContent.text.indexOf(indexedRaw.text, searchFrom)
-    if (normalizedStart < 0) return null
-
-    const originalStart = indexedContent.originalIndexByNormalizedIndex[normalizedStart] ?? content.length
-    const originalEnd = originalEndFromNormalizedEnd(content, indexedContent, normalizedStart + indexedRaw.text.length)
-    if (originalStart >= start) return { start: originalStart, end: originalEnd }
-    searchFrom = normalizedStart + Math.max(1, indexedRaw.text.length)
-  }
-}
-
-function assistantToolParts(parts: any[]) {
-  return (Array.isArray(parts) ? parts : []).filter((part: any) => String(part?.type || '') === 'tool')
-}
-
-export function assistantToolPartId(part: any, index = 0) {
-  return String(part?.id || part?.callId || `tool:${index}`)
-}
+export { assistantToolPartId } from './textProtocolTools'
 
 function toolPartDisplay(part: any) {
   return part?.display && typeof part.display === 'object' ? part.display : {}
@@ -110,65 +57,38 @@ function pushToolBlocks(blocks: AssistantMessageBlock[], part: any, opts?: { sta
 
 export function planAssistantMessageRender(contentRaw: unknown, partsRaw: any[]): AssistantMessageRenderPlan {
   const content = String(contentRaw ?? '')
-  const toolParts = assistantToolParts(partsRaw)
   const segments: AssistantMessageRenderSegment[] = []
-  const trailingToolParts: any[] = []
-  const diagnostics: AssistantMessageRenderDiagnostic[] = []
+  const rangePlan = planTextProtocolToolRanges(content, partsRaw)
   let cursor = 0
 
-  toolParts.forEach((part: any, index: number) => {
-    const source = String(part?.source || '').trim()
-    const raw = String(part?.raw || '')
-    const id = assistantToolPartId(part, index)
-
-    if (source !== 'text_protocol') {
-      trailingToolParts.push(part)
-      return
-    }
-
-    if (!raw) {
-      trailingToolParts.push(part)
-      return
-    }
-
-    const range = findToolRawRange(content, raw, cursor)
-    if (!range) {
-      trailingToolParts.push(part)
-      return
-    }
-
-    if (range.start > cursor) {
-      segments.push({ type: 'text', id: `text:${cursor}:${range.start}`, text: content.slice(cursor, range.start), start: cursor, end: range.start })
-    }
-    segments.push({ type: 'tool', id, part, start: range.start, end: range.end })
+  for (const range of rangePlan.ranges) {
+    if (range.start > cursor) segments.push({ type: 'text', id: `text:${cursor}:${range.start}`, text: content.slice(cursor, range.start), start: cursor, end: range.start })
+    segments.push({ type: 'tool', id: range.id, part: range.part, start: range.start, end: range.end })
     cursor = range.end
-  })
+  }
 
   if (cursor < content.length) {
     segments.push({ type: 'text', id: `text:${cursor}:${content.length}`, text: content.slice(cursor), start: cursor, end: content.length })
   }
 
-  return { segments, trailingToolParts, diagnostics }
+  return { segments, diagnostics: rangePlan.diagnostics }
 }
 
 export function planAssistantMessageBlocks(contentRaw: unknown, partsRaw: any[]): AssistantMessageBlock[] {
-  const plan = planAssistantMessageRender(contentRaw, partsRaw)
+  const content = String(contentRaw ?? '')
+  const toolParts = assistantToolParts(partsRaw)
+  const inlineParts = textProtocolToolParts(partsRaw)
   const blocks: AssistantMessageBlock[] = []
 
-  for (const segment of plan.segments) {
-    if (segment.type === 'text') {
-      if (String(segment.text || '').trim()) blocks.push({ kind: 'text', id: segment.id, text: segment.text, start: segment.start, end: segment.end })
-      continue
+  if (content.trim() || inlineParts.length) blocks.push({ kind: 'text', id: `text:0:${content.length}`, text: content, start: 0, end: content.length, parts: inlineParts })
+
+  toolParts.forEach((part: any, index: number) => {
+    if (isTextProtocolToolPart(part)) {
+      if (part?.result && typeof part.result === 'object' && !isToolResultHidden(part)) blocks.push({ kind: 'tool_result', id: `tool-result:${assistantToolPartId(part, index)}`, part })
+      return
     }
-    pushToolBlocks(blocks, segment.part, { start: segment.start, end: segment.end })
-  }
-
-  for (const diagnostic of plan.diagnostics) {
-    blocks.push({ kind: 'diagnostic', id: `diagnostic:${diagnostic.id}`, reason: diagnostic.reason, part: diagnostic.part })
-    pushToolBlocks(blocks, diagnostic.part)
-  }
-
-  plan.trailingToolParts.forEach((part: any, index: number) => pushToolBlocks(blocks, part, { index }))
+    pushToolBlocks(blocks, part, { index })
+  })
 
   return blocks
 }

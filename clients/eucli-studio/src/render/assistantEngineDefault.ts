@@ -10,7 +10,7 @@ import { hydrateStickerSizes } from './stickers'
 import type { BoolRef } from './types'
 import { enhanceMathCopyButtons } from './mathCopy'
 import { planAssistantMessageRender } from './assistantMessagePlan'
-import { renderAssistantToolDiagnosticHtml, renderAssistantToolHtml } from './assistantToolHtml'
+import { renderAssistantToolDiagnosticHtml, renderAssistantToolInvocationHtml } from './assistantToolHtml'
 import type { AiChatCapabilities } from '../gateway/capabilities'
 
 type RenderSafetyPolicy = 'original' | 'baseline' | 'unsafe'
@@ -58,7 +58,7 @@ export function createDefaultAssistantRenderEngine(capabilities: AiChatCapabilit
     return options?.renderSafetyPolicy === 'unsafe' ? 'unsafe' : options?.renderSafetyPolicy === 'baseline' ? 'baseline' : 'original'
   }
 
-  function renderAssistantTextHtml(text: unknown, options?: AssistantRenderOptions) {
+  function renderAssistantTextHtml(text: unknown, options?: AssistantRenderOptions, placeholders?: Map<string, string>) {
     const raw = String(text || '')
     let html = ''
     const renderSafetyPolicy = normalizeRenderSafetyPolicy(options)
@@ -99,6 +99,9 @@ export function createDefaultAssistantRenderEngine(capabilities: AiChatCapabilit
         const sizeAttr = size > 0 ? ` data-fw-sticker-size="${String(size)}"` : ''
         return `<img class="fw-sticker" data-fw-img="1" data-ref-img="${esc(relPath)}"${sizeAttr} src="${REF_IMG_PLACEHOLDER}" alt="${esc(name || 'sticker')}" title="${esc(label)}" />`
       })
+    }
+    if (placeholders?.size) {
+      safe = safe.replace(/<div(?=[^>]*\bclass="fw-tool-placeholder")(?=[^>]*\bdata-fw-tool-placeholder="([A-Za-z0-9_-]+)")[^>]*><\/div>/g, (match: string, token: string) => placeholders.get(token) || match)
     }
 
     return safe
@@ -152,26 +155,23 @@ export function createDefaultAssistantRenderEngine(capabilities: AiChatCapabilit
     const renderSafetyPolicy = normalizeRenderSafetyPolicy(options)
     const plan = planAssistantMessageRender(text, parts)
     const html: string[] = []
+    const placeholders = new Map<string, string>()
 
     for (const segment of plan.segments) {
       if (segment.type === 'text') {
-        const rendered = renderAssistantTextHtml(segment.text, options)
-        if (rendered.trim()) html.push(rendered)
+        html.push(segment.text)
         continue
       }
-      html.push(renderAssistantToolHtml(segment.part))
+      const token = `fwtool-${crypto.randomUUID()}-${placeholders.size}`
+      placeholders.set(token, renderAssistantToolInvocationHtml(segment.part))
+      html.push(`<div class="fw-tool-placeholder" data-fw-tool-placeholder="${token}"></div>`)
     }
 
     for (const diagnostic of plan.diagnostics) {
-      html.push(renderAssistantToolDiagnosticHtml(diagnostic.reason))
-      html.push(renderAssistantToolHtml(diagnostic.part))
+      html.push(`\n\n${renderAssistantToolDiagnosticHtml(diagnostic.reason)}`)
     }
 
-    for (const part of plan.trailingToolParts) {
-      html.push(renderAssistantToolHtml(part))
-    }
-
-    el.innerHTML = html.join('')
+    el.innerHTML = renderAssistantTextHtml(html.join(''), options, placeholders)
     enhanceAssistantDom(el, renderSafetyPolicy)
   }
 

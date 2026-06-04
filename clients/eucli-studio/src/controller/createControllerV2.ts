@@ -83,7 +83,7 @@ import { createFavoritesOperations } from './favoritesOperations'
 import { createEntityEditors } from './entityEditors'
 import { createChatOperations } from './chatOperations'
 import { createPersistence } from './persistence'
-import { createRoleSession, updateRoleSessionTitle } from './ebRoleSession'
+import { updateRoleSessionTitle } from './ebRoleSession'
 import { createEbRunEventConsumer } from './ebRunEvents'
 import { createToolCatalog } from './toolCatalog'
 import { createModelRequestConfigController, defaultModelRequestConfigState } from './modelRequestConfig'
@@ -679,7 +679,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     removeRoleEntity,
     saveProviderEntity,
     removeProviderEntity,
-    createRoleSession: (roleId: string, title?: string) => createRoleSession(capabilities.net?.request || ((() => Promise.resolve({})) as any), { roleId, title }),
     save: saveMeta,
     render,
     closeModal,
@@ -927,8 +926,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       emit()
     },
     setActiveRole: (roleId: any) => {
-      clearPendingChat()
-      clearPendingGroupChat()
       state.branchDraft = null
       ;(state.draft as any).activeTargetKind = 'role'
       state.draft.activeRoleId = String(roleId || '')
@@ -938,8 +935,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       emit()
     },
     setActiveGroup: (groupId: any) => {
-      clearPendingChat()
-      clearPendingGroupChat()
       state.branchDraft = null
       ;(state.draft as any).activeTargetKind = 'group'
       ;(state.draft as any).activeGroupId = String(groupId || '')

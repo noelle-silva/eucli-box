@@ -8,6 +8,7 @@ import { UI_CHAT_UPDATED_NOTICE_KEY } from '../runtime/runtimeKeys'
 import { splitChatKey, splitGroupChatKey } from '../domain/storageKeys'
 import { normalizeStoredChat } from '../storage/normalizeStoredChat'
 import { isStoredChatNewerThanCurrent, mergeChatFromStorage } from '../domain/chatStorageSync'
+import { pendingChatForTarget } from '../domain/pendingChat'
 
 export function createUiPolling(deps: {
   getState: () => any
@@ -197,6 +198,7 @@ export function createUiPolling(deps: {
         ? String((state.draft as any).activeGroupId || (state.data?.ui as any)?.activeGroupId || '').trim()
         : String(state.draft.activeRoleId || state.data?.ui?.activeRoleId || '').trim()
     if (!activeTid || kind !== activeKind || tid !== activeTid) return false
+    if (pendingChatForTarget(state, kind, tid)) return false
 
     const activeBox = kind === 'group' ? (state.data as any)?.chatsByGroup?.[tid] : state.data?.chatsByRole?.[tid]
     const activeChatId = String(deps.activeChatFromData()?.id || activeBox?.activeChatId || '').trim()
@@ -237,7 +239,12 @@ export function createUiPolling(deps: {
     const t2 = now()
     if (t2 - uiLastMetaCheckMs > 900) {
       uiLastMetaCheckMs = t2
-      if (!state.sending && !state.pendingChat && !(state as any).pendingGroupChat) {
+      const activeKind = deps.activeTargetKind() === 'group' ? 'group' : 'role'
+      const activeTid =
+        activeKind === 'group'
+          ? String((state.draft as any).activeGroupId || (state.data?.ui as any)?.activeGroupId || '').trim()
+          : String(state.draft.activeRoleId || state.data?.ui?.activeRoleId || '').trim()
+      if (!state.sending && !pendingChatForTarget(state, activeKind, activeTid)) {
         try {
           const meta = await deps.loadSplitMeta()
           const updatedAt = Number(meta?.updatedAt || 0)

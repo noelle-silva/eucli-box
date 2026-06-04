@@ -88,6 +88,7 @@ import { EbSettingsPanel } from './settings/EbSettingsPanel'
 import { AI_STUDIO_CHAT_ROOT_ID } from '../runtime/aiStudioGlobals'
 import { isAssistantAwaitingFirstOutput, isAssistantGenerating } from '../domain/assistantRunState'
 import { formatModelRefDisplayText } from '../domain/modelRefUtils'
+import { pendingChatForTarget } from '../domain/pendingChat'
 import { AssistantReplyPendingIndicator } from './components/AssistantReplyPendingIndicator'
 import { AssistantErrorNotice } from './components/AssistantErrorNotice'
 import type { AiChatToastOptions } from '../gateway/capabilities'
@@ -2085,16 +2086,18 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const chatNav = (() => {
     const loading = !!s.loading
     if (loading) return { olderId: '', newerId: '', lockedReason: '正在加载中' }
+    let targetId = ''
     if (activeTargetKind === 'group') {
-      const gid = String((activeGroup as any)?.id || activeGroupId || '').trim()
-      if (!gid) return { olderId: '', newerId: '', lockedReason: '请先选择群组' }
+      targetId = String((activeGroup as any)?.id || activeGroupId || '').trim()
+      if (!targetId) return { olderId: '', newerId: '', lockedReason: '请先选择群组' }
     } else {
-      if (!activeRoleId) return { olderId: '', newerId: '', lockedReason: '请先选择角色' }
+      targetId = String(activeRoleId || '').trim()
+      if (!targetId) return { olderId: '', newerId: '', lockedReason: '请先选择角色' }
     }
     if (!data) return { olderId: '', newerId: '', lockedReason: '数据未就绪' }
+    if (pendingChatForTarget(s, activeTargetKind, targetId)) return { olderId: '', newerId: '', lockedReason: '草稿会话未发送' }
 
-    const box =
-      activeTargetKind === 'group' ? (data as any)?.chatsByGroup?.[String((activeGroup as any)?.id || activeGroupId || '')] : data?.chatsByRole?.[activeRoleId]
+    const box = activeTargetKind === 'group' ? (data as any)?.chatsByGroup?.[targetId] : data?.chatsByRole?.[targetId]
     const chats = Array.isArray(box?.chatMetas) && box.chatMetas.length ? box.chatMetas.slice() : Array.isArray(box?.chats) ? box.chats.slice() : []
     chats.sort((a: any, b: any) => Number(b?.updatedAt || 0) - Number(a?.updatedAt || 0))
     const ids = chats.map((c: any) => String(c?.id || '')).filter((id: string) => !!id)

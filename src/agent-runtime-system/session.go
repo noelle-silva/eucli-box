@@ -20,7 +20,7 @@ func (s *system) loadOrCreateSession(ctx context.Context, request types.RunReque
 		return session, nil
 	}
 	now := time.Now().UTC()
-	return types.Session{ID: utils.NewID("session"), RoleID: request.RoleID, Title: firstTitle(request), Status: string(types.RunStatusCreated), Messages: []types.Message{}, CreatedAt: now, UpdatedAt: now, LastActive: now}, nil
+	return types.Session{ID: utils.NewID("session"), RoleID: request.RoleID, Title: types.DefaultSessionTitle, Status: string(types.RunStatusCreated), Messages: []types.Message{}, CreatedAt: now, UpdatedAt: now, LastActive: now}, nil
 }
 
 func appendMessage(session types.Session, message types.Message) types.Session {
@@ -392,19 +392,4 @@ func toolConfirmationMessage(decision types.PermissionDecision) types.Message {
 	}
 	now := time.Now().UTC()
 	return types.Message{ID: utils.NewID("message"), Type: "tool_confirmation", Content: content, ToolName: decision.ToolName, Reason: decision.Reason, CreatedAt: now, UpdatedAt: now}
-}
-
-func firstTitle(request types.RunRequest) string {
-	message := strings.TrimSpace(request.Message)
-	if message == "" {
-		if len(request.Attachments) > 0 {
-			return "附件消息"
-		}
-		return "New session"
-	}
-	runes := []rune(message)
-	if len(runes) > 48 {
-		return string(runes[:48])
-	}
-	return message
 }

@@ -17,7 +17,7 @@ func (s *system) CreateSession(ctx context.Context, roleID string, title string)
 	}
 	sessionTitle := strings.TrimSpace(title)
 	if sessionTitle == "" {
-		sessionTitle = "新聊天"
+		sessionTitle = types.DefaultSessionTitle
 	}
 	now := time.Now().UTC()
 	session := types.Session{
@@ -55,7 +55,7 @@ func (s *system) writeSessionData(ctx context.Context, session types.Session, no
 	if err != nil {
 		return types.Session{}, err
 	}
-	if err := writeJSON(ctx, target, session); err != nil {
+	if err := writeJSON(ctx, target, toSessionStorageDocument(session)); err != nil {
 		return types.Session{}, err
 	}
 	attachmentsDir, err := s.paths.sessionAttachmentsDir(session.RoleID, session.ID)

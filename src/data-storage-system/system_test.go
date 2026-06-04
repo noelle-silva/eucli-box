@@ -155,6 +155,72 @@ func TestCreateSessionCreatesCanonicalSession(t *testing.T) {
 	assertFile(t, filepath.Join(system.paths.root, "sessions", "developer", session.ID, "data.json"))
 }
 
+func TestSaveSessionStoresMessageTextOnlyInParts(t *testing.T) {
+	system := newTestSystem(t)
+	now := time.Date(2026, 6, 4, 16, 28, 0, 0, time.UTC)
+	session := types.Session{
+		ID:        "session-text-storage",
+		RoleID:    "developer",
+		Title:     "Text Storage",
+		Status:    string(types.RunStatusCompleted),
+		CreatedAt: now,
+		UpdatedAt: now,
+		Messages: []types.Message{
+			{ID: "m1", Type: "user", Content: "你好呀呀呀呀", BranchID: "main", CreatedAt: now, UpdatedAt: now},
+			{ID: "m2", Type: "assistant", Content: "收到啦", ParentMessageID: "m1", BranchID: "main", CreatedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second)},
+			{ID: "m3", Type: "tool", Content: "tool output", ParentMessageID: "m2", BranchID: "main", CreatedAt: now.Add(2 * time.Second), UpdatedAt: now.Add(2 * time.Second)},
+		},
+		LastActive: now.Add(2 * time.Second),
+	}
+	if err := system.SaveSession(context.Background(), session); err != nil {
+		t.Fatalf("SaveSession() error = %v", err)
+	}
+
+	dataFile := filepath.Join(system.paths.root, "sessions", "developer", "session-text-storage", "data.json")
+	stored, err := readJSON[map[string]any](context.Background(), dataFile)
+	if err != nil {
+		t.Fatalf("read stored session error = %v", err)
+	}
+	messages, ok := stored["messages"].([]any)
+	if !ok || len(messages) != 3 {
+		t.Fatalf("stored messages = %#v", stored["messages"])
+	}
+	userMessage, ok := messages[0].(map[string]any)
+	if !ok {
+		t.Fatalf("stored user message = %#v", messages[0])
+	}
+	if _, exists := userMessage["content"]; exists {
+		t.Fatalf("stored user message duplicated content: %#v", userMessage)
+	}
+	userParts, ok := userMessage["parts"].([]any)
+	if !ok || len(userParts) != 1 {
+		t.Fatalf("stored user parts = %#v", userMessage["parts"])
+	}
+	userTextPart, ok := userParts[0].(map[string]any)
+	if !ok || userTextPart["text"] != "你好呀呀呀呀" {
+		t.Fatalf("stored user text part = %#v", userParts[0])
+	}
+	assistantMessage, ok := messages[1].(map[string]any)
+	if !ok {
+		t.Fatalf("stored assistant message = %#v", messages[1])
+	}
+	if _, exists := assistantMessage["content"]; exists {
+		t.Fatalf("stored assistant message duplicated content: %#v", assistantMessage)
+	}
+	toolMessage, ok := messages[2].(map[string]any)
+	if !ok || toolMessage["content"] != "tool output" {
+		t.Fatalf("stored tool message content = %#v", messages[2])
+	}
+
+	loaded, err := system.LoadSession(context.Background(), "developer", "session-text-storage")
+	if err != nil {
+		t.Fatalf("LoadSession() error = %v", err)
+	}
+	if len(loaded.Messages) != 3 || loaded.Messages[0].Content != "你好呀呀呀呀" || loaded.Messages[1].Content != "收到啦" || loaded.Messages[2].Content != "tool output" {
+		t.Fatalf("loaded messages = %#v", loaded.Messages)
+	}
+}
+
 func TestSaveSessionMessageAttachmentStoresImagesAndText(t *testing.T) {
 	system := newTestSystem(t)
 	session := types.Session{ID: "session-1", RoleID: "developer", Title: "Attachments"}

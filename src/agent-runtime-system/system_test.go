@@ -33,6 +33,25 @@ func TestStartRunCompletesWithoutTool(t *testing.T) {
 	}
 }
 
+func TestStartRunUsesDefaultTitleForNewSession(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	message := "请帮我分析这个会话标题是否会和正文重复保存"
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: message})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	waitRun(t, system, state.ID)
+	session := fakes.storage.lastSession()
+	if session.Title != types.DefaultSessionTitle {
+		t.Fatalf("session title = %q, want %q", session.Title, types.DefaultSessionTitle)
+	}
+	if len(session.Messages) == 0 || session.Messages[0].Content != message {
+		t.Fatalf("messages = %#v", session.Messages)
+	}
+}
+
 func TestStartRunSavesAttachmentsAndPassesThemToModel(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}

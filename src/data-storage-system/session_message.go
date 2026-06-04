@@ -221,7 +221,7 @@ func textProjectionFromParts(parts []types.MessagePart) string {
 func normalizeSessionTitle(title string) string {
 	title = strings.Join(strings.Fields(title), " ")
 	if title == "" {
-		return "新聊天"
+		return types.DefaultSessionTitle
 	}
 	runes := []rune(title)
 	if len(runes) > 80 {

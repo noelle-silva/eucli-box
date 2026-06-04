@@ -2,6 +2,8 @@ package types
 
 import "time"
 
+const DefaultSessionTitle = "新聊天"
+
 type Message struct {
 	ID              string              `json:"id"`
 	Type            string              `json:"type"`

@@ -34,14 +34,17 @@ export async function updateRoleSessionTitle(netRequest: EbNetRequest, input: Ro
   return response?.body
 }
 
-export async function updateRoleSessionMessage(netRequest: EbNetRequest, input: RoleSessionInput & { messageId: string; content: string }) {
+export async function updateRoleSessionMessage(netRequest: EbNetRequest, input: RoleSessionInput & { messageId: string; content?: string; parts?: any[] }) {
   const { roleId, sessionId } = normalizeRoleSessionInput(input)
   const messageId = String(input.messageId || '').trim()
   if (!messageId) throw new Error('消息无效')
+  const body: any = {}
+  if (Object.prototype.hasOwnProperty.call(input, 'content')) body.content = String(input.content ?? '')
+  if (Object.prototype.hasOwnProperty.call(input, 'parts')) body.parts = Array.isArray(input.parts) ? input.parts : []
   const response = await netRequest({
     method: 'PATCH',
     path: `/api/roles/${encodeURIComponent(roleId)}/sessions/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(messageId)}`,
-    body: { content: String(input.content ?? '') },
+    body,
     timeoutMs: 15000,
   })
   return response?.body

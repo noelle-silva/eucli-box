@@ -88,7 +88,10 @@ func (s *system) modelMessages(ctx context.Context, roleContext types.RoleContex
 
 func (s *system) runtimeMessageToPrompt(ctx context.Context, message types.Message, index int) (types.PromptMessage, error) {
 	role := message.Type
-	content := messagePromptContent(message)
+	content, err := s.messagePromptContent(ctx, message)
+	if err != nil {
+		return types.PromptMessage{}, err
+	}
 	switch message.Type {
 	case "user", "assistant":
 	case "tool":
@@ -116,8 +119,15 @@ func cloneMessageParts(parts []types.MessagePart) []types.MessagePart {
 	return result
 }
 
-func messagePromptContent(message types.Message) string {
+func (s *system) messagePromptContent(ctx context.Context, message types.Message) (string, error) {
 	content := message.Content
+	if message.Type == "assistant" {
+		visibleContent, err := s.tools.VisibleTextToolContent(ctx, content)
+		if err != nil {
+			return "", runtimeToolFailed("failed to filter visible assistant tool content", err)
+		}
+		content = visibleContent
+	}
 	blocks := []string{}
 	for _, attachment := range message.Attachments {
 		if attachment.Kind == "image" || strings.TrimSpace(attachment.Text) == "" {
@@ -146,13 +156,13 @@ func messagePromptContent(message types.Message) string {
 		blocks = append(blocks, fmt.Sprintf("附件：%s（发送 %d%%：%d/%d 字符）\n```%s\n%s\n```", name, sendPct, sendLen, fullLen, lang, escapePromptFence(attachment.Text)))
 	}
 	if len(blocks) == 0 {
-		return content
+		return content, nil
 	}
 	extra := strings.Join(blocks, "\n\n")
 	if strings.TrimSpace(content) == "" {
-		return extra
+		return extra, nil
 	}
-	return strings.TrimSpace(content) + "\n\n" + extra
+	return strings.TrimSpace(content) + "\n\n" + extra, nil
 }
 
 func (s *system) promptImagesForMessage(ctx context.Context, message types.Message) ([]types.PromptImage, error) {

@@ -37,28 +37,35 @@ func (s *system) CreateSession(ctx context.Context, roleID string, title string)
 }
 
 func (s *system) SaveSession(ctx context.Context, session types.Session) error {
-	session = normalizeSessionForStorage(session, time.Now().UTC())
-	if _, err := cleanID(session.RoleID); err != nil {
+	if _, err := s.writeSessionData(ctx, session, time.Now().UTC()); err != nil {
 		return err
 	}
+	return s.rebuildAllSessionIndexes(ctx)
+}
+
+func (s *system) writeSessionData(ctx context.Context, session types.Session, now time.Time) (types.Session, error) {
+	session = normalizeSessionForStorage(session, now)
+	if _, err := cleanID(session.RoleID); err != nil {
+		return types.Session{}, err
+	}
 	if _, err := cleanID(session.ID); err != nil {
-		return err
+		return types.Session{}, err
 	}
 	target, err := s.paths.sessionDataFile(session.RoleID, session.ID)
 	if err != nil {
-		return err
+		return types.Session{}, err
 	}
 	if err := writeJSON(ctx, target, session); err != nil {
-		return err
+		return types.Session{}, err
 	}
 	attachmentsDir, err := s.paths.sessionAttachmentsDir(session.RoleID, session.ID)
 	if err != nil {
-		return err
+		return types.Session{}, err
 	}
 	if err := ensureDirs(attachmentsDir); err != nil {
-		return storageWriteFailed("failed to create session attachments directory", err)
+		return types.Session{}, storageWriteFailed("failed to create session attachments directory", err)
 	}
-	return s.rebuildAllSessionIndexes(ctx)
+	return session, nil
 }
 
 func (s *system) LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error) {

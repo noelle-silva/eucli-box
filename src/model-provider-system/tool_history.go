@@ -13,9 +13,30 @@ func promptToolParts(message types.PromptMessage) []types.MessagePart {
 		if part.Type != "tool" || strings.TrimSpace(part.CallID) == "" || strings.TrimSpace(part.ToolName) == "" {
 			continue
 		}
+		if toolPartHidden(part) {
+			continue
+		}
 		parts = append(parts, part)
 	}
 	return parts
+}
+
+func toolPartHidden(part types.MessagePart) bool {
+	if len(part.Display) == 0 {
+		return false
+	}
+	return truthy(part.Display["hideInvocation"]) || truthy(part.Display["hideResult"])
+}
+
+func truthy(value any) bool {
+	switch v := value.(type) {
+	case bool:
+		return v
+	case string:
+		return strings.EqualFold(strings.TrimSpace(v), "true")
+	default:
+		return false
+	}
 }
 
 func toolArgumentsJSON(part types.MessagePart) (string, error) {

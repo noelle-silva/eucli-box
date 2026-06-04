@@ -14,10 +14,6 @@ type updateSessionTitleRequest struct {
 	Title string `json:"title"`
 }
 
-type updateSessionMessageRequest struct {
-	Content string `json:"content"`
-}
-
 func (s *system) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	roleID, err := pathValue(r, "roleID")
 	if err != nil {
@@ -154,17 +150,17 @@ func (s *system) handleUpdateSessionMessage(w http.ResponseWriter, r *http.Reque
 		writeError(w, err)
 		return
 	}
-	request, err := decodeJSON[updateSessionMessageRequest](r)
+	request, err := decodeJSON[types.SessionMessagePatch](r)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	session, err := s.sessions.UpdateSessionMessage(r.Context(), roleID, sessionID, messageID, request.Content)
+	message, err := s.sessions.UpdateSessionMessage(r.Context(), roleID, sessionID, messageID, request)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	writeData(w, http.StatusOK, session)
+	writeData(w, http.StatusOK, message)
 }
 
 func (s *system) handleDeleteSessionMessage(w http.ResponseWriter, r *http.Request) {

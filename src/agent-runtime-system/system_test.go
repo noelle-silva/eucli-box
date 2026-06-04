@@ -390,7 +390,7 @@ func TestRunParsesTextToolRequestsIntoUnifiedToolFlow(t *testing.T) {
 		t.Fatalf("tool flow execute=%d intents=%#v", fakes.tool.executeCount, fakes.tool.normalizedIntents)
 	}
 	session := fakes.storage.lastSession()
-	if len(session.Messages) < 2 || !strings.Contains(session.Messages[1].Content, rawRequest) {
+	if len(session.Messages) < 2 || session.Messages[1].Content != "I will check." || strings.Contains(session.Messages[1].Content, rawRequest) {
 		t.Fatalf("assistant message = %#v", session.Messages)
 	}
 	if got := toolPartByCallID(session.Messages[1], "text-intent-1"); got == nil || got.State != "completed" || got.Source != types.ToolCallSourceTextProtocol || got.Raw != rawRequest || got.Result == nil || got.Result.Content != "tool ok" {
@@ -420,7 +420,7 @@ func TestRunDoesNotPersistEmptyAssistantForPureTextToolRequest(t *testing.T) {
 	if len(session.Messages) < 3 {
 		t.Fatalf("messages = %#v", session.Messages)
 	}
-	if session.Messages[1].Type != "assistant" || session.Messages[1].Content != rawRequest {
+	if session.Messages[1].Type != "assistant" || session.Messages[1].Content != "" {
 		t.Fatalf("assistant raw content = %#v", session.Messages)
 	}
 	if got := toolPartByCallID(session.Messages[1], "text-intent-1"); got == nil || got.State != "completed" || got.Source != types.ToolCallSourceTextProtocol || got.Raw != rawRequest || got.Result == nil {
@@ -863,6 +863,16 @@ func (f *fakeRuntimeTools) ParseTextToolRequests(ctx context.Context, content st
 		return f.parsedContent, intents, nil
 	}
 	return content, nil, nil
+}
+
+func (f *fakeRuntimeTools) VisibleTextToolContent(ctx context.Context, content string) (string, error) {
+	if f.parseErr != nil {
+		return "", f.parseErr
+	}
+	if strings.Contains(content, "<<<TOOL_REQUEST>>>") {
+		return f.parsedContent, nil
+	}
+	return content, nil
 }
 
 func (f *fakeRuntimeTools) TextToolInstructions(ctx context.Context, tools []types.ToolDefinition) (types.PromptMessage, error) {

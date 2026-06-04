@@ -757,6 +757,8 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     deleteMessage,
     deleteMessageSubtree,
     editMessage,
+    editMessageBlock,
+    deleteMessageBlock,
   } = chatOps
 
   // ============================================================
@@ -1785,6 +1787,8 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     deleteMessage: (messageId: any) => deleteMessage(String(messageId || '')),
     deleteMessageSubtree: (messageId: any) => deleteMessageSubtree(String(messageId || '')),
     editMessage: (messageId: any, content: any) => editMessage(String(messageId || ''), content),
+    editMessageBlock: (messageId: any, blockRef: any, text: any) => editMessageBlock(String(messageId || ''), blockRef, text),
+    deleteMessageBlock: (messageId: any, blockRef: any) => deleteMessageBlock(String(messageId || ''), blockRef),
     // UI event bridge
     hydrateRefImages,
     applyMermaidScaleDom,

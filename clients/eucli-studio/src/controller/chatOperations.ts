@@ -17,12 +17,14 @@ import {
   activateChatBranchByMessage,
 } from '../domain/branching'
 import { looksLikeImageDataUrl } from '../domain/textProcessing'
+import { syncMessageTextPart } from '../domain/message'
 import { detectDraftFileKind, addDraftFilePlaceholder } from '../domain/draftFileUtils'
 import type { DraftFileItem } from '../domain/draftFileUtils'
 import { normalizeChatModelOverride } from '../domain/modelRefUtils'
 import { createStateAccessors } from '../state/stateAccessors'
 import { hasActiveAssistantMessages } from '../domain/chatRunState'
 import type { ChatSaveIntent } from '../domain/chatSaveIntent'
+import { deleteAssistantMessageBlock, editAssistantMessageBlock } from '../domain/assistantMessageBlockMutations'
 import { cancelRoleRun, getRunState, isTerminalRunStatus, runStateFailureError, sleepMs, startRoleRun, type EbRunState } from './ebRoleRun'
 import { deleteRoleSessionMessage, deleteRoleSessionMessageSubtree, updateRoleSessionMessage } from './ebRoleSession'
 
@@ -220,7 +222,53 @@ export function createChatOperations(deps: {
     const roleId = String(role?.id || '').trim()
     const sessionId = String(chat?.id || '').trim()
     if (!roleId || !sessionId) return null
-    return { roleId, sessionId }
+    return { roleId, sessionId, chat }
+  }
+
+  async function applyRoleSessionMessageMutation(messageId: any, operationText: string, mutate: (message: any) => { ok: true } | { ok: false; error: string }) {
+    const state = getState()
+    if (state.loading || !state.data) return false
+    if (state.sending) {
+      showToast?.('操作中，请稍后重试')
+      return false
+    }
+    const target = await activeRoleSessionMutationTarget(operationText)
+    const mid = String(messageId || '').trim()
+    if (!target || !mid) return false
+    const messages = Array.isArray(target.chat?.messages) ? target.chat.messages : []
+    const message = messages.find((item: any) => String(item?.id || '').trim() === mid) || null
+    if (!message) {
+      showToast?.('消息不存在')
+      return false
+    }
+    const messageIndex = messages.indexOf(message)
+    const beforeMessage = clonePlain(message)
+    const beforeChatUpdatedAt = target.chat.updatedAt
+    const result = mutate(message)
+    if (!result.ok) {
+      showToast?.(result.error)
+      return false
+    }
+    message.updatedAt = now()
+    target.chat.updatedAt = message.updatedAt
+    if (typeof netRequest !== 'function') {
+      showToast?.('e-b 请求通道不可用')
+      if (messageIndex >= 0) messages[messageIndex] = beforeMessage
+      target.chat.updatedAt = beforeChatUpdatedAt
+      render()
+      return false
+    }
+    try {
+      await updateRoleSessionMessage(netRequest, { roleId: target.roleId, sessionId: target.sessionId, messageId: mid, content: String(message.content ?? ''), parts: Array.isArray(message.parts) ? message.parts : [] })
+    } catch (e: any) {
+      if (messageIndex >= 0) messages[messageIndex] = beforeMessage
+      target.chat.updatedAt = beforeChatUpdatedAt
+      showToast?.(String(e?.message || e || `消息块${operationText}失败`))
+      render()
+      return false
+    }
+    render()
+    return true
   }
 
   // ============ draft image ============
@@ -741,23 +789,19 @@ export function createChatOperations(deps: {
   // ============ edit message ============
 
   async function editMessage(messageId: any, content: any) {
-    const state = getState()
-    if (state.loading || !state.data) return
-    if (state.sending) return showToast?.('操作中，请稍后重试')
-    const target = await activeRoleSessionMutationTarget('编辑')
-    const mid = String(messageId || '').trim()
-    if (!target || !mid) return false
-    if (typeof netRequest !== 'function') { showToast?.('e-b 请求通道不可用'); return false }
-    try {
-      await updateRoleSessionMessage(netRequest, { roleId: target.roleId, sessionId: target.sessionId, messageId: mid, content: String(content ?? '') })
-      await refreshRoleSession(target.roleId, target.sessionId)
-      render()
-      return true
-    } catch (e: any) {
-      showToast?.(String(e?.message || e || '消息编辑失败'))
-      render()
-      return false
-    }
+    return applyRoleSessionMessageMutation(messageId, '编辑', (message) => {
+      message.content = String(content ?? '')
+      syncMessageTextPart(message)
+      return { ok: true }
+    })
+  }
+
+  async function editMessageBlock(messageId: any, blockRef: any, text: any) {
+    return applyRoleSessionMessageMutation(messageId, '编辑', (message) => editAssistantMessageBlock(message, blockRef, text))
+  }
+
+  async function deleteMessageBlock(messageId: any, blockRef: any) {
+    return applyRoleSessionMessageMutation(messageId, '删除', (message) => deleteAssistantMessageBlock(message, blockRef))
   }
 
   return {
@@ -777,5 +821,15 @@ export function createChatOperations(deps: {
     deleteMessage,
     deleteMessageSubtree,
     editMessage,
+    editMessageBlock,
+    deleteMessageBlock,
+  }
+}
+
+function clonePlain<T>(value: T): T {
+  try {
+    return JSON.parse(JSON.stringify(value))
+  } catch (_) {
+    return value
   }
 }

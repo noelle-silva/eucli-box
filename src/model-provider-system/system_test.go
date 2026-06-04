@@ -163,6 +163,24 @@ func TestCompleteOpenAIRejectsToolHistoryWithoutResult(t *testing.T) {
 	assertAppErrorCode(t, err, "provider.invalid_request")
 }
 
+func TestCompleteOpenAISkipsHiddenToolHistory(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["openai-main"] = types.Provider{ID: "openai-main", Name: "OpenAI", BaseURL: "https://api.example.test/v1", Key: "secret", Protocol: types.ProviderProtocolOpenAI, Models: []types.ModelInfo{{ID: "gpt-4.1"}}}
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"done"}}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	_, err := system.Complete(context.Background(), types.ModelRequest{
+		Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"},
+		Messages:   []types.PromptMessage{{Role: "assistant", Content: "checking", Parts: []types.MessagePart{{Type: "tool", CallID: "call-1", ToolName: "shell_command", Input: map[string]any{"command": "pwd"}, Result: &types.ToolPartResult{Status: types.ToolStatusSuccess, Content: "ok"}, Display: map[string]any{"hideResult": true}}}}},
+	})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	if strings.Contains(string(network.lastRequest.Body), "tool_calls") || strings.Contains(string(network.lastRequest.Body), "tool_call_id") {
+		t.Fatalf("hidden tool history leaked into request: %s", string(network.lastRequest.Body))
+	}
+}
+
 func TestCompleteAnthropicSeparatesSystemPrompt(t *testing.T) {
 	storage := newFakeProviderStorage()
 	storage.providers["anthropic-main"] = types.Provider{ID: "anthropic-main", Name: "Anthropic", BaseURL: "https://api.anthropic.test/v1", Key: "secret", Protocol: types.ProviderProtocolAnthropic, Models: []types.ModelInfo{{ID: "claude-3-5-sonnet"}}}

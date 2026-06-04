@@ -137,8 +137,23 @@ func TestSessionMessageRoutes(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("message status = %d body=%s", rec.Code, rec.Body.String())
 	}
+	updatedMessage := decodeResponseData[types.Message](t, rec.Body.String())
+	if updatedMessage.ID != "m1" || updatedMessage.Content != "updated" {
+		t.Fatalf("updated message = %#v", updatedMessage)
+	}
 	if got := fakes.sessions.sessions["developer/session-1"].Messages[0].Content; got != "updated" {
 		t.Fatalf("message content = %q", got)
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "/api/roles/developer/sessions/session-1/messages/m2", strings.NewReader(`{"content":"hi","parts":[{"id":"part-tool-1","type":"tool","callId":"call-1","toolName":"shell_command","state":"completed","input":{"command":"pwd"},"display":{"hideResult":true}}]}`))
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("parts message status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	updatedMessage = decodeResponseData[types.Message](t, rec.Body.String())
+	if updatedMessage.ID != "m2" || len(updatedMessage.Parts) != 1 || updatedMessage.Parts[0].Display["hideResult"] != true {
+		t.Fatalf("updated message parts = %#v", updatedMessage)
 	}
 
 	req = httptest.NewRequest(http.MethodDelete, "/api/roles/developer/sessions/session-1/messages/m1", nil)
@@ -408,16 +423,23 @@ func (f *fakeGatewaySessions) UpdateSessionTitle(ctx context.Context, roleID str
 	return session, nil
 }
 
-func (f *fakeGatewaySessions) UpdateSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string, content string) (types.Session, error) {
+func (f *fakeGatewaySessions) UpdateSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string, patch types.SessionMessagePatch) (types.Message, error) {
 	session := f.sessions[roleID+"/"+sessionID]
+	updated := types.Message{}
 	for i := range session.Messages {
 		if session.Messages[i].ID == messageID {
-			session.Messages[i].Content = content
+			if patch.Content != nil {
+				session.Messages[i].Content = *patch.Content
+			}
+			if patch.Parts != nil {
+				session.Messages[i].Parts = append([]types.MessagePart(nil), (*patch.Parts)...)
+			}
 			session.Messages[i].UpdatedAt = time.Now().UTC()
+			updated = session.Messages[i]
 		}
 	}
 	f.sessions[roleID+"/"+sessionID] = session
-	return session, nil
+	return updated, nil
 }
 
 func (f *fakeGatewaySessions) DeleteSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error) {

@@ -183,6 +183,9 @@ func normalizeToolPart(part types.MessagePart, now time.Time, seen map[string]st
 			part.Result.Metadata = map[string]any{}
 		}
 	}
+	if len(part.Display) == 0 {
+		part.Display = nil
+	}
 	if part.CreatedAt.IsZero() {
 		part.CreatedAt = now
 	}
@@ -331,38 +334,60 @@ func (s *system) UpdateSessionTitle(ctx context.Context, roleID string, sessionI
 	return s.LoadSession(ctx, roleID, sessionID)
 }
 
-func (s *system) UpdateSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string, content string) (types.Session, error) {
+func (s *system) UpdateSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string, patch types.SessionMessagePatch) (types.Message, error) {
 	messageID = strings.TrimSpace(messageID)
 	if messageID == "" {
-		return types.Session{}, storageInvalid("message id is required", nil)
+		return types.Message{}, storageInvalid("message id is required", nil)
+	}
+	if patch.Content == nil && patch.Parts == nil {
+		return types.Message{}, storageInvalid("message patch is empty", nil)
 	}
 	session, err := s.LoadSession(ctx, roleID, sessionID)
 	if err != nil {
-		return types.Session{}, err
+		return types.Message{}, err
 	}
 	now := time.Now().UTC()
 	session = normalizeSessionForStorage(session, now)
-	updated := false
+	updatedIndex := -1
 	for i := range session.Messages {
 		if session.Messages[i].ID != messageID {
 			continue
 		}
-		session.Messages[i].Content = content
+		if patch.Content != nil {
+			session.Messages[i].Content = *patch.Content
+		}
+		if patch.Parts != nil {
+			session.Messages[i].Parts = append([]types.MessagePart(nil), (*patch.Parts)...)
+		}
 		session.Messages[i].UpdatedAt = now
-		updated = true
+		updatedIndex = i
 		break
 	}
-	if !updated {
-		return types.Session{}, storageNotFound("message was not found", nil)
+	if updatedIndex < 0 {
+		return types.Message{}, storageNotFound("message was not found", nil)
 	}
 	session.UpdatedAt = now
 	if session.LastActive.Before(now) {
 		session.LastActive = now
 	}
-	if err := s.SaveSession(ctx, session); err != nil {
-		return types.Session{}, err
+	session = normalizeSessionForStorage(session, now)
+	updatedMessage := types.Message{}
+	for _, message := range session.Messages {
+		if message.ID == messageID {
+			updatedMessage = message
+			break
+		}
 	}
-	return s.LoadSession(ctx, roleID, sessionID)
+	if updatedMessage.ID == "" {
+		return types.Message{}, storageNotFound("message was not found", nil)
+	}
+	if _, err := s.writeSessionData(ctx, session, now); err != nil {
+		return types.Message{}, err
+	}
+	if err := s.rebuildSessionIndexes(ctx, roleID); err != nil {
+		return types.Message{}, err
+	}
+	return updatedMessage, nil
 }
 
 func (s *system) DeleteSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error) {

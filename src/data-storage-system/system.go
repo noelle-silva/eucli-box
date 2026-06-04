@@ -17,7 +17,7 @@ type System interface {
 	ListSessions(ctx context.Context, roleID string) ([]types.SessionSummary, error)
 	DeleteSession(ctx context.Context, roleID string, sessionID string) error
 	UpdateSessionTitle(ctx context.Context, roleID string, sessionID string, title string) (types.Session, error)
-	UpdateSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string, content string) (types.Session, error)
+	UpdateSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string, patch types.SessionMessagePatch) (types.Message, error)
 	DeleteSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error)
 	DeleteSessionMessageSubtree(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error)
 	SaveSessionMessageAttachment(ctx context.Context, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)

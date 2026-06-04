@@ -69,6 +69,8 @@ export function normalizeMessageParts(input: any) {
     const state = String((raw as any).state || '').trim()
     const inputValue = (raw as any).input && typeof (raw as any).input === 'object' && !Array.isArray((raw as any).input) ? (raw as any).input : {}
     const part: any = { id, type: 'tool', source, raw: rawText, callId, toolName, state, input: inputValue, createdAt: (raw as any).createdAt, updatedAt: (raw as any).updatedAt }
+    const display = (raw as any).display && typeof (raw as any).display === 'object' && !Array.isArray((raw as any).display) ? (raw as any).display : null
+    if (display) part.display = { ...display }
     const decision = (raw as any).decision && typeof (raw as any).decision === 'object' ? (raw as any).decision : null
     if (decision) {
       part.decision = {
@@ -96,4 +98,20 @@ export function normalizeMessageParts(input: any) {
     out.push(part)
   }
   return out
+}
+
+export function syncMessageTextPart(message: any) {
+  if (!message || typeof message !== 'object') return
+  const content = String(message.content ?? '')
+  if (!Array.isArray(message.parts)) message.parts = []
+  const index = message.parts.findIndex((part: any) => String(part?.type || '') === 'text')
+  if (!content) {
+    if (index >= 0) message.parts.splice(index, 1)
+    return
+  }
+  if (index >= 0) {
+    message.parts[index] = { ...message.parts[index], type: 'text', text: content }
+    return
+  }
+  message.parts.unshift({ id: uid('part'), type: 'text', text: content })
 }

@@ -220,11 +220,11 @@ func TestSessionMessageRootActions(t *testing.T) {
 		t.Fatalf("title = %q", updatedTitle.Title)
 	}
 
-	updatedMessage, err := system.UpdateSessionMessage(context.Background(), "developer", "session-1", "m2", "changed")
+	updatedMessage, err := system.UpdateSessionMessage(context.Background(), "developer", "session-1", "m2", types.SessionMessagePatch{Content: ptrString("changed")})
 	if err != nil {
 		t.Fatalf("UpdateSessionMessage() error = %v", err)
 	}
-	if got := updatedMessage.Messages[1].Content; got != "changed" {
+	if got := updatedMessage.Content; got != "changed" {
 		t.Fatalf("message content = %q", got)
 	}
 
@@ -242,6 +242,59 @@ func TestSessionMessageRootActions(t *testing.T) {
 	}
 	if len(deletedSubtree.Messages) != 0 {
 		t.Fatalf("messages after subtree delete = %#v", deletedSubtree.Messages)
+	}
+}
+
+func TestUpdateSessionMessagePersistsPartsPatch(t *testing.T) {
+	system := newTestSystem(t)
+	now := time.Date(2026, 6, 4, 9, 0, 0, 0, time.UTC)
+	session := types.Session{
+		ID:        "session-patch-parts",
+		RoleID:    "developer",
+		Title:     "Parts Patch",
+		Status:    string(types.RunStatusCreated),
+		CreatedAt: now,
+		UpdatedAt: now,
+		Messages: []types.Message{{
+			ID:        "m1",
+			Type:      "assistant",
+			Content:   "checking",
+			BranchID:  "main",
+			CreatedAt: now,
+			UpdatedAt: now,
+		}},
+		LastActive: now,
+	}
+	if err := system.SaveSession(context.Background(), session); err != nil {
+		t.Fatalf("SaveSession() error = %v", err)
+	}
+
+	parts := []types.MessagePart{{
+		ID:       "part-tool-1",
+		Type:     "tool",
+		CallID:   "call-1",
+		ToolName: "shell_command",
+		State:    "completed",
+		Input:    map[string]any{"command": "pwd"},
+		Result:   &types.ToolPartResult{ID: "result-1", ActionID: "call-1", ToolName: "shell_command", Status: types.ToolStatusSuccess, Content: "ok"},
+		Display:  map[string]any{"hideResult": true},
+	}}
+	updatedMessage, err := system.UpdateSessionMessage(context.Background(), "developer", "session-patch-parts", "m1", types.SessionMessagePatch{Content: ptrString("checking updated"), Parts: &parts})
+	if err != nil {
+		t.Fatalf("UpdateSessionMessage() error = %v", err)
+	}
+	if updatedMessage.Content != "checking updated" {
+		t.Fatalf("content = %q", updatedMessage.Content)
+	}
+	if len(updatedMessage.Parts) != 2 || updatedMessage.Parts[1].Display["hideResult"] != true {
+		t.Fatalf("updated parts = %#v", updatedMessage.Parts)
+	}
+	loaded, err := system.LoadSession(context.Background(), "developer", "session-patch-parts")
+	if err != nil {
+		t.Fatalf("LoadSession() error = %v", err)
+	}
+	if len(loaded.Messages) != 1 || len(loaded.Messages[0].Parts) != 2 || loaded.Messages[0].Parts[1].Display["hideResult"] != true {
+		t.Fatalf("loaded parts = %#v", loaded.Messages)
 	}
 }
 
@@ -400,6 +453,8 @@ func newTestSystem(t *testing.T) *system {
 	}
 	return system
 }
+
+func ptrString(value string) *string { return &value }
 
 func assertDir(t *testing.T, path string) {
 	t.Helper()

@@ -37,8 +37,14 @@ type MessagePart struct {
 	State     string          `json:"state,omitempty"`
 	Decision  *ToolDecision   `json:"decision,omitempty"`
 	Result    *ToolPartResult `json:"result,omitempty"`
+	Display   map[string]any  `json:"display,omitempty"`
 	CreatedAt time.Time       `json:"createdAt,omitempty"`
 	UpdatedAt time.Time       `json:"updatedAt,omitempty"`
+}
+
+type SessionMessagePatch struct {
+	Content *string        `json:"content,omitempty"`
+	Parts   *[]MessagePart `json:"parts,omitempty"`
 }
 
 type ToolDecision struct {

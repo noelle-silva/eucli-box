@@ -81,7 +81,7 @@ import { MermaidDialog } from './dialogs/MermaidDialog'
 import { ImageDialog } from './dialogs/ImageDialog'
 import { RoleAvatarCropper } from './components/avatar/RoleAvatarCropper'
 import { StandaloneWindowControls, type WindowControlActions } from './components/StandaloneWindowControls'
-import { AssistantMessageHost } from '../render/assistantMessageHost'
+import { AssistantMessageBlocks } from './components/AssistantMessageBlocks'
 import { RolesSettingsPanel } from './settings/RolesSettingsPanel'
 import { AiToolsSettingsPanel } from './settings/AiToolsSettingsPanel'
 import { AI_STUDIO_CHAT_ROOT_ID } from '../runtime/aiStudioGlobals'
@@ -3814,28 +3814,28 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                             <Stack spacing={1}>
                               <AssistantErrorNotice error={messageError} />
                               {content || assistantParts.length ? (
-                                <AssistantMessageHost
+                                <AssistantMessageBlocks
                                   controller={controller}
-                                  className="prose"
                                   text={content}
                                   parts={assistantParts}
                                   mid={mid}
                                   renderSafetyPolicyKey={renderSafetyPolicy}
                                   chatRootRef={chatRootRef}
+                                  disabled={!canEdit}
                                 />
                               ) : null}
                             </Stack>
                           ) : messageAwaitingFirstOutput ? (
                             <AssistantReplyPendingIndicator />
                           ) : (
-                            <AssistantMessageHost
+                            <AssistantMessageBlocks
                               controller={controller}
-                              className="prose"
                               text={content}
                               parts={assistantParts}
                               mid={mid}
                               renderSafetyPolicyKey={renderSafetyPolicy}
                               chatRootRef={chatRootRef}
+                              disabled={!canEdit}
                             />
                           )}
 
@@ -3850,51 +3850,55 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                             </Stack>
                           ) : (
                             <Stack direction="row" spacing={0.5} sx={{ mt: 0.5 }} justifyContent="flex-end">
-                              <Tooltip title="上一个分支">
-                                <span>
-                              <IconButton
-                                    aria-label="上一个分支"
-                                    size="small"
-                                    disabled={!canSwitchBranch || s.loading || uiBusy || chatLocked}
-                                    onClick={() => {
-                                      if (!canSwitchBranch) return
-                                      const len = branchSiblings.length
-                                      if (!len) return
-                                      const next = branchSiblings[(branchIndex - 1 + len) % len]
-                                      const nextMid = String(next?.id || '').trim()
-                                      stickToBottomRef.current = false
-                                      autoScrollBlockUntilRef.current = Date.now() + 1200
-                                      if (nextMid) setBranchNav({ mid: nextMid, at: Date.now() })
-                                      controller.actions.switchBranchSibling?.(mid, -1)
-                                    }}
-                                  >
-                                    <ChevronLeftIcon fontSize="inherit" />
-                                  </IconButton>
-                                </span>
-                              </Tooltip>
+                              {!isUser ? (
+                                <>
+                                  <Tooltip title="上一个分支">
+                                    <span>
+                                      <IconButton
+                                        aria-label="上一个分支"
+                                        size="small"
+                                        disabled={!canSwitchBranch || s.loading || uiBusy || chatLocked}
+                                        onClick={() => {
+                                          if (!canSwitchBranch) return
+                                          const len = branchSiblings.length
+                                          if (!len) return
+                                          const next = branchSiblings[(branchIndex - 1 + len) % len]
+                                          const nextMid = String(next?.id || '').trim()
+                                          stickToBottomRef.current = false
+                                          autoScrollBlockUntilRef.current = Date.now() + 1200
+                                          if (nextMid) setBranchNav({ mid: nextMid, at: Date.now() })
+                                          controller.actions.switchBranchSibling?.(mid, -1)
+                                        }}
+                                      >
+                                        <ChevronLeftIcon fontSize="inherit" />
+                                      </IconButton>
+                                    </span>
+                                  </Tooltip>
 
-                              <Tooltip title="下一个分支">
-                                <span>
-                                  <IconButton
-                                    aria-label="下一个分支"
-                                    size="small"
-                                    disabled={!canSwitchBranch || s.loading || uiBusy || chatLocked}
-                                    onClick={() => {
-                                      if (!canSwitchBranch) return
-                                      const len = branchSiblings.length
-                                      if (!len) return
-                                      const next = branchSiblings[(branchIndex + 1 + len) % len]
-                                      const nextMid = String(next?.id || '').trim()
-                                      stickToBottomRef.current = false
-                                      autoScrollBlockUntilRef.current = Date.now() + 1200
-                                      if (nextMid) setBranchNav({ mid: nextMid, at: Date.now() })
-                                      controller.actions.switchBranchSibling?.(mid, 1)
-                                    }}
-                                  >
-                                    <ChevronRightIcon fontSize="inherit" />
-                                  </IconButton>
-                                </span>
-                              </Tooltip>
+                                  <Tooltip title="下一个分支">
+                                    <span>
+                                      <IconButton
+                                        aria-label="下一个分支"
+                                        size="small"
+                                        disabled={!canSwitchBranch || s.loading || uiBusy || chatLocked}
+                                        onClick={() => {
+                                          if (!canSwitchBranch) return
+                                          const len = branchSiblings.length
+                                          if (!len) return
+                                          const next = branchSiblings[(branchIndex + 1 + len) % len]
+                                          const nextMid = String(next?.id || '').trim()
+                                          stickToBottomRef.current = false
+                                          autoScrollBlockUntilRef.current = Date.now() + 1200
+                                          if (nextMid) setBranchNav({ mid: nextMid, at: Date.now() })
+                                          controller.actions.switchBranchSibling?.(mid, 1)
+                                        }}
+                                      >
+                                        <ChevronRightIcon fontSize="inherit" />
+                                      </IconButton>
+                                    </span>
+                                  </Tooltip>
+                                </>
+                              ) : null}
 
                               <Tooltip title="重新回复">
                                 <span>
@@ -3912,29 +3916,33 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                                 </span>
                               </Tooltip>
 
-                              <Tooltip title="编辑">
-                                <span>
-                                  <IconButton aria-label="编辑消息" size="small" disabled={!canEdit} onClick={() => startEditMessage(mid, String(m?.content || ''), messageGenerating)}>
-                                    <EditOutlinedIcon fontSize="inherit" />
-                                  </IconButton>
-                                </span>
-                              </Tooltip>
+                              {isUser ? (
+                                <>
+                                  <Tooltip title="编辑">
+                                    <span>
+                                      <IconButton aria-label="编辑消息" size="small" disabled={!canEdit} onClick={() => startEditMessage(mid, String(m?.content || ''), messageGenerating)}>
+                                        <EditOutlinedIcon fontSize="inherit" />
+                                      </IconButton>
+                                    </span>
+                                  </Tooltip>
 
-                              <Tooltip title="复制">
-                                <IconButton
-                                  aria-label="复制内容"
-                                  size="small"
-                                  onClick={() => {
-                                    const text = String(m?.content || '')
-                                    controller.capabilities?.clipboard?.writeText?.(text).then(
-                                      () => controller.capabilities?.ui?.showToast?.('已复制'),
-                                      () => controller.capabilities?.ui?.showToast?.('复制失败'),
-                                    )
-                                  }}
-                                >
-                                  <ContentCopyIcon fontSize="inherit" />
-                                </IconButton>
-                              </Tooltip>
+                                  <Tooltip title="复制">
+                                    <IconButton
+                                      aria-label="复制内容"
+                                      size="small"
+                                      onClick={() => {
+                                        const text = String(m?.content || '')
+                                        controller.capabilities?.clipboard?.writeText?.(text).then(
+                                          () => controller.capabilities?.ui?.showToast?.('已复制'),
+                                          () => controller.capabilities?.ui?.showToast?.('复制失败'),
+                                        )
+                                      }}
+                                    >
+                                      <ContentCopyIcon fontSize="inherit" />
+                                    </IconButton>
+                                  </Tooltip>
+                                </>
+                              ) : null}
                             </Stack>
                           )}
 
@@ -4106,50 +4114,54 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                         重新回复
                       </MenuItem>
 
-                      <MenuItem
-                        disabled={!msgMenuCanEdit}
-                        onClick={() => {
-                          const mid = msgMenuMid
-                          const pending = msgMenuPending
-                          const text = msgMenuText
-                          closeMsgMenu()
-                          startEditMessage(mid, text, pending)
-                        }}
-                        sx={{ gap: 1 }}
-                      >
-                        <EditOutlinedIcon fontSize="small" />
-                        编辑
-                      </MenuItem>
+                      {msgMenu.role === 'user' ? (
+                        <>
+                          <MenuItem
+                            disabled={!msgMenuCanEdit}
+                            onClick={() => {
+                              const mid = msgMenuMid
+                              const pending = msgMenuPending
+                              const text = msgMenuText
+                              closeMsgMenu()
+                              startEditMessage(mid, text, pending)
+                            }}
+                            sx={{ gap: 1 }}
+                          >
+                            <EditOutlinedIcon fontSize="small" />
+                            编辑
+                          </MenuItem>
 
-                      <MenuItem
-                        disabled={!msgMenuMid}
-                        onClick={() => {
-                          const text = msgMenuText
-                          closeMsgMenu()
-                           controller.capabilities?.clipboard?.writeText?.(text).then(
-                             () => controller.capabilities?.ui?.showToast?.('已复制'),
-                             () => controller.capabilities?.ui?.showToast?.('复制失败'),
-                          )
-                        }}
-                        sx={{ gap: 1 }}
-                      >
-                        <ContentCopyIcon fontSize="small" />
-                        复制
-                      </MenuItem>
+                          <MenuItem
+                            disabled={!msgMenuMid}
+                            onClick={() => {
+                              const text = msgMenuText
+                              closeMsgMenu()
+                              controller.capabilities?.clipboard?.writeText?.(text).then(
+                                () => controller.capabilities?.ui?.showToast?.('已复制'),
+                                () => controller.capabilities?.ui?.showToast?.('复制失败'),
+                              )
+                            }}
+                            sx={{ gap: 1 }}
+                          >
+                            <ContentCopyIcon fontSize="small" />
+                            复制
+                          </MenuItem>
 
-                      <MenuItem
-                        disabled={!msgMenuMid || msgMenuPending || s.loading || uiBusy || chatLocked}
-                        onClick={() => {
-                          const mid = msgMenuMid
-                          const role = msgMenu.role
-                          closeMsgMenu()
-                          setConfirmDelMsg({ mid, role })
-                        }}
-                        sx={{ gap: 1 }}
-                      >
-                        <DeleteOutlineIcon fontSize="small" />
-                        删除
-                      </MenuItem>
+                          <MenuItem
+                            disabled={!msgMenuMid || msgMenuPending || s.loading || uiBusy || chatLocked}
+                            onClick={() => {
+                              const mid = msgMenuMid
+                              const role = msgMenu.role
+                              closeMsgMenu()
+                              setConfirmDelMsg({ mid, role })
+                            }}
+                            sx={{ gap: 1 }}
+                          >
+                            <DeleteOutlineIcon fontSize="small" />
+                            删除
+                          </MenuItem>
+                        </>
+                      ) : null}
                     </>
                   )}
                 </Box>

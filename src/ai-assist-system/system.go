@@ -18,7 +18,7 @@ type System interface {
 type StickerStorage interface {
 	LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error)
 	UpdateSessionTitle(ctx context.Context, roleID string, sessionID string, title string) (types.Session, error)
-	UpdateSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string, content string) (types.Session, error)
+	UpdateSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string, patch types.SessionMessagePatch) (types.Message, error)
 	LoadMermaidFixConfig(ctx context.Context) (types.MermaidFixConfig, error)
 	LoadChatTitleNamingConfig(ctx context.Context) (types.ChatTitleNamingConfig, error)
 	LoadStickerCategory(ctx context.Context, categoryName string) (types.StickerCategory, error)
@@ -223,7 +223,7 @@ func (s *system) FixMermaidInMessage(ctx context.Context, request types.MermaidF
 	if !replaced {
 		return types.MermaidFixResult{}, assistInvalid("target mermaid block was not found in message content", nil)
 	}
-	if _, err := s.storage.UpdateSessionMessage(ctx, roleID, sessionID, messageID, updatedContent); err != nil {
+	if _, err := s.storage.UpdateSessionMessage(ctx, roleID, sessionID, messageID, types.SessionMessagePatch{Content: &updatedContent}); err != nil {
 		return types.MermaidFixResult{}, err
 	}
 	return types.MermaidFixResult{MessageID: messageID, MermaidSource: newCode, UpdatedContent: updatedContent}, nil

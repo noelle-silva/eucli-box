@@ -1,7 +1,9 @@
-import { now } from '../core/utils'
+import { normalizeTimeMs } from '../core/utils'
 import { activateChatBranchByMessage, ensureChatBranch, normalizeBranchId } from '../domain/branching'
-import { beginAssistantRun, checkpointAssistantRun } from '../domain/assistantRunState'
+import { beginAssistantRun, checkpointAssistantRun, finishAssistantRun, type AssistantRunStatus } from '../domain/assistantRunState'
 import { chatMetaFromChat, upsertChatMeta } from '../domain/chatMeta'
+import { normalizeChatMessage, normalizeMessageParentMid } from '../domain/message'
+import { CHAT_DEFAULT_BRANCH_ID } from '../domain/constants'
 
 type DirectEventSubscription = (listener: (event: any) => void) => () => void
 
@@ -22,26 +24,18 @@ export function createEbRunEventConsumer(deps: {
     })
   }
 
-  function millisFromEventTime(value: unknown) {
-    if (typeof value === 'number' && isFinite(value) && value > 0) return value
-    const text = String(value || '').trim()
-    if (!text) return now()
-    const parsed = Date.parse(text)
-    return isFinite(parsed) && parsed > 0 ? parsed : now()
-  }
-
   function sessionKey(roleId: string, sessionId: string) {
     return `${roleId}\n${sessionId}`
   }
 
-  function bufferStreamDelta(payload: any, roleId: string, sessionId: string, messageId: string) {
+  function bufferAssistantMessageUpdate(payload: any, roleId: string, sessionId: string, messageId: string) {
     const key = sessionKey(roleId, sessionId)
     const messages = pendingBySession.get(key) || new Map<string, any>()
     messages.set(messageId, payload)
     pendingBySession.set(key, messages)
   }
 
-  function clearBufferedStreamDelta(roleId: string, sessionId: string, messageId: string) {
+  function clearBufferedAssistantMessageUpdate(roleId: string, sessionId: string, messageId: string) {
     const key = sessionKey(roleId, sessionId)
     const messages = pendingBySession.get(key)
     if (!messages) return
@@ -49,7 +43,33 @@ export function createEbRunEventConsumer(deps: {
     if (!messages.size) pendingBySession.delete(key)
   }
 
-  function applyModelStreamDelta(raw: unknown) {
+  function normalizeRuntimeAssistantMessage(raw: any, fallback: { parentMessageId?: string; branchId?: string; eventTime: number }) {
+    const message = raw && typeof raw === 'object' ? raw : null
+    if (!message) return null
+    const id = String(message.id || '').trim()
+    const type = String(message.type || message.role || '').trim()
+    if (!id || type !== 'assistant') return null
+
+    const out = normalizeChatMessage(message, { activeBranchId: fallback.branchId || CHAT_DEFAULT_BRANCH_ID, toolMessagesAsAssistant: true })
+    out.id = id
+    out.type = 'assistant'
+    out.role = 'assistant'
+    out.parentMid = normalizeMessageParentMid(message) || String(fallback.parentMessageId || '').trim()
+    out.branchId = String(message.branchId || '').trim() ? normalizeBranchId(message.branchId) : ''
+    out.createdAt = normalizeTimeMs(message.createdAt, fallback.eventTime)
+    out.updatedAt = normalizeTimeMs(message.updatedAt, out.createdAt)
+    return out
+  }
+
+  function assistantStatusFromRunStatus(value: unknown): AssistantRunStatus | null {
+    const status = String(value || '').trim()
+    if (status === 'completed') return 'succeeded'
+    if (status === 'failed') return 'failed'
+    if (status === 'cancelled' || status === 'canceled') return 'canceled'
+    return null
+  }
+
+  function applyAssistantMessageUpdate(raw: unknown) {
     const payload = raw && typeof raw === 'object' ? (raw as any) : null
     const state = deps.getState()
     if (!payload || !state.data) return false
@@ -57,36 +77,45 @@ export function createEbRunEventConsumer(deps: {
     const runId = String(payload.runId || '').trim()
     const roleId = String(payload.roleId || '').trim()
     const sessionId = String(payload.sessionId || '').trim()
-    const messageId = String(payload.messageId || '').trim()
+    const eventTime = normalizeTimeMs(payload.createdAt)
+    const incomingMessage = normalizeRuntimeAssistantMessage(payload.message, { eventTime })
+    const messageId = String(incomingMessage?.id || '').trim()
     if (!runId || !roleId || !sessionId || !messageId) return false
 
     const box = state.data.chatsByRole && typeof state.data.chatsByRole === 'object' ? state.data.chatsByRole[roleId] : null
     const chats = Array.isArray(box?.chats) ? box.chats : []
     const chat = chats.find((item: any) => String(item?.id || '').trim() === sessionId) || null
     if (!chat) {
-      bufferStreamDelta(payload, roleId, sessionId, messageId)
+      bufferAssistantMessageUpdate(payload, roleId, sessionId, messageId)
       return false
     }
-    clearBufferedStreamDelta(roleId, sessionId, messageId)
+    clearBufferedAssistantMessageUpdate(roleId, sessionId, messageId)
     if (!Array.isArray(chat.messages)) chat.messages = []
 
-    const eventTime = millisFromEventTime(payload.createdAt)
-    const parentMid = String(payload.parentMessageId || '').trim()
+    const parentMid = String(incomingMessage.parentMid || '').trim()
     const parent = parentMid ? chat.messages.find((item: any) => String(item?.id || '').trim() === parentMid) || null : null
-    const branchId = normalizeBranchId(payload.branchId || parent?.branchId || 'main')
+    const branchId = normalizeBranchId(incomingMessage.branchId || parent?.branchId || CHAT_DEFAULT_BRANCH_ID)
 
     let message = chat.messages.find((item: any) => String(item?.id || '').trim() === messageId) || null
     if (!message) {
-      message = { id: messageId, role: 'assistant', content: '', parentMid, branchId, createdAt: eventTime, updatedAt: eventTime }
+      message = incomingMessage
       chat.messages.push(message)
+    } else {
+      Object.assign(message, incomingMessage)
     }
 
     message.role = 'assistant'
+    message.type = 'assistant'
     if (parentMid) message.parentMid = parentMid
     message.branchId = branchId
-    message.updatedAt = eventTime
-    beginAssistantRun(message, { generationId: runId, stream: true, resetContent: false, startedAt: Number(message.createdAt || eventTime) || eventTime })
-    checkpointAssistantRun(message, String(payload.content ?? String(message.content || '') + String(payload.contentDelta || '')), eventTime)
+    message.updatedAt = Math.max(Number(message.updatedAt || 0), eventTime)
+    const terminalStatus = assistantStatusFromRunStatus(payload.status)
+    if (terminalStatus) {
+      finishAssistantRun(message, message.content, terminalStatus, message.updatedAt)
+    } else {
+      beginAssistantRun(message, { generationId: runId, stream: !!payload.stream, resetContent: false, startedAt: Number(message.createdAt || eventTime) || eventTime })
+      checkpointAssistantRun(message, message.content, message.updatedAt)
+    }
 
     chat.updatedAt = Math.max(Number(chat.updatedAt || 0), eventTime)
     const branch = ensureChatBranch(chat, branchId)
@@ -120,7 +149,7 @@ export function createEbRunEventConsumer(deps: {
     pendingBySession.delete(key)
     let changed = false
     for (const payload of items) {
-      changed = applyModelStreamDelta(payload) || changed
+      changed = applyAssistantMessageUpdate(payload) || changed
     }
     return changed
   }
@@ -128,7 +157,7 @@ export function createEbRunEventConsumer(deps: {
   function applyRunEvent(raw: unknown) {
     const event = raw && typeof raw === 'object' ? (raw as any) : null
     if (!event) return false
-    if (String(event.type || '').trim() === 'model_stream_delta') return applyModelStreamDelta(event.payload)
+    if (String(event.type || '').trim() === 'assistant_message_update') return applyAssistantMessageUpdate(event.payload)
     return false
   }
 

@@ -2,6 +2,7 @@ package agentruntime
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"eucli-box/pkg/types"
@@ -37,5 +38,87 @@ func (s *system) publish(runID string, eventType string, payload any) {
 			delete(s.subscribers, ch)
 			close(ch)
 		}
+	}
+}
+
+func (s *system) publishAssistantMessageUpdate(record *runRecord) {
+	message, ok := currentRunAssistantMessage(record)
+	if !ok {
+		return
+	}
+	state, _ := s.getRunState(record.runID)
+	now := time.Now().UTC()
+	s.publish(record.runID, "assistant_message_update", types.RunAssistantMessageUpdate{RunID: record.runID, RoleID: record.roleID, SessionID: record.session.ID, Stream: record.stream, Status: state.Status, Reason: state.Reason, Error: cloneErrorPayload(state.Error), Message: cloneRunMessageSnapshot(message), CreatedAt: now})
+}
+
+func currentRunAssistantMessage(record *runRecord) (types.Message, bool) {
+	messageID := strings.TrimSpace(record.activeAssistantID)
+	if messageID == "" && record.messageParent.Type == "assistant" {
+		messageID = strings.TrimSpace(record.messageParent.ID)
+	}
+	if messageID == "" {
+		return types.Message{}, false
+	}
+	message, ok := messageByID(record.session.Messages, messageID)
+	if !ok || message.Type != "assistant" {
+		return types.Message{}, false
+	}
+	return message, true
+}
+
+func cloneRunMessageSnapshot(message types.Message) types.Message {
+	message.Error = cloneErrorPayload(message.Error)
+	message.Parts = cloneRunMessageParts(message.Parts)
+	if len(message.Attachments) > 0 {
+		message.Attachments = append([]types.MessageAttachment(nil), message.Attachments...)
+	}
+	return message
+}
+
+func cloneRunMessageParts(parts []types.MessagePart) []types.MessagePart {
+	if len(parts) == 0 {
+		return nil
+	}
+	out := make([]types.MessagePart, len(parts))
+	for index, part := range parts {
+		out[index] = part
+		out[index].Input = cloneMapAny(part.Input)
+		out[index].Display = cloneMapAny(part.Display)
+		if part.Decision != nil {
+			decision := *part.Decision
+			out[index].Decision = &decision
+		}
+		if part.Result != nil {
+			result := *part.Result
+			result.Metadata = cloneMapAny(part.Result.Metadata)
+			out[index].Result = &result
+		}
+	}
+	return out
+}
+
+func cloneMapAny(input map[string]any) map[string]any {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(input))
+	for key, value := range input {
+		out[key] = cloneAny(value)
+	}
+	return out
+}
+
+func cloneAny(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return cloneMapAny(typed)
+	case []any:
+		out := make([]any, len(typed))
+		for index, item := range typed {
+			out[index] = cloneAny(item)
+		}
+		return out
+	default:
+		return value
 	}
 }

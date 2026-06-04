@@ -37,6 +37,7 @@ func (s *system) handleToolIntents(ctx context.Context, record *runRecord, inten
 	if err := s.saveSession(ctx, record.session, types.RunStatusRunning); err != nil {
 		return nil, err
 	}
+	s.publishAssistantMessageUpdate(record)
 
 	pending := pendingConfirmationPlans(entries)
 	if len(pending) > 0 {
@@ -72,6 +73,7 @@ func (s *system) handleToolIntents(ctx context.Context, record *runRecord, inten
 		if err := s.saveSession(ctx, record.session, types.RunStatusRunning); err != nil {
 			return nil, err
 		}
+		s.publishAssistantMessageUpdate(record)
 	}
 
 	ready := readyToolEntries(entries)
@@ -84,12 +86,20 @@ func (s *system) handleToolIntents(ctx context.Context, record *runRecord, inten
 	if err := s.saveSession(ctx, record.session, types.RunStatusRunning); err != nil {
 		return nil, err
 	}
-	executed := s.executeReadyTools(ctx, ready)
-	for _, result := range executed {
+	s.publishAssistantMessageUpdate(record)
+	executed, updateErr := s.executeReadyTools(ctx, ready, func(result toolExecutionResult) error {
 		upsertRunToolPart(record, result.Entry.Action, toolResultPartState(result), &result.Entry.Plan.Decision, &result.Result)
-	}
-	if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
-		return nil, err
+		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
+			return err
+		}
+		if err := s.saveSession(ctx, record.session, types.RunStatusRunning); err != nil {
+			return err
+		}
+		s.publishAssistantMessageUpdate(record)
+		return nil
+	})
+	if updateErr != nil {
+		return nil, updateErr
 	}
 
 	return orderedToolResults(entries, executed)
@@ -107,16 +117,16 @@ func (s *system) applyPreparedToolPlan(record *runRecord, entry *toolRunEntry) {
 	}
 }
 
-func (s *system) executeReadyTools(ctx context.Context, entries []toolRunEntry) []toolExecutionResult {
+func (s *system) executeReadyTools(ctx context.Context, entries []toolRunEntry, onResult func(toolExecutionResult) error) ([]toolExecutionResult, error) {
 	if len(entries) == 0 {
-		return nil
+		return nil, nil
 	}
 	limit := s.config.MaxParallelTools
 	if limit > len(entries) {
 		limit = len(entries)
 	}
 	semaphore := make(chan struct{}, limit)
-	results := make([]toolExecutionResult, len(entries))
+	resultCh := make(chan toolExecutionResult, len(entries))
 	var wg sync.WaitGroup
 	for index, entry := range entries {
 		wg.Add(1)
@@ -130,11 +140,25 @@ func (s *system) executeReadyTools(ctx context.Context, entries []toolRunEntry) 
 			if err != nil {
 				result = types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: entry.Action.ID, ToolName: entry.Action.ToolName, Status: types.ToolStatusFailed, Error: err.Error(), CreatedAt: time.Now().UTC()}
 			}
-			results[resultIndex] = toolExecutionResult{Entry: entry, Result: result, Err: err}
+			resultCh <- toolExecutionResult{Entry: entry, Result: result, Err: err}
 		}(index, entry)
 	}
-	wg.Wait()
-	return results
+	go func() {
+		wg.Wait()
+		close(resultCh)
+	}()
+	results := make([]toolExecutionResult, 0, len(entries))
+	var firstUpdateErr error
+	for result := range resultCh {
+		results = append(results, result)
+		if onResult == nil {
+			continue
+		}
+		if err := onResult(result); err != nil && firstUpdateErr == nil {
+			firstUpdateErr = err
+		}
+	}
+	return results, firstUpdateErr
 }
 
 func pendingConfirmationPlans(entries []toolRunEntry) []types.ToolRunPlan {

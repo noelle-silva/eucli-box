@@ -160,6 +160,18 @@ type RunStreamDelta struct {
 	CreatedAt       time.Time `json:"createdAt"`
 }
 
+type RunAssistantMessageUpdate struct {
+	RunID     string        `json:"runId"`
+	RoleID    string        `json:"roleId"`
+	SessionID string        `json:"sessionId"`
+	Stream    bool          `json:"stream,omitempty"`
+	Status    RunStatus     `json:"status,omitempty"`
+	Reason    string        `json:"reason,omitempty"`
+	Error     *ErrorPayload `json:"error,omitempty"`
+	Message   Message       `json:"message"`
+	CreatedAt time.Time     `json:"createdAt"`
+}
+
 type RunEvent struct {
 	ID        string    `json:"id"`
 	RunID     string    `json:"runId"`

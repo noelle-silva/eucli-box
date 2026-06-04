@@ -1,5 +1,7 @@
-import { uid, clamp } from '../core/utils'
-import { CHAT_ATTACHMENT_KINDS, CHAT_MSG_GROUP_ROLES } from './constants'
+import { now, uid, clamp, normImagePaths, normalizeTimeMs } from '../core/utils'
+import { CHAT_ATTACHMENT_KINDS, CHAT_DEFAULT_BRANCH_ID, CHAT_MSG_GROUP_ROLES } from './constants'
+import { normalizeBranchId } from './branching'
+import { normalizeMessageModelRef } from './modelRefUtils'
 
 export function normalizeMessageError(input: any) {
   const raw = input && typeof input === 'object' ? input : null
@@ -47,6 +49,55 @@ export function normalizeMessageGroup(m: any) {
   return { groupId, groupRole, groupParentMid }
 }
 
+export function normalizeMessageParentMid(message: any) {
+  return String(message?.parentMid || message?.parentMessageId || '').trim()
+}
+
+export function hasExplicitMessageParentLinks(messages: any[]) {
+  const list = Array.isArray(messages) ? messages : []
+  return list.some((message: any) => !!normalizeMessageParentMid(message))
+}
+
+export function normalizeChatMessage(input: any, options?: { activeBranchId?: unknown; toolMessagesAsAssistant?: boolean }) {
+  const m = input && typeof input === 'object' ? input : {}
+  const messageType0 = String((m as any).type || (m as any).role || '').trim()
+  const messageType = ['assistant', 'tool', 'tool_request', 'tool_confirmation', 'failure'].includes(messageType0) ? messageType0 : 'user'
+  const role0 = String((m as any).role || '').trim()
+  const toolMessagesAsAssistant = options?.toolMessagesAsAssistant !== false
+  const role =
+    role0 === 'assistant'
+      ? 'assistant'
+      : messageType === 'assistant'
+        ? 'assistant'
+        : toolMessagesAsAssistant && (messageType === 'tool' || messageType === 'tool_request' || messageType === 'tool_confirmation')
+          ? 'assistant'
+          : 'user'
+  const createdAt = normalizeTimeMs((m as any).createdAt, normalizeTimeMs((m as any).updatedAt, 0) || now())
+  const updatedAt = normalizeTimeMs((m as any).updatedAt, createdAt)
+  const out: any = {
+    id: String((m as any).id || uid('m')),
+    type: messageType,
+    role,
+    speakerRoleId: String((m as any).speakerRoleId || '').trim(),
+    content: String((m as any).content || ''),
+    parts: normalizeMessageParts((m as any).parts),
+    images: normImagePaths((m as any).images),
+    attachments: normalizeMessageAttachments((m as any).attachments),
+    ...normalizeMessageGroup(m),
+    branchId: normalizeBranchId((m as any).branchId || options?.activeBranchId || CHAT_DEFAULT_BRANCH_ID),
+    parentMid: normalizeMessageParentMid(m),
+    createdAt,
+    updatedAt,
+    modelRef: normalizeMessageModelRef(m),
+  }
+  if (typeof (m as any).pending === 'boolean') out.pending = !!(m as any).pending
+  if (typeof (m as any).streaming === 'boolean') out.streaming = !!(m as any).streaming
+  const error = normalizeMessageError((m as any).error)
+  if (error) out.error = error
+  if ((m as any).assistantRun && typeof (m as any).assistantRun === 'object') out.assistantRun = { ...(m as any).assistantRun }
+  return out
+}
+
 export function normalizeMessageParts(input: any) {
   const list = Array.isArray(input) ? input : []
   const out: any[] = []
@@ -58,7 +109,7 @@ export function normalizeMessageParts(input: any) {
     if (type === 'text') {
       const text = String((raw as any).text || '')
       if (!text) continue
-      out.push({ id, type: 'text', text, createdAt: (raw as any).createdAt, updatedAt: (raw as any).updatedAt })
+      out.push({ id, type: 'text', text, createdAt: normalizeTimeMs((raw as any).createdAt, 0), updatedAt: normalizeTimeMs((raw as any).updatedAt, normalizeTimeMs((raw as any).createdAt, 0)) })
       continue
     }
     if (type !== 'tool') continue
@@ -68,7 +119,7 @@ export function normalizeMessageParts(input: any) {
     const rawText = String((raw as any).raw || '')
     const state = String((raw as any).state || '').trim()
     const inputValue = (raw as any).input && typeof (raw as any).input === 'object' && !Array.isArray((raw as any).input) ? (raw as any).input : {}
-    const part: any = { id, type: 'tool', source, raw: rawText, callId, toolName, state, input: inputValue, createdAt: (raw as any).createdAt, updatedAt: (raw as any).updatedAt }
+    const part: any = { id, type: 'tool', source, raw: rawText, callId, toolName, state, input: inputValue, createdAt: normalizeTimeMs((raw as any).createdAt, 0), updatedAt: normalizeTimeMs((raw as any).updatedAt, normalizeTimeMs((raw as any).createdAt, 0)) }
     const display = (raw as any).display && typeof (raw as any).display === 'object' && !Array.isArray((raw as any).display) ? (raw as any).display : null
     if (display) part.display = { ...display }
     const decision = (raw as any).decision && typeof (raw as any).decision === 'object' ? (raw as any).decision : null
@@ -79,7 +130,7 @@ export function normalizeMessageParts(input: any) {
         toolName: String((decision as any).toolName || '').trim(),
         status: String((decision as any).status || '').trim(),
         reason: String((decision as any).reason || '').trim(),
-        createdAt: (decision as any).createdAt,
+        createdAt: normalizeTimeMs((decision as any).createdAt, 0),
       }
     }
     const result = (raw as any).result && typeof (raw as any).result === 'object' ? (raw as any).result : null
@@ -92,7 +143,7 @@ export function normalizeMessageParts(input: any) {
         content: String((result as any).content || ''),
         error: String((result as any).error || '').trim(),
         metadata: (result as any).metadata && typeof (result as any).metadata === 'object' && !Array.isArray((result as any).metadata) ? (result as any).metadata : {},
-        createdAt: (result as any).createdAt,
+        createdAt: normalizeTimeMs((result as any).createdAt, 0),
       }
     }
     out.push(part)

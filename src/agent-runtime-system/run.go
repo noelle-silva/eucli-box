@@ -57,6 +57,7 @@ func (s *system) CancelRun(ctx context.Context, runID string) error {
 	if err != nil {
 		return err
 	}
+	s.publishAssistantMessageUpdate(record)
 	s.publish(runID, "run_cancelled", state)
 	return nil
 }
@@ -93,6 +94,9 @@ func (s *system) startRun(ctx context.Context, record *runRecord, request types.
 	}
 	if err := s.saveSession(ctx, session, types.RunStatusRunning); err != nil {
 		return state, types.Session{}, err
+	}
+	if record.stream {
+		s.publishAssistantMessageUpdate(record)
 	}
 	state, _ = s.getRunState(record.runID)
 	return state, contextSession, nil
@@ -147,14 +151,14 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 			s.failRun(context.Background(), record, record.session, err)
 			return
 		}
+		if assistantOutputRecorded {
+			s.publishAssistantMessageUpdate(record)
+		}
 		if len(modelResponse.ToolIntents) == 0 {
 			s.completeRun(context.Background(), record, record.session)
 			return
 		}
-		results, err := s.handleToolIntents(ctx, record, modelResponse.ToolIntents)
-		for _, result := range results {
-			s.publish(record.runID, "tool_result", result)
-		}
+		_, err = s.handleToolIntents(ctx, record, modelResponse.ToolIntents)
 		if err != nil {
 			s.failRun(context.Background(), record, record.session, err)
 			return
@@ -278,6 +282,7 @@ func (s *system) completeRun(ctx context.Context, record *runRecord, session typ
 	if err != nil {
 		return
 	}
+	s.publishAssistantMessageUpdate(record)
 	s.publish(record.runID, "run_completed", state)
 }
 
@@ -315,6 +320,7 @@ func (s *system) failRunWithPayload(ctx context.Context, record *runRecord, sess
 			return
 		}
 	}
+	s.publishAssistantMessageUpdate(record)
 	s.publish(record.runID, "run_failed", state)
 }
 
@@ -339,6 +345,7 @@ func (s *system) cancelRunRecord(ctx context.Context, record *runRecord, session
 			return
 		}
 	}
+	s.publishAssistantMessageUpdate(record)
 	s.publish(record.runID, "run_cancelled", state)
 }
 

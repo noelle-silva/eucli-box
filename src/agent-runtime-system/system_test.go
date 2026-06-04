@@ -483,6 +483,53 @@ func TestRunExecutesMultipleToolIntentsFromOneModelResponse(t *testing.T) {
 	}
 }
 
+func TestRunPublishesAssistantMessageUpdateWhenEachToolFinishes(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{
+		{ID: "m1", Content: "need tools", ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "slow.md"}}, {ID: "intent-2", ToolName: "file-reader", Arguments: map[string]any{"path": "fast.md"}}}},
+		{ID: "m2", Content: "final"},
+	}
+	fakes.tool.executeDelays = map[string]time.Duration{"intent-1": 180 * time.Millisecond, "intent-2": 20 * time.Millisecond}
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3, MaxParallelTools: 2})
+	events, unsubscribe, err := system.Subscribe(context.Background())
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	defer unsubscribe()
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tools"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case event := <-events:
+			if event.Type != "assistant_message_update" {
+				continue
+			}
+			payload, ok := event.Payload.(types.RunAssistantMessageUpdate)
+			if !ok {
+				t.Fatalf("assistant update payload = %#v", event.Payload)
+			}
+			fast := toolPartByCallID(payload.Message, "intent-2")
+			slow := toolPartByCallID(payload.Message, "intent-1")
+			if fast != nil && fast.State == "completed" && fast.Result != nil {
+				if slow != nil && slow.State == "completed" && slow.Result != nil {
+					t.Fatalf("fast tool update was only visible after slow tool completed: %#v", payload.Message.Parts)
+				}
+				final := waitRun(t, system, state.ID)
+				if final.Status != types.RunStatusCompleted {
+					t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatalf("did not receive fast tool assistant update before timeout")
+		}
+	}
+}
+
 func TestRunExecutesToolBatchWithParallelLimit(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.responses = []types.ModelResponse{
@@ -904,6 +951,7 @@ type fakeRuntimeTools struct {
 	activeExecutions    int
 	maxActiveExecutions int
 	executeDelay        time.Duration
+	executeDelays       map[string]time.Duration
 	executeResult       types.ToolResult
 	toolSummaries       []types.ToolSummary
 	parsedContent       string
@@ -986,6 +1034,11 @@ func (f *fakeRuntimeTools) Execute(ctx context.Context, plan types.ToolRunPlan) 
 		f.maxActiveExecutions = f.activeExecutions
 	}
 	delay := f.executeDelay
+	if f.executeDelays != nil {
+		if configured, ok := f.executeDelays[plan.Action.ID]; ok {
+			delay = configured
+		}
+	}
 	f.mu.Unlock()
 	if delay > 0 {
 		select {

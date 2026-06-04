@@ -85,6 +85,7 @@ func (s *system) waitForConfirmations(ctx context.Context, record *runRecord, pl
 		cleanup()
 		return nil, err
 	}
+	s.publishAssistantMessageUpdate(record)
 	for _, plan := range plans {
 		s.publish(record.runID, "tool_confirmation_required", plan)
 	}
@@ -123,6 +124,7 @@ func (s *system) waitForConfirmations(ctx context.Context, record *runRecord, pl
 	if err != nil {
 		return nil, err
 	}
+	s.publishAssistantMessageUpdate(record)
 	confirmed := make([]types.ToolRunPlan, 0, len(plans))
 	for _, plan := range plans {
 		confirmed = append(confirmed, confirmedByDecisionID[plan.Decision.ID])

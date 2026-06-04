@@ -1,0 +1,33 @@
+{
+  "defaultProvider": "anysearch",
+  "allowModelProviderSelection": true,
+  "providers": [
+    {
+      "id": "tavily",
+      "kind": "tavily",
+      "enabled": true,
+      "endpoint": "https://api.tavily.com/search",
+      "apiKeyEnv": "TAVILY_API_KEY",
+      "apiKeyUserConfig": "tavilyApiKey",
+      "anonymousAllowed": false,
+      "maxResults": 20
+    },
+    {
+      "id": "anysearch",
+      "kind": "anysearch",
+      "enabled": true,
+      "endpoint": "https://api.anysearch.com/v1/search",
+      "apiKeyEnv": "ANYSEARCH_API_KEY",
+      "apiKeyUserConfig": "anysearchApiKey",
+      "anonymousAllowed": true,
+      "maxResults": 100
+    }
+  ],
+  "limits": {
+    "defaultTimeoutMs": 30000,
+    "maxTimeoutMs": 120000,
+    "defaultMaxResults": 5,
+    "maxResults": 100,
+    "maxOutputChars": 20000
+  }
+}

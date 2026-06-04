@@ -1,0 +1,164 @@
+{
+  "id": "web_search",
+  "name": "web_search",
+  "description": "Search the web through a selected search provider and return normalized markdown results with structured metadata.",
+  "promptDescription": "Search the web through one enabled provider. Required [query] is the search text. Optional [provider] selects tavily or anysearch; if omitted, the configured default is anysearch. Optional [maxResults] controls result count. Optional [timeoutMs] controls request timeout. Optional [includeContent] includes longer provider content in the markdown output when the provider returns it. Tavily-specific optional fields: [searchDepth] ultra-fast|fast|basic|advanced, [topic] general|news|finance, [includeAnswer], [includeImages], [includeImageDescriptions], [includeRawContent] text|markdown, [country], [timeRange] day|week|month|year|d|w|m|y, [startDate], [endDate]. AnySearch-specific optional fields: [domain], [tag], [contentTypes], [zone] cn|intl, [language], [params]. API keys should be configured in tool user config or environment variables, not placed in prompts. The tool returns normalized markdown plus metadata including provider, query, resultsCount, statusCode, durationMs, truncated, and providerMetadata.",
+  "type": "local",
+  "directory": ".",
+  "userConfigSchema": {
+    "type": "object",
+    "properties": {
+      "provider": {
+        "type": "string",
+        "enum": ["tavily", "anysearch"],
+        "title": "默认搜索供应商",
+        "description": "模型未指定 provider 时使用的搜索供应商。"
+      },
+      "maxResults": {
+        "type": "integer",
+        "title": "默认结果数量",
+        "description": "模型未指定 maxResults 时使用的结果数量。"
+      },
+      "timeoutMs": {
+        "type": "integer",
+        "title": "默认超时（毫秒）",
+        "description": "模型未指定 timeoutMs 时使用的请求超时。"
+      },
+      "maxOutputChars": {
+        "type": "integer",
+        "title": "默认最大输出字符数",
+        "description": "模型未指定 maxOutputChars 时使用的最大 Markdown 输出字符数。"
+      },
+      "includeContent": {
+        "type": "boolean",
+        "title": "默认包含正文",
+        "description": "模型未指定 includeContent 时是否在输出中包含供应商返回的较长正文。"
+      },
+      "tavilyApiKey": {
+        "type": "string",
+        "title": "Tavily API Key",
+        "description": "Tavily 搜索密钥；也可通过 TAVILY_API_KEY 环境变量提供。"
+      },
+      "anysearchApiKey": {
+        "type": "string",
+        "title": "AnySearch API Key",
+        "description": "AnySearch 搜索密钥；也可通过 ANYSEARCH_API_KEY 环境变量提供。AnySearch 支持匿名访问，但限额较低。"
+      }
+    },
+    "additionalProperties": false
+  },
+  "defaultConfig": {
+    "provider": "anysearch",
+    "maxResults": 5,
+    "timeoutMs": 30000,
+    "maxOutputChars": 20000,
+    "includeContent": false
+  },
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Search query."
+      },
+      "provider": {
+        "type": "string",
+        "enum": ["tavily", "anysearch"],
+        "description": "Optional enabled provider id. Defaults to anysearch."
+      },
+      "maxResults": {
+        "type": "integer",
+        "description": "Maximum number of results. Tavily supports up to 20; AnySearch supports up to 100."
+      },
+      "timeoutMs": {
+        "type": "integer",
+        "description": "Request timeout in milliseconds."
+      },
+      "maxOutputChars": {
+        "type": "integer",
+        "description": "Maximum markdown output characters."
+      },
+      "includeContent": {
+        "type": "boolean",
+        "description": "Include longer provider content when returned."
+      },
+      "description": {
+        "type": "string",
+        "description": "Short human-readable reason for running the search."
+      },
+      "searchDepth": {
+        "type": "string",
+        "enum": ["ultra-fast", "fast", "basic", "advanced"],
+        "description": "Tavily search depth."
+      },
+      "topic": {
+        "type": "string",
+        "enum": ["general", "news", "finance"],
+        "description": "Tavily topic."
+      },
+      "includeAnswer": {
+        "type": "boolean",
+        "description": "Tavily: include direct answer when available."
+      },
+      "includeImages": {
+        "type": "boolean",
+        "description": "Tavily: request image URLs."
+      },
+      "includeImageDescriptions": {
+        "type": "boolean",
+        "description": "Tavily: request image descriptions."
+      },
+      "includeRawContent": {
+        "type": "string",
+        "enum": ["text", "markdown"],
+        "description": "Tavily: request raw page content in text or markdown."
+      },
+      "country": {
+        "type": "string",
+        "description": "Tavily: country filter, lower-case English country name."
+      },
+      "timeRange": {
+        "type": "string",
+        "enum": ["day", "week", "month", "year", "d", "w", "m", "y"],
+        "description": "Tavily: recent time range. Ignored when startDate or endDate is set."
+      },
+      "startDate": {
+        "type": "string",
+        "description": "Tavily: start date in YYYY-MM-DD format."
+      },
+      "endDate": {
+        "type": "string",
+        "description": "Tavily: end date in YYYY-MM-DD format."
+      },
+      "domain": {
+        "type": "string",
+        "description": "AnySearch: domain filter, for example code, finance, academic, security."
+      },
+      "tag": {
+        "type": "string",
+        "description": "AnySearch: capability tag, for example code.doc."
+      },
+      "contentTypes": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "AnySearch: content type filters such as web, news, doc."
+      },
+      "zone": {
+        "type": "string",
+        "enum": ["cn", "intl"],
+        "description": "AnySearch: regional zone."
+      },
+      "language": {
+        "type": "string",
+        "description": "AnySearch: preferred language such as zh-CN or en."
+      },
+      "params": {
+        "type": "object",
+        "description": "AnySearch: extended provider-specific parameters."
+      }
+    },
+    "required": ["query"],
+    "additionalProperties": false
+  },
+  "binaries": []
+}

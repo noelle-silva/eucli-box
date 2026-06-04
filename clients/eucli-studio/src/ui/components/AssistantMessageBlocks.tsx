@@ -64,8 +64,6 @@ function prettyJson(value: any) {
 }
 
 function invocationEditText(part: any) {
-  const source = String(part?.source || '').trim()
-  if (source === 'text_protocol') return String(part?.raw || '')
   return prettyJson({ toolName: String(part?.toolName || ''), input: part?.input && typeof part.input === 'object' ? part.input : {} })
 }
 
@@ -223,7 +221,7 @@ export function AssistantMessageBlocks(props: AssistantMessageBlocksProps) {
                 sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#fff' } }}
               />
             ) : block.kind === 'text' ? (
-              <AssistantMessageHost controller={controller} className="prose" text={block.text} parts={[]} mid={mid} renderSafetyPolicyKey={renderSafetyPolicyKey} chatRootRef={chatRootRef} />
+              <AssistantMessageHost controller={controller} className="prose" text={block.text} parts={block.parts} mid={mid} renderSafetyPolicyKey={renderSafetyPolicyKey} chatRootRef={chatRootRef} />
             ) : (
               <Box className="prose" dangerouslySetInnerHTML={{ __html: renderToolBlockHtml(block) }} />
             )}

@@ -23,7 +23,18 @@ func parseRequest(input types.ToolExecutionInput, config Config) (commandRequest
 	if err != nil {
 		return commandRequest{}, err
 	}
+	defaultProvider, err := stringArgument(input.UserConfig, "provider", false)
+	if err != nil {
+		return commandRequest{}, err
+	}
 	provider, err := stringArgument(input.Arguments, "provider", false)
+	if err != nil {
+		return commandRequest{}, err
+	}
+	if strings.TrimSpace(provider) == "" {
+		provider = defaultProvider
+	}
+	defaultWorkdir, err := stringArgument(input.UserConfig, "workdir", false)
 	if err != nil {
 		return commandRequest{}, err
 	}
@@ -31,11 +42,25 @@ func parseRequest(input types.ToolExecutionInput, config Config) (commandRequest
 	if err != nil {
 		return commandRequest{}, err
 	}
+	if strings.TrimSpace(workdir) == "" {
+		workdir = defaultWorkdir
+	}
+	defaultDescription, err := stringArgument(input.UserConfig, "description", false)
+	if err != nil {
+		return commandRequest{}, err
+	}
 	description, err := stringArgument(input.Arguments, "description", false)
 	if err != nil {
 		return commandRequest{}, err
 	}
-	timeoutMs, err := intArgument(input.Arguments, "timeoutMs", config.Limits.DefaultTimeoutMs)
+	if strings.TrimSpace(description) == "" {
+		description = defaultDescription
+	}
+	defaultTimeoutMs, err := intArgument(input.UserConfig, "timeoutMs", config.Limits.DefaultTimeoutMs)
+	if err != nil {
+		return commandRequest{}, err
+	}
+	timeoutMs, err := intArgument(input.Arguments, "timeoutMs", defaultTimeoutMs)
 	if err != nil {
 		return commandRequest{}, err
 	}
@@ -45,7 +70,11 @@ func parseRequest(input types.ToolExecutionInput, config Config) (commandRequest
 	if timeoutMs > config.Limits.MaxTimeoutMs {
 		timeoutMs = config.Limits.MaxTimeoutMs
 	}
-	maxOutputChars, err := intArgument(input.Arguments, "maxOutputChars", config.Limits.MaxOutputChars)
+	defaultMaxOutputChars, err := intArgument(input.UserConfig, "maxOutputChars", config.Limits.MaxOutputChars)
+	if err != nil {
+		return commandRequest{}, err
+	}
+	maxOutputChars, err := intArgument(input.Arguments, "maxOutputChars", defaultMaxOutputChars)
 	if err != nil {
 		return commandRequest{}, err
 	}

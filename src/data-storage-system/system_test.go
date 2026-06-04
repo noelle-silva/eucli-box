@@ -326,6 +326,43 @@ func TestLoadToolResolvesRelativeDirectoryAgainstToolFolder(t *testing.T) {
 	}
 }
 
+func TestSaveToolUserConfigPreservesToolDefinition(t *testing.T) {
+	system := newTestSystem(t)
+	tool := types.ToolDefinition{
+		ID:          "shell_command",
+		Name:        "shell_command",
+		Description: "Run shell command",
+		Type:        "local",
+		Directory:   ".",
+		UserConfigSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"timeoutMs": map[string]any{"type": "integer"},
+			},
+		},
+		DefaultConfig: map[string]any{"provider": "git-bash"},
+		UserConfig:    map[string]any{"timeoutMs": float64(1000)},
+		Binaries:      []types.ToolBinary{{GOOS: "windows", GOARCH: "amd64", Path: "binary/windows-amd64/shell_command.exe"}},
+	}
+	if err := system.SaveTool(context.Background(), tool); err != nil {
+		t.Fatalf("SaveTool() error = %v", err)
+	}
+
+	updated, err := system.SaveToolUserConfig(context.Background(), tool.ID, map[string]any{"timeoutMs": float64(2000)})
+	if err != nil {
+		t.Fatalf("SaveToolUserConfig() error = %v", err)
+	}
+	if updated.UserConfig["timeoutMs"] != float64(2000) {
+		t.Fatalf("userConfig = %#v", updated.UserConfig)
+	}
+	if updated.Name != tool.Name || updated.Description != tool.Description || updated.Type != tool.Type || updated.DefaultConfig["provider"] != "git-bash" || len(updated.Binaries) != 1 || updated.UserConfigSchema["type"] != "object" {
+		t.Fatalf("tool definition was not preserved: %#v", updated)
+	}
+	if updated.Directory != filepath.Join(system.paths.root, "tools", tool.ID) {
+		t.Fatalf("directory = %q", updated.Directory)
+	}
+}
+
 func TestRebuildIndexesRestoresDeletedIndexes(t *testing.T) {
 	system := newTestSystem(t)
 	role := types.Role{ID: "developer", Name: "Developer"}

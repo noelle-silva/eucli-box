@@ -110,7 +110,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     imageViewer: { items: [] as any[], index: 0, scale: 1 },
     sideTab: 'roles' as string,
     models: { loading: false, error: '', items: [] as any[] },
-    tools: { loading: false, error: '', items: [] as any[], fetchedAt: 0 },
+    tools: { loading: false, error: '', items: [] as any[], fetchedAt: 0, detailLoading: false, detailError: '', selectedToolId: '', selectedTool: null as any, configDraft: {} as Record<string, any>, saving: false, saveError: '' },
     pendingChat: null as any,
     pendingGroupChat: null as any,
     branchDraft: null as any,
@@ -582,7 +582,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     emit,
     showToast: api.ui?.showToast,
   })
-  const { refreshTools } = toolCatalog
+  const { refreshTools, openToolConfig, closeToolConfig, setToolConfigValue, removeToolConfigValue, saveSelectedToolConfig } = toolCatalog
 
   // ============================================================
   // 12. FAVORITES OPERATIONS
@@ -1372,6 +1372,11 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     createRole: () => createRole(),
     saveRole: () => saveRoleEditor(),
     refreshTools: (force: any) => refreshTools(!!force),
+    openToolConfig: (toolId: any) => openToolConfig(toolId),
+    closeToolConfig: () => closeToolConfig(),
+    setToolConfigValue: (path: any, value: any) => setToolConfigValue(path, value),
+    removeToolConfigValue: (path: any) => removeToolConfigValue(path),
+    saveSelectedToolConfig: () => saveSelectedToolConfig(),
     openRoleToolWhitelist: () => {
       state.draft.roleToolWhitelistOpen = true
       refreshTools(false).catch(() => {})

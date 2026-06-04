@@ -9,6 +9,7 @@ type ToolDefinition struct {
 	PromptDescription string         `json:"promptDescription,omitempty"`
 	Type              string         `json:"type"`
 	InputSchema       map[string]any `json:"inputSchema,omitempty"`
+	UserConfigSchema  map[string]any `json:"userConfigSchema,omitempty"`
 	UserConfig        map[string]any `json:"userConfig,omitempty"`
 	DefaultConfig     map[string]any `json:"defaultConfig,omitempty"`
 	Directory         string         `json:"directory,omitempty"`

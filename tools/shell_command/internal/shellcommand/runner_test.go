@@ -73,6 +73,22 @@ func TestExecuteTruncatesCapturedOutput(t *testing.T) {
 	}
 }
 
+func TestExecuteUsesUserConfigDefaults(t *testing.T) {
+	fixture := newShellCommandFixture(t)
+	result := Execute(context.Background(), types.ToolExecutionInput{
+		Arguments:            map[string]any{"command": "large"},
+		UserConfig:           map[string]any{"workdir": ".", "description": "configured run", "timeoutMs": 10000, "maxOutputChars": 8},
+		ToolDirectory:        fixture.toolDir,
+		HostWorkingDirectory: fixture.hostDir,
+	})
+	if result.Status != types.ToolStatusSuccess || result.Metadata["description"] != "configured run" || result.Metadata["maxOutputChars"] != 8 {
+		t.Fatalf("result = %#v", result)
+	}
+	if len([]rune(result.Content)) != 8 {
+		t.Fatalf("content length = %d, content = %q", len([]rune(result.Content)), result.Content)
+	}
+}
+
 func TestExecuteFailsWhenBundledProviderMissing(t *testing.T) {
 	fixture := newShellCommandFixture(t)
 	if err := os.Remove(fixture.providerExe); err != nil {

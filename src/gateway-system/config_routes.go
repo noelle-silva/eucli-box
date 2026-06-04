@@ -212,3 +212,30 @@ func (s *system) handleLoadTool(w http.ResponseWriter, r *http.Request) {
 	}
 	writeData(w, http.StatusOK, tool)
 }
+
+func (s *system) handleSaveToolUserConfig(w http.ResponseWriter, r *http.Request) {
+	toolID, err := pathValue(r, "toolID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	request, err := decodeJSON[toolUserConfigRequest](r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if request.UserConfig == nil {
+		writeError(w, gatewayInvalid("userConfig must be an object", nil))
+		return
+	}
+	tool, err := s.tools.SaveToolUserConfig(r.Context(), toolID, request.UserConfig)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, tool)
+}
+
+type toolUserConfigRequest struct {
+	UserConfig map[string]any `json:"userConfig"`
+}

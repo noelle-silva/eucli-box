@@ -222,6 +222,12 @@ func TestProviderAndToolRoutes(t *testing.T) {
 	if refreshRec.Code != http.StatusOK || !strings.Contains(refreshRec.Body.String(), "gpt-4.1") {
 		t.Fatalf("refresh status = %d body=%s", refreshRec.Code, refreshRec.Body.String())
 	}
+	configReq := httptest.NewRequest(http.MethodPut, "/api/tools/file-reader/user-config", strings.NewReader(`{"userConfig":{"limit":20}}`))
+	configRec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(configRec, configReq)
+	if configRec.Code != http.StatusOK || !strings.Contains(configRec.Body.String(), "\"limit\":20") {
+		t.Fatalf("tool config status = %d body=%s", configRec.Code, configRec.Body.String())
+	}
 }
 
 func TestStickerRoutes(t *testing.T) {
@@ -601,6 +607,13 @@ func (f *fakeGatewayTools) ListTools(ctx context.Context) ([]types.ToolSummary, 
 		tools = append(tools, types.ToolSummary{ID: tool.ID, Name: tool.Name, Description: tool.Description, Type: tool.Type})
 	}
 	return tools, nil
+}
+
+func (f *fakeGatewayTools) SaveToolUserConfig(ctx context.Context, toolID string, userConfig map[string]any) (types.ToolDefinition, error) {
+	tool := f.tools[toolID]
+	tool.UserConfig = userConfig
+	f.tools[toolID] = tool
+	return tool, nil
 }
 
 type fakeGatewayStickers struct {

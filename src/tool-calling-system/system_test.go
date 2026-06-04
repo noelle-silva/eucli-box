@@ -74,6 +74,23 @@ func TestTextToolInstructionsPreferPromptDescription(t *testing.T) {
 	}
 }
 
+func TestSaveToolUserConfigUpdatesOnlyUserConfig(t *testing.T) {
+	storage := newFakeToolStorage()
+	system := newTestToolSystem(t, &fakePermission{}, storage, Config{})
+	tool := types.ToolDefinition{ID: "shell_command", Name: "shell_command", Description: "Run shell command", Type: "local", DefaultConfig: map[string]any{"provider": "git-bash"}}
+	if err := storage.SaveTool(context.Background(), tool); err != nil {
+		t.Fatalf("SaveTool() error = %v", err)
+	}
+
+	updated, err := system.SaveToolUserConfig(context.Background(), tool.ID, map[string]any{"timeoutMs": float64(2000)})
+	if err != nil {
+		t.Fatalf("SaveToolUserConfig() error = %v", err)
+	}
+	if updated.UserConfig["timeoutMs"] != float64(2000) || updated.DefaultConfig["provider"] != "git-bash" || updated.Description != tool.Description {
+		t.Fatalf("updated tool = %#v", updated)
+	}
+}
+
 func TestParseTextToolRequestsExtractsMultipleBlocks(t *testing.T) {
 	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{})
 	_, intents, err := system.ParseTextToolRequests(context.Background(), `<<<TOOL_REQUEST>>>
@@ -423,6 +440,16 @@ func (f *fakeToolStorage) ListTools(ctx context.Context) ([]types.ToolSummary, e
 		summaries = append(summaries, types.ToolSummary{ID: tool.ID, Name: tool.Name, Description: tool.Description, Type: tool.Type, UpdatedAt: tool.UpdatedAt})
 	}
 	return summaries, nil
+}
+
+func (f *fakeToolStorage) SaveToolUserConfig(ctx context.Context, toolID string, userConfig map[string]any) (types.ToolDefinition, error) {
+	tool, ok := f.tools[toolID]
+	if !ok {
+		return types.ToolDefinition{}, errors.New("tool missing")
+	}
+	tool.UserConfig = userConfig
+	f.tools[toolID] = tool
+	return tool, nil
 }
 
 func assertAppErrorCode(t *testing.T, err error, code string) {

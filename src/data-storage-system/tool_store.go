@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"eucli-box/pkg/types"
 )
@@ -58,6 +59,36 @@ func (s *system) ListTools(ctx context.Context) ([]types.ToolSummary, error) {
 	}
 	sort.Slice(summaries, func(i, j int) bool { return summaries[i].ID < summaries[j].ID })
 	return summaries, nil
+}
+
+func (s *system) SaveToolUserConfig(ctx context.Context, toolID string, userConfig map[string]any) (types.ToolDefinition, error) {
+	id, err := cleanID(toolID)
+	if err != nil {
+		return types.ToolDefinition{}, err
+	}
+	target, err := s.paths.toolDataFile(id)
+	if err != nil {
+		return types.ToolDefinition{}, err
+	}
+	tool, err := readJSON[types.ToolDefinition](ctx, target)
+	if err != nil {
+		return types.ToolDefinition{}, err
+	}
+	if strings.TrimSpace(tool.ID) != id {
+		return types.ToolDefinition{}, storageInvalid("tool id does not match path", nil)
+	}
+	if userConfig == nil {
+		userConfig = map[string]any{}
+	}
+	tool.UserConfig = userConfig
+	tool.UpdatedAt = time.Now().UTC()
+	if err := writeJSON(ctx, target, tool); err != nil {
+		return types.ToolDefinition{}, err
+	}
+	if err := s.rebuildToolIndex(ctx); err != nil {
+		return types.ToolDefinition{}, err
+	}
+	return s.LoadTool(ctx, id)
 }
 
 func (s *system) DeleteTool(ctx context.Context, toolID string) error {

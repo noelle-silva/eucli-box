@@ -44,6 +44,17 @@ func (s *system) ListTools(ctx context.Context) ([]types.ToolSummary, error) {
 	return tools, nil
 }
 
+func (s *system) SaveToolUserConfig(ctx context.Context, toolID string, userConfig map[string]any) (types.ToolDefinition, error) {
+	if strings.TrimSpace(toolID) == "" {
+		return types.ToolDefinition{}, toolInvalid("tool id is required", nil)
+	}
+	tool, err := s.storage.SaveToolUserConfig(ctx, toolID, userConfig)
+	if err != nil {
+		return types.ToolDefinition{}, toolStorageFailed("failed to save tool user config", err)
+	}
+	return tool, nil
+}
+
 func (s *system) resolveTool(ctx context.Context, toolName string) (types.ToolDefinition, error) {
 	summaries, err := s.ListTools(ctx)
 	if err != nil {

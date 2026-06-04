@@ -40,6 +40,11 @@ func TestRunBuildsShellCommandIntoAbsoluteDataDir(t *testing.T) {
 	if len(providerEnum) != 1 || providerEnum[0] != "git-bash" {
 		t.Fatalf("provider enum = %#v", providerEnum)
 	}
+	configProviderSchema := tool.UserConfigSchema["properties"].(map[string]any)["provider"].(map[string]any)
+	configProviderEnum := configProviderSchema["enum"].([]any)
+	if len(configProviderEnum) != 1 || configProviderEnum[0] != "git-bash" {
+		t.Fatalf("config provider enum = %#v", configProviderEnum)
+	}
 	if len(tool.Binaries) != 1 || tool.Binaries[0].Path != filepath.ToSlash(binaryRelPath) || filepath.IsAbs(tool.Binaries[0].Path) {
 		t.Fatalf("binaries = %#v", tool.Binaries)
 	}

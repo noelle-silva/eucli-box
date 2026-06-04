@@ -6,13 +6,23 @@ export function createToolCatalog(deps: {
   emit: () => void
   showToast?: (msg: string) => void
 }) {
-  async function refreshTools(force = false) {
+  function currentCatalog() {
     const state = deps.getState()
-    const catalog = state.tools && typeof state.tools === 'object' ? state.tools : { loading: false, error: '', items: [], fetchedAt: 0 }
+    if (!state.tools || typeof state.tools !== 'object') state.tools = defaultToolCatalogState()
+    return { state, catalog: state.tools }
+  }
+
+  function patchCatalog(patch: Record<string, any>) {
+    const { state, catalog } = currentCatalog()
+    state.tools = { ...defaultToolCatalogState(), ...catalog, ...patch }
+  }
+
+  async function refreshTools(force = false) {
+    const { state, catalog } = currentCatalog()
     const age = now() - Number(catalog.fetchedAt || 0)
     if (!force && Array.isArray(catalog.items) && catalog.items.length && age < 60 * 1000) return catalog.items
 
-    state.tools = { loading: true, error: '', items: Array.isArray(catalog.items) ? catalog.items : [], fetchedAt: Number(catalog.fetchedAt || 0) }
+    patchCatalog({ loading: true, error: '', items: Array.isArray(catalog.items) ? catalog.items : [], fetchedAt: Number(catalog.fetchedAt || 0) })
     deps.emit()
 
     try {
@@ -20,11 +30,11 @@ export function createToolCatalog(deps: {
       const status = Number(response?.status || 0)
       if (status < 200 || status >= 300) throw new Error(`HTTP ${status}`)
       const items = normalizeToolSummaries(response?.body)
-      state.tools = { loading: false, error: '', items, fetchedAt: now() }
+      patchCatalog({ loading: false, error: '', items, fetchedAt: now() })
       return items
     } catch (e: any) {
       const error = String(e?.message || e || '工具列表加载失败')
-      state.tools = { loading: false, error, items: Array.isArray(catalog.items) ? catalog.items : [], fetchedAt: Number(catalog.fetchedAt || 0) }
+      patchCatalog({ loading: false, error, items: Array.isArray(catalog.items) ? catalog.items : [], fetchedAt: Number(catalog.fetchedAt || 0) })
       deps.showToast?.(error)
       return state.tools.items
     } finally {
@@ -32,7 +42,98 @@ export function createToolCatalog(deps: {
     }
   }
 
-  return { refreshTools }
+  async function openToolConfig(toolIdRaw: any) {
+    const toolId = String(toolIdRaw || '').trim()
+    if (!toolId) return null
+    patchCatalog({ detailLoading: true, detailError: '', selectedToolId: toolId, selectedTool: null, configDraft: {}, saveError: '' })
+    deps.emit()
+    try {
+      const response = await deps.netRequest({ method: 'GET', path: `/api/tools/${encodeURIComponent(toolId)}`, timeoutMs: 15000 })
+      const status = Number(response?.status || 0)
+      if (status < 200 || status >= 300) throw new Error(`HTTP ${status}`)
+      const tool = normalizeToolDefinition(response?.body)
+      patchCatalog({ detailLoading: false, detailError: '', selectedToolId: String(tool.id || toolId), selectedTool: tool, configDraft: clonePlainObject(tool.userConfig), saveError: '' })
+      return tool
+    } catch (e: any) {
+      const error = String(e?.message || e || '工具详情加载失败')
+      patchCatalog({ detailLoading: false, detailError: error })
+      deps.showToast?.(error)
+      return null
+    } finally {
+      deps.emit()
+    }
+  }
+
+  function closeToolConfig() {
+    patchCatalog({ selectedToolId: '', selectedTool: null, configDraft: {}, detailError: '', saveError: '' })
+    deps.emit()
+  }
+
+  function setToolConfigValue(path: any, value: any) {
+    const segments = normalizeConfigPath(path)
+    if (!segments.length) return
+    const { catalog } = currentCatalog()
+    const draft = clonePlainObject(catalog.configDraft)
+    setValueAtPath(draft, segments, value)
+    patchCatalog({ configDraft: draft, saveError: '' })
+    deps.emit()
+  }
+
+  function removeToolConfigValue(path: any) {
+    const segments = normalizeConfigPath(path)
+    if (!segments.length) return
+    const { catalog } = currentCatalog()
+    const draft = clonePlainObject(catalog.configDraft)
+    removeValueAtPath(draft, segments)
+    patchCatalog({ configDraft: draft, saveError: '' })
+    deps.emit()
+  }
+
+  async function saveSelectedToolConfig() {
+    const { catalog } = currentCatalog()
+    const toolId = String(catalog.selectedToolId || catalog.selectedTool?.id || '').trim()
+    if (!toolId) return false
+
+    const userConfig = clonePlainObject(catalog.configDraft)
+
+    patchCatalog({ saving: true, saveError: '' })
+    deps.emit()
+    try {
+      const response = await deps.netRequest({ method: 'PUT', path: `/api/tools/${encodeURIComponent(toolId)}/user-config`, body: { userConfig }, timeoutMs: 15000 })
+      const status = Number(response?.status || 0)
+      if (status < 200 || status >= 300) throw new Error(`HTTP ${status}`)
+      const tool = normalizeToolDefinition(response?.body)
+      patchCatalog({ saving: false, saveError: '', selectedTool: tool, selectedToolId: String(tool.id || toolId), configDraft: clonePlainObject(tool.userConfig) })
+      await refreshTools(true)
+      deps.showToast?.('工具配置已保存')
+      return true
+    } catch (e: any) {
+      const error = String(e?.message || e || '工具配置保存失败')
+      patchCatalog({ saving: false, saveError: error })
+      deps.showToast?.(error)
+      return false
+    } finally {
+      deps.emit()
+    }
+  }
+
+  return { refreshTools, openToolConfig, closeToolConfig, setToolConfigValue, removeToolConfigValue, saveSelectedToolConfig }
+}
+
+function defaultToolCatalogState() {
+  return {
+    loading: false,
+    error: '',
+    items: [] as any[],
+    fetchedAt: 0,
+    detailLoading: false,
+    detailError: '',
+    selectedToolId: '',
+    selectedTool: null as any,
+    configDraft: {} as Record<string, any>,
+    saving: false,
+    saveError: '',
+  }
 }
 
 function normalizeToolSummaries(value: any): any[] {
@@ -54,4 +155,63 @@ function normalizeToolSummaries(value: any): any[] {
     })
   }
   return out.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+}
+
+function normalizeToolDefinition(value: any): any {
+  const source = value && typeof value === 'object' ? value : {}
+  return {
+    ...source,
+    id: String((source as any).id || (source as any).name || '').trim(),
+    name: String((source as any).name || (source as any).id || '').trim(),
+    description: String((source as any).description || '').trim(),
+    promptDescription: String((source as any).promptDescription || '').trim(),
+    type: String((source as any).type || '').trim(),
+    inputSchema: objectOrNull((source as any).inputSchema),
+    userConfigSchema: objectOrNull((source as any).userConfigSchema),
+    userConfig: objectOrEmpty((source as any).userConfig),
+    defaultConfig: objectOrEmpty((source as any).defaultConfig),
+  }
+}
+
+function objectOrEmpty(value: any): Record<string, any> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
+function objectOrNull(value: any): Record<string, any> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : null
+}
+
+function clonePlainObject(value: any): Record<string, any> {
+  const source = objectOrEmpty(value)
+  try {
+    return JSON.parse(JSON.stringify(source))
+  } catch (_) {
+    return { ...source }
+  }
+}
+
+function normalizeConfigPath(path: any): string[] {
+  const parts = Array.isArray(path) ? path : String(path || '').split('.')
+  return parts.map((part: any) => String(part || '').trim()).filter((part: string) => !!part)
+}
+
+function setValueAtPath(target: Record<string, any>, path: string[], value: any) {
+  let cursor: Record<string, any> = target
+  for (const segment of path.slice(0, -1)) {
+    const next = cursor[segment]
+    if (!next || typeof next !== 'object' || Array.isArray(next)) cursor[segment] = {}
+    cursor = cursor[segment]
+  }
+  cursor[path[path.length - 1]] = value
+}
+
+function removeValueAtPath(target: Record<string, any>, path: string[]): boolean {
+  const key = path[0]
+  if (!key) return false
+  if (path.length === 1) return delete target[key]
+  const child = target[key]
+  if (!child || typeof child !== 'object' || Array.isArray(child)) return false
+  const removed = removeValueAtPath(child, path.slice(1))
+  if (removed && Object.keys(child).length === 0) delete target[key]
+  return removed
 }

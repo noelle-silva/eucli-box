@@ -18,6 +18,7 @@ type System interface {
 	SaveTool(ctx context.Context, tool types.ToolDefinition) error
 	LoadTool(ctx context.Context, toolID string) (types.ToolDefinition, error)
 	ListTools(ctx context.Context) ([]types.ToolSummary, error)
+	SaveToolUserConfig(ctx context.Context, toolID string, userConfig map[string]any) (types.ToolDefinition, error)
 }
 
 type PermissionSystem interface {
@@ -29,6 +30,7 @@ type StorageSystem interface {
 	SaveTool(ctx context.Context, tool types.ToolDefinition) error
 	LoadTool(ctx context.Context, toolID string) (types.ToolDefinition, error)
 	ListTools(ctx context.Context) ([]types.ToolSummary, error)
+	SaveToolUserConfig(ctx context.Context, toolID string, userConfig map[string]any) (types.ToolDefinition, error)
 }
 
 type Config struct {

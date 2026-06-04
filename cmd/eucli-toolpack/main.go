@@ -294,6 +294,9 @@ func writeRuntimeConfig(sourceDir string, targetDir string, definition types.Too
 	config["providers"] = providers
 	if strings.TrimSpace(toolpack.RuntimeConfig.ProviderArgument) != "" {
 		definition.InputSchema = withEnabledProviderEnum(definition.InputSchema, toolpack.RuntimeConfig.ProviderArgument, enabledProviders)
+		if definition.UserConfigSchema != nil {
+			definition.UserConfigSchema = withEnabledProviderEnum(definition.UserConfigSchema, toolpack.RuntimeConfig.ProviderArgument, enabledProviders)
+		}
 	}
 	if err := writeJSON(filepath.Join(targetDir, toolpack.RuntimeConfig.Source), config); err != nil {
 		return types.ToolDefinition{}, err

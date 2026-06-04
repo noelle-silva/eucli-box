@@ -83,13 +83,28 @@ import { RoleAvatarCropper } from './components/avatar/RoleAvatarCropper'
 import { StandaloneWindowControls, type WindowControlActions } from './components/StandaloneWindowControls'
 import { AssistantMessageHost } from '../render/assistantMessageHost'
 import { RolesSettingsPanel } from './settings/RolesSettingsPanel'
+import { AiToolsSettingsPanel } from './settings/AiToolsSettingsPanel'
 import { AI_STUDIO_CHAT_ROOT_ID } from '../runtime/aiStudioGlobals'
 import { isAssistantAwaitingFirstOutput, isAssistantGenerating } from '../domain/assistantRunState'
 import { formatModelRefDisplayText } from '../domain/modelRefUtils'
 import { AssistantReplyPendingIndicator } from './components/AssistantReplyPendingIndicator'
 import { AssistantErrorNotice } from './components/AssistantErrorNotice'
 
-type SettingsTab = 'appearance' | 'attachments' | 'data' | 'groups' | 'roles' | 'providers' | 'services' | 'stickers'
+type SettingsTab = 'appearance' | 'attachments' | 'data' | 'groups' | 'roles' | 'providers' | 'services' | 'tools' | 'stickers'
+
+const SETTINGS_TAB_ITEMS: { value: SettingsTab; label: string }[] = [
+  { value: 'appearance', label: '外观' },
+  { value: 'attachments', label: '附件' },
+  { value: 'data', label: '数据' },
+  { value: 'groups', label: '群组管理' },
+  { value: 'roles', label: '角色管理' },
+  { value: 'providers', label: '供应商管理' },
+  { value: 'services', label: 'AI 微服务' },
+  { value: 'tools', label: 'AI 工具' },
+  { value: 'stickers', label: '表情包' },
+]
+
+const SETTINGS_TAB_BUTTON_SX = { borderRadius: 999, minWidth: 0, px: 1.25, py: 0.25, flexShrink: 0 }
 
 type DataDirectoryStatus = {
   dataDir: string
@@ -3312,72 +3327,21 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                    设置
                 </Typography>
 
-                <Box sx={{ flex: 1 }} />
+                <Box sx={{ flex: 1, minWidth: 8 }} />
 
-                <Button
-                  size="small"
-                  variant={settingsTab === 'appearance' ? 'contained' : 'outlined'}
-                  onClick={() => setSettingsTab('appearance')}
-                  sx={{ borderRadius: 999, minWidth: 0, px: 1.25, py: 0.25 }}
-                >
-                  外观
-                </Button>
-                <Button
-                  size="small"
-                  variant={settingsTab === 'attachments' ? 'contained' : 'outlined'}
-                  onClick={() => setSettingsTab('attachments')}
-                  sx={{ borderRadius: 999, minWidth: 0, px: 1.25, py: 0.25 }}
-                >
-                  附件
-                </Button>
-                <Button
-                  size="small"
-                  variant={settingsTab === 'data' ? 'contained' : 'outlined'}
-                  onClick={() => setSettingsTab('data')}
-                  sx={{ borderRadius: 999, minWidth: 0, px: 1.25, py: 0.25 }}
-                >
-                  数据
-                </Button>
-                <Button
-                  size="small"
-                  variant={settingsTab === 'groups' ? 'contained' : 'outlined'}
-                  onClick={() => setSettingsTab('groups')}
-                  sx={{ borderRadius: 999, minWidth: 0, px: 1.25, py: 0.25 }}
-                >
-                  群组管理
-                </Button>
-                <Button
-                  size="small"
-                  variant={settingsTab === 'roles' ? 'contained' : 'outlined'}
-                  onClick={() => setSettingsTab('roles')}
-                  sx={{ borderRadius: 999, minWidth: 0, px: 1.25, py: 0.25 }}
-                >
-                  角色管理
-                </Button>
-                 <Button
-                   size="small"
-                   variant={settingsTab === 'providers' ? 'contained' : 'outlined'}
-                   onClick={() => setSettingsTab('providers')}
-                   sx={{ borderRadius: 999, minWidth: 0, px: 1.25, py: 0.25 }}
-                 >
-                   供应商管理
-                 </Button>
-                  <Button
-                    size="small"
-                    variant={settingsTab === 'services' ? 'contained' : 'outlined'}
-                    onClick={() => setSettingsTab('services')}
-                    sx={{ borderRadius: 999, minWidth: 0, px: 1.25, py: 0.25 }}
-                  >
-                    AI 微服务
-                  </Button>
-                  <Button
-                    size="small"
-                    variant={settingsTab === 'stickers' ? 'contained' : 'outlined'}
-                    onClick={() => setSettingsTab('stickers')}
-                    sx={{ borderRadius: 999, minWidth: 0, px: 1.25, py: 0.25 }}
-                  >
-                    表情包
-                  </Button>
+                <Stack direction="row" spacing={0.5} sx={{ minWidth: 0, maxWidth: { xs: 'calc(100vw - 150px)', sm: 'none' }, overflowX: 'auto', scrollbarWidth: 'thin' }}>
+                  {SETTINGS_TAB_ITEMS.map((item) => (
+                    <Button
+                      key={item.value}
+                      size="small"
+                      variant={settingsTab === item.value ? 'contained' : 'outlined'}
+                      onClick={() => setSettingsTab(item.value)}
+                      sx={SETTINGS_TAB_BUTTON_SX}
+                    >
+                      {item.label}
+                    </Button>
+                  ))}
+                </Stack>
                   {standaloneWindowControls}
                 </>
             ) : (
@@ -6421,6 +6385,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
             groups={groups}
             providers={providers}
             models={s.models}
+            tools={(s as any).tools}
             draft={s.draft}
             activeRoleId={String(s.draft?.activeRoleId || '')}
             tab={settingsTab}
@@ -6811,12 +6776,13 @@ function PluginSettingsPage(props: {
   groups: any[]
   providers: any[]
   models: any
+  tools: any
   draft: any
   activeRoleId: string
   tab: SettingsTab
   dataDirectory?: AiChatDataDirectory
 }) {
-  const { controller, loading, data, roles, groups, providers, models, draft, activeRoleId, tab, dataDirectory } = props
+  const { controller, loading, data, roles, groups, providers, models, tools, draft, activeRoleId, tab, dataDirectory } = props
   const [treeHotkeyRecording, setTreeHotkeyRecording] = React.useState(false)
 
   React.useEffect(() => {
@@ -7395,6 +7361,10 @@ function PluginSettingsPage(props: {
 
   if (tab === 'roles') {
     return <RolesSettingsPanel controller={controller} loading={loading} roles={roles} providers={providers} activeRoleId={activeRoleId} topbarHeight={TOPBAR_H} />
+  }
+
+  if (tab === 'tools') {
+    return <AiToolsSettingsPanel controller={controller} loading={loading} tools={tools} topbarHeight={TOPBAR_H} />
   }
 
   if (tab === 'stickers') {

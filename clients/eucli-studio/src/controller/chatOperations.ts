@@ -23,6 +23,7 @@ import type { DraftFileItem } from '../domain/draftFileUtils'
 import { normalizeChatModelOverride } from '../domain/modelRefUtils'
 import { createStateAccessors } from '../state/stateAccessors'
 import { hasActiveAssistantMessages } from '../domain/chatRunState'
+import { activateResolvedPendingChat, pendingChatForTarget } from '../domain/pendingChat'
 import type { ChatSaveIntent } from '../domain/chatSaveIntent'
 import { deleteAssistantMessageBlock, editAssistantMessageBlock } from '../domain/assistantMessageBlockMutations'
 import type { AiChatShowToast } from '../gateway/capabilities'
@@ -59,13 +60,16 @@ export function createChatOperations(deps: {
     if (current && String(current?.kind || '') !== 'eb-role-run') return
     if (current && String(current?.runId || '').trim() && runId && String(current?.runId || '').trim() !== runId) return
 
+    const roleId = String(run?.roleId || fallback.roleId || current?.roleId || '').trim()
+    const sessionId = String(run?.sessionId || fallback.sessionId || current?.sessionId || '').trim()
+    if (roleId && sessionId) activateResolvedPendingChat(state, 'role', roleId, sessionId)
     const inputMessageId = String(run?.inputMessageId || current?.inputMessageId || '').trim()
     const lastMessageId = String(run?.lastMessageId || fallback.lastMessageId || current?.lastMessageId || inputMessageId || '').trim()
     state.sendingCtx = {
       kind: 'eb-role-run',
       runId: runId || String(current?.runId || '').trim(),
-      roleId: String(run?.roleId || fallback.roleId || current?.roleId || '').trim(),
-      sessionId: String(run?.sessionId || fallback.sessionId || current?.sessionId || '').trim(),
+      roleId,
+      sessionId,
       inputMessageId,
       lastMessageId,
       cancelledByUser: !!current?.cancelledByUser,
@@ -442,15 +446,16 @@ export function createChatOperations(deps: {
     }
 
     const rid = String(role.id || '')
-    const currentChatBeforeLoad = sa.activeChatFromData()
+    const pendingChat = pendingChatForTarget(state, 'role', rid)
+    const currentChatBeforeLoad = pendingChat ? null : sa.activeChatFromData()
     const selectedParentMessageId = roleMessageParentForSend(currentChatBeforeLoad, opts?.forkFromMid)
-    const loadedChat = await ensureActiveChatLoaded?.().catch(() => null)
-    const chatForModel = loadedChat || currentChatBeforeLoad || sa.activeChatFromData()
+    const loadedChat = pendingChat ? null : await ensureActiveChatLoaded?.().catch(() => null)
+    const chatForModel = pendingChat ? null : loadedChat || currentChatBeforeLoad || sa.activeChatFromData()
     if (normalizeChatModelOverride(chatForModel)) {
       return showToast?.('当前会话临时模型尚未接入 e-b 真实根动作，请先清除当前会话临时模型', { kind: 'error' })
     }
 
-    const chat = loadedChat || currentChatBeforeLoad || sa.activeChatFromData()
+    const chat = pendingChat ? null : loadedChat || currentChatBeforeLoad || sa.activeChatFromData()
     const sessionId = String(chat?.id || '').trim()
     const parentMessageId = sessionId ? selectedParentMessageId || roleMessageParentForSend(chat, opts?.forkFromMid) : ''
     const previousMessageIds = collectChatMessageIds(chat)

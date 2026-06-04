@@ -4,6 +4,7 @@ import { chatMetaFromChat, removeChatMeta, upsertChatMeta } from '../domain/chat
 import { NEW_ROLE_ID } from '../domain/constants'
 import { isAssistantGenerating } from '../domain/assistantRunState'
 import { emptyRoleToolPolicy, normalizeRoleToolPolicy } from '../domain/toolPolicy'
+import { clearPendingChatForTarget, createPendingChatEntry } from '../domain/pendingChat'
 import type { AiChatShowToast } from '../gateway/capabilities'
 
 function looksLikeImageDataUrl(s: any): boolean {
@@ -76,7 +77,6 @@ export function createEntityEditors(deps: {
   removeRoleEntity?: (roleId: any) => Promise<void>
   saveProviderEntity?: (provider: any) => Promise<void>
   removeProviderEntity?: (providerId: any) => Promise<void>
-  createRoleSession?: (roleId: string, title?: string) => Promise<{ id: string; title?: string }>
   render: () => void
   closeModal: () => void
   showToast?: AiChatShowToast
@@ -91,7 +91,7 @@ export function createEntityEditors(deps: {
   cleanupFavoriteRefsForTarget: (kind: string, targetId: string) => void
   cleanupFavoriteRefsForChat: (targetKind: string, targetId: string, chatId: string) => void
 }) {
-  const { getState, save, saveRoleEntity, removeRoleEntity, saveProviderEntity, removeProviderEntity, createRoleSession, render, closeModal, showToast, pickImageFiles, filesImages, ensureChatLoaded, ensureGroupChatLoaded, renameRoleChatInStore, removeChatInStore, setRoleActiveChatSelection, removeLoadedChat, cleanupFavoriteRefsForTarget, cleanupFavoriteRefsForChat } = deps
+  const { getState, save, saveRoleEntity, removeRoleEntity, saveProviderEntity, removeProviderEntity, render, closeModal, showToast, pickImageFiles, filesImages, ensureChatLoaded, ensureGroupChatLoaded, renameRoleChatInStore, removeChatInStore, setRoleActiveChatSelection, removeLoadedChat, cleanupFavoriteRefsForTarget, cleanupFavoriteRefsForChat } = deps
   const sa = createStateAccessors({ getState })
 
   function scrollToBottomSoon() {
@@ -494,31 +494,22 @@ export function createEntityEditors(deps: {
 
   // ===== Create chat for active =====
 
-  async function createChatForActiveRole() {
+  function createChatForActiveRole() {
     const state = getState()
     const role = sa.activeRole()
     if (!role) return showToast?.('请先选择角色', { kind: 'error' })
     const rid = String(role.id || '')
-    try {
-      if (typeof createRoleSession !== 'function') throw new Error('会话创建通道不可用')
-      const session = await createRoleSession(rid, '新聊天')
-      const cid = String(session.id || '').trim()
-      if (!cid) throw new Error('e-b 未返回会话ID')
-      const box = sa.ensureChatsBoxBare(rid)
-      if (box) {
-        box.activeChatId = cid
-        await ensureChatLoaded?.(rid, cid)
-      }
-      state.sideTab = 'chats'
-      state.draft.input = ''
-      state.draft.images = []
-      ;(state.draft as any).files = []
-      render()
-      scrollToBottomSoon()
-    } catch (e: any) {
-      showToast?.(String(e?.message || e || '新建聊天失败'), { kind: 'error' })
-      render()
-    }
+    const pending = createPendingChatEntry('role', rid, '新聊天')
+    if (!pending) return
+    state.pendingChat = pending
+    state.pendingGroupChat = null
+    state.branchDraft = null
+    state.sideTab = 'chats'
+    state.draft.input = ''
+    state.draft.images = []
+    ;(state.draft as any).files = []
+    render()
+    scrollToBottomSoon()
   }
 
   function createChatForActiveGroup() {
@@ -529,7 +520,7 @@ export function createEntityEditors(deps: {
 
   async function createChatForActiveTarget() {
     if (sa.activeTargetKind() === 'group') return createChatForActiveGroup()
-    return await createChatForActiveRole()
+    return createChatForActiveRole()
   }
 
   // ===== Pick chat for active =====
@@ -538,7 +529,7 @@ export function createEntityEditors(deps: {
     const state = getState()
     const role = sa.activeRole()
     if (!role || !state.data) return
-    sa.clearPendingChat()
+    clearPendingChatForTarget(state, 'role', role.id)
     const box = sa.ensureChatsBoxBare(String(role.id))
     if (!box) return
     const cid = String(chatId || '')
@@ -557,7 +548,7 @@ export function createEntityEditors(deps: {
     const state = getState()
     const group = sa.activeGroup()
     if (!group || !state.data) return
-    sa.clearPendingGroupChat()
+    clearPendingChatForTarget(state, 'group', (group as any).id)
     const box = sa.ensureGroupChatsBoxBare(String((group as any).id || ''))
     if (!box) return
     const cid = String(chatId || '')

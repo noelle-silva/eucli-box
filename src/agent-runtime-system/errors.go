@@ -1,6 +1,12 @@
 package agentruntime
 
-import apperrors "eucli-box/pkg/errors"
+import (
+	"errors"
+	"strings"
+
+	apperrors "eucli-box/pkg/errors"
+	"eucli-box/pkg/types"
+)
 
 const systemName = "agent-runtime-system"
 
@@ -30,4 +36,45 @@ func runtimeToolFailed(message string, cause error) error {
 
 func runtimeStateInvalid(message string, cause error) error {
 	return apperrors.Wrap(systemName, "runtime.state_invalid", message, cause)
+}
+
+func errorPayloadFromError(err error, fallback string) *types.ErrorPayload {
+	message := strings.TrimSpace(fallback)
+	if err != nil && message == "" {
+		message = strings.TrimSpace(err.Error())
+	}
+	appErr := innermostAppError(err)
+	if appErr != nil {
+		message = strings.TrimSpace(appErr.Message)
+		return &types.ErrorPayload{Code: appErr.Code, Message: message, System: appErr.System, Details: appErr.Details}
+	}
+	if message == "" {
+		return nil
+	}
+	return &types.ErrorPayload{Message: message}
+}
+
+func runFailureFromError(err error, fallback string) (string, *types.ErrorPayload) {
+	payload := errorPayloadFromError(err, fallback)
+	if payload == nil {
+		return strings.TrimSpace(fallback), nil
+	}
+	reason := strings.TrimSpace(payload.Message)
+	if reason == "" {
+		reason = strings.TrimSpace(fallback)
+	}
+	return reason, payload
+}
+
+func innermostAppError(err error) *apperrors.AppError {
+	var found *apperrors.AppError
+	for err != nil {
+		var appErr *apperrors.AppError
+		if !errors.As(err, &appErr) {
+			break
+		}
+		found = appErr
+		err = appErr.Unwrap()
+	}
+	return found
 }

@@ -22,6 +22,7 @@ type responseFrame struct {
 type responseError struct {
 	Code    string `json:"code,omitempty"`
 	Message string `json:"message"`
+	Details any    `json:"details,omitempty"`
 }
 
 type eventFrame struct {
@@ -54,6 +55,9 @@ func errorResponseFor(id string, err error) responseFrame {
 		if coded, ok := err.(codedError); ok {
 			code = coded.Code()
 		}
+		if detailed, ok := err.(detailedError); ok {
+			return responseFrame{ID: id, Type: "response", OK: false, Error: &responseError{Code: code, Message: message, Details: detailed.Details()}}
+		}
 	}
 	return responseFrame{ID: id, Type: "response", OK: false, Error: &responseError{Code: code, Message: message}}
 }
@@ -63,14 +67,25 @@ type codedError interface {
 	Code() string
 }
 
+type detailedError interface {
+	error
+	Details() any
+}
+
 type appError struct {
 	code    string
 	message string
+	details any
 }
 
 func (e appError) Error() string { return e.message }
 func (e appError) Code() string  { return e.code }
+func (e appError) Details() any  { return e.details }
 
 func newError(code string, message string) error {
 	return appError{code: code, message: message}
+}
+
+func newErrorWithDetails(code string, message string, details any) error {
+	return appError{code: code, message: message, details: details}
 }

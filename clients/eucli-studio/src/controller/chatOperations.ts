@@ -23,7 +23,7 @@ import { normalizeChatModelOverride } from '../domain/modelRefUtils'
 import { createStateAccessors } from '../state/stateAccessors'
 import { hasActiveAssistantMessages } from '../domain/chatRunState'
 import type { ChatSaveIntent } from '../domain/chatSaveIntent'
-import { cancelRoleRun, getRunState, isTerminalRunStatus, sleepMs, startRoleRun, type EbRunState } from './ebRoleRun'
+import { cancelRoleRun, getRunState, isTerminalRunStatus, runStateFailureError, sleepMs, startRoleRun, type EbRunState } from './ebRoleRun'
 import { deleteRoleSessionMessage, deleteRoleSessionMessageSubtree, updateRoleSessionMessage } from './ebRoleSession'
 
 export function createChatOperations(deps: {
@@ -158,7 +158,7 @@ export function createChatOperations(deps: {
 
     followMessageId = String(state.lastMessageId || followMessageId || '').trim()
     await refreshRunSession()
-    if (state.status === 'failed' || state.status === 'cancelled') throw new Error(state.reason || `e-b run ${state.status}`)
+    if (state.status === 'failed' || state.status === 'cancelled') throw runStateFailureError(state)
     if (!sessionId) throw new Error('e-b 未返回会话ID')
     return sessionId
   }

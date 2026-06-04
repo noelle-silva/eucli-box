@@ -16,6 +16,10 @@ func (s *system) saveSession(ctx context.Context, session types.Session, status 
 }
 
 func (s *system) updateRun(runID string, status types.RunStatus, reason string) (types.RunState, error) {
+	return s.updateRunWithError(runID, status, reason, nil)
+}
+
+func (s *system) updateRunWithError(runID string, status types.RunStatus, reason string, errPayload *types.ErrorPayload) (types.RunState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	record, ok := s.runs[runID]
@@ -27,6 +31,7 @@ func (s *system) updateRun(runID string, status types.RunStatus, reason string) 
 	}
 	record.state.Status = status
 	record.state.Reason = reason
+	record.state.Error = cloneErrorPayload(errPayload)
 	record.state.UpdatedAt = nowUTC()
 	return record.state, nil
 }

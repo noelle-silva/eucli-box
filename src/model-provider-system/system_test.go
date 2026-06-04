@@ -131,6 +131,29 @@ func TestCompleteOpenAISendsStructuredToolHistory(t *testing.T) {
 	}
 }
 
+func TestCompletePreservesUpstreamErrorDetails(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["openai-main"] = types.Provider{ID: "openai-main", Name: "OpenAI", BaseURL: "https://api.example.test/v1", Key: "secret", Protocol: types.ProviderProtocolOpenAI, Models: []types.ModelInfo{{ID: "gpt-4.1"}}}
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 400, Headers: map[string][]string{"X-Request-Id": {"req-1"}}, Body: []byte(`{"error":{"message":"upstream says no","type":"invalid_request_error"}}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	_, err := system.Complete(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}})
+	var appErr *apperrors.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("error %v is not AppError", err)
+	}
+	if appErr.Code != "provider.service_failed" || appErr.Message != "upstream says no" {
+		t.Fatalf("app error = %#v", appErr)
+	}
+	details, ok := appErr.Details.(map[string]any)
+	if !ok {
+		t.Fatalf("details = %#v", appErr.Details)
+	}
+	if details["statusCode"] != 400 || details["body"] != `{"error":{"message":"upstream says no","type":"invalid_request_error"}}` {
+		t.Fatalf("details = %#v", details)
+	}
+}
+
 func TestCompleteOpenAIRejectsToolHistoryWithoutResult(t *testing.T) {
 	storage := newFakeProviderStorage()
 	storage.providers["openai-main"] = types.Provider{ID: "openai-main", Name: "OpenAI", BaseURL: "https://api.example.test/v1", Key: "secret", Protocol: types.ProviderProtocolOpenAI, Models: []types.ModelInfo{{ID: "gpt-4.1"}}}

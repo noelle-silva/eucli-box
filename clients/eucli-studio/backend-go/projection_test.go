@@ -142,6 +142,39 @@ func TestRunningSessionMarksLatestAssistantPending(t *testing.T) {
 	}
 }
 
+func TestChatProjectionPreservesAssistantError(t *testing.T) {
+	session := map[string]any{
+		"id":        "session-1",
+		"roleId":    "developer",
+		"title":     "Error",
+		"createdAt": "2026-06-03T10:00:00Z",
+		"updatedAt": "2026-06-03T10:00:00Z",
+		"messages": []any{map[string]any{
+			"id":              "a1",
+			"type":            "assistant",
+			"content":         "",
+			"parentMessageId": "u1",
+			"createdAt":       "2026-06-03T10:00:00Z",
+			"updatedAt":       "2026-06-03T10:00:00Z",
+			"error":           map[string]any{"code": "provider.service_failed", "message": "upstream says no", "details": map[string]any{"body": "raw"}},
+		}},
+	}
+
+	ui := toUIChat(session)
+	messages := objectList(ui["messages"])
+	if len(messages) != 1 {
+		t.Fatalf("messages = %#v", ui["messages"])
+	}
+	if errBox := objectMap(messages[0]["error"]); stringField(errBox, "message") != "upstream says no" || stringField(errBox, "code") != "provider.service_failed" {
+		t.Fatalf("ui error = %#v", messages[0]["error"])
+	}
+	back := fromUIChat(ui, "developer")
+	backMessages := objectList(back["messages"])
+	if errBox := objectMap(backMessages[0]["error"]); stringField(errBox, "message") != "upstream says no" {
+		t.Fatalf("back error = %#v", backMessages[0]["error"])
+	}
+}
+
 func TestStableUpdatedAtUsesMaxPositiveValue(t *testing.T) {
 	if got := stableUpdatedAt(0, -1); got != 1 {
 		t.Fatalf("empty stable updatedAt = %d", got)

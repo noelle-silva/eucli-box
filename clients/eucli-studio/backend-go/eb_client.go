@@ -95,7 +95,7 @@ func (c *ebClient) request(ctx context.Context, req ebRequest) (any, error) {
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, newError("EB_REQUEST_FAILED", responseMessage(payload, resp.Status))
+		return nil, newErrorWithDetails("EB_REQUEST_FAILED", responseMessage(payload, resp.Status), responseDetails(resp, payload))
 	}
 	if len(bytes.TrimSpace(payload)) == 0 {
 		return map[string]any{}, nil
@@ -110,6 +110,20 @@ func (c *ebClient) request(ctx context.Context, req ebRequest) (any, error) {
 		}
 	}
 	return decoded, nil
+}
+
+func responseDetails(resp *http.Response, payload []byte) map[string]any {
+	details := map[string]any{
+		"statusCode": resp.StatusCode,
+		"status":     resp.Status,
+		"headers":    resp.Header,
+		"body":       string(payload),
+	}
+	var decoded any
+	if err := json.Unmarshal(payload, &decoded); err == nil {
+		details["json"] = decoded
+	}
+	return details
 }
 
 func responseMessage(payload []byte, status string) string {

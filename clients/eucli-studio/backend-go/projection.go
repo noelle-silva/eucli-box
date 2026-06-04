@@ -744,6 +744,9 @@ func toUIChat(session map[string]any) map[string]any {
 			updatedAt = createdAt
 		}
 		uiMessage := map[string]any{"id": stringField(msg, "id"), "type": messageStorageType(msg), "role": messageRole(msg), "content": stringField(msg, "content"), "parentMid": stringField(msg, "parentMessageId"), "branchId": fallback(stringField(msg, "branchId"), "main"), "createdAt": createdAt, "updatedAt": updatedAt}
+		if errBox := objectMap(msg["error"]); stringField(errBox, "message") != "" {
+			uiMessage["error"] = errBox
+		}
 		if activeAssistantID != "" && stringField(uiMessage, "id") == activeAssistantID {
 			uiMessage["pending"] = true
 			uiMessage["streaming"] = true
@@ -861,6 +864,9 @@ func fromUIChat(value any, roleID string) map[string]any {
 	messages := []any{}
 	for _, msg := range objectList(chat["messages"]) {
 		message := map[string]any{"id": stringField(msg, "id"), "type": messageStorageType(msg), "content": stringField(msg, "content"), "parentMessageId": stringField(msg, "parentMid"), "branchId": fallback(stringField(msg, "branchId"), "main"), "createdAt": timeFromMillis(msg["createdAt"]), "updatedAt": timeFromMillis(msg["updatedAt"])}
+		if errBox := objectMap(msg["error"]); stringField(errBox, "message") != "" {
+			message["error"] = errBox
+		}
 		if parts := objectList(msg["parts"]); len(parts) > 0 {
 			message["parts"] = anyList(parts)
 		}

@@ -28,6 +28,10 @@ func providerServiceFailed(message string, cause error) error {
 	return apperrors.Wrap(systemName, "provider.service_failed", message, cause)
 }
 
+func providerServiceFailedWithDetails(message string, cause error, details any) error {
+	return apperrors.WrapWithDetails(systemName, "provider.service_failed", message, cause, details)
+}
+
 func providerParseFailed(message string, cause error) error {
 	return apperrors.Wrap(systemName, "provider.parse_failed", message, cause)
 }

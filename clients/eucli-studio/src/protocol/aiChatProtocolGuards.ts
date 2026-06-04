@@ -16,7 +16,8 @@ export function toDirectErrorPayload(error: unknown) {
   if (error instanceof AiChatDirectError) {
     return { code: error.code, message: error.message, details: error.details }
   }
-  return { code: 'INTERNAL', message: String((error as any)?.message || error || '请求失败') }
+  const raw = error && typeof error === 'object' ? (error as any) : null
+  return { code: String(raw?.code || 'INTERNAL'), message: String(raw?.message || error || '请求失败'), details: raw?.details }
 }
 
 export function validateRequestFrame(frame: unknown): AiChatDirectRequest {

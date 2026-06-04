@@ -6,6 +6,7 @@ type Message struct {
 	ID              string              `json:"id"`
 	Type            string              `json:"type"`
 	Content         string              `json:"content"`
+	Error           *ErrorPayload       `json:"error,omitempty"`
 	Parts           []MessagePart       `json:"parts,omitempty"`
 	Attachments     []MessageAttachment `json:"attachments,omitempty"`
 	ParentMessageID string              `json:"parentMessageId,omitempty"`
@@ -15,6 +16,13 @@ type Message struct {
 	Reason          string              `json:"reason,omitempty"`
 	CreatedAt       time.Time           `json:"createdAt"`
 	UpdatedAt       time.Time           `json:"updatedAt"`
+}
+
+type ErrorPayload struct {
+	Code    string `json:"code,omitempty"`
+	Message string `json:"message"`
+	System  string `json:"system,omitempty"`
+	Details any    `json:"details,omitempty"`
 }
 
 type MessagePart struct {
@@ -121,16 +129,17 @@ type RunRequest struct {
 }
 
 type RunState struct {
-	ID             string    `json:"id"`
-	RoleID         string    `json:"roleId"`
-	SessionID      string    `json:"sessionId"`
-	InputMessageID string    `json:"inputMessageId,omitempty"`
-	LastMessageID  string    `json:"lastMessageId,omitempty"`
-	Stream         bool      `json:"stream,omitempty"`
-	Status         RunStatus `json:"status"`
-	Reason         string    `json:"reason,omitempty"`
-	CreatedAt      time.Time `json:"createdAt"`
-	UpdatedAt      time.Time `json:"updatedAt"`
+	ID             string        `json:"id"`
+	RoleID         string        `json:"roleId"`
+	SessionID      string        `json:"sessionId"`
+	InputMessageID string        `json:"inputMessageId,omitempty"`
+	LastMessageID  string        `json:"lastMessageId,omitempty"`
+	Stream         bool          `json:"stream,omitempty"`
+	Status         RunStatus     `json:"status"`
+	Reason         string        `json:"reason,omitempty"`
+	Error          *ErrorPayload `json:"error,omitempty"`
+	CreatedAt      time.Time     `json:"createdAt"`
+	UpdatedAt      time.Time     `json:"updatedAt"`
 }
 
 type RunStreamDelta struct {

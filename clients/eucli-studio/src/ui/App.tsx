@@ -87,6 +87,7 @@ import { AI_STUDIO_CHAT_ROOT_ID } from '../runtime/aiStudioGlobals'
 import { isAssistantAwaitingFirstOutput, isAssistantGenerating } from '../domain/assistantRunState'
 import { formatModelRefDisplayText } from '../domain/modelRefUtils'
 import { AssistantReplyPendingIndicator } from './components/AssistantReplyPendingIndicator'
+import { AssistantErrorNotice } from './components/AssistantErrorNotice'
 
 type SettingsTab = 'appearance' | 'attachments' | 'data' | 'groups' | 'roles' | 'providers' | 'services' | 'stickers'
 
@@ -3690,6 +3691,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                     ].filter((item: any) => item.mid && item.attachment)
                     const messageGenerating = isAssistantGenerating(m)
                     const messageAwaitingFirstOutput = isAssistantAwaitingFirstOutput(m)
+                    const messageError = !isUser && (m as any)?.error && typeof (m as any).error === 'object' ? (m as any).error : null
+                    const assistantParts = Array.isArray((m as any)?.parts) ? (m as any).parts : []
                     const canEdit = !isEditing && !messageGenerating && !s.loading && !uiBusy && !chatLocked && !!mid
                     const contentLines = userMessageCollapseEnabled && isUser ? content.split(/\r?\n/) : []
                     const canCollapse = userMessageCollapseEnabled && isUser && !isEditing && contentLines.length > userMessageCollapseLines
@@ -3843,6 +3846,21 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                                 </Stack>
                               ) : null}
                             </Box>
+                          ) : messageError ? (
+                            <Stack spacing={1}>
+                              <AssistantErrorNotice error={messageError} />
+                              {content || assistantParts.length ? (
+                                <AssistantMessageHost
+                                  controller={controller}
+                                  className="prose"
+                                  text={content}
+                                  parts={assistantParts}
+                                  mid={mid}
+                                  renderSafetyPolicyKey={renderSafetyPolicy}
+                                  chatRootRef={chatRootRef}
+                                />
+                              ) : null}
+                            </Stack>
                           ) : messageAwaitingFirstOutput ? (
                             <AssistantReplyPendingIndicator />
                           ) : (
@@ -3850,7 +3868,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                               controller={controller}
                               className="prose"
                               text={content}
-                              parts={Array.isArray((m as any)?.parts) ? (m as any).parts : []}
+                              parts={assistantParts}
                               mid={mid}
                               renderSafetyPolicyKey={renderSafetyPolicy}
                               chatRootRef={chatRootRef}

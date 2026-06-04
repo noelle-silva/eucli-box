@@ -16,7 +16,7 @@ import {
   rebuildLinearBranchingMessages,
   fillMissingBranchIdsOnly,
 } from './branching'
-import { normalizeMessageAttachments, normalizeMessageGroup, normalizeMessageParts } from './message'
+import { normalizeMessageAttachments, normalizeMessageError, normalizeMessageGroup, normalizeMessageParts } from './message'
 import { normalizeFavorites } from './favorites'
 import { chatMetasFromBox } from './chatMeta'
 import { looksLikeImageDataUrl } from './textProcessing'
@@ -283,6 +283,8 @@ export function normalizeData(raw: any) {
               }
               if (typeof (m as any).pending === 'boolean') outMsg.pending = !!(m as any).pending
               if (typeof (m as any).streaming === 'boolean') outMsg.streaming = !!(m as any).streaming
+              const error = normalizeMessageError((m as any).error)
+              if (error) outMsg.error = error
               if ((m as any).assistantRun && typeof (m as any).assistantRun === 'object') outMsg.assistantRun = { ...(m as any).assistantRun }
               return outMsg
             }),
@@ -424,6 +426,8 @@ export function normalizeData(raw: any) {
               }
               if (typeof (m as any).pending === 'boolean') outMsg.pending = !!(m as any).pending
               if (typeof (m as any).streaming === 'boolean') outMsg.streaming = !!(m as any).streaming
+              const error = normalizeMessageError((m as any).error)
+              if (error) outMsg.error = error
               if ((m as any).assistantRun && typeof (m as any).assistantRun === 'object') outMsg.assistantRun = { ...(m as any).assistantRun }
               return outMsg
             }),

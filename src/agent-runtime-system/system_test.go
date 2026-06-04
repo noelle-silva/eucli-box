@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	apperrors "eucli-box/pkg/errors"
 	"eucli-box/pkg/types"
 )
 
@@ -571,6 +572,32 @@ func TestRunFailsWhenMaxStepsExceeded(t *testing.T) {
 	}
 }
 
+func TestRunFailureStoresAssistantErrorWithoutFailureMessage(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.err = apperrors.WrapWithDetails("model-provider-system", "provider.service_failed", "upstream says no", nil, map[string]any{"body": `{"error":{"message":"upstream says no"}}`})
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusFailed || final.Error == nil || final.Error.Message != "upstream says no" {
+		t.Fatalf("final = %#v", final)
+	}
+	session := fakes.storage.lastSession()
+	if len(session.Messages) != 2 {
+		t.Fatalf("messages = %#v", session.Messages)
+	}
+	if session.Messages[1].Type != "assistant" || session.Messages[1].Error == nil || session.Messages[1].Error.Message != "upstream says no" {
+		t.Fatalf("assistant error = %#v", session.Messages[1])
+	}
+	for _, message := range session.Messages {
+		if message.Type == "failure" {
+			t.Fatalf("failure message should not be appended: %#v", session.Messages)
+		}
+	}
+}
+
 func newTestRuntime(t *testing.T, fakes *runtimeFakes, config Config) System {
 	t.Helper()
 	system, err := NewSystem(config, fakes.storage, fakes.roles, fakes.provider, fakes.tool)
@@ -717,9 +744,13 @@ type fakeRuntimeProvider struct {
 	calls          int
 	requests       []types.ModelRequest
 	block          chan struct{}
+	err            error
 }
 
 func (f *fakeRuntimeProvider) Complete(ctx context.Context, request types.ModelRequest) (types.ModelResponse, error) {
+	if f.err != nil {
+		return types.ModelResponse{}, f.err
+	}
 	if f.block != nil {
 		select {
 		case <-f.block:
@@ -743,6 +774,9 @@ func (f *fakeRuntimeProvider) Complete(ctx context.Context, request types.ModelR
 }
 
 func (f *fakeRuntimeProvider) CompleteStream(ctx context.Context, request types.ModelRequest, onEvent types.ModelStreamHandler) (types.ModelResponse, error) {
+	if f.err != nil {
+		return types.ModelResponse{}, f.err
+	}
 	if f.block != nil {
 		select {
 		case <-f.block:

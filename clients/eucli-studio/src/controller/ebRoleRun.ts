@@ -9,6 +9,7 @@ export type EbRunState = {
   stream: boolean
   status: string
   reason: string
+  error: { code?: string; message: string; system?: string; details?: unknown } | null
 }
 
 export function isTerminalRunStatus(status: unknown) {
@@ -59,6 +60,8 @@ export async function cancelRoleRun(netRequest: EbNetRequest, runId: string) {
 
 export function normalizeRunState(value: any): EbRunState {
   const state = value && typeof value === 'object' ? value : {}
+  const rawError = state.error && typeof state.error === 'object' ? state.error : null
+  const message = String(rawError?.message || '').trim()
   return {
     id: String(state.id || '').trim(),
     roleId: String(state.roleId || '').trim(),
@@ -68,7 +71,24 @@ export function normalizeRunState(value: any): EbRunState {
     stream: !!state.stream,
     status: String(state.status || '').trim(),
     reason: String(state.reason || '').trim(),
+    error: message
+      ? {
+          code: String(rawError?.code || '').trim() || undefined,
+          message,
+          system: String(rawError?.system || '').trim() || undefined,
+          details: rawError?.details,
+        }
+      : null,
   }
+}
+
+export function runStateFailureError(state: EbRunState) {
+  const payload = state.error
+  const err: any = new Error(String(payload?.message || state.reason || `e-b run ${state.status}`))
+  if (payload?.code) err.code = payload.code
+  if (payload?.system) err.system = payload.system
+  if (payload && Object.prototype.hasOwnProperty.call(payload, 'details')) err.details = payload.details
+  return err
 }
 
 export function sleepMs(ms: number) {

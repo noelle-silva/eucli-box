@@ -178,16 +178,39 @@ func appendRunMessage(record *runRecord, message types.Message) {
 	record.lastMessageID = record.messageParent.ID
 }
 
-func appendRunFailureMessage(record *runRecord, session types.Session, reason string) types.Session {
-	if strings.TrimSpace(record.messageParent.ID) == "" {
-		session = appendMessage(session, failureMessage(reason))
-		record.session = session
-		record.lastMessageID = lastSessionMessage(session).ID
+func markRunFailureMessage(record *runRecord, session types.Session, payload *types.ErrorPayload) types.Session {
+	if payload == nil || strings.TrimSpace(payload.Message) == "" {
 		return session
 	}
 	record.session = session
-	appendRunMessage(record, failureMessage(reason))
+	if _, ok := activeRunAssistant(record); !ok {
+		appendRunAssistantReply(record, "")
+	}
+	messageID := strings.TrimSpace(record.activeAssistantID)
+	if messageID == "" {
+		return record.session
+	}
+	now := time.Now().UTC()
+	for index := range record.session.Messages {
+		if record.session.Messages[index].ID != messageID {
+			continue
+		}
+		record.session.Messages[index].Error = cloneErrorPayload(payload)
+		record.session.Messages[index].UpdatedAt = now
+		record.messageParent = record.session.Messages[index]
+		record.lastMessageID = record.messageParent.ID
+		record.session.UpdatedAt = now
+		record.session.LastActive = now
+		return record.session
+	}
 	return record.session
+}
+
+func cloneErrorPayload(payload *types.ErrorPayload) *types.ErrorPayload {
+	if payload == nil {
+		return nil
+	}
+	return &types.ErrorPayload{Code: payload.Code, Message: payload.Message, System: payload.System, Details: payload.Details}
 }
 
 func assistantReplyBranchID(session types.Session, parent types.Message, assistantID string) string {
@@ -353,11 +376,6 @@ func toolMessage(result types.ToolResult) types.Message {
 	}
 	now := time.Now().UTC()
 	return types.Message{ID: utils.NewID("message"), Type: "tool", Content: content, ToolID: result.ID, ToolName: result.ToolName, Reason: result.Error, CreatedAt: now, UpdatedAt: now}
-}
-
-func failureMessage(reason string) types.Message {
-	now := time.Now().UTC()
-	return types.Message{ID: utils.NewID("message"), Type: "failure", Content: reason, Reason: reason, CreatedAt: now, UpdatedAt: now}
 }
 
 func toolRequestMessage(action types.ToolAction) types.Message {

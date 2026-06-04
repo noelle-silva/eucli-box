@@ -20,6 +20,7 @@ type responseError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 	System  string `json:"system"`
+	Details any    `json:"details,omitempty"`
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
@@ -43,7 +44,7 @@ func writeError(w http.ResponseWriter, err error) {
 		if inner != nil {
 			appErr = inner
 		}
-		writeJSON(w, statusForCode(appErr.Code), errorResponse{Error: responseError{Code: appErr.Code, Message: appErr.Message, System: appErr.System}})
+		writeJSON(w, statusForCode(appErr.Code), errorResponse{Error: responseError{Code: appErr.Code, Message: appErr.Message, System: appErr.System, Details: appErr.Details}})
 		return
 	}
 	writeJSON(w, http.StatusInternalServerError, errorResponse{Error: responseError{Code: "gateway.internal_error", Message: err.Error(), System: systemName}})

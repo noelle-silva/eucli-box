@@ -147,24 +147,53 @@ func requireSuccess(response types.HTTPResponse) error {
 		return nil
 	}
 	message := fmt.Sprintf("provider service returned status %d", response.StatusCode)
-	if len(response.Body) > 0 {
-		bodyStr := string(response.Body)
-		lines := strings.Split(bodyStr, "\n")
-		filtered := make([]string, 0, len(lines))
-		for _, line := range lines {
-			lower := strings.ToLower(line)
-			if strings.Contains(lower, "key") || strings.Contains(lower, "api_key") || strings.Contains(lower, "secret") {
-				continue
-			}
-			filtered = append(filtered, line)
-		}
-		bodyStr = strings.Join(filtered, "\n")
-		if len(bodyStr) > 200 {
-			bodyStr = bodyStr[:200] + "..."
-		}
-		message = message + ": " + bodyStr
+	if upstreamMessage := upstreamErrorMessage(response.Body); upstreamMessage != "" {
+		message = upstreamMessage
 	}
-	return providerServiceFailed(message, nil)
+	return providerServiceFailedWithDetails(message, nil, upstreamHTTPErrorDetails(response))
+}
+
+func upstreamHTTPErrorDetails(response types.HTTPResponse) map[string]any {
+	details := map[string]any{
+		"statusCode": response.StatusCode,
+		"headers":    response.Headers,
+		"body":       string(response.Body),
+	}
+	if decoded := decodeJSONBody(response.Body); decoded != nil {
+		details["json"] = decoded
+	}
+	return details
+}
+
+func upstreamErrorMessage(body []byte) string {
+	decoded := decodeJSONBody(body)
+	if decoded == nil {
+		return strings.TrimSpace(string(body))
+	}
+	root, ok := decoded.(map[string]any)
+	if !ok {
+		return ""
+	}
+	if errBox, ok := root["error"].(map[string]any); ok {
+		if msg := strings.TrimSpace(fmt.Sprint(errBox["message"])); msg != "" {
+			return msg
+		}
+	}
+	if msg := strings.TrimSpace(fmt.Sprint(root["message"])); msg != "" {
+		return msg
+	}
+	return ""
+}
+
+func decodeJSONBody(body []byte) any {
+	if len(bytes.TrimSpace(body)) == 0 {
+		return nil
+	}
+	var decoded any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return nil
+	}
+	return decoded
 }
 
 func parseToolArguments(raw string) (map[string]any, error) {

@@ -7,6 +7,7 @@ type AppError struct {
 	Message string
 	System  string
 	Cause   error
+	Details any
 }
 
 func (e *AppError) Error() string {
@@ -32,4 +33,12 @@ func New(system string, code string, message string) *AppError {
 
 func Wrap(system string, code string, message string, cause error) *AppError {
 	return &AppError{System: system, Code: code, Message: message, Cause: cause}
+}
+
+func NewWithDetails(system string, code string, message string, details any) *AppError {
+	return &AppError{System: system, Code: code, Message: message, Details: details}
+}
+
+func WrapWithDetails(system string, code string, message string, cause error, details any) *AppError {
+	return &AppError{System: system, Code: code, Message: message, Cause: cause, Details: details}
 }

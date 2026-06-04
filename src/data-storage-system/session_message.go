@@ -69,6 +69,7 @@ func normalizeSessionMessages(messages []types.Message, now time.Time) []types.M
 		seen[message.ID] = struct{}{}
 
 		message.Type = normalizeMessageType(message.Type)
+		message.Error = normalizeErrorPayload(message.Error)
 		message.Attachments = normalizeSessionMessageAttachments(message.Attachments)
 		if message.Content == "" {
 			message.Content = textProjectionFromParts(message.Parts)
@@ -95,6 +96,19 @@ func normalizeSessionMessages(messages []types.Message, now time.Time) []types.M
 	}
 
 	return result
+}
+
+func normalizeErrorPayload(errorPayload *types.ErrorPayload) *types.ErrorPayload {
+	if errorPayload == nil {
+		return nil
+	}
+	errorPayload.Code = strings.TrimSpace(errorPayload.Code)
+	errorPayload.Message = strings.TrimSpace(errorPayload.Message)
+	errorPayload.System = strings.TrimSpace(errorPayload.System)
+	if errorPayload.Message == "" {
+		return nil
+	}
+	return errorPayload
 }
 
 func normalizeSessionMessageParts(message types.Message, now time.Time) []types.MessagePart {

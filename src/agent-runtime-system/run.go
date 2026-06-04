@@ -23,7 +23,7 @@ func (s *system) StartRun(ctx context.Context, request types.RunRequest) (types.
 	state, contextSession, err := s.startRun(ctx, record, request)
 	if err != nil {
 		cancel()
-		s.failRunStateOnly(record, err.Error())
+		s.failRunStateOnly(record, err)
 		if failed, ok := s.getRunState(record.runID); ok {
 			return failed, nil
 		}
@@ -107,17 +107,17 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 		}
 		roleContext, err := s.buildRoleContext(ctx, record.roleID, contextSession)
 		if err != nil {
-			s.failRun(context.Background(), record, record.session, err.Error())
+			s.failRun(context.Background(), record, record.session, err)
 			return
 		}
 		modelResponse, err := s.callModel(ctx, record, roleContext)
 		if err != nil {
-			s.failRun(context.Background(), record, record.session, err.Error())
+			s.failRun(context.Background(), record, record.session, err)
 			return
 		}
 		modelResponse, err = s.mergeTextToolRequests(ctx, modelResponse)
 		if err != nil {
-			s.failRun(context.Background(), record, record.session, err.Error())
+			s.failRun(context.Background(), record, record.session, err)
 			return
 		}
 		if err := ctx.Err(); err != nil {
@@ -136,7 +136,7 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 		}
 		assistantParent = record.messageParent
 		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, assistantParent.ID); err != nil {
-			s.failRun(context.Background(), record, record.session, err.Error())
+			s.failRun(context.Background(), record, record.session, err)
 			return
 		}
 		if assistantOutputRecorded {
@@ -144,7 +144,7 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 		}
 		s.publish(record.runID, "model_output", modelResponse)
 		if err := s.saveSession(ctx, record.session, types.RunStatusRunning); err != nil {
-			s.failRun(context.Background(), record, record.session, err.Error())
+			s.failRun(context.Background(), record, record.session, err)
 			return
 		}
 		if len(modelResponse.ToolIntents) == 0 {
@@ -156,7 +156,7 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 			s.publish(record.runID, "tool_result", result)
 		}
 		if err != nil {
-			s.failRun(context.Background(), record, record.session, err.Error())
+			s.failRun(context.Background(), record, record.session, err)
 			return
 		}
 		assistantParent = record.messageParent
@@ -167,11 +167,11 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 			return
 		}
 		if err := s.saveSession(ctx, record.session, types.RunStatusRunning); err != nil {
-			s.failRun(context.Background(), record, record.session, err.Error())
+			s.failRun(context.Background(), record, record.session, err)
 			return
 		}
 	}
-	s.failRun(context.Background(), record, record.session, "run exceeded max steps")
+	s.failRunMessage(context.Background(), record, record.session, "run exceeded max steps")
 }
 
 func shouldRecordAssistantOutput(response types.ModelResponse) bool {
@@ -268,7 +268,8 @@ func upsertSessionMessage(session types.Session, message types.Message) types.Se
 
 func (s *system) completeRun(ctx context.Context, record *runRecord, session types.Session) {
 	if err := s.saveSession(ctx, session, types.RunStatusCompleted); err != nil {
-		state, _ := s.updateRun(record.runID, types.RunStatusFailed, "save session failed: "+err.Error())
+		reason, payload := runFailureFromError(err, "save session failed: "+err.Error())
+		state, _ := s.updateRunWithError(record.runID, types.RunStatusFailed, reason, payload)
 		s.publish(record.runID, "run_failed", state)
 		return
 	}
@@ -279,36 +280,48 @@ func (s *system) completeRun(ctx context.Context, record *runRecord, session typ
 	s.publish(record.runID, "run_completed", state)
 }
 
-func (s *system) failRun(ctx context.Context, record *runRecord, session types.Session, reason string) {
-	state, err := s.updateRun(record.runID, types.RunStatusFailed, reason)
+func (s *system) failRun(ctx context.Context, record *runRecord, session types.Session, err error) {
+	reason, payload := runFailureFromError(err, "")
+	s.failRunWithPayload(ctx, record, session, reason, payload)
+}
+
+func (s *system) failRunMessage(ctx context.Context, record *runRecord, session types.Session, reason string) {
+	reason, payload := runFailureFromError(nil, reason)
+	s.failRunWithPayload(ctx, record, session, reason, payload)
+}
+
+func (s *system) failRunWithPayload(ctx context.Context, record *runRecord, session types.Session, reason string, payload *types.ErrorPayload) {
+	state, err := s.updateRunWithError(record.runID, types.RunStatusFailed, reason, payload)
 	if err != nil {
 		if session.ID != "" {
-			session = appendRunFailureMessage(record, session, reason)
+			session = markRunFailureMessage(record, session, payload)
 			_ = s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID)
 			_ = s.saveSession(ctx, session, types.RunStatus(session.Status))
 		}
-		s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, InputMessageID: record.inputMessageID, LastMessageID: record.lastMessageID, Status: types.RunStatusFailed, Reason: reason})
+		s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, InputMessageID: record.inputMessageID, LastMessageID: record.lastMessageID, Status: types.RunStatusFailed, Reason: reason, Error: cloneErrorPayload(payload)})
 		return
 	}
 	if session.ID != "" {
-		session = appendRunFailureMessage(record, session, reason)
+		session = markRunFailureMessage(record, session, payload)
 		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err == nil {
 			if next, ok := s.getRunState(record.runID); ok {
 				state = next
 			}
 		}
 		if err := s.saveSession(ctx, session, types.RunStatusFailed); err != nil {
-			s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: "save session failed: " + err.Error()})
+			saveReason, savePayload := runFailureFromError(err, "save session failed: "+err.Error())
+			s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: saveReason, Error: cloneErrorPayload(savePayload)})
 			return
 		}
 	}
 	s.publish(record.runID, "run_failed", state)
 }
 
-func (s *system) failRunStateOnly(record *runRecord, reason string) {
-	state, err := s.updateRun(record.runID, types.RunStatusFailed, reason)
-	if err != nil {
-		s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: reason})
+func (s *system) failRunStateOnly(record *runRecord, err error) {
+	reason, payload := runFailureFromError(err, "")
+	state, updateErr := s.updateRunWithError(record.runID, types.RunStatusFailed, reason, payload)
+	if updateErr != nil {
+		s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: reason, Error: cloneErrorPayload(payload)})
 		return
 	}
 	s.publish(record.runID, "run_failed", state)

@@ -84,8 +84,9 @@ import { StandaloneWindowControls, type WindowControlActions } from './component
 import { AssistantMessageHost } from '../render/assistantMessageHost'
 import { RolesSettingsPanel } from './settings/RolesSettingsPanel'
 import { AI_STUDIO_CHAT_ROOT_ID } from '../runtime/aiStudioGlobals'
-import { isAssistantGenerating } from '../domain/assistantRunState'
+import { isAssistantAwaitingFirstOutput, isAssistantGenerating } from '../domain/assistantRunState'
 import { formatModelRefDisplayText } from '../domain/modelRefUtils'
+import { AssistantReplyPendingIndicator } from './components/AssistantReplyPendingIndicator'
 
 type SettingsTab = 'appearance' | 'attachments' | 'data' | 'groups' | 'roles' | 'providers' | 'services' | 'stickers'
 
@@ -3688,6 +3689,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                       ...legacyAttMsgs.map((am: any) => ({ mid: String(am?.id || '').trim(), idx: 0, attachment: am && Array.isArray(am.attachments) ? am.attachments[0] : null })),
                     ].filter((item: any) => item.mid && item.attachment)
                     const messageGenerating = isAssistantGenerating(m)
+                    const messageAwaitingFirstOutput = isAssistantAwaitingFirstOutput(m)
                     const canEdit = !isEditing && !messageGenerating && !s.loading && !uiBusy && !chatLocked && !!mid
                     const contentLines = userMessageCollapseEnabled && isUser ? content.split(/\r?\n/) : []
                     const canCollapse = userMessageCollapseEnabled && isUser && !isEditing && contentLines.length > userMessageCollapseLines
@@ -3841,6 +3843,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                                 </Stack>
                               ) : null}
                             </Box>
+                          ) : messageAwaitingFirstOutput ? (
+                            <AssistantReplyPendingIndicator />
                           ) : (
                             <AssistantMessageHost
                               controller={controller}

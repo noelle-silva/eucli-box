@@ -80,6 +80,24 @@ export function isAssistantGenerating(message: unknown) {
   return m.pending === true
 }
 
+export function hasAssistantVisibleOutput(message: unknown) {
+  const m = message && typeof message === 'object' ? (message as any) : null
+  if (!m || m.role !== 'assistant') return false
+  const content = String(m.content ?? '').trim()
+  if (content && content !== ASSISTANT_RUNNING_CONTENT) return true
+  const parts = Array.isArray(m.parts) ? m.parts : []
+  return parts.some((part: any) => {
+    if (!part || typeof part !== 'object') return false
+    const type = String(part.type || '').trim()
+    if (type === 'text') return !!String(part.text || '').trim()
+    return type === 'tool'
+  })
+}
+
+export function isAssistantAwaitingFirstOutput(message: unknown) {
+  return isAssistantGenerating(message) && !hasAssistantVisibleOutput(message)
+}
+
 export function assistantRunGenerationId(message: unknown) {
   const m = message && typeof message === 'object' ? (message as any) : null
   return normalizeAssistantRunState(m?.assistantRun)?.generationId || ''

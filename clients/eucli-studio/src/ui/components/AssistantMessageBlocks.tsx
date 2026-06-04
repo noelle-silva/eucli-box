@@ -8,6 +8,7 @@ import CloseIcon from '@mui/icons-material/Close'
 import { planAssistantMessageBlocks, type AssistantMessageBlock } from '../../render/assistantMessagePlan'
 import { renderAssistantToolDiagnosticHtml, renderAssistantToolInvocationHtml, renderAssistantToolResultHtml } from '../../render/assistantToolHtml'
 import { AssistantMessageHost } from '../../render/assistantMessageHost'
+import type { AiChatToastOptions } from '../../gateway/capabilities'
 
 type AssistantMessageBlocksProps = {
   controller: any
@@ -97,20 +98,20 @@ function renderToolBlockHtml(block: AssistantMessageBlock) {
   return ''
 }
 
-function showToast(controller: any, message: string) {
-  controller?.capabilities?.ui?.showToast?.(message)
+function showToast(controller: any, message: string, options?: AiChatToastOptions) {
+  controller?.capabilities?.ui?.showToast?.(message, options)
 }
 
 function writeClipboard(controller: any, text: string) {
   const writeText = controller?.capabilities?.clipboard?.writeText
   if (typeof writeText !== 'function') {
-    showToast(controller, '未授权：clipboard.writeText')
+    showToast(controller, '未授权：clipboard.writeText', { kind: 'error' })
     return
   }
   Promise.resolve()
     .then(() => writeText(text))
-    .then(() => showToast(controller, '已复制'))
-    .catch(() => showToast(controller, '复制失败'))
+    .then(() => showToast(controller, '已复制', { kind: 'success' }))
+    .catch(() => showToast(controller, '复制失败', { kind: 'error' }))
 }
 
 export function AssistantMessageBlocks(props: AssistantMessageBlocksProps) {

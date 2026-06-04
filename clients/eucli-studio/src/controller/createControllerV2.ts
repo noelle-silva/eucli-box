@@ -426,7 +426,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     syncGroupAvatarFile,
     getState: () => state,
     setState: (data: any) => { state.data = data },
-    onError: (msg: string) => { api.ui?.showToast?.(msg) },
+    onError: (msg: string) => { api.ui?.showToast?.(msg, { kind: 'error' }) },
   })
   const {
     loadSplitMeta,
@@ -548,7 +548,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       state.draft.activeRoleId = ''
       state.draft.activeGroupId = ''
       state.draft.activeTargetKind = 'role'
-      api.ui?.showToast?.(String(e?.message || e || '加载失败'))
+      api.ui?.showToast?.(String(e?.message || e || '加载失败'), { kind: 'error' })
     } finally {
       state.loading = false
     }
@@ -868,7 +868,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     if (!list.length) return
 
     const vCat = validateStickerCategoryName(categoryName)
-    if (!vCat.ok) return api.ui?.showToast?.(vCat.error || '分类名无效')
+    if (!vCat.ok) return api.ui?.showToast?.(vCat.error || '分类名无效', { kind: 'error' })
     const cat = vCat.name
 
     let ok = 0
@@ -903,17 +903,17 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       await loadStickersFromSource()
       emit()
     }
-    if (dup) api.ui?.showToast?.(`跳过重名：${dup} 个`)
-    if (!ok && bad) api.ui?.showToast?.(firstError || '导入失败')
+    if (dup) api.ui?.showToast?.(`跳过重名：${dup} 个`, { kind: 'error' })
+    if (!ok && bad) api.ui?.showToast?.(firstError || '导入失败', { kind: 'error' })
   }
 
   async function pickStickerImages(categoryName: any) {
-    if (typeof pickImageFiles !== 'function') return api.ui?.showToast?.('未授权：files.pickImages')
+    if (typeof pickImageFiles !== 'function') return api.ui?.showToast?.('未授权：files.pickImages', { kind: 'error' })
     try {
       const items = await pickImageFiles(30)
       await addStickersFromPickedImages(categoryName, items)
     } catch (e) {
-      api.ui?.showToast?.(String((e as any)?.message || e || '选择图片失败'))
+      api.ui?.showToast?.(String((e as any)?.message || e || '选择图片失败'), { kind: 'error' })
     }
   }
 
@@ -1100,12 +1100,12 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       const next = !state.data.settings.stickers.enabled
       setStickersEnabled(next)
         .then(() => emit())
-        .catch((e: any) => api.ui?.showToast?.(String(e?.message || e || '保存表情包开关失败')))
+        .catch((e: any) => api.ui?.showToast?.(String(e?.message || e || '保存表情包开关失败'), { kind: 'error' }))
     },
     createStickerCategory: async (categoryName: any) => {
       if (!state.data) return
       const v = validateStickerCategoryName(categoryName)
-      if (!v.ok) return api.ui?.showToast?.(v.error || '分类名无效')
+      if (!v.ok) return api.ui?.showToast?.(v.error || '分类名无效', { kind: 'error' })
 
       const name = v.name
       try {
@@ -1113,7 +1113,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
         emit()
         return true
       } catch (e: any) {
-        api.ui?.showToast?.(String(e?.message || e || '创建分类失败'))
+        api.ui?.showToast?.(String(e?.message || e || '创建分类失败'), { kind: 'error' })
         return false
       }
     },
@@ -1134,7 +1134,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
         emit()
         return true
       } catch (e: any) {
-        api.ui?.showToast?.(String(e?.message || e || '删除分类失败'))
+        api.ui?.showToast?.(String(e?.message || e || '删除分类失败'), { kind: 'error' })
         return false
       }
     },
@@ -1143,18 +1143,18 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       if (!state.data.settings.stickers || typeof state.data.settings.stickers !== 'object') state.data.settings.stickers = { enabled: false, categories: [], map: {} }
 
       const vCat = validateStickerCategoryName(categoryName)
-      if (!vCat.ok) return api.ui?.showToast?.(vCat.error || '分类名无效')
+      if (!vCat.ok) return api.ui?.showToast?.(vCat.error || '分类名无效', { kind: 'error' })
       const cat = vCat.name
 
       const vName = validateStickerName(stickerName)
-      if (!vName.ok) return api.ui?.showToast?.(vName.error || '表情名无效')
+      if (!vName.ok) return api.ui?.showToast?.(vName.error || '表情名无效', { kind: 'error' })
       const name = vName.name
 
       const r = await addStickerInternal(cat, name, dataUrl).catch((e: any) => ({ ok: false, kind: 'err' as const, error: e }))
       if (!r || !r.ok) {
-        if (r?.kind === 'dup') return api.ui?.showToast?.('重名：该分类下已存在同名表情')
-        if (r?.kind === 'bad-image') return api.ui?.showToast?.('图片格式不支持（仅支持 png/jpg/webp/gif）')
-        return api.ui?.showToast?.(String((r as any)?.error?.message || (r as any)?.error || '保存失败'))
+        if (r?.kind === 'dup') return api.ui?.showToast?.('重名：该分类下已存在同名表情', { kind: 'error' })
+        if (r?.kind === 'bad-image') return api.ui?.showToast?.('图片格式不支持（仅支持 png/jpg/webp/gif）', { kind: 'error' })
+        return api.ui?.showToast?.(String((r as any)?.error?.message || (r as any)?.error || '保存失败'), { kind: 'error' })
       }
 
       await loadStickersFromSource().catch(() => {})
@@ -1170,21 +1170,21 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
         await deleteStickerInternal(cat, name)
         emit()
       } catch (e: any) {
-        api.ui?.showToast?.(String(e?.message || e || '删除表情包失败'))
+        api.ui?.showToast?.(String(e?.message || e || '删除表情包失败'), { kind: 'error' })
       }
     },
     renameSticker: async (categoryName: any, oldStickerName: any, newStickerName: any) => {
       if (!state.data) return
 
       const vCat = validateStickerCategoryName(categoryName)
-      if (!vCat.ok) return api.ui?.showToast?.(vCat.error || '分类名无效')
+      if (!vCat.ok) return api.ui?.showToast?.(vCat.error || '分类名无效', { kind: 'error' })
       const cat = vCat.name
 
       const oldName = String(oldStickerName || '').trim()
       if (!oldName) return
 
       const vName = validateStickerName(newStickerName)
-      if (!vName.ok) return api.ui?.showToast?.(vName.error || '表情名无效')
+      if (!vName.ok) return api.ui?.showToast?.(vName.error || '表情名无效', { kind: 'error' })
       const name = vName.name
 
       if (name === oldName) return api.ui?.showToast?.('名称未变化')
@@ -1193,7 +1193,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
         emit()
         return true
       } catch (e: any) {
-        api.ui?.showToast?.(String(e?.message || e || '表情包改名失败'))
+        api.ui?.showToast?.(String(e?.message || e || '表情包改名失败'), { kind: 'error' })
         return false
       }
     },
@@ -1519,7 +1519,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
         ;(state.data.settings as any).renderSafetyPolicy = nextRenderSafetyPolicy
         await saveMeta().catch((e: any) => {
           ok = false
-          api.ui?.showToast?.(String(e?.message || e || '保存渲染安全策略失败'))
+          api.ui?.showToast?.(String(e?.message || e || '保存渲染安全策略失败'), { kind: 'error' })
         })
       }
       if (ok) {
@@ -1548,16 +1548,16 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
 	        if (updatedContent) {
 	          return patchMessageContentSilent(String(messageId || ''), updatedContent)
 	            .then(() => {
-	              api.ui?.showToast?.(`Mermaid 已修复（${cost()}s）`)
+	              api.ui?.showToast?.(`Mermaid 已修复（${cost()}s）`, { kind: 'success' })
 	              return nextMermaid || fixed
 	            })
 	        }
-          api.ui?.showToast?.(`Mermaid 已修复（${cost()}s）`)
+          api.ui?.showToast?.(`Mermaid 已修复（${cost()}s）`, { kind: 'success' })
           return fixed
         })
         .catch((e: any) => {
           const msg = String(e?.message || e || 'AI 修复 Mermaid 失败')
-          api.ui?.showToast?.(`AI 修复 Mermaid 失败（${cost()}s）：${msg}`)
+          api.ui?.showToast?.(`AI 修复 Mermaid 失败（${cost()}s）：${msg}`, { kind: 'error' })
           throw e
         })
     },
@@ -1685,13 +1685,13 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
 	          return reloadRoleSession(String(roleId || ''), String(chatId || ''))
 	            .then(() => {
 	              emit()
-	              api.ui?.showToast?.(`已更新标题（${cost()}s）：${nextTitle || '（空）'}`)
+	              api.ui?.showToast?.(`已更新标题（${cost()}s）：${nextTitle || '（空）'}`, { kind: 'success' })
 	              return title
 	            })
         })
         .catch((e: any) => {
           const msg = String(e?.message || e || 'AI 生成标题失败')
-          api.ui?.showToast?.(`AI 生成标题失败（${cost()}s）：${msg}`)
+          api.ui?.showToast?.(`AI 生成标题失败（${cost()}s）：${msg}`, { kind: 'error' })
           throw e
         })
     },
@@ -1705,12 +1705,12 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
           return aiGenerateGroupChatTitle(String(groupId || ''), String(chatId || ''))
         })
         .then((title: any) => {
-          api.ui?.showToast?.(`已更新标题（${cost()}s）：${String(title || '').trim() || '（空）'}`)
+          api.ui?.showToast?.(`已更新标题（${cost()}s）：${String(title || '').trim() || '（空）'}`, { kind: 'success' })
           return title
         })
         .catch((e: any) => {
           const msg = String(e?.message || e || 'AI 生成标题失败')
-          api.ui?.showToast?.(`AI 生成标题失败（${cost()}s）：${msg}`)
+          api.ui?.showToast?.(`AI 生成标题失败（${cost()}s）：${msg}`, { kind: 'error' })
           throw e
         })
     },
@@ -1727,7 +1727,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
           const nextName = String((name as any)?.name || name || '').trim()
           return loadStickersFromSource().then(() => {
             emit()
-            api.ui?.showToast?.(`已更新表情名（${cost()}s）：${nextName || '（空）'}`)
+            api.ui?.showToast?.(`已更新表情名（${cost()}s）：${nextName || '（空）'}`, { kind: 'success' })
             return name
           })
         })
@@ -1735,7 +1735,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
           let msg = String(e?.message || e || 'AI 取名失败')
           if (msg.includes('sticker naming is disabled')) msg = '请先在“设置 > AI 微服务”中启用表情包取名服务'
           else if (msg.includes('model coordinate is required')) msg = '请先在“设置 > AI 微服务”中配置表情包取名的供应商和模型'
-          api.ui?.showToast?.(`AI 取名失败（${cost()}s）：${msg}`)
+          api.ui?.showToast?.(`AI 取名失败（${cost()}s）：${msg}`, { kind: 'error' })
           throw e
         })
     },
@@ -1804,8 +1804,8 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     setChatModelOverride: async (providerId: any, modelId: any) => {
       const pid = String(providerId || '').trim()
       const mid = String(modelId || '').trim()
-      if (!pid || !mid) return api.ui?.showToast?.('供应商/模型 不能为空')
-      api.ui?.showToast?.('当前会话临时模型尚未接入 e-b 真实根动作，已阻止本地假覆盖')
+      if (!pid || !mid) return api.ui?.showToast?.('供应商/模型 不能为空', { kind: 'error' })
+      api.ui?.showToast?.('当前会话临时模型尚未接入 e-b 真实根动作，已阻止本地假覆盖', { kind: 'error' })
     },
     clearChatModelOverride: async () => {
       if (!state.data) return
@@ -1817,7 +1817,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       chat.updatedAt = now()
       save().catch(() => {})
       emit()
-      api.ui?.showToast?.('已清除未接入 e-b 的本地临时模型覆盖')
+      api.ui?.showToast?.('已清除未接入 e-b 的本地临时模型覆盖', { kind: 'success' })
     },
     deleteMessage: (messageId: any) => deleteMessage(String(messageId || '')),
     deleteMessageSubtree: (messageId: any) => deleteMessageSubtree(String(messageId || '')),

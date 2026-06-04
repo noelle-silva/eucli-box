@@ -1,11 +1,12 @@
 import { now } from '../core/utils'
+import type { AiChatShowToast } from '../gateway/capabilities'
 
 export function createModelRefresh(deps: {
   getState: () => any
   getProvider: (pid: string) => any
   netRequest: (req: any) => Promise<any>
   emit: () => void
-  showToast?: (msg: string) => void
+  showToast?: AiChatShowToast
 }) {
   async function refreshModels(providerId: string, force: boolean) {
     const s = deps.getState()
@@ -37,10 +38,10 @@ export function createModelRefresh(deps: {
 
       p.modelsCache = { items: ids, fetchedAt: now() }
       s.models = { loading: false, error: '', items: ids.slice(0, 300) }
-      deps.showToast?.(`模型已刷新（${ids.length}）`)
+      deps.showToast?.(`模型已刷新（${ids.length}）`, { kind: 'success' })
     } catch (e: any) {
       s.models = { loading: false, error: String(e?.message || e || '获取模型失败'), items: [] }
-      deps.showToast?.(s.models.error || '获取模型失败')
+      deps.showToast?.(s.models.error || '获取模型失败', { kind: 'error' })
     } finally {
       deps.emit()
     }

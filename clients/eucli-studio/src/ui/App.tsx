@@ -90,6 +90,7 @@ import { isAssistantAwaitingFirstOutput, isAssistantGenerating } from '../domain
 import { formatModelRefDisplayText } from '../domain/modelRefUtils'
 import { AssistantReplyPendingIndicator } from './components/AssistantReplyPendingIndicator'
 import { AssistantErrorNotice } from './components/AssistantErrorNotice'
+import type { AiChatToastOptions } from '../gateway/capabilities'
 
 type SettingsTab = 'appearance' | 'attachments' | 'data' | 'groups' | 'roles' | 'providers' | 'services' | 'tools' | 'stickers' | 'eb'
 
@@ -1095,7 +1096,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const backToHost = useEvent(() => {
     const host = (controller as any)?.capabilities?.host
     if (host?.back) host.back()
-    else controller?.capabilities?.ui?.showToast?.('无法返回')
+    else controller?.capabilities?.ui?.showToast?.('无法返回', { kind: 'error' })
   })
 
   const focusComposerSoon = useEvent(() => {
@@ -2271,7 +2272,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const closeTempModelPicker = useEvent(() => setTempModelPickerEl(null))
   const openTempModelPicker = useEvent((e: React.MouseEvent<HTMLElement>) => {
     if (!activeRole) return
-    if (!providers.length) return controller?.capabilities?.ui?.showToast?.('暂无供应商')
+    if (!providers.length) return controller?.capabilities?.ui?.showToast?.('暂无供应商', { kind: 'error' })
 
     const pid0 = effectiveProviderId || String((providers[0] as any)?.id || '')
     const mid0 = effectiveModelId || ''
@@ -2302,8 +2303,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     let mid = String(tempModelPick || '').trim()
     if (mid === '__custom__') mid = String(tempCustomModelId || '').trim()
 
-    if (!pid) return controller?.capabilities?.ui?.showToast?.('请选择供应商')
-    if (!mid) return controller?.capabilities?.ui?.showToast?.('请选择模型')
+    if (!pid) return controller?.capabilities?.ui?.showToast?.('请选择供应商', { kind: 'error' })
+    if (!mid) return controller?.capabilities?.ui?.showToast?.('请选择模型', { kind: 'error' })
 
     controller.actions.setChatModelOverride?.(pid, mid)
     closeTempModelPicker()
@@ -3935,8 +3936,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                                       onClick={() => {
                                         const text = String(m?.content || '')
                                         controller.capabilities?.clipboard?.writeText?.(text).then(
-                                          () => controller.capabilities?.ui?.showToast?.('已复制'),
-                                          () => controller.capabilities?.ui?.showToast?.('复制失败'),
+                                          () => controller.capabilities?.ui?.showToast?.('已复制', { kind: 'success' }),
+                                          () => controller.capabilities?.ui?.showToast?.('复制失败', { kind: 'error' }),
                                         )
                                       }}
                                     >
@@ -3981,11 +3982,11 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                          onClick={() => {
                            const text = String(attachViewItem?.attachment?.text || '')
                             const writeText = controller.capabilities?.clipboard?.writeText
-                            if (typeof writeText !== 'function') return controller.capabilities?.ui?.showToast?.('未授权：clipboard.writeText')
+                            if (typeof writeText !== 'function') return controller.capabilities?.ui?.showToast?.('未授权：clipboard.writeText', { kind: 'error' })
                             Promise.resolve()
                               .then(() => writeText(text))
-                              .then(() => controller.capabilities?.ui?.showToast?.('已复制'))
-                              .catch(() => controller.capabilities?.ui?.showToast?.('复制失败'))
+                              .then(() => controller.capabilities?.ui?.showToast?.('已复制', { kind: 'success' }))
+                              .catch(() => controller.capabilities?.ui?.showToast?.('复制失败', { kind: 'error' }))
                          }}
                        >
                          <ContentCopyIcon fontSize="inherit" />
@@ -4032,8 +4033,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                           const text = msgMenuText
                           closeMsgMenu()
                            controller.capabilities?.clipboard?.writeText?.(text).then(
-                             () => controller.capabilities?.ui?.showToast?.('已复制'),
-                             () => controller.capabilities?.ui?.showToast?.('复制失败'),
+                             () => controller.capabilities?.ui?.showToast?.('已复制', { kind: 'success' }),
+                             () => controller.capabilities?.ui?.showToast?.('复制失败', { kind: 'error' }),
                           )
                         }}
                         sx={{ gap: 1 }}
@@ -4139,8 +4140,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                               const text = msgMenuText
                               closeMsgMenu()
                               controller.capabilities?.clipboard?.writeText?.(text).then(
-                                () => controller.capabilities?.ui?.showToast?.('已复制'),
-                                () => controller.capabilities?.ui?.showToast?.('复制失败'),
+                                () => controller.capabilities?.ui?.showToast?.('已复制', { kind: 'success' }),
+                                () => controller.capabilities?.ui?.showToast?.('复制失败', { kind: 'error' }),
                               )
                             }}
                             sx={{ gap: 1 }}
@@ -6489,15 +6490,15 @@ function StickersSettingsPanel(props: { controller: any; loading: boolean; data:
 
   const copyCategoryPrompt = useEvent(() => {
     const name = String(cat || '').trim()
-    if (!name) return api?.ui?.showToast?.('请先选择分类')
+    if (!name) return api?.ui?.showToast?.('请先选择分类', { kind: 'error' })
     const prompt = buildCategoryPrompt(name)
     if (!prompt) return
     const writeText = api?.clipboard?.writeText
-    if (typeof writeText !== 'function') return api?.ui?.showToast?.('未授权：clipboard.writeText')
+    if (typeof writeText !== 'function') return api?.ui?.showToast?.('未授权：clipboard.writeText', { kind: 'error' })
     Promise.resolve()
       .then(() => writeText(prompt))
-      .then(() => api?.ui?.showToast?.('已复制提示词'))
-      .catch(() => api?.ui?.showToast?.('复制失败'))
+      .then(() => api?.ui?.showToast?.('已复制提示词', { kind: 'success' }))
+      .catch(() => api?.ui?.showToast?.('复制失败', { kind: 'error' }))
   })
 
   const openCatMenu = useEvent((e: React.MouseEvent<HTMLElement>) => setCatMenuEl(e.currentTarget))
@@ -6512,13 +6513,13 @@ function StickersSettingsPanel(props: { controller: any; loading: boolean; data:
 
   const onConfirmCreateCat = useEvent(async () => {
     const name = String(createCat.name || '').trim()
-    if (!name) return api?.ui?.showToast?.('请输入分类名')
+    if (!name) return api?.ui?.showToast?.('请输入分类名', { kind: 'error' })
     const ok = await Promise.resolve(controller.actions.createStickerCategory?.(name)).catch(() => false)
     if (ok) closeCreateCat()
   })
 
   const onPickStickerImages = useEvent(() => {
-    if (!cat) return api?.ui?.showToast?.('请先选择分类')
+    if (!cat) return api?.ui?.showToast?.('请先选择分类', { kind: 'error' })
     controller.actions.pickStickerImages?.(cat)
   })
 
@@ -6719,7 +6720,7 @@ function StickersSettingsPanel(props: { controller: any; loading: boolean; data:
             onClick={() => {
               const name = String(cat || '')
               closeCatMenu()
-              if (!name) return api?.ui?.showToast?.('请先选择分类')
+              if (!name) return api?.ui?.showToast?.('请先选择分类', { kind: 'error' })
               setConfirmDelCat(name)
             }}
             disabled={loading || !cat}
@@ -6803,7 +6804,7 @@ function PluginSettingsPage(props: {
 
   React.useEffect(() => {
     if (!treeHotkeyRecording) return
-    const toast = (s: string) => controller?.capabilities?.ui?.showToast?.(s)
+    const toast = (s: string, options?: AiChatToastOptions) => controller?.capabilities?.ui?.showToast?.(s, options)
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return
@@ -6814,7 +6815,7 @@ function PluginSettingsPage(props: {
         e.preventDefault()
         e.stopPropagation()
         setTreeHotkeyRecording(false)
-        toast('已取消录制')
+        toast('已取消录制', { kind: 'success' })
         return
       }
 
@@ -6825,7 +6826,7 @@ function PluginSettingsPage(props: {
       if (!hasMainMod) {
         e.preventDefault()
         e.stopPropagation()
-        toast('请使用 Ctrl / Alt / Meta + 任意键')
+        toast('请使用 Ctrl / Alt / Meta + 任意键', { kind: 'error' })
         return
       }
 
@@ -6833,7 +6834,7 @@ function PluginSettingsPage(props: {
       e.stopPropagation()
       setTreeHotkeyRecording(false)
       controller.actions.setBranchTreeModalHotkey?.(hk)
-      toast(`快捷键已设置：${hk}`)
+      toast(`快捷键已设置：${hk}`, { kind: 'success' })
     }
 
     window.addEventListener('keydown', onKeyDown, true)

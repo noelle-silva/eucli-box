@@ -4,6 +4,7 @@ import { chatMetaFromChat, removeChatMeta, upsertChatMeta } from '../domain/chat
 import { NEW_ROLE_ID } from '../domain/constants'
 import { isAssistantGenerating } from '../domain/assistantRunState'
 import { emptyRoleToolPolicy, normalizeRoleToolPolicy } from '../domain/toolPolicy'
+import type { AiChatShowToast } from '../gateway/capabilities'
 
 function looksLikeImageDataUrl(s: any): boolean {
   const t = String(s || '')
@@ -78,7 +79,7 @@ export function createEntityEditors(deps: {
   createRoleSession?: (roleId: string, title?: string) => Promise<{ id: string; title?: string }>
   render: () => void
   closeModal: () => void
-  showToast?: (msg: string) => void
+  showToast?: AiChatShowToast
   pickImageFiles?: (maxCount?: number) => Promise<any[]>
   filesImages: { delete?: (req: any) => Promise<any> }
   ensureChatLoaded?: (rid: string, cid: string) => Promise<any>
@@ -102,23 +103,23 @@ export function createEntityEditors(deps: {
   async function pickRoleAvatarImage() {
     const state = getState()
     if (state.loading) return
-    if (typeof pickImageFiles !== 'function') return showToast?.('未授权：files.pickImages')
+    if (typeof pickImageFiles !== 'function') return showToast?.('未授权：files.pickImages', { kind: 'error' })
 
     try {
       const items = await pickImageFiles(1)
       const list = Array.isArray(items) ? items : []
       const it = list.length ? list[0] : null
       const u0 = String(it?.dataUrl || '')
-      if (!looksLikeImageDataUrl(u0)) return showToast?.('未选择图片')
+      if (!looksLikeImageDataUrl(u0)) return showToast?.('未选择图片', { kind: 'error' })
 
       const shrunk = await shrinkImageDataUrl(u0, 1024)
       const u = shrunk || u0
-      if (!looksLikeImageDataUrl(u)) return showToast?.('头像图片无效')
+      if (!looksLikeImageDataUrl(u)) return showToast?.('头像图片无效', { kind: 'error' })
 
       state.draft.roleAvatarImageCropSrc = u
       render()
     } catch (e: any) {
-      showToast?.(String(e?.message || e || '选择头像失败'))
+      showToast?.(String(e?.message || e || '选择头像失败'), { kind: 'error' })
     }
   }
 
@@ -132,23 +133,23 @@ export function createEntityEditors(deps: {
   async function pickGroupAvatarImage() {
     const state = getState()
     if (state.loading) return
-    if (typeof pickImageFiles !== 'function') return showToast?.('未授权：files.pickImages')
+    if (typeof pickImageFiles !== 'function') return showToast?.('未授权：files.pickImages', { kind: 'error' })
 
     try {
       const items = await pickImageFiles(1)
       const list = Array.isArray(items) ? items : []
       const it = list.length ? list[0] : null
       const u0 = String(it?.dataUrl || '')
-      if (!looksLikeImageDataUrl(u0)) return showToast?.('未选择图片')
+      if (!looksLikeImageDataUrl(u0)) return showToast?.('未选择图片', { kind: 'error' })
 
       const shrunk = await shrinkImageDataUrl(u0, 1024)
       const u = shrunk || u0
-      if (!looksLikeImageDataUrl(u)) return showToast?.('头像图片无效')
+      if (!looksLikeImageDataUrl(u)) return showToast?.('头像图片无效', { kind: 'error' })
 
       ;(state.draft as any).groupAvatarImageCropSrc = u
       render()
     } catch (e: any) {
-      showToast?.(String(e?.message || e || '选择头像失败'))
+      showToast?.(String(e?.message || e || '选择头像失败'), { kind: 'error' })
     }
   }
 
@@ -249,9 +250,9 @@ export function createEntityEditors(deps: {
     let modelId = String(state.draft.roleModelId || '').trim()
     if (modelId === '__custom__') modelId = String(state.draft.roleCustomModelId || '').trim()
 
-    if (!sys) return showToast?.('请填写角色系统提示词')
-    if (!providerId) return showToast?.('请选择角色供应商')
-    if (!modelId) return showToast?.('请选择或填写角色模型')
+    if (!sys) return showToast?.('请填写角色系统提示词', { kind: 'error' })
+    if (!providerId) return showToast?.('请选择角色供应商', { kind: 'error' })
+    if (!modelId) return showToast?.('请选择或填写角色模型', { kind: 'error' })
     const toolPolicy = normalizeRoleToolPolicy(state.draft.roleToolPolicy)
 
     if (rid === NEW_ROLE_ID) {
@@ -275,10 +276,10 @@ export function createEntityEditors(deps: {
         if (!state.data.chatsByRole || typeof state.data.chatsByRole !== 'object') state.data.chatsByRole = {}
         state.data.chatsByRole[newRid] = { activeChatId: '', chatMetas: [], chats: [] }
         state.draft.activeRoleId = newRid
-        showToast?.('角色已保存')
+        showToast?.('角色已保存', { kind: 'success' })
         closeModal()
       } catch (e: any) {
-        showToast?.(String(e?.message || e || '角色保存失败'))
+        showToast?.(String(e?.message || e || '角色保存失败'), { kind: 'error' })
         render()
       }
       return
@@ -299,11 +300,11 @@ export function createEntityEditors(deps: {
 
     try {
       await saveRoleEntity?.(role)
-      showToast?.('角色已保存')
+      showToast?.('角色已保存', { kind: 'success' })
       closeModal()
     } catch (e: any) {
       Object.assign(role, previous)
-      showToast?.(String(e?.message || e || '角色保存失败'))
+      showToast?.(String(e?.message || e || '角色保存失败'), { kind: 'error' })
       render()
     }
   }
@@ -329,7 +330,7 @@ export function createEntityEditors(deps: {
     }
     try {
       await removeRoleEntity?.(rid)
-      showToast?.('角色已删除')
+      showToast?.('角色已删除', { kind: 'success' })
       render()
       return true
     } catch (e: any) {
@@ -338,7 +339,7 @@ export function createEntityEditors(deps: {
       state.draft.activeRoleId = previousActiveRoleId
       ;(state.draft as any).activeTargetKind = previousActiveTargetKind
       ;(state.draft as any).activeGroupId = previousActiveGroupId
-      showToast?.(String(e?.message || e || '角色删除失败'))
+      showToast?.(String(e?.message || e || '角色删除失败'), { kind: 'error' })
       render()
       return false
     }
@@ -347,7 +348,7 @@ export function createEntityEditors(deps: {
   // ===== Group CRUD =====
 
   function openNewGroupEditor() {
-    showToast?.('群组编辑尚未接入 e-b 真实群组根动作，已阻止本地假群组创建')
+    showToast?.('群组编辑尚未接入 e-b 真实群组根动作，已阻止本地假群组创建', { kind: 'error' })
   }
 
   function createGroup() {
@@ -356,17 +357,17 @@ export function createEntityEditors(deps: {
 
   function openGroupEditor(groupId: any) {
     if (!String(groupId || '').trim()) return
-    showToast?.('群组编辑尚未接入 e-b 真实群组根动作，已阻止本地假群组编辑')
+    showToast?.('群组编辑尚未接入 e-b 真实群组根动作，已阻止本地假群组编辑', { kind: 'error' })
   }
 
   async function saveGroupEditor() {
-    showToast?.('群组保存尚未接入 e-b 真实群组根动作，已阻止本地假群组保存')
+    showToast?.('群组保存尚未接入 e-b 真实群组根动作，已阻止本地假群组保存', { kind: 'error' })
   }
 
   function deleteGroup(groupId: any) {
     const gid = String(groupId || '').trim()
     if (!gid) return false
-    showToast?.('群组删除尚未接入 e-b 真实群组根动作，已阻止本地假群组删除')
+    showToast?.('群组删除尚未接入 e-b 真实群组根动作，已阻止本地假群组删除', { kind: 'error' })
     return false
   }
 
@@ -415,7 +416,7 @@ export function createEntityEditors(deps: {
     const previous = { ...p, modelsCache: p.modelsCache && typeof p.modelsCache === 'object' ? { ...p.modelsCache } : p.modelsCache }
 
     if (!nextProtocol) {
-      showToast?.('请选择供应商协议')
+      showToast?.('请选择供应商协议', { kind: 'error' })
       render()
       return
     }
@@ -428,11 +429,11 @@ export function createEntityEditors(deps: {
       if (oldBaseUrl !== nextBaseUrl || oldApiKey !== nextApiKey) p.modelsCache = { items: [], fetchedAt: 0 }
       await saveProviderEntity?.(p)
       state.draft.editProviderId = ''
-      showToast?.('供应商已保存')
+      showToast?.('供应商已保存', { kind: 'success' })
       render()
     } catch (e: any) {
       Object.assign(p, previous)
-      showToast?.(String(e?.message || e || '供应商保存失败'))
+      showToast?.(String(e?.message || e || '供应商保存失败'), { kind: 'error' })
       render()
     }
   }
@@ -471,7 +472,7 @@ export function createEntityEditors(deps: {
     const pid = String(providerId || '')
     if (!pid) return false
     if (state.data.settings.providers.length <= 1) {
-      showToast?.('至少保留一个供应商')
+      showToast?.('至少保留一个供应商', { kind: 'error' })
       return false
     }
 
@@ -480,12 +481,12 @@ export function createEntityEditors(deps: {
 
     try {
       await removeProviderEntity?.(pid)
-      showToast?.('供应商已删除')
+      showToast?.('供应商已删除', { kind: 'success' })
       render()
       return true
     } catch (e: any) {
       state.data.settings.providers = previousProviders
-      showToast?.(String(e?.message || e || '供应商删除失败'))
+      showToast?.(String(e?.message || e || '供应商删除失败'), { kind: 'error' })
       render()
       return false
     }
@@ -496,7 +497,7 @@ export function createEntityEditors(deps: {
   async function createChatForActiveRole() {
     const state = getState()
     const role = sa.activeRole()
-    if (!role) return showToast?.('请先选择角色')
+    if (!role) return showToast?.('请先选择角色', { kind: 'error' })
     const rid = String(role.id || '')
     try {
       if (typeof createRoleSession !== 'function') throw new Error('会话创建通道不可用')
@@ -515,15 +516,15 @@ export function createEntityEditors(deps: {
       render()
       scrollToBottomSoon()
     } catch (e: any) {
-      showToast?.(String(e?.message || e || '新建聊天失败'))
+      showToast?.(String(e?.message || e || '新建聊天失败'), { kind: 'error' })
       render()
     }
   }
 
   function createChatForActiveGroup() {
     const group = sa.activeGroup()
-    if (!group) return showToast?.('请先选择群组')
-    showToast?.('群组会话尚未接入 e-b 真实会话根动作，已阻止本地假会话创建')
+    if (!group) return showToast?.('请先选择群组', { kind: 'error' })
+    showToast?.('群组会话尚未接入 e-b 真实会话根动作，已阻止本地假会话创建', { kind: 'error' })
   }
 
   async function createChatForActiveTarget() {
@@ -595,7 +596,7 @@ export function createEntityEditors(deps: {
       if (typeof renameRoleChatInStore !== 'function') throw new Error('会话标题保存通道不可用')
       await renameRoleChatInStore(rid, cid, t)
     } catch (e: any) {
-      showToast?.(String(e?.message || e || '会话标题保存失败'))
+      showToast?.(String(e?.message || e || '会话标题保存失败'), { kind: 'error' })
       render()
       return false
     }
@@ -630,7 +631,7 @@ export function createEntityEditors(deps: {
     const cid = String(chatId || '').trim()
     if (!gid || !cid) return false
 
-    showToast?.('群组会话标题尚未接入 e-b 真实群组会话根动作，已阻止本地假修改')
+    showToast?.('群组会话标题尚未接入 e-b 真实群组会话根动作，已阻止本地假修改', { kind: 'error' })
     return false
   }
 
@@ -730,7 +731,7 @@ export function createEntityEditors(deps: {
     if (!box) return
     const before = Array.isArray(box.chats) ? box.chats : []
     const target = before.find((c: any) => String(c?.id) === cid) || null
-    if (target && chatHasPendingAssistant(target)) return showToast?.('正在生成中，不能删除该会话')
+    if (target && chatHasPendingAssistant(target)) return showToast?.('正在生成中，不能删除该会话', { kind: 'error' })
 
     box.chats = before.filter((c: any) => String(c?.id) !== cid)
     box.chatMetas = removeChatMeta(box.chatMetas, cid, '新聊天')
@@ -754,7 +755,7 @@ export function createEntityEditors(deps: {
     if (!box) return
     const before = Array.isArray(box.chats) ? box.chats : []
     const target = before.find((c: any) => String(c?.id) === cid) || null
-    if (target && chatHasPendingAssistant(target)) return showToast?.('正在生成中，不能删除该会话')
+    if (target && chatHasPendingAssistant(target)) return showToast?.('正在生成中，不能删除该会话', { kind: 'error' })
 
     box.chats = before.filter((c: any) => String(c?.id) !== cid)
     box.chatMetas = removeChatMeta(box.chatMetas, cid, '群聊')

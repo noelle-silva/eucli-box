@@ -217,9 +217,9 @@ export function MermaidDialog(props: { open: boolean; controller: any; mermaid: 
 
       const dataUrl = await exportSvgElementToPngDataUrl(liveSvg)
       await controller.capabilities?.clipboard?.writeImage?.(dataUrl)
-      controller.capabilities?.ui?.showToast?.('已复制图片到剪贴板')
+      controller.capabilities?.ui?.showToast?.('已复制图片到剪贴板', { kind: 'success' })
     } catch (e) {
-      controller.capabilities?.ui?.showToast?.(`复制失败：${String((e as any)?.message || e || '未知错误')}`)
+      controller.capabilities?.ui?.showToast?.(`复制失败：${String((e as any)?.message || e || '未知错误')}`, { kind: 'error' })
     }
   })
 

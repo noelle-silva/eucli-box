@@ -1,10 +1,11 @@
 import { now } from '../core/utils'
+import type { AiChatShowToast } from '../gateway/capabilities'
 
 export function createToolCatalog(deps: {
   getState: () => any
   netRequest: (req: any) => Promise<any>
   emit: () => void
-  showToast?: (msg: string) => void
+  showToast?: AiChatShowToast
 }) {
   function currentCatalog() {
     const state = deps.getState()
@@ -35,7 +36,7 @@ export function createToolCatalog(deps: {
     } catch (e: any) {
       const error = String(e?.message || e || '工具列表加载失败')
       patchCatalog({ loading: false, error, items: Array.isArray(catalog.items) ? catalog.items : [], fetchedAt: Number(catalog.fetchedAt || 0) })
-      deps.showToast?.(error)
+      deps.showToast?.(error, { kind: 'error' })
       return state.tools.items
     } finally {
       deps.emit()
@@ -57,7 +58,7 @@ export function createToolCatalog(deps: {
     } catch (e: any) {
       const error = String(e?.message || e || '工具详情加载失败')
       patchCatalog({ detailLoading: false, detailError: error })
-      deps.showToast?.(error)
+      deps.showToast?.(error, { kind: 'error' })
       return null
     } finally {
       deps.emit()
@@ -105,12 +106,12 @@ export function createToolCatalog(deps: {
       const tool = normalizeToolDefinition(response?.body)
       patchCatalog({ saving: false, saveError: '', selectedTool: tool, selectedToolId: String(tool.id || toolId), configDraft: clonePlainObject(tool.userConfig) })
       await refreshTools(true)
-      deps.showToast?.('工具配置已保存')
+      deps.showToast?.('工具配置已保存', { kind: 'success' })
       return true
     } catch (e: any) {
       const error = String(e?.message || e || '工具配置保存失败')
       patchCatalog({ saving: false, saveError: error })
-      deps.showToast?.(error)
+      deps.showToast?.(error, { kind: 'error' })
       return false
     } finally {
       deps.emit()

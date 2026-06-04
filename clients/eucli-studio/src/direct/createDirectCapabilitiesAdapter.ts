@@ -58,7 +58,7 @@ export async function createDirectCapabilitiesAdapter(baseApi: unknown): Promise
 
     ui: {
       showToast: typeof (baseApi as any)?.ui?.showToast === 'function'
-        ? (message: any) => (baseApi as any).ui.showToast(message)
+        ? (message: any, options?: any) => (baseApi as any).ui.showToast(message, options)
         : undefined,
       startDragging: typeof (baseApi as any)?.ui?.startDragging === 'function'
         ? () => (baseApi as any).ui.startDragging()

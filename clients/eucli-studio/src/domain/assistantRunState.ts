@@ -80,6 +80,14 @@ export function isAssistantGenerating(message: unknown) {
   return m.pending === true
 }
 
+export function isAssistantRunInterrupted(message: unknown) {
+  const m = message && typeof message === 'object' ? (message as any) : null
+  if (!m || m.role !== 'assistant') return false
+  const run = normalizeAssistantRunState(m.assistantRun)
+  if (run && (run.status === 'failed' || run.status === 'canceled')) return true
+  return !!(m.error && typeof m.error === 'object')
+}
+
 export function hasAssistantVisibleOutput(message: unknown) {
   const m = message && typeof message === 'object' ? (message as any) : null
   if (!m || m.role !== 'assistant') return false

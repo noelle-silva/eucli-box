@@ -78,3 +78,8 @@ func innermostAppError(err error) *apperrors.AppError {
 	}
 	return found
 }
+
+func isStorageConflict(err error) bool {
+	appErr := innermostAppError(err)
+	return appErr != nil && appErr.Code == "storage.conflict"
+}

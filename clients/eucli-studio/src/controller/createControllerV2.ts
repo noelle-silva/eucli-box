@@ -56,6 +56,13 @@ import {
   normalizeRenderSafetyPolicy,
   normalizeMaxFileSizeMb,
 } from '../domain/dataNormalizers'
+import {
+  activateComposerDraftForCurrentSession,
+  saveActiveComposerDraftMirror,
+  setActiveComposerFiles,
+  setActiveComposerImages,
+  setActiveComposerInput,
+} from '../domain/sessionComposerDrafts'
 
 // ---- storage ----
 import { createChatWriteLock } from '../storage/chatWriteLock'
@@ -104,9 +111,9 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   // ============================================================
   const state = {
     loading: true,
-    sending: false,
-    sendingJobId: '',
-    sendingCtx: null as any,
+    activeRunCards: [] as any[],
+    sessionComposerDrafts: {} as Record<string, any>,
+    activeSessionComposerDraftKey: '',
     modal: '',
     mermaid: { items: [] as any[], index: 0, scale: 1 },
     imageViewer: { items: [] as any[], index: 0, scale: 1 },
@@ -220,6 +227,11 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
 
   function render() { emit() }
   function renderComposer() { emit() }
+
+  function getControllerState() {
+    activateComposerDraftForCurrentSession(state)
+    return state
+  }
 
   function scrollToBottomSoon() {
     // UI 负责滚动逻辑
@@ -681,7 +693,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     storage,
     aiGenerateChatTitle: undefined, // filled later
     locateMessageInActiveChat,
-    chatHasPendingAssistant,
     getStickerRelPath,
     uiStreamCache,
   })
@@ -864,14 +875,28 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     ensureGroupChatsBox: ensureGroupChatsBoxBare,
     clearPendingChat,
     clearPendingGroupChat,
+    setDraft: (key: any, value: any) => {
+      const k = String(key || '')
+      if (k === 'input') setActiveComposerInput(state, value)
+      else if (k) (state.draft as any)[k] = value
+      emit()
+    },
     // These will be filled by the full actions object
     openProvidersEditor: () => openProvidersEditor(),
     createRole: () => createRole(),
     createChatForActiveTarget: () => createChatForActiveTarget(),
     openRoleEditor: (id: string) => openRoleEditor(id),
     pickChatForActiveTarget: (id: string) => pickChatForActiveTarget(id),
-    removeDraftImage: (id: string) => { state.draft.images = removeDraftImageFromList(state.draft.images, String(id || '')); emit(); },
-    removeDraftFile: (id: string) => { state.draft.files = removeDraftFile(state.draft.files, String(id || '')); emit(); },
+    removeDraftImage: (id: string) => {
+      const draft = activateComposerDraftForCurrentSession(state)
+      setActiveComposerImages(state, removeDraftImageFromList(draft.images, String(id || '')))
+      emit()
+    },
+    removeDraftFile: (id: string) => {
+      const draft = activateComposerDraftForCurrentSession(state)
+      setActiveComposerFiles(state, removeDraftFile(draft.files, String(id || '')))
+      emit()
+    },
     sendChat: () => sendChat(),
     pickDraftImages: () => pickDraftImages(),
     addDraftImagesFromFiles: (files: any) => addDraftImagesFromFiles(Array.isArray(files) ? files : []),
@@ -962,24 +987,29 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       emit()
     },
     setActiveRole: (roleId: any) => {
+      saveActiveComposerDraftMirror(state)
       state.branchDraft = null
       ;(state.draft as any).activeTargetKind = 'role'
       state.draft.activeRoleId = String(roleId || '')
       ensureChatsBoxBare(state.draft.activeRoleId)
+      activateComposerDraftForCurrentSession(state)
       ensureActiveChatLoaded().catch(() => {}).finally(() => emit())
       saveMeta().catch(() => {})
       emit()
     },
     setActiveGroup: (groupId: any) => {
+      saveActiveComposerDraftMirror(state)
       state.branchDraft = null
       ;(state.draft as any).activeTargetKind = 'group'
       ;(state.draft as any).activeGroupId = String(groupId || '')
       ensureGroupChatsBoxBare((state.draft as any).activeGroupId)
+      activateComposerDraftForCurrentSession(state)
       ensureActiveChatLoaded().catch(() => {}).finally(() => emit())
       saveMeta().catch(() => {})
       emit()
     },
     setActiveChat: (chatId: any) => {
+      saveActiveComposerDraftMirror(state)
       state.branchDraft = null
       Promise.resolve(pickChatForActiveTarget(String(chatId || ''))).catch(() => {})
     },
@@ -1770,6 +1800,11 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     setDraft: (key: any, value: any) => {
       const k = String(key || '')
       if (!k) return
+      if (k === 'input') {
+        setActiveComposerInput(state, value)
+        emit()
+        return
+      }
       ;(state.draft as any)[k] = value
       emit()
     },
@@ -1807,20 +1842,23 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     pickGroupAvatarImage: () => pickGroupAvatarImage(),
     clearGroupAvatarImage: () => clearGroupAvatarImage(),
     removeDraftImage: (id: any) => {
-      state.draft.images = removeDraftImageFromList(state.draft.images, String(id || ''))
+      const draft = activateComposerDraftForCurrentSession(state)
+      setActiveComposerImages(state, removeDraftImageFromList(draft.images, String(id || '')))
       emit()
     },
     removeDraftFile: (id: any) => {
-      state.draft.files = removeDraftFile(state.draft.files, String(id || ''))
+      const draft = activateComposerDraftForCurrentSession(state)
+      setActiveComposerFiles(state, removeDraftFile(draft.files, String(id || '')))
       emit()
     },
     setDraftFileSendPct: (id: any, pct: any) => {
       const rid = String(id || '')
       if (!rid) return
-      if (!Array.isArray(state.draft.files)) state.draft.files = []
-      const it = state.draft.files.find((x: any) => String(x?.id || '') === rid)
+      const draft = activateComposerDraftForCurrentSession(state)
+      const it = draft.files.find((x: any) => String(x?.id || '') === rid)
       if (!it) return
       it.sendPct = clamp(Math.round(Number(pct ?? 100)), 0, 100)
+      setActiveComposerFiles(state, draft.files)
       emit()
     },
     pickDraftImages: () => pickDraftImages(),
@@ -1928,7 +1966,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       chatTitleNamingSystemPrompt: DEFAULT_CHAT_TITLE_NAMING_SYSTEM_PROMPT,
       stickerNamingSystemPrompt: DEFAULT_STICKER_NAMING_SYSTEM_PROMPT,
     },
-    getState: () => state,
+    getState: getControllerState,
     getSnapshot: () => getVer(),
     subscribe,
     fmtTime,

@@ -34,14 +34,14 @@ func (s *system) handleToolIntents(ctx context.Context, record *runRecord, inten
 	if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
 		return nil, err
 	}
-	if err := s.saveSession(ctx, record.session, types.RunStatusRunning); err != nil {
+	if err := s.saveRunSession(ctx, record, types.RunStatusRunning); err != nil {
 		return nil, err
 	}
 	s.publishAssistantMessageUpdate(record)
 
 	pending := pendingConfirmationPlans(entries)
 	if len(pending) > 0 {
-		if err := s.saveSession(ctx, record.session, types.RunStatusWaitingConfirmation); err != nil {
+		if err := s.saveRunSession(ctx, record, types.RunStatusWaitingConfirmation); err != nil {
 			return nil, err
 		}
 		confirmed, err := s.waitForConfirmations(ctx, record, pending)
@@ -70,7 +70,7 @@ func (s *system) handleToolIntents(ctx context.Context, record *runRecord, inten
 		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
 			return nil, err
 		}
-		if err := s.saveSession(ctx, record.session, types.RunStatusRunning); err != nil {
+		if err := s.saveRunSession(ctx, record, types.RunStatusRunning); err != nil {
 			return nil, err
 		}
 		s.publishAssistantMessageUpdate(record)
@@ -83,7 +83,7 @@ func (s *system) handleToolIntents(ctx context.Context, record *runRecord, inten
 	if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
 		return nil, err
 	}
-	if err := s.saveSession(ctx, record.session, types.RunStatusRunning); err != nil {
+	if err := s.saveRunSession(ctx, record, types.RunStatusRunning); err != nil {
 		return nil, err
 	}
 	s.publishAssistantMessageUpdate(record)
@@ -92,7 +92,7 @@ func (s *system) handleToolIntents(ctx context.Context, record *runRecord, inten
 		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
 			return err
 		}
-		if err := s.saveSession(ctx, record.session, types.RunStatusRunning); err != nil {
+		if err := s.saveRunSession(ctx, record, types.RunStatusRunning); err != nil {
 			return err
 		}
 		s.publishAssistantMessageUpdate(record)

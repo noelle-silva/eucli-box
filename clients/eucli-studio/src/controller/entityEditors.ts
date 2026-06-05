@@ -5,6 +5,7 @@ import { NEW_ROLE_ID } from '../domain/constants'
 import { isAssistantGenerating } from '../domain/assistantRunState'
 import { emptyRoleToolPolicy, normalizeRoleToolPolicy } from '../domain/toolPolicy'
 import { clearPendingChatForTarget, createPendingChatEntry } from '../domain/pendingChat'
+import { activateComposerDraftForCurrentSession, saveActiveComposerDraftMirror } from '../domain/sessionComposerDrafts'
 import type { AiChatShowToast } from '../gateway/capabilities'
 
 function looksLikeImageDataUrl(s: any): boolean {
@@ -579,13 +580,12 @@ export function createEntityEditors(deps: {
     const rid = String(role.id || '')
     const pending = createPendingChatEntry('role', rid, '新聊天')
     if (!pending) return
+    saveActiveComposerDraftMirror(state)
     state.pendingChat = pending
     state.pendingGroupChat = null
     state.branchDraft = null
     state.sideTab = 'chats'
-    state.draft.input = ''
-    state.draft.images = []
-    ;(state.draft as any).files = []
+    activateComposerDraftForCurrentSession(state)
     render()
     scrollToBottomSoon()
   }
@@ -607,12 +607,14 @@ export function createEntityEditors(deps: {
     const state = getState()
     const role = sa.activeRole()
     if (!role || !state.data) return
+    saveActiveComposerDraftMirror(state)
     clearPendingChatForTarget(state, 'role', role.id)
     const box = sa.ensureChatsBoxBare(String(role.id))
     if (!box) return
     const cid = String(chatId || '')
     if (!boxHasChatRef(box, cid)) return
     box.activeChatId = cid
+    activateComposerDraftForCurrentSession(state)
     ;(setRoleActiveChatSelection?.(String(role.id || ''), cid) || save()).catch(() => {})
     render()
     scrollToBottomSoon()
@@ -623,12 +625,14 @@ export function createEntityEditors(deps: {
     const state = getState()
     const group = sa.activeGroup()
     if (!group || !state.data) return
+    saveActiveComposerDraftMirror(state)
     clearPendingChatForTarget(state, 'group', (group as any).id)
     const box = sa.ensureGroupChatsBoxBare(String((group as any).id || ''))
     if (!box) return
     const cid = String(chatId || '')
     if (!boxHasChatRef(box, cid)) return
     box.activeChatId = cid
+    activateComposerDraftForCurrentSession(state)
     save().catch(() => {})
     render()
     scrollToBottomSoon()

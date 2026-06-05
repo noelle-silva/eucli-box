@@ -1,9 +1,10 @@
 import { normalizeTimeMs } from '../core/utils'
-import { activateChatBranchByMessage, ensureChatBranch, normalizeBranchId } from '../domain/branching'
+import { ensureChatBranch, normalizeBranchId } from '../domain/branching'
 import { beginAssistantRun, checkpointAssistantRun, finishAssistantRun, type AssistantRunStatus } from '../domain/assistantRunState'
 import { chatMetaFromChat, upsertChatMeta } from '../domain/chatMeta'
 import { normalizeChatMessage, normalizeMessageParentMid } from '../domain/message'
 import { CHAT_DEFAULT_BRANCH_ID } from '../domain/constants'
+import { isTerminalEbRunStatus, removeEbRoleRunCard, upsertEbRoleRunCard } from '../domain/activeRunCards'
 
 type DirectEventSubscription = (listener: (event: any) => void) => () => void
 
@@ -41,6 +42,36 @@ export function createEbRunEventConsumer(deps: {
     if (!messages) return
     messages.delete(messageId)
     if (!messages.size) pendingBySession.delete(key)
+  }
+
+  function ensureRoleChatBox(state: any, roleId: string) {
+    if (!state?.data || !roleId) return null
+    if (!state.data.chatsByRole || typeof state.data.chatsByRole !== 'object') state.data.chatsByRole = {}
+    if (!state.data.chatsByRole[roleId] || typeof state.data.chatsByRole[roleId] !== 'object') state.data.chatsByRole[roleId] = { activeChatId: '', chatMetas: [], chats: [] }
+    const box = state.data.chatsByRole[roleId]
+    if (!Array.isArray(box.chats)) box.chats = []
+    if (!Array.isArray(box.chatMetas)) box.chatMetas = []
+    return box
+  }
+
+  function ensureRuntimeRoleChat(state: any, roleId: string, sessionId: string, eventTime: number) {
+    const box = ensureRoleChatBox(state, roleId)
+    if (!box || !sessionId) return null
+    const chat = box.chats.find((item: any) => String(item?.id || '').trim() === sessionId) || null
+    if (chat) return chat
+
+    const meta = box.chatMetas.find((item: any) => String(item?.id || '').trim() === sessionId) || null
+    const t = Number(eventTime || 0) || Date.now()
+    const runtimeChat = {
+      id: sessionId,
+      title: String(meta?.title || '').trim() || '新聊天',
+      messages: [],
+      createdAt: Number(meta?.createdAt || 0) || t,
+      updatedAt: Math.max(Number(meta?.updatedAt || 0), t),
+      runtimePartial: true,
+    }
+    box.chats.unshift(runtimeChat)
+    return runtimeChat
   }
 
   function normalizeRuntimeAssistantMessage(raw: any, fallback: { parentMessageId?: string; branchId?: string; eventTime: number }) {
@@ -82,9 +113,8 @@ export function createEbRunEventConsumer(deps: {
     const messageId = String(incomingMessage?.id || '').trim()
     if (!runId || !roleId || !sessionId || !messageId) return false
 
-    const box = state.data.chatsByRole && typeof state.data.chatsByRole === 'object' ? state.data.chatsByRole[roleId] : null
-    const chats = Array.isArray(box?.chats) ? box.chats : []
-    const chat = chats.find((item: any) => String(item?.id || '').trim() === sessionId) || null
+    const box = ensureRoleChatBox(state, roleId)
+    const chat = ensureRuntimeRoleChat(state, roleId, sessionId, eventTime)
     if (!chat) {
       bufferAssistantMessageUpdate(payload, roleId, sessionId, messageId)
       return false
@@ -117,22 +147,29 @@ export function createEbRunEventConsumer(deps: {
       checkpointAssistantRun(message, message.content, message.updatedAt)
     }
 
+    if (isTerminalEbRunStatus(payload.status)) {
+      removeEbRoleRunCard(state, runId)
+    } else {
+      upsertEbRoleRunCard(state, {
+        runId,
+        roleId,
+        sessionId,
+        inputMessageId: parentMid,
+        lastMessageId: messageId,
+        anchorMessageId: parentMid,
+        status: String(payload.status || 'running').trim() || 'running',
+        stream: !!payload.stream,
+      })
+    }
     chat.updatedAt = Math.max(Number(chat.updatedAt || 0), eventTime)
     const branch = ensureChatBranch(chat, branchId)
     if (branch) {
       branch.headMid = messageId
       branch.updatedAt = chat.updatedAt
       if (!String(branch.forkFromMid || '').trim() && parentMid) branch.forkFromMid = parentMid
-      if (chat.branching && typeof chat.branching === 'object') chat.branching.activeBranchId = branch.id
     }
-    activateChatBranchByMessage(chat, messageId)
 
     if (box) box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chat, '新聊天'), '新聊天')
-    const sendingCtx = state.sendingCtx && typeof state.sendingCtx === 'object' ? state.sendingCtx : null
-    if (sendingCtx && String(sendingCtx.kind || '') === 'eb-role-run' && String(sendingCtx.runId || '').trim() === runId) {
-      sendingCtx.lastMessageId = messageId
-      sendingCtx.sessionId = sessionId
-    }
 
     scheduleRender()
     return true

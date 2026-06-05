@@ -318,6 +318,8 @@ func normalizeBranchID(branchID string) string {
 }
 
 func (s *system) UpdateSessionTitle(ctx context.Context, roleID string, sessionID string, title string) (types.Session, error) {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
 	session, err := s.LoadSession(ctx, roleID, sessionID)
 	if err != nil {
 		return types.Session{}, err
@@ -328,13 +330,18 @@ func (s *system) UpdateSessionTitle(ctx context.Context, roleID string, sessionI
 	if session.LastActive.Before(now) {
 		session.LastActive = now
 	}
-	if err := s.SaveSession(ctx, session); err != nil {
+	if _, err := s.writeSessionData(ctx, session, now); err != nil {
+		return types.Session{}, err
+	}
+	if err := s.rebuildSessionIndexes(ctx, roleID); err != nil {
 		return types.Session{}, err
 	}
 	return s.LoadSession(ctx, roleID, sessionID)
 }
 
 func (s *system) UpdateSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string, patch types.SessionMessagePatch) (types.Message, error) {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
 	messageID = strings.TrimSpace(messageID)
 	if messageID == "" {
 		return types.Message{}, storageInvalid("message id is required", nil)
@@ -391,6 +398,8 @@ func (s *system) UpdateSessionMessage(ctx context.Context, roleID string, sessio
 }
 
 func (s *system) DeleteSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error) {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
 	messageID = strings.TrimSpace(messageID)
 	if messageID == "" {
 		return types.Session{}, storageInvalid("message id is required", nil)
@@ -430,13 +439,18 @@ func (s *system) DeleteSessionMessage(ctx context.Context, roleID string, sessio
 	if session.LastActive.Before(now) {
 		session.LastActive = now
 	}
-	if err := s.SaveSession(ctx, session); err != nil {
+	if _, err := s.writeSessionData(ctx, session, now); err != nil {
+		return types.Session{}, err
+	}
+	if err := s.rebuildSessionIndexes(ctx, roleID); err != nil {
 		return types.Session{}, err
 	}
 	return s.LoadSession(ctx, roleID, sessionID)
 }
 
 func (s *system) DeleteSessionMessageSubtree(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error) {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
 	messageID = strings.TrimSpace(messageID)
 	if messageID == "" {
 		return types.Session{}, storageInvalid("message id is required", nil)
@@ -489,7 +503,10 @@ func (s *system) DeleteSessionMessageSubtree(ctx context.Context, roleID string,
 	if session.LastActive.Before(now) {
 		session.LastActive = now
 	}
-	if err := s.SaveSession(ctx, session); err != nil {
+	if _, err := s.writeSessionData(ctx, session, now); err != nil {
+		return types.Session{}, err
+	}
+	if err := s.rebuildSessionIndexes(ctx, roleID); err != nil {
 		return types.Session{}, err
 	}
 	return s.LoadSession(ctx, roleID, sessionID)

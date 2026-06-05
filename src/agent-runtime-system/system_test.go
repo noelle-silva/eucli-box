@@ -392,6 +392,90 @@ func TestStartRunWithMissingParentMessageDoesNotMutateSession(t *testing.T) {
 	}
 }
 
+func TestConcurrentRunsOnDifferentBranchesPreserveMessages(t *testing.T) {
+	fakes := newRuntimeFakes()
+	now := time.Now().UTC()
+	fakes.storage.sessions["developer/session-1"] = types.Session{
+		ID:     "session-1",
+		RoleID: "developer",
+		Title:  "Parallel",
+		Status: string(types.RunStatusCompleted),
+		Messages: []types.Message{
+			{ID: "u1", Type: "user", Content: "root", BranchID: "main", CreatedAt: now, UpdatedAt: now},
+			{ID: "a1", Type: "assistant", Content: "answer 1", ParentMessageID: "u1", BranchID: "main", CreatedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second)},
+			{ID: "u2", Type: "user", Content: "branch 1", ParentMessageID: "a1", BranchID: "main", CreatedAt: now.Add(2 * time.Second), UpdatedAt: now.Add(2 * time.Second)},
+			{ID: "a2", Type: "assistant", Content: "answer 2", ParentMessageID: "u1", BranchID: "branch-a2", CreatedAt: now.Add(3 * time.Second), UpdatedAt: now.Add(3 * time.Second)},
+			{ID: "u3", Type: "user", Content: "branch 2", ParentMessageID: "a2", BranchID: "branch-a2", CreatedAt: now.Add(4 * time.Second), UpdatedAt: now.Add(4 * time.Second)},
+		},
+		CreatedAt:  now,
+		UpdatedAt:  now.Add(4 * time.Second),
+		LastActive: now.Add(4 * time.Second),
+	}
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "reply one"}, {ID: "m2", Content: "reply two"}}
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	run1, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "u2"})
+	if err != nil {
+		t.Fatalf("StartRun(run1) error = %v", err)
+	}
+	run2, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "u3"})
+	if err != nil {
+		t.Fatalf("StartRun(run2) error = %v", err)
+	}
+	waitRun(t, system, run1.ID)
+	waitRun(t, system, run2.ID)
+	session := fakes.storage.sessions["developer/session-1"]
+	if len(session.Messages) != 7 {
+		t.Fatalf("messages = %#v", session.Messages)
+	}
+	if _, ok := messageByID(session.Messages, run1.LastMessageID); !ok {
+		t.Fatalf("run1 message missing: %q messages=%#v", run1.LastMessageID, session.Messages)
+	}
+	if _, ok := messageByID(session.Messages, run2.LastMessageID); !ok {
+		t.Fatalf("run2 message missing: %q messages=%#v", run2.LastMessageID, session.Messages)
+	}
+}
+
+func TestConcurrentRunsFromSameUserMessageCreateDistinctReplySlots(t *testing.T) {
+	fakes := newRuntimeFakes()
+	now := time.Now().UTC()
+	fakes.storage.sessions["developer/session-1"] = types.Session{
+		ID:        "session-1",
+		RoleID:    "developer",
+		Title:     "Parallel replies",
+		Status:    string(types.RunStatusCompleted),
+		Messages:  []types.Message{{ID: "u1", Type: "user", Content: "question", BranchID: "main", CreatedAt: now, UpdatedAt: now}},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	fakes.provider.block = make(chan struct{})
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "first"}, {ID: "m2", Content: "second"}}
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	run1, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "u1"})
+	if err != nil {
+		t.Fatalf("StartRun(run1) error = %v", err)
+	}
+	run2, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "u1"})
+	if err != nil {
+		t.Fatalf("StartRun(run2) error = %v", err)
+	}
+	close(fakes.provider.block)
+	waitRun(t, system, run1.ID)
+	waitRun(t, system, run2.ID)
+	session := fakes.storage.sessions["developer/session-1"]
+	answers := []types.Message{}
+	for _, message := range session.Messages {
+		if message.Type == "assistant" && message.ParentMessageID == "u1" {
+			answers = append(answers, message)
+		}
+	}
+	if len(answers) != 2 {
+		t.Fatalf("answers = %#v messages=%#v", answers, session.Messages)
+	}
+	if answers[0].BranchID == "" || answers[1].BranchID == "" || answers[0].BranchID == answers[1].BranchID {
+		t.Fatalf("answers share branch: %#v", answers)
+	}
+}
+
 func TestRunWaitsForToolConfirmationThenCompletes(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.responses = []types.ModelResponse{
@@ -731,6 +815,90 @@ func TestRunFailureStoresAssistantErrorWithoutFailureMessage(t *testing.T) {
 	}
 }
 
+func TestRunFailsWhenOwnedInputMessageIsExternallyEdited(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.block = make(chan struct{})
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	events, unsubscribe, err := system.Subscribe(context.Background())
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	defer unsubscribe()
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	if state.InputMessageID == "" {
+		t.Fatalf("input message id is empty: %#v", state)
+	}
+	fakes.storage.updateMessageContent(t, "developer", state.SessionID, state.InputMessageID, "user edited")
+	close(fakes.provider.block)
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusFailed || !strings.Contains(final.Reason, "message was changed or deleted") {
+		t.Fatalf("final = %#v", final)
+	}
+	session := fakes.storage.lastSession()
+	if session.Status != string(types.RunStatusFailed) {
+		t.Fatalf("session status after conflict = %q", session.Status)
+	}
+	if len(session.Messages) != 1 || session.Messages[0].Content != "user edited" {
+		t.Fatalf("session messages after conflict = %#v", session.Messages)
+	}
+	assertNoAssistantUpdateBeforeRunFailed(t, events, state.ID)
+}
+
+func TestRunFailsWhenDependencyMessageIsExternallyEdited(t *testing.T) {
+	fakes := newRuntimeFakes()
+	now := time.Now().UTC()
+	fakes.storage.sessions["developer/session-1"] = types.Session{ID: "session-1", RoleID: "developer", Title: "Existing", Status: string(types.RunStatusCompleted), CreatedAt: now, UpdatedAt: now, LastActive: now, Messages: []types.Message{{ID: "u1", Type: "user", Content: "question", BranchID: "main", CreatedAt: now, UpdatedAt: now}}}
+	fakes.provider.block = make(chan struct{})
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	events, unsubscribe, err := system.Subscribe(context.Background())
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	defer unsubscribe()
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "u1"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	fakes.storage.updateMessageContent(t, "developer", "session-1", "u1", "edited question")
+	close(fakes.provider.block)
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusFailed || !strings.Contains(final.Reason, "message was changed or deleted") {
+		t.Fatalf("final = %#v", final)
+	}
+	session := fakes.storage.sessions["developer/session-1"]
+	if session.Status != string(types.RunStatusFailed) {
+		t.Fatalf("session status after conflict = %q", session.Status)
+	}
+	if len(session.Messages) != 1 || session.Messages[0].Content != "edited question" {
+		t.Fatalf("session messages after conflict = %#v", session.Messages)
+	}
+	assertNoAssistantUpdateBeforeRunFailed(t, events, state.ID)
+}
+
+func assertNoAssistantUpdateBeforeRunFailed(t *testing.T, events <-chan types.RunEvent, runID string) {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case event := <-events:
+			if event.RunID != runID {
+				continue
+			}
+			if event.Type == "assistant_message_update" {
+				t.Fatalf("assistant update published for unsaved conflict message: %#v", event.Payload)
+			}
+			if event.Type == "run_failed" {
+				return
+			}
+		case <-deadline:
+			t.Fatalf("run_failed event was not published for %s", runID)
+		}
+	}
+}
+
 func newTestRuntime(t *testing.T, fakes *runtimeFakes, config Config) System {
 	t.Helper()
 	system, err := NewSystem(config, fakes.storage, fakes.roles, fakes.provider, fakes.tool)
@@ -818,6 +986,138 @@ func (f *fakeRuntimeStorage) SaveSession(ctx context.Context, session types.Sess
 	return nil
 }
 
+func (f *fakeRuntimeStorage) SaveSessionMessages(ctx context.Context, save types.SessionMessageSave) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	session := save.Session
+	key := session.RoleID + "/" + session.ID
+	merged, ok := f.sessions[key]
+	if !ok {
+		merged = session
+		merged.Messages = nil
+	}
+	merged.Status = string(save.Status)
+	for _, condition := range save.Conditions {
+		messageID := strings.TrimSpace(condition.MessageID)
+		if messageID == "" && condition.Expected != nil {
+			messageID = condition.Expected.ID
+		}
+		if err := fakeValidateMessageExpected(merged, messageID, condition.Expected); err != nil {
+			return err
+		}
+	}
+	for _, delete := range save.Deletes {
+		messageID := strings.TrimSpace(delete.MessageID)
+		if messageID == "" && delete.Expected != nil {
+			messageID = delete.Expected.ID
+		}
+		if err := fakeValidateMessageExpected(merged, messageID, delete.Expected); err != nil {
+			return err
+		}
+	}
+	validated := merged
+	for _, delete := range save.Deletes {
+		validated = fakeRemoveSessionMessage(validated, delete.MessageID)
+	}
+	for _, write := range save.Writes {
+		if err := fakeValidateMessageExpected(validated, write.Message.ID, write.Expected); err != nil {
+			return err
+		}
+		if fakeShouldValidateMessageBranchSlot(validated, write.Message) {
+			if err := fakeValidateMessageBranchSlotAvailable(validated, write.Message); err != nil {
+				return err
+			}
+		}
+		validated = fakeUpsertSessionMessage(validated, write.Message)
+	}
+	merged = validated
+	f.sessions[key] = merged
+	return nil
+}
+
+func fakeValidateMessageExpected(session types.Session, messageID string, expected *types.Message) error {
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		return errors.New("message id is required")
+	}
+	current, ok := messageByID(session.Messages, messageID)
+	if expected == nil {
+		if ok {
+			return apperrors.New("fake-storage", "storage.conflict", "message already exists")
+		}
+		return nil
+	}
+	if !ok || !fakeMessageMatchesExpected(current, *expected) {
+		return apperrors.New("fake-storage", "storage.conflict", "message was changed or deleted")
+	}
+	return nil
+}
+
+func fakeMessageMatchesExpected(current types.Message, expected types.Message) bool {
+	return current.ID == expected.ID && current.Type == expected.Type && strings.TrimSpace(current.ParentMessageID) == strings.TrimSpace(expected.ParentMessageID) && fakeNormalizeBranchID(current.BranchID) == fakeNormalizeBranchID(expected.BranchID) && current.UpdatedAt.Equal(expected.UpdatedAt)
+}
+
+func fakeShouldValidateMessageBranchSlot(session types.Session, message types.Message) bool {
+	current, ok := messageByID(session.Messages, message.ID)
+	if !ok {
+		return true
+	}
+	return !fakeSameMessageBranchSlot(current, message)
+}
+
+func fakeValidateMessageBranchSlotAvailable(session types.Session, message types.Message) error {
+	messageID := strings.TrimSpace(message.ID)
+	if messageID == "" {
+		return errors.New("message id is required")
+	}
+	for _, current := range session.Messages {
+		if strings.TrimSpace(current.ID) == messageID {
+			continue
+		}
+		if fakeSameMessageBranchSlot(current, message) {
+			return apperrors.New("fake-storage", "storage.conflict", "message branch slot is already occupied")
+		}
+	}
+	return nil
+}
+
+func fakeSameMessageBranchSlot(left types.Message, right types.Message) bool {
+	return strings.TrimSpace(left.ParentMessageID) == strings.TrimSpace(right.ParentMessageID) && fakeNormalizeBranchID(left.BranchID) == fakeNormalizeBranchID(right.BranchID)
+}
+
+func fakeNormalizeBranchID(branchID string) string {
+	branchID = strings.TrimSpace(branchID)
+	if branchID == "" {
+		return defaultRuntimeBranchID
+	}
+	return branchID
+}
+
+func fakeRemoveSessionMessage(session types.Session, messageID string) types.Session {
+	messageID = strings.TrimSpace(messageID)
+	next := make([]types.Message, 0, len(session.Messages))
+	for _, message := range session.Messages {
+		if message.ID == messageID {
+			continue
+		}
+		next = append(next, message)
+	}
+	session.Messages = next
+	return session
+}
+
+func fakeUpsertSessionMessage(session types.Session, message types.Message) types.Session {
+	for index := range session.Messages {
+		if session.Messages[index].ID != message.ID {
+			continue
+		}
+		session.Messages[index] = message
+		return session
+	}
+	session.Messages = append(session.Messages, message)
+	return session
+}
+
 func (f *fakeRuntimeStorage) LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -835,6 +1135,31 @@ func (f *fakeRuntimeStorage) lastSession() types.Session {
 		return session
 	}
 	return types.Session{}
+}
+
+func (f *fakeRuntimeStorage) updateMessageContent(t *testing.T, roleID string, sessionID string, messageID string, content string) {
+	t.Helper()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	key := roleID + "/" + sessionID
+	session, ok := f.sessions[key]
+	if !ok {
+		t.Fatalf("session %s was not found", key)
+	}
+	for index := range session.Messages {
+		if session.Messages[index].ID != messageID {
+			continue
+		}
+		updatedAt := session.Messages[index].UpdatedAt.Add(time.Second)
+		if !updatedAt.After(session.Messages[index].UpdatedAt) {
+			updatedAt = time.Now().UTC()
+		}
+		session.Messages[index].Content = content
+		session.Messages[index].UpdatedAt = updatedAt
+		f.sessions[key] = session
+		return
+	}
+	t.Fatalf("message %s was not found in %#v", messageID, session.Messages)
 }
 
 func (f *fakeRuntimeStorage) SaveSessionMessageAttachment(ctx context.Context, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {

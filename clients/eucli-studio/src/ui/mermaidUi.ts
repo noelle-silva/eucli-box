@@ -3,6 +3,8 @@ import { VIEWER_ZOOM_MIN, MERMAID_VIEWER_ZOOM_MAX } from '../core/viewerZoom'
 import { splitChatKey, splitGroupChatKey } from '../domain/storageKeys'
 import { isAssistantGenerating } from '../domain/assistantRunState'
 import { runChatMutationTransaction } from '../domain/chatMutationTransaction'
+import { readActiveEbRoleRunCardsForSession } from '../domain/activeRunCards'
+import { messageMutationConflict } from '../domain/messageMutationConflicts'
 
 export function createMermaidUi(deps: {
   getState: () => any
@@ -13,7 +15,6 @@ export function createMermaidUi(deps: {
   storage: { get: (key: string) => Promise<any>; set: (key: string, value: any) => Promise<void> }
   aiGenerateChatTitle?: (rid: string, cid: string) => Promise<any>
   locateMessageInActiveChat: (mid: string) => any
-  chatHasPendingAssistant: (chat: any) => boolean
   getStickerRelPath: (cat: string, name: string) => string
   uiStreamCache: Map<string, any>
 }) {
@@ -25,7 +26,6 @@ export function createMermaidUi(deps: {
     loadSplitMeta,
     storage,
     locateMessageInActiveChat,
-    chatHasPendingAssistant,
     getStickerRelPath,
     uiStreamCache,
   } = deps
@@ -192,22 +192,25 @@ export function createMermaidUi(deps: {
   async function patchMessageContentSilent(messageId: string, content: string) {
     const s = getState()
     if (s.loading || !s.data) throw new Error('数据未加载')
-    if (s.sending) throw new Error('操作中，请稍后重试')
 
     const found = locateMessageInActiveChat(messageId)
     if (!found) throw new Error('未找到该消息')
 
     const { chat, pendingChat, target } = found
     if (pendingChat) throw new Error('当前会话尚未写入存档，请先发送一条消息后再修复')
-    if (chatHasPendingAssistant(chat)) throw new Error('该会话正在生成中，无法编辑')
+    const kind = String(found.kind || '') === 'group' ? 'group' : 'role'
+    const targetId = String(found.targetId || '')
+    const cid = String(chat?.id || '')
+    const conflict = messageMutationConflict(chat, messageId, {
+      operation: 'edit',
+      activeRunCards: kind === 'role' ? readActiveEbRoleRunCardsForSession(s, targetId, cid) : [],
+    })
+    if (conflict.blocked) throw new Error(conflict.reason || '该消息正在被运行中的回复使用，无法编辑')
     if (target.role === 'assistant') {
       if (isAssistantGenerating(target)) throw new Error('该消息正在生成中，无法编辑')
     }
 
     const verifySavedContent = async () => {
-      const kind = String(found.kind || '') === 'group' ? 'group' : 'role'
-      const targetId = String(found.targetId || '')
-      const cid = String(chat?.id || '')
       const mid = String(messageId || '')
       if (targetId && cid && mid) {
         const meta = await loadSplitMeta()

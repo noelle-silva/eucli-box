@@ -149,7 +149,7 @@ export function createLazyChatStore(deps: {
     const box = targetBox(state.data, kind, targetId)
     if (!box) return null
     const existing = box.chats.find((c: any) => String(c?.id || '') === chatId) || null
-    if (existing) return existing
+    if (existing && !existing.runtimePartial) return existing
 
     const pendingKey = loadingChatKey(kind, targetId, chatId)
     const pending = loadingChats.get(pendingKey)

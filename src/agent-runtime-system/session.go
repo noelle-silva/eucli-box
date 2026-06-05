@@ -53,6 +53,66 @@ func appendMessage(session types.Session, message types.Message) types.Session {
 	return session
 }
 
+func markRunOwnedMessage(record *runRecord, messageID string) {
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		return
+	}
+	if record.ownedMessageIDs == nil {
+		record.ownedMessageIDs = map[string]struct{}{}
+	}
+	record.ownedMessageIDs[messageID] = struct{}{}
+}
+
+func isRunOwnedMessage(record *runRecord, messageID string) bool {
+	if record == nil || len(record.ownedMessageIDs) == 0 {
+		return false
+	}
+	_, ok := record.ownedMessageIDs[strings.TrimSpace(messageID)]
+	return ok
+}
+
+func markRunDeletedMessage(record *runRecord, message types.Message) {
+	messageID := strings.TrimSpace(message.ID)
+	if messageID == "" || record == nil {
+		return
+	}
+	if record.deletedMessageIDs == nil {
+		record.deletedMessageIDs = map[string]struct{}{}
+	}
+	record.deletedMessageIDs[messageID] = struct{}{}
+	if record.messageSnapshots == nil {
+		record.messageSnapshots = map[string]types.Message{}
+	}
+	if _, ok := record.messageSnapshots[messageID]; !ok {
+		record.messageSnapshots[messageID] = cloneRunMessageSnapshot(message)
+	}
+	delete(record.ownedMessageIDs, messageID)
+}
+
+func markRunDependencyMessage(record *runRecord, message types.Message) {
+	messageID := strings.TrimSpace(message.ID)
+	if messageID == "" || record == nil || isRunOwnedMessage(record, messageID) {
+		return
+	}
+	if record.dependencyIDs == nil {
+		record.dependencyIDs = map[string]struct{}{}
+	}
+	record.dependencyIDs[messageID] = struct{}{}
+	if record.messageSnapshots == nil {
+		record.messageSnapshots = map[string]types.Message{}
+	}
+	if _, ok := record.messageSnapshots[messageID]; !ok {
+		record.messageSnapshots[messageID] = cloneRunMessageSnapshot(message)
+	}
+}
+
+func markRunDependencyMessages(record *runRecord, messages []types.Message) {
+	for _, message := range messages {
+		markRunDependencyMessage(record, message)
+	}
+}
+
 func (s *system) appendUserMessageForRun(ctx context.Context, session types.Session, request types.RunRequest) (types.Session, error) {
 	attachments, err := s.saveRunAttachments(ctx, session.RoleID, session.ID, request.Attachments)
 	if err != nil {
@@ -62,7 +122,8 @@ func (s *system) appendUserMessageForRun(ctx context.Context, session types.Sess
 	message.Attachments = attachments
 	parentMessageID := strings.TrimSpace(request.ParentMessageID)
 	if parentMessageID == "" {
-		return appendMessage(session, message), nil
+		next := appendMessage(session, message)
+		return next, nil
 	}
 	parent, ok := messageByID(session.Messages, parentMessageID)
 	if !ok {
@@ -93,6 +154,16 @@ func appendAssistantReply(session types.Session, content string, parent types.Me
 	return appendChildMessage(session, message, parent)
 }
 
+func appendAssistantReplyForRun(record *runRecord, content string) types.Session {
+	message := assistantMessage(content)
+	if record.forceBranchReply {
+		message.BranchID = branchIDFromMessageID(message.ID)
+	} else {
+		message.BranchID = assistantReplyBranchID(record.session, record.messageParent, message.ID)
+	}
+	return appendChildMessage(record.session, message, record.messageParent)
+}
+
 func appendChildMessage(session types.Session, message types.Message, parent types.Message) types.Session {
 	message.ParentMessageID = parent.ID
 	if strings.TrimSpace(message.BranchID) == "" {
@@ -107,10 +178,11 @@ func appendRunAssistantReply(record *runRecord, content string) {
 		record.activeAssistantID = record.messageParent.ID
 		return
 	}
-	record.session = appendAssistantReply(record.session, content, record.messageParent)
+	record.session = appendAssistantReplyForRun(record, content)
 	record.messageParent = lastSessionMessage(record.session)
 	record.lastMessageID = record.messageParent.ID
 	record.activeAssistantID = record.messageParent.ID
+	markRunOwnedMessage(record, record.messageParent.ID)
 }
 
 func ensureRunAssistantMessage(record *runRecord) {
@@ -157,6 +229,7 @@ func dropEmptyAssistantOutput(record *runRecord) {
 	if len(record.session.Messages) == 0 || record.session.Messages[len(record.session.Messages)-1].ID != record.messageParent.ID {
 		return
 	}
+	markRunDeletedMessage(record, record.messageParent)
 	parentID := strings.TrimSpace(record.messageParent.ParentMessageID)
 	record.session.Messages = record.session.Messages[:len(record.session.Messages)-1]
 	if parentID != "" {
@@ -176,6 +249,11 @@ func appendRunMessage(record *runRecord, message types.Message) {
 	record.session = appendChildMessage(record.session, message, record.messageParent)
 	record.messageParent = lastSessionMessage(record.session)
 	record.lastMessageID = record.messageParent.ID
+	markRunOwnedMessage(record, record.messageParent.ID)
+}
+
+func markRunInputMessage(record *runRecord, message types.Message) {
+	markRunOwnedMessage(record, message.ID)
 }
 
 func markRunFailureMessage(record *runRecord, session types.Session, payload *types.ErrorPayload) types.Session {
@@ -222,6 +300,14 @@ func assistantReplyBranchID(session types.Session, parent types.Message, assista
 		return parentBranchID
 	}
 	return branchIDFromMessageID(assistantID)
+}
+
+func shouldForceBranchReply(session types.Session, parent types.Message) bool {
+	parentID := strings.TrimSpace(parent.ID)
+	if parentID == "" || parent.Type != "user" {
+		return false
+	}
+	return hasAssistantChild(session.Messages, parentID)
 }
 
 func userMessageBranchID(session types.Session, parent types.Message, userMessageID string) string {

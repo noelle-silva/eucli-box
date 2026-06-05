@@ -3,6 +3,7 @@ package datastorage
 import (
 	"context"
 	"strings"
+	"sync"
 	"time"
 
 	"eucli-box/pkg/types"
@@ -13,6 +14,7 @@ type System interface {
 
 	CreateSession(ctx context.Context, roleID string, title string) (types.Session, error)
 	SaveSession(ctx context.Context, session types.Session) error
+	SaveSessionMessages(ctx context.Context, save types.SessionMessageSave) error
 	LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error)
 	ListSessions(ctx context.Context, roleID string) ([]types.SessionSummary, error)
 	DeleteSession(ctx context.Context, roleID string, sessionID string) error
@@ -74,7 +76,8 @@ type Config struct {
 }
 
 type system struct {
-	paths paths
+	paths     paths
+	sessionMu sync.Mutex
 }
 
 func NewSystem(config Config) (System, error) {

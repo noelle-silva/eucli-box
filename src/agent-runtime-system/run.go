@@ -83,6 +83,12 @@ func (s *system) startRun(ctx context.Context, record *runRecord, request types.
 	}
 	record.session = session
 	record.messageParent = assistantParent
+	record.anchorMessageID = assistantParent.ID
+	if strings.TrimSpace(request.UserMessageID) == "" {
+		markRunInputMessage(record, assistantParent)
+	}
+	markRunDependencyMessages(record, contextSession.Messages)
+	record.forceBranchReply = shouldForceBranchReply(session, assistantParent) || s.hasActiveRunAtAnchor(record)
 	lastMessageID := assistantParent.ID
 	if record.stream {
 		ensureRunAssistantMessage(record)
@@ -92,7 +98,7 @@ func (s *system) startRun(ctx context.Context, record *runRecord, request types.
 	if err := s.setRunMessageIDs(record.runID, assistantParent.ID, lastMessageID); err != nil {
 		return state, types.Session{}, err
 	}
-	if err := s.saveSession(ctx, session, types.RunStatusRunning); err != nil {
+	if err := s.saveRunSession(ctx, record, types.RunStatusRunning); err != nil {
 		return state, types.Session{}, err
 	}
 	if record.stream {
@@ -147,7 +153,7 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 			contextSession = appendMessage(contextSession, assistantParent)
 		}
 		s.publish(record.runID, "model_output", modelResponse)
-		if err := s.saveSession(ctx, record.session, types.RunStatusRunning); err != nil {
+		if err := s.saveRunSession(ctx, record, types.RunStatusRunning); err != nil {
 			s.failRun(context.Background(), record, record.session, err)
 			return
 		}
@@ -170,7 +176,7 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 			s.cancelRunRecord(context.Background(), record, record.session)
 			return
 		}
-		if err := s.saveSession(ctx, record.session, types.RunStatusRunning); err != nil {
+		if err := s.saveRunSession(ctx, record, types.RunStatusRunning); err != nil {
 			s.failRun(context.Background(), record, record.session, err)
 			return
 		}
@@ -271,7 +277,7 @@ func upsertSessionMessage(session types.Session, message types.Message) types.Se
 }
 
 func (s *system) completeRun(ctx context.Context, record *runRecord, session types.Session) {
-	if err := s.saveSession(ctx, session, types.RunStatusCompleted); err != nil {
+	if err := s.saveRunSession(ctx, record, types.RunStatusCompleted); err != nil {
 		reason, payload := runFailureFromError(err, "save session failed: "+err.Error())
 		state, _ := s.updateRunWithError(record.runID, types.RunStatusFailed, reason, payload)
 		s.publish(record.runID, "run_failed", state)
@@ -301,7 +307,7 @@ func (s *system) failRunWithPayload(ctx context.Context, record *runRecord, sess
 		if session.ID != "" {
 			session = markRunFailureMessage(record, session, payload)
 			_ = s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID)
-			_ = s.saveSession(ctx, session, types.RunStatus(session.Status))
+			_ = s.saveRunSession(ctx, record, types.RunStatus(session.Status))
 		}
 		s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, InputMessageID: record.inputMessageID, LastMessageID: record.lastMessageID, Status: types.RunStatusFailed, Reason: reason, Error: cloneErrorPayload(payload)})
 		return
@@ -313,13 +319,18 @@ func (s *system) failRunWithPayload(ctx context.Context, record *runRecord, sess
 				state = next
 			}
 		}
-		if err := s.saveSession(ctx, session, types.RunStatusFailed); err != nil {
-			saveReason, savePayload := runFailureFromError(err, "save session failed: "+err.Error())
+		messagesSaved, saveErr := s.saveRunSessionWithStatusFallback(ctx, record, types.RunStatusFailed)
+		if saveErr != nil {
+			saveReason, savePayload := runFailureFromError(saveErr, "save session failed: "+saveErr.Error())
 			s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: saveReason, Error: cloneErrorPayload(savePayload)})
 			return
 		}
+		if messagesSaved {
+			s.publishAssistantMessageUpdate(record)
+		}
+	} else {
+		s.publishAssistantMessageUpdate(record)
 	}
-	s.publishAssistantMessageUpdate(record)
 	s.publish(record.runID, "run_failed", state)
 }
 
@@ -338,13 +349,18 @@ func (s *system) cancelRunRecord(ctx context.Context, record *runRecord, session
 	if err != nil {
 		return
 	}
+	messagesSaved := false
 	if session.ID != "" {
-		if err := s.saveSession(ctx, session, types.RunStatusCancelled); err != nil {
-			s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: "save session failed: " + err.Error()})
+		var saveErr error
+		messagesSaved, saveErr = s.saveRunSessionWithStatusFallback(ctx, record, types.RunStatusCancelled)
+		if saveErr != nil {
+			s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: "save session failed: " + saveErr.Error()})
 			return
 		}
 	}
-	s.publishAssistantMessageUpdate(record)
+	if messagesSaved || session.ID == "" {
+		s.publishAssistantMessageUpdate(record)
+	}
 	s.publish(record.runID, "run_cancelled", state)
 }
 

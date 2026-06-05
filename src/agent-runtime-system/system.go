@@ -18,6 +18,7 @@ type System interface {
 
 type StorageSystem interface {
 	SaveSession(ctx context.Context, session types.Session) error
+	SaveSessionMessages(ctx context.Context, save types.SessionMessageSave) error
 	LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error)
 	SaveSessionMessageAttachment(ctx context.Context, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
 	LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error)
@@ -69,7 +70,13 @@ type runRecord struct {
 	messageParent     types.Message
 	inputMessageID    string
 	lastMessageID     string
+	anchorMessageID   string
 	activeAssistantID string
+	ownedMessageIDs   map[string]struct{}
+	deletedMessageIDs map[string]struct{}
+	dependencyIDs     map[string]struct{}
+	messageSnapshots  map[string]types.Message
+	forceBranchReply  bool
 	stream            bool
 	streamContent     string
 	cancel            context.CancelFunc

@@ -15,7 +15,7 @@ function isAssistantTextMessage(value: any) {
 function mergeMessagesFromStorage(nextChat: any, currentChat: any) {
   const nextMessages = Array.isArray(nextChat?.messages) ? nextChat.messages : null
   const currentMessages = Array.isArray(currentChat?.messages) ? currentChat.messages : null
-  if (!nextMessages || !currentMessages || !nextMessages.length || !currentMessages.length) return
+  if (!nextMessages || !currentMessages || !currentMessages.length) return
 
   const currentById = new Map<string, any>()
   for (const message of currentMessages) {
@@ -30,12 +30,22 @@ function mergeMessagesFromStorage(nextChat: any, currentChat: any) {
     if (!isAssistantGenerating(currentMessage) && !isAssistantGenerating(storedMessage)) return storedMessage
     return resolveAssistantMessageForMerge(currentMessage, storedMessage)
   })
+
+  const nextIds = new Set(nextChat.messages.map((message: any) => messageId(message)).filter(Boolean))
+  for (const currentMessage of currentMessages) {
+    const id = messageId(currentMessage)
+    if (!id || nextIds.has(id)) continue
+    if (!isAssistantTextMessage(currentMessage) || !isAssistantGenerating(currentMessage)) continue
+    nextChat.messages.push(currentMessage)
+    nextIds.add(id)
+  }
 }
 
 export function mergeChatFromStorage(nextChat: any, currentChat: any) {
   const next = preserveLocalBranchSelection(nextChat, currentChat)
   if (!next || !currentChat || typeof next !== 'object' || typeof currentChat !== 'object') return next
   mergeMessagesFromStorage(next, currentChat)
+  if ((next as any).runtimePartial) delete (next as any).runtimePartial
   return next
 }
 

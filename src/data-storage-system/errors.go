@@ -24,6 +24,10 @@ func storageWriteFailed(message string, cause error) error {
 	return apperrors.Wrap(systemName, "storage.write_failed", message, cause)
 }
 
+func storageConflict(message string, cause error) error {
+	return apperrors.Wrap(systemName, "storage.conflict", message, cause)
+}
+
 func storageDeleteFailed(message string, cause error) error {
 	return apperrors.Wrap(systemName, "storage.delete_failed", message, cause)
 }

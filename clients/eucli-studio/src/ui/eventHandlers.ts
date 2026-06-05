@@ -257,6 +257,10 @@ export function createEventHandlers(deps: {
     const bind = t.getAttribute('data-bind') || ''
     if (!bind) return
     const state = deps.getState()
+    if (bind === 'input') {
+      deps.actions.setDraft?.('input', t.value)
+      return
+    }
     state.draft[bind] = t.value
   }
 
@@ -266,6 +270,10 @@ export function createEventHandlers(deps: {
     const bind = t.getAttribute('data-bind') || ''
     if (!bind) return
     const state = deps.getState()
+    if (bind === 'input') {
+      deps.actions.setDraft?.('input', t.value)
+      return
+    }
     state.draft[bind] = t.value
 
     if (bind === 'roleProviderId') {

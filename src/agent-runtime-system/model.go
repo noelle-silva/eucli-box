@@ -30,7 +30,7 @@ func (s *system) callModelStream(ctx context.Context, record *runRecord, request
 	if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
 		return types.ModelResponse{}, err
 	}
-	if err := s.saveSession(ctx, record.session, types.RunStatusRunning); err != nil {
+	if err := s.saveRunSession(ctx, record, types.RunStatusRunning); err != nil {
 		return types.ModelResponse{}, err
 	}
 	response, err := s.providers.CompleteStream(ctx, request, func(event types.ModelStreamEvent) error {

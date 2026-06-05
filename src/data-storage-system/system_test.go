@@ -427,6 +427,122 @@ func TestSessionMessagePartsAreNormalized(t *testing.T) {
 	}
 }
 
+func TestSaveSessionMessagesRejectsExternallyEditedOwnedMessage(t *testing.T) {
+	system := newTestSystem(t)
+	now := time.Date(2026, 6, 5, 9, 0, 0, 0, time.UTC)
+	session := types.Session{ID: "session-save-conflict-edit", RoleID: "developer", Title: "Conflict", Status: string(types.RunStatusRunning), CreatedAt: now, UpdatedAt: now, LastActive: now, Messages: []types.Message{{ID: "u1", Type: "user", Content: "question", BranchID: "main", CreatedAt: now, UpdatedAt: now}, {ID: "a1", Type: "assistant", Content: "draft", ParentMessageID: "u1", BranchID: "main", CreatedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second)}}}
+	if err := system.SaveSession(context.Background(), session); err != nil {
+		t.Fatalf("SaveSession() error = %v", err)
+	}
+	loaded, err := system.LoadSession(context.Background(), "developer", session.ID)
+	if err != nil {
+		t.Fatalf("LoadSession() error = %v", err)
+	}
+	expected := mustTestMessage(t, loaded.Messages, "a1")
+
+	if _, err := system.UpdateSessionMessage(context.Background(), "developer", session.ID, "a1", types.SessionMessagePatch{Content: ptrString("user edited")}); err != nil {
+		t.Fatalf("UpdateSessionMessage() error = %v", err)
+	}
+	incoming := expected
+	incoming.Content = "runtime overwrite"
+	incoming.UpdatedAt = now.Add(2 * time.Second)
+	err = system.SaveSessionMessages(context.Background(), types.SessionMessageSave{Session: loaded, Writes: []types.SessionMessageWrite{{Message: incoming, Expected: &expected}}, Status: types.RunStatusRunning})
+	assertAppErrorCode(t, err, "storage.conflict")
+	after, err := system.LoadSession(context.Background(), "developer", session.ID)
+	if err != nil {
+		t.Fatalf("LoadSession(after) error = %v", err)
+	}
+	if got := mustTestMessage(t, after.Messages, "a1").Content; got != "user edited" {
+		t.Fatalf("content after conflict = %q", got)
+	}
+}
+
+func TestSaveSessionMessagesRejectsExternallyDeletedOwnedMessage(t *testing.T) {
+	system := newTestSystem(t)
+	now := time.Date(2026, 6, 5, 10, 0, 0, 0, time.UTC)
+	session := types.Session{ID: "session-save-conflict-delete", RoleID: "developer", Title: "Conflict", Status: string(types.RunStatusRunning), CreatedAt: now, UpdatedAt: now, LastActive: now, Messages: []types.Message{{ID: "u1", Type: "user", Content: "question", BranchID: "main", CreatedAt: now, UpdatedAt: now}, {ID: "a1", Type: "assistant", Content: "draft", ParentMessageID: "u1", BranchID: "main", CreatedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second)}}}
+	if err := system.SaveSession(context.Background(), session); err != nil {
+		t.Fatalf("SaveSession() error = %v", err)
+	}
+	loaded, err := system.LoadSession(context.Background(), "developer", session.ID)
+	if err != nil {
+		t.Fatalf("LoadSession() error = %v", err)
+	}
+	expected := mustTestMessage(t, loaded.Messages, "a1")
+	if _, err := system.DeleteSessionMessage(context.Background(), "developer", session.ID, "a1"); err != nil {
+		t.Fatalf("DeleteSessionMessage() error = %v", err)
+	}
+	incoming := expected
+	incoming.Content = "runtime revive"
+	incoming.UpdatedAt = now.Add(2 * time.Second)
+	err = system.SaveSessionMessages(context.Background(), types.SessionMessageSave{Session: loaded, Writes: []types.SessionMessageWrite{{Message: incoming, Expected: &expected}}, Status: types.RunStatusRunning})
+	assertAppErrorCode(t, err, "storage.conflict")
+	after, err := system.LoadSession(context.Background(), "developer", session.ID)
+	if err != nil {
+		t.Fatalf("LoadSession(after) error = %v", err)
+	}
+	if _, ok := storedSessionMessageByID(after, "a1"); ok {
+		t.Fatalf("deleted message was revived: %#v", after.Messages)
+	}
+}
+
+func TestSaveSessionMessagesRejectsChangedDependency(t *testing.T) {
+	system := newTestSystem(t)
+	now := time.Date(2026, 6, 5, 11, 0, 0, 0, time.UTC)
+	session := types.Session{ID: "session-save-conflict-dependency", RoleID: "developer", Title: "Conflict", Status: string(types.RunStatusRunning), CreatedAt: now, UpdatedAt: now, LastActive: now, Messages: []types.Message{{ID: "u1", Type: "user", Content: "question", BranchID: "main", CreatedAt: now, UpdatedAt: now}}}
+	if err := system.SaveSession(context.Background(), session); err != nil {
+		t.Fatalf("SaveSession() error = %v", err)
+	}
+	loaded, err := system.LoadSession(context.Background(), "developer", session.ID)
+	if err != nil {
+		t.Fatalf("LoadSession() error = %v", err)
+	}
+	dependency := mustTestMessage(t, loaded.Messages, "u1")
+	if _, err := system.UpdateSessionMessage(context.Background(), "developer", session.ID, "u1", types.SessionMessagePatch{Content: ptrString("changed question")}); err != nil {
+		t.Fatalf("UpdateSessionMessage() error = %v", err)
+	}
+	assistant := types.Message{ID: "a1", Type: "assistant", Content: "answer", ParentMessageID: "u1", BranchID: "main", CreatedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second)}
+	err = system.SaveSessionMessages(context.Background(), types.SessionMessageSave{Session: loaded, Writes: []types.SessionMessageWrite{{Message: assistant}}, Conditions: []types.SessionMessageCondition{{MessageID: "u1", Expected: &dependency}}, Status: types.RunStatusRunning})
+	assertAppErrorCode(t, err, "storage.conflict")
+	after, err := system.LoadSession(context.Background(), "developer", session.ID)
+	if err != nil {
+		t.Fatalf("LoadSession(after) error = %v", err)
+	}
+	if _, ok := storedSessionMessageByID(after, "a1"); ok {
+		t.Fatalf("assistant was written despite dependency conflict: %#v", after.Messages)
+	}
+}
+
+func TestSaveSessionMessagesRejectsOccupiedBranchSlot(t *testing.T) {
+	system := newTestSystem(t)
+	now := time.Date(2026, 6, 5, 12, 0, 0, 0, time.UTC)
+	session := types.Session{ID: "session-save-conflict-branch-slot", RoleID: "developer", Title: "Conflict", Status: string(types.RunStatusRunning), CreatedAt: now, UpdatedAt: now, LastActive: now, Messages: []types.Message{{ID: "u1", Type: "user", Content: "question", BranchID: "main", CreatedAt: now, UpdatedAt: now}, {ID: "a1", Type: "assistant", Content: "answer", ParentMessageID: "u1", BranchID: "main", CreatedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second)}}}
+	if err := system.SaveSession(context.Background(), session); err != nil {
+		t.Fatalf("SaveSession() error = %v", err)
+	}
+	loaded, err := system.LoadSession(context.Background(), "developer", session.ID)
+	if err != nil {
+		t.Fatalf("LoadSession() error = %v", err)
+	}
+	first := types.Message{ID: "u2", Type: "user", Content: "first follow up", ParentMessageID: "a1", BranchID: "main", CreatedAt: now.Add(2 * time.Second), UpdatedAt: now.Add(2 * time.Second)}
+	second := types.Message{ID: "u3", Type: "user", Content: "second follow up", ParentMessageID: "a1", BranchID: "main", CreatedAt: now.Add(3 * time.Second), UpdatedAt: now.Add(3 * time.Second)}
+	if err := system.SaveSessionMessages(context.Background(), types.SessionMessageSave{Session: loaded, Writes: []types.SessionMessageWrite{{Message: first}}, Status: types.RunStatusRunning}); err != nil {
+		t.Fatalf("SaveSessionMessages(first) error = %v", err)
+	}
+	err = system.SaveSessionMessages(context.Background(), types.SessionMessageSave{Session: loaded, Writes: []types.SessionMessageWrite{{Message: second}}, Status: types.RunStatusRunning})
+	assertAppErrorCode(t, err, "storage.conflict")
+	after, err := system.LoadSession(context.Background(), "developer", session.ID)
+	if err != nil {
+		t.Fatalf("LoadSession(after) error = %v", err)
+	}
+	if _, ok := storedSessionMessageByID(after, "u2"); !ok {
+		t.Fatalf("first message missing after conflict: %#v", after.Messages)
+	}
+	if _, ok := storedSessionMessageByID(after, "u3"); ok {
+		t.Fatalf("second message was written despite branch slot conflict: %#v", after.Messages)
+	}
+}
+
 func TestProviderAndToolStores(t *testing.T) {
 	system := newTestSystem(t)
 	provider := types.Provider{ID: "openai-main", Name: "OpenAI", Protocol: types.ProviderProtocolOpenAI, UpdatedAt: time.Date(2026, 5, 30, 10, 0, 0, 0, time.UTC)}
@@ -545,6 +661,17 @@ func newTestSystem(t *testing.T) *system {
 }
 
 func ptrString(value string) *string { return &value }
+
+func mustTestMessage(t *testing.T, messages []types.Message, messageID string) types.Message {
+	t.Helper()
+	for _, message := range messages {
+		if message.ID == messageID {
+			return message
+		}
+	}
+	t.Fatalf("message %s was not found in %#v", messageID, messages)
+	return types.Message{}
+}
 
 func assertDir(t *testing.T, path string) {
 	t.Helper()

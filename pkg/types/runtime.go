@@ -76,6 +76,29 @@ type SessionMessagePatch struct {
 	Parts   *[]MessagePart `json:"parts,omitempty"`
 }
 
+type SessionMessageSave struct {
+	Session    Session                   `json:"session"`
+	Writes     []SessionMessageWrite     `json:"writes,omitempty"`
+	Deletes    []SessionMessageDelete    `json:"deletes,omitempty"`
+	Conditions []SessionMessageCondition `json:"conditions,omitempty"`
+	Status     RunStatus                 `json:"status"`
+}
+
+type SessionMessageWrite struct {
+	Message  Message  `json:"message"`
+	Expected *Message `json:"expected,omitempty"`
+}
+
+type SessionMessageDelete struct {
+	MessageID string   `json:"messageId"`
+	Expected  *Message `json:"expected,omitempty"`
+}
+
+type SessionMessageCondition struct {
+	MessageID string   `json:"messageId"`
+	Expected  *Message `json:"expected,omitempty"`
+}
+
 type ToolDecision struct {
 	ID        string    `json:"id"`
 	ActionID  string    `json:"actionId"`

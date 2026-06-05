@@ -2868,6 +2868,17 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     if (ok === true) setEditingMsg({ mid: '', text: '' })
   })
 
+  const copyMessageText = useEvent((text: unknown) => {
+    const writeText = controller.capabilities?.clipboard?.writeText
+    if (typeof writeText !== 'function') return controller.capabilities?.ui?.showToast?.('未授权：clipboard.writeText', { kind: 'error' })
+    Promise.resolve()
+      .then(() => writeText(String(text ?? '')))
+      .then(
+        () => controller.capabilities?.ui?.showToast?.('已复制', { kind: 'success' }),
+        () => controller.capabilities?.ui?.showToast?.('复制失败', { kind: 'error' }),
+      )
+  })
+
   const openRolePicker = useEvent((e: React.MouseEvent<HTMLElement>) => {
     setRolePickerTab(activeTargetKind === 'group' ? 'groups' : 'roles')
     setRolePickerEl(e.currentTarget)
@@ -4104,6 +4115,32 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                                 </span>
                               </Tooltip>
 
+                              {!isUser ? (
+                                <>
+                                  <Tooltip title="编辑">
+                                    <span>
+                                      <IconButton aria-label="编辑消息" size="small" disabled={!canEdit} onClick={() => startEditMessage(mid, String(m?.content || ''), messageGenerating)}>
+                                        <EditOutlinedIcon fontSize="inherit" />
+                                      </IconButton>
+                                    </span>
+                                  </Tooltip>
+
+                                  <Tooltip title="复制">
+                                    <IconButton aria-label="复制内容" size="small" disabled={!mid} onClick={() => copyMessageText(m?.content || '')}>
+                                      <ContentCopyIcon fontSize="inherit" />
+                                    </IconButton>
+                                  </Tooltip>
+
+                                  <Tooltip title="删除">
+                                    <span>
+                                      <IconButton aria-label="删除消息" size="small" disabled={!canEdit} onClick={() => setConfirmDelMsg({ mid, role: displayRole })}>
+                                        <DeleteOutlineIcon fontSize="inherit" />
+                                      </IconButton>
+                                    </span>
+                                  </Tooltip>
+                                </>
+                              ) : null}
+
                               {isUser ? (
                                 <>
                                   <Tooltip title="编辑">
@@ -4118,13 +4155,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                                     <IconButton
                                       aria-label="复制内容"
                                       size="small"
-                                      onClick={() => {
-                                        const text = String(m?.content || '')
-                                        controller.capabilities?.clipboard?.writeText?.(text).then(
-                                          () => controller.capabilities?.ui?.showToast?.('已复制', { kind: 'success' }),
-                                          () => controller.capabilities?.ui?.showToast?.('复制失败', { kind: 'error' }),
-                                        )
-                                      }}
+                                      onClick={() => copyMessageText(m?.content || '')}
                                     >
                                       <ContentCopyIcon fontSize="inherit" />
                                     </IconButton>
@@ -4217,10 +4248,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                         onClick={() => {
                           const text = msgMenuText
                           closeMsgMenu()
-                           controller.capabilities?.clipboard?.writeText?.(text).then(
-                             () => controller.capabilities?.ui?.showToast?.('已复制', { kind: 'success' }),
-                             () => controller.capabilities?.ui?.showToast?.('复制失败', { kind: 'error' }),
-                          )
+                          copyMessageText(text)
                         }}
                         sx={{ gap: 1 }}
                       >
@@ -4302,54 +4330,47 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                         重新回复
                       </MenuItem>
 
-                      {msgMenu.role === 'user' ? (
-                        <>
-                          <MenuItem
-                            disabled={!msgMenuCanEdit}
-                            onClick={() => {
-                              const mid = msgMenuMid
-                              const pending = msgMenuPending
-                              const text = msgMenuText
-                              closeMsgMenu()
-                              startEditMessage(mid, text, pending)
-                            }}
-                            sx={{ gap: 1 }}
-                          >
-                            <EditOutlinedIcon fontSize="small" />
-                            编辑
-                          </MenuItem>
+                      <MenuItem
+                        disabled={!msgMenuCanEdit}
+                        onClick={() => {
+                          const mid = msgMenuMid
+                          const pending = msgMenuPending
+                          const text = msgMenuText
+                          closeMsgMenu()
+                          startEditMessage(mid, text, pending)
+                        }}
+                        sx={{ gap: 1 }}
+                      >
+                        <EditOutlinedIcon fontSize="small" />
+                        编辑
+                      </MenuItem>
 
-                          <MenuItem
-                            disabled={!msgMenuMid}
-                            onClick={() => {
-                              const text = msgMenuText
-                              closeMsgMenu()
-                              controller.capabilities?.clipboard?.writeText?.(text).then(
-                                () => controller.capabilities?.ui?.showToast?.('已复制', { kind: 'success' }),
-                                () => controller.capabilities?.ui?.showToast?.('复制失败', { kind: 'error' }),
-                              )
-                            }}
-                            sx={{ gap: 1 }}
-                          >
-                            <ContentCopyIcon fontSize="small" />
-                            复制
-                          </MenuItem>
+                      <MenuItem
+                        disabled={!msgMenuMid}
+                        onClick={() => {
+                          const text = msgMenuText
+                          closeMsgMenu()
+                          copyMessageText(text)
+                        }}
+                        sx={{ gap: 1 }}
+                      >
+                        <ContentCopyIcon fontSize="small" />
+                        复制
+                      </MenuItem>
 
-                          <MenuItem
-                            disabled={!msgMenuMid || msgMenuPending || s.loading || uiBusy || chatLocked}
-                            onClick={() => {
-                              const mid = msgMenuMid
-                              const role = msgMenu.role
-                              closeMsgMenu()
-                              setConfirmDelMsg({ mid, role })
-                            }}
-                            sx={{ gap: 1 }}
-                          >
-                            <DeleteOutlineIcon fontSize="small" />
-                            删除
-                          </MenuItem>
-                        </>
-                      ) : null}
+                      <MenuItem
+                        disabled={!msgMenuMid || msgMenuPending || s.loading || uiBusy || chatLocked}
+                        onClick={() => {
+                          const mid = msgMenuMid
+                          const role = msgMenu.role
+                          closeMsgMenu()
+                          setConfirmDelMsg({ mid, role })
+                        }}
+                        sx={{ gap: 1 }}
+                      >
+                        <DeleteOutlineIcon fontSize="small" />
+                        删除
+                      </MenuItem>
                     </>
                   )}
                 </Box>

@@ -23,7 +23,7 @@ type AssistantMessageBlocksProps = {
 type EditingBlock = { id: string; text: string }
 
 function blockTitle(block: AssistantMessageBlock) {
-  if (block.kind === 'text') return '消息文本'
+  if (block.kind === 'text') return '消息正文'
   if (block.kind === 'tool_invocation') return '工具调用'
   if (block.kind === 'tool_result') return '工具返回'
   return '渲染诊断'
@@ -141,6 +141,13 @@ export function AssistantMessageBlocks(props: AssistantMessageBlocksProps) {
   return (
     <Stack spacing={0.9} data-mid={mid}>
       {blocks.map((block) => {
+        if (block.kind === 'text') {
+          return (
+            <Box key={block.id} data-mid={mid} data-assistant-block-kind={block.kind} sx={{ minWidth: 0 }}>
+              <AssistantMessageHost controller={controller} className="prose" text={block.text} parts={block.parts} mid={mid} renderSafetyPolicyKey={renderSafetyPolicyKey} chatRootRef={chatRootRef} />
+            </Box>
+          )
+        }
         const isEditing = editing.id === block.id
         const tone = blockTone(block)
         const canEdit = block.kind !== 'diagnostic' && !disabled
@@ -210,7 +217,7 @@ export function AssistantMessageBlocks(props: AssistantMessageBlocksProps) {
                 autoFocus
                 fullWidth
                 multiline
-                minRows={block.kind === 'text' ? 4 : 5}
+                minRows={5}
                 size="small"
                 value={editing.text}
                 onChange={(event) => setEditing((current) => ({ ...current, text: event.target.value }))}
@@ -220,8 +227,6 @@ export function AssistantMessageBlocks(props: AssistantMessageBlocksProps) {
                 }}
                 sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#fff' } }}
               />
-            ) : block.kind === 'text' ? (
-              <AssistantMessageHost controller={controller} className="prose" text={block.text} parts={block.parts} mid={mid} renderSafetyPolicyKey={renderSafetyPolicyKey} chatRootRef={chatRootRef} />
             ) : (
               <Box className="prose" dangerouslySetInnerHTML={{ __html: renderToolBlockHtml(block) }} />
             )}

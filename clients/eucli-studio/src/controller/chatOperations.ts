@@ -17,7 +17,6 @@ import {
   activateChatBranchByMessage,
 } from '../domain/branching'
 import { looksLikeImageDataUrl } from '../domain/textProcessing'
-import { syncMessageTextPart } from '../domain/message'
 import { detectDraftFileKind, addDraftFilePlaceholder } from '../domain/draftFileUtils'
 import type { DraftFileItem } from '../domain/draftFileUtils'
 import { normalizeChatModelOverride } from '../domain/modelRefUtils'
@@ -25,7 +24,7 @@ import { createStateAccessors } from '../state/stateAccessors'
 import { hasActiveAssistantMessages } from '../domain/chatRunState'
 import { activateResolvedPendingChat, pendingChatForTarget } from '../domain/pendingChat'
 import type { ChatSaveIntent } from '../domain/chatSaveIntent'
-import { deleteAssistantMessageBlock, editAssistantMessageBlock } from '../domain/assistantMessageBlockMutations'
+import { deleteAssistantMessageBlock, editAssistantMessageBlock, replaceMessageText } from '../domain/assistantMessageBlockMutations'
 import type { AiChatShowToast } from '../gateway/capabilities'
 import { cancelRoleRun, getRunState, isTerminalRunStatus, runStateFailureError, sleepMs, startRoleRun, type EbRunState } from './ebRoleRun'
 import { deleteRoleSessionMessage, deleteRoleSessionMessageSubtree, updateRoleSessionMessage } from './ebRoleSession'
@@ -793,11 +792,7 @@ export function createChatOperations(deps: {
   // ============ edit message ============
 
   async function editMessage(messageId: any, content: any) {
-    return applyRoleSessionMessageMutation(messageId, '编辑', (message) => {
-      message.content = String(content ?? '')
-      syncMessageTextPart(message)
-      return { ok: true }
-    })
+    return applyRoleSessionMessageMutation(messageId, '编辑', (message) => replaceMessageText(message, content))
   }
 
   async function editMessageBlock(messageId: any, blockRef: any, text: any) {

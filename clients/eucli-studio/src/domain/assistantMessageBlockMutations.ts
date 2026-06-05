@@ -51,6 +51,17 @@ function replaceContentRange(message: any, ref: AssistantMessageBlockRef, replac
   return { ok: true }
 }
 
+export function replaceMessageText(message: any, text: unknown): MutationResult {
+  if (!message || typeof message !== 'object') return { ok: false, error: '消息无效' }
+  const nextContent = String(text ?? '')
+  const validation = validateTextProtocolToolRequestsForParts(nextContent, message?.parts)
+  if (!validation.ok) return { ok: false, error: validation.error }
+  message.content = nextContent
+  syncMessageTextPart(message)
+  syncTextProtocolToolParts(message.parts, validation.matches)
+  return { ok: true }
+}
+
 function editTextBlock(message: any, ref: AssistantMessageBlockRef, text: string): MutationResult {
   const blocks = planAssistantMessageBlocks(message?.content, message?.parts)
   const block = blocks.find((item) => item.kind === 'text' && item.id === ref.blockId)

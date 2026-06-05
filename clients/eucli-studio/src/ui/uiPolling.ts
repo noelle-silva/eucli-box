@@ -5,7 +5,7 @@
 import { now } from '../core/utils'
 import { chatMetaFromChat, chatMetasFromBox, upsertChatMeta } from '../domain/chatMeta'
 import { UI_CHAT_UPDATED_NOTICE_KEY } from '../runtime/runtimeKeys'
-import { splitChatKey, splitGroupChatKey } from '../domain/storageKeys'
+import { splitChatKey, splitGroupChatKey, splitGroupChatIndexKey, splitRoleChatIndexKey } from '../domain/storageKeys'
 import { normalizeStoredChat } from '../storage/normalizeStoredChat'
 import { isStoredChatNewerThanCurrent, mergeChatFromStorage } from '../domain/chatStorageSync'
 import { pendingChatForTarget } from '../domain/pendingChat'
@@ -29,6 +29,41 @@ export function createUiPolling(deps: {
   let uiLastChatUpdatedNoticeId = ''
   let uiPollingDisposed = false
 
+  async function loadActiveTargetIndexMeta(activeKind: 'role' | 'group', activeTid: string) {
+    if (!activeTid) return null
+    const target = await loadTargetFolderMeta(activeKind, activeTid)
+    const meta = target?.meta
+    const folder = String(target?.folder || '').trim()
+    if (!meta || !folder) return null
+
+    const indexKey = activeKind === 'group' ? splitGroupChatIndexKey(folder) : splitRoleChatIndexKey(folder)
+    const idx = await deps.storage.get(indexKey).catch(() => null)
+    if (!idx || typeof idx !== 'object') return { meta, updatedAt: Number((meta as any)?.updatedAt || 0) }
+
+    const updatedAt = Math.max(Number((meta as any)?.updatedAt || 0), Number((idx as any)?.updatedAt || 0))
+    if (activeKind === 'group') {
+      return {
+        meta: { ...(meta as any), updatedAt, chatIndexByGroup: { ...((meta as any).chatIndexByGroup || {}), [activeTid]: idx } },
+        updatedAt,
+      }
+    }
+    return {
+      meta: { ...(meta as any), updatedAt, chatIndexByRole: { ...((meta as any).chatIndexByRole || {}), [activeTid]: idx } },
+      updatedAt,
+    }
+  }
+
+  async function loadTargetFolderMeta(activeKind: 'role' | 'group', activeTid: string) {
+    if (!activeTid) return null
+    let meta = deps.getSplitMetaCache()
+    let folder = activeKind === 'group' ? String((meta as any)?.groupFolders?.[activeTid] || '').trim() : String(meta?.roleFolders?.[activeTid] || '').trim()
+    if (meta && folder) return { meta, folder }
+
+    meta = await deps.loadSplitMeta()
+    folder = activeKind === 'group' ? String((meta as any)?.groupFolders?.[activeTid] || '').trim() : String(meta?.roleFolders?.[activeTid] || '').trim()
+    return meta && folder ? { meta, folder } : null
+  }
+
   async function syncActiveRoleChatsFromStorage(metaOverride?: any) {
     const state = deps.getState()
     if (!state.data) return
@@ -38,7 +73,8 @@ export function createUiPolling(deps: {
       const rid = String(state.draft.activeRoleId || state.data?.ui?.activeRoleId || '')
       if (!rid) return
 
-      const meta = metaOverride || (await deps.loadSplitMeta())
+      const activeMeta = metaOverride ? null : await loadActiveTargetIndexMeta('role', rid)
+      const meta = metaOverride || activeMeta?.meta || deps.getSplitMetaCache() || (await deps.loadSplitMeta())
       if (!meta || typeof meta !== 'object') return
 
       const updatedAt = Number((meta as any).updatedAt || 0)
@@ -118,9 +154,8 @@ export function createUiPolling(deps: {
     const cid = String(chatId || '').trim()
     if (!rid || !cid) return false
 
-    const meta = (await deps.loadSplitMeta()) || deps.getSplitMetaCache()
-    if (!meta) return false
-    const folder = String(meta.roleFolders?.[rid] || '')
+    const target = await loadTargetFolderMeta('role', rid)
+    const folder = String(target?.folder || '')
     if (!folder) return false
 
     const raw = await deps.storage.get(splitChatKey(folder, cid))
@@ -148,9 +183,8 @@ export function createUiPolling(deps: {
     const cid = String(chatId || '').trim()
     if (!gid || !cid) return false
 
-    const meta = (await deps.loadSplitMeta()) || deps.getSplitMetaCache()
-    if (!meta) return false
-    const folder = String((meta as any).groupFolders?.[gid] || '')
+    const target = await loadTargetFolderMeta('group', gid)
+    const folder = String(target?.folder || '')
     if (!folder) return false
 
     const raw = await deps.storage.get(splitGroupChatKey(folder, cid))
@@ -246,8 +280,9 @@ export function createUiPolling(deps: {
           : String(state.draft.activeRoleId || state.data?.ui?.activeRoleId || '').trim()
       if (!state.sending && !pendingChatForTarget(state, activeKind, activeTid)) {
         try {
-          const meta = await deps.loadSplitMeta()
-          const updatedAt = Number(meta?.updatedAt || 0)
+          const activeMeta = await loadActiveTargetIndexMeta(activeKind, activeTid)
+          const meta = activeMeta?.meta
+          const updatedAt = Number(activeMeta?.updatedAt || 0)
           if (updatedAt && updatedAt !== uiLastMetaUpdatedAt) {
             await syncActiveTargetChatsFromStorage(meta)
             deps.emit()

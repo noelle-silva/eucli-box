@@ -181,6 +181,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   // 3. SPLIT META CACHE (shared across modules)
   // ============================================================
   let splitMetaCache: any = null
+  let splitMetaLoadPromise: Promise<any> | null = null
 
   // ============================================================
   // 4. ASSISTANT RENDERER
@@ -449,9 +450,16 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
 
   // Update splitMetaCache on loadSplitMeta (wrapper)
   const loadSplitMetaCached = async () => {
-    const meta = await loadSplitMeta()
-    if (meta) splitMetaCache = meta
-    return meta
+    if (splitMetaLoadPromise) return splitMetaLoadPromise
+    splitMetaLoadPromise = loadSplitMeta()
+      .then((meta) => {
+        if (meta) splitMetaCache = meta
+        return meta
+      })
+      .finally(() => {
+        splitMetaLoadPromise = null
+      })
+    return splitMetaLoadPromise
   }
 
   function getSplitMetaCache(): any {
@@ -462,6 +470,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     storage,
     getState: () => state,
     loadSplitMeta: loadSplitMetaCached,
+    getSplitMetaCache,
   })
   const { loadShell, loadChat, ensureChatLoaded, ensureActiveChatLoaded, removeChat, upsertLoadedChat, removeLoadedChat } = lazyChatStore
 

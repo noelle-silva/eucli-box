@@ -70,6 +70,12 @@ function imageBasename(p: string): string {
   return i >= 0 ? s.slice(i + 1) : s
 }
 
+function boxHasChatRef(box: any, chatId: string) {
+  if (!chatId) return false
+  if (Array.isArray(box?.chatMetas) && box.chatMetas.some((c: any) => String(c?.id || '') === chatId)) return true
+  return Array.isArray(box?.chats) && box.chats.some((c: any) => String(c?.id || '') === chatId)
+}
+
 export function createEntityEditors(deps: {
   getState: () => any
   save: () => Promise<void>
@@ -96,6 +102,27 @@ export function createEntityEditors(deps: {
 
   function scrollToBottomSoon() {
     // UI 负责滚动逻辑（React）
+  }
+
+  function loadPickedChatInBackground(kind: 'role' | 'group', targetId: string, chatId: string, load?: (targetId: string, chatId: string) => Promise<any>) {
+    if (typeof load !== 'function') return
+    Promise.resolve()
+      .then(() => load(targetId, chatId))
+      .then((chat) => {
+        const state = getState()
+        if (!state.data) return
+        const box = kind === 'group' ? (state.data as any).chatsByGroup?.[targetId] : state.data.chatsByRole?.[targetId]
+        const stillActive = String(box?.activeChatId || '') === chatId
+        if (stillActive) render()
+        if (stillActive && chat) scrollToBottomSoon()
+      })
+      .catch((error: any) => {
+        const state = getState()
+        const box = kind === 'group' ? (state.data as any)?.chatsByGroup?.[targetId] : state.data?.chatsByRole?.[targetId]
+        if (String(box?.activeChatId || '') !== chatId) return
+        showToast?.(String(error?.message || error || '会话加载失败'), { kind: 'error' })
+        render()
+      })
   }
 
   // ===== Avatar =====
@@ -533,15 +560,12 @@ export function createEntityEditors(deps: {
     const box = sa.ensureChatsBoxBare(String(role.id))
     if (!box) return
     const cid = String(chatId || '')
-    const exists =
-      Array.isArray(box.chatMetas) && box.chatMetas.some((c: any) => String(c?.id || '') === cid) ||
-      Array.isArray(box.chats) && box.chats.some((c: any) => String(c?.id || '') === cid)
-    if (!cid || !exists) return
-    await ensureChatLoaded?.(String(role.id || ''), cid)
+    if (!boxHasChatRef(box, cid)) return
     box.activeChatId = cid
     ;(setRoleActiveChatSelection?.(String(role.id || ''), cid) || save()).catch(() => {})
     render()
     scrollToBottomSoon()
+    loadPickedChatInBackground('role', String(role.id || ''), cid, ensureChatLoaded)
   }
 
   async function pickChatForActiveGroup(chatId: any) {
@@ -552,15 +576,12 @@ export function createEntityEditors(deps: {
     const box = sa.ensureGroupChatsBoxBare(String((group as any).id || ''))
     if (!box) return
     const cid = String(chatId || '')
-    const exists =
-      Array.isArray(box.chatMetas) && box.chatMetas.some((c: any) => String(c?.id || '') === cid) ||
-      Array.isArray(box.chats) && box.chats.some((c: any) => String(c?.id || '') === cid)
-    if (!cid || !exists) return
-    await ensureGroupChatLoaded?.(String((group as any).id || ''), cid)
+    if (!boxHasChatRef(box, cid)) return
     box.activeChatId = cid
     save().catch(() => {})
     render()
     scrollToBottomSoon()
+    loadPickedChatInBackground('group', String((group as any).id || ''), cid, ensureGroupChatLoaded)
   }
 
   function pickChatForActiveTarget(chatId: any) {

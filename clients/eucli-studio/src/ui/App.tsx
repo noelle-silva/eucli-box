@@ -6,6 +6,7 @@ import {
   Button,
   Checkbox,
   Chip,
+  CircularProgress,
   Collapse,
   CssBaseline,
   Dialog,
@@ -553,6 +554,16 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const activeRole = controller.activeRole()
   const activeGroup = activeTargetKind === 'group' ? (groups.find((g: any) => String(g?.id || '') === activeGroupId) || null) : null
   const activeChat = controller.activeChat()
+  const openingChatMeta = (() => {
+    if (activeChat || !data) return null
+    const targetId = activeTargetKind === 'group' ? String((activeGroup as any)?.id || activeGroupId || '').trim() : String(activeRole?.id || '').trim()
+    if (!targetId) return null
+    const box = activeTargetKind === 'group' ? (data as any)?.chatsByGroup?.[targetId] : data?.chatsByRole?.[targetId]
+    const activeChatId = String(box?.activeChatId || '').trim()
+    if (!activeChatId) return null
+    const metas = Array.isArray(box?.chatMetas) ? box.chatMetas : []
+    return metas.find((m: any) => String(m?.id || '') === activeChatId) || null
+  })()
   const savedTreeDir = (() => {
     const raw = String(((data?.settings as any)?.branchTree?.dir ?? '') as any).trim()
     return raw === 'lr' || raw === 'tb' || raw === 'bt' || raw === 'rl' ? (raw as any) : 'lr'
@@ -3499,9 +3510,18 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                     请选择角色
                   </Typography>
                 ) : !activeChat ? (
-                  <Typography variant="body2" color="text.secondary">
-                    还没有消息。输入内容并发送。
-                  </Typography>
+                  openingChatMeta ? (
+                    <Box role="status" aria-live="polite" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, color: 'text.secondary' }}>
+                      <CircularProgress size={18} thickness={4.4} color="inherit" />
+                      <Typography variant="body2" color="text.secondary">
+                        正在打开「{String((openingChatMeta as any)?.title || '会话')}」…
+                      </Typography>
+                    </Box>
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">
+                      还没有消息。输入内容并发送。
+                    </Typography>
+                  )
               ) : !Array.isArray(activeChat.messages) || activeChat.messages.length === 0 ? (
                 <Typography variant="body2" color="text.secondary">
                   还没有消息。输入内容并发送。

@@ -1,5 +1,5 @@
 import { normalizeData } from '../domain/dataNormalizers'
-import { VERSION, SESSION_FAVORITES_KEY, STICKERS_KEY } from '../domain/constants'
+import { VERSION, SESSION_FAVORITES_KEY } from '../domain/constants'
 import { normalizeFavorites } from '../domain/favorites'
 import { chatMetaFromChat, chatMetasFromBox, removeChatMeta, upsertChatMeta } from '../domain/chatMeta'
 import { mergeChatFromStorage } from '../domain/chatStorageSync'
@@ -11,6 +11,7 @@ import {
 } from '../domain/storageKeys'
 import { loadProvidersFromStorage, loadSplitMetaSnapshot } from './splitIndexes'
 import { normalizeStoredChat } from './normalizeStoredChat'
+import { loadStickerSettingsFromStorage } from './stickerSettingsPersistence'
 
 export type LazyChatKind = 'role' | 'group'
 
@@ -66,7 +67,7 @@ export function createLazyChatStore(deps: {
 
     let stickers = null
     try {
-      stickers = await storage.get(STICKERS_KEY)
+      stickers = await loadStickerSettingsFromStorage(storage)
     } catch (_) {
       stickers = null
     }

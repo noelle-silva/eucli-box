@@ -147,7 +147,7 @@ export function createChatOperations(deps: {
     return ids
   }
 
-  function syncEbRoleRunCard(run: EbRunState, fallback: { roleId: string; sessionId?: string; lastMessageId?: string; anchorMessageId?: string; dependencyMessageIds?: string[]; startedFromPending?: boolean }) {
+  function syncEbRoleRunCard(run: EbRunState, fallback: { roleId: string; sessionId?: string; lastMessageId?: string; anchorMessageId?: string; dependencyMessageIds?: string[]; startedFromPending?: boolean; pendingChatId?: string }) {
     const runId = String(run?.id || '').trim()
     const state = getState()
     if (!runId) return null
@@ -155,7 +155,7 @@ export function createChatOperations(deps: {
     const current = findEbRoleRunCard(state, runId)
     const roleId = String(run?.roleId || fallback.roleId || current?.roleId || '').trim()
     const sessionId = String(run?.sessionId || fallback.sessionId || current?.sessionId || '').trim()
-    if (fallback.startedFromPending && roleId && sessionId) activateResolvedPendingChat(state, 'role', roleId, sessionId)
+    if (fallback.startedFromPending && roleId && sessionId) activateResolvedPendingChat(state, 'role', roleId, sessionId, fallback.pendingChatId)
     const inputMessageId = String(run?.inputMessageId || current?.inputMessageId || '').trim()
     const lastMessageId = String(run?.lastMessageId || fallback.lastMessageId || current?.lastMessageId || inputMessageId || '').trim()
     return upsertEbRoleRunCard(state, {
@@ -233,6 +233,14 @@ export function createChatOperations(deps: {
     return branchId === anchor.branchId && activeChatHeadMid(chat) === anchor.headMid
   }
 
+  function roleRunPendingViewStillCurrent(roleId: string, sessionId: string, pendingChatId: string) {
+    const state = getState()
+    const pending = pendingChatForTarget(state, 'role', roleId)
+    if (pending) return String(pending?.id || '').trim() === String(pendingChatId || '').trim()
+    const box = state?.data?.chatsByRole && typeof state.data.chatsByRole === 'object' ? state.data.chatsByRole[roleId] : null
+    return !!sessionId && String(box?.activeChatId || '').trim() === sessionId
+  }
+
   function roleMessageParentForSend(chat: any, explicitParentMid?: string) {
     const explicit = String(explicitParentMid || '').trim()
     if (explicit) return explicit
@@ -266,7 +274,9 @@ export function createChatOperations(deps: {
     const startKey = roleRunStartKey(input)
     if (startingRoleRunKeys.has(startKey)) throw new Error('该位置已有启动中的请求，请稍候')
     const stateBeforeRun = getState()
-    const startedFromPending = !String(input.sessionId || '').trim() && !!pendingChatForTarget(stateBeforeRun, 'role', input.roleId)
+    const pendingAtStart = !String(input.sessionId || '').trim() ? pendingChatForTarget(stateBeforeRun, 'role', input.roleId) : null
+    const startedFromPending = !!pendingAtStart
+    const startedFromPendingChatId = String(pendingAtStart?.id || '').trim()
     let followPendingOnce = startedFromPending
     const followAnchor = roleSessionViewAnchor(input.roleId, String(input.sessionId || '').trim())
     startingRoleRunKeys.add(startKey)
@@ -282,12 +292,12 @@ export function createChatOperations(deps: {
     let followMessageId = String(state.lastMessageId || '').trim()
     const runAnchorMessageId = String(follow?.ancestorMessageId || input.userMessageId || input.parentMessageId || '').trim()
     const dependencyMessageIds = dependencyMessageIdsForRunStart(sa.activeChatFromData(), runAnchorMessageId)
-    syncEbRoleRunCard(state, { roleId: input.roleId, sessionId, lastMessageId: followMessageId, anchorMessageId: runAnchorMessageId, dependencyMessageIds, startedFromPending })
+    syncEbRoleRunCard(state, { roleId: input.roleId, sessionId, lastMessageId: followMessageId, anchorMessageId: runAnchorMessageId, dependencyMessageIds, startedFromPending, pendingChatId: startedFromPendingChatId })
     let runSessionLoadedOnce = false
 
     const refreshRunSession = async () => {
       if (!sessionId) return
-      const shouldFollowNow = followPendingOnce || roleSessionViewUnchanged(input.roleId, sessionId, followAnchor)
+      const shouldFollowNow = (followPendingOnce && roleRunPendingViewStillCurrent(input.roleId, sessionId, startedFromPendingChatId)) || roleSessionViewUnchanged(input.roleId, sessionId, followAnchor)
       await refreshRoleSession(input.roleId, sessionId, (chat) => {
         if (shouldFollowNow) followRunResultBranch(chat, follow ? { ...follow, messageId: followMessageId } : null)
       }, { activate: shouldFollowNow })
@@ -310,7 +320,7 @@ export function createChatOperations(deps: {
       await sleepMs(450)
       state = await getRunState(netRequest, state.id)
       followMessageId = String(state.lastMessageId || followMessageId || '').trim()
-      syncEbRoleRunCard(state, { roleId: input.roleId, sessionId, lastMessageId: followMessageId, anchorMessageId: runAnchorMessageId, dependencyMessageIds, startedFromPending })
+      syncEbRoleRunCard(state, { roleId: input.roleId, sessionId, lastMessageId: followMessageId, anchorMessageId: runAnchorMessageId, dependencyMessageIds, startedFromPending, pendingChatId: startedFromPendingChatId })
       const nextSessionId = String(state.sessionId || sessionId || '').trim()
       if (nextSessionId) {
         sessionId = nextSessionId

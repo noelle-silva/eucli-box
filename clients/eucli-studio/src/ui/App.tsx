@@ -91,6 +91,7 @@ import { isAssistantAwaitingFirstOutput, isAssistantGenerating } from '../domain
 import { formatModelRefDisplayText } from '../domain/modelRefUtils'
 import { pendingChatForTarget } from '../domain/pendingChat'
 import { chatSessionRunSummaryFromChat, normalizeChatSessionRunStatus, type ChatSessionRunStatus } from '../domain/chatSessionRunStatus'
+import { sortChatListItemsForDisplay } from '../domain/chatListOrdering'
 import { readActiveEbRoleRunCardsForSession } from '../domain/activeRunCards'
 import { messageMutationConflict, type MessageMutationOperation } from '../domain/messageMutationConflicts'
 import { AssistantReplyPendingIndicator } from './components/AssistantReplyPendingIndicator'
@@ -2257,8 +2258,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     if (pendingChatForTarget(s, activeTargetKind, targetId)) return { olderId: '', newerId: '', lockedReason: '草稿会话未发送' }
 
     const box = activeTargetKind === 'group' ? (data as any)?.chatsByGroup?.[targetId] : data?.chatsByRole?.[targetId]
-    const chats = Array.isArray(box?.chatMetas) && box.chatMetas.length ? box.chatMetas.slice() : Array.isArray(box?.chats) ? box.chats.slice() : []
-    chats.sort((a: any, b: any) => Number(b?.updatedAt || 0) - Number(a?.updatedAt || 0))
+    const chats = sortChatListItemsForDisplay(Array.isArray(box?.chatMetas) && box.chatMetas.length ? box.chatMetas : Array.isArray(box?.chats) ? box.chats : [])
     const ids = chats.map((c: any) => String(c?.id || '')).filter((id: string) => !!id)
     if (!ids.length) return { olderId: '', newerId: '', lockedReason: '暂无会话' }
 
@@ -5838,14 +5838,13 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                       )
                     }
                     const box = (data as any)?.chatsByGroup?.[String((activeGroup as any).id || '')]
-                    const chats = Array.isArray(box?.chatMetas) && box.chatMetas.length ? box.chatMetas.slice() : Array.isArray(box?.chats) ? box.chats.slice() : []
+                    const chats = sortChatListItemsForDisplay(Array.isArray(box?.chatMetas) && box.chatMetas.length ? box.chatMetas : Array.isArray(box?.chats) ? box.chats : [])
                     const activeChatId = String(box?.activeChatId || '')
                     const pendingChat =
                       (s as any)?.pendingGroupChat && String((s as any).pendingGroupChat?.groupId || '') === String((activeGroup as any)?.id || '')
                         ? (s as any).pendingGroupChat.chat
                         : null
                     const hasPending = !!pendingChat
-                    chats.sort((a: any, b: any) => Number(b?.updatedAt || 0) - Number(a?.updatedAt || 0))
                     const showPending = hasPending && match(pendingChat, '群聊')
                     const shownChats = chats.filter((c: any) => match(c, '群聊'))
                     if (!showPending && !shownChats.length) {
@@ -5938,11 +5937,10 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                     )
                   }
                   const box = data?.chatsByRole?.[String(role.id)]
-                  const chats = Array.isArray(box?.chatMetas) && box.chatMetas.length ? box.chatMetas.slice() : Array.isArray(box?.chats) ? box.chats.slice() : []
+                  const chats = sortChatListItemsForDisplay(Array.isArray(box?.chatMetas) && box.chatMetas.length ? box.chatMetas : Array.isArray(box?.chats) ? box.chats : [])
                   const activeChatId = String(box?.activeChatId || '')
                   const pendingChat = s?.pendingChat && String(s.pendingChat?.roleId || '') === String(role.id) ? s.pendingChat.chat : null
                   const hasPending = !!pendingChat
-                  chats.sort((a: any, b: any) => Number(b?.updatedAt || 0) - Number(a?.updatedAt || 0))
                   const showPending = hasPending && match(pendingChat, '新聊天')
                   const shownChats = chats.filter((c: any) => match(c, '新聊天'))
                   if (!showPending && !shownChats.length) {

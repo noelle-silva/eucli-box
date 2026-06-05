@@ -19,6 +19,10 @@ function statusUpdatedAt(value: any) {
   return timeValue(value?.finishedAt) || timeValue(value?.updatedAt) || timeValue(value?.createdAt)
 }
 
+function statusStartedAt(value: any) {
+  return timeValue(value?.startedAt) || timeValue(value?.createdAt) || timeValue(value?.updatedAt)
+}
+
 export function normalizeChatSessionRunStatus(value: unknown): ChatSessionRunStatus {
   const status = String(value || '').trim().toLowerCase()
   if (status === 'queued' || status === 'running' || status === 'waiting_confirmation') return 'running'
@@ -30,7 +34,7 @@ export function normalizeChatSessionRunStatus(value: unknown): ChatSessionRunSta
 function assistantRunSummary(message: any): ChatSessionRunSummary | null {
   if (!message || typeof message !== 'object') return null
   if (String(message?.role || message?.type || '').trim() !== 'assistant') return null
-  if (isAssistantGenerating(message)) return { status: 'running', changedAt: statusUpdatedAt(message?.assistantRun) || statusUpdatedAt(message) }
+  if (isAssistantGenerating(message)) return { status: 'running', changedAt: statusStartedAt(message?.assistantRun) || statusStartedAt(message) }
   if (message?.error && typeof message.error === 'object') return { status: 'interrupted', changedAt: statusUpdatedAt(message) }
 
   const run = normalizeAssistantRunState(message?.assistantRun)

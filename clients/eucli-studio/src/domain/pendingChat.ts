@@ -47,11 +47,14 @@ export function clearPendingChatForTarget(state: any, kind: PendingChatTargetKin
   if (state.pendingChat && normalizeId(state.pendingChat.roleId) === targetId) state.pendingChat = null
 }
 
-export function activateResolvedPendingChat(state: any, kind: PendingChatTargetKind, targetIdRaw: unknown, chatIdRaw: unknown) {
+export function activateResolvedPendingChat(state: any, kind: PendingChatTargetKind, targetIdRaw: unknown, chatIdRaw: unknown, expectedPendingChatIdRaw?: unknown) {
   const targetId = normalizeId(targetIdRaw)
   const chatId = normalizeId(chatIdRaw)
+  const expectedPendingChatId = normalizeId(expectedPendingChatIdRaw)
   if (!state?.data || !targetId || !chatId) return false
-  if (!pendingChatForTarget(state, kind, targetId)) return false
+  const pendingChat = pendingChatForTarget(state, kind, targetId)
+  if (!pendingChat) return false
+  if (expectedPendingChatId && normalizeId(pendingChat.id) !== expectedPendingChatId) return false
   clearPendingChatForTarget(state, kind, targetId)
 
   if (kind === 'group') {

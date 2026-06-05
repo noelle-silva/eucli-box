@@ -1,5 +1,6 @@
 import { now } from '../core/utils'
 import { isAssistantGenerating } from './assistantRunState'
+import { chatSessionRunSummaryFromChat, normalizeChatSessionRunStatus, type ChatSessionRunStatus } from './chatSessionRunStatus'
 
 export type ChatMeta = {
   id: string
@@ -9,6 +10,8 @@ export type ChatMeta = {
   lastMessagePreview: string
   messageCount: number
   hasPending: boolean
+  runStatus: ChatSessionRunStatus
+  runStatusChangedAt: number
 }
 
 function normalizeWhitespace(value: unknown): string {
@@ -123,6 +126,8 @@ export function chatMetaFromChat(chat: any, fallbackTitle = '新聊天'): ChatMe
   const last = messages.length ? messages[messages.length - 1] : null
   const createdAt = Number(chat.createdAt || 0) || now()
   const updatedAt = Number(chat.updatedAt || 0) || createdAt
+  const runSummary = chatSessionRunSummaryFromChat(chat)
+  const hasPending = messages.some((m: any) => isAssistantGenerating(m)) || runSummary.status === 'running'
   return {
     id,
     title: normalizeWhitespace(chat.title) || fallbackTitle,
@@ -130,7 +135,9 @@ export function chatMetaFromChat(chat: any, fallbackTitle = '新聊天'): ChatMe
     updatedAt,
     lastMessagePreview: messagePreview(last),
     messageCount: messages.length,
-    hasPending: messages.some((m: any) => isAssistantGenerating(m)),
+    hasPending,
+    runStatus: hasPending ? 'running' : runSummary.status,
+    runStatusChangedAt: Number(runSummary.changedAt || updatedAt || createdAt || 0),
   }
 }
 
@@ -140,6 +147,8 @@ export function normalizeChatMeta(raw: any, fallbackId = '', fallbackTitle = '�
   if (!id) return null
   const createdAt = Number((obj as any).createdAt || 0) || Number(fallbackUpdatedAt || 0) || now()
   const updatedAt = Number((obj as any).updatedAt || 0) || Number(fallbackUpdatedAt || 0) || createdAt
+  const runStatus = normalizeChatSessionRunStatus((obj as any).runStatus || (obj as any).status)
+  const hasPending = !!(obj as any).hasPending || runStatus === 'running'
   return {
     id,
     title: normalizeWhitespace((obj as any).title) || fallbackTitle,
@@ -147,7 +156,9 @@ export function normalizeChatMeta(raw: any, fallbackId = '', fallbackTitle = '�
     updatedAt,
     lastMessagePreview: clampPreview((obj as any).lastMessagePreview || (obj as any).snippet || ''),
     messageCount: Math.max(0, Math.floor(Number((obj as any).messageCount || 0) || 0)),
-    hasPending: !!(obj as any).hasPending,
+    hasPending,
+    runStatus: hasPending ? 'running' : runStatus,
+    runStatusChangedAt: Number((obj as any).runStatusChangedAt || (obj as any).statusChangedAt || updatedAt || createdAt || 0) || updatedAt,
   }
 }
 

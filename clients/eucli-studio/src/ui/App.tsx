@@ -89,11 +89,26 @@ import { AI_STUDIO_CHAT_ROOT_ID } from '../runtime/aiStudioGlobals'
 import { isAssistantAwaitingFirstOutput, isAssistantGenerating } from '../domain/assistantRunState'
 import { formatModelRefDisplayText } from '../domain/modelRefUtils'
 import { pendingChatForTarget } from '../domain/pendingChat'
+import { chatSessionRunSummaryFromChat, normalizeChatSessionRunStatus, type ChatSessionRunStatus } from '../domain/chatSessionRunStatus'
 import { AssistantReplyPendingIndicator } from './components/AssistantReplyPendingIndicator'
 import { AssistantErrorNotice } from './components/AssistantErrorNotice'
+import { ChatSessionRunIndicator, type ChatSessionRunIndicatorKind } from './components/ChatSessionRunIndicator'
 import type { AiChatToastOptions } from '../gateway/capabilities'
 
 type SettingsTab = 'appearance' | 'attachments' | 'data' | 'groups' | 'roles' | 'providers' | 'services' | 'tools' | 'stickers' | 'eb'
+
+type ChatSessionRunNoticeKind = Exclude<ChatSessionRunStatus, 'idle' | 'running'>
+
+type ChatSessionRunNotice = {
+  kind: ChatSessionRunNoticeKind
+  changedAt: number
+}
+
+type ChatSessionRunObservation = {
+  key: string
+  status: ChatSessionRunStatus
+  changedAt: number
+}
 
 const SETTINGS_TAB_ITEMS: { value: SettingsTab; label: string }[] = [
   { value: 'appearance', label: '外观' },
@@ -152,6 +167,55 @@ function snippetText(raw: any, maxLen = 26) {
   const one = s.replace(/\s+/g, ' ').trim()
   if (one.length <= maxLen) return one
   return one.slice(0, Math.max(0, maxLen - 1)).trimEnd() + '…'
+}
+
+function numericTimeValue(value: unknown) {
+  if (typeof value === 'number' && isFinite(value) && value > 0) return value
+  const text = String(value || '').trim()
+  if (!text) return 0
+  const parsed = Date.parse(text)
+  return isFinite(parsed) && parsed > 0 ? parsed : 0
+}
+
+function chatSessionRunNoticeKey(targetKind: 'role' | 'group', targetId: unknown, chatId: unknown) {
+  const tid = String(targetId || '').trim()
+  const cid = String(chatId || '').trim()
+  if (!tid || !cid) return ''
+  return `${targetKind}:${tid}:${cid}`
+}
+
+function chatSessionRunSummaryFromListItem(item: any) {
+  const status = normalizeChatSessionRunStatus(item?.hasPending ? 'running' : item?.runStatus || item?.status)
+  const changedAt = numericTimeValue(item?.runStatusChangedAt) || numericTimeValue(item?.updatedAt) || numericTimeValue(item?.createdAt)
+  if (item && typeof item === 'object' && Array.isArray(item.messages)) {
+    const chatSummary = chatSessionRunSummaryFromChat(item)
+    if (status !== 'idle') return { status, changedAt: changedAt || chatSummary.changedAt }
+    return chatSummary
+  }
+  return { status, changedAt }
+}
+
+function collectChatSessionRunObservations(data: any): ChatSessionRunObservation[] {
+  const byKey = new Map<string, ChatSessionRunObservation>()
+  const collectBox = (targetKind: 'role' | 'group', targetId: string, box: any) => {
+    if (!targetId || !box || typeof box !== 'object') return
+    const add = (item: any) => {
+      const chatId = String(item?.id || '').trim()
+      const key = chatSessionRunNoticeKey(targetKind, targetId, chatId)
+      if (!key) return
+      const summary = chatSessionRunSummaryFromListItem(item)
+      if (summary.status === 'idle') return
+      byKey.set(key, { key, status: summary.status, changedAt: Number(summary.changedAt || 0) })
+    }
+    if (Array.isArray(box.chats)) box.chats.forEach(add)
+    if (Array.isArray(box.chatMetas)) box.chatMetas.forEach(add)
+  }
+
+  const roleBoxes = data?.chatsByRole && typeof data.chatsByRole === 'object' ? data.chatsByRole : {}
+  for (const [targetId, box] of Object.entries(roleBoxes)) collectBox('role', String(targetId || ''), box)
+  const groupBoxes = data?.chatsByGroup && typeof data.chatsByGroup === 'object' ? data.chatsByGroup : {}
+  for (const [targetId, box] of Object.entries(groupBoxes)) collectBox('group', String(targetId || ''), box)
+  return Array.from(byKey.values())
 }
 
 function svgSafeId(raw: any) {
@@ -553,6 +617,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const activeRole = controller.activeRole()
   const activeGroup = activeTargetKind === 'group' ? (groups.find((g: any) => String(g?.id || '') === activeGroupId) || null) : null
   const activeChat = controller.activeChat()
+  const activeChatTargetId = activeTargetKind === 'group' ? activeGroupId : String(activeRole?.id || '')
+  const activeChatId = String(activeChat?.id || '')
   const savedTreeDir = (() => {
     const raw = String(((data?.settings as any)?.branchTree?.dir ?? '') as any).trim()
     return raw === 'lr' || raw === 'tb' || raw === 'bt' || raw === 'rl' ? (raw as any) : 'lr'
@@ -602,6 +668,93 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const treeNeedInitialCenterRef = React.useRef(false)
 
   const effectiveTreeView = (treeViewOverride || savedTreeView) as 'right' | 'float'
+  const [chatSessionRunNotices, setChatSessionRunNotices] = React.useState<Record<string, ChatSessionRunNotice>>({})
+  const chatSessionRunStatusRef = React.useRef<Record<string, ChatSessionRunObservation>>({})
+
+  React.useEffect(() => {
+    const observations = collectChatSessionRunObservations(data)
+    const previousByKey = chatSessionRunStatusRef.current
+    const liveKeys = new Set<string>()
+    const nextByKey: Record<string, ChatSessionRunObservation> = {}
+
+    for (const observation of observations) {
+      liveKeys.add(observation.key)
+      nextByKey[observation.key] = observation
+    }
+
+    setChatSessionRunNotices((prev) => {
+      let changed = false
+      const next = { ...prev }
+
+      for (const observation of observations) {
+        const previous = previousByKey[observation.key]
+        const terminal = observation.status === 'completed' || observation.status === 'interrupted'
+        if (observation.status === 'running') {
+          if (next[observation.key]) {
+            delete next[observation.key]
+            changed = true
+          }
+          continue
+        }
+        if (terminal && previous?.status === 'running') {
+          const kind = observation.status as ChatSessionRunNoticeKind
+          const changedAt = Number(observation.changedAt || 0)
+          if (!next[observation.key] || next[observation.key].kind !== kind || Number(next[observation.key].changedAt || 0) !== changedAt) {
+            next[observation.key] = { kind, changedAt }
+            changed = true
+          }
+        }
+      }
+
+      for (const key of Object.keys(next)) {
+        if (!liveKeys.has(key)) {
+          delete next[key]
+          changed = true
+        }
+      }
+
+      return changed ? next : prev
+    })
+
+    chatSessionRunStatusRef.current = nextByKey
+  })
+
+  React.useEffect(() => {
+    const key = chatSessionRunNoticeKey(activeTargetKind, activeChatTargetId, activeChatId)
+    if (!key) return
+    setChatSessionRunNotices((prev) => {
+      if (!prev[key]) return prev
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+  })
+
+  const clearChatSessionRunNotice = useEvent((targetKind: 'role' | 'group', targetId: string, chatId: string) => {
+    const key = chatSessionRunNoticeKey(targetKind, targetId, chatId)
+    if (!key) return
+    setChatSessionRunNotices((prev) => {
+      if (!prev[key]) return prev
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+  })
+
+  const chatSessionRunIndicatorKind = React.useCallback(
+    (targetKind: 'role' | 'group', targetId: string, chat: any, selected: boolean): ChatSessionRunIndicatorKind | '' => {
+      const chatId = String(chat?.id || '').trim()
+      const key = chatSessionRunNoticeKey(targetKind, targetId, chatId)
+      if (!key) return ''
+      const summary = chatSessionRunSummaryFromListItem(chat)
+      if (summary.status === 'running') return 'running'
+      if (selected) return ''
+      const notice = chatSessionRunNotices[key]
+      return notice ? notice.kind : ''
+    },
+    [chatSessionRunNotices],
+  )
+
   const isChatGenerating = React.useCallback((chat: any) => {
     const msgs = Array.isArray(chat?.messages) ? chat.messages : []
     return msgs.some((m: any) => isAssistantGenerating(m))
@@ -616,13 +769,13 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
         const chats = Array.isArray(box?.chats) ? box.chats : []
         const chat = chats.find((c: any) => String(c?.id || '') === cid) || null
         const meta = Array.isArray(box?.chatMetas) ? box.chatMetas.find((m: any) => String(m?.id || '') === cid) : null
-        return isChatGenerating(chat) || !!meta?.hasPending
+        return isChatGenerating(chat) || !!meta?.hasPending || normalizeChatSessionRunStatus(meta?.runStatus || meta?.status) === 'running'
       }
       const box = data?.chatsByRole?.[tid]
       const chats = Array.isArray(box?.chats) ? box.chats : []
       const chat = chats.find((c: any) => String(c?.id || '') === cid) || null
       const meta = Array.isArray(box?.chatMetas) ? box.chatMetas.find((m: any) => String(m?.id || '') === cid) : null
-      return isChatGenerating(chat) || !!meta?.hasPending
+      return isChatGenerating(chat) || !!meta?.hasPending || normalizeChatSessionRunStatus(meta?.runStatus || meta?.status) === 'running'
     },
     [data, isChatGenerating],
   )
@@ -669,11 +822,15 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
       if (targetKind === 'group') {
         const box = (data as any)?.chatsByGroup?.[tid]
         const chats = Array.isArray(box?.chats) ? box.chats : []
-        return chats.find((c: any) => String(c?.id || '') === cid) || (Array.isArray(box?.chatMetas) ? box.chatMetas.find((c: any) => String(c?.id || '') === cid) : null) || null
+        const chat = chats.find((c: any) => String(c?.id || '') === cid) || null
+        const meta = Array.isArray(box?.chatMetas) ? box.chatMetas.find((c: any) => String(c?.id || '') === cid) : null
+        return chat && meta ? { ...chat, ...meta } : chat || meta || null
       }
       const box = data?.chatsByRole?.[tid]
       const chats = Array.isArray(box?.chats) ? box.chats : []
-      return chats.find((c: any) => String(c?.id || '') === cid) || (Array.isArray(box?.chatMetas) ? box.chatMetas.find((c: any) => String(c?.id || '') === cid) : null) || null
+      const chat = chats.find((c: any) => String(c?.id || '') === cid) || null
+      const meta = Array.isArray(box?.chatMetas) ? box.chatMetas.find((c: any) => String(c?.id || '') === cid) : null
+      return chat && meta ? { ...chat, ...meta } : chat || meta || null
     },
     [data],
   )
@@ -841,6 +998,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     const tid = String(targetId || '')
     const cid = String(chatId || '')
     if (!tid || !cid) return
+    clearChatSessionRunNotice(targetKind, tid, cid)
     if (targetKind === 'group') controller.actions.setActiveGroup?.(tid)
     else controller.actions.setActiveRole?.(tid)
     controller.actions.setActiveChat?.(cid)
@@ -2562,6 +2720,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
             const targetMeta = getFavoriteTargetMeta(targetKind as any, targetId)
             const targetName = String(targetMeta?.name || (targetKind === 'group' ? '群聊' : '角色'))
             const snippet = snippetText((chat as any)?.lastMessagePreview || (Array.isArray((chat as any)?.messages) ? (chat as any).messages : []).slice(-1)[0]?.content || '')
+            const selected = targetKind === activeTargetKind && String(targetId || '') === activeChatTargetId && String(chatId || '') === activeChatId
+            const indicatorKind = chatSessionRunIndicatorKind(targetKind as any, targetId, chat, selected)
             if (q) {
               const hay = [String((chat as any)?.title || ''), snippet, targetName].join('\n').toLowerCase()
               if (!hay.includes(q)) return null
@@ -2582,6 +2742,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                   </Typography>
                 </Stack>
                 <ListItemText sx={{ minWidth: 0, mt: 0.25 }} primary={String((chat as any)?.title || (targetKind === 'group' ? '群聊' : '新聊天'))} secondary={snippet} />
+                {indicatorKind ? <ChatSessionRunIndicator kind={indicatorKind} /> : null}
               </ListItemButton>
             )
           })
@@ -2621,6 +2782,10 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
       favoriteSearchText,
       getChatByFavoriteRef,
       getFavoriteTargetMeta,
+      activeTargetKind,
+      activeChatTargetId,
+      activeChatId,
+      chatSessionRunIndicatorKind,
       openFavoritedChat,
       toggleFavoriteFolderExpanded,
     ],
@@ -5715,11 +5880,13 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                           const raw = String(c?.lastMessagePreview || '').replace(/\s+/g, ' ').trim()
                           const snippet = raw.length > 40 ? raw.slice(0, 40) + '…' : raw
                           const time = controller.fmtTime(Number(c?.updatedAt || c?.createdAt || 0))
+                          const indicatorKind = chatSessionRunIndicatorKind('group', String((activeGroup as any)?.id || ''), c, on)
                           return (
                             <ListItemButton
                               key={String(c?.id || '')}
                               selected={on}
                               onClick={() => {
+                                clearChatSessionRunNotice('group', String((activeGroup as any)?.id || ''), String(c?.id || ''))
                                 controller.actions.setActiveChat(String(c?.id || ''))
                                 closeChatPicker()
                               }}
@@ -5735,11 +5902,12 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                                     <Typography sx={{ fontWeight: 900, fontSize: 13, flex: 1, minWidth: 0 }} noWrap>
                                       {String(c?.title || '群聊')}
                                     </Typography>
-                                    <Typography variant="caption" color="text.secondary">
-                                      {time}
-                                    </Typography>
-                                  </Stack>
-                                }
+                                     <Typography variant="caption" color="text.secondary">
+                                       {time}
+                                     </Typography>
+                                     {indicatorKind ? <ChatSessionRunIndicator kind={indicatorKind} /> : null}
+                                   </Stack>
+                                 }
                                 secondary={
                                   <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block', minWidth: 0 }}>
                                     {snippet || '（空）'}
@@ -5809,11 +5977,13 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                         const raw = String(c?.lastMessagePreview || '').replace(/\s+/g, ' ').trim()
                         const snippet = raw.length > 40 ? raw.slice(0, 40) + '…' : raw
                         const time = controller.fmtTime(Number(c?.updatedAt || c?.createdAt || 0))
+                        const indicatorKind = chatSessionRunIndicatorKind('role', String(role?.id || ''), c, on)
                         return (
                           <ListItemButton
                             key={String(c?.id || '')}
                             selected={on}
                             onClick={() => {
+                              clearChatSessionRunNotice('role', String(role?.id || ''), String(c?.id || ''))
                               controller.actions.setActiveChat(String(c?.id || ''))
                               closeChatPicker()
                             }}
@@ -5829,11 +5999,12 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                                   <Typography sx={{ fontWeight: 900, fontSize: 13, flex: 1, minWidth: 0 }} noWrap>
                                     {String(c?.title || '新聊天')}
                                   </Typography>
-                                  <Typography variant="caption" color="text.secondary">
-                                    {time}
-                                  </Typography>
-                                </Stack>
-                              }
+                                   <Typography variant="caption" color="text.secondary">
+                                     {time}
+                                   </Typography>
+                                   {indicatorKind ? <ChatSessionRunIndicator kind={indicatorKind} /> : null}
+                                 </Stack>
+                               }
                               secondary={
                                 <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block', minWidth: 0 }}>
                                   {snippet || '（空）'}

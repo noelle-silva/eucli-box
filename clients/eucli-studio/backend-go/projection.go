@@ -163,10 +163,9 @@ func (p *projectionService) saveMeta(ctx context.Context, value any) error {
 	if err := p.saveAssistConfigs(ctx, settings); err != nil {
 		return err
 	}
-	settings = stripAssistSettings(settings)
 	_, err := p.config.updateProjection(func(projection *projectionConfig) {
 		projection.UI = objectMap(meta["ui"])
-		projection.Settings = settings
+		projection.Settings = mergeProjectionSettingsForMetaSave(projection.Settings, settings)
 	})
 	return err
 }
@@ -216,15 +215,48 @@ func (p *projectionService) saveAssistConfigs(ctx context.Context, settings map[
 	return nil
 }
 
+var dedicatedProjectionSettingKeys = map[string]struct{}{
+	"stickers": {},
+}
+
+var derivedProjectionSettingKeys = map[string]struct{}{
+	"providers": {},
+}
+
+var assistProjectionSettingKeys = map[string]struct{}{
+	"stickerNaming":   {},
+	"mermaidFix":      {},
+	"chatTitleNaming": {},
+}
+
+func mergeProjectionSettingsForMetaSave(existing map[string]any, incoming map[string]any) map[string]any {
+	settings := stripAssistSettings(copyObjectMap(incoming))
+	for key := range derivedProjectionSettingKeys {
+		delete(settings, key)
+	}
+	for key := range dedicatedProjectionSettingKeys {
+		delete(settings, key)
+	}
+
+	existing = objectMap(existing)
+	for key := range dedicatedProjectionSettingKeys {
+		if value, ok := existing[key]; ok {
+			settings[key] = value
+		}
+	}
+	return settings
+}
+
 func stripAssistSettings(settings map[string]any) map[string]any {
-	settings = objectMap(settings)
-	services := objectMap(settings["aiServices"])
-	if len(services) == 0 {
+	settings = copyObjectMap(settings)
+	services, ok := settings["aiServices"].(map[string]any)
+	if !ok || len(services) == 0 {
 		return settings
 	}
-	delete(services, "stickerNaming")
-	delete(services, "mermaidFix")
-	delete(services, "chatTitleNaming")
+	services = copyObjectMap(services)
+	for key := range assistProjectionSettingKeys {
+		delete(services, key)
+	}
 	settings["aiServices"] = services
 	return settings
 }
@@ -241,7 +273,7 @@ func (p *projectionService) saveChatsIndex(value any) error {
 func (p *projectionService) saveStickers(value any) error {
 	stickers := objectMap(value)
 	_, err := p.config.updateProjection(func(projection *projectionConfig) {
-		settings := objectMap(projection.Settings)
+		settings := copyObjectMap(projection.Settings)
 		settings["stickers"] = map[string]any{"enabled": boolField(stickers, "enabled", false)}
 		projection.Settings = settings
 	})
@@ -967,6 +999,15 @@ func objectMap(value any) map[string]any {
 		return m
 	}
 	return map[string]any{}
+}
+
+func copyObjectMap(value any) map[string]any {
+	src := objectMap(value)
+	out := make(map[string]any, len(src))
+	for key, item := range src {
+		out[key] = item
+	}
+	return out
 }
 
 func objectList(value any) []map[string]any {

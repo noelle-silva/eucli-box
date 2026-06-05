@@ -1,5 +1,5 @@
 import { now, uid } from '../core/utils'
-import { VERSION, SPLIT_SCHEMA_VERSION, SPLIT_META_KEY, SESSION_FAVORITES_KEY, STICKERS_KEY } from '../domain/constants'
+import { VERSION, SPLIT_SCHEMA_VERSION, SPLIT_META_KEY, SESSION_FAVORITES_KEY } from '../domain/constants'
 import { chatMetaFromChat, chatMetaIds, chatMetaUpdatedAtMap, chatMetasFromBox, upsertChatMeta } from '../domain/chatMeta'
 import { normalizeData } from '../domain/dataNormalizers'
 import { normalizeFavorites } from '../domain/favorites'
@@ -22,6 +22,7 @@ import {
 } from '../domain/storageKeys'
 import { loadProvidersFromStorage, loadSplitMetaSnapshot } from './splitIndexes'
 import { updateStoredChatIndexEntry, type ChatIndexKind } from './chatIndexUpdater'
+import { initializeStickerSettingsStorage, loadStickerSettingsFromStorage } from './stickerSettingsPersistence'
 
 let splitMetaCache: any = null
 let splitMetaWriteChain: Promise<void> = Promise.resolve()
@@ -495,7 +496,7 @@ export function createSplitStorage(deps: {
 
     let stickers = null
     try {
-      stickers = await storage.get(STICKERS_KEY)
+      stickers = await loadStickerSettingsFromStorage(storage)
     } catch (_) {
       stickers = null
     }
@@ -585,7 +586,7 @@ export function createSplitStorage(deps: {
     const meta = (await loadSplitMeta()) || splitMetaCache
     if (meta) return
     const updatedAt = now()
-    await storage.set(STICKERS_KEY, {})
+    await initializeStickerSettingsStorage(storage)
     await storage.set(SESSION_FAVORITES_KEY, { folders: [], chatRefsByFolderId: {} })
     await writeRequired(storage, splitChatsIndexKey(), {
       schemaVersion: SPLIT_SCHEMA_VERSION,
@@ -663,13 +664,6 @@ export function createSplitStorage(deps: {
     await next
   }
 
-  async function saveStickersOnly() {
-    const state = getState?.()
-    if (!state?.data) return
-    const stickers = state.data.settings && typeof state.data.settings === 'object' ? (state.data.settings as any).stickers : null
-    await storage.set(STICKERS_KEY, { enabled: !!(stickers && typeof stickers === 'object' && (stickers as any).enabled) })
-  }
-
   async function load() {
     const state = getState?.()
     try {
@@ -722,7 +716,6 @@ export function createSplitStorage(deps: {
     touchGroupChatUpdatedAt,
     saveMetaOnly,
     saveFavoritesOnly,
-    saveStickersOnly,
     load,
     save,
     writeChatUpdatedNotice,

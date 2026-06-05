@@ -17,6 +17,32 @@ export function createGroupChatSync(deps: {
   let uiLastMetaUpdatedAt = 0
   let uiChatSyncing = false
 
+  async function loadGroupFolderMeta(groupId: string) {
+    if (!groupId) return null
+    let meta = getSplitMetaCache()
+    let folder = String((meta as any)?.groupFolders?.[groupId] || '').trim()
+    if (meta && folder) return { meta, folder }
+
+    meta = await loadSplitMeta()
+    folder = String((meta as any)?.groupFolders?.[groupId] || '').trim()
+    return meta && folder ? { meta, folder } : null
+  }
+
+  async function loadGroupIndexMeta(groupId: string) {
+    const target = await loadGroupFolderMeta(groupId)
+    const meta = target?.meta
+    const folder = String(target?.folder || '').trim()
+    if (!meta || !folder) return null
+    const idx = await storage.get(splitGroupChatIndexKey(folder)).catch(() => null)
+    if (!idx || typeof idx !== 'object') return { meta, folder, updatedAt: Number((meta as any)?.updatedAt || 0) }
+    const updatedAt = Math.max(Number((meta as any)?.updatedAt || 0), Number((idx as any)?.updatedAt || 0))
+    return {
+      meta: { ...(meta as any), updatedAt, chatIndexByGroup: { ...((meta as any).chatIndexByGroup || {}), [groupId]: idx } },
+      folder,
+      updatedAt,
+    }
+  }
+
   async function touchGroupChatUpdatedAt(groupId: any, chatId: any, updatedAt: any) {
     const gid = String(groupId || '').trim()
     const cid = String(chatId || '').trim()
@@ -24,9 +50,8 @@ export function createGroupChatSync(deps: {
     if (!gid || !cid) return
 
     await withSplitMetaWrite(async () => {
-      const meta = (await loadSplitMeta()) || getSplitMetaCache()
-      if (!meta) return
-      const folder = String((meta as any).groupFolders?.[gid] || '').trim()
+      const target = await loadGroupFolderMeta(gid)
+      const folder = String(target?.folder || '').trim()
       if (!folder) return
       const idx = await storage.get(splitGroupChatIndexKey(folder)).catch(() => null)
       if (!idx || typeof idx !== 'object') return
@@ -59,7 +84,8 @@ export function createGroupChatSync(deps: {
       const gid = String((state.draft as any).activeGroupId || (state.data?.ui as any)?.activeGroupId || '').trim()
       if (!gid) return
 
-      const meta = metaOverride || (await loadSplitMeta())
+      const activeMeta = metaOverride ? null : await loadGroupIndexMeta(gid)
+      const meta = metaOverride || activeMeta?.meta || (await loadSplitMeta())
       if (!meta || typeof meta !== 'object') return
 
       const updatedAt = Number((meta as any).updatedAt || 0)

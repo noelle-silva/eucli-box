@@ -1,4 +1,4 @@
-import { now, uid, clamp, normImagePaths } from '../core/utils'
+import { now, uid, clamp, normalizeTimeMs } from '../core/utils'
 import {
   VERSION,
   SPLIT_SCHEMA_VERSION,
@@ -16,11 +16,11 @@ import {
   rebuildLinearBranchingMessages,
   fillMissingBranchIdsOnly,
 } from './branching'
-import { normalizeMessageAttachments, normalizeMessageError, normalizeMessageGroup, normalizeMessageParts } from './message'
+import { hasExplicitMessageParentLinks, normalizeChatMessage } from './message'
 import { normalizeFavorites } from './favorites'
 import { chatMetasFromBox } from './chatMeta'
 import { looksLikeImageDataUrl } from './textProcessing'
-import { normalizeChatModelOverride, normalizeMessageModelRef } from './modelRefUtils'
+import { normalizeChatModelOverride } from './modelRefUtils'
 import { normalizeRoleToolPolicy } from './toolPolicy'
 
 export function normalizeRenderSafetyPolicy(v0: unknown) {
@@ -270,9 +270,10 @@ export function normalizeData(raw: any) {
         const cc = c
         const cid = String(cc.id || uid('c'))
         const title = typeof cc.title === 'string' && cc.title.trim() ? cc.title : '新聊天'
-        const createdAt = Number(cc.createdAt || now())
-        const updatedAt = Number(cc.updatedAt || createdAt || now())
+        const createdAt = normalizeTimeMs(cc.createdAt, now())
+        const updatedAt = normalizeTimeMs(cc.updatedAt, createdAt)
         const messages = Array.isArray(cc.messages) ? cc.messages : []
+        const hasMessageTree = hasExplicitMessageParentLinks(messages)
         const fallbackHeadMid = messages.length ? String((messages[messages.length - 1] as any)?.id || '') : ''
         const branching = normalizeChatBranching((cc as any).branching, fallbackHeadMid, createdAt, updatedAt)
         const activeBranchId = normalizeBranchId((branching as any).activeBranchId)
@@ -284,43 +285,7 @@ export function normalizeData(raw: any) {
           createdAt,
           updatedAt,
           branching,
-          messages: messages
-            .filter((m: any) => m && typeof m === 'object')
-            .map((m: any) => {
-              const messageType0 = String((m as any).type || (m as any).role || '').trim()
-              const messageType = ['assistant', 'tool', 'tool_request', 'tool_confirmation', 'failure'].includes(messageType0) ? messageType0 : 'user'
-              const role0 = String((m as any).role || '').trim()
-              const role =
-                role0 === 'assistant'
-                  ? role0
-                  : messageType === 'assistant'
-                    ? 'assistant'
-                    : messageType === 'tool' || messageType === 'tool_request' || messageType === 'tool_confirmation'
-                      ? 'assistant'
-                      : 'user'
-              const outMsg: any = {
-                id: String(m.id || uid('m')),
-                type: messageType,
-                role,
-                speakerRoleId: String((m as any).speakerRoleId || '').trim(),
-                content: String(m.content || ''),
-                parts: normalizeMessageParts((m as any).parts),
-                images: normImagePaths(m.images),
-                attachments: normalizeMessageAttachments((m as any).attachments),
-                ...normalizeMessageGroup(m),
-                branchId: normalizeBranchId((m as any).branchId || activeBranchId),
-                parentMid: String((m as any).parentMid || '').trim(),
-                createdAt: Number(m.createdAt || now()),
-                updatedAt: Number((m as any).updatedAt || m.createdAt || now()),
-                modelRef: normalizeMessageModelRef(m),
-              }
-              if (typeof (m as any).pending === 'boolean') outMsg.pending = !!(m as any).pending
-              if (typeof (m as any).streaming === 'boolean') outMsg.streaming = !!(m as any).streaming
-              const error = normalizeMessageError((m as any).error)
-              if (error) outMsg.error = error
-              if ((m as any).assistantRun && typeof (m as any).assistantRun === 'object') outMsg.assistantRun = { ...(m as any).assistantRun }
-              return outMsg
-            }),
+          messages: messages.filter((m: any) => m && typeof m === 'object').map((m: any) => normalizeChatMessage(m, { activeBranchId, toolMessagesAsAssistant: true })),
         }
 
         if (modelOverride) out.modelOverride = modelOverride
@@ -333,7 +298,7 @@ export function normalizeData(raw: any) {
           if (idSet.size >= 2) break
         }
         let headMid = ''
-        if (idSet.size >= 2) {
+        if (idSet.size >= 2 || hasMessageTree) {
           fillMissingBranchIdsOnly(out.messages, activeBranchId)
           headMid = out.messages.length ? String((out.messages[out.messages.length - 1] as any)?.id || '') : ''
         } else {
@@ -427,9 +392,10 @@ export function normalizeData(raw: any) {
         const cc = c
         const cid = String(cc.id || uid('gc'))
         const title = typeof cc.title === 'string' && cc.title.trim() ? cc.title : '群聊'
-        const createdAt = Number(cc.createdAt || now())
-        const updatedAt = Number(cc.updatedAt || createdAt || now())
+        const createdAt = normalizeTimeMs(cc.createdAt, now())
+        const updatedAt = normalizeTimeMs(cc.updatedAt, createdAt)
         const messages = Array.isArray(cc.messages) ? cc.messages : []
+        const hasMessageTree = hasExplicitMessageParentLinks(messages)
         const fallbackHeadMid = messages.length ? String((messages[messages.length - 1] as any)?.id || '') : ''
         const branching = normalizeChatBranching((cc as any).branching, fallbackHeadMid, createdAt, updatedAt)
         const activeBranchId = normalizeBranchId((branching as any).activeBranchId)
@@ -441,29 +407,7 @@ export function normalizeData(raw: any) {
           createdAt,
           updatedAt,
           branching,
-          messages: messages
-            .filter((m: any) => m && typeof m === 'object')
-            .map((m: any) => {
-              const outMsg: any = {
-                id: String(m.id || uid('m')),
-                role: m.role === 'assistant' ? 'assistant' : 'user',
-                speakerRoleId: String((m as any).speakerRoleId || '').trim(),
-                content: String(m.content || ''),
-                images: normImagePaths(m.images),
-                attachments: normalizeMessageAttachments((m as any).attachments),
-                ...normalizeMessageGroup(m),
-                branchId: normalizeBranchId((m as any).branchId || activeBranchId),
-                parentMid: String((m as any).parentMid || '').trim(),
-                createdAt: Number(m.createdAt || now()),
-                updatedAt: Number((m as any).updatedAt || m.createdAt || now()),
-              }
-              if (typeof (m as any).pending === 'boolean') outMsg.pending = !!(m as any).pending
-              if (typeof (m as any).streaming === 'boolean') outMsg.streaming = !!(m as any).streaming
-              const error = normalizeMessageError((m as any).error)
-              if (error) outMsg.error = error
-              if ((m as any).assistantRun && typeof (m as any).assistantRun === 'object') outMsg.assistantRun = { ...(m as any).assistantRun }
-              return outMsg
-            }),
+          messages: messages.filter((m: any) => m && typeof m === 'object').map((m: any) => normalizeChatMessage(m, { activeBranchId, toolMessagesAsAssistant: false })),
         }
 
         if (modelOverride) out.modelOverride = modelOverride
@@ -476,7 +420,7 @@ export function normalizeData(raw: any) {
           if (idSet.size >= 2) break
         }
         let headMid = ''
-        if (idSet.size >= 2) {
+        if (idSet.size >= 2 || hasMessageTree) {
           fillMissingBranchIdsOnly(out.messages, activeBranchId)
           headMid = out.messages.length ? String((out.messages[out.messages.length - 1] as any)?.id || '') : ''
         } else {

@@ -7,13 +7,13 @@ import (
 	"eucli-box/pkg/types"
 )
 
-func promptToolParts(message types.PromptMessage) []types.MessagePart {
+func promptNativeToolParts(message types.PromptMessage) []types.MessagePart {
 	parts := make([]types.MessagePart, 0, len(message.Parts))
 	for _, part := range message.Parts {
 		if part.Type != "tool" || strings.TrimSpace(part.CallID) == "" || strings.TrimSpace(part.ToolName) == "" {
 			continue
 		}
-		if toolPartHidden(part) {
+		if strings.TrimSpace(part.Source) == types.ToolCallSourceTextProtocol {
 			continue
 		}
 		parts = append(parts, part)
@@ -21,22 +21,15 @@ func promptToolParts(message types.PromptMessage) []types.MessagePart {
 	return parts
 }
 
-func toolPartHidden(part types.MessagePart) bool {
-	if len(part.Display) == 0 {
-		return false
+func promptTextProtocolToolResultParts(message types.PromptMessage) []types.MessagePart {
+	parts := make([]types.MessagePart, 0, len(message.Parts))
+	for _, part := range message.Parts {
+		if part.Type != "tool" || strings.TrimSpace(part.Source) != types.ToolCallSourceTextProtocol || part.Result == nil {
+			continue
+		}
+		parts = append(parts, part)
 	}
-	return truthy(part.Display["hideInvocation"]) || truthy(part.Display["hideResult"])
-}
-
-func truthy(value any) bool {
-	switch v := value.(type) {
-	case bool:
-		return v
-	case string:
-		return strings.EqualFold(strings.TrimSpace(v), "true")
-	default:
-		return false
-	}
+	return parts
 }
 
 func toolArgumentsJSON(part types.MessagePart) (string, error) {
@@ -72,12 +65,47 @@ func toolResultText(part types.MessagePart) string {
 	if strings.TrimSpace(part.Result.Error) != "" {
 		payload["error"] = part.Result.Error
 	}
-	if len(part.Result.Metadata) > 0 {
-		payload["metadata"] = part.Result.Metadata
-	}
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return string(part.Result.Status)
 	}
 	return string(data)
+}
+
+func textProtocolToolResultsText(parts []types.MessagePart) string {
+	items := make([]map[string]any, 0, len(parts))
+	for _, part := range parts {
+		if part.Result == nil {
+			continue
+		}
+		item := map[string]any{
+			"toolName": textProtocolToolResultName(part),
+			"status":   part.Result.Status,
+		}
+		if strings.TrimSpace(part.Result.Content) != "" {
+			item["content"] = part.Result.Content
+		}
+		if strings.TrimSpace(part.Result.Error) != "" {
+			item["error"] = part.Result.Error
+		}
+		items = append(items, item)
+	}
+	if len(items) == 0 {
+		return ""
+	}
+	data, err := json.Marshal(map[string]any{"textProtocolToolResults": items})
+	if err != nil {
+		return "Text protocol tool results are available."
+	}
+	return "External tool results for text protocol requests:\n" + string(data)
+}
+
+func textProtocolToolResultName(part types.MessagePart) string {
+	if strings.TrimSpace(part.ToolName) != "" {
+		return part.ToolName
+	}
+	if part.Result != nil && strings.TrimSpace(part.Result.ToolName) != "" {
+		return part.Result.ToolName
+	}
+	return "tool"
 }

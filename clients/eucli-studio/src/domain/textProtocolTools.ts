@@ -15,7 +15,8 @@ export type TextProtocolToolRequestRange = TextProtocolToolRequest & {
 
 export type TextProtocolToolRange = {
   id: string
-  part: any
+  request: TextProtocolToolRequestRange
+  part: any | null
   raw: string
   start: number
   end: number
@@ -68,6 +69,8 @@ export function parseTextToolRequest(rawText: string): TextProtocolToolRequest |
 
   const input: Record<string, string> = {}
   let toolName = ''
+  const seen = new Set<string>()
+  let entryCount = 0
   for (let index = 1; index < lines.length - 1; index++) {
     const line = String(lines[index] || '').trim()
     if (!line) continue
@@ -76,6 +79,10 @@ export function parseTextToolRequest(rawText: string): TextProtocolToolRequest |
     const key = String(match[1] || '').trim()
     const value = String(match[2] || '').trim()
     if (!key) return null
+    if (seen.has(key)) return null
+    seen.add(key)
+    if (entryCount === 0 && key !== 'tool') return null
+    entryCount++
     if (key === 'tool') toolName = value
     else input[key] = value
   }
@@ -88,9 +95,16 @@ export function extractTextToolRequests(contentRaw: unknown): { ok: true; reques
   const content = String(contentRaw ?? '')
   const requests: TextProtocolToolRequestRange[] = []
   let blockStart: number | null = null
+  let inFence = false
 
   for (const line of sourceLines(content)) {
     const marker = String(line.text || '').trim()
+    if (blockStart === null && isMarkdownFenceLine(line.text)) {
+      inFence = !inFence
+      continue
+    }
+    if (inFence) continue
+
     if (marker === TOOL_REQUEST_START) {
       if (blockStart !== null) return { ok: false, error: 'TOOL_REQUEST 不能嵌套' }
       blockStart = line.start
@@ -115,7 +129,6 @@ export function validateTextProtocolToolRequestsForParts(contentRaw: unknown, pa
   const extracted = extractTextToolRequests(contentRaw)
   if (!extracted.ok) return extracted
   const protocolParts = textProtocolToolParts(partsRaw)
-  if (extracted.requests.length > protocolParts.length) return { ok: false as const, error: 'TOOL_REQUEST 没有对应的工具记录' }
   const matched = matchTextProtocolRequestsToParts(extracted.requests, protocolParts)
   if (!matched.ok) return matched
   return { ...extracted, matches: matched.matches }
@@ -152,10 +165,15 @@ export function planTextProtocolToolRanges(contentRaw: unknown, partsRaw: any[])
     return { ranges, diagnostics }
   }
 
-  matched.matches.forEach(({ request, part }, index) => {
+  const partByRequest = new Map<TextProtocolToolRequestRange, any>()
+  matched.matches.forEach(({ request, part }) => partByRequest.set(request, part))
+
+  extracted.requests.forEach((request, index) => {
+    const part = partByRequest.get(request) || null
     ranges.push({
-      id: assistantToolPartId(part, index),
-      part: { ...part, raw: request.raw, toolName: request.toolName || part?.toolName, input: request.input },
+      id: part ? assistantToolPartId(part, index) : `text-protocol:${request.start}:${request.end}`,
+      request,
+      part: part ? { ...part, raw: request.raw, toolName: request.toolName || part?.toolName, input: request.input } : null,
       raw: request.raw,
       start: request.start,
       end: request.end,
@@ -172,31 +190,34 @@ export function planTextProtocolToolRanges(contentRaw: unknown, partsRaw: any[])
 }
 
 function matchTextProtocolRequestsToParts(requests: TextProtocolToolRequestRange[], parts: any[]): { ok: true; matches: TextProtocolToolRequestMatch[] } | { ok: false; error: string } {
-  const used = new Set<number>()
+  const usedRequests = new Set<number>()
   const matches: TextProtocolToolRequestMatch[] = []
-  const unmatchedRequests: TextProtocolToolRequestRange[] = []
 
-  for (const request of requests) {
-    const exactIndex = parts.findIndex((part: any, index: number) => !used.has(index) && parseTextToolRequest(String(part?.raw || ''))?.raw === request.raw)
+  const unmatchedParts: any[] = []
+  for (const part of parts) {
+    const exactIndex = requests.findIndex((request, index) => !usedRequests.has(index) && parseTextToolRequest(String(part?.raw || ''))?.raw === request.raw)
     if (exactIndex >= 0) {
-      used.add(exactIndex)
-      matches.push({ request, part: parts[exactIndex] })
+      usedRequests.add(exactIndex)
+      matches.push({ request: requests[exactIndex], part })
       continue
     }
-    unmatchedRequests.push(request)
+    unmatchedParts.push(part)
   }
 
-  const unmatchedPartIndexes = parts.map((_part: any, index: number) => index).filter((index: number) => !used.has(index))
-  if (unmatchedRequests.length === 1 && unmatchedPartIndexes.length === 1) {
-    matches.push({ request: unmatchedRequests[0], part: parts[unmatchedPartIndexes[0]] })
-    return { ok: true, matches }
+  const unmatchedRequests = requests.filter((_request, index) => !usedRequests.has(index))
+  if (unmatchedParts.length > unmatchedRequests.length) {
+    return { ok: false, error: '工具记录保留了文本协议调用，但正文中已经没有对应的 TOOL_REQUEST。' }
   }
-
-  if (unmatchedRequests.length) {
-    return { ok: false, error: '多个文本协议工具调用不能在同一次正文编辑中改写未配对的 TOOL_REQUEST' }
+  for (let index = 0; index < unmatchedParts.length; index++) {
+    matches.push({ request: unmatchedRequests[index], part: unmatchedParts[index] })
   }
 
   return { ok: true, matches }
+}
+
+function isMarkdownFenceLine(line: string) {
+  const trimmed = String(line || '').trim()
+  return trimmed.startsWith('```') || trimmed.startsWith('~~~')
 }
 
 function sourceLines(source: string): SourceLine[] {

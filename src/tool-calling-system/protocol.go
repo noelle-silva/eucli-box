@@ -18,27 +18,18 @@ const (
 
 var toolRequestLinePattern = regexp.MustCompile(`^\[([A-Za-z0-9_-]+)\]:[ \t]?(.*)$`)
 
-func (s *system) ParseTextToolRequests(ctx context.Context, content string) (string, []types.ToolIntent, error) {
+func (s *system) ParseTextToolRequests(ctx context.Context, content string) ([]types.ToolIntent, error) {
 	if err := ctx.Err(); err != nil {
-		return "", nil, toolProtocolInvalid("TOOL_REQUEST_CANCELLED: text tool request parsing was cancelled", err)
+		return nil, toolProtocolInvalid("TOOL_REQUEST_CANCELLED: text tool request parsing was cancelled", err)
 	}
 	return parseTextToolRequests(content)
 }
 
-func (s *system) VisibleTextToolContent(ctx context.Context, content string) (string, error) {
-	if err := ctx.Err(); err != nil {
-		return "", toolProtocolInvalid("TOOL_REQUEST_CANCELLED: text tool request display filtering was cancelled", err)
-	}
-	return visibleTextToolContent(content), nil
-}
-
-func parseTextToolRequests(content string) (string, []types.ToolIntent, error) {
+func parseTextToolRequests(content string) ([]types.ToolIntent, error) {
 	lines := protocolLines(content)
-	outside := make([]string, 0, len(lines))
 	intents := []types.ToolIntent{}
 	inBlock := false
 	inFence := false
-	sawBlock := false
 	blockStartLine := 0
 	blockLines := []string{}
 
@@ -48,23 +39,18 @@ func parseTextToolRequests(content string) (string, []types.ToolIntent, error) {
 		if !inBlock {
 			if isMarkdownFenceLine(line) {
 				inFence = !inFence
-				outside = append(outside, line)
 				continue
 			}
 			if inFence {
-				outside = append(outside, line)
 				continue
 			}
 			switch marker {
 			case toolRequestStartMarker:
 				inBlock = true
-				sawBlock = true
 				blockStartLine = lineNumber
 				blockLines = []string{line}
 			case toolRequestEndMarker:
-				return "", nil, protocolError("TOOL_REQUEST_MISSING_START", lineNumber, "found end marker without a matching start marker")
-			default:
-				outside = append(outside, line)
+				return nil, protocolError("TOOL_REQUEST_MISSING_START", lineNumber, "found end marker without a matching start marker")
 			}
 			continue
 		}
@@ -72,11 +58,11 @@ func parseTextToolRequests(content string) (string, []types.ToolIntent, error) {
 		blockLines = append(blockLines, line)
 		switch marker {
 		case toolRequestStartMarker:
-			return "", nil, protocolError("TOOL_REQUEST_NESTED_BLOCK", lineNumber, "found a start marker before the previous tool request was closed")
+			return nil, protocolError("TOOL_REQUEST_NESTED_BLOCK", lineNumber, "found a start marker before the previous tool request was closed")
 		case toolRequestEndMarker:
 			intent, err := parseToolRequestBlock(blockLines, blockStartLine)
 			if err != nil {
-				return "", nil, err
+				return nil, err
 			}
 			intents = append(intents, intent)
 			inBlock = false
@@ -85,12 +71,9 @@ func parseTextToolRequests(content string) (string, []types.ToolIntent, error) {
 		}
 	}
 	if inBlock {
-		return "", nil, protocolError("TOOL_REQUEST_MISSING_END", blockStartLine, "start marker was not closed before the end of the model response")
+		return nil, protocolError("TOOL_REQUEST_MISSING_END", blockStartLine, "start marker was not closed before the end of the model response")
 	}
-	if !sawBlock {
-		return content, nil, nil
-	}
-	return normalizeProtocolContent(outside), intents, nil
+	return intents, nil
 }
 
 func parseToolRequestBlock(blockLines []string, startLine int) (types.ToolIntent, error) {
@@ -147,69 +130,9 @@ func protocolLines(content string) []string {
 	return strings.Split(normalized, "\n")
 }
 
-func normalizeProtocolContent(lines []string) string {
-	content := strings.TrimSpace(strings.Join(lines, "\n"))
-	for strings.Contains(content, "\n\n\n") {
-		content = strings.ReplaceAll(content, "\n\n\n", "\n\n")
-	}
-	return content
-}
-
-func visibleTextToolContent(content string) string {
-	lines := protocolLines(content)
-	outside := make([]string, 0, len(lines))
-	inBlock := false
-	inFence := false
-	sawBlock := false
-	for _, line := range lines {
-		marker := strings.TrimSpace(line)
-		if !inBlock {
-			if isMarkdownFenceLine(line) {
-				inFence = !inFence
-				outside = append(outside, line)
-				continue
-			}
-			if inFence {
-				outside = append(outside, line)
-				continue
-			}
-		}
-		if !inBlock && marker == toolRequestStartMarker {
-			inBlock = true
-			sawBlock = true
-			continue
-		}
-		if inBlock {
-			if marker == toolRequestEndMarker {
-				inBlock = false
-			}
-			continue
-		}
-		outside = append(outside, line)
-	}
-	if !sawBlock {
-		return trimPartialStartMarkerLine(content)
-	}
-	return trimPartialStartMarkerLine(normalizeProtocolContent(outside))
-}
-
 func isMarkdownFenceLine(line string) bool {
 	trimmed := strings.TrimSpace(line)
 	return strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~")
-}
-
-func trimPartialStartMarkerLine(content string) string {
-	lineStart := strings.LastIndex(content, "\n") + 1
-	lastLine := strings.TrimSpace(content[lineStart:])
-	if lastLine == "" {
-		return content
-	}
-	for length := 1; length < len(toolRequestStartMarker); length++ {
-		if lastLine == toolRequestStartMarker[:length] {
-			return strings.TrimSpace(content[:lineStart])
-		}
-	}
-	return content
 }
 
 func protocolError(kind string, lineNumber int, message string) error {

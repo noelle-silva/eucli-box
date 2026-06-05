@@ -4,6 +4,11 @@ import "time"
 
 const DefaultSessionTitle = "新聊天"
 
+const (
+	MessagePartDisplayHideInvocation = "hideInvocation"
+	MessagePartDisplayHideResult     = "hideResult"
+)
+
 type Message struct {
 	ID              string              `json:"id"`
 	Type            string              `json:"type"`
@@ -42,6 +47,28 @@ type MessagePart struct {
 	Display   map[string]any  `json:"display,omitempty"`
 	CreatedAt time.Time       `json:"createdAt,omitempty"`
 	UpdatedAt time.Time       `json:"updatedAt,omitempty"`
+}
+
+func (part MessagePart) IsToolInvocationHidden() bool {
+	return messagePartDisplayTruthy(part.Display, MessagePartDisplayHideInvocation)
+}
+
+func (part MessagePart) IsToolResultHidden() bool {
+	return messagePartDisplayTruthy(part.Display, MessagePartDisplayHideResult)
+}
+
+func messagePartDisplayTruthy(display map[string]any, key string) bool {
+	if len(display) == 0 {
+		return false
+	}
+	switch value := display[key].(type) {
+	case bool:
+		return value
+	case string:
+		return value == "true"
+	default:
+		return false
+	}
 }
 
 type SessionMessagePatch struct {

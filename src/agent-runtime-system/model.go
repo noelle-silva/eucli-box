@@ -115,13 +115,6 @@ func cloneMessageParts(parts []types.MessagePart) []types.MessagePart {
 
 func (s *system) messagePromptContent(ctx context.Context, message types.Message) (string, error) {
 	content := message.Content
-	if message.Type == "assistant" {
-		visibleContent, err := s.tools.VisibleTextToolContent(ctx, content)
-		if err != nil {
-			return "", runtimeToolFailed("failed to filter visible assistant tool content", err)
-		}
-		content = visibleContent
-	}
 	blocks := []string{}
 	for _, attachment := range message.Attachments {
 		if attachment.Kind == "image" || strings.TrimSpace(attachment.Text) == "" {

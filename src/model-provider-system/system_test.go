@@ -227,7 +227,7 @@ func TestCompleteOpenAIRejectsToolHistoryWithoutResult(t *testing.T) {
 	assertAppErrorCode(t, err, "provider.invalid_request")
 }
 
-func TestCompleteOpenAISkipsHiddenToolHistory(t *testing.T) {
+func TestCompleteOpenAIHistoryIgnoresDisplayHiding(t *testing.T) {
 	storage := newFakeProviderStorage()
 	storage.providers["openai-main"] = testOpenAIProvider()
 	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"done"}}]}`)}}
@@ -240,8 +240,34 @@ func TestCompleteOpenAISkipsHiddenToolHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Complete() error = %v", err)
 	}
-	if strings.Contains(string(network.lastRequest.Body), "tool_calls") || strings.Contains(string(network.lastRequest.Body), "tool_call_id") {
-		t.Fatalf("hidden tool history leaked into request: %s", string(network.lastRequest.Body))
+	if !strings.Contains(string(network.lastRequest.Body), "tool_calls") || !strings.Contains(string(network.lastRequest.Body), "tool_call_id") {
+		t.Fatalf("display hiding changed tool history: %s", string(network.lastRequest.Body))
+	}
+}
+
+func TestCompleteOpenAISendsTextProtocolResultAsObservation(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["openai-main"] = testOpenAIProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"done"}}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+	rawRequest := "<<<TOOL_REQUEST>>>\n[tool]: shell_command\n[command]: node -v\n<<<END_TOOL_REQUEST>>>"
+
+	_, err := system.Complete(context.Background(), types.ModelRequest{
+		Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"},
+		Messages:   []types.PromptMessage{{Role: "assistant", Content: rawRequest, Parts: []types.MessagePart{{Type: "tool", Source: types.ToolCallSourceTextProtocol, CallID: "text-call-1", ToolName: "shell_command", Input: map[string]any{"command": "node -v"}, Result: &types.ToolPartResult{Status: types.ToolStatusSuccess, Content: "v22.14.0", Metadata: map[string]any{"exitCode": 0, "timedOut": false, "truncated": false}}}}}},
+	})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	body := string(network.lastRequest.Body)
+	if strings.Contains(body, "tool_calls") || strings.Contains(body, "tool_call_id") {
+		t.Fatalf("text protocol result was sent as native tool history: %s", body)
+	}
+	if !strings.Contains(body, "<<<TOOL_REQUEST>>>") || !strings.Contains(body, "External tool results for text protocol requests") || !strings.Contains(body, "v22.14.0") {
+		t.Fatalf("text protocol history missing request or result observation: %s", body)
+	}
+	if strings.Contains(body, "exitCode") || strings.Contains(body, "timedOut") || strings.Contains(body, "truncated") {
+		t.Fatalf("tool execution metadata leaked into model request: %s", body)
 	}
 }
 
@@ -306,6 +332,32 @@ func TestCompleteAnthropicSendsStructuredToolHistory(t *testing.T) {
 	toolResult := messages[1].(map[string]any)
 	if toolResult["role"] != "user" || !strings.Contains(string(network.lastRequest.Body), `"type":"tool_result"`) {
 		t.Fatalf("tool result message = %#v body=%s", toolResult, string(network.lastRequest.Body))
+	}
+}
+
+func TestCompleteAnthropicSendsTextProtocolResultAsObservation(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["anthropic-main"] = testAnthropicProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"msg-1","content":[{"type":"text","text":"done"}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+	rawRequest := "<<<TOOL_REQUEST>>>\n[tool]: shell_command\n[command]: node -v\n<<<END_TOOL_REQUEST>>>"
+
+	_, err := system.Complete(context.Background(), types.ModelRequest{
+		Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"},
+		Messages:   []types.PromptMessage{{Role: "assistant", Content: rawRequest, Parts: []types.MessagePart{{Type: "tool", Source: types.ToolCallSourceTextProtocol, CallID: "text-call-1", ToolName: "shell_command", Input: map[string]any{"command": "node -v"}, Result: &types.ToolPartResult{Status: types.ToolStatusSuccess, Content: "v22.14.0", Metadata: map[string]any{"exitCode": 0, "timedOut": false, "truncated": false}}}}}},
+	})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	body := string(network.lastRequest.Body)
+	if strings.Contains(body, `"type":"tool_use"`) || strings.Contains(body, `"type":"tool_result"`) {
+		t.Fatalf("text protocol result was sent as native Anthropic tool history: %s", body)
+	}
+	if !strings.Contains(body, "<<<TOOL_REQUEST>>>") || !strings.Contains(body, "External tool results for text protocol requests") || !strings.Contains(body, "v22.14.0") {
+		t.Fatalf("text protocol history missing request or result observation: %s", body)
+	}
+	if strings.Contains(body, "exitCode") || strings.Contains(body, "timedOut") || strings.Contains(body, "truncated") {
+		t.Fatalf("tool execution metadata leaked into model request: %s", body)
 	}
 }
 

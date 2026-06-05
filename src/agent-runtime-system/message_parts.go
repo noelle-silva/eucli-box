@@ -108,10 +108,20 @@ func applyToolPart(part *types.MessagePart, action types.ToolAction, callID stri
 	part.State = state
 	part.Decision = toolDecisionPart(decision)
 	part.Result = toolResultPart(result)
+	if isTextProtocolToolAction(action) {
+		if part.Display == nil {
+			part.Display = map[string]any{}
+		}
+		part.Display[types.MessagePartDisplayHideInvocation] = true
+	}
 	part.UpdatedAt = now
 	if part.CreatedAt.IsZero() {
 		part.CreatedAt = now
 	}
+}
+
+func isTextProtocolToolAction(action types.ToolAction) bool {
+	return strings.TrimSpace(action.Source) == types.ToolCallSourceTextProtocol
 }
 
 func cloneToolArguments(arguments map[string]any) map[string]any {

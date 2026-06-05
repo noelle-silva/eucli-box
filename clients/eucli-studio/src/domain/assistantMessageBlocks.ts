@@ -8,7 +8,7 @@ import {
 
 export type AssistantMessageRenderSegment =
   | { type: 'text'; id: string; text: string; start: number; end: number }
-  | { type: 'tool'; id: string; part: any; start: number; end: number }
+  | { type: 'text_protocol_tool'; id: string; request: any; part: any | null; start: number; end: number }
 
 export type AssistantMessageBlockKind = 'text' | 'tool_invocation' | 'tool_result' | 'diagnostic'
 
@@ -63,7 +63,7 @@ export function planAssistantMessageRender(contentRaw: unknown, partsRaw: any[])
 
   for (const range of rangePlan.ranges) {
     if (range.start > cursor) segments.push({ type: 'text', id: `text:${cursor}:${range.start}`, text: content.slice(cursor, range.start), start: cursor, end: range.start })
-    segments.push({ type: 'tool', id: range.id, part: range.part, start: range.start, end: range.end })
+    segments.push({ type: 'text_protocol_tool', id: range.id, request: range.request, part: range.part || null, start: range.start, end: range.end })
     cursor = range.end
   }
 
@@ -84,7 +84,6 @@ export function planAssistantMessageBlocks(contentRaw: unknown, partsRaw: any[])
 
   toolParts.forEach((part: any, index: number) => {
     if (isTextProtocolToolPart(part)) {
-      if (part?.result && typeof part.result === 'object' && !isToolResultHidden(part)) blocks.push({ kind: 'tool_result', id: `tool-result:${assistantToolPartId(part, index)}`, part })
       return
     }
     pushToolBlocks(blocks, part, { index })

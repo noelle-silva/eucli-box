@@ -235,14 +235,15 @@ func (openAIAdapter) ParseCompleteResponse(response types.HTTPResponse) (types.M
 func openAIMessages(messages []types.PromptMessage) ([]map[string]any, error) {
 	converted := make([]map[string]any, 0, len(messages))
 	for _, message := range messages {
-		toolParts := promptToolParts(message)
-		if message.Role == "assistant" && len(toolParts) > 0 {
-			if err := requireToolResults(toolParts); err != nil {
+		nativeToolParts := promptNativeToolParts(message)
+		textProtocolResultParts := promptTextProtocolToolResultParts(message)
+		if message.Role == "assistant" && len(nativeToolParts) > 0 {
+			if err := requireToolResults(nativeToolParts); err != nil {
 				return nil, err
 			}
 			assistant := map[string]any{"role": "assistant", "content": openAIMessageContent(message)}
-			toolCalls := make([]map[string]any, 0, len(toolParts))
-			for _, part := range toolParts {
+			toolCalls := make([]map[string]any, 0, len(nativeToolParts))
+			for _, part := range nativeToolParts {
 				arguments, err := toolArgumentsJSON(part)
 				if err != nil {
 					return nil, err
@@ -251,15 +252,23 @@ func openAIMessages(messages []types.PromptMessage) ([]map[string]any, error) {
 			}
 			assistant["tool_calls"] = toolCalls
 			converted = append(converted, assistant)
-			for _, part := range toolParts {
+			for _, part := range nativeToolParts {
 				if part.Result == nil {
 					continue
 				}
 				converted = append(converted, map[string]any{"role": "tool", "tool_call_id": part.CallID, "content": toolResultText(part)})
 			}
+			if text := textProtocolToolResultsText(textProtocolResultParts); text != "" {
+				converted = append(converted, map[string]any{"role": "user", "content": text})
+			}
 			continue
 		}
 		converted = append(converted, map[string]any{"role": message.Role, "content": openAIMessageContent(message)})
+		if message.Role == "assistant" {
+			if text := textProtocolToolResultsText(textProtocolResultParts); text != "" {
+				converted = append(converted, map[string]any{"role": "user", "content": text})
+			}
+		}
 	}
 	return converted, nil
 }

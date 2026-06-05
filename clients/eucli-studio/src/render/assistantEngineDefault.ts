@@ -10,7 +10,7 @@ import { hydrateStickerSizes } from './stickers'
 import type { BoolRef } from './types'
 import { enhanceMathCopyButtons } from './mathCopy'
 import { planAssistantMessageRender } from './assistantMessagePlan'
-import { renderAssistantToolDiagnosticHtml, renderAssistantToolInvocationHtml } from './assistantToolHtml'
+import { renderAssistantTextProtocolToolHtml, renderAssistantToolDiagnosticHtml } from './assistantToolHtml'
 import type { AiChatCapabilities } from '../gateway/capabilities'
 
 type RenderSafetyPolicy = 'original' | 'baseline' | 'unsafe'
@@ -163,7 +163,7 @@ export function createDefaultAssistantRenderEngine(capabilities: AiChatCapabilit
         continue
       }
       const token = `fwtool-${crypto.randomUUID()}-${placeholders.size}`
-      placeholders.set(token, renderAssistantToolInvocationHtml(segment.part))
+      placeholders.set(token, renderAssistantTextProtocolToolHtml(segment.request, segment.part))
       html.push(`<div class="fw-tool-placeholder" data-fw-tool-placeholder="${token}"></div>`)
     }
 

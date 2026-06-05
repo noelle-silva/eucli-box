@@ -9,8 +9,7 @@ import (
 
 type System interface {
 	TextToolInstructions(ctx context.Context, tools []types.ToolDefinition) (types.PromptMessage, error)
-	VisibleTextToolContent(ctx context.Context, content string) (string, error)
-	ParseTextToolRequests(ctx context.Context, content string) (string, []types.ToolIntent, error)
+	ParseTextToolRequests(ctx context.Context, content string) ([]types.ToolIntent, error)
 	NormalizeIntent(ctx context.Context, intent types.ToolIntent) (types.ToolAction, error)
 	Prepare(ctx context.Context, roleID string, action types.ToolAction) (types.ToolRunPlan, error)
 	ApplyConfirmation(ctx context.Context, plan types.ToolRunPlan, confirmation types.ToolConfirmation) (types.ToolRunPlan, error)

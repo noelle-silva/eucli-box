@@ -282,6 +282,7 @@ export function normalizeData(raw: any) {
         const out: any = {
           id: cid,
           title,
+          status: String((cc as any).status || '').trim(),
           createdAt,
           updatedAt,
           branching,
@@ -404,6 +405,7 @@ export function normalizeData(raw: any) {
         const out: any = {
           id: cid,
           title,
+          status: String((cc as any).status || '').trim(),
           createdAt,
           updatedAt,
           branching,

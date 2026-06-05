@@ -1,6 +1,6 @@
-import { STICKERS_KEY } from '../domain/constants'
 import { looksLikeImageDataUrl } from '../domain/textProcessing'
 import type { AiChatImageStorageAdapter, AiChatPersistentStorageAdapter } from './types'
+import { ensureStickerSettings, loadStickerSettingsFromStorage, saveStickerSettingsOnly } from './stickerSettingsPersistence'
 
 type NetRequest = (req: any) => Promise<any>
 
@@ -12,19 +12,23 @@ export function createStickerStorage(deps: {
 }) {
   const { filesImages, storage, netRequest, getState } = deps
 
-  async function loadStickersFromSource() {
-    const stickers = await storage.get(STICKERS_KEY)
-    const data = getState()
-    if (data && typeof data === 'object') {
-      if (!data.settings || typeof data.settings !== 'object') data.settings = {}
-      data.settings.stickers = stickers && typeof stickers === 'object' ? stickers : {}
-    }
-    return stickers && typeof stickers === 'object' ? stickers : {}
+  function loadStickersFromSource() {
+    return loadStickerSettingsFromStorage(storage, getState)
   }
 
   async function setStickersEnabled(enabled: any) {
-    await storage.set(STICKERS_KEY, { enabled: !!enabled })
-    return loadStickersFromSource()
+    const data = getState()
+    const stickers = ensureStickerSettings(data)
+    if (!stickers) return {}
+    const previous = !!stickers.enabled
+    stickers.enabled = !!enabled
+    try {
+      await saveStickerSettingsOnly(storage, getState)
+      return await loadStickersFromSource()
+    } catch (error) {
+      stickers.enabled = previous
+      throw error
+    }
   }
 
   async function ebRequest(req: any) {

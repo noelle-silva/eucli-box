@@ -117,6 +117,88 @@ func TestSessionFavoritesStorageKeyUsesRootAction(t *testing.T) {
 	}
 }
 
+func TestMetaSavePreservesStickerProjectionSettings(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/stickers" || r.Method != http.MethodGet {
+			t.Fatalf("unexpected stickers request %s %s", r.Method, r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"categories": []any{}, "map": map[string]any{}}})
+	}))
+	defer server.Close()
+
+	store, err := newConfigStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("newConfigStore() error = %v", err)
+	}
+	if _, err := store.save(clientConfig{EucliBoxURL: server.URL}); err != nil {
+		t.Fatalf("save config error = %v", err)
+	}
+
+	projection := newProjectionService(store, newEBClient(store))
+	if err := projection.set(context.Background(), "stickers/index", map[string]any{"enabled": true}); err != nil {
+		t.Fatalf("save stickers error = %v", err)
+	}
+	if err := projection.set(context.Background(), "meta/index", map[string]any{"ui": map[string]any{}, "settings": map[string]any{"streamEnabled": false}}); err != nil {
+		t.Fatalf("save meta error = %v", err)
+	}
+
+	loaded, err := projection.get(context.Background(), "stickers/index")
+	if err != nil {
+		t.Fatalf("load stickers error = %v", err)
+	}
+	stickers := objectMap(loaded)
+	if enabled := boolField(stickers, "enabled", false); !enabled {
+		t.Fatalf("stickers enabled was not preserved: %#v", stickers)
+	}
+
+	cfg, err := store.load()
+	if err != nil {
+		t.Fatalf("load config error = %v", err)
+	}
+	if streamEnabled := boolField(cfg.Projection.Settings, "streamEnabled", true); streamEnabled {
+		t.Fatalf("meta settings were not saved: %#v", cfg.Projection.Settings)
+	}
+}
+
+func TestMergeProjectionSettingsForMetaSaveOwnsOnlyMetaSettings(t *testing.T) {
+	merged := mergeProjectionSettingsForMetaSave(
+		map[string]any{
+			"stickers":  map[string]any{"enabled": true},
+			"providers": []any{map[string]any{"id": "stale-provider"}},
+		},
+		map[string]any{
+			"streamEnabled": false,
+			"stickers":      map[string]any{"enabled": false},
+			"providers":     []any{map[string]any{"id": "derived-provider"}},
+			"aiServices": map[string]any{
+				"stickerNaming": map[string]any{"enabled": true},
+				"mermaidFix":    map[string]any{"enabled": true},
+				"localOnly":     map[string]any{"enabled": true},
+			},
+		},
+	)
+
+	if enabled := boolField(objectMap(merged["stickers"]), "enabled", false); !enabled {
+		t.Fatalf("dedicated stickers setting was not preserved: %#v", merged)
+	}
+	if _, ok := merged["providers"]; ok {
+		t.Fatalf("derived providers should not be stored in projection settings: %#v", merged)
+	}
+	services := objectMap(merged["aiServices"])
+	if _, ok := services["stickerNaming"]; ok {
+		t.Fatalf("stickerNaming should be saved through assist config, not projection settings: %#v", services)
+	}
+	if _, ok := services["mermaidFix"]; ok {
+		t.Fatalf("mermaidFix should be saved through assist config, not projection settings: %#v", services)
+	}
+	if services["localOnly"] == nil {
+		t.Fatalf("unowned local aiServices settings should be preserved: %#v", services)
+	}
+	if streamEnabled := boolField(merged, "streamEnabled", true); streamEnabled {
+		t.Fatalf("meta-owned setting was not updated: %#v", merged)
+	}
+}
+
 func TestRunningSessionMarksLatestAssistantPending(t *testing.T) {
 	session := map[string]any{
 		"id":        "session-1",

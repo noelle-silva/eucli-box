@@ -21,6 +21,7 @@ const (
 var (
 	roleKeyPattern        = regexp.MustCompile(`^roles/([^/]+)/role$`)
 	providerKeyPattern    = regexp.MustCompile(`^providers/([^/]+)/provider$`)
+	modelGroupKeyPattern  = regexp.MustCompile(`^model-groups/([^/]+)/model-group$`)
 	chatKeyPattern        = regexp.MustCompile(`^chats/([^/]+)/([^/]+)/chat$`)
 	roleChatIndexPattern  = regexp.MustCompile(`^chats/([^/]+)/index$`)
 	roleAvatarPathPattern = regexp.MustCompile(`^roles/([^/]+)/avatar\.(png|jpg|jpeg|webp)$`)
@@ -45,6 +46,8 @@ func (p *projectionService) get(ctx context.Context, key string) (any, error) {
 		return p.chatsIndex(ctx)
 	case "providers/index":
 		return p.providersIndex(ctx)
+	case "model-groups/index":
+		return p.modelGroupsIndex(ctx)
 	case "groups/index":
 		cfg, err := p.config.load()
 		if err != nil {
@@ -59,6 +62,9 @@ func (p *projectionService) get(ctx context.Context, key string) (any, error) {
 	}
 	if match := providerKeyPattern.FindStringSubmatch(key); match != nil {
 		return p.providerByFolder(ctx, match[1])
+	}
+	if match := modelGroupKeyPattern.FindStringSubmatch(key); match != nil {
+		return p.modelGroupByFolder(ctx, match[1])
 	}
 	if match := roleChatIndexPattern.FindStringSubmatch(key); match != nil {
 		return p.roleChatIndex(ctx, match[1])
@@ -76,6 +82,9 @@ func (p *projectionService) set(ctx context.Context, key string, value any) erro
 	if match := providerKeyPattern.FindStringSubmatch(key); match != nil {
 		return p.saveProvider(ctx, match[1], value)
 	}
+	if match := modelGroupKeyPattern.FindStringSubmatch(key); match != nil {
+		return p.saveModelGroup(ctx, match[1], value)
+	}
 	if match := chatKeyPattern.FindStringSubmatch(key); match != nil {
 		return p.saveSession(ctx, match[1], value)
 	}
@@ -92,6 +101,9 @@ func (p *projectionService) set(ctx context.Context, key string, value any) erro
 		return p.saveChatsIndex(value)
 	}
 	if key == "providers/index" {
+		return nil
+	}
+	if key == "model-groups/index" {
 		return nil
 	}
 	if key == "stickers/index" {
@@ -137,6 +149,29 @@ func (p *projectionService) remove(ctx context.Context, key string) error {
 		})
 		return err
 	}
+	if match := modelGroupKeyPattern.FindStringSubmatch(key); match != nil {
+		groupID, err := p.modelGroupIDByFolder(ctx, match[1])
+		if err != nil {
+			return err
+		}
+		groups, err := p.listModelGroups(ctx)
+		if err != nil {
+			return err
+		}
+		next := make([]map[string]any, 0, len(groups))
+		for _, group := range groups {
+			if stringField(group, "id") != groupID {
+				next = append(next, group)
+			}
+		}
+		if _, err := p.eb.request(ctx, ebRequest{Method: "PUT", Path: "/api/model-groups", Body: mustJSON(next)}); err != nil {
+			return err
+		}
+		_, err = p.config.updateProjection(func(projection *projectionConfig) {
+			delete(projection.ModelGroupFolders, groupID)
+		})
+		return err
+	}
 	if match := chatKeyPattern.FindStringSubmatch(key); match != nil {
 		roleID, err := p.roleIDByFolder(ctx, match[1])
 		if err != nil {
@@ -148,7 +183,7 @@ func (p *projectionService) remove(ctx context.Context, key string) error {
 	if key == sessionFavoritesKey {
 		return p.saveFavorites(ctx, map[string]any{"folders": []any{}, "chatRefsByFolderId": map[string]any{}})
 	}
-	if key == "meta/index" || key == "chats/index" || key == "providers/index" || key == "groups/index" || strings.HasPrefix(key, "groups/") || strings.HasPrefix(key, "runtime/") {
+	if key == "meta/index" || key == "chats/index" || key == "providers/index" || key == "model-groups/index" || key == "groups/index" || strings.HasPrefix(key, "groups/") || strings.HasPrefix(key, "runtime/") {
 		return newError("NOT_IMPLEMENTED", "storage key 未接入 e-b 根动作："+key)
 	}
 	if key == "stickers/index" {
@@ -203,13 +238,8 @@ func (p *projectionService) saveAssistConfigs(ctx context.Context, settings map[
 			continue
 		}
 		providerID := stringField(req.config, "providerId")
-		modelPick := stringField(req.config, "modelId")
-		customModelID := stringField(req.config, "customModelId")
-		modelID := modelPick
-		if modelPick == "__custom__" {
-			modelID = customModelID
-		}
-		if _, err := p.eb.request(ctx, ebRequest{Method: "PUT", Path: req.path, Body: mustJSON(map[string]any{"enabled": boolField(req.config, "enabled", false), "modelPick": modelPick, "customModelId": customModelID, "coordinate": map[string]any{"providerId": providerID, "modelId": modelID}, "systemPrompt": stringField(req.config, "systemPrompt"), "temperature": 0.2})}); err != nil {
+		modelID := stringField(req.config, "modelId")
+		if _, err := p.eb.request(ctx, ebRequest{Method: "PUT", Path: req.path, Body: mustJSON(map[string]any{"enabled": boolField(req.config, "enabled", false), "modelPick": modelID, "coordinate": map[string]any{"providerId": providerID, "modelId": modelID}, "systemPrompt": stringField(req.config, "systemPrompt"), "temperature": 0.2})}); err != nil {
 			return err
 		}
 	}
@@ -298,19 +328,14 @@ func (p *projectionService) loadAssistConfig(ctx context.Context, path string) (
 	config := objectMap(data)
 	modelID := stringField(objectMap(config["coordinate"]), "modelId")
 	modelPick := stringField(config, "modelPick")
-	customModelID := stringField(config, "customModelId")
-	if modelPick == "" {
-		modelPick = modelID
-	}
-	if modelPick == "__custom__" && customModelID == "" {
-		customModelID = modelID
+	if modelID == "" && modelPick != "__custom__" {
+		modelID = modelPick
 	}
 	return map[string]any{
-		"enabled":       boolField(config, "enabled", false),
-		"providerId":    stringField(objectMap(config["coordinate"]), "providerId"),
-		"modelId":       modelPick,
-		"customModelId": customModelID,
-		"systemPrompt":  stringField(config, "systemPrompt"),
+		"enabled":      boolField(config, "enabled", false),
+		"providerId":   stringField(objectMap(config["coordinate"]), "providerId"),
+		"modelId":      modelID,
+		"systemPrompt": stringField(config, "systemPrompt"),
 	}, nil
 }
 
@@ -373,21 +398,38 @@ func (p *projectionService) meta(ctx context.Context) (any, error) {
 		providerFolders[id] = folderFor(projection.ProviderFolders, id, stringField(provider, "name"), "供应商")
 		updatedAt = stableUpdatedAt(updatedAt, millisFromAnyOrZero(provider["updatedAt"]), millisFromAnyOrZero(provider["createdAt"]))
 	}
+	modelGroups, err := p.listModelGroups(ctx)
+	if err != nil {
+		return nil, err
+	}
+	modelGroupOrder := []string{}
+	modelGroupFolders := map[string]string{}
+	for _, group := range modelGroups {
+		id := stringField(group, "id")
+		if id == "" {
+			continue
+		}
+		modelGroupOrder = append(modelGroupOrder, id)
+		modelGroupFolders[id] = folderFor(projection.ModelGroupFolders, id, stringField(group, "name"), "模型组")
+		updatedAt = stableUpdatedAt(updatedAt, millisFromAnyOrZero(group["updatedAt"]), millisFromAnyOrZero(group["createdAt"]))
+	}
 	updatedAt = stableUpdatedAt(updatedAt, millisFromAnyOrZero(mermaidFix["updatedAt"]), millisFromAnyOrZero(chatTitleNaming["updatedAt"]), millisFromAnyOrZero(stickerNaming["updatedAt"]))
 	return map[string]any{
-		"schemaVersion":    splitSchemaVersion,
-		"dataVersion":      uiVersion,
-		"updatedAt":        updatedAt,
-		"ui":               projection.UI,
-		"settings":         mergeSettings(projection.Settings, providers, mermaidFix, chatTitleNaming, stickerNaming),
-		"roleOrder":        roleOrder,
-		"roleFolders":      roleFolders,
-		"chatIndexByRole":  chatIndexByRole,
-		"groupOrder":       []any{},
-		"groupFolders":     map[string]any{},
-		"chatIndexByGroup": map[string]any{},
-		"providerOrder":    providerOrder,
-		"providerFolders":  providerFolders,
+		"schemaVersion":     splitSchemaVersion,
+		"dataVersion":       uiVersion,
+		"updatedAt":         updatedAt,
+		"ui":                projection.UI,
+		"settings":          mergeSettings(projection.Settings, providers, mermaidFix, chatTitleNaming, stickerNaming),
+		"roleOrder":         roleOrder,
+		"roleFolders":       roleFolders,
+		"chatIndexByRole":   chatIndexByRole,
+		"groupOrder":        []any{},
+		"groupFolders":      map[string]any{},
+		"chatIndexByGroup":  map[string]any{},
+		"providerOrder":     providerOrder,
+		"providerFolders":   providerFolders,
+		"modelGroupOrder":   modelGroupOrder,
+		"modelGroupFolders": modelGroupFolders,
 	}, nil
 }
 
@@ -407,6 +449,15 @@ func (p *projectionService) providersIndex(ctx context.Context) (any, error) {
 	}
 	m := meta.(map[string]any)
 	return map[string]any{"providerOrder": m["providerOrder"], "providerFolders": m["providerFolders"], "updatedAt": stableUpdatedAt(millisFromAnyOrZero(m["updatedAt"]))}, nil
+}
+
+func (p *projectionService) modelGroupsIndex(ctx context.Context) (any, error) {
+	meta, err := p.meta(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m := meta.(map[string]any)
+	return map[string]any{"modelGroupOrder": m["modelGroupOrder"], "modelGroupFolders": m["modelGroupFolders"], "updatedAt": stableUpdatedAt(millisFromAnyOrZero(m["updatedAt"]))}, nil
 }
 
 func (p *projectionService) roleChatIndex(ctx context.Context, folder string) (any, error) {
@@ -499,6 +550,21 @@ func (p *projectionService) providerByFolder(ctx context.Context, folder string)
 	return nil, newError("NOT_FOUND", "供应商不存在")
 }
 
+func (p *projectionService) modelGroupByFolder(ctx context.Context, folder string) (any, error) {
+	groups, err := p.listModelGroups(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cfg, _ := p.config.load()
+	for _, group := range groups {
+		id := stringField(group, "id")
+		if folderFor(cfg.Projection.ModelGroupFolders, id, stringField(group, "name"), "模型组") == folder {
+			return group, nil
+		}
+	}
+	return nil, newError("NOT_FOUND", "模型组不存在")
+}
+
 func (p *projectionService) chatByFolder(ctx context.Context, folder string, chatID string) (any, error) {
 	roleID, err := p.roleIDByFolder(ctx, folder)
 	if err != nil {
@@ -537,6 +603,38 @@ func (p *projectionService) saveProvider(ctx context.Context, folder string, val
 	}
 	_, err := p.config.updateProjection(func(projection *projectionConfig) {
 		projection.ProviderFolders[providerID] = folder
+	})
+	return err
+}
+
+func (p *projectionService) saveModelGroup(ctx context.Context, folder string, value any) error {
+	group := objectMap(value)
+	groupID := stringField(group, "id")
+	if groupID == "" {
+		return newError("BAD_REQUEST", "model group id is required")
+	}
+	groups, err := p.listModelGroups(ctx)
+	if err != nil {
+		return err
+	}
+	next := make([]map[string]any, 0, len(groups)+1)
+	replaced := false
+	for _, existing := range groups {
+		if stringField(existing, "id") == groupID {
+			next = append(next, group)
+			replaced = true
+			continue
+		}
+		next = append(next, existing)
+	}
+	if !replaced {
+		next = append([]map[string]any{group}, next...)
+	}
+	if _, err := p.eb.request(ctx, ebRequest{Method: "PUT", Path: "/api/model-groups", Body: mustJSON(next)}); err != nil {
+		return err
+	}
+	_, err = p.config.updateProjection(func(projection *projectionConfig) {
+		projection.ModelGroupFolders[groupID] = folder
 	})
 	return err
 }
@@ -610,6 +708,11 @@ func (p *projectionService) listProviders(ctx context.Context) ([]map[string]any
 	return providers, nil
 }
 
+func (p *projectionService) listModelGroups(ctx context.Context) ([]map[string]any, error) {
+	data, err := p.eb.request(ctx, ebRequest{Method: "GET", Path: "/api/model-groups"})
+	return objectList(data), err
+}
+
 func (p *projectionService) listSessions(ctx context.Context, roleID string) ([]map[string]any, error) {
 	data, err := p.eb.request(ctx, ebRequest{Method: "GET", Path: fmt.Sprintf("/api/roles/%s/sessions", roleID)})
 	return objectList(data), err
@@ -661,16 +764,35 @@ func (p *projectionService) providerIDByFolder(ctx context.Context, folder strin
 	return "", newError("NOT_FOUND", "供应商不存在")
 }
 
+func (p *projectionService) modelGroupIDByFolder(ctx context.Context, folder string) (string, error) {
+	groups, err := p.listModelGroups(ctx)
+	if err != nil {
+		return "", err
+	}
+	cfg, _ := p.config.load()
+	for _, group := range groups {
+		id := stringField(group, "id")
+		if folderFor(cfg.Projection.ModelGroupFolders, id, stringField(group, "name"), "模型组") == folder {
+			return id, nil
+		}
+	}
+	return "", newError("NOT_FOUND", "模型组不存在")
+}
+
 func toUIRole(role map[string]any) map[string]any {
 	modelConfig := objectMap(role["modelConfig"])
 	coordinate := objectMap(modelConfig["coordinate"])
+	modelRef := map[string]any{"kind": stringField(coordinate, "kind"), "groupId": stringField(coordinate, "groupId"), "providerId": stringField(coordinate, "providerId"), "modelId": stringField(coordinate, "modelId")}
+	if stringField(modelRef, "kind") == "" {
+		modelRef["kind"] = "provider"
+	}
 	return map[string]any{
 		"id":           stringField(role, "id"),
 		"name":         fallback(stringField(role, "name"), "未命名角色"),
 		"avatar":       stringField(role, "avatar"),
 		"systemPrompt": promptText(objectList(role["prompts"])),
 		"temperature":  numberField(modelConfig, "temperature", 0.7),
-		"modelRef":     map[string]any{"providerId": stringField(coordinate, "providerId"), "modelId": stringField(coordinate, "modelId")},
+		"modelRef":     modelRef,
 		"toolPolicy":   normalizeUIToolPolicy(role["toolPolicy"]),
 		"createdAt":    millisFromAny(role["createdAt"]),
 		"updatedAt":    millisFromAny(role["updatedAt"]),
@@ -687,7 +809,7 @@ func fromUIRole(value any) map[string]any {
 		"avatar":      stringField(role, "avatar"),
 		"description": stringField(role, "description"),
 		"prompts":     []any{map[string]any{"id": "system", "role": "system", "content": stringField(role, "systemPrompt"), "order": 0, "createdAt": now, "updatedAt": now}},
-		"modelConfig": map[string]any{"coordinate": map[string]any{"providerId": stringField(modelRef, "providerId"), "modelId": stringField(modelRef, "modelId")}, "temperature": numberField(role, "temperature", 0.7)},
+		"modelConfig": map[string]any{"coordinate": map[string]any{"kind": fallback(stringField(modelRef, "kind"), "provider"), "groupId": stringField(modelRef, "groupId"), "providerId": stringField(modelRef, "providerId"), "modelId": stringField(modelRef, "modelId")}, "temperature": numberField(role, "temperature", 0.7)},
 		"toolPolicy":  normalizeUIToolPolicy(role["toolPolicy"]),
 		"createdAt":   timeFromMillis(role["createdAt"]),
 		"updatedAt":   time.Now().UTC().Format(time.RFC3339),
@@ -744,12 +866,23 @@ func toUIProvider(provider map[string]any) map[string]any {
 			models = append(models, id)
 		}
 	}
-	return map[string]any{"id": stringField(provider, "id"), "name": stringField(provider, "name"), "baseUrl": stringField(provider, "baseUrl"), "apiKey": stringField(provider, "key"), "protocol": stringField(provider, "protocol"), "modelsCache": map[string]any{"items": models, "fetchedAt": millisFromAny(provider["updatedAt"])}}
+	apiKeys := anyList(objectList(provider["apiKeys"]))
+	registeredModels := anyList(objectList(provider["registeredModels"]))
+	legacyKey := stringField(provider, "key")
+	if len(apiKeys) == 0 && legacyKey != "" {
+		apiKeys = []any{map[string]any{"id": "legacy", "name": "默认 Key", "key": legacyKey, "enabled": true, "weight": 1}}
+	}
+	return map[string]any{"id": stringField(provider, "id"), "name": stringField(provider, "name"), "baseUrl": stringField(provider, "baseUrl"), "apiKey": legacyKey, "apiKeyStrategy": fallback(stringField(provider, "apiKeyStrategy"), "sequential"), "apiKeys": apiKeys, "protocol": stringField(provider, "protocol"), "registeredModels": registeredModels, "modelsCache": map[string]any{"items": models, "fetchedAt": millisFromAny(provider["updatedAt"])}}
 }
 
 func fromUIProvider(value any) map[string]any {
 	provider := objectMap(value)
-	return map[string]any{"id": stringField(provider, "id"), "name": stringField(provider, "name"), "baseUrl": stringField(provider, "baseUrl"), "key": stringField(provider, "apiKey"), "protocol": stringField(provider, "protocol")}
+	modelsCache := objectMap(provider["modelsCache"])
+	models := []any{}
+	for _, modelID := range stringSlice(modelsCache["items"]) {
+		models = append(models, map[string]any{"id": modelID, "name": modelID})
+	}
+	return map[string]any{"id": stringField(provider, "id"), "name": stringField(provider, "name"), "baseUrl": stringField(provider, "baseUrl"), "key": stringField(provider, "apiKey"), "apiKeyStrategy": fallback(stringField(provider, "apiKeyStrategy"), "sequential"), "apiKeys": anyList(objectList(provider["apiKeys"])), "protocol": stringField(provider, "protocol"), "models": models, "registeredModels": anyList(objectList(provider["registeredModels"]))}
 }
 
 func toUIChat(session map[string]any) map[string]any {

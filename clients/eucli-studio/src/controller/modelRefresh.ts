@@ -47,16 +47,8 @@ export function createModelRefresh(deps: {
     }
   }
 
-  function resolveAiModelId(modelPick: any, customModelId: any) {
-    const pick = String(modelPick || '').trim()
-    if (!pick) return ''
-    if (pick === '__custom__') return String(customModelId || '').trim()
-    return pick
-  }
-
   return {
     refreshModels,
-    resolveAiModelId,
   }
 }
 

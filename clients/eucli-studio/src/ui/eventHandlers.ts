@@ -270,7 +270,7 @@ export function createEventHandlers(deps: {
 
     if (bind === 'roleProviderId') {
       const p = deps.actions.getProvider(String(state.draft.roleProviderId || ''))
-      const cachedItems = Array.isArray(p?.modelsCache?.items) ? p.modelsCache.items : []
+      const cachedItems = Array.isArray(p?.registeredModels) ? p.registeredModels.map((model: any) => String(model?.id || '')).filter(Boolean) : []
       state.models = { loading: false, error: '', items: cachedItems.slice(0, 300) }
       state.draft.roleModelId = ''
       state.draft.roleCustomModelId = ''

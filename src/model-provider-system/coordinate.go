@@ -8,6 +8,9 @@ import (
 )
 
 func (s *system) ResolveModel(ctx context.Context, coordinate types.ModelCoordinate) (types.Provider, types.ModelInfo, error) {
+	if strings.TrimSpace(coordinate.Kind) == "model_group" || strings.TrimSpace(coordinate.GroupID) != "" {
+		return s.resolveModelGroup(ctx, coordinate)
+	}
 	if strings.TrimSpace(coordinate.ModelID) == "" {
 		return types.Provider{}, types.ModelInfo{}, providerInvalid("model id is required", nil)
 	}
@@ -21,22 +24,20 @@ func (s *system) ResolveModel(ctx context.Context, coordinate types.ModelCoordin
 	if err != nil {
 		return types.Provider{}, types.ModelInfo{}, err
 	}
-	for _, model := range provider.Models {
-		if model.ID == coordinate.ModelID {
-			return provider, model, nil
-		}
+	source, err := resolveRegisteredModel(provider, coordinate.ModelID)
+	if err != nil {
+		return types.Provider{}, types.ModelInfo{}, err
 	}
-	return types.Provider{}, types.ModelInfo{}, providerModelNotFound("model coordinate does not exist", nil)
+	return provider, source, nil
 }
 
 func (s *system) resolveByProviderName(ctx context.Context, coordinate types.ModelCoordinate) (types.Provider, types.ModelInfo, error) {
 	if strings.TrimSpace(coordinate.ProviderID) != "" {
 		provider, err := s.LoadProvider(ctx, coordinate.ProviderID)
 		if err == nil {
-			for _, model := range provider.Models {
-				if model.ID == coordinate.ModelID {
-					return provider, model, nil
-				}
+			model, modelErr := resolveRegisteredModel(provider, coordinate.ModelID)
+			if modelErr == nil {
+				return provider, model, nil
 			}
 		}
 	}
@@ -50,12 +51,33 @@ func (s *system) resolveByProviderName(ctx context.Context, coordinate types.Mod
 			if err != nil {
 				continue
 			}
-			for _, model := range provider.Models {
-				if model.ID == coordinate.ModelID {
-					return provider, model, nil
-				}
+			model, modelErr := resolveRegisteredModel(provider, coordinate.ModelID)
+			if modelErr == nil {
+				return provider, model, nil
 			}
 		}
 	}
 	return types.Provider{}, types.ModelInfo{}, providerNotFound("provider not found by name", nil)
+}
+
+func resolveRegisteredModel(provider types.Provider, registeredID string) (types.ModelInfo, error) {
+	id := strings.TrimSpace(registeredID)
+	if id == "" {
+		return types.ModelInfo{}, providerInvalid("registered model id is required", nil)
+	}
+	for _, registered := range provider.RegisteredModels {
+		if strings.TrimSpace(registered.ID) != id {
+			continue
+		}
+		sourceID := strings.TrimSpace(registered.SourceModelID)
+		if sourceID == "" {
+			return types.ModelInfo{}, providerModelNotFound("registered model has empty sourceModelId", nil)
+		}
+		name := strings.TrimSpace(registered.Name)
+		if name == "" {
+			name = sourceID
+		}
+		return types.ModelInfo{ID: sourceID, Name: name}, nil
+	}
+	return types.ModelInfo{}, providerModelNotFound("registered model does not exist", nil)
 }

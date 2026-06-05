@@ -8,7 +8,12 @@ import (
 )
 
 func validateModelConfig(ctx context.Context, providers ProviderSystem, config types.ModelConfig) error {
-	if strings.TrimSpace(config.Coordinate.ProviderID) == "" {
+	coordinateKind := strings.TrimSpace(config.Coordinate.Kind)
+	if coordinateKind == "model_group" || strings.TrimSpace(config.Coordinate.GroupID) != "" {
+		if strings.TrimSpace(config.Coordinate.GroupID) == "" {
+			return roleModelInvalid("model group id is required", nil)
+		}
+	} else if strings.TrimSpace(config.Coordinate.ProviderID) == "" {
 		return roleModelInvalid("provider id is required", nil)
 	}
 	if strings.TrimSpace(config.Coordinate.ModelID) == "" {

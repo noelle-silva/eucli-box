@@ -12,12 +12,13 @@ type RolesSettingsPanelProps = {
   loading: boolean
   roles: any[]
   providers: any[]
+  modelGroups: any[]
   activeRoleId: string
   topbarHeight: number
 }
 
 export function RolesSettingsPanel(props: RolesSettingsPanelProps) {
-  const { controller, loading, roles, providers, activeRoleId, topbarHeight } = props
+  const { controller, loading, roles, providers, modelGroups, activeRoleId, topbarHeight } = props
   const [sortMode, setSortMode] = React.useState(false)
 
   const roleIds = React.useMemo(() => roles.map((role: any) => String(role?.id || '').trim()).filter(Boolean), [roles])
@@ -51,7 +52,7 @@ export function RolesSettingsPanel(props: RolesSettingsPanelProps) {
                 roles.map((role: any) => {
                   const roleId = String(role?.id || '')
                   const isActive = !!roleId && roleId === activeRoleId
-                  const modelRefText = formatModelRefDisplayText(role?.modelRef, providers)
+                  const modelRefText = formatModelRefDisplayText(role?.modelRef, providers, modelGroups)
 
                   return (
                     <SortableItem key={roleId} id={roleId} disabled={!sortMode}>

@@ -167,7 +167,8 @@ export function normalizeData(raw: any) {
   if (typeof mm.providerId !== 'string') mm.providerId = fallbackPid
   if (!mm.providerId || !d.settings.providers.some((p: any) => String(p?.id || '') === String(mm.providerId || ''))) mm.providerId = fallbackPid
   if (typeof mm.modelId !== 'string') mm.modelId = ''
-  if (typeof mm.customModelId !== 'string') mm.customModelId = ''
+  if (mm.modelId === '__custom__') mm.modelId = ''
+  mm.customModelId = ''
   if (typeof mm.systemPrompt !== 'string') mm.systemPrompt = DEFAULT_MERMAID_FIX_SYSTEM_PROMPT
 
   if (!as.chatTitleNaming || typeof as.chatTitleNaming !== 'object') as.chatTitleNaming = {}
@@ -176,7 +177,8 @@ export function normalizeData(raw: any) {
   if (typeof ctn.providerId !== 'string') ctn.providerId = fallbackPid
   if (!ctn.providerId || !d.settings.providers.some((p: any) => String(p?.id || '') === String(ctn.providerId || ''))) ctn.providerId = fallbackPid
   if (typeof ctn.modelId !== 'string') ctn.modelId = ''
-  if (typeof ctn.customModelId !== 'string') ctn.customModelId = ''
+  if (ctn.modelId === '__custom__') ctn.modelId = ''
+  ctn.customModelId = ''
   if (typeof ctn.systemPrompt !== 'string') ctn.systemPrompt = DEFAULT_CHAT_TITLE_NAMING_SYSTEM_PROMPT
 
   if (!as.stickerNaming || typeof as.stickerNaming !== 'object') as.stickerNaming = {}
@@ -185,7 +187,8 @@ export function normalizeData(raw: any) {
   if (typeof sn.providerId !== 'string') sn.providerId = fallbackPid
   if (!sn.providerId || !d.settings.providers.some((p: any) => String(p?.id || '') === String(sn.providerId || ''))) sn.providerId = fallbackPid
   if (typeof sn.modelId !== 'string') sn.modelId = ''
-  if (typeof sn.customModelId !== 'string') sn.customModelId = ''
+  if (sn.modelId === '__custom__') sn.modelId = ''
+  sn.customModelId = ''
   if (typeof sn.systemPrompt !== 'string') sn.systemPrompt = DEFAULT_STICKER_NAMING_SYSTEM_PROMPT
 
   for (const p of d.settings.providers) {
@@ -194,6 +197,27 @@ export function normalizeData(raw: any) {
     if (typeof p.id !== 'string' || !p.id.trim()) p.id = String(p.name || '').trim() || uid('p')
     if (typeof p.baseUrl !== 'string' || !p.baseUrl.trim()) p.baseUrl = 'http://'
     if (typeof p.apiKey !== 'string') p.apiKey = ''
+    p.apiKeyStrategy = String(p.apiKeyStrategy || '') === 'weighted_random' ? 'weighted_random' : 'sequential'
+    if (!Array.isArray(p.apiKeys)) p.apiKeys = []
+    p.apiKeys = p.apiKeys
+      .filter((key: any) => key && typeof key === 'object')
+      .map((key: any) => ({
+        id: String(key.id || uid('key')).trim(),
+        name: String(key.name || 'Key').trim(),
+        key: String(key.key || '').trim(),
+        enabled: typeof key.enabled === 'boolean' ? key.enabled : true,
+        weight: Math.max(1, Math.round(Number(key.weight || 1))),
+      }))
+    if (!p.apiKeys.length && p.apiKey) p.apiKeys = [{ id: 'legacy', name: '默认 Key', key: p.apiKey, enabled: true, weight: 1 }]
+    if (!Array.isArray(p.registeredModels)) p.registeredModels = []
+    p.registeredModels = p.registeredModels
+      .filter((model: any) => model && typeof model === 'object')
+      .map((model: any) => ({
+        id: String(model.id || '').trim(),
+        name: String(model.name || model.id || '').trim(),
+        sourceModelId: String(model.sourceModelId || model.modelId || '').trim(),
+      }))
+      .filter((model: any) => model.id && model.sourceModelId)
     if (!p.modelsCache || typeof p.modelsCache !== 'object') p.modelsCache = { items: [], fetchedAt: 0 }
     if (!Array.isArray(p.modelsCache.items)) p.modelsCache.items = []
     p.modelsCache.fetchedAt = Number(p.modelsCache.fetchedAt || 0)
@@ -213,10 +237,19 @@ export function normalizeData(raw: any) {
     if (typeof r.systemPrompt !== 'string') r.systemPrompt = ''
     if (typeof r.temperature !== 'number' || !isFinite(r.temperature)) r.temperature = 0.7
     if (!r.modelRef || typeof r.modelRef !== 'object') r.modelRef = { providerId: String(d.settings.providers[0]?.id || ''), modelId: '' }
+    if (typeof r.modelRef.kind !== 'string') r.modelRef.kind = String(r.modelRef.groupId || '').trim() ? 'model_group' : 'provider'
+    if (typeof r.modelRef.groupId !== 'string') r.modelRef.groupId = ''
     if (typeof r.modelRef.providerId !== 'string') r.modelRef.providerId = String(d.settings.providers[0]?.id || '')
     if (typeof r.modelRef.modelId !== 'string') r.modelRef.modelId = ''
-    const pid = String(r.modelRef.providerId || '')
-    if (!d.settings.providers.some((p: any) => String(p?.id || '') === pid)) r.modelRef.providerId = String(d.settings.providers[0]?.id || '')
+    const modelKind = String(r.modelRef.kind || '').trim() === 'model_group' ? 'model_group' : 'provider'
+    r.modelRef.kind = modelKind
+    if (modelKind === 'provider') {
+      const pid = String(r.modelRef.providerId || '')
+      if (!d.settings.providers.some((p: any) => String(p?.id || '') === pid)) r.modelRef.providerId = String(d.settings.providers[0]?.id || '')
+      r.modelRef.groupId = ''
+    } else {
+      r.modelRef.providerId = ''
+    }
     r.toolPolicy = normalizeRoleToolPolicy((r as any).toolPolicy)
     r.createdAt = Number(r.createdAt || now())
     r.updatedAt = Number(r.updatedAt || now())

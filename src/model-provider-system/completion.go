@@ -19,14 +19,25 @@ func (s *system) Complete(ctx context.Context, request types.ModelRequest) (type
 		ModelID:    request.Coordinate.ModelID,
 		CreatedAt:  time.Now().UTC(),
 	}
-	provider, _, err := s.ResolveModel(ctx, request.Coordinate)
+	provider, resolved, err := s.ResolveModel(ctx, request.Coordinate)
 	if err != nil {
 		record.Success = false
 		record.ErrorCode = errCode(err)
 		_ = s.storage.SaveCallRecord(ctx, record)
 		return types.ModelResponse{}, err
 	}
+	request.Coordinate.ProviderID = provider.ID
+	request.Coordinate.ProviderName = provider.Name
+	request.Coordinate.ModelID = resolved.ID
 	record.ProviderID = provider.ID
+	record.ModelID = resolved.ID
+	provider, err = s.providerWithSelectedKey(provider)
+	if err != nil {
+		record.Success = false
+		record.ErrorCode = errCode(err)
+		_ = s.storage.SaveCallRecord(ctx, record)
+		return types.ModelResponse{}, err
+	}
 	adapter, err := adapterFor(provider.Protocol)
 	if err != nil {
 		record.Success = false
@@ -70,14 +81,25 @@ func (s *system) Complete(ctx context.Context, request types.ModelRequest) (type
 func (s *system) CompleteStream(ctx context.Context, request types.ModelRequest, onEvent types.ModelStreamHandler) (types.ModelResponse, error) {
 	request.Stream = true
 	record := types.CallRecord{ID: newCallID(), ProviderID: request.Coordinate.ProviderID, ModelID: request.Coordinate.ModelID, CreatedAt: time.Now().UTC()}
-	provider, _, err := s.ResolveModel(ctx, request.Coordinate)
+	provider, resolved, err := s.ResolveModel(ctx, request.Coordinate)
 	if err != nil {
 		record.Success = false
 		record.ErrorCode = errCode(err)
 		_ = s.storage.SaveCallRecord(ctx, record)
 		return types.ModelResponse{}, err
 	}
+	request.Coordinate.ProviderID = provider.ID
+	request.Coordinate.ProviderName = provider.Name
+	request.Coordinate.ModelID = resolved.ID
 	record.ProviderID = provider.ID
+	record.ModelID = resolved.ID
+	provider, err = s.providerWithSelectedKey(provider)
+	if err != nil {
+		record.Success = false
+		record.ErrorCode = errCode(err)
+		_ = s.storage.SaveCallRecord(ctx, record)
+		return types.ModelResponse{}, err
+	}
 	adapter, err := adapterFor(provider.Protocol)
 	if err != nil {
 		record.Success = false

@@ -12,6 +12,10 @@ func (s *system) RefreshModels(ctx context.Context, providerID string) ([]types.
 	if err != nil {
 		return nil, err
 	}
+	requestProvider, err := s.providerWithSelectedKey(provider)
+	if err != nil {
+		return nil, err
+	}
 	adapter, err := adapterFor(provider.Protocol)
 	if err != nil {
 		return nil, err
@@ -20,7 +24,7 @@ func (s *system) RefreshModels(ctx context.Context, providerID string) ([]types.
 	if err != nil {
 		return nil, err
 	}
-	req, err := adapter.BuildListModelsRequest(provider, int64(timeoutFromMs(requestConfig.ListModelsTimeoutMs)))
+	req, err := adapter.BuildListModelsRequest(requestProvider, int64(timeoutFromMs(requestConfig.ListModelsTimeoutMs)))
 	if err != nil {
 		return nil, err
 	}

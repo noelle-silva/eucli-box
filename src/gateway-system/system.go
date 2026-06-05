@@ -42,6 +42,8 @@ type ProviderSystem interface {
 	DeleteProvider(ctx context.Context, providerID string) error
 	LoadModelRequestConfig(ctx context.Context) (types.ModelRequestConfig, error)
 	SaveModelRequestConfig(ctx context.Context, config types.ModelRequestConfig) (types.ModelRequestConfig, error)
+	LoadModelGroups(ctx context.Context) ([]types.ModelGroup, error)
+	SaveModelGroups(ctx context.Context, groups []types.ModelGroup) ([]types.ModelGroup, error)
 	RefreshModels(ctx context.Context, providerID string) ([]types.ModelInfo, error)
 }
 

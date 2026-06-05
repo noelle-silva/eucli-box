@@ -30,6 +30,8 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("GET /api/providers", s.authWrap(s.handleListProviders))
 	s.mux.HandleFunc("GET /api/providers/model-request-config", s.authWrap(s.handleLoadModelRequestConfig))
 	s.mux.HandleFunc("PUT /api/providers/model-request-config", s.authWrap(s.handleSaveModelRequestConfig))
+	s.mux.HandleFunc("GET /api/model-groups", s.authWrap(s.handleLoadModelGroups))
+	s.mux.HandleFunc("PUT /api/model-groups", s.authWrap(s.handleSaveModelGroups))
 	s.mux.HandleFunc("POST /api/providers", s.authWrap(s.handleSaveProvider))
 	s.mux.HandleFunc("GET /api/providers/{providerID}", s.authWrap(s.handleLoadProvider))
 	s.mux.HandleFunc("DELETE /api/providers/{providerID}", s.authWrap(s.handleDeleteProvider))

@@ -79,6 +79,7 @@ import { createAiServices } from '../services/aiServices'
 
 // ---- controller modules ----
 import { createModelRefresh } from './modelRefresh'
+import { createModelGroupsController, defaultModelGroupsState } from './modelGroups'
 import { createFavoritesOperations } from './favoritesOperations'
 import { createEntityEditors } from './entityEditors'
 import { createChatOperations } from './chatOperations'
@@ -111,6 +112,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     imageViewer: { items: [] as any[], index: 0, scale: 1 },
     sideTab: 'roles' as string,
     models: { loading: false, error: '', items: [] as any[] },
+    modelGroups: defaultModelGroupsState(),
     tools: { loading: false, error: '', items: [] as any[], fetchedAt: 0, detailLoading: false, detailError: '', selectedToolId: '', selectedTool: null as any, configDraft: {} as Record<string, any>, saving: false, saveError: '' },
     modelRequestConfig: defaultModelRequestConfigState(),
     pendingChat: null as any,
@@ -133,6 +135,8 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       roleProviderId: '',
       roleModelId: '',
       roleCustomModelId: '',
+      roleModelSource: 'provider',
+      roleModelGroupId: '',
       roleTemperature: '0.7',
       roleToolPolicy: emptyRoleToolPolicy(),
       roleToolWhitelistOpen: false,
@@ -161,6 +165,9 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       providerBaseUrl: '',
       providerApiKey: '',
       providerProtocol: '',
+      providerApiKeyStrategy: 'sequential',
+      providerApiKeys: [] as any[],
+      providerRegisteredModels: [] as any[],
 
       deleteRoleId: '',
       deleteGroupId: '',
@@ -579,7 +586,27 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     emit,
     showToast: api.ui?.showToast,
   })
-  const { refreshModels, resolveAiModelId } = modelRefresh
+  const { refreshModels } = modelRefresh
+
+  const modelGroupsController = createModelGroupsController({
+    getState: () => state,
+    netRequest: capabilities.net?.request || ((() => Promise.resolve({})) as any),
+    emit,
+    showToast: api.ui?.showToast,
+  })
+  const {
+    refreshModelGroups,
+    saveModelGroups,
+    createModelGroup,
+    deleteModelGroup,
+    setModelGroupField,
+    createModelGroupModel,
+    deleteModelGroupModel,
+    setModelGroupModelField,
+    createModelGroupMember,
+    deleteModelGroupMember,
+    setModelGroupMemberField,
+  } = modelGroupsController
 
   const toolCatalog = createToolCatalog({
     getState: () => state,
@@ -1206,6 +1233,8 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
       if (!state.data.settings.aiServices.mermaidFix || typeof state.data.settings.aiServices.mermaidFix !== 'object') state.data.settings.aiServices.mermaidFix = {} as any
       state.data.settings.aiServices.mermaidFix.providerId = pid
+      state.data.settings.aiServices.mermaidFix.modelId = ''
+      state.data.settings.aiServices.mermaidFix.customModelId = ''
       saveMeta().catch(() => {})
       emit()
     },
@@ -1215,15 +1244,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
       if (!state.data.settings.aiServices.mermaidFix || typeof state.data.settings.aiServices.mermaidFix !== 'object') state.data.settings.aiServices.mermaidFix = {} as any
       state.data.settings.aiServices.mermaidFix.modelId = mid
-      saveMeta().catch(() => {})
-      emit()
-    },
-    setMermaidFixCustomModelId: (customModelId: any) => {
-      if (!state.data) return
-      const mid = String(customModelId || '')
-      if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
-      if (!state.data.settings.aiServices.mermaidFix || typeof state.data.settings.aiServices.mermaidFix !== 'object') state.data.settings.aiServices.mermaidFix = {} as any
-      state.data.settings.aiServices.mermaidFix.customModelId = mid
+      state.data.settings.aiServices.mermaidFix.customModelId = ''
       saveMeta().catch(() => {})
       emit()
     },
@@ -1258,6 +1279,8 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
       if (!state.data.settings.aiServices.chatTitleNaming || typeof state.data.settings.aiServices.chatTitleNaming !== 'object') state.data.settings.aiServices.chatTitleNaming = {} as any
       state.data.settings.aiServices.chatTitleNaming.providerId = pid
+      state.data.settings.aiServices.chatTitleNaming.modelId = ''
+      state.data.settings.aiServices.chatTitleNaming.customModelId = ''
       saveMeta().catch(() => {})
       emit()
     },
@@ -1267,15 +1290,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
       if (!state.data.settings.aiServices.chatTitleNaming || typeof state.data.settings.aiServices.chatTitleNaming !== 'object') state.data.settings.aiServices.chatTitleNaming = {} as any
       state.data.settings.aiServices.chatTitleNaming.modelId = mid
-      saveMeta().catch(() => {})
-      emit()
-    },
-    setChatTitleNamingCustomModelId: (customModelId: any) => {
-      if (!state.data) return
-      const mid = String(customModelId || '')
-      if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
-      if (!state.data.settings.aiServices.chatTitleNaming || typeof state.data.settings.aiServices.chatTitleNaming !== 'object') state.data.settings.aiServices.chatTitleNaming = {} as any
-      state.data.settings.aiServices.chatTitleNaming.customModelId = mid
+      state.data.settings.aiServices.chatTitleNaming.customModelId = ''
       saveMeta().catch(() => {})
       emit()
     },
@@ -1310,6 +1325,8 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
       if (!state.data.settings.aiServices.stickerNaming || typeof state.data.settings.aiServices.stickerNaming !== 'object') state.data.settings.aiServices.stickerNaming = {} as any
       state.data.settings.aiServices.stickerNaming.providerId = pid
+      state.data.settings.aiServices.stickerNaming.modelId = ''
+      state.data.settings.aiServices.stickerNaming.customModelId = ''
       saveMeta().catch(() => {})
       emit()
     },
@@ -1319,15 +1336,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
       if (!state.data.settings.aiServices.stickerNaming || typeof state.data.settings.aiServices.stickerNaming !== 'object') state.data.settings.aiServices.stickerNaming = {} as any
       state.data.settings.aiServices.stickerNaming.modelId = mid
-      saveMeta().catch(() => {})
-      emit()
-    },
-    setStickerNamingCustomModelId: (customModelId: any) => {
-      if (!state.data) return
-      const mid = String(customModelId || '')
-      if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
-      if (!state.data.settings.aiServices.stickerNaming || typeof state.data.settings.aiServices.stickerNaming !== 'object') state.data.settings.aiServices.stickerNaming = {} as any
-      state.data.settings.aiServices.stickerNaming.customModelId = mid
+      state.data.settings.aiServices.stickerNaming.customModelId = ''
       saveMeta().catch(() => {})
       emit()
     },
@@ -1391,6 +1400,17 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     setModelRequestConfigDraft: (key: any, value: any) => setModelRequestConfigDraft(key, value),
     resetModelRequestConfigDraftToDefaults: () => resetModelRequestConfigDraftToDefaults(),
     saveModelRequestConfig: () => saveModelRequestConfig(),
+    refreshModelGroups: (force: any) => refreshModelGroups(!!force),
+    saveModelGroups: () => saveModelGroups(),
+    createModelGroup: () => createModelGroup(),
+    deleteModelGroup: (groupId: any) => deleteModelGroup(groupId),
+    setModelGroupField: (groupId: any, field: any, value: any) => setModelGroupField(groupId, field, value),
+    createModelGroupModel: (groupId: any) => createModelGroupModel(groupId),
+    deleteModelGroupModel: (groupId: any, modelId: any) => deleteModelGroupModel(groupId, modelId),
+    setModelGroupModelField: (groupId: any, modelId: any, field: any, value: any) => setModelGroupModelField(groupId, modelId, field, value),
+    createModelGroupMember: (groupId: any, modelId: any) => createModelGroupMember(groupId, modelId),
+    deleteModelGroupMember: (groupId: any, modelId: any, memberIndex: any) => deleteModelGroupMember(groupId, modelId, memberIndex),
+    setModelGroupMemberField: (groupId: any, modelId: any, memberIndex: any, field: any, value: any) => setModelGroupMemberField(groupId, modelId, memberIndex, field, value),
     openRoleToolWhitelist: () => {
       state.draft.roleToolWhitelistOpen = true
       refreshTools(false).catch(() => {})
@@ -1747,8 +1767,23 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     roleProviderChanged: (providerId: any) => {
       state.draft.roleProviderId = String(providerId || '')
       const p = getProvider(state.draft.roleProviderId)
-      const cachedItems = Array.isArray(p?.modelsCache?.items) ? p.modelsCache.items : []
+      const cachedItems = Array.isArray(p?.registeredModels) ? p.registeredModels.map((model: any) => String(model?.id || '')).filter(Boolean) : []
       state.models = { loading: false, error: '', items: cachedItems.slice(0, 300) }
+      state.draft.roleModelId = ''
+      state.draft.roleCustomModelId = ''
+      emit()
+    },
+    roleModelSourceChanged: (source: any) => {
+      state.draft.roleModelSource = String(source || '') === 'model_group' ? 'model_group' : 'provider'
+      state.draft.roleProviderId = ''
+      state.draft.roleModelGroupId = ''
+      state.draft.roleModelId = ''
+      state.draft.roleCustomModelId = ''
+      state.models = { loading: false, error: '', items: [] }
+      emit()
+    },
+    roleModelGroupChanged: (groupId: any) => {
+      state.draft.roleModelGroupId = String(groupId || '')
       state.draft.roleModelId = ''
       state.draft.roleCustomModelId = ''
       emit()
@@ -1862,6 +1897,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   async function init() {
     await ensureRenderer().catch(() => {})
     await load()
+    refreshModelGroups(false).catch(() => {})
     ebRunEvents.start()
     startUiPollers()
     render()

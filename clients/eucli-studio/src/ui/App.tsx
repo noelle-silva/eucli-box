@@ -48,7 +48,6 @@ import HistoryIcon from '@mui/icons-material/History'
 import SearchIcon from '@mui/icons-material/Search'
 import ImageIcon from '@mui/icons-material/Image'
 import AttachFileIcon from '@mui/icons-material/AttachFile'
-import RefreshIcon from '@mui/icons-material/Refresh'
 import SettingsIcon from '@mui/icons-material/Settings'
 import StorageIcon from '@mui/icons-material/Storage'
 import ZoomInIcon from '@mui/icons-material/ZoomIn'
@@ -67,7 +66,7 @@ import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import DriveFileMoveOutlinedIcon from '@mui/icons-material/DriveFileMoveOutlined'
 import UnfoldLessIcon from '@mui/icons-material/UnfoldLess'
 import { IMAGE_VIEWER_ZOOM_MAX, MERMAID_VIEWER_ZOOM_MAX, VIEWER_ZOOM_MIN } from '../core/viewerZoom'
-import { ApiKeyField } from './components/fields/ApiKeyField'
+import { ProviderConfigEditor } from './components/ProviderConfigEditor'
 import { useAiChatState } from './hooks/useAiChatState'
 import { useEvent } from './hooks/useEvent'
 import { findAtMentionTrigger } from './utils/mention'
@@ -85,6 +84,7 @@ import { AssistantMessageBlocks } from './components/AssistantMessageBlocks'
 import { RolesSettingsPanel } from './settings/RolesSettingsPanel'
 import { AiToolsSettingsPanel } from './settings/AiToolsSettingsPanel'
 import { EbSettingsPanel } from './settings/EbSettingsPanel'
+import { ModelGroupsSettingsPanel } from './settings/ModelGroupsSettingsPanel'
 import { AI_STUDIO_CHAT_ROOT_ID } from '../runtime/aiStudioGlobals'
 import { isAssistantAwaitingFirstOutput, isAssistantGenerating } from '../domain/assistantRunState'
 import { formatModelRefDisplayText } from '../domain/modelRefUtils'
@@ -93,7 +93,7 @@ import { AssistantReplyPendingIndicator } from './components/AssistantReplyPendi
 import { AssistantErrorNotice } from './components/AssistantErrorNotice'
 import type { AiChatToastOptions } from '../gateway/capabilities'
 
-type SettingsTab = 'appearance' | 'attachments' | 'data' | 'groups' | 'roles' | 'providers' | 'services' | 'tools' | 'stickers' | 'eb'
+type SettingsTab = 'appearance' | 'attachments' | 'data' | 'groups' | 'roles' | 'providers' | 'modelGroups' | 'services' | 'tools' | 'stickers' | 'eb'
 
 const SETTINGS_TAB_ITEMS: { value: SettingsTab; label: string }[] = [
   { value: 'appearance', label: '外观' },
@@ -102,6 +102,7 @@ const SETTINGS_TAB_ITEMS: { value: SettingsTab; label: string }[] = [
   { value: 'groups', label: '群组管理' },
   { value: 'roles', label: '角色管理' },
   { value: 'providers', label: '供应商管理' },
+  { value: 'modelGroups', label: '模型组' },
   { value: 'services', label: 'AI 微服务' },
   { value: 'eb', label: 'e-b' },
   { value: 'tools', label: 'AI 工具' },
@@ -518,6 +519,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const roles = Array.isArray(data?.roles) ? data.roles : []
   const groups = Array.isArray((data as any)?.groups) ? ((data as any).groups as any[]) : []
   const providers = Array.isArray(data?.settings?.providers) ? data.settings.providers : []
+  const modelGroups = Array.isArray((s as any)?.modelGroups?.items) ? (s as any).modelGroups.items : []
   const favorites = (data as any)?.favorites && typeof (data as any).favorites === 'object' ? (data as any).favorites : { folders: [], chatRefsByFolderId: {} }
   const favoriteFolders = Array.isArray((favorites as any)?.folders) ? ((favorites as any).folders as any[]) : []
   const favoriteChatRefsByFolderId =
@@ -704,9 +706,9 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
 
   const formatModelRefText = React.useCallback(
     (modelRef: any) => {
-      return formatModelRefDisplayText(modelRef, providers)
+      return formatModelRefDisplayText(modelRef, providers, modelGroups)
     },
-    [providers],
+    [providers, modelGroups],
   )
 
   const openCreateFavoriteFolder = useEvent((parentId = '') => {
@@ -1089,7 +1091,6 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const [fileAdjust, setFileAdjust] = React.useState<{ el: HTMLElement | null; id: string }>({ el: null, id: '' })
   const [tempModelProviderId, setTempModelProviderId] = React.useState('')
   const [tempModelPick, setTempModelPick] = React.useState('')
-  const [tempCustomModelId, setTempCustomModelId] = React.useState('')
   const composerInputRef = React.useRef<HTMLTextAreaElement | HTMLInputElement | null>(null)
   const [atPicker, setAtPicker] = React.useState<null | { triggerIndex: number; cursorIndex: number; query: string }>(null)
   const closeAtPicker = useEvent(() => setAtPicker(null))
@@ -1579,7 +1580,6 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const effectiveProviderId = hasChatOverride ? overrideProviderId : roleProviderId
   const effectiveModelId = hasChatOverride ? overrideModelId : roleModelId
 
-  const modelLoading = !!(s as any)?.models?.loading
   const uiBusy = !!s.sending
   const chatLocked = isReplying
   const jumpToMessage = useEvent((mid0: string) => {
@@ -2286,11 +2286,10 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     setTempModelProviderId(pid)
 
     const p = providers.find((x: any) => String(x?.id || '') === pid) || null
-    const items = Array.isArray(p?.modelsCache?.items) ? (p.modelsCache.items as any[]).map((x) => String(x)) : []
-    const inList = !!mid && items.some((x: string) => x === mid)
+    const items = registeredModelItems(p)
+    const inList = !!mid && items.some((x: any) => x.id === mid)
 
-    setTempModelPick(inList ? mid : mid ? '__custom__' : '')
-    setTempCustomModelId(inList ? '' : mid)
+    setTempModelPick(inList ? mid : '')
     setTempModelPickerEl(e.currentTarget)
   })
 
@@ -2298,13 +2297,11 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     const pid = String(nextProviderId || '').trim()
     setTempModelProviderId(pid)
     setTempModelPick('')
-    setTempCustomModelId('')
   })
 
   const saveTempModelOverride = useEvent(() => {
     const pid = String(tempModelProviderId || '').trim()
-    let mid = String(tempModelPick || '').trim()
-    if (mid === '__custom__') mid = String(tempCustomModelId || '').trim()
+    const mid = String(tempModelPick || '').trim()
 
     if (!pid) return controller?.capabilities?.ui?.showToast?.('请选择供应商', { kind: 'error' })
     if (!mid) return controller?.capabilities?.ui?.showToast?.('请选择模型', { kind: 'error' })
@@ -5294,54 +5291,33 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
               {(() => {
                 const pid = String(tempModelProviderId || '')
                 const p = providers.find((x: any) => String(x?.id || '') === pid) || null
-                const items = Array.isArray(p?.modelsCache?.items) ? (p.modelsCache.items as any[]).map((x) => String(x)) : []
+                const items = registeredModelItems(p)
 
                 return (
                   <Stack spacing={1}>
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <FormControl size="small" fullWidth>
-                        <InputLabel id="chat-override-model">模型</InputLabel>
-                        <Select
-                          labelId="chat-override-model"
-                          label="模型"
-                          value={String(tempModelPick || '')}
-                          onChange={(e) => setTempModelPick(String(e.target.value || ''))}
-                          disabled={s.loading || !pid}
-                        >
-                          <MenuItem value="">
-                            <em>请选择…</em>
-                          </MenuItem>
-                          {items.map((id: string) => (
-                            <MenuItem key={id} value={id}>
-                              {id}
-                            </MenuItem>
-                          ))}
-                          <MenuItem value="__custom__">自定义模型ID…</MenuItem>
-                        </Select>
-                      </FormControl>
-
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        startIcon={<RefreshIcon />}
-                        onClick={() => controller.actions.refreshModels(pid, true)}
-                        disabled={!pid || modelLoading || s.loading}
-                        sx={{ whiteSpace: 'nowrap' }}
+                    <FormControl size="small" fullWidth>
+                      <InputLabel id="chat-override-model">登记模型</InputLabel>
+                      <Select
+                        labelId="chat-override-model"
+                        label="登记模型"
+                        value={String(tempModelPick || '')}
+                        onChange={(e) => setTempModelPick(String(e.target.value || ''))}
+                        disabled={s.loading || !pid}
                       >
-                        {modelLoading ? '刷新中…' : '刷新'}
-                      </Button>
-                    </Stack>
+                        <MenuItem value="">
+                          <em>请选择…</em>
+                        </MenuItem>
+                        {items.map((item: any) => (
+                          <MenuItem key={item.id} value={item.id}>
+                            {item.hint ? `${item.label} / ${item.hint}` : item.label}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
 
-                    {String(tempModelPick || '') === '__custom__' ? (
-                      <TextField
-                        size="small"
-                        label="自定义模型ID"
-                        value={String(tempCustomModelId || '')}
-                        onChange={(e) => setTempCustomModelId(e.target.value)}
-                        placeholder="例如：gpt-4.1-mini / deepseek-chat"
-                        fullWidth
-                      />
-                    ) : null}
+                    <Typography variant="caption" color="text.secondary">
+                      这里仅显示供应商设置中已登记的模型；原始模型列表请到供应商设置中刷新并登记。
+                    </Typography>
                   </Stack>
                 )
               })()}
@@ -6402,6 +6378,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
             roles={roles}
             groups={groups}
             providers={providers}
+            modelGroups={(s as any).modelGroups}
             models={s.models}
             tools={(s as any).tools}
             modelRequestConfig={(s as any).modelRequestConfig}
@@ -6413,8 +6390,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
         )}
         </Box>
 
-        <ProvidersDialog open={s.modal === 'providers'} controller={controller} providers={providers} draft={s.draft} />
-        <RoleDialog open={s.modal === 'role'} controller={controller} providers={providers} draft={s.draft} models={s.models} tools={(s as any).tools} />
+        <ProvidersDialog open={s.modal === 'providers'} controller={controller} providers={providers} draft={s.draft} models={s.models} />
+        <RoleDialog open={s.modal === 'role'} controller={controller} providers={providers} modelGroups={modelGroups} draft={s.draft} models={s.models} tools={(s as any).tools} />
         <GroupDialog open={s.modal === 'group'} controller={controller} roles={roles} draft={s.draft} />
         <ConfirmDialog open={s.modal === 'confirm'} controller={controller} draft={s.draft} roles={roles} groups={groups} providers={providers} />
         <MermaidDialog open={s.modal === 'mermaid'} controller={controller} mermaid={s.mermaid} />
@@ -6435,11 +6412,10 @@ function StickersSettingsPanel(props: { controller: any; loading: boolean; data:
   const stickerNamingEnabled = !!stickerNamingCfg.enabled
   const stickerNamingProviderId = String(stickerNamingCfg.providerId || '').trim()
   const stickerNamingModelId = String(stickerNamingCfg.modelId || '').trim()
-  const stickerNamingCustomModelId = String(stickerNamingCfg.customModelId || '').trim()
-  const stickerNamingReady = stickerNamingEnabled && !!stickerNamingProviderId && (!!stickerNamingModelId || !!stickerNamingCustomModelId)
+  const stickerNamingReady = stickerNamingEnabled && !!stickerNamingProviderId && !!stickerNamingModelId
   const stickerNamingDisabledReason = !stickerNamingEnabled
     ? '请先在“设置 > AI 微服务”中启用表情包取名服务'
-    : !stickerNamingProviderId || (!stickerNamingModelId && !stickerNamingCustomModelId)
+    : !stickerNamingProviderId || !stickerNamingModelId
       ? '请先在“设置 > AI 微服务”中配置表情包取名的供应商和模型'
       : ''
   const enabled = !!cfg.enabled
@@ -6794,6 +6770,7 @@ function PluginSettingsPage(props: {
   roles: any[]
   groups: any[]
   providers: any[]
+  modelGroups: any
   models: any
   tools: any
   modelRequestConfig: any
@@ -6802,7 +6779,7 @@ function PluginSettingsPage(props: {
   tab: SettingsTab
   dataDirectory?: AiChatDataDirectory
 }) {
-  const { controller, loading, data, roles, groups, providers, models, tools, modelRequestConfig, draft, activeRoleId, tab, dataDirectory } = props
+  const { controller, loading, data, roles, groups, providers, modelGroups, models, tools, modelRequestConfig, draft, activeRoleId, tab, dataDirectory } = props
   const [treeHotkeyRecording, setTreeHotkeyRecording] = React.useState(false)
 
   React.useEffect(() => {
@@ -7380,7 +7357,11 @@ function PluginSettingsPage(props: {
   }
 
   if (tab === 'roles') {
-    return <RolesSettingsPanel controller={controller} loading={loading} roles={roles} providers={providers} activeRoleId={activeRoleId} topbarHeight={TOPBAR_H} />
+    return <RolesSettingsPanel controller={controller} loading={loading} roles={roles} providers={providers} modelGroups={Array.isArray(modelGroups?.items) ? modelGroups.items : []} activeRoleId={activeRoleId} topbarHeight={TOPBAR_H} />
+  }
+
+  if (tab === 'modelGroups') {
+    return <ModelGroupsSettingsPanel controller={controller} loading={loading} modelGroups={modelGroups} providers={providers} topbarHeight={TOPBAR_H} />
   }
 
   if (tab === 'tools') {
@@ -7400,7 +7381,6 @@ function PluginSettingsPage(props: {
     const mmEnabled = !!mmCfg.enabled
     const mmProviderId = String(mmCfg.providerId || providers?.[0]?.id || '')
     const mmModelPick = String(mmCfg.modelId || '')
-    const mmCustomModelId = String(mmCfg.customModelId || '')
     const mmSystemPrompt = typeof mmCfg.systemPrompt === 'string' ? mmCfg.systemPrompt : ''
     const mmDefaultPrompt = String(controller?.defaults?.mermaidFixSystemPrompt || '')
     const mmPromptChanged = !!mmDefaultPrompt && mmSystemPrompt.trim() !== mmDefaultPrompt.trim()
@@ -7409,7 +7389,6 @@ function PluginSettingsPage(props: {
     const ctnEnabled = !!ctnCfg.enabled
     const ctnProviderId = String(ctnCfg.providerId || providers?.[0]?.id || '')
     const ctnModelPick = String(ctnCfg.modelId || '')
-    const ctnCustomModelId = String(ctnCfg.customModelId || '')
     const ctnSystemPrompt = typeof ctnCfg.systemPrompt === 'string' ? ctnCfg.systemPrompt : ''
     const ctnDefaultPrompt = String(controller?.defaults?.chatTitleNamingSystemPrompt || '')
     const ctnPromptChanged = !!ctnDefaultPrompt && ctnSystemPrompt.trim() !== ctnDefaultPrompt.trim()
@@ -7418,24 +7397,21 @@ function PluginSettingsPage(props: {
     const snEnabled = !!snCfg.enabled
     const snProviderId = String(snCfg.providerId || providers?.[0]?.id || '')
     const snModelPick = String(snCfg.modelId || '')
-    const snCustomModelId = String(snCfg.customModelId || '')
     const snSystemPrompt = typeof snCfg.systemPrompt === 'string' ? snCfg.systemPrompt : ''
     const snDefaultPrompt = String(controller?.defaults?.stickerNamingSystemPrompt || '')
     const snPromptChanged = !!snDefaultPrompt && snSystemPrompt.trim() !== snDefaultPrompt.trim()
 
     const mmP = providers.find((x: any) => String(x?.id || '') === mmProviderId) || null
-    const mmModelItems = Array.isArray(mmP?.modelsCache?.items) ? (mmP.modelsCache.items as any[]).map((x) => String(x)) : []
-    const mmHasPickInList = !!mmModelPick && mmModelPick !== '__custom__' && mmModelItems.some((x) => x === mmModelPick)
+    const mmModelItems = registeredModelItems(mmP)
+    const mmHasPickInList = !!mmModelPick && mmModelItems.some((x: any) => x.id === mmModelPick)
 
     const ctnP = providers.find((x: any) => String(x?.id || '') === ctnProviderId) || null
-    const ctnModelItems = Array.isArray(ctnP?.modelsCache?.items) ? (ctnP.modelsCache.items as any[]).map((x) => String(x)) : []
-    const ctnHasPickInList = !!ctnModelPick && ctnModelPick !== '__custom__' && ctnModelItems.some((x) => x === ctnModelPick)
+    const ctnModelItems = registeredModelItems(ctnP)
+    const ctnHasPickInList = !!ctnModelPick && ctnModelItems.some((x: any) => x.id === ctnModelPick)
 
     const snP = providers.find((x: any) => String(x?.id || '') === snProviderId) || null
-    const snModelItems = Array.isArray(snP?.modelsCache?.items) ? (snP.modelsCache.items as any[]).map((x) => String(x)) : []
-    const snHasPickInList = !!snModelPick && snModelPick !== '__custom__' && snModelItems.some((x) => x === snModelPick)
-
-    const modelLoading = !!models?.loading
+    const snModelItems = registeredModelItems(snP)
+    const snHasPickInList = !!snModelPick && snModelItems.some((x: any) => x.id === snModelPick)
 
     return (
       <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', px: 2, pt: `calc(${TOPBAR_H}px + 16px)`, pb: 2, bgcolor: 'grey.50' }}>
@@ -7484,44 +7460,31 @@ function PluginSettingsPage(props: {
                   </Select>
                 </FormControl>
 
-                <Stack direction="row" spacing={1} sx={{ pt: { xs: 0, sm: 0.5 } }}>
-                  <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => controller.actions.refreshModels(mmProviderId, true)} disabled={!mmProviderId || modelLoading}>
-                    {modelLoading ? '刷新中…' : '刷新模型'}
-                  </Button>
-                </Stack>
               </Stack>
 
               <FormControl size="small" fullWidth>
-                <InputLabel id="mmfix-model">模型</InputLabel>
+                <InputLabel id="mmfix-model">登记模型</InputLabel>
                 <Select
                   labelId="mmfix-model"
-                  value={mmHasPickInList ? mmModelPick : mmModelPick === '__custom__' ? '__custom__' : ''}
-                  label="模型"
+                  value={mmHasPickInList ? mmModelPick : ''}
+                  label="登记模型"
                   onChange={(e) => controller.actions.setMermaidFixModelId?.(e.target.value)}
                   disabled={loading || !mmProviderId}
                 >
                   <MenuItem value="">
                     <em>请选择…</em>
                   </MenuItem>
-                  {mmModelItems.map((id: string) => (
-                    <MenuItem key={id} value={id}>
-                      {id}
+                  {mmModelItems.map((item: any) => (
+                    <MenuItem key={item.id} value={item.id}>
+                      {item.hint ? `${item.label} / ${item.hint}` : item.label}
                     </MenuItem>
                   ))}
-                  <MenuItem value="__custom__">自定义模型ID…</MenuItem>
                 </Select>
               </FormControl>
 
-              {mmModelPick === '__custom__' ? (
-                <TextField
-                  size="small"
-                  label="自定义模型ID"
-                  value={mmCustomModelId}
-                  onChange={(e) => controller.actions.setMermaidFixCustomModelId?.(e.target.value)}
-                  placeholder="例如：gpt-4.1-mini / deepseek-chat"
-                  fullWidth
-                />
-              ) : null}
+              <Typography variant="caption" color="text.secondary">
+                仅可选择供应商设置中已登记的模型；如列表为空，请先到供应商设置刷新原始列表并登记模型。
+              </Typography>
 
               <TextField
                 size="small"
@@ -7588,44 +7551,31 @@ function PluginSettingsPage(props: {
                     </Select>
                   </FormControl>
 
-                  <Stack direction="row" spacing={1} sx={{ pt: { xs: 0, sm: 0.5 } }}>
-                    <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => controller.actions.refreshModels(ctnProviderId, true)} disabled={!ctnProviderId || modelLoading}>
-                      {modelLoading ? '刷新中…' : '刷新模型'}
-                    </Button>
-                  </Stack>
                 </Stack>
 
                 <FormControl size="small" fullWidth>
-                  <InputLabel id="ctn-model">模型</InputLabel>
+                  <InputLabel id="ctn-model">登记模型</InputLabel>
                   <Select
                     labelId="ctn-model"
-                    value={ctnHasPickInList ? ctnModelPick : ctnModelPick === '__custom__' ? '__custom__' : ''}
-                    label="模型"
+                    value={ctnHasPickInList ? ctnModelPick : ''}
+                    label="登记模型"
                     onChange={(e) => controller.actions.setChatTitleNamingModelId?.(e.target.value)}
                     disabled={loading || !ctnProviderId}
                   >
                     <MenuItem value="">
                       <em>请选择…</em>
                     </MenuItem>
-                    {ctnModelItems.map((id: string) => (
-                      <MenuItem key={id} value={id}>
-                        {id}
+                    {ctnModelItems.map((item: any) => (
+                      <MenuItem key={item.id} value={item.id}>
+                        {item.hint ? `${item.label} / ${item.hint}` : item.label}
                       </MenuItem>
                     ))}
-                    <MenuItem value="__custom__">自定义模型ID…</MenuItem>
                   </Select>
                 </FormControl>
 
-                {ctnModelPick === '__custom__' ? (
-                  <TextField
-                    size="small"
-                    label="自定义模型ID"
-                    value={ctnCustomModelId}
-                    onChange={(e) => controller.actions.setChatTitleNamingCustomModelId?.(e.target.value)}
-                    placeholder="例如：gpt-4.1-mini / deepseek-chat"
-                    fullWidth
-                  />
-                ) : null}
+                <Typography variant="caption" color="text.secondary">
+                  仅可选择供应商设置中已登记的模型；如列表为空，请先到供应商设置刷新原始列表并登记模型。
+                </Typography>
 
                 <TextField
                   size="small"
@@ -7693,44 +7643,31 @@ function PluginSettingsPage(props: {
                     </Select>
                   </FormControl>
 
-                  <Stack direction="row" spacing={1} sx={{ pt: { xs: 0, sm: 0.5 } }}>
-                    <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => controller.actions.refreshModels(snProviderId, true)} disabled={!snProviderId || modelLoading}>
-                      {modelLoading ? '刷新中…' : '刷新模型'}
-                    </Button>
-                  </Stack>
                 </Stack>
 
                 <FormControl size="small" fullWidth>
-                  <InputLabel id="sn-model">模型</InputLabel>
+                  <InputLabel id="sn-model">登记模型</InputLabel>
                   <Select
                     labelId="sn-model"
-                    value={snHasPickInList ? snModelPick : snModelPick === '__custom__' ? '__custom__' : ''}
-                    label="模型"
+                    value={snHasPickInList ? snModelPick : ''}
+                    label="登记模型"
                     onChange={(e) => controller.actions.setStickerNamingModelId?.(e.target.value)}
                     disabled={loading || !snProviderId}
                   >
                     <MenuItem value="">
                       <em>请选择…</em>
                     </MenuItem>
-                    {snModelItems.map((id: string) => (
-                      <MenuItem key={id} value={id}>
-                        {id}
+                    {snModelItems.map((item: any) => (
+                      <MenuItem key={item.id} value={item.id}>
+                        {item.hint ? `${item.label} / ${item.hint}` : item.label}
                       </MenuItem>
                     ))}
-                    <MenuItem value="__custom__">自定义模型ID…</MenuItem>
                   </Select>
                 </FormControl>
 
-                {snModelPick === '__custom__' ? (
-                  <TextField
-                    size="small"
-                    label="自定义模型ID"
-                    value={snCustomModelId}
-                    onChange={(e) => controller.actions.setStickerNamingCustomModelId?.(e.target.value)}
-                    placeholder="例如：gpt-4.1-mini / deepseek-chat"
-                    fullWidth
-                  />
-                ) : null}
+                <Typography variant="caption" color="text.secondary">
+                  仅可选择供应商设置中已登记的模型；如列表为空，请先到供应商设置刷新原始列表并登记模型。
+                </Typography>
 
                 <TextField
                   size="small"
@@ -7811,29 +7748,7 @@ function PluginSettingsPage(props: {
 
                 {isEditing ? (
                   <Stack spacing={1.5} sx={{ mt: 1.5 }}>
-                    <TextField label="名称" value={String(draft?.providerName || '')} onChange={(e) => controller.actions.setDraft('providerName', e.target.value)} />
-                    <TextField
-                      label="Base URL"
-                      value={String(draft?.providerBaseUrl || '')}
-                      onChange={(e) => controller.actions.setDraft('providerBaseUrl', e.target.value)}
-                      placeholder="https://api.openai.com/v1"
-                    />
-                    <FormControl fullWidth>
-                      <InputLabel id={`provider-protocol-${pid}`}>协议</InputLabel>
-                      <Select
-                        labelId={`provider-protocol-${pid}`}
-                        label="协议"
-                        value={String(draft?.providerProtocol || '')}
-                        onChange={(e) => controller.actions.setDraft('providerProtocol', e.target.value)}
-                      >
-                        <MenuItem value="">
-                          <em>请选择协议</em>
-                        </MenuItem>
-                        <MenuItem value="openai">OpenAI 兼容</MenuItem>
-                        <MenuItem value="anthropic">Anthropic</MenuItem>
-                      </Select>
-                    </FormControl>
-                    <ApiKeyField value={String(draft?.providerApiKey || '')} onValueChange={(next) => controller.actions.setDraft('providerApiKey', next)} />
+                    <ProviderConfigEditor controller={controller} draft={draft} provider={p} loading={loading} models={models} />
                     <Stack direction="row" spacing={1} justifyContent="flex-end">
                       <Button variant="contained" onClick={() => controller.actions.saveProvider()}>
                         保存
@@ -7848,6 +7763,18 @@ function PluginSettingsPage(props: {
       </Paper>
     </Box>
   )
+}
+
+function registeredModelItems(provider: any) {
+  const models = Array.isArray(provider?.registeredModels) ? provider.registeredModels : []
+  return models
+    .map((model: any) => {
+      const id = String(model?.id || '').trim()
+      const label = String(model?.name || model?.id || '').trim() || id
+      const hint = String(model?.sourceModelId || '').trim()
+      return { id, label, hint }
+    })
+    .filter((model: any) => model.id)
 }
 
 function providerProtocolLabel(protocol: unknown) {

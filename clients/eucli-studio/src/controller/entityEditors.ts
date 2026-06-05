@@ -174,7 +174,9 @@ export function createEntityEditors(deps: {
     state.draft.roleAvatarImageCropSrc = ''
     state.draft.roleSystemPrompt = ''
     state.draft.roleTemperature = '0.7'
+    state.draft.roleModelSource = 'provider'
     state.draft.roleProviderId = fallbackPid
+    state.draft.roleModelGroupId = ''
     state.draft.roleToolPolicy = emptyRoleToolPolicy()
     state.draft.roleToolWhitelistOpen = false
     state.draft.roleToolAddOpen = false
@@ -185,7 +187,7 @@ export function createEntityEditors(deps: {
     state.draft.roleNativeToolAddOpen = false
 
     const p = sa.getProvider(fallbackPid)
-    const cachedItems = Array.isArray(p?.modelsCache?.items) ? p.modelsCache.items : []
+    const cachedItems = Array.isArray(p?.registeredModels) ? p.registeredModels.map((model: any) => String(model?.id || '')).filter(Boolean) : []
     state.models = { loading: false, error: '', items: cachedItems.slice(0, 300) }
     state.draft.roleModelId = ''
     state.draft.roleCustomModelId = ''
@@ -213,7 +215,10 @@ export function createEntityEditors(deps: {
     state.draft.roleAvatarImageCropSrc = ''
     state.draft.roleSystemPrompt = String(role.systemPrompt || '')
     state.draft.roleTemperature = String(role.temperature ?? 0.7)
-    state.draft.roleProviderId = String(role.modelRef?.providerId || '')
+    const modelKind = String(role.modelRef?.kind || '').trim() === 'model_group' || String(role.modelRef?.groupId || '').trim() ? 'model_group' : 'provider'
+    state.draft.roleModelSource = modelKind
+    state.draft.roleProviderId = modelKind === 'provider' ? String(role.modelRef?.providerId || '') : ''
+    state.draft.roleModelGroupId = modelKind === 'model_group' ? String(role.modelRef?.groupId || '') : ''
     state.draft.roleToolPolicy = normalizeRoleToolPolicy(role.toolPolicy)
     state.draft.roleToolWhitelistOpen = false
     state.draft.roleToolAddOpen = false
@@ -225,12 +230,11 @@ export function createEntityEditors(deps: {
     const curModelId = String(role.modelRef?.modelId || '').trim()
 
     const p = sa.getProvider(state.draft.roleProviderId)
-    const cachedItems = Array.isArray(p?.modelsCache?.items) ? p.modelsCache.items : []
+    const cachedItems = Array.isArray(p?.registeredModels) ? p.registeredModels.map((model: any) => String(model?.id || '')).filter(Boolean) : []
     state.models = { loading: false, error: '', items: cachedItems.slice(0, 300) }
 
-    const inCache = !!curModelId && cachedItems.some((x: any) => String(x) === curModelId)
-    state.draft.roleModelId = inCache ? curModelId : curModelId ? '__custom__' : ''
-    state.draft.roleCustomModelId = inCache ? '' : curModelId
+    state.draft.roleModelId = curModelId
+    state.draft.roleCustomModelId = ''
 
     state.modal = 'role'
     render()
@@ -246,14 +250,19 @@ export function createEntityEditors(deps: {
     const avatarImage = looksLikeImageDataUrl(state.draft.roleAvatarImage) ? String(state.draft.roleAvatarImage || '') : ''
     const sys = String(state.draft.roleSystemPrompt || '').trim()
     const temperature = clampTemp(state.draft.roleTemperature)
-    const providerId = String(state.draft.roleProviderId || '').trim()
+    const modelSource = String(state.draft.roleModelSource || '').trim() === 'model_group' ? 'model_group' : 'provider'
+    const providerId = modelSource === 'provider' ? String(state.draft.roleProviderId || '').trim() : ''
+    const groupId = modelSource === 'model_group' ? String(state.draft.roleModelGroupId || '').trim() : ''
     let modelId = String(state.draft.roleModelId || '').trim()
-    if (modelId === '__custom__') modelId = String(state.draft.roleCustomModelId || '').trim()
 
     if (!sys) return showToast?.('请填写角色系统提示词', { kind: 'error' })
-    if (!providerId) return showToast?.('请选择角色供应商', { kind: 'error' })
-    if (!modelId) return showToast?.('请选择或填写角色模型', { kind: 'error' })
+    if (modelSource === 'provider' && !providerId) return showToast?.('请选择角色供应商', { kind: 'error' })
+    if (modelSource === 'model_group' && !groupId) return showToast?.('请选择模型组', { kind: 'error' })
+    if (!modelId) return showToast?.('请选择角色模型', { kind: 'error' })
     const toolPolicy = normalizeRoleToolPolicy(state.draft.roleToolPolicy)
+    const modelRef = modelSource === 'model_group'
+      ? { kind: 'model_group', groupId, providerId: '', modelId }
+      : { kind: 'provider', providerId, modelId }
 
     if (rid === NEW_ROLE_ID) {
       const newRid = uid('r')
@@ -264,7 +273,7 @@ export function createEntityEditors(deps: {
         avatarImage,
         systemPrompt: sys,
         temperature,
-        modelRef: { providerId, modelId },
+        modelRef,
         toolPolicy,
         createdAt: now(),
         updatedAt: now(),
@@ -294,7 +303,7 @@ export function createEntityEditors(deps: {
     role.avatarImage = avatarImage
     role.systemPrompt = sys
     role.temperature = temperature
-    role.modelRef = { providerId, modelId }
+    role.modelRef = modelRef
     role.toolPolicy = toolPolicy
     role.updatedAt = now()
 
@@ -389,6 +398,10 @@ export function createEntityEditors(deps: {
     state.draft.providerBaseUrl = String(p.baseUrl || '')
     state.draft.providerApiKey = String(p.apiKey || '')
     state.draft.providerProtocol = String(p.protocol || '')
+    state.draft.providerApiKeyStrategy = String(p.apiKeyStrategy || '') === 'weighted_random' ? 'weighted_random' : 'sequential'
+    state.draft.providerApiKeys = Array.isArray(p.apiKeys) ? p.apiKeys.map((key: any) => ({ ...key })) : []
+    if (!state.draft.providerApiKeys.length && String(p.apiKey || '').trim()) state.draft.providerApiKeys = [{ id: 'legacy', name: '默认 Key', key: String(p.apiKey || ''), enabled: true, weight: 1 }]
+    state.draft.providerRegisteredModels = Array.isArray(p.registeredModels) ? p.registeredModels.map((model: any) => ({ ...model })) : []
     render()
   }
 
@@ -409,9 +422,10 @@ export function createEntityEditors(deps: {
     }
 
     const oldBaseUrl = String(p.baseUrl || '').trim()
-    const oldApiKey = String(p.apiKey || '').trim()
     const nextBaseUrl = String(state.draft.providerBaseUrl || '').trim() || 'http://'
-    const nextApiKey = String(state.draft.providerApiKey || '').trim()
+    const nextApiKeyStrategy = String(state.draft.providerApiKeyStrategy || '') === 'weighted_random' ? 'weighted_random' : 'sequential'
+    const nextApiKeys = normalizeProviderApiKeys(state.draft.providerApiKeys)
+    const nextRegisteredModels = normalizeProviderRegisteredModels(state.draft.providerRegisteredModels)
     const nextProtocol = normalizeProviderProtocol(state.draft.providerProtocol)
     const previous = { ...p, modelsCache: p.modelsCache && typeof p.modelsCache === 'object' ? { ...p.modelsCache } : p.modelsCache }
 
@@ -420,13 +434,21 @@ export function createEntityEditors(deps: {
       render()
       return
     }
+    if (!nextApiKeys.length) {
+      showToast?.('请至少填写一个供应商 Key', { kind: 'error' })
+      render()
+      return
+    }
 
     try {
       p.name = nextName
       p.baseUrl = nextBaseUrl
-      p.apiKey = nextApiKey
+      p.apiKey = ''
       p.protocol = nextProtocol
-      if (oldBaseUrl !== nextBaseUrl || oldApiKey !== nextApiKey) p.modelsCache = { items: [], fetchedAt: 0 }
+      p.apiKeyStrategy = nextApiKeyStrategy
+      p.apiKeys = nextApiKeys
+      p.registeredModels = nextRegisteredModels
+      if (oldBaseUrl !== nextBaseUrl) p.modelsCache = { items: [], fetchedAt: 0 }
       await saveProviderEntity?.(p)
       state.draft.editProviderId = ''
       showToast?.('供应商已保存', { kind: 'success' })
@@ -456,6 +478,9 @@ export function createEntityEditors(deps: {
       baseUrl: 'http://',
       apiKey: '',
       protocol: '',
+      apiKeyStrategy: 'sequential',
+      apiKeys: [],
+      registeredModels: [],
       modelsCache: { items: [], fetchedAt: 0 },
     })
     openProviderInlineEditor(pid)
@@ -464,6 +489,32 @@ export function createEntityEditors(deps: {
   function normalizeProviderProtocol(value: any) {
     const protocol = String(value || '').trim()
     return protocol === 'openai' || protocol === 'anthropic' ? protocol : ''
+  }
+
+  function normalizeProviderApiKeys(value: any) {
+    const list = Array.isArray(value) ? value : []
+    return list
+      .filter((key: any) => key && typeof key === 'object')
+      .map((key: any, index: number) => ({
+        id: String(key.id || uid('key')).trim(),
+        name: String(key.name || `Key ${index + 1}`).trim(),
+        key: String(key.key || '').trim(),
+        enabled: typeof key.enabled === 'boolean' ? key.enabled : true,
+        weight: Math.max(1, Math.round(Number(key.weight || 1))),
+      }))
+      .filter((key: any) => key.id && key.name && key.key)
+  }
+
+  function normalizeProviderRegisteredModels(value: any) {
+    const list = Array.isArray(value) ? value : []
+    return list
+      .filter((model: any) => model && typeof model === 'object')
+      .map((model: any) => ({
+        id: String(model.id || '').trim(),
+        name: String(model.name || model.id || '').trim(),
+        sourceModelId: String(model.sourceModelId || '').trim(),
+      }))
+      .filter((model: any) => model.id && model.sourceModelId)
   }
 
   async function deleteProvider(providerId: any) {

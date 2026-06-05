@@ -1,12 +1,12 @@
-import { Box, Button, Dialog, DialogContent, DialogTitle, FormControl, IconButton, InputLabel, MenuItem, Paper, Select, Stack, TextField, Typography } from '@mui/material'
+import { Box, Button, Dialog, DialogContent, DialogTitle, IconButton, Paper, Stack, Typography } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import CloseIcon from '@mui/icons-material/Close'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import StorageIcon from '@mui/icons-material/Storage'
-import { ApiKeyField } from '../components/fields/ApiKeyField'
+import { ProviderConfigEditor } from '../components/ProviderConfigEditor'
 
-export function ProvidersDialog(props: { open: boolean; controller: any; providers: any[]; draft: any }) {
-  const { open, controller, providers, draft } = props
+export function ProvidersDialog(props: { open: boolean; controller: any; providers: any[]; draft: any; models: any }) {
+  const { open, controller, providers, draft, models } = props
   const editingId = String(draft?.editProviderId || '')
 
   return (
@@ -48,29 +48,7 @@ export function ProvidersDialog(props: { open: boolean; controller: any; provide
 
                 {isEditing ? (
                   <Stack spacing={1.5} sx={{ mt: 1.5 }}>
-                    <TextField label="名称" value={String(draft?.providerName || '')} onChange={(e) => controller.actions.setDraft('providerName', e.target.value)} />
-                    <TextField
-                      label="Base URL"
-                      value={String(draft?.providerBaseUrl || '')}
-                      onChange={(e) => controller.actions.setDraft('providerBaseUrl', e.target.value)}
-                      placeholder="https://api.openai.com/v1"
-                    />
-                    <FormControl fullWidth>
-                      <InputLabel id={`provider-dialog-protocol-${pid}`}>协议</InputLabel>
-                      <Select
-                        labelId={`provider-dialog-protocol-${pid}`}
-                        label="协议"
-                        value={String(draft?.providerProtocol || '')}
-                        onChange={(e) => controller.actions.setDraft('providerProtocol', e.target.value)}
-                      >
-                        <MenuItem value="">
-                          <em>请选择协议</em>
-                        </MenuItem>
-                        <MenuItem value="openai">OpenAI 兼容</MenuItem>
-                        <MenuItem value="anthropic">Anthropic</MenuItem>
-                      </Select>
-                    </FormControl>
-                    <ApiKeyField value={String(draft?.providerApiKey || '')} onValueChange={(next) => controller.actions.setDraft('providerApiKey', next)} />
+                    <ProviderConfigEditor controller={controller} draft={draft} provider={p} models={models} />
                     <Stack direction="row" spacing={1} justifyContent="flex-end">
                       <Button variant="contained" onClick={() => controller.actions.saveProvider()}>
                         保存

@@ -598,6 +598,7 @@ func (f *fakeGatewayRoles) DeleteRoleAvatar(ctx context.Context, roleID string) 
 
 type fakeGatewayProviders struct {
 	providers          map[string]types.Provider
+	modelGroups        []types.ModelGroup
 	modelRequestConfig types.ModelRequestConfig
 }
 
@@ -614,7 +615,18 @@ func (f *fakeGatewayProviders) LoadProvider(ctx context.Context, providerID stri
 func (f *fakeGatewayProviders) ListProviders(ctx context.Context) ([]types.ProviderSummary, error) {
 	providers := make([]types.ProviderSummary, 0, len(f.providers))
 	for _, provider := range f.providers {
-		providers = append(providers, types.ProviderSummary{ID: provider.ID, Name: provider.Name, Protocol: provider.Protocol})
+		apiKeyCount := len(provider.APIKeys)
+		enabledAPIKeyCount := 0
+		for _, key := range provider.APIKeys {
+			if key.Enabled {
+				enabledAPIKeyCount++
+			}
+		}
+		if apiKeyCount == 0 && provider.Key != "" {
+			apiKeyCount = 1
+			enabledAPIKeyCount = 1
+		}
+		providers = append(providers, types.ProviderSummary{ID: provider.ID, Name: provider.Name, Protocol: provider.Protocol, APIKeyCount: apiKeyCount, EnabledAPIKeyCount: enabledAPIKeyCount, RegisteredModelCount: len(provider.RegisteredModels)})
 	}
 	return providers, nil
 }
@@ -628,6 +640,13 @@ func (f *fakeGatewayProviders) LoadModelRequestConfig(ctx context.Context) (type
 func (f *fakeGatewayProviders) SaveModelRequestConfig(ctx context.Context, config types.ModelRequestConfig) (types.ModelRequestConfig, error) {
 	f.modelRequestConfig = config
 	return f.modelRequestConfig, nil
+}
+func (f *fakeGatewayProviders) LoadModelGroups(ctx context.Context) ([]types.ModelGroup, error) {
+	return f.modelGroups, nil
+}
+func (f *fakeGatewayProviders) SaveModelGroups(ctx context.Context, groups []types.ModelGroup) ([]types.ModelGroup, error) {
+	f.modelGroups = groups
+	return f.modelGroups, nil
 }
 func (f *fakeGatewayProviders) RefreshModels(ctx context.Context, providerID string) ([]types.ModelInfo, error) {
 	return []types.ModelInfo{{ID: "gpt-4.1", Name: "GPT-4.1"}}, nil

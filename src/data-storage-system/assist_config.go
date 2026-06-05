@@ -94,19 +94,9 @@ func normalizeAssistModelSelection(modelPick string, customModelID string, coord
 	coordinate.ProviderName = strings.TrimSpace(coordinate.ProviderName)
 	coordinate.ModelID = strings.TrimSpace(coordinate.ModelID)
 	modelPick = strings.TrimSpace(modelPick)
-	customModelID = strings.TrimSpace(customModelID)
-	if modelPick == "" {
-		if customModelID != "" {
-			modelPick = "__custom__"
-		} else {
-			modelPick = coordinate.ModelID
-		}
-	}
-	if modelPick == "__custom__" && customModelID == "" {
-		customModelID = coordinate.ModelID
-	}
-	if modelPick != "__custom__" && coordinate.ModelID == "" {
+	if coordinate.ModelID == "" && modelPick != "__custom__" {
 		coordinate.ModelID = modelPick
 	}
-	return modelPick, customModelID, coordinate
+	modelPick = coordinate.ModelID
+	return modelPick, "", coordinate
 }

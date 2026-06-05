@@ -31,7 +31,8 @@ func TestSaveProviderValidatesProvider(t *testing.T) {
 
 func TestRefreshModelsUsesNetworkSystemAndSavesModels(t *testing.T) {
 	storage := newFakeProviderStorage()
-	provider := types.Provider{ID: "openai-main", Name: "OpenAI", BaseURL: "https://api.example.test/v1/", Key: "secret", Protocol: types.ProviderProtocolOpenAI}
+	provider := testOpenAIProvider()
+	provider.BaseURL = "https://api.example.test/v1/"
 	storage.providers[provider.ID] = provider
 	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"data":[{"id":"gpt-4.1"}]}`)}}
 	system := newTestProviderSystem(t, network, storage)
@@ -57,7 +58,7 @@ func TestRefreshModelsUsesNetworkSystemAndSavesModels(t *testing.T) {
 func TestRefreshModelsUsesConfiguredTimeout(t *testing.T) {
 	storage := newFakeProviderStorage()
 	storage.modelRequestConfig = types.ModelRequestConfig{ListModelsTimeoutMs: 45_000, CompletionTimeoutMs: types.ModelRequestCompletionTimeoutDefaultMs, StreamIdleTimeoutMs: types.ModelRequestStreamIdleTimeoutDefaultMs}
-	storage.providers["openai-main"] = types.Provider{ID: "openai-main", Name: "OpenAI", BaseURL: "https://api.example.test/v1", Key: "secret", Protocol: types.ProviderProtocolOpenAI}
+	storage.providers["openai-main"] = testOpenAIProvider()
 	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"data":[{"id":"gpt-4.1"}]}`)}}
 	system := newTestProviderSystem(t, network, storage)
 
@@ -72,15 +73,46 @@ func TestRefreshModelsUsesConfiguredTimeout(t *testing.T) {
 
 func TestResolveModelFailsWhenModelMissing(t *testing.T) {
 	storage := newFakeProviderStorage()
-	storage.providers["openai-main"] = types.Provider{ID: "openai-main", Name: "OpenAI", BaseURL: "https://api.example.test/v1", Key: "secret", Protocol: types.ProviderProtocolOpenAI, Models: []types.ModelInfo{{ID: "gpt-4.1"}}}
+	storage.providers["openai-main"] = testOpenAIProvider()
 	system := newTestProviderSystem(t, &fakeNetwork{}, storage)
 	_, _, err := system.ResolveModel(context.Background(), types.ModelCoordinate{ProviderID: "openai-main", ModelID: "missing"})
 	assertAppErrorCode(t, err, "provider.model_not_found")
 }
 
+func TestResolveModelMapsRegisteredModelToSourceModel(t *testing.T) {
+	storage := newFakeProviderStorage()
+	provider := testOpenAIProvider()
+	provider.RegisteredModels = []types.ProviderRegisteredModel{{ID: "fast", Name: "Fast", SourceModelID: "gpt-4.1"}}
+	storage.providers["openai-main"] = provider
+	system := newTestProviderSystem(t, &fakeNetwork{}, storage)
+
+	_, model, err := system.ResolveModel(context.Background(), types.ModelCoordinate{ProviderID: "openai-main", ModelID: "fast"})
+	if err != nil {
+		t.Fatalf("ResolveModel() error = %v", err)
+	}
+	if model.ID != "gpt-4.1" || model.Name != "Fast" {
+		t.Fatalf("model = %#v", model)
+	}
+}
+
+func TestResolveModelGroupUsesRegisteredMemberModel(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["openai-main"] = testOpenAIProvider()
+	storage.modelGroups = []types.ModelGroup{{ID: "main-group", Name: "Main Group", Models: []types.ModelGroupModel{{ID: "balanced", Name: "Balanced", Strategy: types.RotationStrategySequential, Members: []types.ModelGroupMember{{ProviderID: "openai-main", ModelID: "gpt-4.1", Weight: 1}}}}}}
+	system := newTestProviderSystem(t, &fakeNetwork{}, storage)
+
+	provider, model, err := system.ResolveModel(context.Background(), types.ModelCoordinate{Kind: "model_group", GroupID: "main-group", ModelID: "balanced"})
+	if err != nil {
+		t.Fatalf("ResolveModel() error = %v", err)
+	}
+	if provider.ID != "openai-main" || model.ID != "gpt-4.1" {
+		t.Fatalf("provider = %#v model = %#v", provider, model)
+	}
+}
+
 func TestCompleteOpenAIWritesToolsIntoRequest(t *testing.T) {
 	storage := newFakeProviderStorage()
-	storage.providers["openai-main"] = types.Provider{ID: "openai-main", Name: "OpenAI", BaseURL: "https://api.example.test/v1", Key: "secret", Protocol: types.ProviderProtocolOpenAI, Models: []types.ModelInfo{{ID: "gpt-4.1"}}}
+	storage.providers["openai-main"] = testOpenAIProvider()
 	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"hello","tool_calls":[{"id":"call-1","function":{"name":"file-reader","arguments":"{\"path\":\"README.md\"}"}}]}}]}`)}}
 	system := newTestProviderSystem(t, network, storage)
 
@@ -108,7 +140,7 @@ func TestCompleteOpenAIWritesToolsIntoRequest(t *testing.T) {
 func TestCompleteUsesConfiguredTimeout(t *testing.T) {
 	storage := newFakeProviderStorage()
 	storage.modelRequestConfig = types.ModelRequestConfig{ListModelsTimeoutMs: types.ModelRequestListModelsTimeoutDefaultMs, CompletionTimeoutMs: 180_000, StreamIdleTimeoutMs: types.ModelRequestStreamIdleTimeoutDefaultMs}
-	storage.providers["openai-main"] = types.Provider{ID: "openai-main", Name: "OpenAI", BaseURL: "https://api.example.test/v1", Key: "secret", Protocol: types.ProviderProtocolOpenAI, Models: []types.ModelInfo{{ID: "gpt-4.1"}}}
+	storage.providers["openai-main"] = testOpenAIProvider()
 	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"done"}}]}`)}}
 	system := newTestProviderSystem(t, network, storage)
 
@@ -134,7 +166,7 @@ func TestModelToolDescriptionPrefersPromptDescription(t *testing.T) {
 
 func TestCompleteOpenAISendsStructuredToolHistory(t *testing.T) {
 	storage := newFakeProviderStorage()
-	storage.providers["openai-main"] = types.Provider{ID: "openai-main", Name: "OpenAI", BaseURL: "https://api.example.test/v1", Key: "secret", Protocol: types.ProviderProtocolOpenAI, Models: []types.ModelInfo{{ID: "gpt-4.1"}}}
+	storage.providers["openai-main"] = testOpenAIProvider()
 	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"done"}}]}`)}}
 	system := newTestProviderSystem(t, network, storage)
 
@@ -165,7 +197,7 @@ func TestCompleteOpenAISendsStructuredToolHistory(t *testing.T) {
 
 func TestCompletePreservesUpstreamErrorDetails(t *testing.T) {
 	storage := newFakeProviderStorage()
-	storage.providers["openai-main"] = types.Provider{ID: "openai-main", Name: "OpenAI", BaseURL: "https://api.example.test/v1", Key: "secret", Protocol: types.ProviderProtocolOpenAI, Models: []types.ModelInfo{{ID: "gpt-4.1"}}}
+	storage.providers["openai-main"] = testOpenAIProvider()
 	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 400, Headers: map[string][]string{"X-Request-Id": {"req-1"}}, Body: []byte(`{"error":{"message":"upstream says no","type":"invalid_request_error"}}`)}}
 	system := newTestProviderSystem(t, network, storage)
 
@@ -188,7 +220,7 @@ func TestCompletePreservesUpstreamErrorDetails(t *testing.T) {
 
 func TestCompleteOpenAIRejectsToolHistoryWithoutResult(t *testing.T) {
 	storage := newFakeProviderStorage()
-	storage.providers["openai-main"] = types.Provider{ID: "openai-main", Name: "OpenAI", BaseURL: "https://api.example.test/v1", Key: "secret", Protocol: types.ProviderProtocolOpenAI, Models: []types.ModelInfo{{ID: "gpt-4.1"}}}
+	storage.providers["openai-main"] = testOpenAIProvider()
 	system := newTestProviderSystem(t, &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"done"}}]}`)}}, storage)
 
 	_, err := system.Complete(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Messages: []types.PromptMessage{{Role: "assistant", Parts: []types.MessagePart{{Type: "tool", CallID: "call-1", ToolName: "shell_command", Input: map[string]any{"command": "pwd"}}}}}})
@@ -197,7 +229,7 @@ func TestCompleteOpenAIRejectsToolHistoryWithoutResult(t *testing.T) {
 
 func TestCompleteOpenAISkipsHiddenToolHistory(t *testing.T) {
 	storage := newFakeProviderStorage()
-	storage.providers["openai-main"] = types.Provider{ID: "openai-main", Name: "OpenAI", BaseURL: "https://api.example.test/v1", Key: "secret", Protocol: types.ProviderProtocolOpenAI, Models: []types.ModelInfo{{ID: "gpt-4.1"}}}
+	storage.providers["openai-main"] = testOpenAIProvider()
 	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"done"}}]}`)}}
 	system := newTestProviderSystem(t, network, storage)
 
@@ -215,7 +247,7 @@ func TestCompleteOpenAISkipsHiddenToolHistory(t *testing.T) {
 
 func TestCompleteAnthropicSeparatesSystemPrompt(t *testing.T) {
 	storage := newFakeProviderStorage()
-	storage.providers["anthropic-main"] = types.Provider{ID: "anthropic-main", Name: "Anthropic", BaseURL: "https://api.anthropic.test/v1", Key: "secret", Protocol: types.ProviderProtocolAnthropic, Models: []types.ModelInfo{{ID: "claude-3-5-sonnet"}}}
+	storage.providers["anthropic-main"] = testAnthropicProvider()
 	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"msg-1","content":[{"type":"text","text":"hello"},{"type":"tool_use","id":"toolu-1","name":"search","input":{"query":"eucli"}}]}`)}}
 	system := newTestProviderSystem(t, network, storage)
 
@@ -248,7 +280,7 @@ func TestCompleteAnthropicSeparatesSystemPrompt(t *testing.T) {
 
 func TestCompleteAnthropicSendsStructuredToolHistory(t *testing.T) {
 	storage := newFakeProviderStorage()
-	storage.providers["anthropic-main"] = types.Provider{ID: "anthropic-main", Name: "Anthropic", BaseURL: "https://api.anthropic.test/v1", Key: "secret", Protocol: types.ProviderProtocolAnthropic, Models: []types.ModelInfo{{ID: "claude-3-5-sonnet"}}}
+	storage.providers["anthropic-main"] = testAnthropicProvider()
 	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"msg-1","content":[{"type":"text","text":"done"}]}`)}}
 	system := newTestProviderSystem(t, network, storage)
 
@@ -279,7 +311,7 @@ func TestCompleteAnthropicSendsStructuredToolHistory(t *testing.T) {
 
 func TestCompleteAnthropicRejectsToolHistoryWithoutResult(t *testing.T) {
 	storage := newFakeProviderStorage()
-	storage.providers["anthropic-main"] = types.Provider{ID: "anthropic-main", Name: "Anthropic", BaseURL: "https://api.anthropic.test/v1", Key: "secret", Protocol: types.ProviderProtocolAnthropic, Models: []types.ModelInfo{{ID: "claude-3-5-sonnet"}}}
+	storage.providers["anthropic-main"] = testAnthropicProvider()
 	system := newTestProviderSystem(t, &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"msg-1","content":[{"type":"text","text":"done"}]}`)}}, storage)
 
 	_, err := system.Complete(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"}, Messages: []types.PromptMessage{{Role: "assistant", Parts: []types.MessagePart{{Type: "tool", CallID: "toolu-1", ToolName: "shell_command", Input: map[string]any{"command": "pwd"}}}}}})
@@ -288,7 +320,7 @@ func TestCompleteAnthropicRejectsToolHistoryWithoutResult(t *testing.T) {
 
 func TestCompleteStreamOpenAIEmitsDeltasAndAssemblesResponse(t *testing.T) {
 	storage := newFakeProviderStorage()
-	storage.providers["openai-main"] = types.Provider{ID: "openai-main", Name: "OpenAI", BaseURL: "https://api.example.test/v1", Key: "secret", Protocol: types.ProviderProtocolOpenAI, Models: []types.ModelInfo{{ID: "gpt-4.1"}}}
+	storage.providers["openai-main"] = testOpenAIProvider()
 	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`data: {"id":"chatcmpl-stream","choices":[{"delta":{"content":"he"}}]}
 
 data: {"id":"chatcmpl-stream","choices":[{"delta":{"content":"llo"}}]}
@@ -331,7 +363,7 @@ data: [DONE]
 func TestCompleteStreamUsesConfiguredIdleTimeout(t *testing.T) {
 	storage := newFakeProviderStorage()
 	storage.modelRequestConfig = types.ModelRequestConfig{ListModelsTimeoutMs: types.ModelRequestListModelsTimeoutDefaultMs, CompletionTimeoutMs: types.ModelRequestCompletionTimeoutDefaultMs, StreamIdleTimeoutMs: 90_000}
-	storage.providers["openai-main"] = types.Provider{ID: "openai-main", Name: "OpenAI", BaseURL: "https://api.example.test/v1", Key: "secret", Protocol: types.ProviderProtocolOpenAI, Models: []types.ModelInfo{{ID: "gpt-4.1"}}}
+	storage.providers["openai-main"] = testOpenAIProvider()
 	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte("data: {\"id\":\"chatcmpl-stream\",\"choices\":[{\"delta\":{\"content\":\"done\"}}]}\n\ndata: [DONE]\n\n")}}
 	system := newTestProviderSystem(t, network, storage)
 
@@ -352,7 +384,7 @@ func TestSaveModelRequestConfigRejectsOutOfRangeTimeout(t *testing.T) {
 
 func TestCompleteStreamAnthropicEmitsDeltas(t *testing.T) {
 	storage := newFakeProviderStorage()
-	storage.providers["anthropic-main"] = types.Provider{ID: "anthropic-main", Name: "Anthropic", BaseURL: "https://api.anthropic.test/v1", Key: "secret", Protocol: types.ProviderProtocolAnthropic, Models: []types.ModelInfo{{ID: "claude-3-5-sonnet"}}}
+	storage.providers["anthropic-main"] = testAnthropicProvider()
 	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`data: {"type":"message_start","message":{"id":"msg-stream"}}
 
 data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"he"}}
@@ -394,6 +426,38 @@ func newTestProviderSystem(t *testing.T, network NetworkSystem, storage StorageS
 	return system
 }
 
+func testOpenAIProvider() types.Provider {
+	return types.Provider{
+		ID:       "openai-main",
+		Name:     "OpenAI",
+		BaseURL:  "https://api.example.test/v1",
+		Key:      "secret",
+		Protocol: types.ProviderProtocolOpenAI,
+		Models:   []types.ModelInfo{{ID: "gpt-4.1", Name: "gpt-4.1"}},
+		RegisteredModels: []types.ProviderRegisteredModel{{
+			ID:            "gpt-4.1",
+			Name:          "gpt-4.1",
+			SourceModelID: "gpt-4.1",
+		}},
+	}
+}
+
+func testAnthropicProvider() types.Provider {
+	return types.Provider{
+		ID:       "anthropic-main",
+		Name:     "Anthropic",
+		BaseURL:  "https://api.anthropic.test/v1",
+		Key:      "secret",
+		Protocol: types.ProviderProtocolAnthropic,
+		Models:   []types.ModelInfo{{ID: "claude-3-5-sonnet", Name: "claude-3-5-sonnet"}},
+		RegisteredModels: []types.ProviderRegisteredModel{{
+			ID:            "claude-3-5-sonnet",
+			Name:          "claude-3-5-sonnet",
+			SourceModelID: "claude-3-5-sonnet",
+		}},
+	}
+}
+
 type fakeNetwork struct {
 	lastRequest types.HTTPRequest
 	response    types.HTTPResponse
@@ -423,6 +487,7 @@ func (f *fakeNetwork) DoStream(ctx context.Context, req types.HTTPRequest, onChu
 
 type fakeProviderStorage struct {
 	providers          map[string]types.Provider
+	modelGroups        []types.ModelGroup
 	callRecords        []types.CallRecord
 	modelRequestConfig types.ModelRequestConfig
 }
@@ -447,7 +512,14 @@ func (f *fakeProviderStorage) LoadProvider(ctx context.Context, providerID strin
 func (f *fakeProviderStorage) ListProviders(ctx context.Context) ([]types.ProviderSummary, error) {
 	summaries := make([]types.ProviderSummary, 0, len(f.providers))
 	for _, provider := range f.providers {
-		summaries = append(summaries, types.ProviderSummary{ID: provider.ID, Name: provider.Name, Protocol: provider.Protocol, UpdatedAt: provider.UpdatedAt})
+		provider = normalizeProvider(provider)
+		enabledKeyCount := 0
+		for _, key := range provider.APIKeys {
+			if key.Enabled {
+				enabledKeyCount++
+			}
+		}
+		summaries = append(summaries, types.ProviderSummary{ID: provider.ID, Name: provider.Name, Protocol: provider.Protocol, APIKeyCount: len(provider.APIKeys), EnabledAPIKeyCount: enabledKeyCount, RegisteredModelCount: len(provider.RegisteredModels), UpdatedAt: provider.UpdatedAt})
 	}
 	return summaries, nil
 }
@@ -464,6 +536,15 @@ func (f *fakeProviderStorage) LoadModelRequestConfig(ctx context.Context) (types
 func (f *fakeProviderStorage) SaveModelRequestConfig(ctx context.Context, config types.ModelRequestConfig) (types.ModelRequestConfig, error) {
 	f.modelRequestConfig = config
 	return f.modelRequestConfig, nil
+}
+
+func (f *fakeProviderStorage) LoadModelGroups(ctx context.Context) ([]types.ModelGroup, error) {
+	return f.modelGroups, nil
+}
+
+func (f *fakeProviderStorage) SaveModelGroups(ctx context.Context, groups []types.ModelGroup) ([]types.ModelGroup, error) {
+	f.modelGroups = groups
+	return f.modelGroups, nil
 }
 
 func (f *fakeProviderStorage) SaveCallRecord(ctx context.Context, record types.CallRecord) error {

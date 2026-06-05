@@ -10,21 +10,52 @@ const (
 )
 
 type Provider struct {
-	ID        string           `json:"id"`
-	Name      string           `json:"name"`
-	BaseURL   string           `json:"baseUrl"`
-	Key       string           `json:"key"`
-	Protocol  ProviderProtocol `json:"protocol"`
-	Models    []ModelInfo      `json:"models,omitempty"`
-	CreatedAt time.Time        `json:"createdAt"`
-	UpdatedAt time.Time        `json:"updatedAt"`
+	ID               string                    `json:"id"`
+	Name             string                    `json:"name"`
+	BaseURL          string                    `json:"baseUrl"`
+	Key              string                    `json:"key,omitempty"`
+	Protocol         ProviderProtocol          `json:"protocol"`
+	APIKeyStrategy   RotationStrategy          `json:"apiKeyStrategy"`
+	APIKeys          []ProviderAPIKey          `json:"apiKeys,omitempty"`
+	Models           []ModelInfo               `json:"models,omitempty"`
+	RegisteredModels []ProviderRegisteredModel `json:"registeredModels,omitempty"`
+	CreatedAt        time.Time                 `json:"createdAt"`
+	UpdatedAt        time.Time                 `json:"updatedAt"`
 }
 
 type ProviderSummary struct {
-	ID        string           `json:"id"`
-	Name      string           `json:"name"`
-	Protocol  ProviderProtocol `json:"protocol"`
-	UpdatedAt time.Time        `json:"updatedAt"`
+	ID                   string           `json:"id"`
+	Name                 string           `json:"name"`
+	Protocol             ProviderProtocol `json:"protocol"`
+	APIKeyCount          int              `json:"apiKeyCount"`
+	EnabledAPIKeyCount   int              `json:"enabledApiKeyCount"`
+	RegisteredModelCount int              `json:"registeredModelCount"`
+	UpdatedAt            time.Time        `json:"updatedAt"`
+}
+
+type RotationStrategy string
+
+const (
+	RotationStrategySequential     RotationStrategy = "sequential"
+	RotationStrategyWeightedRandom RotationStrategy = "weighted_random"
+)
+
+type ProviderAPIKey struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Key       string    `json:"key"`
+	Enabled   bool      `json:"enabled"`
+	Weight    int       `json:"weight"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type ProviderRegisteredModel struct {
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	SourceModelID string    `json:"sourceModelId"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
 }
 
 type ModelInfo struct {
@@ -33,9 +64,34 @@ type ModelInfo struct {
 }
 
 type ModelCoordinate struct {
+	Kind         string `json:"kind,omitempty"`
+	GroupID      string `json:"groupId,omitempty"`
 	ProviderID   string `json:"providerId"`
 	ProviderName string `json:"providerName"`
 	ModelID      string `json:"modelId"`
+}
+
+type ModelGroup struct {
+	ID        string            `json:"id"`
+	Name      string            `json:"name"`
+	Models    []ModelGroupModel `json:"models"`
+	CreatedAt time.Time         `json:"createdAt"`
+	UpdatedAt time.Time         `json:"updatedAt"`
+}
+
+type ModelGroupModel struct {
+	ID        string             `json:"id"`
+	Name      string             `json:"name"`
+	Strategy  RotationStrategy   `json:"strategy"`
+	Members   []ModelGroupMember `json:"members"`
+	CreatedAt time.Time          `json:"createdAt"`
+	UpdatedAt time.Time          `json:"updatedAt"`
+}
+
+type ModelGroupMember struct {
+	ProviderID string `json:"providerId"`
+	ModelID    string `json:"modelId"`
+	Weight     int    `json:"weight"`
 }
 
 type ModelRequest struct {

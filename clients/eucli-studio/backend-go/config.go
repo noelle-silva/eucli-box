@@ -18,13 +18,14 @@ type clientConfig struct {
 }
 
 type projectionConfig struct {
-	UpdatedAt        int64             `json:"updatedAt,omitempty"`
-	UI               map[string]any    `json:"ui,omitempty"`
-	Settings         map[string]any    `json:"settings,omitempty"`
-	RoleOrder        []string          `json:"roleOrder,omitempty"`
-	RoleFolders      map[string]string `json:"roleFolders,omitempty"`
-	ProviderFolders  map[string]string `json:"providerFolders,omitempty"`
-	ActiveChatByRole map[string]string `json:"activeChatByRole,omitempty"`
+	UpdatedAt         int64             `json:"updatedAt,omitempty"`
+	UI                map[string]any    `json:"ui,omitempty"`
+	Settings          map[string]any    `json:"settings,omitempty"`
+	RoleOrder         []string          `json:"roleOrder,omitempty"`
+	RoleFolders       map[string]string `json:"roleFolders,omitempty"`
+	ProviderFolders   map[string]string `json:"providerFolders,omitempty"`
+	ModelGroupFolders map[string]string `json:"modelGroupFolders,omitempty"`
+	ActiveChatByRole  map[string]string `json:"activeChatByRole,omitempty"`
 }
 
 type configStore struct {
@@ -124,6 +125,9 @@ func normalizeProjection(value projectionConfig) projectionConfig {
 	}
 	if value.ProviderFolders == nil {
 		value.ProviderFolders = map[string]string{}
+	}
+	if value.ModelGroupFolders == nil {
+		value.ModelGroupFolders = map[string]string{}
 	}
 	if value.ActiveChatByRole == nil {
 		value.ActiveChatByRole = map[string]string{}

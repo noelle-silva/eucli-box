@@ -86,9 +86,6 @@ func validateProvider(provider types.Provider) error {
 	if strings.TrimSpace(provider.BaseURL) == "" {
 		return gatewayInvalid("provider baseUrl is required", nil)
 	}
-	if strings.TrimSpace(provider.Key) == "" {
-		return gatewayInvalid("provider key is required", nil)
-	}
 	if provider.Protocol == "" {
 		return gatewayInvalid("provider protocol is required", nil)
 	}

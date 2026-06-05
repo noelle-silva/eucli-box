@@ -182,6 +182,29 @@ func (s *system) handleSaveModelRequestConfig(w http.ResponseWriter, r *http.Req
 	writeData(w, http.StatusOK, saved)
 }
 
+func (s *system) handleLoadModelGroups(w http.ResponseWriter, r *http.Request) {
+	groups, err := s.providers.LoadModelGroups(r.Context())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, groups)
+}
+
+func (s *system) handleSaveModelGroups(w http.ResponseWriter, r *http.Request) {
+	groups, err := decodeJSON[[]types.ModelGroup](r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	saved, err := s.providers.SaveModelGroups(r.Context(), groups)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, saved)
+}
+
 func (s *system) handleRefreshProviderModels(w http.ResponseWriter, r *http.Request) {
 	providerID, err := pathValue(r, "providerID")
 	if err != nil {

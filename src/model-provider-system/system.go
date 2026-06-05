@@ -3,6 +3,7 @@ package modelprovider
 import (
 	"context"
 	"strings"
+	"sync"
 	"time"
 
 	"eucli-box/pkg/types"
@@ -15,6 +16,8 @@ type System interface {
 	DeleteProvider(ctx context.Context, providerID string) error
 	LoadModelRequestConfig(ctx context.Context) (types.ModelRequestConfig, error)
 	SaveModelRequestConfig(ctx context.Context, config types.ModelRequestConfig) (types.ModelRequestConfig, error)
+	LoadModelGroups(ctx context.Context) ([]types.ModelGroup, error)
+	SaveModelGroups(ctx context.Context, groups []types.ModelGroup) ([]types.ModelGroup, error)
 
 	RefreshModels(ctx context.Context, providerID string) ([]types.ModelInfo, error)
 	ResolveModel(ctx context.Context, coordinate types.ModelCoordinate) (types.Provider, types.ModelInfo, error)
@@ -34,6 +37,8 @@ type StorageSystem interface {
 	DeleteProvider(ctx context.Context, providerID string) error
 	LoadModelRequestConfig(ctx context.Context) (types.ModelRequestConfig, error)
 	SaveModelRequestConfig(ctx context.Context, config types.ModelRequestConfig) (types.ModelRequestConfig, error)
+	LoadModelGroups(ctx context.Context) ([]types.ModelGroup, error)
+	SaveModelGroups(ctx context.Context, groups []types.ModelGroup) ([]types.ModelGroup, error)
 	SaveCallRecord(ctx context.Context, record types.CallRecord) error
 }
 
@@ -42,9 +47,12 @@ type Config struct {
 }
 
 type system struct {
-	config  Config
-	network NetworkSystem
-	storage StorageSystem
+	config       Config
+	network      NetworkSystem
+	storage      StorageSystem
+	rotationMu   sync.Mutex
+	keyCursors   map[string]int
+	modelCursors map[string]int
 }
 
 func NewSystem(config Config, network NetworkSystem, storage StorageSystem) (System, error) {
@@ -60,7 +68,7 @@ func NewSystem(config Config, network NetworkSystem, storage StorageSystem) (Sys
 	if config.RequestTimeout == 0 {
 		config.RequestTimeout = 60 * time.Second
 	}
-	return &system{config: config, network: network, storage: storage}, nil
+	return &system{config: config, network: network, storage: storage, keyCursors: map[string]int{}, modelCursors: map[string]int{}}, nil
 }
 
 func normalizeBaseURL(baseURL string) string {

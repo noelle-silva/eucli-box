@@ -43,20 +43,11 @@ func normalizeStickerNamingConfig(config types.StickerNamingConfig) types.Sticke
 	config.Coordinate.ProviderName = strings.TrimSpace(config.Coordinate.ProviderName)
 	config.Coordinate.ModelID = strings.TrimSpace(config.Coordinate.ModelID)
 	config.ModelPick = strings.TrimSpace(config.ModelPick)
-	config.CustomModelID = strings.TrimSpace(config.CustomModelID)
-	if config.ModelPick == "" {
-		if config.CustomModelID != "" {
-			config.ModelPick = "__custom__"
-		} else {
-			config.ModelPick = config.Coordinate.ModelID
-		}
-	}
-	if config.ModelPick == "__custom__" && config.CustomModelID == "" {
-		config.CustomModelID = config.Coordinate.ModelID
-	}
-	if config.ModelPick != "__custom__" && config.Coordinate.ModelID == "" {
+	if config.Coordinate.ModelID == "" && config.ModelPick != "__custom__" {
 		config.Coordinate.ModelID = config.ModelPick
 	}
+	config.ModelPick = config.Coordinate.ModelID
+	config.CustomModelID = ""
 	config.SystemPrompt = strings.TrimSpace(config.SystemPrompt)
 	if config.SystemPrompt == "" {
 		config.SystemPrompt = types.DefaultStickerNamingSystemPrompt

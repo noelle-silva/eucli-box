@@ -62,6 +62,54 @@ func hasToolParts(message types.Message) bool {
 	return false
 }
 
+func cancelRunToolParts(record *runRecord, reason string) bool {
+	messageID := strings.TrimSpace(record.activeAssistantID)
+	if messageID == "" && record.messageParent.Type == "assistant" {
+		messageID = strings.TrimSpace(record.messageParent.ID)
+	}
+	if messageID == "" {
+		return false
+	}
+	now := time.Now().UTC()
+	changed := false
+	for index := range record.session.Messages {
+		if record.session.Messages[index].ID != messageID || record.session.Messages[index].Type != "assistant" {
+			continue
+		}
+		for partIndex := range record.session.Messages[index].Parts {
+			part := &record.session.Messages[index].Parts[partIndex]
+			if part.Type != "tool" || isTerminalToolPartState(part.State) {
+				continue
+			}
+			part.State = "cancelled"
+			part.UpdatedAt = now
+			if part.Result == nil {
+				part.Result = &types.ToolPartResult{ID: utils.NewID("tool-result"), ActionID: strings.TrimSpace(part.CallID), ToolName: part.ToolName, Status: types.ToolStatusCancelled, Error: strings.TrimSpace(reason), CreatedAt: now}
+			}
+			changed = true
+		}
+		if !changed {
+			return false
+		}
+		record.session.Messages[index].UpdatedAt = now
+		record.messageParent = record.session.Messages[index]
+		record.lastMessageID = record.messageParent.ID
+		record.session.UpdatedAt = now
+		record.session.LastActive = now
+		return true
+	}
+	return false
+}
+
+func isTerminalToolPartState(state string) bool {
+	switch strings.TrimSpace(state) {
+	case "completed", "denied", "cancelled", "canceled", "error", "failed":
+		return true
+	default:
+		return false
+	}
+}
+
 func upsertRunToolPart(record *runRecord, action types.ToolAction, state string, decision *types.PermissionDecision, result *types.ToolResult) {
 	ensureRunAssistantMessage(record)
 	callID := strings.TrimSpace(action.ID)

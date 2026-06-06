@@ -26,6 +26,7 @@ import { isAssistantGenerating, isAssistantRunInterrupted } from '../domain/assi
 import {
   activeEbRoleRunCards,
   activeEbRoleRunCardsForSession,
+  ebRoleRunCardIsOnMessagePath,
   findEbRoleRunCard,
   latestEbRoleRunCardForSession,
   markEbRoleRunCardCancelled,
@@ -98,6 +99,41 @@ export function createChatOperations(deps: {
     return hasActiveAssistantMessages(chat, { branchId: bid })
   }
 
+  function activeBranchMessagePath(chat: any) {
+    const ids = new Set<string>()
+    const headMid = activeChatHeadMid(chat)
+    const messages = Array.isArray(chat?.messages) ? chat.messages : []
+    if (!headMid || !messages.length) return { ids, headMid }
+    const byId = new Map<string, any>()
+    for (const message of messages) {
+      const id = String(message?.id || '').trim()
+      if (id && !byId.has(id)) byId.set(id, message)
+    }
+    let current = headMid
+    const seen = new Set<string>()
+    while (current && !seen.has(current)) {
+      seen.add(current)
+      const message = byId.get(current) || null
+      if (!message) break
+      ids.add(current)
+      current = String(message?.parentMid || '').trim()
+    }
+    return { ids, headMid }
+  }
+
+  function activeBranchHasActiveRun(roleId: string, sessionId: string, chat: any) {
+    const cards = activeEbRoleRunCardsForSession(getState(), roleId, sessionId)
+    const path = activeBranchMessagePath(chat)
+    return cards.some((card) => ebRoleRunCardIsOnMessagePath(card, path.ids, path.headMid))
+  }
+
+  async function refreshIfPendingAssistantHasNoRunCard(roleId: string, sessionId: string, chat: any) {
+    if (!roleId || !sessionId || !chat) return chat
+    if (!activeBranchHasPendingAssistant(chat)) return chat
+    if (activeBranchHasActiveRun(roleId, sessionId, chat)) return chat
+    return (await refreshRoleSession(roleId, sessionId, undefined, { activate: false }).catch(() => null)) || chat
+  }
+
   function ensureStableComposerParent(roleId: string, sessionId: string, chat: any, parentMid: string, explicitParent: boolean) {
     const mid = String(parentMid || '').trim()
     if (!chat || !mid) return true
@@ -116,6 +152,10 @@ export function createChatOperations(deps: {
     }
     if (!explicitParent && parent && String((parent as any).role || '') === 'user' && findActiveRunAtMessage(roleId, sessionId, mid)) {
       showToast?.('这个问题已有运行中的回答，请从用户消息菜单并排生成，或选择一条稳定回复后继续', { kind: 'error' })
+      return false
+    }
+    if (!explicitParent && activeBranchHasActiveRun(roleId, sessionId, chat)) {
+      showToast?.('当前路线仍有运行中的任务，请停止或等待完成后再发送', { kind: 'error' })
       return false
     }
     if (!explicitParent && activeBranchHasPendingAssistant(chat)) {
@@ -651,8 +691,12 @@ export function createChatOperations(deps: {
       return showToast?.('当前会话临时模型尚未接入 e-b 真实根动作，请先清除当前会话临时模型', { kind: 'error' })
     }
 
-    const chat = pendingChat ? null : currentChat
-    const sessionId = String(chat?.id || '').trim()
+    let chat = pendingChat ? null : currentChat
+    let sessionId = String(chat?.id || '').trim()
+    if (sessionId) {
+      chat = await refreshIfPendingAssistantHasNoRunCard(rid, sessionId, chat)
+      sessionId = String(chat?.id || sessionId).trim()
+    }
     const forkFromMid = String(opts?.forkFromMid || '').trim()
     const branchDraft = state.branchDraft && typeof state.branchDraft === 'object' ? state.branchDraft : null
     const branchDraftParentId =
@@ -704,15 +748,18 @@ export function createChatOperations(deps: {
     const activeRun = explicitRunId
       ? findEbRoleRunCard(state, explicitRunId)
       : latestEbRoleRunCardForSession(state, String(sa.activeRole()?.id || '').trim(), String(sa.activeChatFromData()?.id || '').trim()) || activeEbRoleRunCards(state).slice(-1)[0] || null
-    if (activeRun) {
-      const runId = String(activeRun.runId || '').trim()
+    if (activeRun || explicitRunId) {
+      const runId = String(activeRun?.runId || explicitRunId).trim()
       if (!runId) return showToast?.('当前运行尚未拿到 e-b run id，请稍候再试', { kind: 'error' })
       if (typeof netRequest !== 'function') return showToast?.('e-b 请求通道不可用', { kind: 'error' })
       try {
         cancelledRunIds.add(runId)
-        markEbRoleRunCardCancelled(state, runId)
+        if (activeRun) markEbRoleRunCardCancelled(state, runId)
         await cancelRoleRun(netRequest, runId)
         showToast?.('已请求停止', { kind: 'success' })
+        const roleId = String(activeRun?.roleId || sa.activeRole()?.id || '').trim()
+        const sessionId = String(activeRun?.sessionId || sa.activeChatFromData()?.id || '').trim()
+        if (roleId && sessionId) refreshRoleSession(roleId, sessionId, undefined, { activate: false }).catch(() => {})
         renderComposer()
       } catch (e) {
         showToast?.(String((e as any)?.message || e || '停止失败'), { kind: 'error' })

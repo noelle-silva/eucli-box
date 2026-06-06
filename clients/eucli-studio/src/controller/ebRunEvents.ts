@@ -1,10 +1,10 @@
 import { normalizeTimeMs } from '../core/utils'
 import { ensureChatBranch, normalizeBranchId } from '../domain/branching'
-import { beginAssistantRun, checkpointAssistantRun, finishAssistantRun, type AssistantRunStatus } from '../domain/assistantRunState'
+import { beginAssistantRun, checkpointAssistantRun, finishAssistantRun, hasSettledAssistantToolParts, type AssistantRunStatus } from '../domain/assistantRunState'
 import { chatMetaFromChat, upsertChatMeta } from '../domain/chatMeta'
 import { normalizeChatMessage, normalizeMessageParentMid } from '../domain/message'
 import { CHAT_DEFAULT_BRANCH_ID } from '../domain/constants'
-import { isTerminalEbRunStatus, removeEbRoleRunCard, upsertEbRoleRunCard } from '../domain/activeRunCards'
+import { activeEbRoleRunCardsForSession, isTerminalEbRunStatus, removeEbRoleRunCard, upsertEbRoleRunCard } from '../domain/activeRunCards'
 
 type DirectEventSubscription = (listener: (event: any) => void) => () => void
 
@@ -142,6 +142,8 @@ export function createEbRunEventConsumer(deps: {
     const terminalStatus = assistantStatusFromRunStatus(payload.status)
     if (terminalStatus) {
       finishAssistantRun(message, message.content, terminalStatus, message.updatedAt)
+    } else if (hasSettledAssistantToolParts(message)) {
+      finishAssistantRun(message, message.content, 'succeeded', message.updatedAt)
     } else {
       beginAssistantRun(message, { generationId: runId, stream: !!payload.stream, resetContent: false, startedAt: Number(message.createdAt || eventTime) || eventTime })
       checkpointAssistantRun(message, message.content, message.updatedAt)
@@ -168,6 +170,11 @@ export function createEbRunEventConsumer(deps: {
       branch.updatedAt = chat.updatedAt
       if (!String(branch.forkFromMid || '').trim() && parentMid) branch.forkFromMid = parentMid
     }
+
+    const runStatus = String(payload.status || '').trim()
+    const activeCards = activeEbRoleRunCardsForSession(state, roleId, sessionId)
+    const chatStatus = activeCards.length ? String(activeCards[activeCards.length - 1]?.status || 'running').trim() || 'running' : runStatus
+    if (chatStatus) chat.status = chatStatus
 
     if (box) box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chat, '新聊天'), '新聊天')
 

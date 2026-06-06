@@ -24,6 +24,10 @@ export type AssistantRunSignal = {
   expiresAt?: number
 }
 
+export type AssistantMessageMergeOptions = {
+  storedChatStatus?: unknown
+}
+
 function normalizeRunStatus(value: unknown): AssistantRunStatus {
   const s = String(value || '').trim()
   if (s === 'queued' || s === 'running' || s === 'succeeded' || s === 'failed' || s === 'canceled') return s
@@ -41,8 +45,34 @@ function finiteTime(value: unknown, fallback: number) {
   return isFinite(n) && n > 0 ? n : fallback
 }
 
-function messageUpdatedAt(value: any) {
-  return finiteTime(value?.updatedAt, finiteTime(value?.createdAt, 0))
+function isTerminalStoredChatStatus(value: unknown) {
+  const status = String(value || '').trim().toLowerCase()
+  return status === 'completed' || status === 'failed' || status === 'cancelled' || status === 'canceled'
+}
+
+function isTerminalToolPartState(value: unknown) {
+  const state = String(value || '').trim().toLowerCase()
+  return state === 'completed' || state === 'denied' || state === 'cancelled' || state === 'canceled' || state === 'error' || state === 'failed'
+}
+
+export function hasSettledAssistantToolParts(message: unknown) {
+  const m = message && typeof message === 'object' ? (message as any) : null
+  if (!m || m.role !== 'assistant') return false
+  const parts = Array.isArray(m?.parts) ? m.parts.filter((part: any) => String(part?.type || '') === 'tool') : []
+  if (!parts.length) return false
+  let hasSettledPart = false
+  for (const part of parts) {
+    const settled = isTerminalToolPartState(part?.state) || !!(part?.result && typeof part.result === 'object')
+    if (!settled) return false
+    hasSettledPart = true
+  }
+  return hasSettledPart
+}
+
+function storedMessageSettlesActiveRun(stored: any, options?: AssistantMessageMergeOptions) {
+  if (isTerminalStoredChatStatus(options?.storedChatStatus)) return true
+  if (stored?.error && typeof stored.error === 'object') return true
+  return hasSettledAssistantToolParts(stored)
 }
 
 export function normalizeAssistantRunState(raw: unknown): AssistantRunState | null {
@@ -208,7 +238,7 @@ export function finishAssistantRun(message: any, content: unknown, status: Assis
   return changed
 }
 
-export function resolveAssistantMessageForMerge(localMessage: any, storedMessage: any) {
+export function resolveAssistantMessageForMerge(localMessage: any, storedMessage: any, options?: AssistantMessageMergeOptions) {
   const local = localMessage && typeof localMessage === 'object' ? localMessage : null
   const stored = storedMessage && typeof storedMessage === 'object' ? storedMessage : null
   if (!local || !stored) return localMessage
@@ -231,13 +261,7 @@ export function resolveAssistantMessageForMerge(localMessage: any, storedMessage
 
   if (localActive && !storedActive) {
     if (!localRun) return stored
-
-    const localText = String(local.content ?? '')
-    const storedText = String(stored.content ?? '')
-    const storedUpdatedAt = messageUpdatedAt(stored)
-    const localRunUpdatedAt = finiteTime(localRun.updatedAt, messageUpdatedAt(local))
-    if (storedUpdatedAt > localRunUpdatedAt) return stored
-    if (storedText && storedText === localText) return stored
+    if (storedMessageSettlesActiveRun(stored, options)) return stored
     return local
   }
   if (!localActive && storedActive) return local

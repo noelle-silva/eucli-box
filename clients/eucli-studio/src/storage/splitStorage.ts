@@ -202,7 +202,7 @@ function mergeChatForConcurrentWrite(localChat: any, storedChat: any, intentRaw?
     if (typeof i !== 'number') continue
     const lm = localMsgs[i]
     if (!lm || typeof lm !== 'object') continue
-    localMsgs[i] = normalizeMessageAfterDeletionIntent(resolveAssistantMessageForMerge(lm, sm), deletedMessageIds, deletedMessageParentById, localIds)
+    localMsgs[i] = normalizeMessageAfterDeletionIntent(resolveAssistantMessageForMerge(lm, sm, { storedChatStatus: (stored as any)?.status }), deletedMessageIds, deletedMessageParentById, localIds)
   }
 
   try {

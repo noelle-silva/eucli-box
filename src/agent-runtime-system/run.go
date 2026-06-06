@@ -166,6 +166,10 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 		}
 		_, err = s.handleToolIntents(ctx, record, modelResponse.ToolIntents)
 		if err != nil {
+			if ctx.Err() != nil {
+				s.cancelRunRecord(context.Background(), record, record.session)
+				return
+			}
 			s.failRun(context.Background(), record, record.session, err)
 			return
 		}
@@ -348,6 +352,13 @@ func (s *system) cancelRunRecord(ctx context.Context, record *runRecord, session
 	state, err := s.updateRun(record.runID, types.RunStatusCancelled, "cancelled")
 	if err != nil {
 		return
+	}
+	if cancelRunToolParts(record, "cancelled by user") {
+		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err == nil {
+			if next, ok := s.getRunState(record.runID); ok {
+				state = next
+			}
+		}
 	}
 	messagesSaved := false
 	if session.ID != "" {

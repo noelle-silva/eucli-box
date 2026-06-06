@@ -16,6 +16,23 @@ function plainObject(value: any) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
 }
 
+function stripJsonFence(text: string) {
+  const raw = String(text || '').trim()
+  const match = raw.match(/^```(?:json)?\s*\n([\s\S]*?)\n```$/i)
+  return match ? String(match[1] || '').trim() : raw
+}
+
+function parseJsonObject(text: string): { ok: true; value: Record<string, any> } | { ok: false; error: string } {
+  let parsed: any = null
+  try {
+    parsed = JSON.parse(stripJsonFence(text) || '{}')
+  } catch (_) {
+    return { ok: false, error: '工具调用参数必须是 JSON 对象' }
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { ok: false, error: '工具调用参数必须是 JSON 对象' }
+  return { ok: true, value: parsed }
+}
+
 function normalizeBlockRef(raw: any): AssistantMessageBlockRef | null {
   const kind = String(raw?.kind || '').trim() as AssistantMessageBlockKind
   if (kind !== 'text' && kind !== 'tool_invocation' && kind !== 'tool_result') return null
@@ -74,17 +91,9 @@ function editInvocationBlock(message: any, ref: AssistantMessageBlockRef, text: 
   if (!part) return { ok: false, error: '工具调用块不存在' }
   if (isTextProtocolToolPart(part)) return { ok: false, error: '文本协议工具调用属于消息正文，请编辑消息文本' }
 
-  let parsed: any = null
-  try {
-    parsed = JSON.parse(String(text || '{}'))
-  } catch (_) {
-    return { ok: false, error: '原生工具调用必须是 JSON' }
-  }
-  const box = plainObject(parsed)
-  const toolName = String(box.toolName || '').trim()
-  if (toolName) part.toolName = toolName
-  if (box.input && typeof box.input === 'object' && !Array.isArray(box.input)) part.input = box.input
-  else if (!box.toolName) part.input = box
+  const parsed = parseJsonObject(String(text || '{}'))
+  if (!parsed.ok) return { ok: false, error: parsed.error }
+  part.input = plainObject(parsed.value)
   part.raw = JSON.stringify(part.input || {})
   return { ok: true }
 }

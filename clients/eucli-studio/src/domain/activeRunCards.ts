@@ -109,6 +109,32 @@ export function latestEbRoleRunCardForSession(state: any, roleIdRaw: unknown, se
   return cards.length ? cards[cards.length - 1] : null
 }
 
+export function ebRoleRunCardIsOnMessagePath(card: Pick<EbRoleRunCard, 'inputMessageId' | 'anchorMessageId' | 'lastMessageId'> | null | undefined, pathIdsRaw: Iterable<unknown> | null | undefined, headIdRaw?: unknown) {
+  if (!card || !pathIdsRaw) return false
+  const pathIds = new Set<string>()
+  for (const item of pathIdsRaw) {
+    const id = text(item)
+    if (id) pathIds.add(id)
+  }
+  if (!pathIds.size) return false
+
+  const inputId = text(card.inputMessageId)
+  const anchorId = text(card.anchorMessageId)
+  const lastId = text(card.lastMessageId)
+  const headId = text(headIdRaw)
+  if (lastId && pathIds.has(lastId)) {
+    if (lastId === inputId || lastId === anchorId) return !!headId && lastId === headId
+    return true
+  }
+
+  const startId = anchorId || inputId
+  return !!startId && !!headId && startId === headId
+}
+
+export function filterEbRoleRunCardsOnMessagePath<T extends Pick<EbRoleRunCard, 'inputMessageId' | 'anchorMessageId' | 'lastMessageId'>>(cards: T[], pathIdsRaw: Iterable<unknown> | null | undefined, headIdRaw?: unknown) {
+  return cards.filter((card) => ebRoleRunCardIsOnMessagePath(card, pathIdsRaw, headIdRaw))
+}
+
 export function findEbRoleRunCard(state: any, runIdRaw: unknown) {
   const runId = text(runIdRaw)
   if (!runId) return null

@@ -755,6 +755,124 @@ func TestRunPreservesNonErrorToolResultStates(t *testing.T) {
 	}
 }
 
+func TestRunContinuesWhenToolExecutionReturnsError(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{
+		{ID: "m1", Content: "need tool", ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}}}},
+		{ID: "m2", Content: "final after tool failure"},
+	}
+	fakes.tool.executeErr = errors.New("tool process failed")
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tool"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	session := fakes.storage.lastSession()
+	part := toolPartByCallID(session.Messages[1], "intent-1")
+	if part == nil || part.State != "error" || part.Result == nil || part.Result.Status != types.ToolStatusFailed || !strings.Contains(part.Result.Error, "tool process failed") {
+		t.Fatalf("tool part = %#v", part)
+	}
+	if got := session.Messages[len(session.Messages)-1].Content; got != "final after tool failure" {
+		t.Fatalf("final assistant content = %q", got)
+	}
+}
+
+func TestRunCancellationDuringToolExecutionDoesNotRecordToolFailure(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{
+		{ID: "m1", Content: "need tool", ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}}}},
+		{ID: "m2", Content: "should not continue after cancellation"},
+	}
+	fakes.tool.executeDelay = time.Second
+	fakes.tool.executeCancelResult = types.ToolResult{ID: "result-after-cancel", Status: types.ToolStatusFailed, Error: "tool observed cancellation", CreatedAt: time.Now().UTC()}
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	events, unsubscribe, err := system.Subscribe(context.Background())
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	defer unsubscribe()
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tool"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	fakes.tool.waitExecuteCount(t, 1)
+	if err := system.CancelRun(context.Background(), state.ID); err != nil {
+		t.Fatalf("CancelRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCancelled {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	session := waitStoredSessionStatus(t, fakes.storage, types.RunStatusCancelled)
+	part := toolPartByCallID(session.Messages[1], "intent-1")
+	if part == nil {
+		t.Fatalf("tool part was not recorded: %#v", session.Messages)
+	}
+	if part.State != "cancelled" || part.Result == nil || part.Result.Status != types.ToolStatusCancelled {
+		t.Fatalf("cancelled run did not settle tool part: %#v", part)
+	}
+	if part.Result.Status == types.ToolStatusFailed || part.State == "error" {
+		t.Fatalf("cancelled run recorded tool failure: %#v", part)
+	}
+	waitCancelledToolPartUpdate(t, events, state.ID, "intent-1")
+	if got := fakes.provider.callCount(); got != 1 {
+		t.Fatalf("model call count = %d", got)
+	}
+}
+
+func waitCancelledToolPartUpdate(t *testing.T, events <-chan types.RunEvent, runID string, callID string) {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case event := <-events:
+			if event.RunID != runID || event.Type != "assistant_message_update" {
+				continue
+			}
+			payload, ok := event.Payload.(types.RunAssistantMessageUpdate)
+			if !ok || payload.Status != types.RunStatusCancelled {
+				continue
+			}
+			part := toolPartByCallID(payload.Message, callID)
+			if part != nil && part.State == "cancelled" && part.Result != nil && part.Result.Status == types.ToolStatusCancelled {
+				return
+			}
+		case <-deadline:
+			t.Fatalf("cancelled assistant message update did not settle tool part")
+		}
+	}
+}
+
+func TestRunContinuesWhenToolPrepareReturnsError(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{
+		{ID: "m1", Content: "need tool", ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}}}},
+		{ID: "m2", Content: "final after prepare failure"},
+	}
+	fakes.tool.prepareErr = errors.New("tool executable missing")
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tool"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	session := fakes.storage.lastSession()
+	part := toolPartByCallID(session.Messages[1], "intent-1")
+	if part == nil || part.State != "error" || part.Result == nil || part.Result.Status != types.ToolStatusFailed || !strings.Contains(part.Result.Error, "tool executable missing") {
+		t.Fatalf("tool part = %#v", part)
+	}
+	if got := session.Messages[len(session.Messages)-1].Content; got != "final after prepare failure" {
+		t.Fatalf("final assistant content = %q", got)
+	}
+}
+
 func toolPartByCallID(message types.Message, callID string) *types.MessagePart {
 	for index := range message.Parts {
 		if message.Parts[index].Type == "tool" && message.Parts[index].CallID == callID {
@@ -944,6 +1062,21 @@ func waitStatus(t *testing.T, system System, runID string, status types.RunStatu
 	}
 	t.Fatalf("run did not reach status %s", status)
 	return types.RunState{}
+}
+
+func waitStoredSessionStatus(t *testing.T, storage *fakeRuntimeStorage, status types.RunStatus) types.Session {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		session := storage.lastSession()
+		if session.Status == string(status) {
+			return session
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	session := storage.lastSession()
+	t.Fatalf("stored session did not reach status %s, last session = %#v", status, session)
+	return types.Session{}
 }
 
 func assertPromptMessageIDs(t *testing.T, got []string, want []string) {
@@ -1326,6 +1459,7 @@ type fakeRuntimeTools struct {
 	mu                  sync.Mutex
 	prepareDecision     types.PermissionDecision
 	prepareDecisions    map[string]types.PermissionDecision
+	prepareErr          error
 	confirmedDecision   types.PermissionDecision
 	executeCount        int
 	activeExecutions    int
@@ -1333,6 +1467,8 @@ type fakeRuntimeTools struct {
 	executeDelay        time.Duration
 	executeDelays       map[string]time.Duration
 	executeResult       types.ToolResult
+	executeCancelResult types.ToolResult
+	executeErr          error
 	toolSummaries       []types.ToolSummary
 	parsedIntents       []types.ToolIntent
 	parseErr            error
@@ -1361,6 +1497,9 @@ func (f *fakeRuntimeTools) NormalizeIntent(ctx context.Context, intent types.Too
 }
 
 func (f *fakeRuntimeTools) Prepare(ctx context.Context, roleID string, action types.ToolAction) (types.ToolRunPlan, error) {
+	if f.prepareErr != nil {
+		return types.ToolRunPlan{}, f.prepareErr
+	}
 	decision := f.prepareDecision
 	if f.prepareDecisions != nil {
 		if configured, ok := f.prepareDecisions[action.ID]; ok {
@@ -1415,7 +1554,13 @@ func (f *fakeRuntimeTools) Execute(ctx context.Context, plan types.ToolRunPlan) 
 		case <-ctx.Done():
 			f.mu.Lock()
 			f.activeExecutions--
+			result := f.executeCancelResult
 			f.mu.Unlock()
+			if result.ID != "" {
+				result.ActionID = plan.Action.ID
+				result.ToolName = plan.Action.ToolName
+				return result, nil
+			}
 			return types.ToolResult{}, ctx.Err()
 		}
 	}
@@ -1428,7 +1573,28 @@ func (f *fakeRuntimeTools) Execute(ctx context.Context, plan types.ToolRunPlan) 
 		result.ToolName = plan.Action.ToolName
 		return result, nil
 	}
+	if f.executeErr != nil {
+		return types.ToolResult{}, f.executeErr
+	}
 	return types.ToolResult{ID: "result-1", ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Status: types.ToolStatusSuccess, Content: "tool ok", CreatedAt: time.Now().UTC()}, nil
+}
+
+func (f *fakeRuntimeTools) waitExecuteCount(t *testing.T, want int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if f.executeCountSnapshot() >= want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("execute count did not reach %d, got %d", want, f.executeCountSnapshot())
+}
+
+func (f *fakeRuntimeTools) executeCountSnapshot() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.executeCount
 }
 
 func (f *fakeRuntimeTools) LoadTool(ctx context.Context, toolID string) (types.ToolDefinition, error) {

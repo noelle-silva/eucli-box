@@ -145,14 +145,14 @@ func TestSessionMessageRoutes(t *testing.T) {
 		t.Fatalf("message content = %q", got)
 	}
 
-	req = httptest.NewRequest(http.MethodPatch, "/api/roles/developer/sessions/session-1/messages/m2", strings.NewReader(`{"content":"hi","parts":[{"id":"part-tool-1","type":"tool","callId":"call-1","toolName":"shell_command","state":"completed","input":{"command":"pwd"},"display":{"hideResult":true}}]}`))
+	req = httptest.NewRequest(http.MethodPatch, "/api/roles/developer/sessions/session-1/messages/m2", strings.NewReader(`{"content":"hi","parts":[{"id":"part-tool-1","type":"tool","callId":"call-1","toolName":"shell_command","state":"completed","input":{"command":"pwd"},"display":{"hideResult":true},"createdAt":"2026-01-02T03:04:05Z","updatedAt":"2026-01-02T03:04:06Z","decision":{"id":"decision-1","actionId":"call-1","toolName":"shell_command","status":"allowed","createdAt":"2026-01-02T03:04:05Z"},"result":{"id":"result-1","actionId":"call-1","toolName":"shell_command","status":"success","content":"ok","createdAt":"2026-01-02T03:04:06Z"}}]}`))
 	rec = httptest.NewRecorder()
 	system.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("parts message status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	updatedMessage = decodeResponseData[types.Message](t, rec.Body.String())
-	if updatedMessage.ID != "m2" || len(updatedMessage.Parts) != 1 || updatedMessage.Parts[0].Display["hideResult"] != true {
+	if updatedMessage.ID != "m2" || len(updatedMessage.Parts) != 1 || updatedMessage.Parts[0].Display["hideResult"] != true || updatedMessage.Parts[0].CreatedAt.IsZero() || updatedMessage.Parts[0].Result == nil || updatedMessage.Parts[0].Result.CreatedAt.IsZero() {
 		t.Fatalf("updated message parts = %#v", updatedMessage)
 	}
 

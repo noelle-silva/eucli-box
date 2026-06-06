@@ -64,7 +64,7 @@ function prettyJson(value: any) {
 }
 
 function invocationEditText(part: any) {
-  return prettyJson({ toolName: String(part?.toolName || ''), input: part?.input && typeof part.input === 'object' ? part.input : {} })
+  return prettyJson(part?.input && typeof part.input === 'object' ? part.input : {})
 }
 
 function blockEditText(block: AssistantMessageBlock) {

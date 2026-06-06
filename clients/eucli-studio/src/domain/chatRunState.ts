@@ -13,6 +13,17 @@ export type ActiveAssistantMessageRef = {
 export type ActiveAssistantMessageFilter = {
   branchId?: any
   excludeMid?: any
+  messageIds?: Iterable<any> | null
+}
+
+function normalizeMessageIdFilter(input: Iterable<any> | null | undefined) {
+  if (!input) return null
+  const ids = new Set<string>()
+  for (const item of input) {
+    const id = String(item || '').trim()
+    if (id) ids.add(id)
+  }
+  return ids
 }
 
 export function listActiveAssistantMessages(chat: any, filter?: ActiveAssistantMessageFilter): ActiveAssistantMessageRef[] {
@@ -21,6 +32,7 @@ export function listActiveAssistantMessages(chat: any, filter?: ActiveAssistantM
     ? normalizeBranchId(filter.branchId || CHAT_DEFAULT_BRANCH_ID)
     : ''
   const excludeMid = String(filter?.excludeMid || '').trim()
+  const messageIdFilter = normalizeMessageIdFilter(filter?.messageIds)
   const out: ActiveAssistantMessageRef[] = []
 
   for (let index = 0; index < messages.length; index++) {
@@ -32,6 +44,7 @@ export function listActiveAssistantMessages(chat: any, filter?: ActiveAssistantM
     const mid = String(message.id || '').trim()
     if (!mid) continue
     if (excludeMid && mid === excludeMid) continue
+    if (messageIdFilter && !messageIdFilter.has(mid)) continue
 
     const branchId = normalizeBranchId(message.branchId || CHAT_DEFAULT_BRANCH_ID)
     if (branchFilter && branchId !== branchFilter) continue

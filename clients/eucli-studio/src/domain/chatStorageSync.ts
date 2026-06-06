@@ -28,7 +28,7 @@ function mergeMessagesFromStorage(nextChat: any, currentChat: any) {
     if (!currentMessage) return storedMessage
     if (!isAssistantTextMessage(currentMessage) || !isAssistantTextMessage(storedMessage)) return storedMessage
     if (!isAssistantGenerating(currentMessage) && !isAssistantGenerating(storedMessage)) return storedMessage
-    return resolveAssistantMessageForMerge(currentMessage, storedMessage)
+    return resolveAssistantMessageForMerge(currentMessage, storedMessage, { storedChatStatus: nextChat?.status })
   })
 
   const nextIds = new Set(nextChat.messages.map((message: any) => messageId(message)).filter(Boolean))

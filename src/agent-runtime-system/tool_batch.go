@@ -2,6 +2,8 @@ package agentruntime
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,7 +15,14 @@ func (s *system) handleToolIntents(ctx context.Context, record *runRecord, inten
 	for index, intent := range intents {
 		action, err := s.tools.NormalizeIntent(ctx, intent)
 		if err != nil {
-			return nil, runtimeToolFailed("failed to normalize tool intent", err)
+			if isToolContextCancelled(err) {
+				return nil, err
+			}
+			action = fallbackToolAction(intent)
+			result := failedToolResult(action, "failed to normalize tool intent: "+err.Error())
+			entries = append(entries, toolRunEntry{Index: index, Action: action, Result: result, HasResult: true})
+			upsertRunToolPart(record, action, "error", nil, &result)
+			continue
 		}
 		entries = append(entries, toolRunEntry{Index: index, Action: action})
 		upsertRunToolPart(record, action, "requested", nil, nil)
@@ -23,9 +32,19 @@ func (s *system) handleToolIntents(ctx context.Context, record *runRecord, inten
 	}
 
 	for index := range entries {
+		if entries[index].HasResult {
+			continue
+		}
 		plan, err := s.tools.Prepare(ctx, record.roleID, entries[index].Action)
 		if err != nil {
-			return nil, runtimeToolFailed("failed to prepare tool run plan", err)
+			if isToolContextCancelled(err) {
+				return nil, err
+			}
+			result := failedToolResult(entries[index].Action, "failed to prepare tool run plan: "+err.Error())
+			entries[index].Result = result
+			entries[index].HasResult = true
+			upsertRunToolPart(record, entries[index].Action, "error", nil, &result)
+			continue
 		}
 		entries[index].Plan = plan
 		s.publish(record.runID, "tool_requested", plan)
@@ -132,13 +151,26 @@ func (s *system) executeReadyTools(ctx context.Context, entries []toolRunEntry, 
 		wg.Add(1)
 		go func(resultIndex int, entry toolRunEntry) {
 			defer wg.Done()
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
+			select {
+			case semaphore <- struct{}{}:
+				defer func() { <-semaphore }()
+			case <-ctx.Done():
+				resultCh <- toolExecutionResult{Entry: entry, Err: context.Canceled}
+				return
+			}
+			if cancellationErr, ok := toolExecutionCancelled(ctx, nil, nil); ok {
+				resultCh <- toolExecutionResult{Entry: entry, Err: cancellationErr}
+				return
+			}
 			toolCtx, cancel := context.WithTimeout(ctx, s.config.ToolTimeout)
 			defer cancel()
 			result, err := s.tools.Execute(toolCtx, entry.Plan)
+			if cancellationErr, ok := toolExecutionCancelled(ctx, toolCtx, err); ok {
+				resultCh <- toolExecutionResult{Entry: entry, Err: cancellationErr}
+				return
+			}
 			if err != nil {
-				result = types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: entry.Action.ID, ToolName: entry.Action.ToolName, Status: types.ToolStatusFailed, Error: err.Error(), CreatedAt: time.Now().UTC()}
+				result = failedToolResult(entry.Action, err.Error())
 			}
 			resultCh <- toolExecutionResult{Entry: entry, Result: result, Err: err}
 		}(index, entry)
@@ -151,6 +183,12 @@ func (s *system) executeReadyTools(ctx context.Context, entries []toolRunEntry, 
 	var firstUpdateErr error
 	for result := range resultCh {
 		results = append(results, result)
+		if isToolContextCancelled(result.Err) {
+			if firstUpdateErr == nil {
+				firstUpdateErr = result.Err
+			}
+			continue
+		}
 		if onResult == nil {
 			continue
 		}
@@ -195,8 +233,11 @@ func readyToolEntries(entries []toolRunEntry) []toolRunEntry {
 
 func orderedToolResults(entries []toolRunEntry, executed []toolExecutionResult) ([]types.ToolResult, error) {
 	results := make([]types.ToolResult, 0, len(entries))
-	var firstExecutionErr error
 	for _, entry := range entries {
+		if entry.HasResult {
+			results = append(results, entry.Result)
+			continue
+		}
 		if entry.Plan.PlanStatus == types.ToolPlanStatusDenied {
 			if !entry.HasResult {
 				return nil, runtimeStateInvalid("denied tool result was not produced", nil)
@@ -209,12 +250,6 @@ func orderedToolResults(entries []toolRunEntry, executed []toolExecutionResult) 
 			return nil, runtimeStateInvalid("tool execution result was not produced", nil)
 		}
 		results = append(results, executedResult.Result)
-		if executedResult.Err != nil && firstExecutionErr == nil {
-			firstExecutionErr = executedResult.Err
-		}
-	}
-	if firstExecutionErr != nil {
-		return results, runtimeToolFailed("failed to execute tool", firstExecutionErr)
 	}
 	return results, nil
 }
@@ -246,6 +281,59 @@ func toolResultPartState(result toolExecutionResult) string {
 
 func deniedToolResult(action types.ToolAction, decision types.PermissionDecision) types.ToolResult {
 	return types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: action.ID, ToolName: action.ToolName, Status: types.ToolStatusDenied, Error: decision.Reason, CreatedAt: time.Now().UTC()}
+}
+
+func failedToolResult(action types.ToolAction, message string) types.ToolResult {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		message = "tool execution failed"
+	}
+	return types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: action.ID, ToolName: action.ToolName, Status: types.ToolStatusFailed, Content: message, Error: message, CreatedAt: time.Now().UTC()}
+}
+
+func fallbackToolAction(intent types.ToolIntent) types.ToolAction {
+	actionID := strings.TrimSpace(intent.ID)
+	if actionID == "" {
+		actionID = newRuntimeID("tool-action")
+	}
+	toolName := strings.TrimSpace(intent.ToolName)
+	if toolName == "" {
+		toolName = "unknown_tool"
+	}
+	arguments := map[string]any{}
+	for key, value := range intent.Arguments {
+		trimmed := strings.TrimSpace(key)
+		if trimmed == "" {
+			continue
+		}
+		arguments[trimmed] = value
+	}
+	source := strings.TrimSpace(intent.Source)
+	if source == "" {
+		source = types.ToolCallSourceNative
+	}
+	return types.ToolAction{ID: actionID, ToolName: toolName, Arguments: arguments, Source: source, Raw: intent.Raw, CreatedAt: time.Now().UTC()}
+}
+
+func isToolContextCancelled(err error) bool {
+	return errors.Is(err, context.Canceled)
+}
+
+func toolExecutionCancelled(parent context.Context, tool context.Context, err error) (error, bool) {
+	if isToolContextCancelled(err) {
+		return err, true
+	}
+	if contextIsCancelled(parent) || contextIsCancelled(tool) {
+		return context.Canceled, true
+	}
+	return nil, false
+}
+
+func contextIsCancelled(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	return errors.Is(ctx.Err(), context.Canceled)
 }
 
 type toolRunEntry struct {

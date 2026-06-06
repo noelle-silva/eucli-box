@@ -92,7 +92,8 @@ import { formatModelRefDisplayText } from '../domain/modelRefUtils'
 import { pendingChatForTarget } from '../domain/pendingChat'
 import { chatSessionRunSummaryFromChat, normalizeChatSessionRunStatus, type ChatSessionRunStatus } from '../domain/chatSessionRunStatus'
 import { sortChatListItemsForDisplay } from '../domain/chatListOrdering'
-import { readActiveEbRoleRunCardsForSession } from '../domain/activeRunCards'
+import { filterEbRoleRunCardsOnMessagePath, readActiveEbRoleRunCardsForSession } from '../domain/activeRunCards'
+import { lastActiveAssistantMessage } from '../domain/chatRunState'
 import { messageMutationConflict, type MessageMutationOperation } from '../domain/messageMutationConflicts'
 import { AssistantReplyPendingIndicator } from './components/AssistantReplyPendingIndicator'
 import { AssistantErrorNotice } from './components/AssistantErrorNotice'
@@ -791,9 +792,9 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
       const chats = Array.isArray(box?.chats) ? box.chats : []
       const chat = chats.find((c: any) => String(c?.id || '') === cid) || null
       const meta = Array.isArray(box?.chatMetas) ? box.chatMetas.find((m: any) => String(m?.id || '') === cid) : null
-      return isChatGenerating(chat) || !!meta?.hasPending || normalizeChatSessionRunStatus(meta?.runStatus || meta?.status) === 'running'
+      return readActiveEbRoleRunCardsForSession(s, tid, cid).length > 0 || isChatGenerating(chat) || !!meta?.hasPending || normalizeChatSessionRunStatus(meta?.runStatus || meta?.status) === 'running'
     },
-    [data, isChatGenerating],
+    [s, data, isChatGenerating],
   )
 
   const favoriteChildrenMap = (() => {
@@ -1597,7 +1598,6 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   }, [treeLayout, treeDir])
   const activeBranchIdUi = String((activeChat as any)?.branching?.activeBranchId || '')
   const activeSessionRunCards = readActiveEbRoleRunCardsForSession(s, String(activeRole?.id || '').trim(), String(activeChat?.id || '').trim())
-  const latestActiveSessionRunCard = activeSessionRunCards.length ? activeSessionRunCards[activeSessionRunCards.length - 1] : null
   const activeSendPathAnchorMid =
     String(sendPathAnchor.chatId || '') === String(activeChat?.id || '') ? String(sendPathAnchor.parentMid || '').trim() : ''
   const treeFocusMid = String(treeSelectedMid || activeSendPathAnchorMid || '').trim()
@@ -1640,6 +1640,12 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     out.reverse()
     return out.length ? out : msgs
   })()
+  const activeVisibleMessageIds = new Set(allMessages.map((message: any) => String(message?.id || '').trim()).filter(Boolean))
+  const activeVisibleHeadMid = allMessages.length ? String(allMessages[allMessages.length - 1]?.id || '').trim() : ''
+  const activeVisibleRunCards = filterEbRoleRunCardsOnMessagePath(activeSessionRunCards, activeVisibleMessageIds, activeVisibleHeadMid)
+  const latestActiveVisibleRunCard = activeVisibleRunCards.length ? activeVisibleRunCards[activeVisibleRunCards.length - 1] : null
+  const latestActiveAssistantRunRef = lastActiveAssistantMessage(activeChat, { messageIds: activeVisibleMessageIds })
+  const activeStopRunId = String(latestActiveVisibleRunCard?.runId || latestActiveAssistantRunRef?.generationId || '').trim()
 
   const assistantSiblingsByPrevAiMid = (() => {
     const map = new Map<string, any[]>()
@@ -2423,7 +2429,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     if (warns.length) return setSendWarn({ open: true, items: warns })
     sendFromComposer()
   })
-  const onStop = useEvent(() => controller.actions.stop?.(String(latestActiveSessionRunCard?.runId || '')))
+  const onStop = useEvent(() => controller.actions.stop?.(activeStopRunId))
   const onPickDraftImages = useEvent(() => controller.actions.pickDraftImages())
   const onPickFilesChanged = useEvent((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files ? Array.from(e.target.files) : []
@@ -5406,7 +5412,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                     </Box>
                   </Popover>
 
-                  {latestActiveSessionRunCard ? (
+                  {activeStopRunId ? (
                     <Button variant="contained" color="error" onClick={onStop} disabled={s.loading || !activeRole} sx={{ borderRadius: 999 }}>
                       停止
                     </Button>

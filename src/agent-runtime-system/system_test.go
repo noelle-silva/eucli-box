@@ -669,6 +669,59 @@ func TestRunPublishesAssistantMessageUpdateWhenEachToolFinishes(t *testing.T) {
 	}
 }
 
+func TestRunPublishesAssistantWaitingUpdateBeforeStreamingAfterToolResults(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.streamResponses = []types.ModelResponse{
+		{ID: "m1", Content: "need tool", ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}}}},
+		{ID: "m2", Content: "final"},
+	}
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	events, unsubscribe, err := system.Subscribe(context.Background())
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	defer unsubscribe()
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tool", Stream: true})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+
+	toolCompleted := false
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case event := <-events:
+			if event.Type != "assistant_message_update" {
+				continue
+			}
+			payload, ok := event.Payload.(types.RunAssistantMessageUpdate)
+			if !ok {
+				t.Fatalf("assistant update payload = %#v", event.Payload)
+			}
+			part := toolPartByCallID(payload.Message, "intent-1")
+			if part != nil && part.State == "completed" && part.Result != nil {
+				toolCompleted = true
+				continue
+			}
+			if !toolCompleted {
+				continue
+			}
+			if payload.Status != types.RunStatusRunning || payload.Message.Type != "assistant" {
+				continue
+			}
+			if strings.TrimSpace(payload.Message.Content) != "" || len(payload.Message.Parts) != 0 {
+				continue
+			}
+			if final := waitRun(t, system, state.ID); final.Status != types.RunStatusCompleted {
+				t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+			}
+			return
+		case <-deadline:
+			t.Fatalf("did not receive assistant waiting update after tool result")
+		}
+	}
+}
+
 func TestRunExecutesToolBatchWithParallelLimit(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.responses = []types.ModelResponse{
@@ -1359,15 +1412,16 @@ func fakeRuntimeNativeTools(tools []types.ToolDefinition, names []string) []type
 }
 
 type fakeRuntimeProvider struct {
-	mu             sync.Mutex
-	responses      []types.ModelResponse
-	streamEvents   []types.ModelStreamEvent
-	streamResponse types.ModelResponse
-	alwaysTool     bool
-	calls          int
-	requests       []types.ModelRequest
-	block          chan struct{}
-	err            error
+	mu              sync.Mutex
+	responses       []types.ModelResponse
+	streamEvents    []types.ModelStreamEvent
+	streamResponse  types.ModelResponse
+	streamResponses []types.ModelResponse
+	alwaysTool      bool
+	calls           int
+	requests        []types.ModelRequest
+	block           chan struct{}
+	err             error
 }
 
 func (f *fakeRuntimeProvider) Complete(ctx context.Context, request types.ModelRequest) (types.ModelResponse, error) {
@@ -1412,6 +1466,10 @@ func (f *fakeRuntimeProvider) CompleteStream(ctx context.Context, request types.
 	f.requests = append(f.requests, request)
 	events := append([]types.ModelStreamEvent(nil), f.streamEvents...)
 	response := f.streamResponse
+	if len(f.streamResponses) > 0 {
+		response = f.streamResponses[0]
+		f.streamResponses = f.streamResponses[1:]
+	}
 	if response.ID == "" && response.Content == "" && len(response.ToolIntents) == 0 {
 		response = types.ModelResponse{ID: "default-stream", Content: "done"}
 	}

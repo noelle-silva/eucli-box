@@ -26,12 +26,16 @@ func (s *system) callModel(ctx context.Context, record *runRecord, roleContext t
 
 func (s *system) callModelStream(ctx context.Context, record *runRecord, request types.ModelRequest) (types.ModelResponse, error) {
 	record.streamContent = ""
+	_, hadWaitingAssistant := activeRunAssistant(record)
 	ensureRunAssistantMessage(record)
 	if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
 		return types.ModelResponse{}, err
 	}
 	if err := s.saveRunSession(ctx, record, types.RunStatusRunning); err != nil {
 		return types.ModelResponse{}, err
+	}
+	if !hadWaitingAssistant {
+		s.publishAssistantMessageUpdate(record)
 	}
 	response, err := s.providers.CompleteStream(ctx, request, func(event types.ModelStreamEvent) error {
 		if event.Type != types.ModelStreamEventContentDelta {

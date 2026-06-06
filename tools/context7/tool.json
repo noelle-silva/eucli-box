@@ -1,0 +1,80 @@
+{
+  "id": "context7",
+  "name": "context7",
+  "description": "Fetch up-to-date library documentation from Context7 by searching library ids and querying documentation context.",
+  "promptDescription": "Fetch up-to-date library/API documentation from Context7. Required [action] chooses search or docs. For [action]: search, provide required [libraryName] and [query] to find Context7-compatible library ids. For [action]: docs, provide required [libraryId] such as /vercel/next.js or /facebook/react and required [query] to retrieve documentation snippets. Optional [fast] skips reranking for lower latency. Optional [timeoutMs] controls request timeout. Optional [maxOutputChars] controls markdown output length. Optional [description] records why the lookup is being run. API keys should be configured in tool user config or CONTEXT7_API_KEY, not placed in prompts. The tool returns normalized markdown plus metadata including action, query, statusCode, durationMs, truncated, and result counts.",
+  "type": "local",
+  "directory": ".",
+  "userConfigSchema": {
+    "type": "object",
+    "properties": {
+      "context7ApiKey": {
+        "type": "string",
+        "title": "Context7 API Key",
+        "description": "Context7 API Key；也可通过 CONTEXT7_API_KEY 环境变量提供。未配置时使用 Context7 匿名访问能力，限额较低。"
+      },
+      "timeoutMs": {
+        "type": "integer",
+        "title": "默认超时（毫秒）",
+        "description": "模型未指定 timeoutMs 时使用的请求超时。"
+      },
+      "maxOutputChars": {
+        "type": "integer",
+        "title": "默认最大输出字符数",
+        "description": "模型未指定 maxOutputChars 时使用的最大 Markdown 输出字符数。"
+      },
+      "fast": {
+        "type": "boolean",
+        "title": "默认快速模式",
+        "description": "模型未指定 fast 时是否跳过 Context7 的重排序以降低延迟。"
+      }
+    },
+    "additionalProperties": false
+  },
+  "defaultConfig": {
+    "timeoutMs": 30000,
+    "maxOutputChars": 24000,
+    "fast": false
+  },
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["search", "docs"],
+        "description": "Action to run. Use search to find library ids; use docs to fetch documentation for a known library id."
+      },
+      "libraryName": {
+        "type": "string",
+        "description": "Context7 library name to search for, for example react, nextjs, prisma. Required for action=search."
+      },
+      "libraryId": {
+        "type": "string",
+        "description": "Context7-compatible library id, for example /facebook/react or /vercel/next.js. Required for action=docs."
+      },
+      "query": {
+        "type": "string",
+        "description": "Specific documentation question or task."
+      },
+      "fast": {
+        "type": "boolean",
+        "description": "Skip Context7 reranking for lower latency."
+      },
+      "timeoutMs": {
+        "type": "integer",
+        "description": "Request timeout in milliseconds."
+      },
+      "maxOutputChars": {
+        "type": "integer",
+        "description": "Maximum markdown output characters."
+      },
+      "description": {
+        "type": "string",
+        "description": "Short human-readable reason for running the lookup."
+      }
+    },
+    "required": ["action", "query"],
+    "additionalProperties": false
+  },
+  "binaries": []
+}

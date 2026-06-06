@@ -1,0 +1,12 @@
+{
+  "searchEndpoint": "https://context7.com/api/v2/libs/search",
+  "contextEndpoint": "https://context7.com/api/v2/context",
+  "apiKeyEnv": "CONTEXT7_API_KEY",
+  "apiKeyUserConfig": "context7ApiKey",
+  "anonymousAllowed": true,
+  "limits": {
+    "defaultTimeoutMs": 30000,
+    "maxTimeoutMs": 120000,
+    "maxOutputChars": 24000
+  }
+}

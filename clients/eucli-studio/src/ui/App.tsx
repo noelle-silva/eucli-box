@@ -87,7 +87,7 @@ import { AiToolsSettingsPanel } from './settings/AiToolsSettingsPanel'
 import { EbSettingsPanel } from './settings/EbSettingsPanel'
 import { ModelGroupsSettingsPanel } from './settings/ModelGroupsSettingsPanel'
 import { AI_STUDIO_CHAT_ROOT_ID } from '../runtime/aiStudioGlobals'
-import { isAssistantAwaitingFirstOutput, isAssistantGenerating } from '../domain/assistantRunState'
+import { assistantRunGenerationId, isAssistantAwaitingFirstOutput, isAssistantGenerating } from '../domain/assistantRunState'
 import { formatModelRefDisplayText } from '../domain/modelRefUtils'
 import { pendingChatForTarget } from '../domain/pendingChat'
 import { chatSessionRunSummaryFromChat, normalizeChatSessionRunStatus, type ChatSessionRunStatus } from '../domain/chatSessionRunStatus'
@@ -113,6 +113,20 @@ type ChatSessionRunObservation = {
   key: string
   status: ChatSessionRunStatus
   changedAt: number
+}
+
+type SendPathAnchor = {
+  chatId: string
+  branchId: string
+  parentMid: string
+  runId: string
+  inputMessageId: string
+  lastMessageId: string
+  nonce: number
+}
+
+function emptySendPathAnchor(): SendPathAnchor {
+  return { chatId: '', branchId: '', parentMid: '', runId: '', inputMessageId: '', lastMessageId: '', nonce: 0 }
 }
 
 const SETTINGS_TAB_ITEMS: { value: SettingsTab; label: string }[] = [
@@ -668,7 +682,9 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const [treeScale, setTreeScale] = React.useState(1)
   const [treeDir, setTreeDir] = React.useState<'lr' | 'tb' | 'bt' | 'rl'>(() => savedTreeDir)
   const [treeSelectedMid, setTreeSelectedMid] = React.useState('')
-  const [sendPathAnchor, setSendPathAnchor] = React.useState<{ chatId: string; parentMid: string; nonce: number }>({ chatId: '', parentMid: '', nonce: 0 })
+  const [sendPathAnchor, setSendPathAnchor] = React.useState<SendPathAnchor>(() => emptySendPathAnchor())
+  const clearSendPathAnchor = useEvent(() => setSendPathAnchor(emptySendPathAnchor()))
+  const sendPathAnchorNonceRef = React.useRef(0)
   const [treePop, setTreePop] = React.useState<{ id: string; at: number }>({ id: '', at: 0 })
   const [treeDragging, setTreeDragging] = React.useState(false)
   const treeDragRef = React.useRef<{ pid: number; sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null)
@@ -1051,9 +1067,9 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     setTreePan({ x: 18, y: 18 })
     setTreeScale(1)
     setTreeSelectedMid('')
-    setSendPathAnchor({ chatId: '', parentMid: '', nonce: 0 })
+    clearSendPathAnchor()
     treeViewRef.current = { x: 18, y: 18, scale: 1 }
-  }, [String(activeChat?.id || '')])
+  }, [String(activeChat?.id || ''), clearSendPathAnchor])
 
   React.useEffect(() => {
     if (treeDir === savedTreeDir) return
@@ -1600,7 +1616,29 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const activeSessionRunCards = readActiveEbRoleRunCardsForSession(s, String(activeRole?.id || '').trim(), String(activeChat?.id || '').trim())
   const activeSendPathAnchorMid =
     String(sendPathAnchor.chatId || '') === String(activeChat?.id || '') ? String(sendPathAnchor.parentMid || '').trim() : ''
-  const treeFocusMid = String(treeSelectedMid || activeSendPathAnchorMid || '').trim()
+  const activeSendPathRunId = activeSendPathAnchorMid ? String(sendPathAnchor.runId || '').trim() : ''
+  const activeSendPathRunCard = activeSendPathRunId ? activeSessionRunCards.find((card: any) => String(card?.runId || '').trim() === activeSendPathRunId) || null : null
+  const activeSendPathFollowMid = (() => {
+    if (!activeChat || !activeSendPathAnchorMid) return ''
+    const runCardMid = String(activeSendPathRunCard?.lastMessageId || '').trim()
+    if (runCardMid && chatAllById.has(runCardMid)) return runCardMid
+
+    if (activeSendPathRunId) {
+      for (let i = chatAllMessagesRaw.length - 1; i >= 0; i--) {
+        const message = chatAllMessagesRaw[i]
+        if (!message || String(message?.role || '') !== 'assistant') continue
+        if (assistantRunGenerationId(message) === activeSendPathRunId) return String(message?.id || '').trim()
+      }
+    }
+
+    const lastMid = String(sendPathAnchor.lastMessageId || '').trim()
+    if (lastMid && chatAllById.has(lastMid)) return lastMid
+
+    const inputMid = String(sendPathAnchor.inputMessageId || '').trim()
+    if (inputMid && chatAllById.has(inputMid)) return inputMid
+    return activeSendPathAnchorMid
+  })()
+  const treeFocusMid = String(treeSelectedMid || activeSendPathFollowMid || activeSendPathAnchorMid || '').trim()
   const allMessages: any[] = (() => {
     const chat: any = activeChat
     const msgs = chatAllMessagesRaw
@@ -1615,7 +1653,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     let headMid = activeHeadMid
     if (branchDraft) headMid = String(branchDraft?.forkFromMid || '').trim() || headMid
     if (!branchDraft && treeSelectedMid) headMid = String(treeSelectedMid || '').trim() || headMid
-    else if (!branchDraft && activeSendPathAnchorMid) headMid = activeSendPathAnchorMid
+    else if (!branchDraft && activeSendPathAnchorMid) headMid = activeSendPathFollowMid || activeSendPathAnchorMid
     if (!headMid) headMid = String(msgs[msgs.length - 1]?.id || '').trim()
     if (!headMid) return msgs
 
@@ -1761,6 +1799,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     if (!activeChat) return
     const msg = chatAllById.get(mid) || null
     if (!msg) return
+    clearSendPathAnchor()
     setTreeSelectedMid(mid)
 
     const branching = (activeChat as any)?.branching
@@ -2390,18 +2429,37 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     const branchDraftMid = String((branchDraft as any)?.forkFromMid || '').trim()
     const mid = selectedMid || branchDraftMid
     if (mid && activeChat) {
-      setSendPathAnchor({ chatId: String(activeChat?.id || ''), parentMid: mid, nonce: Date.now() })
+      const chatId = String(activeChat?.id || '')
+      const nonce = ++sendPathAnchorNonceRef.current
+      setSendPathAnchor({ ...emptySendPathAnchor(), chatId, branchId: activeBranchIdUi, parentMid: mid, nonce })
       setTreeSelectedMid('')
-      Promise.resolve(controller.actions.sendFromMid?.(mid)).finally(() => {
+      const onRunState = (run: any) => {
+        const runId = String(run?.id || '').trim()
         setSendPathAnchor((current) => {
-          if (String(current?.chatId || '') !== String(activeChat?.id || '')) return current
+          if (String(current?.chatId || '') !== chatId) return current
           if (String(current?.parentMid || '') !== mid) return current
-          return { chatId: '', parentMid: '', nonce: 0 }
+          if (Number(current?.nonce || 0) !== nonce) return current
+          return {
+            ...current,
+            runId,
+            inputMessageId: String(run?.inputMessageId || current.inputMessageId || '').trim(),
+            lastMessageId: String(run?.lastMessageId || current.lastMessageId || run?.inputMessageId || current.inputMessageId || '').trim(),
+          }
         })
-      })
+      }
+      Promise.resolve()
+        .then(() => controller.actions.sendFromMid?.(mid, { onRunState }))
+        .finally(() => {
+          setSendPathAnchor((current) => {
+            if (String(current?.chatId || '') !== chatId) return current
+            if (String(current?.parentMid || '') !== mid) return current
+            if (Number(current?.nonce || 0) !== nonce) return current
+            return emptySendPathAnchor()
+          })
+        })
       return
     }
-    setSendPathAnchor({ chatId: '', parentMid: '', nonce: 0 })
+    clearSendPathAnchor()
     setTreeSelectedMid('')
     controller.actions.send()
   })
@@ -4060,6 +4118,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                                           const nextMid = String(next?.id || '').trim()
                                           stickToBottomRef.current = false
                                           autoScrollBlockUntilRef.current = Date.now() + 1200
+                                          clearSendPathAnchor()
                                           if (nextMid) setBranchNav({ mid: nextMid, at: Date.now() })
                                           controller.actions.switchBranchSibling?.(mid, -1)
                                         }}
@@ -4083,6 +4142,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                                           const nextMid = String(next?.id || '').trim()
                                           stickToBottomRef.current = false
                                           autoScrollBlockUntilRef.current = Date.now() + 1200
+                                          clearSendPathAnchor()
                                           if (nextMid) setBranchNav({ mid: nextMid, at: Date.now() })
                                           controller.actions.switchBranchSibling?.(mid, 1)
                                         }}

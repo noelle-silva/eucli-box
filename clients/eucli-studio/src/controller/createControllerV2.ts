@@ -1869,7 +1869,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       await addDraftFilesFromFiles(Array.isArray(files) ? files : [])
     },
     send: () => sendChat(),
-    sendFromMid: (forkFromMid: any) => sendChat({ forkFromMid: String(forkFromMid || '') }),
+    sendFromMid: (forkFromMid: any, opts?: any) => sendChat({ ...(opts && typeof opts === 'object' ? opts : {}), forkFromMid: String(forkFromMid || '') }),
     stop: () => {
       stopSending().catch(() => {})
     },

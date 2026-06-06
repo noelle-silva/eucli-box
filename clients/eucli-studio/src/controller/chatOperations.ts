@@ -50,6 +50,11 @@ import type { AiChatShowToast } from '../gateway/capabilities'
 import { cancelRoleRun, getRunState, isTerminalRunStatus, runStateFailureError, sleepMs, startRoleRun, type EbRunState } from './ebRoleRun'
 import { deleteRoleSessionMessage, deleteRoleSessionMessageSubtree, updateRoleSessionMessage } from './ebRoleSession'
 
+type SendChatOptions = {
+  forkFromMid?: string
+  onRunState?: (run: EbRunState) => void
+}
+
 export function createChatOperations(deps: {
   getState: () => any
   pickImageFiles?: (maxCount: number) => Promise<any[]>
@@ -309,6 +314,7 @@ export function createChatOperations(deps: {
     input: { roleId: string; sessionId: string; message?: string; attachments?: any[]; parentMessageId?: string; userMessageId?: string; stream?: boolean },
     onAccepted?: (run: EbRunState) => void,
     follow?: { previousMessageIds: Set<string>; ancestorMessageId?: string },
+    onState?: (run: EbRunState) => void,
   ) {
     if (typeof netRequest !== 'function') throw new Error('e-b 请求通道不可用')
     const startKey = roleRunStartKey(input)
@@ -333,6 +339,7 @@ export function createChatOperations(deps: {
     const runAnchorMessageId = String(follow?.ancestorMessageId || input.userMessageId || input.parentMessageId || '').trim()
     const dependencyMessageIds = dependencyMessageIdsForRunStart(sa.activeChatFromData(), runAnchorMessageId)
     syncEbRoleRunCard(state, { roleId: input.roleId, sessionId, lastMessageId: followMessageId, anchorMessageId: runAnchorMessageId, dependencyMessageIds, startedFromPending, pendingChatId: startedFromPendingChatId })
+    onState?.(state)
     let runSessionLoadedOnce = false
 
     const refreshRunSession = async () => {
@@ -361,6 +368,7 @@ export function createChatOperations(deps: {
       state = await getRunState(netRequest, state.id)
       followMessageId = String(state.lastMessageId || followMessageId || '').trim()
       syncEbRoleRunCard(state, { roleId: input.roleId, sessionId, lastMessageId: followMessageId, anchorMessageId: runAnchorMessageId, dependencyMessageIds, startedFromPending, pendingChatId: startedFromPendingChatId })
+      onState?.(state)
       const nextSessionId = String(state.sessionId || sessionId || '').trim()
       if (nextSessionId) {
         sessionId = nextSessionId
@@ -654,7 +662,7 @@ export function createChatOperations(deps: {
 
   // ============ send chat ============
 
-  async function sendChat(opts?: { forkFromMid?: string }) {
+  async function sendChat(opts?: SendChatOptions) {
     const state = getState()
     if (state.loading || !state.data) return
 
@@ -718,7 +726,7 @@ export function createChatOperations(deps: {
         state.branchDraft = null
         renderComposer()
         render()
-      }, { previousMessageIds, ancestorMessageId: parentMessageId })
+      }, { previousMessageIds, ancestorMessageId: parentMessageId }, (run) => opts?.onRunState?.(run))
     } catch (e) {
       const msg = String((e as any)?.message || e || '请求失败')
       if (acceptedRunId && cancelledRunIds.has(acceptedRunId)) showToast?.('已停止', { kind: 'success' })
@@ -731,7 +739,7 @@ export function createChatOperations(deps: {
 
   // ============ send group chat ============
 
-  async function sendGroupChat(_opts?: { forkFromMid?: string }) {
+  async function sendGroupChat(_opts?: SendChatOptions) {
     const state = getState()
     if (state.loading || !state.data) return
 

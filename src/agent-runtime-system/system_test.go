@@ -101,6 +101,82 @@ func TestStartRunDoesNotAutoInjectToolInstructionsOrNativeTools(t *testing.T) {
 	}
 }
 
+func TestStartRunPassesReasoningEffortToModelAndSessionMetadata(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello", ReasoningEffort: types.ReasoningEffortHigh})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	request := fakes.provider.lastRequest()
+	if request.ReasoningEffort != types.ReasoningEffortHigh {
+		t.Fatalf("reasoning effort = %q", request.ReasoningEffort)
+	}
+	session := fakes.storage.lastSession()
+	if session.Metadata["reasoningEffort"] != string(types.ReasoningEffortHigh) {
+		t.Fatalf("session metadata = %#v", session.Metadata)
+	}
+}
+
+func TestRunMessageSaveDoesNotOverwriteNewerSessionReasoningEffort(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.block = make(chan struct{})
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello", ReasoningEffort: types.ReasoningEffortHigh})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	session := fakes.storage.lastSession()
+	session.Metadata["reasoningEffort"] = string(types.ReasoningEffortLow)
+	if err := fakes.storage.SaveSession(context.Background(), session); err != nil {
+		t.Fatalf("SaveSession() error = %v", err)
+	}
+	close(fakes.provider.block)
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	after := fakes.storage.lastSession()
+	if after.Metadata["reasoningEffort"] != string(types.ReasoningEffortLow) {
+		t.Fatalf("newer session reasoning effort was overwritten: %#v", after.Metadata)
+	}
+}
+
+func TestStartRunPersistsNewReasoningEffortForExistingSession(t *testing.T) {
+	fakes := newRuntimeFakes()
+	now := time.Now().UTC()
+	fakes.storage.sessions["developer/session-1"] = types.Session{ID: "session-1", RoleID: "developer", Title: "Existing", Metadata: map[string]string{"reasoningEffort": string(types.ReasoningEffortLow)}, Messages: []types.Message{{ID: "u1", Type: "user", Content: "hello", BranchID: "main", CreatedAt: now, UpdatedAt: now}}, CreatedAt: now, UpdatedAt: now, LastActive: now}
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "u1", ReasoningEffort: types.ReasoningEffortHigh})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	after := fakes.storage.sessions["developer/session-1"]
+	if after.Metadata["reasoningEffort"] != string(types.ReasoningEffortHigh) {
+		t.Fatalf("reasoning effort was not persisted: %#v", after.Metadata)
+	}
+}
+
+func TestStartRunRejectsInvalidReasoningEffort(t *testing.T) {
+	fakes := newRuntimeFakes()
+	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	_, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello", ReasoningEffort: "extreme"})
+	var appErr *apperrors.AppError
+	if !errors.As(err, &appErr) || appErr.Code != "runtime.invalid_request" {
+		t.Fatalf("error = %#v", err)
+	}
+}
+
 func TestStartRunPassesOnlyNativeToolsToProvider(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.roles.policy = types.ToolPolicy{

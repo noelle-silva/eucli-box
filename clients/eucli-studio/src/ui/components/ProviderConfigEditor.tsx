@@ -4,6 +4,7 @@ import AddIcon from '@mui/icons-material/Add'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import { ApiKeyField } from './fields/ApiKeyField'
+import { REASONING_EFFORT_OPTIONS } from '../../domain/reasoning'
 
 type ProviderConfigEditorProps = {
   controller: any
@@ -126,6 +127,15 @@ export function ProviderConfigEditor(props: ProviderConfigEditorProps) {
                     {rawModels.map((id: string) => <MenuItem key={id} value={id}>{id}</MenuItem>)}
                   </Select>
                 </FormControl>
+                <FormControlLabel control={<Switch checked={!!item?.supportsReasoning} onChange={(e) => updateRegisteredModel(index, { supportsReasoning: e.target.checked })} />} label="可推理" />
+                {item?.supportsReasoning ? (
+                  <FormControl size="small" sx={{ minWidth: 140 }}>
+                    <InputLabel>默认思考</InputLabel>
+                    <Select label="默认思考" value={String(item?.defaultReasoningEffort || 'medium')} onChange={(e) => updateRegisteredModel(index, { defaultReasoningEffort: e.target.value })}>
+                      {REASONING_EFFORT_OPTIONS.map((option) => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}
+                    </Select>
+                  </FormControl>
+                ) : null}
                 <Button size="small" color="error" startIcon={<DeleteOutlineIcon />} onClick={() => removeRegisteredModel(index)}>删除</Button>
               </Stack>
             </Paper>

@@ -102,9 +102,13 @@ func (openAIAdapter) BuildCompleteRequest(provider types.Provider, request types
 		return types.HTTPRequest{}, err
 	}
 	body := map[string]any{
-		"model":       request.Coordinate.ModelID,
-		"messages":    messages,
-		"temperature": request.Temperature,
+		"model":    request.Coordinate.ModelID,
+		"messages": messages,
+	}
+	if request.ReasoningEffort != "" {
+		body["reasoning_effort"] = openAIReasoningEffort(request.ReasoningEffort)
+	} else {
+		body["temperature"] = request.Temperature
 	}
 	if request.Stream {
 		body["stream"] = true
@@ -124,6 +128,21 @@ func (openAIAdapter) BuildCompleteRequest(provider types.Provider, request types
 		Body:     payload,
 		Timeout:  time.Duration(timeout),
 	}, nil
+}
+
+func openAIReasoningEffort(effort types.ReasoningEffort) string {
+	switch types.NormalizeReasoningEffort(effort, types.DefaultReasoningEffort) {
+	case types.ReasoningEffortVeryLow:
+		return "minimal"
+	case types.ReasoningEffortLow:
+		return "low"
+	case types.ReasoningEffortHigh:
+		return "high"
+	case types.ReasoningEffortVeryHigh:
+		return "xhigh"
+	default:
+		return "medium"
+	}
 }
 
 func (openAIAdapter) NewCompleteStreamParser(onEvent types.ModelStreamHandler) completeStreamParser {

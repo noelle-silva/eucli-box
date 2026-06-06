@@ -77,11 +77,12 @@ type SessionMessagePatch struct {
 }
 
 type SessionMessageSave struct {
-	Session    Session                   `json:"session"`
-	Writes     []SessionMessageWrite     `json:"writes,omitempty"`
-	Deletes    []SessionMessageDelete    `json:"deletes,omitempty"`
-	Conditions []SessionMessageCondition `json:"conditions,omitempty"`
-	Status     RunStatus                 `json:"status"`
+	Session       Session                   `json:"session"`
+	MetadataPatch map[string]string         `json:"metadataPatch,omitempty"`
+	Writes        []SessionMessageWrite     `json:"writes,omitempty"`
+	Deletes       []SessionMessageDelete    `json:"deletes,omitempty"`
+	Conditions    []SessionMessageCondition `json:"conditions,omitempty"`
+	Status        RunStatus                 `json:"status"`
 }
 
 type SessionMessageWrite struct {
@@ -183,6 +184,7 @@ type RunRequest struct {
 	Attachments     []RunAttachment `json:"attachments,omitempty"`
 	ParentMessageID string          `json:"parentMessageId,omitempty"`
 	UserMessageID   string          `json:"userMessageId,omitempty"`
+	ReasoningEffort ReasoningEffort `json:"reasoningEffort,omitempty"`
 	Stream          bool            `json:"stream,omitempty"`
 }
 

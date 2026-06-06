@@ -16,7 +16,7 @@ func (s *system) StartRun(ctx context.Context, request types.RunRequest) (types.
 	runCtx, cancel := context.WithCancel(context.Background())
 	now := nowUTC()
 	state := types.RunState{ID: utils.NewID("run"), RoleID: request.RoleID, SessionID: request.SessionID, Stream: request.Stream, Status: types.RunStatusCreated, CreatedAt: now, UpdatedAt: now}
-	record := &runRecord{runID: state.ID, roleID: request.RoleID, state: state, stream: request.Stream, cancel: cancel}
+	record := &runRecord{runID: state.ID, roleID: request.RoleID, state: state, stream: request.Stream, reasoningEffort: types.TrimReasoningEffort(request.ReasoningEffort), cancel: cancel}
 	s.mu.Lock()
 	s.runs[state.ID] = record
 	s.mu.Unlock()
@@ -72,6 +72,7 @@ func (s *system) startRun(ctx context.Context, record *runRecord, request types.
 	if err != nil {
 		return state, types.Session{}, err
 	}
+	applyRunReasoningEffort(record, &session)
 	if record.state.SessionID == "" {
 		if err := s.setRunSessionID(record.runID, session.ID); err != nil {
 			return state, types.Session{}, err
@@ -228,7 +229,32 @@ func validateRunRequest(ctx context.Context, request types.RunRequest) error {
 	if strings.TrimSpace(request.ParentMessageID) != "" && strings.TrimSpace(request.SessionID) == "" {
 		return runtimeInvalid("session id is required when parentMessageId is provided", nil)
 	}
+	if effort := types.TrimReasoningEffort(request.ReasoningEffort); effort != "" && !types.IsReasoningEffort(effort) {
+		return runtimeInvalid("reasoningEffort is invalid", nil)
+	}
 	return nil
+}
+
+func applyRunReasoningEffort(record *runRecord, session *types.Session) {
+	if record == nil || session == nil {
+		return
+	}
+	const key = "reasoningEffort"
+	effort := types.TrimReasoningEffort(record.reasoningEffort)
+	if effort == "" && session.Metadata != nil {
+		effort = types.TrimReasoningEffort(types.ReasoningEffort(session.Metadata[key]))
+	}
+	if effort == "" {
+		return
+	}
+	record.reasoningEffort = effort
+	if session.Metadata == nil {
+		session.Metadata = map[string]string{}
+	}
+	if session.Metadata[key] != string(effort) {
+		record.reasoningPersistPending = true
+	}
+	session.Metadata[key] = string(effort)
 }
 
 func (s *system) prepareRunSession(ctx context.Context, session types.Session, request types.RunRequest) (types.Session, types.Session, types.Message, error) {

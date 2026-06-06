@@ -24,12 +24,15 @@ func main() {
 }
 
 type options struct {
-	tool       string
-	dataDir    string
-	assetRoots assetRootFlags
+	tool               string
+	dataDir            string
+	assetRoots         assetRootFlags
+	requiredAssetRoots requiredAssetRootFlags
 }
 
 type assetRootFlags map[string]string
+
+type requiredAssetRootFlags map[string]struct{}
 
 func (f *assetRootFlags) String() string {
 	return fmt.Sprint(map[string]string(*f))
@@ -49,12 +52,33 @@ func (f *assetRootFlags) Set(value string) error {
 	return nil
 }
 
+func (f *requiredAssetRootFlags) String() string {
+	keys := make([]string, 0, len(*f))
+	for key := range *f {
+		keys = append(keys, key)
+	}
+	return strings.Join(keys, ",")
+}
+
+func (f *requiredAssetRootFlags) Set(value string) error {
+	name := strings.TrimSpace(value)
+	if name == "" {
+		return fmt.Errorf("required asset root name is required")
+	}
+	if *f == nil {
+		*f = requiredAssetRootFlags{}
+	}
+	(*f)[name] = struct{}{}
+	return nil
+}
+
 func run(ctx context.Context, args []string) error {
 	var opts options
 	flags := flag.NewFlagSet("build-tools", flag.ContinueOnError)
 	flags.StringVar(&opts.tool, "tool", "all", "tool id to build, or all")
 	flags.StringVar(&opts.dataDir, "data-dir", "data", "runtime data directory")
 	flags.Var(&opts.assetRoots, "asset-root", "tool asset root in name=path form; repeatable")
+	flags.Var(&opts.requiredAssetRoots, "require-asset-root", "asset root name that must be provided when declared by a matched tool; repeatable")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -139,7 +163,7 @@ func buildTool(ctx context.Context, repoRoot string, dataDir string, source tool
 		return err
 	}
 	if hasToolpack {
-		if err := copyDeclaredAssetRoots(targetDir, toolpack, opts.assetRoots); err != nil {
+		if err := copyDeclaredAssetRoots(targetDir, toolpack, opts.assetRoots, opts.requiredAssetRoots); err != nil {
 			return err
 		}
 		updatedDefinition, err := writeRuntimeConfig(source.Dir, targetDir, definition, toolpack)
@@ -183,9 +207,12 @@ type toolpackSpec struct {
 }
 
 type assetRootSpec struct {
-	Name         string `json:"name"`
-	Target       string `json:"target"`
-	RequiredFile string `json:"requiredFile"`
+	Name              string   `json:"name"`
+	Target            string   `json:"target"`
+	RequiredFile      string   `json:"requiredFile"`
+	RequiredFiles     []string `json:"requiredFiles,omitempty"`
+	RequiredInPackage bool     `json:"requiredInPackage,omitempty"`
+	Required          bool     `json:"required,omitempty"`
 }
 
 type runtimeConfigSpec struct {
@@ -211,13 +238,17 @@ func readToolpack(sourceDir string) (toolpackSpec, bool, error) {
 	return spec, true, nil
 }
 
-func copyDeclaredAssetRoots(targetDir string, toolpack toolpackSpec, roots assetRootFlags) error {
+func copyDeclaredAssetRoots(targetDir string, toolpack toolpackSpec, roots assetRootFlags, requiredRoots requiredAssetRootFlags) error {
 	for _, asset := range toolpack.AssetRoots {
-		if err := validateAssetRootSpec(asset); err != nil {
+		requiredFiles, err := validateAssetRootSpec(asset)
+		if err != nil {
 			return err
 		}
 		rootInput := strings.TrimSpace(roots[asset.Name])
 		if rootInput == "" {
+			if asset.Required || assetRootRequired(requiredRoots, asset.Name) {
+				return fmt.Errorf("required asset root %q was not provided", asset.Name)
+			}
 			continue
 		}
 		root, err := filepath.Abs(rootInput)
@@ -231,8 +262,8 @@ func copyDeclaredAssetRoots(targetDir string, toolpack toolpackSpec, roots asset
 		if !info.IsDir() {
 			return fmt.Errorf("asset root %q is not a directory", asset.Name)
 		}
-		if _, err := os.Stat(filepath.Join(root, asset.RequiredFile)); err != nil {
-			return fmt.Errorf("asset root %q must contain %s", asset.Name, asset.RequiredFile)
+		if err := validateRequiredAssetFiles(root, asset.Name, requiredFiles, "asset root"); err != nil {
+			return err
 		}
 		target := filepath.Join(targetDir, filepath.FromSlash(asset.Target))
 		if !pathWithin(targetDir, target) {
@@ -242,15 +273,106 @@ func copyDeclaredAssetRoots(targetDir string, toolpack toolpackSpec, roots asset
 			return err
 		}
 	}
+	return validatePackagedAssetRoots(targetDir, toolpack)
+}
+
+func assetRootRequired(requiredRoots requiredAssetRootFlags, name string) bool {
+	if len(requiredRoots) == 0 {
+		return false
+	}
+	_, ok := requiredRoots[name]
+	return ok
+}
+
+func validateAssetRootSpec(asset assetRootSpec) ([]string, error) {
+	requiredFiles, err := requiredAssetFiles(asset)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(asset.Name) == "" || strings.TrimSpace(asset.Target) == "" || len(requiredFiles) == 0 {
+		return nil, fmt.Errorf("toolpack assetRoots entries require name, target, and requiredFile or requiredFiles")
+	}
+	if !isRelativePackagePath(asset.Target) {
+		return nil, fmt.Errorf("toolpack asset root %q paths must be relative", asset.Name)
+	}
+	for _, requiredFile := range requiredFiles {
+		if !isRelativePackagePath(requiredFile) {
+			return nil, fmt.Errorf("toolpack asset root %q paths must be relative", asset.Name)
+		}
+	}
+	return requiredFiles, nil
+}
+
+func requiredAssetFiles(asset assetRootSpec) ([]string, error) {
+	requiredFiles := []string{}
+	if requiredFile := strings.TrimSpace(asset.RequiredFile); requiredFile != "" {
+		requiredFiles = append(requiredFiles, requiredFile)
+	}
+	for _, requiredFile := range asset.RequiredFiles {
+		requiredFile = strings.TrimSpace(requiredFile)
+		if requiredFile == "" {
+			return nil, fmt.Errorf("toolpack asset root %q requiredFiles entries must not be empty", asset.Name)
+		}
+		requiredFiles = append(requiredFiles, requiredFile)
+	}
+	return requiredFiles, nil
+}
+
+func isRelativePackagePath(path string) bool {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return false
+	}
+	path = filepath.Clean(filepath.FromSlash(path))
+	if filepath.IsAbs(path) || filepath.VolumeName(path) != "" {
+		return false
+	}
+	return path != ".." && !strings.HasPrefix(path, ".."+string(filepath.Separator))
+}
+
+func validatePackagedAssetRoots(targetDir string, toolpack toolpackSpec) error {
+	for _, asset := range toolpack.AssetRoots {
+		requiredFiles, err := validateAssetRootSpec(asset)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(targetDir, filepath.FromSlash(asset.Target))
+		if !pathWithin(targetDir, target) {
+			return fmt.Errorf("asset root %q target escapes tool package", asset.Name)
+		}
+		info, err := os.Stat(target)
+		if err != nil {
+			if os.IsNotExist(err) {
+				if asset.RequiredInPackage {
+					return fmt.Errorf("required packaged asset root %q was not produced", asset.Name)
+				}
+				continue
+			}
+			return fmt.Errorf("stat packaged asset root %q: %w", asset.Name, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("packaged asset root %q is not a directory", asset.Name)
+		}
+		if err := validateRequiredAssetFiles(target, asset.Name, requiredFiles, "packaged asset root"); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
-func validateAssetRootSpec(asset assetRootSpec) error {
-	if strings.TrimSpace(asset.Name) == "" || strings.TrimSpace(asset.Target) == "" || strings.TrimSpace(asset.RequiredFile) == "" {
-		return fmt.Errorf("toolpack assetRoots entries require name, target, and requiredFile")
-	}
-	if filepath.IsAbs(asset.Target) || filepath.VolumeName(asset.Target) != "" || filepath.IsAbs(asset.RequiredFile) || filepath.VolumeName(asset.RequiredFile) != "" {
-		return fmt.Errorf("toolpack asset root %q paths must be relative", asset.Name)
+func validateRequiredAssetFiles(base string, assetName string, requiredFiles []string, label string) error {
+	for _, requiredFile := range requiredFiles {
+		requiredPath := filepath.Join(base, filepath.FromSlash(requiredFile))
+		if !pathWithin(base, requiredPath) {
+			return fmt.Errorf("%s %q required file %s escapes asset root", label, assetName, requiredFile)
+		}
+		requiredInfo, err := os.Stat(requiredPath)
+		if err != nil {
+			return fmt.Errorf("%s %q must contain %s", label, assetName, requiredFile)
+		}
+		if requiredInfo.IsDir() {
+			return fmt.Errorf("%s %q required file %s is a directory", label, assetName, requiredFile)
+		}
 	}
 	return nil
 }
@@ -263,6 +385,12 @@ func writeRuntimeConfig(sourceDir string, targetDir string, definition types.Too
 	config, err := readRuntimeConfig(source)
 	if err != nil {
 		return types.ToolDefinition{}, err
+	}
+	if strings.TrimSpace(toolpack.RuntimeConfig.ProviderArgument) == "" {
+		if err := writeJSON(filepath.Join(targetDir, toolpack.RuntimeConfig.Source), config); err != nil {
+			return types.ToolDefinition{}, err
+		}
+		return definition, nil
 	}
 	providers, err := runtimeProviders(config)
 	if err != nil {
@@ -292,11 +420,9 @@ func writeRuntimeConfig(sourceDir string, targetDir string, definition types.Too
 		return types.ToolDefinition{}, fmt.Errorf("tool must package at least one enabled provider")
 	}
 	config["providers"] = providers
-	if strings.TrimSpace(toolpack.RuntimeConfig.ProviderArgument) != "" {
-		definition.InputSchema = withEnabledProviderEnum(definition.InputSchema, toolpack.RuntimeConfig.ProviderArgument, enabledProviders)
-		if definition.UserConfigSchema != nil {
-			definition.UserConfigSchema = withEnabledProviderEnum(definition.UserConfigSchema, toolpack.RuntimeConfig.ProviderArgument, enabledProviders)
-		}
+	definition.InputSchema = withEnabledProviderEnum(definition.InputSchema, toolpack.RuntimeConfig.ProviderArgument, enabledProviders)
+	if definition.UserConfigSchema != nil {
+		definition.UserConfigSchema = withEnabledProviderEnum(definition.UserConfigSchema, toolpack.RuntimeConfig.ProviderArgument, enabledProviders)
 	}
 	if err := writeJSON(filepath.Join(targetDir, toolpack.RuntimeConfig.Source), config); err != nil {
 		return types.ToolDefinition{}, err

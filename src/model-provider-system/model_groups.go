@@ -61,7 +61,18 @@ func (s *system) resolveModelGroup(ctx context.Context, coordinate types.ModelCo
 				return types.Provider{}, types.ModelInfo{}, err
 			}
 			member := model.Members[index]
-			return s.ResolveModel(ctx, types.ModelCoordinate{ProviderID: member.ProviderID, ModelID: member.ModelID})
+			provider, resolved, err := s.ResolveModel(ctx, types.ModelCoordinate{ProviderID: member.ProviderID, ModelID: member.ModelID})
+			if err != nil {
+				return types.Provider{}, types.ModelInfo{}, err
+			}
+			if model.SupportsReasoning {
+				resolved.SupportsReasoning = true
+				resolved.DefaultReasoningEffort = types.NormalizeReasoningEffort(model.DefaultReasoningEffort, types.DefaultReasoningEffort)
+			} else {
+				resolved.SupportsReasoning = false
+				resolved.DefaultReasoningEffort = ""
+			}
+			return provider, resolved, nil
 		}
 	}
 	return types.Provider{}, types.ModelInfo{}, providerModelNotFound("model group coordinate does not exist", nil)
@@ -97,6 +108,9 @@ func (s *system) validateModelGroups(ctx context.Context, groups []types.ModelGr
 			if _, ok := seenModels[model.ID]; ok {
 				return providerInvalid("model group exposed model id must be unique", nil)
 			}
+			if model.SupportsReasoning && !types.IsReasoningEffort(model.DefaultReasoningEffort) {
+				return providerInvalid("model group exposed model defaultReasoningEffort is invalid", nil)
+			}
 			seenModels[model.ID] = struct{}{}
 			if len(model.Members) == 0 {
 				return providerInvalid("model group exposed model member is required", nil)
@@ -128,6 +142,11 @@ func normalizeModelGroups(groups []types.ModelGroup) []types.ModelGroup {
 			model.ID = strings.TrimSpace(model.ID)
 			model.Name = strings.TrimSpace(model.Name)
 			model.Strategy = normalizeRotationStrategy(model.Strategy)
+			if model.SupportsReasoning {
+				model.DefaultReasoningEffort = types.NormalizeReasoningEffort(model.DefaultReasoningEffort, types.DefaultReasoningEffort)
+			} else {
+				model.DefaultReasoningEffort = ""
+			}
 			if model.CreatedAt.IsZero() {
 				model.CreatedAt = now
 			}

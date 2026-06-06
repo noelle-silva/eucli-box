@@ -79,6 +79,8 @@ type runRecord struct {
 	forceBranchReply  bool
 	stream            bool
 	streamContent     string
+	reasoningEffort   types.ReasoningEffort
+	reasoningPersistPending bool
 	cancel            context.CancelFunc
 
 	pendingPlans   map[string]types.ToolRunPlan

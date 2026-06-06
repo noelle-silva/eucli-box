@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"eucli-box/pkg/types"
@@ -47,6 +48,177 @@ func TestRunBuildsShellCommandIntoAbsoluteDataDir(t *testing.T) {
 	}
 	if len(tool.Binaries) != 1 || tool.Binaries[0].Path != filepath.ToSlash(binaryRelPath) || filepath.IsAbs(tool.Binaries[0].Path) {
 		t.Fatalf("binaries = %#v", tool.Binaries)
+	}
+}
+
+func TestRunBuildsSciCalculatorWithBundledPythonRuntime(t *testing.T) {
+	dataDir := filepath.Join(t.TempDir(), "runtime-data")
+	pythonRoot := filepath.Join(t.TempDir(), "python-runtime")
+	writeFixtureFile(t, filepath.Join(pythonRoot, "python.exe"))
+	if err := run(context.Background(), []string{"-tool", "sci_calculator", "-data-dir", dataDir, "-asset-root", "sci-calculator-python-runtime=" + pythonRoot}); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	targetDir := filepath.Join(dataDir, "tools", "sci_calculator")
+	assertFile(t, filepath.Join(targetDir, "config.json"))
+	assertFile(t, filepath.Join(targetDir, "runtime", "python", "python.exe"))
+	binaryRelPath := filepath.Join("binary", runtime.GOOS+"-"+runtime.GOARCH, executableName("sci_calculator"))
+	assertFile(t, filepath.Join(targetDir, binaryRelPath))
+	tool := readToolDefinitionFile(t, filepath.Join(targetDir, "data.json"))
+	if tool.ID != "sci_calculator" || tool.Name != "SciCalculator" || tool.Directory != "." {
+		t.Fatalf("tool definition = %#v", tool)
+	}
+	if len(tool.Binaries) != 1 || tool.Binaries[0].Path != filepath.ToSlash(binaryRelPath) || filepath.IsAbs(tool.Binaries[0].Path) {
+		t.Fatalf("binaries = %#v", tool.Binaries)
+	}
+}
+
+func TestRunBuildsSciCalculatorWithoutBundledPythonRuntime(t *testing.T) {
+	dataDir := filepath.Join(t.TempDir(), "runtime-data")
+	if err := run(context.Background(), []string{"-tool", "sci_calculator", "-data-dir", dataDir}); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	targetDir := filepath.Join(dataDir, "tools", "sci_calculator")
+	assertFile(t, filepath.Join(targetDir, "config.json"))
+	if _, err := os.Stat(filepath.Join(targetDir, "runtime", "python", "python.exe")); !os.IsNotExist(err) {
+		t.Fatalf("bundled python stat error = %v, want not exist", err)
+	}
+}
+
+func TestRunRequiresExplicitSciCalculatorPythonRuntimeAsset(t *testing.T) {
+	dataDir := filepath.Join(t.TempDir(), "runtime-data")
+	if err := run(context.Background(), []string{"-tool", "sci_calculator", "-data-dir", dataDir, "-require-asset-root", "sci-calculator-python-runtime"}); err == nil {
+		t.Fatalf("run() error = nil, want required asset root error")
+	}
+}
+
+func TestRunRejectsSciCalculatorPythonRuntimeDirectoryExecutable(t *testing.T) {
+	dataDir := filepath.Join(t.TempDir(), "runtime-data")
+	pythonRoot := filepath.Join(t.TempDir(), "python-runtime")
+	if err := os.MkdirAll(filepath.Join(pythonRoot, "python.exe"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(python.exe directory) error = %v", err)
+	}
+	if err := run(context.Background(), []string{"-tool", "sci_calculator", "-data-dir", dataDir, "-asset-root", "sci-calculator-python-runtime=" + pythonRoot}); err == nil {
+		t.Fatalf("run() error = nil, want required file directory error")
+	}
+}
+
+func TestCopyDeclaredAssetRootsAcceptsRequiredFiles(t *testing.T) {
+	assetRoot := filepath.Join(t.TempDir(), "everything-root")
+	writeFixtureFile(t, filepath.Join(assetRoot, "Everything.exe"))
+	writeFixtureFile(t, filepath.Join(assetRoot, "es.exe"))
+	targetDir := filepath.Join(t.TempDir(), "tool")
+
+	err := copyDeclaredAssetRoots(targetDir, toolpackSpec{AssetRoots: []assetRootSpec{{
+		Name:          "everything-root",
+		Target:        "providers/everything",
+		RequiredFiles: []string{"Everything.exe", "es.exe"},
+	}}}, assetRootFlags{"everything-root": assetRoot}, nil)
+	if err != nil {
+		t.Fatalf("copyDeclaredAssetRoots() error = %v", err)
+	}
+	assertFile(t, filepath.Join(targetDir, "providers", "everything", "Everything.exe"))
+	assertFile(t, filepath.Join(targetDir, "providers", "everything", "es.exe"))
+}
+
+func TestCopyDeclaredAssetRootsRejectsMissingRequiredFile(t *testing.T) {
+	assetRoot := filepath.Join(t.TempDir(), "everything-root")
+	writeFixtureFile(t, filepath.Join(assetRoot, "Everything.exe"))
+	targetDir := filepath.Join(t.TempDir(), "tool")
+
+	err := copyDeclaredAssetRoots(targetDir, toolpackSpec{AssetRoots: []assetRootSpec{{
+		Name:          "everything-root",
+		Target:        "providers/everything",
+		RequiredFiles: []string{"Everything.exe", "es.exe"},
+	}}}, assetRootFlags{"everything-root": assetRoot}, nil)
+	if err == nil || !strings.Contains(err.Error(), "es.exe") {
+		t.Fatalf("copyDeclaredAssetRoots() error = %v, want missing es.exe error", err)
+	}
+}
+
+func TestCopyDeclaredAssetRootsAcceptsLegacyRequiredFile(t *testing.T) {
+	assetRoot := filepath.Join(t.TempDir(), "python-runtime")
+	writeFixtureFile(t, filepath.Join(assetRoot, "python.exe"))
+	targetDir := filepath.Join(t.TempDir(), "tool")
+
+	err := copyDeclaredAssetRoots(targetDir, toolpackSpec{AssetRoots: []assetRootSpec{{
+		Name:         "python-runtime",
+		Target:       "runtime/python",
+		RequiredFile: "python.exe",
+	}}}, assetRootFlags{"python-runtime": assetRoot}, nil)
+	if err != nil {
+		t.Fatalf("copyDeclaredAssetRoots() error = %v", err)
+	}
+	assertFile(t, filepath.Join(targetDir, "runtime", "python", "python.exe"))
+}
+
+func TestCopyDeclaredAssetRootsAcceptsExistingPackagedTarget(t *testing.T) {
+	targetDir := filepath.Join(t.TempDir(), "tool")
+	writeFixtureFile(t, filepath.Join(targetDir, "providers", "everything", "Everything.exe"))
+	writeFixtureFile(t, filepath.Join(targetDir, "providers", "everything", "es.exe"))
+
+	err := copyDeclaredAssetRoots(targetDir, toolpackSpec{AssetRoots: []assetRootSpec{{
+		Name:          "everything-root",
+		Target:        "providers/everything",
+		RequiredFiles: []string{"Everything.exe", "es.exe"},
+	}}}, nil, nil)
+	if err != nil {
+		t.Fatalf("copyDeclaredAssetRoots() error = %v", err)
+	}
+}
+
+func TestCopyDeclaredAssetRootsRejectsIncompletePackagedTarget(t *testing.T) {
+	targetDir := filepath.Join(t.TempDir(), "tool")
+	writeFixtureFile(t, filepath.Join(targetDir, "providers", "everything", "Everything.exe"))
+
+	err := copyDeclaredAssetRoots(targetDir, toolpackSpec{AssetRoots: []assetRootSpec{{
+		Name:          "everything-root",
+		Target:        "providers/everything",
+		RequiredFiles: []string{"Everything.exe", "es.exe"},
+	}}}, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "es.exe") {
+		t.Fatalf("copyDeclaredAssetRoots() error = %v, want missing packaged es.exe error", err)
+	}
+}
+
+func TestCopyDeclaredAssetRootsRejectsMissingRequiredPackagedTarget(t *testing.T) {
+	targetDir := filepath.Join(t.TempDir(), "tool")
+
+	err := copyDeclaredAssetRoots(targetDir, toolpackSpec{AssetRoots: []assetRootSpec{{
+		Name:              "everything-root",
+		Target:            "providers/everything",
+		RequiredFiles:     []string{"Everything.exe", "es.exe"},
+		RequiredInPackage: true,
+	}}}, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "was not produced") {
+		t.Fatalf("copyDeclaredAssetRoots() error = %v, want missing required packaged target error", err)
+	}
+}
+
+func TestCopyDeclaredAssetRootsAcceptsMissingOptionalPackagedTarget(t *testing.T) {
+	targetDir := filepath.Join(t.TempDir(), "tool")
+
+	err := copyDeclaredAssetRoots(targetDir, toolpackSpec{AssetRoots: []assetRootSpec{{
+		Name:         "python-runtime",
+		Target:       "runtime/python",
+		RequiredFile: "python.exe",
+	}}}, nil, nil)
+	if err != nil {
+		t.Fatalf("copyDeclaredAssetRoots() error = %v", err)
+	}
+}
+
+func TestCopyDeclaredAssetRootsRejectsEscapingRequiredFile(t *testing.T) {
+	assetRoot := filepath.Join(t.TempDir(), "asset-root")
+	writeFixtureFile(t, filepath.Join(assetRoot, "inside.exe"))
+	targetDir := filepath.Join(t.TempDir(), "tool")
+
+	err := copyDeclaredAssetRoots(targetDir, toolpackSpec{AssetRoots: []assetRootSpec{{
+		Name:          "asset-root",
+		Target:        "runtime",
+		RequiredFiles: []string{"../outside.exe"},
+	}}}, assetRootFlags{"asset-root": assetRoot}, nil)
+	if err == nil || !strings.Contains(err.Error(), "paths must be relative") {
+		t.Fatalf("copyDeclaredAssetRoots() error = %v, want relative path error", err)
 	}
 }
 

@@ -66,6 +66,7 @@ import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import DriveFileMoveOutlinedIcon from '@mui/icons-material/DriveFileMoveOutlined'
 import UnfoldLessIcon from '@mui/icons-material/UnfoldLess'
+import PsychologySparkIcon from '@mui/icons-material/PsychologyAlt'
 import { IMAGE_VIEWER_ZOOM_MAX, MERMAID_VIEWER_ZOOM_MAX, VIEWER_ZOOM_MIN } from '../core/viewerZoom'
 import { ProviderConfigEditor } from './components/ProviderConfigEditor'
 import { useAiChatState } from './hooks/useAiChatState'
@@ -101,6 +102,7 @@ import { AssistantReplyPendingIndicator } from './components/AssistantReplyPendi
 import { AssistantErrorNotice } from './components/AssistantErrorNotice'
 import { ChatSessionRunIndicator, type ChatSessionRunIndicatorKind } from './components/ChatSessionRunIndicator'
 import type { AiChatToastOptions } from '../gateway/capabilities'
+import { REASONING_EFFORT_OPTIONS, chatReasoningEffort, effectiveReasoningEffort, modelReasoningProfileFromModelRef, reasoningEffortLabel } from '../domain/reasoning'
 
 type SettingsTab = SettingsTabValue
 
@@ -1263,6 +1265,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   })
   const [confirmClearFavoriteFolder, setConfirmClearFavoriteFolder] = React.useState<{ open: boolean; folderId: string }>({ open: false, folderId: '' })
   const [tempModelPickerEl, setTempModelPickerEl] = React.useState<HTMLElement | null>(null)
+  const [reasoningPickerEl, setReasoningPickerEl] = React.useState<HTMLElement | null>(null)
   const [fileAdjust, setFileAdjust] = React.useState<{ el: HTMLElement | null; id: string }>({ el: null, id: '' })
   const [tempModelProviderId, setTempModelProviderId] = React.useState('')
   const [tempModelPick, setTempModelPick] = React.useState('')
@@ -1315,6 +1318,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   })
 
   const closeFileAdjust = useEvent(() => setFileAdjust({ el: null, id: '' }))
+  const closeReasoningPicker = useEvent(() => setReasoningPickerEl(null))
   const openFileAdjust = useEvent((e: React.MouseEvent<HTMLElement>, fileId: string) => {
     const id = String(fileId || '')
     if (!id) return
@@ -1757,9 +1761,20 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
 
   const roleProviderId = String((activeRole as any)?.modelRef?.providerId || '').trim()
   const roleModelId = String((activeRole as any)?.modelRef?.modelId || '').trim()
+  const roleModelRef = (activeRole as any)?.modelRef || null
 
   const effectiveProviderId = hasChatOverride ? overrideProviderId : roleProviderId
   const effectiveModelId = hasChatOverride ? overrideModelId : roleModelId
+  const effectiveModelRef = hasChatOverride
+    ? { kind: 'provider', providerId: overrideProviderId, modelId: overrideModelId }
+    : roleModelRef
+  const reasoningProfile = activeTargetKind === 'role'
+    ? modelReasoningProfileFromModelRef(effectiveModelRef, providers, modelGroups)
+    : { supportsReasoning: false, defaultReasoningEffort: '' as const }
+  const activeChatReasoningEffort = chatReasoningEffort(activeChat)
+  const activeEffectiveReasoningEffort = effectiveReasoningEffort(activeChat, reasoningProfile)
+  const activeReasoningLabel = reasoningEffortLabel(activeEffectiveReasoningEffort)
+  const hasChatReasoningOverride = !!activeChatReasoningEffort
 
   const uiBusy = !!s.loading
   const messageMutationBlocked = (mid: any, operation: MessageMutationOperation = 'edit') => {
@@ -2509,6 +2524,18 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const clearTempModelOverride = useEvent(() => {
     controller.actions.clearChatModelOverride?.()
     closeTempModelPicker()
+  })
+  const openReasoningPicker = useEvent((e: React.MouseEvent<HTMLElement>) => {
+    if (!reasoningProfile.supportsReasoning) return
+    setReasoningPickerEl(e.currentTarget)
+  })
+  const pickReasoningEffort = useEvent((effort: string) => {
+    controller.actions.setChatReasoningEffort?.(effort)
+    closeReasoningPicker()
+  })
+  const clearReasoningEffort = useEvent(() => {
+    controller.actions.setChatReasoningEffort?.('')
+    closeReasoningPicker()
   })
   const [regen, setRegen] = React.useState<{ mid: string; role: 'assistant' | 'user' }>({ mid: '', role: 'assistant' })
   const [msgMenu, setMsgMenu] = React.useState<{ mid: string; role: 'user' | 'assistant'; x: number; y: number; pending: boolean }>({
@@ -5345,6 +5372,29 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                     </span>
                   </Tooltip>
 
+                  {reasoningProfile.supportsReasoning ? (
+                    <Tooltip title={`思考等级：${activeReasoningLabel || '默认'}`}>
+                      <span>
+                        <IconButton
+                          aria-label="选择思考等级"
+                          onClick={openReasoningPicker}
+                          disabled={s.loading || !activeRole}
+                          size="small"
+                          sx={{
+                            bgcolor: hasChatReasoningOverride ? 'rgba(124,58,237,.12)' : 'rgba(0,0,0,.05)',
+                            color: hasChatReasoningOverride ? 'primary.main' : 'inherit',
+                            borderRadius: '999px',
+                            width: 36,
+                            height: 36,
+                            '&:hover': { bgcolor: hasChatReasoningOverride ? 'rgba(124,58,237,.18)' : 'rgba(0,0,0,.09)' },
+                          }}
+                        >
+                          <PsychologySparkIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  ) : null}
+
                   <TextField
                     fullWidth
                     multiline
@@ -5458,6 +5508,17 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                     </Button>
                   </Stack>
                 ) : null}
+
+                {reasoningProfile.supportsReasoning && hasChatReasoningOverride ? (
+                  <Stack direction="row" spacing={1} alignItems="center" sx={{ px: 0.5 }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ flex: 1, minWidth: 0 }} noWrap>
+                      {`当前会话思考等级：${activeReasoningLabel}`}
+                    </Typography>
+                    <Button size="small" variant="text" onClick={clearReasoningEffort} disabled={s.loading}>
+                      恢复默认
+                    </Button>
+                  </Stack>
+                ) : null}
               </Stack>
             </Box>
         </Box>
@@ -5544,6 +5605,53 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                   保存
                 </Button>
               </Stack>
+            </Stack>
+          </Box>
+        </Popover>
+
+        <Popover
+          open={!!reasoningPickerEl}
+          anchorEl={reasoningPickerEl}
+          onClose={closeReasoningPicker}
+          anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+          transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        >
+          <Box data-area="reasoning-effort" sx={{ width: 300, p: 1.5 }}>
+            <Stack spacing={1.25}>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>
+                  当前会话思考等级
+                </Typography>
+                <Box sx={{ flex: 1 }} />
+                <Button size="small" onClick={closeReasoningPicker}>关闭</Button>
+              </Stack>
+
+              <Typography variant="caption" color="text.secondary">
+                仅影响当前会话；不修改模型默认设置。
+              </Typography>
+
+              <Stack spacing={0.75}>
+                {REASONING_EFFORT_OPTIONS.map((option) => {
+                  const selected = String(activeEffectiveReasoningEffort || '') === option.value
+                  const sessionSelected = String(activeChatReasoningEffort || '') === option.value
+                  return (
+                    <Button
+                      key={option.value}
+                      variant={selected ? 'contained' : 'outlined'}
+                      onClick={() => pickReasoningEffort(option.value)}
+                      disabled={s.loading}
+                      sx={{ justifyContent: 'space-between', borderRadius: 2 }}
+                    >
+                      <span>{option.label}</span>
+                      <span style={{ fontSize: 12, opacity: 0.75 }}>{sessionSelected ? '当前会话' : selected ? '默认生效' : ''}</span>
+                    </Button>
+                  )
+                })}
+              </Stack>
+
+              <Button variant="text" onClick={clearReasoningEffort} disabled={!hasChatReasoningOverride || s.loading}>
+                恢复模型默认
+              </Button>
             </Stack>
           </Box>
         </Popover>

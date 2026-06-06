@@ -1,4 +1,5 @@
 import { now } from '../core/utils'
+import { normalizeReasoningEffort, normalizeReasoningFields } from '../domain/reasoning'
 
 type ModelGroupsDraftMutator = (items: any[]) => any[]
 
@@ -113,13 +114,19 @@ export function createModelGroupsController(deps: {
     const gid = String(groupId || '').trim()
     const modelIndex = normalizeModelIndex(modelIndexRaw)
     const key = String(field || '').trim()
-    if (!gid || modelIndex < 0 || !['id', 'name', 'strategy'].includes(key)) return
+    if (!gid || modelIndex < 0 || !['id', 'name', 'strategy', 'supportsReasoning', 'defaultReasoningEffort'].includes(key)) return
     updateItems((items) => items.map((group) => {
       if (String(group?.id || '') !== gid) return group
       return {
         ...group,
         models: (Array.isArray(group.models) ? group.models : []).map((model: any, index: number) => {
           if (index !== modelIndex) return model
+          if (key === 'supportsReasoning') {
+            return normalizeReasoningFields({ ...model, supportsReasoning: !!value })
+          }
+          if (key === 'defaultReasoningEffort') {
+            return normalizeReasoningFields({ ...model, supportsReasoning: true, defaultReasoningEffort: normalizeReasoningEffort(value) })
+          }
           const nextValue = key === 'strategy' && String(value || '') === 'weighted_random' ? 'weighted_random' : key === 'strategy' ? 'sequential' : String(value ?? '')
           return { ...model, [key]: nextValue }
         }),
@@ -233,6 +240,10 @@ function normalizeGroupModels(value: any): any[] {
       id: String(model.id || '').trim(),
       name: String(model.name || '').trim(),
       strategy: String(model.strategy || '') === 'weighted_random' ? 'weighted_random' : 'sequential',
+      ...normalizeReasoningFields({
+        supportsReasoning: !!model.supportsReasoning,
+        defaultReasoningEffort: normalizeReasoningEffort(model.defaultReasoningEffort),
+      }),
       members: normalizeGroupMembers(model.members),
       createdAt: typeof model.createdAt === 'string' ? model.createdAt : undefined,
       updatedAt: typeof model.updatedAt === 'string' ? model.updatedAt : undefined,

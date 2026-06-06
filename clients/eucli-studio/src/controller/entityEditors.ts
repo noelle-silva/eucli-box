@@ -7,6 +7,7 @@ import { emptyRoleToolPolicy, normalizeRoleToolPolicy } from '../domain/toolPoli
 import { clearPendingChatForTarget, createPendingChatEntry } from '../domain/pendingChat'
 import { activateComposerDraftForCurrentSession, saveActiveComposerDraftMirror } from '../domain/sessionComposerDrafts'
 import type { AiChatShowToast } from '../gateway/capabilities'
+import { normalizeReasoningEffort, normalizeReasoningFields } from '../domain/reasoning'
 
 function looksLikeImageDataUrl(s: any): boolean {
   const t = String(s || '')
@@ -537,10 +538,12 @@ export function createEntityEditors(deps: {
     const list = Array.isArray(value) ? value : []
     return list
       .filter((model: any) => model && typeof model === 'object')
-      .map((model: any) => ({
+      .map((model: any) => normalizeReasoningFields({
         id: String(model.id || '').trim(),
         name: String(model.name || model.id || '').trim(),
         sourceModelId: String(model.sourceModelId || '').trim(),
+        supportsReasoning: !!model.supportsReasoning,
+        defaultReasoningEffort: normalizeReasoningEffort(model.defaultReasoningEffort),
       }))
       .filter((model: any) => model.id && model.sourceModelId)
   }

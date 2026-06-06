@@ -77,7 +77,7 @@ func resolveRegisteredModel(provider types.Provider, registeredID string) (types
 		if name == "" {
 			name = sourceID
 		}
-		return types.ModelInfo{ID: sourceID, Name: name}, nil
+		return types.ModelInfo{ID: sourceID, Name: name, SupportsReasoning: registered.SupportsReasoning, DefaultReasoningEffort: registered.DefaultReasoningEffort}, nil
 	}
 	return types.ModelInfo{}, providerModelNotFound("registered model does not exist", nil)
 }

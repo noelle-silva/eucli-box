@@ -63,6 +63,9 @@ func validateRunRequest(request types.RunRequest) error {
 	if strings.TrimSpace(request.ParentMessageID) != "" && strings.TrimSpace(request.SessionID) == "" {
 		return gatewayInvalid("sessionId is required when parentMessageId is provided", nil)
 	}
+	if effort := types.TrimReasoningEffort(request.ReasoningEffort); effort != "" && !types.IsReasoningEffort(effort) {
+		return gatewayInvalid("reasoningEffort is invalid", nil)
+	}
 	return nil
 }
 

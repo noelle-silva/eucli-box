@@ -22,6 +22,7 @@ import { chatMetasFromBox } from './chatMeta'
 import { looksLikeImageDataUrl } from './textProcessing'
 import { normalizeChatModelOverride } from './modelRefUtils'
 import { normalizeRoleToolPolicy } from './toolPolicy'
+import { normalizeReasoningEffort, normalizeReasoningFields } from './reasoning'
 
 export function normalizeRenderSafetyPolicy(v0: unknown) {
   const v = String(v0 || '').trim()
@@ -212,10 +213,12 @@ export function normalizeData(raw: any) {
     if (!Array.isArray(p.registeredModels)) p.registeredModels = []
     p.registeredModels = p.registeredModels
       .filter((model: any) => model && typeof model === 'object')
-      .map((model: any) => ({
+      .map((model: any) => normalizeReasoningFields({
         id: String(model.id || '').trim(),
         name: String(model.name || model.id || '').trim(),
         sourceModelId: String(model.sourceModelId || model.modelId || '').trim(),
+        supportsReasoning: !!model.supportsReasoning,
+        defaultReasoningEffort: normalizeReasoningEffort(model.defaultReasoningEffort),
       }))
       .filter((model: any) => model.id && model.sourceModelId)
     if (!p.modelsCache || typeof p.modelsCache !== 'object') p.modelsCache = { items: [], fetchedAt: 0 }
@@ -290,6 +293,8 @@ export function normalizeData(raw: any) {
         }
 
         if (modelOverride) out.modelOverride = modelOverride
+        const reasoningEffort = normalizeReasoningEffort((cc as any).reasoningEffort)
+        if (reasoningEffort) out.reasoningEffort = reasoningEffort
 
         const branches0 = Array.isArray(out.branching?.branches) ? out.branching.branches : []
         const idSet = new Set<string>()
@@ -413,6 +418,8 @@ export function normalizeData(raw: any) {
         }
 
         if (modelOverride) out.modelOverride = modelOverride
+        const reasoningEffort = normalizeReasoningEffort((cc as any).reasoningEffort)
+        if (reasoningEffort) out.reasoningEffort = reasoningEffort
 
         const branches0 = Array.isArray(out.branching?.branches) ? out.branching.branches : []
         const idSet = new Set<string>()

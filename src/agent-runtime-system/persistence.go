@@ -41,7 +41,18 @@ func (s *system) saveRunSessionWithStatusFallback(ctx context.Context, record *r
 }
 
 func runSessionMessageSave(record *runRecord, status types.RunStatus) types.SessionMessageSave {
-	return types.SessionMessageSave{Session: record.session, Writes: runMessageWrites(record), Deletes: runMessageDeletes(record), Conditions: runMessageConditions(record), Status: status}
+	return types.SessionMessageSave{Session: record.session, MetadataPatch: runMetadataPatch(record), Writes: runMessageWrites(record), Deletes: runMessageDeletes(record), Conditions: runMessageConditions(record), Status: status}
+}
+
+func runMetadataPatch(record *runRecord) map[string]string {
+	if record == nil || !record.reasoningPersistPending {
+		return nil
+	}
+	effort := types.TrimReasoningEffort(record.reasoningEffort)
+	if effort == "" {
+		return nil
+	}
+	return map[string]string{"reasoningEffort": string(effort)}
 }
 
 func runMessageWrites(record *runRecord) []types.SessionMessageWrite {
@@ -106,6 +117,9 @@ func markRunSessionSaveAccepted(record *runRecord, save types.SessionMessageSave
 	}
 	if record.messageSnapshots == nil {
 		record.messageSnapshots = map[string]types.Message{}
+	}
+	if len(save.MetadataPatch) > 0 {
+		record.reasoningPersistPending = false
 	}
 	for _, write := range save.Writes {
 		messageID := strings.TrimSpace(write.Message.ID)

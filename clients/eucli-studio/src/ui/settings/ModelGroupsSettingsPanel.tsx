@@ -1,9 +1,10 @@
 import * as React from 'react'
-import { Box, Button, Divider, FormControl, InputLabel, MenuItem, Paper, Select, Stack, TextField, Typography } from '@mui/material'
+import { Box, Button, Divider, FormControl, FormControlLabel, InputLabel, MenuItem, Paper, Select, Stack, Switch, TextField, Typography } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import SaveIcon from '@mui/icons-material/Save'
+import { REASONING_EFFORT_OPTIONS } from '../../domain/reasoning'
 
 type ModelGroupsSettingsPanelProps = {
   controller: any
@@ -106,6 +107,15 @@ function ModelGroupModelCard(props: { controller: any; groupId: string; model: a
               <MenuItem value="weighted_random">权重随机</MenuItem>
             </Select>
           </FormControl>
+          <FormControlLabel control={<Switch checked={!!model?.supportsReasoning} onChange={(e) => controller.actions.setModelGroupModelField?.(groupId, modelIndex, 'supportsReasoning', e.target.checked)} />} label="可推理" />
+          {model?.supportsReasoning ? (
+            <FormControl size="small" sx={{ minWidth: 140 }}>
+              <InputLabel>默认思考</InputLabel>
+              <Select label="默认思考" value={String(model?.defaultReasoningEffort || 'medium')} onChange={(e) => controller.actions.setModelGroupModelField?.(groupId, modelIndex, 'defaultReasoningEffort', e.target.value)}>
+                {REASONING_EFFORT_OPTIONS.map((option) => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}
+              </Select>
+            </FormControl>
+          ) : null}
           <Button size="small" startIcon={<AddIcon />} onClick={() => controller.actions.createModelGroupMember?.(groupId, modelIndex)} disabled={busy}>添加成员</Button>
           <Button size="small" color="error" startIcon={<DeleteOutlineIcon />} onClick={() => controller.actions.deleteModelGroupModel?.(groupId, modelIndex)} disabled={busy}>删除模型</Button>
         </Stack>

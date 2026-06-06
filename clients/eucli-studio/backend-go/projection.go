@@ -955,7 +955,11 @@ func toUIChat(session map[string]any) map[string]any {
 		updatedAt = createdAt
 	}
 	branching := deriveUIBranching(messages, createdAt, updatedAt)
-	return map[string]any{"id": stringField(session, "id"), "title": fallback(stringField(session, "title"), "新聊天"), "createdAt": createdAt, "updatedAt": updatedAt, "branching": branching, "messages": anyList(messages)}
+	chat := map[string]any{"id": stringField(session, "id"), "title": fallback(stringField(session, "title"), "新聊天"), "createdAt": createdAt, "updatedAt": updatedAt, "branching": branching, "messages": anyList(messages)}
+	if effort := normalizeReasoningEffort(stringField(objectMap(session["metadata"]), "reasoningEffort")); effort != "" {
+		chat["reasoningEffort"] = effort
+	}
+	return chat
 }
 
 func deriveUIBranching(messages []map[string]any, createdAt int64, updatedAt int64) map[string]any {
@@ -1060,7 +1064,11 @@ func fromUIChat(value any, roleID string) map[string]any {
 		messages = append(messages, message)
 	}
 	updatedAt := timeFromMillis(chat["updatedAt"])
-	return map[string]any{"id": stringField(chat, "id"), "roleId": roleID, "title": fallback(stringField(chat, "title"), "新聊天"), "status": "created", "messages": messages, "createdAt": timeFromMillis(chat["createdAt"]), "updatedAt": updatedAt, "lastActive": updatedAt}
+	session := map[string]any{"id": stringField(chat, "id"), "roleId": roleID, "title": fallback(stringField(chat, "title"), "新聊天"), "status": "created", "messages": messages, "createdAt": timeFromMillis(chat["createdAt"]), "updatedAt": updatedAt, "lastActive": updatedAt}
+	if effort := normalizeReasoningEffort(stringField(chat, "reasoningEffort")); effort != "" {
+		session["metadata"] = map[string]any{"reasoningEffort": effort}
+	}
+	return session
 }
 
 func toUIMessageAttachments(attachments []map[string]any) ([]any, []any) {
@@ -1248,6 +1256,14 @@ func boolField(m map[string]any, key string, fallback bool) bool {
 		return v
 	}
 	return fallback
+}
+func normalizeReasoningEffort(value string) string {
+	switch strings.TrimSpace(value) {
+	case "very_low", "low", "medium", "high", "very_high":
+		return strings.TrimSpace(value)
+	default:
+		return ""
+	}
 }
 func fallback(value string, fallback string) string {
 	if strings.TrimSpace(value) == "" {

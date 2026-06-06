@@ -29,6 +29,12 @@ func (s *system) Complete(ctx context.Context, request types.ModelRequest) (type
 	request.Coordinate.ProviderID = provider.ID
 	request.Coordinate.ProviderName = provider.Name
 	request.Coordinate.ModelID = resolved.ID
+	if err := applyResolvedReasoning(&request, resolved); err != nil {
+		record.Success = false
+		record.ErrorCode = errCode(err)
+		_ = s.storage.SaveCallRecord(ctx, record)
+		return types.ModelResponse{}, err
+	}
 	record.ProviderID = provider.ID
 	record.ModelID = resolved.ID
 	provider, err = s.providerWithSelectedKey(provider)
@@ -91,6 +97,12 @@ func (s *system) CompleteStream(ctx context.Context, request types.ModelRequest,
 	request.Coordinate.ProviderID = provider.ID
 	request.Coordinate.ProviderName = provider.Name
 	request.Coordinate.ModelID = resolved.ID
+	if err := applyResolvedReasoning(&request, resolved); err != nil {
+		record.Success = false
+		record.ErrorCode = errCode(err)
+		_ = s.storage.SaveCallRecord(ctx, record)
+		return types.ModelResponse{}, err
+	}
 	record.ProviderID = provider.ID
 	record.ModelID = resolved.ID
 	provider, err = s.providerWithSelectedKey(provider)
@@ -155,6 +167,22 @@ func newCallID() string {
 	b := make([]byte, 8)
 	rand.Read(b)
 	return fmt.Sprintf("call-%d-%x", time.Now().UTC().UnixNano(), b)
+}
+
+func applyResolvedReasoning(request *types.ModelRequest, resolved types.ModelInfo) error {
+	effort := types.TrimReasoningEffort(request.ReasoningEffort)
+	if effort != "" && !types.IsReasoningEffort(effort) {
+		return providerInvalid("reasoningEffort is invalid", nil)
+	}
+	if !resolved.SupportsReasoning {
+		request.ReasoningEffort = ""
+		return nil
+	}
+	if effort == "" {
+		effort = resolved.DefaultReasoningEffort
+	}
+	request.ReasoningEffort = types.NormalizeReasoningEffort(effort, types.DefaultReasoningEffort)
+	return nil
 }
 
 func errCode(err error) string {

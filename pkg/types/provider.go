@@ -51,16 +51,20 @@ type ProviderAPIKey struct {
 }
 
 type ProviderRegisteredModel struct {
-	ID            string    `json:"id"`
-	Name          string    `json:"name"`
-	SourceModelID string    `json:"sourceModelId"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
+	ID                     string          `json:"id"`
+	Name                   string          `json:"name"`
+	SourceModelID          string          `json:"sourceModelId"`
+	SupportsReasoning      bool            `json:"supportsReasoning,omitempty"`
+	DefaultReasoningEffort ReasoningEffort `json:"defaultReasoningEffort,omitempty"`
+	CreatedAt              time.Time       `json:"createdAt"`
+	UpdatedAt              time.Time       `json:"updatedAt"`
 }
 
 type ModelInfo struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID                     string          `json:"id"`
+	Name                   string          `json:"name"`
+	SupportsReasoning      bool            `json:"supportsReasoning,omitempty"`
+	DefaultReasoningEffort ReasoningEffort `json:"defaultReasoningEffort,omitempty"`
 }
 
 type ModelCoordinate struct {
@@ -80,12 +84,14 @@ type ModelGroup struct {
 }
 
 type ModelGroupModel struct {
-	ID        string             `json:"id"`
-	Name      string             `json:"name"`
-	Strategy  RotationStrategy   `json:"strategy"`
-	Members   []ModelGroupMember `json:"members"`
-	CreatedAt time.Time          `json:"createdAt"`
-	UpdatedAt time.Time          `json:"updatedAt"`
+	ID                     string             `json:"id"`
+	Name                   string             `json:"name"`
+	Strategy               RotationStrategy   `json:"strategy"`
+	SupportsReasoning      bool               `json:"supportsReasoning,omitempty"`
+	DefaultReasoningEffort ReasoningEffort    `json:"defaultReasoningEffort,omitempty"`
+	Members                []ModelGroupMember `json:"members"`
+	CreatedAt              time.Time          `json:"createdAt"`
+	UpdatedAt              time.Time          `json:"updatedAt"`
 }
 
 type ModelGroupMember struct {
@@ -95,11 +101,12 @@ type ModelGroupMember struct {
 }
 
 type ModelRequest struct {
-	Coordinate  ModelCoordinate  `json:"coordinate"`
-	Messages    []PromptMessage  `json:"messages"`
-	Temperature float64          `json:"temperature"`
-	Tools       []ToolDefinition `json:"tools,omitempty"`
-	Stream      bool             `json:"stream,omitempty"`
+	Coordinate      ModelCoordinate  `json:"coordinate"`
+	Messages        []PromptMessage  `json:"messages"`
+	Temperature     float64          `json:"temperature"`
+	ReasoningEffort ReasoningEffort  `json:"reasoningEffort,omitempty"`
+	Tools           []ToolDefinition `json:"tools,omitempty"`
+	Stream          bool             `json:"stream,omitempty"`
 }
 
 const (

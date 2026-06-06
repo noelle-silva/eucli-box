@@ -28,6 +28,7 @@ func normalizeSessionForStorage(session types.Session, now time.Time) types.Sess
 	if session.LastActive.IsZero() {
 		session.LastActive = baseline
 	}
+	session.Metadata = normalizeSessionMetadata(session.Metadata)
 	session.Messages = normalizeSessionMessages(session.Messages, now)
 	for _, message := range session.Messages {
 		if message.CreatedAt.After(session.LastActive) {
@@ -337,6 +338,32 @@ func (s *system) UpdateSessionTitle(ctx context.Context, roleID string, sessionI
 		return types.Session{}, err
 	}
 	return s.LoadSession(ctx, roleID, sessionID)
+}
+
+func normalizeSessionMetadata(metadata map[string]string) map[string]string {
+	if len(metadata) == 0 {
+		return nil
+	}
+	out := map[string]string{}
+	for key, value := range metadata {
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if key == "" || value == "" {
+			continue
+		}
+		if key == "reasoningEffort" {
+			effort := types.TrimReasoningEffort(types.ReasoningEffort(value))
+			if types.IsReasoningEffort(effort) {
+				out[key] = string(effort)
+			}
+			continue
+		}
+		out[key] = value
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (s *system) UpdateSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string, patch types.SessionMessagePatch) (types.Message, error) {

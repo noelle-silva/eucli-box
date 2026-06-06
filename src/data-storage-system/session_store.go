@@ -116,6 +116,7 @@ func (s *system) mergeSessionMessageSave(ctx context.Context, save types.Session
 	} else {
 		merged.Metadata = mergeSessionMetadata(session.Metadata, merged.Metadata)
 	}
+	merged.Metadata = applySessionMetadataPatch(merged.Metadata, save.MetadataPatch)
 	if merged.Title == "" || merged.Title == types.DefaultSessionTitle {
 		merged.Title = session.Title
 	}
@@ -196,6 +197,36 @@ func mergeSessionMetadataPreservingCurrent(current map[string]string, incoming m
 	}
 	for key, value := range current {
 		out[key] = value
+	}
+	return out
+}
+
+func applySessionMetadataPatch(current map[string]string, patch map[string]string) map[string]string {
+	if len(patch) == 0 {
+		return current
+	}
+	out := make(map[string]string, len(current)+len(patch))
+	for key, value := range current {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		out[key] = value
+	}
+	for key, value := range patch {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		if value == "" {
+			delete(out, key)
+			continue
+		}
+		out[key] = value
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

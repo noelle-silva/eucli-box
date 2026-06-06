@@ -36,6 +36,7 @@ import { normalizeBranchId } from '../domain/branching'
 import { normalizeMessageAttachments, normalizeMessageGroup } from '../domain/message'
 import { validateFavoriteFolderName } from '../domain/favoriteValidator'
 import { normalizeChatModelOverride, normalizeMessageModelRef, buildMessageModelRef } from '../domain/modelRefUtils'
+import { normalizeReasoningEffort } from '../domain/reasoning'
 import { isAssistantGenerating } from '../domain/assistantRunState'
 import { moveListItemById, type ListMovePosition } from '../domain/listOrdering'
 import { detectDraftFileKind, addDraftFilePlaceholder, removeDraftFile, removeDraftImage as removeDraftImageFromList, fileExtLower } from '../domain/draftFileUtils'
@@ -1895,6 +1896,23 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       save().catch(() => {})
       emit()
       api.ui?.showToast?.('已清除未接入 e-b 的本地临时模型覆盖', { kind: 'success' })
+    },
+    setChatReasoningEffort: async (effort: any) => {
+      if (!state.data) return
+      const next = normalizeReasoningEffort(effort)
+      const kind = activeTargetKind()
+      if (kind !== 'role') return
+      const target = activeRole()
+      const targetId = String((target as any)?.id || '').trim()
+      if (!targetId) return
+      const pending = state.pendingChat && String(state.pendingChat.roleId || '') === targetId ? state.pendingChat.chat : null
+      const chat = pending || activeChatFromData()
+      if (!chat) return
+      if (next) (chat as any).reasoningEffort = next
+      else delete (chat as any).reasoningEffort
+      chat.updatedAt = now()
+      if (!pending) save().catch(() => {})
+      emit()
     },
     deleteMessage: (messageId: any) => deleteMessage(String(messageId || '')),
     deleteMessageSubtree: (messageId: any) => deleteMessageSubtree(String(messageId || '')),

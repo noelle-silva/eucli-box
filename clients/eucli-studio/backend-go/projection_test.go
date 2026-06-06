@@ -59,6 +59,28 @@ func TestChatProjectionPreservesMessageParts(t *testing.T) {
 	}
 }
 
+func TestChatProjectionPreservesReasoningEffort(t *testing.T) {
+	session := map[string]any{
+		"id":        "session-1",
+		"roleId":    "developer",
+		"title":     "Reasoning",
+		"createdAt": "2026-06-03T10:00:00Z",
+		"updatedAt": "2026-06-03T10:00:00Z",
+		"metadata":  map[string]any{"reasoningEffort": "high"},
+		"messages":  []any{},
+	}
+
+	ui := toUIChat(session)
+	if ui["reasoningEffort"] != "high" {
+		t.Fatalf("ui reasoning effort = %#v", ui["reasoningEffort"])
+	}
+	back := fromUIChat(ui, "developer")
+	metadata := objectMap(back["metadata"])
+	if metadata["reasoningEffort"] != "high" {
+		t.Fatalf("back metadata = %#v", metadata)
+	}
+}
+
 func TestLegacyToolMessageProjectsAsAssistantSide(t *testing.T) {
 	message := map[string]any{"type": "tool", "content": "ok"}
 	if role := messageRole(message); role != "assistant" {

@@ -104,10 +104,14 @@ func (anthropicAdapter) BuildCompleteRequest(provider types.Provider, request ty
 		return types.HTTPRequest{}, err
 	}
 	body := map[string]any{
-		"model":       request.Coordinate.ModelID,
-		"messages":    messages,
-		"temperature": request.Temperature,
-		"max_tokens":  4096,
+		"model":      request.Coordinate.ModelID,
+		"messages":   messages,
+		"max_tokens": 4096,
+	}
+	if request.ReasoningEffort != "" {
+		body["thinking"] = map[string]any{"type": "enabled", "budget_tokens": anthropicThinkingBudgetTokens(request.ReasoningEffort)}
+	} else {
+		body["temperature"] = request.Temperature
 	}
 	if request.Stream {
 		body["stream"] = true
@@ -134,6 +138,21 @@ func (anthropicAdapter) BuildCompleteRequest(provider types.Provider, request ty
 		Body:     payload,
 		Timeout:  time.Duration(timeout),
 	}, nil
+}
+
+func anthropicThinkingBudgetTokens(effort types.ReasoningEffort) int {
+	switch types.NormalizeReasoningEffort(effort, types.DefaultReasoningEffort) {
+	case types.ReasoningEffortVeryLow:
+		return 1024
+	case types.ReasoningEffortLow:
+		return 1536
+	case types.ReasoningEffortHigh:
+		return 3072
+	case types.ReasoningEffortVeryHigh:
+		return 3584
+	default:
+		return 2048
+	}
 }
 
 func (anthropicAdapter) NewCompleteStreamParser(onEvent types.ModelStreamHandler) completeStreamParser {

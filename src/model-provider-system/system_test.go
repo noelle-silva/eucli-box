@@ -95,6 +95,22 @@ func TestResolveModelMapsRegisteredModelToSourceModel(t *testing.T) {
 	}
 }
 
+func TestResolveModelCarriesRegisteredReasoningProfile(t *testing.T) {
+	storage := newFakeProviderStorage()
+	provider := testOpenAIProvider()
+	provider.RegisteredModels = []types.ProviderRegisteredModel{{ID: "thinking", Name: "Thinking", SourceModelID: "gpt-4.1", SupportsReasoning: true, DefaultReasoningEffort: types.ReasoningEffortHigh}}
+	storage.providers["openai-main"] = provider
+	system := newTestProviderSystem(t, &fakeNetwork{}, storage)
+
+	_, model, err := system.ResolveModel(context.Background(), types.ModelCoordinate{ProviderID: "openai-main", ModelID: "thinking"})
+	if err != nil {
+		t.Fatalf("ResolveModel() error = %v", err)
+	}
+	if !model.SupportsReasoning || model.DefaultReasoningEffort != types.ReasoningEffortHigh {
+		t.Fatalf("model reasoning profile = %#v", model)
+	}
+}
+
 func TestResolveModelGroupUsesRegisteredMemberModel(t *testing.T) {
 	storage := newFakeProviderStorage()
 	storage.providers["openai-main"] = testOpenAIProvider()
@@ -107,6 +123,23 @@ func TestResolveModelGroupUsesRegisteredMemberModel(t *testing.T) {
 	}
 	if provider.ID != "openai-main" || model.ID != "gpt-4.1" {
 		t.Fatalf("provider = %#v model = %#v", provider, model)
+	}
+}
+
+func TestResolveModelGroupOverridesReasoningProfile(t *testing.T) {
+	storage := newFakeProviderStorage()
+	provider := testOpenAIProvider()
+	provider.RegisteredModels = []types.ProviderRegisteredModel{{ID: "gpt-4.1", Name: "gpt-4.1", SourceModelID: "gpt-4.1", SupportsReasoning: true, DefaultReasoningEffort: types.ReasoningEffortLow}}
+	storage.providers["openai-main"] = provider
+	storage.modelGroups = []types.ModelGroup{{ID: "main-group", Name: "Main Group", Models: []types.ModelGroupModel{{ID: "balanced", Name: "Balanced", Strategy: types.RotationStrategySequential, SupportsReasoning: true, DefaultReasoningEffort: types.ReasoningEffortVeryHigh, Members: []types.ModelGroupMember{{ProviderID: "openai-main", ModelID: "gpt-4.1", Weight: 1}}}}}}
+	system := newTestProviderSystem(t, &fakeNetwork{}, storage)
+
+	_, model, err := system.ResolveModel(context.Background(), types.ModelCoordinate{Kind: "model_group", GroupID: "main-group", ModelID: "balanced"})
+	if err != nil {
+		t.Fatalf("ResolveModel() error = %v", err)
+	}
+	if !model.SupportsReasoning || model.DefaultReasoningEffort != types.ReasoningEffortVeryHigh {
+		t.Fatalf("model group reasoning profile = %#v", model)
 	}
 }
 
@@ -134,6 +167,56 @@ func TestCompleteOpenAIWritesToolsIntoRequest(t *testing.T) {
 	}
 	if _, ok := body["tools"]; !ok {
 		t.Fatalf("request body missing tools: %s", string(network.lastRequest.Body))
+	}
+}
+
+func TestCompleteOpenAIUsesReasoningEffortAndOmitsTemperature(t *testing.T) {
+	storage := newFakeProviderStorage()
+	provider := testOpenAIProvider()
+	provider.RegisteredModels[0].SupportsReasoning = true
+	provider.RegisteredModels[0].DefaultReasoningEffort = types.ReasoningEffortVeryHigh
+	storage.providers["openai-main"] = provider
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"done"}}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	_, err := system.Complete(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}, Temperature: 0.7})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(network.lastRequest.Body, &body); err != nil {
+		t.Fatalf("request body is invalid json: %v", err)
+	}
+	if body["reasoning_effort"] != "xhigh" {
+		t.Fatalf("reasoning_effort = %#v body=%s", body["reasoning_effort"], string(network.lastRequest.Body))
+	}
+	if _, ok := body["temperature"]; ok {
+		t.Fatalf("temperature should be omitted when reasoning is enabled: %s", string(network.lastRequest.Body))
+	}
+}
+
+func TestCompleteAnthropicUsesReasoningEffortAndOmitsTemperature(t *testing.T) {
+	storage := newFakeProviderStorage()
+	provider := testAnthropicProvider()
+	provider.RegisteredModels[0].SupportsReasoning = true
+	storage.providers["anthropic-main"] = provider
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"msg-1","content":[{"type":"text","text":"done"}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	_, err := system.Complete(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}, Temperature: 0.2, ReasoningEffort: types.ReasoningEffortHigh})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(network.lastRequest.Body, &body); err != nil {
+		t.Fatalf("request body is invalid json: %v", err)
+	}
+	thinking, ok := body["thinking"].(map[string]any)
+	if !ok || thinking["type"] != "enabled" || thinking["budget_tokens"] != float64(3072) {
+		t.Fatalf("thinking = %#v body=%s", body["thinking"], string(network.lastRequest.Body))
+	}
+	if _, ok := body["temperature"]; ok {
+		t.Fatalf("temperature should be omitted when reasoning is enabled: %s", string(network.lastRequest.Body))
 	}
 }
 

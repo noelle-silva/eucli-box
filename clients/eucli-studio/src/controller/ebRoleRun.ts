@@ -17,7 +17,7 @@ export function isTerminalRunStatus(status: unknown) {
   return value === 'completed' || value === 'failed' || value === 'cancelled'
 }
 
-export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: string; sessionId?: string; message?: string; attachments?: any[]; parentMessageId?: string; userMessageId?: string; stream?: boolean }) {
+export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: string; sessionId?: string; message?: string; attachments?: any[]; parentMessageId?: string; userMessageId?: string; stream?: boolean; reasoningEffort?: string }) {
   const body = {
     roleId: String(input.roleId || '').trim(),
     sessionId: String(input.sessionId || '').trim(),
@@ -25,6 +25,7 @@ export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: st
     attachments: Array.isArray(input.attachments) ? input.attachments : [],
     parentMessageId: String(input.parentMessageId || '').trim(),
     userMessageId: String(input.userMessageId || '').trim(),
+    reasoningEffort: String(input.reasoningEffort || '').trim(),
     stream: !!input.stream,
   }
   if (!body.roleId) throw new Error('角色无效')
@@ -41,6 +42,7 @@ export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: st
   if (!body.message) delete (body as any).message
   if (!body.attachments.length) delete (body as any).attachments
   if (!body.sessionId) delete (body as any).sessionId
+  if (!body.reasoningEffort) delete (body as any).reasoningEffort
   const response = await netRequest({ method: 'POST', path: '/api/runs', body, timeoutMs: 30000 })
   return normalizeRunState(response?.body)
 }

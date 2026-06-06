@@ -121,6 +121,9 @@ func validateProvider(provider types.Provider) error {
 		if _, ok := seenModelIDs[model.ID]; ok {
 			return providerInvalid("registered model id must be unique", nil)
 		}
+		if model.SupportsReasoning && !types.IsReasoningEffort(model.DefaultReasoningEffort) {
+			return providerInvalid("registered model defaultReasoningEffort is invalid", nil)
+		}
 		seenModelIDs[model.ID] = struct{}{}
 	}
 	return nil
@@ -173,6 +176,11 @@ func normalizeProvider(provider types.Provider) types.Provider {
 		model.ID = strings.TrimSpace(model.ID)
 		model.Name = strings.TrimSpace(model.Name)
 		model.SourceModelID = strings.TrimSpace(model.SourceModelID)
+		if model.SupportsReasoning {
+			model.DefaultReasoningEffort = types.NormalizeReasoningEffort(model.DefaultReasoningEffort, types.DefaultReasoningEffort)
+		} else {
+			model.DefaultReasoningEffort = ""
+		}
 		if model.Name == "" {
 			model.Name = model.ID
 		}

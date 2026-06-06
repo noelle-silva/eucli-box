@@ -13,7 +13,7 @@ func (s *system) callModel(ctx context.Context, record *runRecord, roleContext t
 	if err != nil {
 		return types.ModelResponse{}, err
 	}
-	request := types.ModelRequest{Coordinate: roleContext.ModelConfig.Coordinate, Temperature: roleContext.ModelConfig.Temperature, Messages: messages, Tools: roleContext.NativeTools, Stream: record.stream}
+	request := types.ModelRequest{Coordinate: roleContext.ModelConfig.Coordinate, Temperature: roleContext.ModelConfig.Temperature, Messages: messages, ReasoningEffort: record.reasoningEffort, Tools: roleContext.NativeTools, Stream: record.stream}
 	if record.stream {
 		return s.callModelStream(ctx, record, request)
 	}

@@ -20,6 +20,7 @@ import { looksLikeImageDataUrl } from '../domain/textProcessing'
 import { detectDraftFileKind, addDraftFilePlaceholder } from '../domain/draftFileUtils'
 import type { DraftFileItem } from '../domain/draftFileUtils'
 import { normalizeChatModelOverride } from '../domain/modelRefUtils'
+import { chatReasoningEffort } from '../domain/reasoning'
 import { createStateAccessors } from '../state/stateAccessors'
 import { hasActiveAssistantMessages } from '../domain/chatRunState'
 import { isAssistantGenerating, isAssistantRunInterrupted } from '../domain/assistantRunState'
@@ -77,13 +78,14 @@ export function createChatOperations(deps: {
   const cancelledRunIds = new Set<string>()
   const startingRoleRunKeys = new Set<string>()
 
-  function roleRunStartKey(input: { roleId: string; sessionId?: string; parentMessageId?: string; userMessageId?: string; message?: string }) {
+  function roleRunStartKey(input: { roleId: string; sessionId?: string; parentMessageId?: string; userMessageId?: string; message?: string; reasoningEffort?: string }) {
     const roleId = String(input.roleId || '').trim()
     const sessionId = String(input.sessionId || '').trim()
     const parentMessageId = String(input.parentMessageId || '').trim()
     const userMessageId = String(input.userMessageId || '').trim()
     const message = String(input.message || '').trim()
-    return [roleId, sessionId, userMessageId ? `user:${userMessageId}` : `parent:${parentMessageId}`, message].join('\n')
+    const reasoningEffort = String(input.reasoningEffort || '').trim()
+    return [roleId, sessionId, userMessageId ? `user:${userMessageId}` : `parent:${parentMessageId}`, message, reasoningEffort].join('\n')
   }
 
   function findActiveAssistantChild(chat: any, parentMid: string) {
@@ -311,7 +313,7 @@ export function createChatOperations(deps: {
   }
 
   async function runRoleMessageViaEb(
-    input: { roleId: string; sessionId: string; message?: string; attachments?: any[]; parentMessageId?: string; userMessageId?: string; stream?: boolean },
+    input: { roleId: string; sessionId: string; message?: string; attachments?: any[]; parentMessageId?: string; userMessageId?: string; stream?: boolean; reasoningEffort?: string },
     onAccepted?: (run: EbRunState) => void,
     follow?: { previousMessageIds: Set<string>; ancestorMessageId?: string },
     onState?: (run: EbRunState) => void,
@@ -412,7 +414,8 @@ export function createChatOperations(deps: {
     let acceptedRunId = ''
     try {
       renderComposer()
-      await runRoleMessageViaEb({ roleId: input.roleId, sessionId: input.sessionId, userMessageId, stream: !!state.data?.settings?.streamEnabled }, (run) => {
+      const reasoningEffort = chatReasoningEffort(sa.activeChatFromData())
+      await runRoleMessageViaEb({ roleId: input.roleId, sessionId: input.sessionId, userMessageId, reasoningEffort, stream: !!state.data?.settings?.streamEnabled }, (run) => {
         acceptedRunId = String(run?.id || '').trim()
         syncEbRoleRunCard(run, { roleId: input.roleId, sessionId: input.sessionId, anchorMessageId: userMessageId })
         renderComposer()
@@ -719,7 +722,8 @@ export function createChatOperations(deps: {
     let acceptedRunId = ''
     try {
       renderComposer()
-      await runRoleMessageViaEb({ roleId: rid, sessionId, message: input, attachments, parentMessageId, stream: !!state.data?.settings?.streamEnabled }, (run) => {
+      const reasoningEffort = chatReasoningEffort(pendingChat || currentChat)
+      await runRoleMessageViaEb({ roleId: rid, sessionId, message: input, attachments, parentMessageId, reasoningEffort, stream: !!state.data?.settings?.streamEnabled }, (run) => {
         acceptedRunId = String(run?.id || '').trim()
         syncEbRoleRunCard(run, { roleId: rid, sessionId, anchorMessageId: parentMessageId })
         clearComposerDraftByKey(state, draftKey)

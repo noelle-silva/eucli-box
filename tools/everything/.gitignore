@@ -1,0 +1,7 @@
+# everything runtime data
+runtime/
+.runtime/
+
+# bundled provider binaries
+!providers/everything/Everything.exe
+!providers/everything/es.exe

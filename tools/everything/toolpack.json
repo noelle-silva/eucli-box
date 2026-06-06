@@ -1,0 +1,14 @@
+{
+  "assetRoots": [
+    {
+      "name": "everything-root",
+      "target": "providers/everything",
+      "requiredFiles": ["Everything.exe", "es.exe"],
+      "requiredInPackage": true
+    }
+  ],
+  "runtimeConfig": {
+    "source": "config.json"
+  },
+  "preservePaths": ["runtime"]
+}

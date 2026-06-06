@@ -1,0 +1,85 @@
+{
+  "id": "everything",
+  "name": "everything",
+  "description": "Search local files through Everything and return normalized markdown results with structured metadata.",
+  "promptDescription": "Search local files on Windows through the bundled Everything runtime. [query] is required and may use Everything query syntax. When [scopePath] is omitted, the bundled runtime uses the tool's dedicated Windows service to search accessible local drive roots; first full-disk use can require one-time service authorization. Optional [scopePath] limits results to an existing folder and uses the bundled scoped runtime. Optional [instanceName] targets a named Everything instance when intentionally needed. Optional [maxResults] controls result count. Optional [timeoutMs] controls search timeout. Optional [maxOutputChars] controls markdown output length. Optional [description] records why the lookup is being run. The tool ships with Everything.exe and es.exe. Configure [esPath] or EVERYTHING_ES_PATH only when you intentionally want to use an external Everything CLI instead of the bundled CLI. The tool returns normalized markdown plus metadata including provider, query, resultsCount, scopeMode, scopePath, scopePaths, instanceName, serviceName, durationMs, truncated, executableSource, and runtimeSource. The tool only performs searches; Everything maintains indexes through its own runtime behavior.",
+  "type": "local",
+  "directory": ".",
+  "userConfigSchema": {
+    "type": "object",
+    "properties": {
+      "esPath": {
+        "type": "string",
+        "title": "Everything CLI 路径",
+        "description": "明确覆盖自带 Everything CLI 时使用的 es.exe 绝对路径；通常不用填写，也可通过 EVERYTHING_ES_PATH 环境变量提供。"
+      },
+      "instanceName": {
+        "type": "string",
+        "title": "默认实例名",
+        "description": "模型未指定 instanceName 时使用的 Everything 实例名；留空表示工具专属默认实例。"
+      },
+      "scopePath": {
+        "type": "string",
+        "title": "默认搜索范围",
+        "description": "模型未指定 scopePath 时使用的默认文件夹范围；留空表示通过工具自带本体搜索可用盘符，相对路径基于 e-b 主机工作目录。"
+      },
+      "maxResults": {
+        "type": "integer",
+        "title": "默认结果数量",
+        "description": "模型未指定 maxResults 时使用的结果数量。"
+      },
+      "timeoutMs": {
+        "type": "integer",
+        "title": "默认超时（毫秒）",
+        "description": "模型未指定 timeoutMs 时使用的搜索超时。"
+      },
+      "maxOutputChars": {
+        "type": "integer",
+        "title": "默认最大输出字符数",
+        "description": "模型未指定 maxOutputChars 时使用的最大 Markdown 输出字符数。"
+      }
+    },
+    "additionalProperties": false
+  },
+  "defaultConfig": {
+    "instanceName": "",
+    "maxResults": 80,
+    "timeoutMs": 120000,
+    "maxOutputChars": 20000
+  },
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Required Everything search query. Everything query syntax is supported."
+      },
+      "scopePath": {
+        "type": "string",
+        "description": "Optional existing folder used to limit the otherwise full-disk search. Relative paths resolve from the e-b host working directory."
+      },
+      "instanceName": {
+        "type": "string",
+        "description": "Optional Everything instance name. Omit for the default instance."
+      },
+      "maxResults": {
+        "type": "integer",
+        "description": "Maximum number of results."
+      },
+      "timeoutMs": {
+        "type": "integer",
+        "description": "Search timeout in milliseconds."
+      },
+      "maxOutputChars": {
+        "type": "integer",
+        "description": "Maximum markdown output characters."
+      },
+      "description": {
+        "type": "string",
+        "description": "Short human-readable reason for running the search."
+      }
+    },
+    "additionalProperties": false
+  },
+  "binaries": []
+}

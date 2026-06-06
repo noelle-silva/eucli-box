@@ -1,0 +1,31 @@
+{
+  "defaultProvider": "bundled",
+  "esPathEnv": "EVERYTHING_ES_PATH",
+  "providers": [
+    {
+      "id": "bundled",
+      "mode": "bundled",
+      "enabled": true,
+      "executables": [
+        { "goos": "windows", "goarch": "amd64", "path": "providers/everything/es.exe" }
+      ],
+      "runtimeExecutables": [
+        { "goos": "windows", "goarch": "amd64", "path": "providers/everything/Everything.exe" }
+      ]
+    }
+  ],
+  "runtime": {
+    "directory": "runtime",
+    "defaultInstanceName": "eucli-box-everything",
+    "readyTimeoutMs": 30000,
+    "probeIntervalMs": 250
+  },
+  "limits": {
+    "defaultTimeoutMs": 120000,
+    "maxTimeoutMs": 120000,
+    "defaultConnectTimeoutMs": 5000,
+    "defaultMaxResults": 80,
+    "maxResults": 500,
+    "maxOutputChars": 30000
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "assetRoots": [
+    {
+      "name": "sci-calculator-python-runtime",
+      "target": "runtime/python",
+      "requiredFile": "python.exe"
+    }
+  ],
+  "runtimeConfig": {
+    "source": "config.json"
+  }
+}

@@ -222,6 +222,31 @@ func TestCopyDeclaredAssetRootsRejectsEscapingRequiredFile(t *testing.T) {
 	}
 }
 
+func TestClearTargetToolDirectoryPreservesDeclaredTopLevelPaths(t *testing.T) {
+	targetDir := filepath.Join(t.TempDir(), "tool")
+	writeFixtureFile(t, filepath.Join(targetDir, "runtime", "Everything.db"))
+	writeFixtureFile(t, filepath.Join(targetDir, "providers", "everything", "Everything.exe"))
+	writeFixtureFile(t, filepath.Join(targetDir, "data.json"))
+
+	if err := clearTargetToolDirectory(targetDir, []string{"runtime"}); err != nil {
+		t.Fatalf("clearTargetToolDirectory() error = %v", err)
+	}
+	assertFile(t, filepath.Join(targetDir, "runtime", "Everything.db"))
+	if _, err := os.Stat(filepath.Join(targetDir, "providers", "everything", "Everything.exe")); !os.IsNotExist(err) {
+		t.Fatalf("providers stat error = %v, want not exist", err)
+	}
+	if _, err := os.Stat(filepath.Join(targetDir, "data.json")); !os.IsNotExist(err) {
+		t.Fatalf("data.json stat error = %v, want not exist", err)
+	}
+}
+
+func TestValidatePreservePathsRejectsNestedPaths(t *testing.T) {
+	_, err := validatePreservePaths([]string{"runtime/cache"})
+	if err == nil || !strings.Contains(err.Error(), "relative top-level") {
+		t.Fatalf("validatePreservePaths() error = %v, want top-level error", err)
+	}
+}
+
 func writeFixtureFile(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

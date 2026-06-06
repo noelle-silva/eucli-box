@@ -145,21 +145,28 @@ func buildTool(ctx context.Context, repoRoot string, dataDir string, source tool
 	if definition.ID != source.ID {
 		return fmt.Errorf("tool %q tool.json id must match directory name", source.ID)
 	}
+	toolpack, hasToolpack, err := readToolpack(source.Dir)
+	if err != nil {
+		return err
+	}
 	targetDir := filepath.Join(dataDir, "tools", source.ID)
 	if !pathWithin(filepath.Join(dataDir, "tools"), targetDir) {
 		return fmt.Errorf("target directory escapes data tools root")
 	}
-	if err := os.RemoveAll(targetDir); err != nil {
+	preservePaths := []string{}
+	if hasToolpack {
+		preservePaths, err = validatePreservePaths(toolpack.PreservePaths)
+		if err != nil {
+			return err
+		}
+	}
+	if err := clearTargetToolDirectory(targetDir, preservePaths); err != nil {
 		return fmt.Errorf("clear target tool directory: %w", err)
 	}
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		return fmt.Errorf("create target tool directory: %w", err)
 	}
 	if err := copyDirIfExists(filepath.Join(source.Dir, "providers"), filepath.Join(targetDir, "providers")); err != nil {
-		return err
-	}
-	toolpack, hasToolpack, err := readToolpack(source.Dir)
-	if err != nil {
 		return err
 	}
 	if hasToolpack {
@@ -204,6 +211,7 @@ func buildTool(ctx context.Context, repoRoot string, dataDir string, source tool
 type toolpackSpec struct {
 	AssetRoots    []assetRootSpec   `json:"assetRoots"`
 	RuntimeConfig runtimeConfigSpec `json:"runtimeConfig"`
+	PreservePaths []string          `json:"preservePaths,omitempty"`
 }
 
 type assetRootSpec struct {
@@ -236,6 +244,49 @@ func readToolpack(sourceDir string) (toolpackSpec, bool, error) {
 		return toolpackSpec{}, false, fmt.Errorf("decode toolpack.json: %w", err)
 	}
 	return spec, true, nil
+}
+
+func clearTargetToolDirectory(targetDir string, preservePaths []string) error {
+	if len(preservePaths) == 0 {
+		return os.RemoveAll(targetDir)
+	}
+	entries, err := os.ReadDir(targetDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	preserve := map[string]struct{}{}
+	for _, path := range preservePaths {
+		preserve[path] = struct{}{}
+	}
+	for _, entry := range entries {
+		if _, ok := preserve[entry.Name()]; ok {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(targetDir, entry.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validatePreservePaths(paths []string) ([]string, error) {
+	result := []string{}
+	seen := map[string]struct{}{}
+	for _, value := range paths {
+		path := filepath.Clean(filepath.FromSlash(strings.TrimSpace(value)))
+		if path == "." || filepath.IsAbs(path) || filepath.VolumeName(path) != "" || strings.Contains(path, string(filepath.Separator)) {
+			return nil, fmt.Errorf("toolpack preservePaths entries must be relative top-level names")
+		}
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		result = append(result, path)
+	}
+	return result, nil
 }
 
 func copyDeclaredAssetRoots(targetDir string, toolpack toolpackSpec, roots assetRootFlags, requiredRoots requiredAssetRootFlags) error {

@@ -30,7 +30,6 @@ type AiToolsSettingsPanelProps = {
   controller: any
   loading: boolean
   tools: any
-  topbarHeight: number
 }
 
 type ToolSummary = {
@@ -55,7 +54,7 @@ type ConfigField = {
 }
 
 export function AiToolsSettingsPanel(props: AiToolsSettingsPanelProps) {
-  const { controller, loading, tools, topbarHeight } = props
+  const { controller, loading, tools } = props
   const [filter, setFilter] = React.useState('')
 
   React.useEffect(() => {
@@ -69,7 +68,7 @@ export function AiToolsSettingsPanel(props: AiToolsSettingsPanelProps) {
     : items
 
   return (
-    <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', px: 2, pt: `calc(${topbarHeight}px + 16px)`, pb: 2, bgcolor: 'grey.50' }}>
+    <>
       <Paper variant="outlined" sx={{ p: 1.5 }}>
         <Stack spacing={1.5}>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
@@ -122,7 +121,7 @@ export function AiToolsSettingsPanel(props: AiToolsSettingsPanelProps) {
       </Paper>
 
       <ToolConfigDialog controller={controller} tools={tools} />
-    </Box>
+    </>
   )
 }
 

@@ -14,11 +14,10 @@ type RolesSettingsPanelProps = {
   providers: any[]
   modelGroups: any[]
   activeRoleId: string
-  topbarHeight: number
 }
 
 export function RolesSettingsPanel(props: RolesSettingsPanelProps) {
-  const { controller, loading, roles, providers, modelGroups, activeRoleId, topbarHeight } = props
+  const { controller, loading, roles, providers, modelGroups, activeRoleId } = props
   const [sortMode, setSortMode] = React.useState(false)
 
   const roleIds = React.useMemo(() => roles.map((role: any) => String(role?.id || '').trim()).filter(Boolean), [roles])
@@ -33,8 +32,7 @@ export function RolesSettingsPanel(props: RolesSettingsPanelProps) {
   )
 
   return (
-    <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', px: 2, pt: `calc(${topbarHeight}px + 16px)`, pb: 2, bgcolor: 'grey.50' }}>
-      <Paper variant="outlined" sx={{ p: 1.5 }}>
+    <Paper variant="outlined" sx={{ p: 1.5 }}>
         <Stack direction="row" spacing={1} alignItems="center">
           <Typography sx={{ fontWeight: 900 }}>角色管理</Typography>
           <Box sx={{ flex: 1 }} />
@@ -116,7 +114,6 @@ export function RolesSettingsPanel(props: RolesSettingsPanelProps) {
             </Stack>
           </SortableSection>
         </SortableRoot>
-      </Paper>
-    </Box>
+    </Paper>
   )
 }

@@ -1445,11 +1445,11 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     deleteModelGroup: (groupId: any) => deleteModelGroup(groupId),
     setModelGroupField: (groupId: any, field: any, value: any) => setModelGroupField(groupId, field, value),
     createModelGroupModel: (groupId: any) => createModelGroupModel(groupId),
-    deleteModelGroupModel: (groupId: any, modelId: any) => deleteModelGroupModel(groupId, modelId),
-    setModelGroupModelField: (groupId: any, modelId: any, field: any, value: any) => setModelGroupModelField(groupId, modelId, field, value),
-    createModelGroupMember: (groupId: any, modelId: any) => createModelGroupMember(groupId, modelId),
-    deleteModelGroupMember: (groupId: any, modelId: any, memberIndex: any) => deleteModelGroupMember(groupId, modelId, memberIndex),
-    setModelGroupMemberField: (groupId: any, modelId: any, memberIndex: any, field: any, value: any) => setModelGroupMemberField(groupId, modelId, memberIndex, field, value),
+    deleteModelGroupModel: (groupId: any, modelIndex: any) => deleteModelGroupModel(groupId, modelIndex),
+    setModelGroupModelField: (groupId: any, modelIndex: any, field: any, value: any) => setModelGroupModelField(groupId, modelIndex, field, value),
+    createModelGroupMember: (groupId: any, modelIndex: any) => createModelGroupMember(groupId, modelIndex),
+    deleteModelGroupMember: (groupId: any, modelIndex: any, memberIndex: any) => deleteModelGroupMember(groupId, modelIndex, memberIndex),
+    setModelGroupMemberField: (groupId: any, modelIndex: any, memberIndex: any, field: any, value: any) => setModelGroupMemberField(groupId, modelIndex, memberIndex, field, value),
     openRoleToolWhitelist: () => {
       state.draft.roleToolWhitelistOpen = true
       refreshTools(false).catch(() => {})

@@ -99,27 +99,27 @@ export function createModelGroupsController(deps: {
     }))
   }
 
-  function deleteModelGroupModel(groupId: any, modelId: any) {
+  function deleteModelGroupModel(groupId: any, modelIndexRaw: any) {
     const gid = String(groupId || '').trim()
-    const mid = String(modelId || '').trim()
-    if (!gid || !mid) return
+    const modelIndex = normalizeModelIndex(modelIndexRaw)
+    if (!gid || modelIndex < 0) return
     updateItems((items) => items.map((group) => {
       if (String(group?.id || '') !== gid) return group
-      return { ...group, models: (Array.isArray(group.models) ? group.models : []).filter((model: any) => String(model?.id || '') !== mid) }
+      return { ...group, models: (Array.isArray(group.models) ? group.models : []).filter((_model: any, index: number) => index !== modelIndex) }
     }))
   }
 
-  function setModelGroupModelField(groupId: any, modelId: any, field: any, value: any) {
+  function setModelGroupModelField(groupId: any, modelIndexRaw: any, field: any, value: any) {
     const gid = String(groupId || '').trim()
-    const mid = String(modelId || '').trim()
+    const modelIndex = normalizeModelIndex(modelIndexRaw)
     const key = String(field || '').trim()
-    if (!gid || !mid || !['id', 'name', 'strategy'].includes(key)) return
+    if (!gid || modelIndex < 0 || !['id', 'name', 'strategy'].includes(key)) return
     updateItems((items) => items.map((group) => {
       if (String(group?.id || '') !== gid) return group
       return {
         ...group,
-        models: (Array.isArray(group.models) ? group.models : []).map((model: any) => {
-          if (String(model?.id || '') !== mid) return model
+        models: (Array.isArray(group.models) ? group.models : []).map((model: any, index: number) => {
+          if (index !== modelIndex) return model
           const nextValue = key === 'strategy' && String(value || '') === 'weighted_random' ? 'weighted_random' : key === 'strategy' ? 'sequential' : String(value ?? '')
           return { ...model, [key]: nextValue }
         }),
@@ -127,51 +127,51 @@ export function createModelGroupsController(deps: {
     }))
   }
 
-  function createModelGroupMember(groupId: any, modelId: any) {
+  function createModelGroupMember(groupId: any, modelIndexRaw: any) {
     const gid = String(groupId || '').trim()
-    const mid = String(modelId || '').trim()
-    if (!gid || !mid) return
+    const modelIndex = normalizeModelIndex(modelIndexRaw)
+    if (!gid || modelIndex < 0) return
     updateItems((items) => items.map((group) => {
       if (String(group?.id || '') !== gid) return group
       return {
         ...group,
-        models: (Array.isArray(group.models) ? group.models : []).map((model: any) => {
-          if (String(model?.id || '') !== mid) return model
+        models: (Array.isArray(group.models) ? group.models : []).map((model: any, index: number) => {
+          if (index !== modelIndex) return model
           return { ...model, members: [...(Array.isArray(model.members) ? model.members : []), { providerId: '', modelId: '', weight: 1 }] }
         }),
       }
     }))
   }
 
-  function deleteModelGroupMember(groupId: any, modelId: any, memberIndexRaw: any) {
+  function deleteModelGroupMember(groupId: any, modelIndexRaw: any, memberIndexRaw: any) {
     const gid = String(groupId || '').trim()
-    const mid = String(modelId || '').trim()
+    const modelIndex = normalizeModelIndex(modelIndexRaw)
     const memberIndex = Number(memberIndexRaw)
-    if (!gid || !mid || !Number.isInteger(memberIndex) || memberIndex < 0) return
+    if (!gid || modelIndex < 0 || !Number.isInteger(memberIndex) || memberIndex < 0) return
     updateItems((items) => items.map((group) => {
       if (String(group?.id || '') !== gid) return group
       return {
         ...group,
-        models: (Array.isArray(group.models) ? group.models : []).map((model: any) => {
-          if (String(model?.id || '') !== mid) return model
+        models: (Array.isArray(group.models) ? group.models : []).map((model: any, index: number) => {
+          if (index !== modelIndex) return model
           return { ...model, members: (Array.isArray(model.members) ? model.members : []).filter((_member: any, index: number) => index !== memberIndex) }
         }),
       }
     }))
   }
 
-  function setModelGroupMemberField(groupId: any, modelId: any, memberIndexRaw: any, field: any, value: any) {
+  function setModelGroupMemberField(groupId: any, modelIndexRaw: any, memberIndexRaw: any, field: any, value: any) {
     const gid = String(groupId || '').trim()
-    const mid = String(modelId || '').trim()
+    const modelIndex = normalizeModelIndex(modelIndexRaw)
     const memberIndex = Number(memberIndexRaw)
     const key = String(field || '').trim()
-    if (!gid || !mid || !Number.isInteger(memberIndex) || memberIndex < 0 || !['providerId', 'modelId', 'weight'].includes(key)) return
+    if (!gid || modelIndex < 0 || !Number.isInteger(memberIndex) || memberIndex < 0 || !['providerId', 'modelId', 'weight'].includes(key)) return
     updateItems((items) => items.map((group) => {
       if (String(group?.id || '') !== gid) return group
       return {
         ...group,
-        models: (Array.isArray(group.models) ? group.models : []).map((model: any) => {
-          if (String(model?.id || '') !== mid) return model
+        models: (Array.isArray(group.models) ? group.models : []).map((model: any, index: number) => {
+          if (index !== modelIndex) return model
           return {
             ...model,
             members: (Array.isArray(model.members) ? model.members : []).map((member: any, index: number) => {
@@ -249,6 +249,11 @@ function normalizeGroupMembers(value: any): any[] {
       modelId: String(member.modelId || '').trim(),
       weight: Math.max(1, Math.round(Number(member.weight || 1))),
     }))
+}
+
+function normalizeModelIndex(value: any) {
+  const index = Number(value)
+  return Number.isInteger(index) && index >= 0 ? index : -1
 }
 
 function makeClientId(prefix: string) {

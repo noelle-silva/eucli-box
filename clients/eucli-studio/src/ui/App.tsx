@@ -86,6 +86,7 @@ import { RolesSettingsPanel } from './settings/RolesSettingsPanel'
 import { AiToolsSettingsPanel } from './settings/AiToolsSettingsPanel'
 import { EbSettingsPanel } from './settings/EbSettingsPanel'
 import { ModelGroupsSettingsPanel } from './settings/ModelGroupsSettingsPanel'
+import { SettingsPageLayout, type SettingsTabValue } from './settings/SettingsNavigationBar'
 import { AI_STUDIO_CHAT_ROOT_ID } from '../runtime/aiStudioGlobals'
 import { assistantRunGenerationId, isAssistantAwaitingFirstOutput, isAssistantGenerating } from '../domain/assistantRunState'
 import { formatModelRefDisplayText } from '../domain/modelRefUtils'
@@ -100,7 +101,7 @@ import { AssistantErrorNotice } from './components/AssistantErrorNotice'
 import { ChatSessionRunIndicator, type ChatSessionRunIndicatorKind } from './components/ChatSessionRunIndicator'
 import type { AiChatToastOptions } from '../gateway/capabilities'
 
-type SettingsTab = 'appearance' | 'attachments' | 'data' | 'groups' | 'roles' | 'providers' | 'modelGroups' | 'services' | 'tools' | 'stickers' | 'eb'
+type SettingsTab = SettingsTabValue
 
 type ChatSessionRunNoticeKind = Exclude<ChatSessionRunStatus, 'idle' | 'running'>
 
@@ -128,22 +129,6 @@ type SendPathAnchor = {
 function emptySendPathAnchor(): SendPathAnchor {
   return { chatId: '', branchId: '', parentMid: '', runId: '', inputMessageId: '', lastMessageId: '', nonce: 0 }
 }
-
-const SETTINGS_TAB_ITEMS: { value: SettingsTab; label: string }[] = [
-  { value: 'appearance', label: '外观' },
-  { value: 'attachments', label: '附件' },
-  { value: 'data', label: '数据' },
-  { value: 'groups', label: '群组管理' },
-  { value: 'roles', label: '角色管理' },
-  { value: 'providers', label: '供应商管理' },
-  { value: 'modelGroups', label: '模型组' },
-  { value: 'services', label: 'AI 微服务' },
-  { value: 'eb', label: 'e-b' },
-  { value: 'tools', label: 'AI 工具' },
-  { value: 'stickers', label: '表情包' },
-]
-
-const SETTINGS_TAB_BUTTON_SX = { borderRadius: 999, minWidth: 0, px: 1.25, py: 0.25, flexShrink: 0 }
 
 type DataDirectoryStatus = {
   dataDir: string
@@ -3570,20 +3555,6 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                 </Typography>
 
                 <Box sx={{ flex: 1, minWidth: 8 }} />
-
-                <Stack direction="row" spacing={0.5} sx={{ minWidth: 0, maxWidth: { xs: 'calc(100vw - 150px)', sm: 'none' }, overflowX: 'auto', scrollbarWidth: 'thin' }}>
-                  {SETTINGS_TAB_ITEMS.map((item) => (
-                    <Button
-                      key={item.value}
-                      size="small"
-                      variant={settingsTab === item.value ? 'contained' : 'outlined'}
-                      onClick={() => setSettingsTab(item.value)}
-                      sx={SETTINGS_TAB_BUTTON_SX}
-                    >
-                      {item.label}
-                    </Button>
-                  ))}
-                </Stack>
                   {standaloneWindowControls}
                 </>
             ) : (
@@ -6650,6 +6621,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
             draft={s.draft}
             activeRoleId={String(s.draft?.activeRoleId || '')}
             tab={settingsTab}
+            onTabChange={setSettingsTab}
             dataDirectory={dataDirectory}
           />
         )}
@@ -6785,7 +6757,7 @@ function StickersSettingsPanel(props: { controller: any; loading: boolean; data:
   const box = stickerMap && typeof stickerMap === 'object' ? (stickerMap as any)[String(cat || '')] : null
 
   return (
-    <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', px: 2, pt: `calc(${TOPBAR_H}px + 16px)`, pb: 2, bgcolor: 'grey.50' }}>
+    <>
       <Paper variant="outlined" sx={{ p: 1.5 }}>
         <Stack spacing={1.5}>
           <Stack direction="row" spacing={1} alignItems="center">
@@ -7024,7 +6996,7 @@ function StickersSettingsPanel(props: { controller: any; loading: boolean; data:
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </>
   )
 }
 
@@ -7042,9 +7014,10 @@ function PluginSettingsPage(props: {
   draft: any
   activeRoleId: string
   tab: SettingsTab
+  onTabChange: (tab: SettingsTab) => void
   dataDirectory?: AiChatDataDirectory
 }) {
-  const { controller, loading, data, roles, groups, providers, modelGroups, models, tools, modelRequestConfig, draft, activeRoleId, tab, dataDirectory } = props
+  const { controller, loading, data, roles, groups, providers, modelGroups, models, tools, modelRequestConfig, draft, activeRoleId, tab, onTabChange, dataDirectory } = props
   const [treeHotkeyRecording, setTreeHotkeyRecording] = React.useState(false)
 
   React.useEffect(() => {
@@ -7086,13 +7059,17 @@ function PluginSettingsPage(props: {
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [treeHotkeyRecording, controller])
 
+  const wrapSettingsPanel = (children: React.ReactNode) => (
+    <SettingsPageLayout topbarHeight={TOPBAR_H} value={tab} onChange={onTabChange}>
+      {children}
+    </SettingsPageLayout>
+  )
+
   if (!data) {
-    return (
-      <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', px: 2, pt: `calc(${TOPBAR_H}px + 16px)`, pb: 2, bgcolor: 'grey.50' }}>
+    return wrapSettingsPanel(
         <Typography variant="body2" color="text.secondary">
           {loading ? '加载中…' : '未加载到数据'}
-        </Typography>
-      </Box>
+        </Typography>,
     )
   }
 
@@ -7131,7 +7108,7 @@ function PluginSettingsPage(props: {
   })()
 
   const appearancePanel = (
-    <Paper variant="outlined" sx={{ p: 1.5, mb: 1.5 }}>
+    <Paper variant="outlined" sx={{ p: 1.5 }}>
       <Stack spacing={1.25}>
         <Stack direction="row" spacing={1} alignItems="center">
           <Typography sx={{ fontWeight: 900 }}>外观</Typography>
@@ -7425,17 +7402,12 @@ function PluginSettingsPage(props: {
   )
 
   if (tab === 'appearance') {
-    return (
-      <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', px: 2, pt: `calc(${TOPBAR_H}px + 16px)`, pb: 2, bgcolor: 'grey.50' }}>
-        {appearancePanel}
-      </Box>
-    )
+    return wrapSettingsPanel(appearancePanel)
   }
 
   if (tab === 'attachments') {
-    return (
-      <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', px: 2, pt: `calc(${TOPBAR_H}px + 16px)`, pb: 2, bgcolor: 'grey.50' }}>
-        <Paper variant="outlined" sx={{ p: 1.5, mb: 1.5 }}>
+    return wrapSettingsPanel(
+        <Paper variant="outlined" sx={{ p: 1.5 }}>
           <Stack spacing={1.25}>
             <Typography sx={{ fontWeight: 900 }}>附件</Typography>
 
@@ -7537,19 +7509,17 @@ function PluginSettingsPage(props: {
               </Typography>
             </Box>
           </Stack>
-        </Paper>
-      </Box>
+        </Paper>,
     )
   }
 
   if (tab === 'data') {
-    return <DataSettingsPanel dataDirectory={dataDirectory} loading={loading} />
+    return wrapSettingsPanel(<DataSettingsPanel dataDirectory={dataDirectory} loading={loading} />)
   }
 
   if (tab === 'groups') {
     const activeGroupId = String((draft as any)?.activeGroupId || '')
-    return (
-      <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', px: 2, pt: `calc(${TOPBAR_H}px + 16px)`, pb: 2, bgcolor: 'grey.50' }}>
+    return wrapSettingsPanel(
         <Paper variant="outlined" sx={{ p: 1.5 }}>
           <Stack direction="row" spacing={1} alignItems="center">
             <Typography sx={{ fontWeight: 900 }}>群组管理</Typography>
@@ -7616,29 +7586,28 @@ function PluginSettingsPage(props: {
               </Typography>
             )}
           </Stack>
-        </Paper>
-      </Box>
+        </Paper>,
     )
   }
 
   if (tab === 'roles') {
-    return <RolesSettingsPanel controller={controller} loading={loading} roles={roles} providers={providers} modelGroups={Array.isArray(modelGroups?.items) ? modelGroups.items : []} activeRoleId={activeRoleId} topbarHeight={TOPBAR_H} />
+    return wrapSettingsPanel(<RolesSettingsPanel controller={controller} loading={loading} roles={roles} providers={providers} modelGroups={Array.isArray(modelGroups?.items) ? modelGroups.items : []} activeRoleId={activeRoleId} />)
   }
 
   if (tab === 'modelGroups') {
-    return <ModelGroupsSettingsPanel controller={controller} loading={loading} modelGroups={modelGroups} providers={providers} topbarHeight={TOPBAR_H} />
+    return wrapSettingsPanel(<ModelGroupsSettingsPanel controller={controller} loading={loading} modelGroups={modelGroups} providers={providers} />)
   }
 
   if (tab === 'tools') {
-    return <AiToolsSettingsPanel controller={controller} loading={loading} tools={tools} topbarHeight={TOPBAR_H} />
+    return wrapSettingsPanel(<AiToolsSettingsPanel controller={controller} loading={loading} tools={tools} />)
   }
 
   if (tab === 'eb') {
-    return <EbSettingsPanel controller={controller} loading={loading} modelRequestConfig={modelRequestConfig} topbarHeight={TOPBAR_H} />
+    return wrapSettingsPanel(<EbSettingsPanel controller={controller} loading={loading} modelRequestConfig={modelRequestConfig} />)
   }
 
   if (tab === 'stickers') {
-    return <StickersSettingsPanel controller={controller} loading={loading} data={data} />
+    return wrapSettingsPanel(<StickersSettingsPanel controller={controller} loading={loading} data={data} />)
   }
 
   if (tab === 'services') {
@@ -7678,8 +7647,7 @@ function PluginSettingsPage(props: {
     const snModelItems = registeredModelItems(snP)
     const snHasPickInList = !!snModelPick && snModelItems.some((x: any) => x.id === snModelPick)
 
-    return (
-      <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', px: 2, pt: `calc(${TOPBAR_H}px + 16px)`, pb: 2, bgcolor: 'grey.50' }}>
+    return wrapSettingsPanel(
         <Paper variant="outlined" sx={{ p: 1.5 }}>
           <Stack spacing={1.5}>
             <Stack direction="row" spacing={1} alignItems="center">
@@ -7962,15 +7930,13 @@ function PluginSettingsPage(props: {
               </Stack>
             </Stack>
           </Stack>
-        </Paper>
-      </Box>
+        </Paper>,
     )
   }
 
   const editingId = String(draft?.editProviderId || '')
 
-  return (
-    <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', px: 2, pt: `calc(${TOPBAR_H}px + 16px)`, pb: 2, bgcolor: 'grey.50' }}>
+  return wrapSettingsPanel(
       <Paper variant="outlined" sx={{ p: 1.5 }}>
         <Stack direction="row" spacing={1} alignItems="center">
           <Typography sx={{ fontWeight: 900 }}>供应商管理</Typography>
@@ -8025,8 +7991,7 @@ function PluginSettingsPage(props: {
             )
           })}
         </Stack>
-      </Paper>
-    </Box>
+      </Paper>,
   )
 }
 
@@ -8070,8 +8035,7 @@ function DataSettingsPanel(props: { dataDirectory?: AiChatDataDirectory; loading
   })
 
   return (
-    <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', px: 2, pt: `calc(${TOPBAR_H}px + 16px)`, pb: 2, bgcolor: 'grey.50' }}>
-      <Paper variant="outlined" sx={{ p: 1.5 }}>
+    <Paper variant="outlined" sx={{ p: 1.5 }}>
         <Stack spacing={1.5}>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
             <Box sx={{ minWidth: 0, flex: 1 }}>
@@ -8130,8 +8094,7 @@ function DataSettingsPanel(props: { dataDirectory?: AiChatDataDirectory; loading
             切换目录会重启 AI Studio 自己的本机后台，然后重新载入新目录中的数据。
           </Typography>
         </Stack>
-      </Paper>
-    </Box>
+    </Paper>
   )
 }
 

@@ -11,11 +11,10 @@ type EbSettingsPanelProps = {
   controller: any
   loading: boolean
   modelRequestConfig: any
-  topbarHeight: number
 }
 
 export function EbSettingsPanel(props: EbSettingsPanelProps) {
-  const { controller, loading, modelRequestConfig, topbarHeight } = props
+  const { controller, loading, modelRequestConfig } = props
   const box = modelRequestConfig && typeof modelRequestConfig === 'object' ? modelRequestConfig : {}
   const draft = box.draft && typeof box.draft === 'object' ? box.draft : {}
   const value = box.value && typeof box.value === 'object' ? box.value : {}
@@ -31,8 +30,7 @@ export function EbSettingsPanel(props: EbSettingsPanelProps) {
   const setDraft = useEvent((key: string, next: string) => controller.actions.setModelRequestConfigDraft?.(key, next))
 
   return (
-    <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', px: 2, pt: `calc(${topbarHeight}px + 16px)`, pb: 2, bgcolor: 'grey.50' }}>
-      <Paper variant="outlined" sx={{ p: 1.5 }}>
+    <Paper variant="outlined" sx={{ p: 1.5 }}>
         <Stack spacing={1.5}>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
             <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
@@ -112,8 +110,7 @@ export function EbSettingsPanel(props: EbSettingsPanelProps) {
             </Typography>
           </Paper>
         </Stack>
-      </Paper>
-    </Box>
+    </Paper>
   )
 }
 

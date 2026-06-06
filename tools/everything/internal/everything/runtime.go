@@ -124,6 +124,9 @@ func ensureBundledRuntime(ctx context.Context, toolDirectory string, config Conf
 	if err := waitIndexedFoldersReady(ctx, provider.ESExecutable, request, config); err != nil {
 		return searchRequest{}, err
 	}
+	if err := persistBundledDatabaseIfMissing(ctx, provider.ESExecutable, databasePath, request); err != nil {
+		return searchRequest{}, err
+	}
 	return request, nil
 }
 
@@ -292,6 +295,25 @@ func stopBundledEverything(ctx context.Context, executable string, instanceName 
 	timeout := time.Duration(config.Limits.DefaultConnectTimeoutMs) * time.Millisecond
 	_, err := runCommandOutput(ctx, timeout, executable, everythingExitArgs(instanceName, config.Limits.DefaultConnectTimeoutMs)...)
 	return err
+}
+
+func persistBundledDatabaseIfMissing(ctx context.Context, executable string, databasePath string, request searchRequest) error {
+	if _, err := os.Stat(databasePath); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("stat Everything database: %w", err)
+	}
+	timeout := time.Duration(request.TimeoutMs) * time.Millisecond
+	if _, err := runCommandOutput(ctx, timeout, executable, everythingSaveDatabaseArgs(request.InstanceName, request.ConnectTimeoutMs)...); err != nil {
+		return fmt.Errorf("save Everything database: %w", err)
+	}
+	if _, err := os.Stat(databasePath); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("Everything database was not saved: %s", databasePath)
+		}
+		return fmt.Errorf("stat saved Everything database: %w", err)
+	}
+	return nil
 }
 
 type bundledWindowsServiceOps interface {
@@ -610,6 +632,14 @@ func everythingExitArgs(instanceName string, timeoutMs int) []string {
 		args = append(args, "-instance", strings.TrimSpace(instanceName))
 	}
 	return append(args, "-timeout", strconv.Itoa(timeoutMs), "-exit")
+}
+
+func everythingSaveDatabaseArgs(instanceName string, timeoutMs int) []string {
+	args := []string{}
+	if strings.TrimSpace(instanceName) != "" {
+		args = append(args, "-instance", strings.TrimSpace(instanceName))
+	}
+	return append(args, "-timeout", strconv.Itoa(timeoutMs), "-save-db")
 }
 
 func everythingCountArgs(instanceName string, timeoutMs int, scopePath string) []string {

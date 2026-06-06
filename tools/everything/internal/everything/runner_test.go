@@ -200,6 +200,28 @@ func TestEnsureBundledWindowsServiceDoesNotReinstallMatchingService(t *testing.T
 	}
 }
 
+func TestPersistBundledDatabaseIfMissingSavesMissingDatabase(t *testing.T) {
+	fixture := newEverythingFixture(t, true)
+	databasePath := filepath.Join(t.TempDir(), "Everything.db")
+	t.Setenv("FAKE_EVERYTHING_DB_PATH", databasePath)
+	request := searchRequest{InstanceName: "custom", TimeoutMs: 30000, ConnectTimeoutMs: 5000}
+	if err := persistBundledDatabaseIfMissing(context.Background(), fixture.esExe, databasePath, request); err != nil {
+		t.Fatal(err)
+	}
+	assertFile(t, databasePath)
+}
+
+func TestPersistBundledDatabaseIfMissingKeepsExistingDatabase(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "Everything.db")
+	if err := os.WriteFile(databasePath, []byte("existing"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	request := searchRequest{InstanceName: "custom", TimeoutMs: 30000, ConnectTimeoutMs: 5000}
+	if err := persistBundledDatabaseIfMissing(context.Background(), filepath.Join(t.TempDir(), "missing-es"), databasePath, request); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestFolderIndexReadyRequiresVisibleEntriesForNonEmptyScope(t *testing.T) {
 	nonEmpty := t.TempDir()
 	if err := os.WriteFile(filepath.Join(nonEmpty, "file.txt"), []byte("ok"), 0o644); err != nil {
@@ -312,6 +334,7 @@ func newEverythingFixture(t *testing.T, includeBundledProvider bool) everythingF
 	if err := os.MkdirAll(hostDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(host) error = %v", err)
 	}
+	t.Setenv("FAKE_EVERYTHING_TOOL_DIR", toolDir)
 	buildFakeES(t, esExe)
 	if includeBundledProvider {
 		if err := os.MkdirAll(bundledDir, 0o755); err != nil {
@@ -389,21 +412,50 @@ func containsAll(text string, values ...string) bool {
 	return true
 }
 
+func assertFile(t *testing.T, path string) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat %s error = %v", path, err)
+	}
+	if info.IsDir() {
+		t.Fatalf("%s is a directory", path)
+	}
+}
+
 const fakeESSource = `package main
 
 import (
 	"encoding/csv"
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 func main() {
 	csvPath := ""
+	instanceName := ""
 	scopePath := "C:\\Temp"
 	query := ""
+	for index, arg := range os.Args {
+		if arg == "-instance" && index+1 < len(os.Args) {
+			instanceName = os.Args[index+1]
+		}
+	}
 	for _, arg := range os.Args {
 		if arg == "-get-everything-version" {
 			fmt.Println("test-version")
+			return
+		}
+		if arg == "-save-db" {
+			dbPath := os.Getenv("FAKE_EVERYTHING_DB_PATH")
+			if dbPath == "" && os.Getenv("FAKE_EVERYTHING_TOOL_DIR") != "" && instanceName != "" {
+				dbPath = filepath.Join(os.Getenv("FAKE_EVERYTHING_TOOL_DIR"), "runtime", instanceName, "Everything.db")
+			}
+			if dbPath != "" {
+				_ = os.MkdirAll(filepath.Dir(dbPath), 0755)
+				_ = os.WriteFile(dbPath, []byte("db"), 0644)
+			}
 			return
 		}
 		if arg == "-exit" {

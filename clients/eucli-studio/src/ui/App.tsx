@@ -91,6 +91,7 @@ import { AI_STUDIO_CHAT_ROOT_ID } from '../runtime/aiStudioGlobals'
 import { assistantRunGenerationId, isAssistantAwaitingFirstOutput, isAssistantGenerating } from '../domain/assistantRunState'
 import { formatModelRefDisplayText } from '../domain/modelRefUtils'
 import { pendingChatForTarget } from '../domain/pendingChat'
+import { chatNavigationFromOrderedChats } from '../domain/chatNavigation'
 import { chatSessionRunSummaryFromChat, normalizeChatSessionRunStatus, type ChatSessionRunStatus } from '../domain/chatSessionRunStatus'
 import { sortChatListItemsForDisplay } from '../domain/chatListOrdering'
 import { filterEbRoleRunCardsOnMessagePath, readActiveEbRoleRunCardsForSession } from '../domain/activeRunCards'
@@ -1269,12 +1270,6 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const [atPicker, setAtPicker] = React.useState<null | { triggerIndex: number; cursorIndex: number; query: string }>(null)
   const closeAtPicker = useEvent(() => setAtPicker(null))
 
-  const backToHost = useEvent(() => {
-    const host = (controller as any)?.capabilities?.host
-    if (host?.back) host.back()
-    else controller?.capabilities?.ui?.showToast?.('无法返回', { kind: 'error' })
-  })
-
   const focusComposerSoon = useEvent(() => {
     if (page !== 'chat') return
     requestAnimationFrame(() => {
@@ -2285,19 +2280,12 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
       if (!targetId) return { olderId: '', newerId: '', lockedReason: '请先选择角色' }
     }
     if (!data) return { olderId: '', newerId: '', lockedReason: '数据未就绪' }
-    if (pendingChatForTarget(s, activeTargetKind, targetId)) return { olderId: '', newerId: '', lockedReason: '草稿会话未发送' }
 
     const box = activeTargetKind === 'group' ? (data as any)?.chatsByGroup?.[targetId] : data?.chatsByRole?.[targetId]
     const chats = sortChatListItemsForDisplay(Array.isArray(box?.chatMetas) && box.chatMetas.length ? box.chatMetas : Array.isArray(box?.chats) ? box.chats : [])
-    const ids = chats.map((c: any) => String(c?.id || '')).filter((id: string) => !!id)
-    if (!ids.length) return { olderId: '', newerId: '', lockedReason: '暂无会话' }
-
-    const cur = String(activeChat?.id || box?.activeChatId || ids[0] || '')
-    const idx = ids.findIndex((id: string) => id === cur)
-    const i = idx >= 0 ? idx : 0
-    const olderId = i + 1 < ids.length ? ids[i + 1] : ''
-    const newerId = i - 1 >= 0 ? ids[i - 1] : ''
-    return { olderId, newerId, lockedReason: '' }
+    const pendingChat = pendingChatForTarget(s, activeTargetKind, targetId)
+    const currentChatId = String(activeChat?.id || box?.activeChatId || String(chats[0]?.id || '') || '')
+    return chatNavigationFromOrderedChats({ orderedChats: chats, activeChatId: currentChatId, pendingChat })
   })()
 
   React.useLayoutEffect(() => {
@@ -3543,26 +3531,20 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
           >
             {page === 'settings' ? (
               <>
-                <IconButton onClick={backToHost} size="small" aria-label="返回主页">
-                   <ArrowBackRoundedIcon fontSize="small" />
-                 </IconButton>
-                 <IconButton onClick={closePluginSettings} size="small">
-                   <ChevronLeftIcon fontSize="small" />
-                 </IconButton>
+                <IconButton onClick={closePluginSettings} size="small">
+                  <ChevronLeftIcon fontSize="small" />
+                </IconButton>
 
-                  <Typography variant="subtitle2" sx={{ fontWeight: 900, mr: 0.5 }}>
-                   设置
+                <Typography variant="subtitle2" sx={{ fontWeight: 900, mr: 0.5 }}>
+                  设置
                 </Typography>
 
                 <Box sx={{ flex: 1, minWidth: 8 }} />
-                  {standaloneWindowControls}
-                </>
+                {standaloneWindowControls}
+              </>
             ) : (
-               <>
-                 <IconButton onClick={backToHost} size="small" aria-label="返回主页">
-                   <ArrowBackRoundedIcon fontSize="small" />
-                 </IconButton>
-                 <Button
+              <>
+                <Button
                   variant="outlined"
                   size="small"
                   onClick={openRolePicker}

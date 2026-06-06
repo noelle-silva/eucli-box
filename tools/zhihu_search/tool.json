@@ -1,0 +1,95 @@
+{
+  "id": "zhihu_search",
+  "name": "zhihu_search",
+  "description": "Search Zhihu through the Zhihu OpenAPI and return normalized markdown results with structured sources and items.",
+  "promptDescription": "Search Zhihu through the Zhihu OpenAPI. Required [query] is the search text. Optional [searchType] selects zhihu_search or global_search; aliases zhihu, site, global, and all are accepted. Optional [count] controls result count and is capped by the selected search type: zhihu_search returns 1-10 results, global_search returns 1-20 results. Optional [timeoutMs] controls request timeout. Optional [maxOutputChars] controls markdown output length. Optional [description] records why the lookup is being run. API secrets should be configured in tool user config or ZHIHU_ACCESS_SECRET, not placed in prompts. The tool returns markdown plus metadata including searchType, query, resultsCount, statusCode, durationMs, code, apiMessage, sources, and items.",
+  "type": "local",
+  "directory": ".",
+  "userConfigSchema": {
+    "type": "object",
+    "properties": {
+      "zhihuAccessSecret": {
+        "type": "string",
+        "title": "Zhihu Access Secret",
+        "description": "知乎开放平台 Access Secret；也可通过 ZHIHU_ACCESS_SECRET 环境变量提供。"
+      },
+      "baseURL": {
+        "type": "string",
+        "title": "知乎开放平台 Base URL",
+        "description": "模型未指定覆盖地址时使用的知乎开放平台基础地址。"
+      },
+      "zhihuSearchURL": {
+        "type": "string",
+        "title": "站内搜索完整地址",
+        "description": "zhihu_search 的完整 endpoint 覆盖地址；为空时使用 Base URL 加默认路径。"
+      },
+      "globalSearchURL": {
+        "type": "string",
+        "title": "全局搜索完整地址",
+        "description": "global_search 的完整 endpoint 覆盖地址；为空时使用 Base URL 加默认路径。"
+      },
+      "searchType": {
+        "type": "string",
+        "enum": ["zhihu_search", "global_search"],
+        "title": "默认搜索范围",
+        "description": "模型未指定 searchType 时使用的默认搜索范围。"
+      },
+      "count": {
+        "type": "integer",
+        "title": "默认结果数量",
+        "description": "模型未指定 count 时使用的结果数量。"
+      },
+      "timeoutMs": {
+        "type": "integer",
+        "title": "默认超时（毫秒）",
+        "description": "模型未指定 timeoutMs 时使用的请求超时。"
+      },
+      "maxOutputChars": {
+        "type": "integer",
+        "title": "默认最大输出字符数",
+        "description": "模型未指定 maxOutputChars 时使用的最大 Markdown 输出字符数。"
+      }
+    },
+    "additionalProperties": false
+  },
+  "defaultConfig": {
+    "baseURL": "https://developer.zhihu.com",
+    "searchType": "zhihu_search",
+    "count": 10,
+    "timeoutMs": 30000,
+    "maxOutputChars": 20000
+  },
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Zhihu search query."
+      },
+      "searchType": {
+        "type": "string",
+        "enum": ["zhihu_search", "global_search", "zhihu", "site", "global", "all"],
+        "description": "Search scope. zhihu_search searches Zhihu content; global_search searches broader Zhihu-related content."
+      },
+      "count": {
+        "type": "integer",
+        "description": "Maximum number of results. zhihu_search supports up to 10; global_search supports up to 20."
+      },
+      "timeoutMs": {
+        "type": "integer",
+        "description": "Request timeout in milliseconds."
+      },
+      "maxOutputChars": {
+        "type": "integer",
+        "description": "Maximum markdown output characters."
+      },
+      "description": {
+        "type": "string",
+        "description": "Short human-readable reason for running the search."
+      }
+    },
+    "required": ["query"],
+    "additionalProperties": false
+  },
+  "binaries": []
+}

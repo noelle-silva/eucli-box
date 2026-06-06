@@ -1,0 +1,17 @@
+{
+  "baseURL": "https://developer.zhihu.com",
+  "apiKeyEnv": "ZHIHU_ACCESS_SECRET",
+  "apiKeyUserConfig": "zhihuAccessSecret",
+  "endpoints": {
+    "zhihu_search": "/api/v1/content/zhihu_search",
+    "global_search": "/api/v1/content/global_search"
+  },
+  "limits": {
+    "defaultTimeoutMs": 30000,
+    "maxTimeoutMs": 120000,
+    "defaultCount": 10,
+    "zhihuSearchMaxCount": 10,
+    "globalSearchMaxCount": 20,
+    "maxOutputChars": 20000
+  }
+}

@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Box, CircularProgress, Typography } from '@mui/material'
+import { Box, CircularProgress } from '@mui/material'
 
 export function AssistantReplyPendingIndicator() {
   return (
@@ -10,16 +10,14 @@ export function AssistantReplyPendingIndicator() {
       sx={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 1,
+        justifyContent: 'center',
+        width: 66,
         minHeight: 32,
-        px: 0.25,
         color: 'text.secondary',
+        flexShrink: 0,
       }}
     >
-      <CircularProgress size={18} thickness={4.4} color="inherit" />
-      <Typography variant="body2" color="text.secondary">
-        正在思考…
-      </Typography>
+      <CircularProgress size={20} thickness={4.4} color="inherit" />
     </Box>
   )
 }

@@ -1747,6 +1747,31 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     return out
   })()
   const showActiveRunTailPending = !!latestActiveVisibleRunCard && !renderMessages.some((message: any) => !!activeRunCardForMessage(message) && isAssistantGenerating(message))
+  const activeRunTailPendingMessage = (() => {
+    if (!showActiveRunTailPending || !latestActiveVisibleRunCard) return null
+    const runId = String(latestActiveVisibleRunCard?.runId || '').trim()
+    if (!runId) return null
+    const t = Number(latestActiveVisibleRunCard?.createdAt || latestActiveVisibleRunCard?.updatedAt || Date.now())
+    return {
+      id: `__ui_active_run_tail_pending:${runId}`,
+      role: 'assistant',
+      content: ASSISTANT_RUNNING_CONTENT,
+      pending: true,
+      streaming: !!latestActiveVisibleRunCard?.stream,
+      createdAt: isFinite(t) && t > 0 ? t : Date.now(),
+      speakerRoleId: activeTargetKind === 'group' ? String(latestActiveVisibleRunCard?.roleId || '').trim() : '',
+      displayOnlyPendingRunTail: true,
+      assistantRun: {
+        generationId: runId,
+        status: 'running',
+        mode: 'new',
+        stream: !!latestActiveVisibleRunCard?.stream,
+        startedAt: isFinite(t) && t > 0 ? t : Date.now(),
+        updatedAt: Number(latestActiveVisibleRunCard?.updatedAt || t || Date.now()),
+      },
+    }
+  })()
+  const displayRenderMessages = activeRunTailPendingMessage ? [...renderMessages, activeRunTailPendingMessage] : renderMessages
 
   const lastMsg = renderMessages.length ? renderMessages[renderMessages.length - 1] : null
   const lastMsgId = String(lastMsg?.id || '')
@@ -3751,12 +3776,13 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                 </Typography>
               ) : (
                 <Stack spacing={1.25}>
-                  {renderMessages.map((m: any) => {
-                     const content = messageVisibleText(m)
-                     const isToolResponse = content.startsWith('<<<[TOOL_RESPONSE]>>>')
-                     const mid = String(m?.id || '')
-                     const isToolExpanded = !!mid && expandedToolMsgIds.has(mid)
-                     const isEditing = editingMsg.mid === mid
+                  {displayRenderMessages.map((m: any) => {
+                      const content = messageVisibleText(m)
+                      const isToolResponse = content.startsWith('<<<[TOOL_RESPONSE]>>>')
+                      const mid = String(m?.id || '')
+                      const isDisplayOnlyPendingRunTail = !!(m as any)?.displayOnlyPendingRunTail
+                      const isToolExpanded = !!mid && expandedToolMsgIds.has(mid)
+                      const isEditing = !isDisplayOnlyPendingRunTail && editingMsg.mid === mid
 
                      if (isToolResponse) {
                        const resultTags = content.match(/<<\[RESULT-\d+\]>>/g) || []
@@ -3906,17 +3932,17 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                     const messageAwaitingFirstOutput = messageGenerating && isAssistantAwaitingFirstOutput(m)
                     const messageError = !isUser && (m as any)?.error && typeof (m as any).error === 'object' ? (m as any).error : null
                     const assistantParts = Array.isArray((m as any)?.parts) ? (m as any).parts : []
-                    const canEdit = !isEditing && !!mid && !messageMutationBlocked(mid, 'edit')
-                    const canDeleteMessage = !!mid && !messageMutationBlocked(mid, 'delete')
+                    const canEdit = !isDisplayOnlyPendingRunTail && !isEditing && !!mid && !messageMutationBlocked(mid, 'edit')
+                    const canDeleteMessage = !isDisplayOnlyPendingRunTail && !!mid && !messageMutationBlocked(mid, 'delete')
                     const contentLines = userMessageCollapseEnabled && isUser ? content.split(/\r?\n/) : []
                     const canCollapse = userMessageCollapseEnabled && isUser && !isEditing && contentLines.length > userMessageCollapseLines
                     const isExpanded = !canCollapse || expandedUserMsgIds.has(mid)
                     const shownContent = canCollapse && !isExpanded ? contentLines.slice(0, userMessageCollapseLines).join('\n') : content
 
                     let regenRole: 'assistant' | 'user' = isUser ? 'user' : 'assistant'
-                    let regenMid = mid
-                    let regenBlocked = isUser ? false : messageMutationBlocked(regenMid, 'edit')
-                    if (isUser) {
+                    let regenMid = isDisplayOnlyPendingRunTail ? '' : mid
+                    let regenBlocked = isUser || !regenMid ? false : messageMutationBlocked(regenMid, 'edit')
+                    if (isUser && !isDisplayOnlyPendingRunTail) {
                       const msgs = chatAllMessagesRaw
                       const fullIdx = msgs.findIndex((x: any) => String(x?.id || '') === mid)
                       for (let j = fullIdx + 1; j < msgs.length; j++) {
@@ -3930,13 +3956,13 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                         }
                         if (next.role === 'user') break
                       }
-                    } else {
+                    } else if (!isDisplayOnlyPendingRunTail) {
                       regenRole = 'assistant'
                       regenMid = mid
                       regenBlocked = messageMutationBlocked(regenMid, 'edit')
                     }
 
-                    const branchPrevAiMid = !isUser ? String(prevAiMidByAssistantId.get(mid) || '').trim() : ''
+                    const branchPrevAiMid = !isUser && !isDisplayOnlyPendingRunTail ? String(prevAiMidByAssistantId.get(mid) || '').trim() : ''
                     const branchSiblings = !isUser && branchPrevAiMid ? assistantSiblingsByPrevAiMid.get(branchPrevAiMid) || [] : []
                     const branchIndex = !isUser ? branchSiblings.findIndex((x: any) => String(x?.id || '') === mid) : -1
                     const canSwitchBranch = !isUser && branchSiblings.length >= 2 && branchIndex >= 0
@@ -3945,7 +3971,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                         <Paper
                           variant="outlined"
                           data-mid={mid}
-                          onContextMenu={isEditing ? undefined : (e) => onMessageContextMenu(e, mid, isUser ? 'user' : 'assistant')}
+                          onContextMenu={isEditing || isDisplayOnlyPendingRunTail ? undefined : (e) => onMessageContextMenu(e, mid, isUser ? 'user' : 'assistant')}
                           sx={{
                             width: isUser ? 'auto' : '100%',
                             maxWidth: isUser ? 920 : '100%',
@@ -4089,7 +4115,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                             />
                           )}
 
-                          {isEditing ? (
+                          {isDisplayOnlyPendingRunTail ? null : isEditing ? (
                             <Stack direction="row" spacing={1} sx={{ mt: 1 }} justifyContent="flex-end">
                               <Button size="small" variant="contained" onClick={saveEditMessage} disabled={!editingMsg.mid || messageMutationBlocked(editingMsg.mid, 'edit')}>
                                 保存
@@ -4218,7 +4244,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                             </Stack>
                           )}
 
-                          {messageGenerating ? (
+                          {messageGenerating && !isDisplayOnlyPendingRunTail ? (
                             <Box sx={{ mt: 1 }}>
                               <Chip size="small" label={m?.streaming ? '生成中（流式）' : '生成中'} />
                             </Box>
@@ -4227,22 +4253,6 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                       </Stack>
                     )
                   })}
-                  {showActiveRunTailPending ? (
-                    <Stack direction="row" justifyContent="flex-start">
-                      <Paper
-                        variant="outlined"
-                        sx={{
-                          width: '100%',
-                          px: 1.5,
-                          py: 1.25,
-                          borderColor: 'rgba(25,118,210,.18)',
-                          bgcolor: 'rgba(25,118,210,.035)',
-                        }}
-                      >
-                        <AssistantReplyPendingIndicator />
-                      </Paper>
-                    </Stack>
-                  ) : null}
                 </Stack>
                )}
              </Box>

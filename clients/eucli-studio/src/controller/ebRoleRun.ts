@@ -6,15 +6,29 @@ export type EbRunState = {
   sessionId: string
   inputMessageId: string
   lastMessageId: string
+  dependencyMessageIds: string[]
   stream: boolean
   status: string
   reason: string
   error: { code?: string; message: string; system?: string; details?: unknown } | null
 }
 
+function normalizeTextList(value: unknown) {
+  const list = Array.isArray(value) ? value : []
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const item of list) {
+    const id = String(item || '').trim()
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    out.push(id)
+  }
+  return out
+}
+
 export function isTerminalRunStatus(status: unknown) {
   const value = String(status || '').trim()
-  return value === 'completed' || value === 'failed' || value === 'cancelled'
+  return value === 'completed' || value === 'failed' || value === 'cancelled' || value === 'canceled'
 }
 
 export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: string; sessionId?: string; message?: string; attachments?: any[]; parentMessageId?: string; userMessageId?: string; stream?: boolean; reasoningEffort?: string }) {
@@ -54,10 +68,35 @@ export async function getRunState(netRequest: EbNetRequest, runId: string) {
   return normalizeRunState(response?.body)
 }
 
+export async function listActiveRoleRuns(netRequest: EbNetRequest) {
+  const response = await netRequest({ method: 'GET', path: '/api/runs', timeoutMs: 15000 })
+  const runs = Array.isArray(response?.body) ? response.body : []
+  return runs.map(normalizeRunState).filter((run: EbRunState) => run.id && !isTerminalRunStatus(run.status))
+}
+
 export async function cancelRoleRun(netRequest: EbNetRequest, runId: string) {
   const id = String(runId || '').trim()
   if (!id) throw new Error('run id 无效')
   await netRequest({ method: 'POST', path: `/api/runs/${encodeURIComponent(id)}/cancel`, timeoutMs: 15000 })
+}
+
+export async function pollRunUntilTerminal(
+  netRequest: EbNetRequest,
+  initialRun: EbRunState,
+  onState?: (run: EbRunState) => void | Promise<void>,
+  options?: { shouldContinue?: () => boolean },
+) {
+  let state = initialRun
+  const runId = String(state?.id || '').trim()
+  if (!runId) throw new Error('run id 无效')
+  while (!isTerminalRunStatus(state.status)) {
+    if (options?.shouldContinue && !options.shouldContinue()) return state
+    await sleepMs(450)
+    if (options?.shouldContinue && !options.shouldContinue()) return state
+    state = await getRunState(netRequest, runId)
+    await onState?.(state)
+  }
+  return state
 }
 
 export function normalizeRunState(value: any): EbRunState {
@@ -70,6 +109,7 @@ export function normalizeRunState(value: any): EbRunState {
     sessionId: String(state.sessionId || '').trim(),
     inputMessageId: String(state.inputMessageId || '').trim(),
     lastMessageId: String(state.lastMessageId || '').trim(),
+    dependencyMessageIds: normalizeTextList(state.dependencyMessageIds),
     stream: !!state.stream,
     status: String(state.status || '').trim(),
     reason: String(state.reason || '').trim(),

@@ -1,4 +1,4 @@
-import { isAssistantGenerating, normalizeAssistantRunState, type AssistantRunStatus } from './assistantRunState'
+import { normalizeAssistantRunState, type AssistantRunStatus } from './assistantRunState'
 
 export type ChatSessionRunStatus = 'idle' | 'running' | 'completed' | 'interrupted'
 
@@ -34,12 +34,12 @@ export function normalizeChatSessionRunStatus(value: unknown): ChatSessionRunSta
 function assistantRunSummary(message: any): ChatSessionRunSummary | null {
   if (!message || typeof message !== 'object') return null
   if (String(message?.role || message?.type || '').trim() !== 'assistant') return null
-  if (isAssistantGenerating(message)) return { status: 'running', changedAt: statusStartedAt(message?.assistantRun) || statusStartedAt(message) }
   if (message?.error && typeof message.error === 'object') return { status: 'interrupted', changedAt: statusUpdatedAt(message) }
 
   const run = normalizeAssistantRunState(message?.assistantRun)
   if (!run) return null
   const status = normalizeChatSessionRunStatus(run.status as AssistantRunStatus)
+  if (status === 'running') return null
   if (status === 'idle') return null
   return { status, changedAt: statusUpdatedAt(run) || statusUpdatedAt(message) }
 }

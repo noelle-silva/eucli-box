@@ -15,7 +15,7 @@ import (
 func TestStartRunCompletesWithoutTool(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
@@ -36,7 +36,7 @@ func TestStartRunCompletesWithoutTool(t *testing.T) {
 func TestStartRunUsesDefaultTitleForNewSession(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	message := "请帮我分析这个会话标题是否会和正文重复保存"
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: message})
 	if err != nil {
@@ -55,7 +55,7 @@ func TestStartRunUsesDefaultTitleForNewSession(t *testing.T) {
 func TestStartRunSavesAttachmentsAndPassesThemToModel(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	imageDataURL := "data:image/png;base64,iVBORw0KGgo="
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Attachments: []types.RunAttachment{{Kind: "image", Name: "shot.png", DataURL: imageDataURL}, {Kind: "md", Name: "note.md", Lang: "markdown", Text: "# hello", FullLen: 7, SendLen: 7, SendPct: 100}}})
 	if err != nil {
@@ -81,7 +81,7 @@ func TestStartRunSavesAttachmentsAndPassesThemToModel(t *testing.T) {
 func TestStartRunDoesNotAutoInjectToolInstructionsOrNativeTools(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
@@ -104,7 +104,7 @@ func TestStartRunDoesNotAutoInjectToolInstructionsOrNativeTools(t *testing.T) {
 func TestStartRunPassesReasoningEffortToModelAndSessionMetadata(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello", ReasoningEffort: types.ReasoningEffortHigh})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
@@ -126,7 +126,7 @@ func TestStartRunPassesReasoningEffortToModelAndSessionMetadata(t *testing.T) {
 func TestRunMessageSaveDoesNotOverwriteNewerSessionReasoningEffort(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.block = make(chan struct{})
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello", ReasoningEffort: types.ReasoningEffortHigh})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
@@ -152,7 +152,7 @@ func TestStartRunPersistsNewReasoningEffortForExistingSession(t *testing.T) {
 	now := time.Now().UTC()
 	fakes.storage.sessions["developer/session-1"] = types.Session{ID: "session-1", RoleID: "developer", Title: "Existing", Metadata: map[string]string{"reasoningEffort": string(types.ReasoningEffortLow)}, Messages: []types.Message{{ID: "u1", Type: "user", Content: "hello", BranchID: "main", CreatedAt: now, UpdatedAt: now}}, CreatedAt: now, UpdatedAt: now, LastActive: now}
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "u1", ReasoningEffort: types.ReasoningEffortHigh})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
@@ -169,7 +169,7 @@ func TestStartRunPersistsNewReasoningEffortForExistingSession(t *testing.T) {
 
 func TestStartRunRejectsInvalidReasoningEffort(t *testing.T) {
 	fakes := newRuntimeFakes()
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	_, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello", ReasoningEffort: "extreme"})
 	var appErr *apperrors.AppError
 	if !errors.As(err, &appErr) || appErr.Code != "runtime.invalid_request" {
@@ -186,7 +186,7 @@ func TestStartRunPassesOnlyNativeToolsToProvider(t *testing.T) {
 	}
 	fakes.tool.toolSummaries = []types.ToolSummary{{ID: "file-reader", Name: "file-reader", Description: "Read files", Type: "local"}, {ID: "web-search", Name: "web-search", Description: "Search web", Type: "network"}}
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
@@ -207,7 +207,7 @@ func TestStartRunPassesOnlyNativeToolsToProvider(t *testing.T) {
 func TestStartRunPersistsInputMessageBeforeReturning(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.block = make(chan struct{})
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
@@ -228,12 +228,13 @@ func TestStartRunPersistsInputMessageBeforeReturning(t *testing.T) {
 
 func TestStartRunStreamCreatesAssistantAndPublishesDeltas(t *testing.T) {
 	fakes := newRuntimeFakes()
+	fakes.provider.block = make(chan struct{})
 	fakes.provider.streamEvents = []types.ModelStreamEvent{
 		{Type: types.ModelStreamEventContentDelta, ContentDelta: "he", Content: "he", CreatedAt: time.Now().UTC()},
 		{Type: types.ModelStreamEventContentDelta, ContentDelta: "llo", Content: "hello", CreatedAt: time.Now().UTC()},
 	}
 	fakes.provider.streamResponse = types.ModelResponse{ID: "stream-1", Content: "hello"}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	events, unsubscribe, err := system.Subscribe(context.Background())
 	if err != nil {
 		t.Fatalf("Subscribe() error = %v", err)
@@ -246,19 +247,20 @@ func TestStartRunStreamCreatesAssistantAndPublishesDeltas(t *testing.T) {
 	if !state.Stream {
 		t.Fatalf("state stream = false")
 	}
-	if state.InputMessageID == "" || state.LastMessageID == "" || state.InputMessageID == state.LastMessageID {
+	if state.InputMessageID == "" || state.LastMessageID != state.InputMessageID {
 		t.Fatalf("initial stream message ids = input %q last %q", state.InputMessageID, state.LastMessageID)
 	}
 	sessionBeforeModel := fakes.storage.lastSession()
-	if len(sessionBeforeModel.Messages) != 2 || sessionBeforeModel.Messages[1].Type != "assistant" || sessionBeforeModel.Messages[1].Content != "" {
+	if len(sessionBeforeModel.Messages) != 1 || sessionBeforeModel.Messages[0].Type != "user" {
 		t.Fatalf("stream initial messages = %#v", sessionBeforeModel.Messages)
 	}
+	close(fakes.provider.block)
 	final := waitRun(t, system, state.ID)
-	if final.Status != types.RunStatusCompleted || final.LastMessageID != state.LastMessageID {
+	if final.Status != types.RunStatusCompleted || final.LastMessageID == "" || final.LastMessageID == state.LastMessageID {
 		t.Fatalf("final = %#v initial=%#v", final, state)
 	}
 	session := fakes.storage.lastSession()
-	if len(session.Messages) != 2 || session.Messages[1].Content != "hello" || session.Messages[1].ID != state.LastMessageID {
+	if len(session.Messages) != 2 || session.Messages[1].Content != "hello" || session.Messages[1].ID != final.LastMessageID {
 		t.Fatalf("final stream messages = %#v", session.Messages)
 	}
 	gotDeltas := []string{}
@@ -283,6 +285,35 @@ func TestStartRunStreamCreatesAssistantAndPublishesDeltas(t *testing.T) {
 	}
 }
 
+func TestListActiveRunsReturnsOnlyLiveRuns(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.block = make(chan struct{})
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	runs, err := system.ListActiveRuns(context.Background())
+	if err != nil {
+		t.Fatalf("ListActiveRuns() error = %v", err)
+	}
+	if len(runs) != 1 || runs[0].ID != state.ID || runs[0].Status != types.RunStatusRunning || runs[0].InputMessageID == "" {
+		t.Fatalf("active runs = %#v state=%#v", runs, state)
+	}
+	close(fakes.provider.block)
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("final = %#v", final)
+	}
+	runs, err = system.ListActiveRuns(context.Background())
+	if err != nil {
+		t.Fatalf("ListActiveRuns() after complete error = %v", err)
+	}
+	if len(runs) != 0 {
+		t.Fatalf("active runs after complete = %#v", runs)
+	}
+}
+
 func TestStartRunFromUserMessageAppendsAssistantSibling(t *testing.T) {
 	fakes := newRuntimeFakes()
 	now := time.Now().UTC()
@@ -300,7 +331,7 @@ func TestStartRunFromUserMessageAppendsAssistantSibling(t *testing.T) {
 		LastActive: now.Add(time.Second),
 	}
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "new answer"}}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "u1"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
@@ -342,7 +373,7 @@ func TestStartRunFromUserMessageUsesOnlyParentChainContext(t *testing.T) {
 		LastActive: now.Add(3 * time.Second),
 	}
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "reply"}}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "u2"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
@@ -377,7 +408,7 @@ func TestStartRunWithParentMessageIDAppendsUserAtSelectedMessage(t *testing.T) {
 		LastActive: now.Add(2 * time.Second),
 	}
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "reply"}}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", Message: "new branch", ParentMessageID: "a1"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
@@ -424,7 +455,7 @@ func TestStartRunFromNonUserMessageFails(t *testing.T) {
 		CreatedAt: now,
 		UpdatedAt: now.Add(time.Second),
 	}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "a1"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
@@ -451,7 +482,7 @@ func TestStartRunWithMissingParentMessageDoesNotMutateSession(t *testing.T) {
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", Message: "new branch", ParentMessageID: "missing"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
@@ -488,7 +519,7 @@ func TestConcurrentRunsOnDifferentBranchesPreserveMessages(t *testing.T) {
 		LastActive: now.Add(4 * time.Second),
 	}
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "reply one"}, {ID: "m2", Content: "reply two"}}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	run1, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "u2"})
 	if err != nil {
 		t.Fatalf("StartRun(run1) error = %v", err)
@@ -525,7 +556,7 @@ func TestConcurrentRunsFromSameUserMessageCreateDistinctReplySlots(t *testing.T)
 	}
 	fakes.provider.block = make(chan struct{})
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "first"}, {ID: "m2", Content: "second"}}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	run1, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "u1"})
 	if err != nil {
 		t.Fatalf("StartRun(run1) error = %v", err)
@@ -560,7 +591,7 @@ func TestRunWaitsForToolConfirmationThenCompletes(t *testing.T) {
 	}
 	fakes.tool.prepareDecision = types.PermissionDecision{ID: "decision-1", ActionID: "intent-1", ToolName: "file-reader", Status: types.PermissionStatusNeedsConfirmation}
 	fakes.tool.confirmedDecision = types.PermissionDecision{ID: "decision-1", ActionID: "intent-1", ToolName: "file-reader", Status: types.PermissionStatusAllowed}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tool"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
@@ -586,7 +617,7 @@ func TestRunParsesTextToolRequestsIntoUnifiedToolFlow(t *testing.T) {
 	}
 	rawRequest := "<<<TOOL_REQUEST>>>\n[tool]: file-reader\n[path]: README.md\n<<<END_TOOL_REQUEST>>>"
 	fakes.tool.parsedIntents = []types.ToolIntent{{ID: "text-intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}, Source: types.ToolCallSourceTextProtocol, Raw: rawRequest}}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use text tool"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
@@ -615,7 +646,7 @@ func TestRunPreservesPureTextToolRequestAsAssistantContent(t *testing.T) {
 	}
 	rawRequest := "<<<TOOL_REQUEST>>>\n[tool]: file-reader\n[path]: README.md\n<<<END_TOOL_REQUEST>>>"
 	fakes.tool.parsedIntents = []types.ToolIntent{{ID: "text-intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}, Source: types.ToolCallSourceTextProtocol, Raw: rawRequest}}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use pure text tool"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
@@ -646,7 +677,7 @@ func TestRunTextProtocolToolUsesUnifiedConfirmationState(t *testing.T) {
 	fakes.tool.parsedIntents = []types.ToolIntent{{ID: "text-intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}, Source: types.ToolCallSourceTextProtocol, Raw: rawRequest}}
 	fakes.tool.prepareDecision = types.PermissionDecision{ID: "decision-1", ActionID: "text-intent-1", ToolName: "file-reader", Status: types.PermissionStatusNeedsConfirmation}
 	fakes.tool.confirmedDecision = types.PermissionDecision{ID: "decision-1", ActionID: "text-intent-1", ToolName: "file-reader", Status: types.PermissionStatusAllowed}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use text tool"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
@@ -680,7 +711,7 @@ func TestRunExecutesMultipleToolIntentsFromOneModelResponse(t *testing.T) {
 		{ID: "m1", Content: "need tools", ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}}, {ID: "intent-2", ToolName: "file-reader", Arguments: map[string]any{"path": "CHANGELOG.md"}}}},
 		{ID: "m2", Content: "final"},
 	}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tools"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
@@ -705,7 +736,7 @@ func TestRunPublishesAssistantMessageUpdateWhenEachToolFinishes(t *testing.T) {
 		{ID: "m2", Content: "final"},
 	}
 	fakes.tool.executeDelays = map[string]time.Duration{"intent-1": 180 * time.Millisecond, "intent-2": 20 * time.Millisecond}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3, MaxParallelTools: 2})
+	system := newTestRuntime(t, fakes, Config{MaxParallelTools: 2})
 	events, unsubscribe, err := system.Subscribe(context.Background())
 	if err != nil {
 		t.Fatalf("Subscribe() error = %v", err)
@@ -745,13 +776,13 @@ func TestRunPublishesAssistantMessageUpdateWhenEachToolFinishes(t *testing.T) {
 	}
 }
 
-func TestRunPublishesAssistantWaitingUpdateBeforeStreamingAfterToolResults(t *testing.T) {
+func TestRunDoesNotPublishEmptyWaitingAssistantAfterToolResults(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.streamResponses = []types.ModelResponse{
 		{ID: "m1", Content: "need tool", ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}}}},
 		{ID: "m2", Content: "final"},
 	}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	events, unsubscribe, err := system.Subscribe(context.Background())
 	if err != nil {
 		t.Fatalf("Subscribe() error = %v", err)
@@ -761,9 +792,13 @@ func TestRunPublishesAssistantWaitingUpdateBeforeStreamingAfterToolResults(t *te
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
-
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
 	toolCompleted := false
-	deadline := time.After(2 * time.Second)
+	emptyWaitingAfterTool := false
+	deadline := time.After(100 * time.Millisecond)
 	for {
 		select {
 		case event := <-events:
@@ -779,21 +814,17 @@ func TestRunPublishesAssistantWaitingUpdateBeforeStreamingAfterToolResults(t *te
 				toolCompleted = true
 				continue
 			}
+			if toolCompleted && payload.Status == types.RunStatusRunning && payload.Message.Type == "assistant" && strings.TrimSpace(payload.Message.Content) == "" && len(payload.Message.Parts) == 0 {
+				emptyWaitingAfterTool = true
+			}
+		case <-deadline:
 			if !toolCompleted {
-				continue
+				t.Fatalf("did not receive completed tool assistant update")
 			}
-			if payload.Status != types.RunStatusRunning || payload.Message.Type != "assistant" {
-				continue
-			}
-			if strings.TrimSpace(payload.Message.Content) != "" || len(payload.Message.Parts) != 0 {
-				continue
-			}
-			if final := waitRun(t, system, state.ID); final.Status != types.RunStatusCompleted {
-				t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+			if emptyWaitingAfterTool {
+				t.Fatalf("received empty assistant waiting update after tool result")
 			}
 			return
-		case <-deadline:
-			t.Fatalf("did not receive assistant waiting update after tool result")
 		}
 	}
 }
@@ -805,7 +836,7 @@ func TestRunExecutesToolBatchWithParallelLimit(t *testing.T) {
 		{ID: "m2", Content: "final"},
 	}
 	fakes.tool.executeDelay = 80 * time.Millisecond
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3, MaxParallelTools: 2})
+	system := newTestRuntime(t, fakes, Config{MaxParallelTools: 2})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tools"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
@@ -829,7 +860,7 @@ func TestRunWaitsForMultipleToolConfirmationsThenExecutesBatch(t *testing.T) {
 		"intent-1": {ID: "decision-1", ActionID: "intent-1", ToolName: "file-reader", Status: types.PermissionStatusNeedsConfirmation},
 		"intent-2": {ID: "decision-2", ActionID: "intent-2", ToolName: "file-reader", Status: types.PermissionStatusNeedsConfirmation},
 	}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tools"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
@@ -868,7 +899,7 @@ func TestRunPreservesNonErrorToolResultStates(t *testing.T) {
 		{ID: "m2", Content: "final"},
 	}
 	fakes.tool.executeResult = types.ToolResult{ID: "result-cancelled", ActionID: "intent-1", ToolName: "file-reader", Status: types.ToolStatusCancelled, Error: "cancelled by tool", CreatedAt: time.Now().UTC()}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tool"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
@@ -891,7 +922,7 @@ func TestRunContinuesWhenToolExecutionReturnsError(t *testing.T) {
 		{ID: "m2", Content: "final after tool failure"},
 	}
 	fakes.tool.executeErr = errors.New("tool process failed")
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tool"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
@@ -918,7 +949,7 @@ func TestRunCancellationDuringToolExecutionDoesNotRecordToolFailure(t *testing.T
 	}
 	fakes.tool.executeDelay = time.Second
 	fakes.tool.executeCancelResult = types.ToolResult{ID: "result-after-cancel", Status: types.ToolStatusFailed, Error: "tool observed cancellation", CreatedAt: time.Now().UTC()}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	events, unsubscribe, err := system.Subscribe(context.Background())
 	if err != nil {
 		t.Fatalf("Subscribe() error = %v", err)
@@ -983,7 +1014,7 @@ func TestRunContinuesWhenToolPrepareReturnsError(t *testing.T) {
 		{ID: "m2", Content: "final after prepare failure"},
 	}
 	fakes.tool.prepareErr = errors.New("tool executable missing")
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tool"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
@@ -1021,25 +1052,32 @@ func completedToolPartCount(message types.Message) int {
 	return count
 }
 
-func TestRunFailsWhenMaxStepsExceeded(t *testing.T) {
+func TestRunContinuesAcrossManyToolRounds(t *testing.T) {
 	fakes := newRuntimeFakes()
-	fakes.provider.alwaysTool = true
-	fakes.tool.prepareDecision = types.PermissionDecision{ID: "decision-1", ActionID: "intent-1", ToolName: "file-reader", Status: types.PermissionStatusAllowed}
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 1})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "loop"})
+	const rounds = 10
+	for index := 0; index < rounds; index++ {
+		intentID := "intent-" + string(rune('a'+index))
+		fakes.provider.responses = append(fakes.provider.responses, types.ModelResponse{ID: "m-tool", Content: "need tool", ToolIntents: []types.ToolIntent{{ID: intentID, ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}}}})
+	}
+	fakes.provider.responses = append(fakes.provider.responses, types.ModelResponse{ID: "m-final", Content: "final"})
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tools"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
 	final := waitRun(t, system, state.ID)
-	if final.Status != types.RunStatusFailed || final.Reason != "run exceeded max steps" {
+	if final.Status != types.RunStatusCompleted {
 		t.Fatalf("final = %#v", final)
+	}
+	if fakes.tool.executeCount != rounds {
+		t.Fatalf("executeCount = %d, want %d", fakes.tool.executeCount, rounds)
 	}
 }
 
 func TestRunFailureStoresAssistantErrorWithoutFailureMessage(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.err = apperrors.WrapWithDetails("model-provider-system", "provider.service_failed", "upstream says no", nil, map[string]any{"body": `{"error":{"message":"upstream says no"}}`})
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
@@ -1065,7 +1103,7 @@ func TestRunFailureStoresAssistantErrorWithoutFailureMessage(t *testing.T) {
 func TestRunFailsWhenOwnedInputMessageIsExternallyEdited(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.block = make(chan struct{})
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	events, unsubscribe, err := system.Subscribe(context.Background())
 	if err != nil {
 		t.Fatalf("Subscribe() error = %v", err)
@@ -1099,7 +1137,7 @@ func TestRunFailsWhenDependencyMessageIsExternallyEdited(t *testing.T) {
 	now := time.Now().UTC()
 	fakes.storage.sessions["developer/session-1"] = types.Session{ID: "session-1", RoleID: "developer", Title: "Existing", Status: string(types.RunStatusCompleted), CreatedAt: now, UpdatedAt: now, LastActive: now, Messages: []types.Message{{ID: "u1", Type: "user", Content: "question", BranchID: "main", CreatedAt: now, UpdatedAt: now}}}
 	fakes.provider.block = make(chan struct{})
-	system := newTestRuntime(t, fakes, Config{MaxSteps: 3})
+	system := newTestRuntime(t, fakes, Config{})
 	events, unsubscribe, err := system.Subscribe(context.Background())
 	if err != nil {
 		t.Fatalf("Subscribe() error = %v", err)

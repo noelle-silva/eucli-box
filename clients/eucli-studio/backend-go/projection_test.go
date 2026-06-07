@@ -221,7 +221,7 @@ func TestMergeProjectionSettingsForMetaSaveOwnsOnlyMetaSettings(t *testing.T) {
 	}
 }
 
-func TestRunningSessionMarksLatestAssistantPending(t *testing.T) {
+func TestRunningSessionDoesNotInventAssistantRunIdentity(t *testing.T) {
 	session := map[string]any{
 		"id":        "session-1",
 		"roleId":    "developer",
@@ -236,13 +236,19 @@ func TestRunningSessionMarksLatestAssistantPending(t *testing.T) {
 	}
 
 	ui := toUIChat(session)
+	if ui["status"] != runStatusRunning {
+		t.Fatalf("ui status = %#v", ui["status"])
+	}
 	messages := objectList(ui["messages"])
 	if len(messages) != 2 {
 		t.Fatalf("messages = %#v", ui["messages"])
 	}
 	assistant := messages[1]
-	if assistant["pending"] != true || assistant["streaming"] != true {
-		t.Fatalf("assistant pending/streaming = %#v", assistant)
+	if _, ok := assistant["pending"]; ok {
+		t.Fatalf("assistant pending was invented from session status: %#v", assistant)
+	}
+	if _, ok := assistant["streaming"]; ok {
+		t.Fatalf("assistant streaming was invented from session status: %#v", assistant)
 	}
 }
 

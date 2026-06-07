@@ -1,5 +1,4 @@
 import { now } from '../core/utils'
-import { isAssistantGenerating } from './assistantRunState'
 import { chatSessionRunSummaryFromChat, normalizeChatSessionRunStatus, type ChatSessionRunStatus } from './chatSessionRunStatus'
 
 export type ChatMeta = {
@@ -127,7 +126,7 @@ export function chatMetaFromChat(chat: any, fallbackTitle = '新聊天'): ChatMe
   const createdAt = Number(chat.createdAt || 0) || now()
   const updatedAt = Number(chat.updatedAt || 0) || createdAt
   const runSummary = chatSessionRunSummaryFromChat(chat)
-  const hasPending = messages.some((m: any) => isAssistantGenerating(m)) || runSummary.status === 'running'
+  const hasPending = runSummary.status === 'running'
   return {
     id,
     title: normalizeWhitespace(chat.title) || fallbackTitle,
@@ -148,7 +147,7 @@ export function normalizeChatMeta(raw: any, fallbackId = '', fallbackTitle = '�
   const createdAt = Number((obj as any).createdAt || 0) || Number(fallbackUpdatedAt || 0) || now()
   const updatedAt = Number((obj as any).updatedAt || 0) || Number(fallbackUpdatedAt || 0) || createdAt
   const runStatus = normalizeChatSessionRunStatus((obj as any).runStatus || (obj as any).status)
-  const hasPending = !!(obj as any).hasPending || runStatus === 'running'
+  const hasPending = runStatus === 'running'
   return {
     id,
     title: normalizeWhitespace((obj as any).title) || fallbackTitle,

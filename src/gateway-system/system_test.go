@@ -524,6 +524,18 @@ func (f *fakeGatewayRuntime) GetRun(ctx context.Context, runID string) (types.Ru
 	return state, nil
 }
 
+func (f *fakeGatewayRuntime) ListActiveRuns(ctx context.Context) ([]types.RunState, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	runs := make([]types.RunState, 0, len(f.runs))
+	for _, state := range f.runs {
+		if state.Status == types.RunStatusCreated || state.Status == types.RunStatusRunning || state.Status == types.RunStatusWaitingConfirmation {
+			runs = append(runs, state)
+		}
+	}
+	return runs, nil
+}
+
 func (f *fakeGatewayRuntime) Subscribe(ctx context.Context) (<-chan types.RunEvent, func(), error) {
 	ch := make(chan types.RunEvent, 16)
 	f.mu.Lock()

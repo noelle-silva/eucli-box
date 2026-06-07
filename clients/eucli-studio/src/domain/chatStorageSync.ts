@@ -1,5 +1,5 @@
 import { preserveLocalBranchSelection } from './branching'
-import { isAssistantGenerating, resolveAssistantMessageForMerge } from './assistantRunState'
+import { hasAssistantVisibleOutput, isAssistantGenerating, resolveAssistantMessageForMerge } from './assistantRunState'
 
 function messageId(value: any) {
   return String(value?.id || '').trim()
@@ -36,6 +36,7 @@ function mergeMessagesFromStorage(nextChat: any, currentChat: any) {
     const id = messageId(currentMessage)
     if (!id || nextIds.has(id)) continue
     if (!isAssistantTextMessage(currentMessage) || !isAssistantGenerating(currentMessage)) continue
+    if (!hasAssistantVisibleOutput(currentMessage)) continue
     nextChat.messages.push(currentMessage)
     nextIds.add(id)
   }

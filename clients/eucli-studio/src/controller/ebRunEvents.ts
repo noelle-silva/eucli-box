@@ -100,6 +100,37 @@ export function createEbRunEventConsumer(deps: {
     return null
   }
 
+  function applyRunStateEvent(raw: unknown, fallbackRunIdRaw?: unknown) {
+    const payload = raw && typeof raw === 'object' ? (raw as any) : null
+    const runId = String(payload?.id || payload?.runId || fallbackRunIdRaw || '').trim()
+    if (!runId) return false
+    const state = deps.getState()
+    if (!state?.data) return false
+    const status = String(payload?.status || '').trim()
+    if (isTerminalEbRunStatus(status)) {
+      const removed = removeEbRoleRunCard(state, runId)
+      if (!removed) return false
+      scheduleRender()
+      return true
+    }
+    const roleId = String(payload?.roleId || '').trim()
+    const sessionId = String(payload?.sessionId || '').trim()
+    if (!roleId || !sessionId) return false
+    upsertEbRoleRunCard(state, {
+      runId,
+      roleId,
+      sessionId,
+      inputMessageId: String(payload?.inputMessageId || '').trim(),
+      lastMessageId: String(payload?.lastMessageId || payload?.inputMessageId || '').trim(),
+      anchorMessageId: String(payload?.inputMessageId || '').trim(),
+      dependencyMessageIds: Array.isArray(payload?.dependencyMessageIds) ? payload.dependencyMessageIds : [],
+      status: status || 'running',
+      stream: !!payload?.stream,
+    })
+    scheduleRender()
+    return true
+  }
+
   function applyAssistantMessageUpdate(raw: unknown) {
     const payload = raw && typeof raw === 'object' ? (raw as any) : null
     const state = deps.getState()
@@ -159,6 +190,7 @@ export function createEbRunEventConsumer(deps: {
         inputMessageId: parentMid,
         lastMessageId: messageId,
         anchorMessageId: parentMid,
+        dependencyMessageIds: Array.isArray(payload?.dependencyMessageIds) ? payload.dependencyMessageIds : [],
         status: String(payload.status || 'running').trim() || 'running',
         stream: !!payload.stream,
       })
@@ -201,7 +233,9 @@ export function createEbRunEventConsumer(deps: {
   function applyRunEvent(raw: unknown) {
     const event = raw && typeof raw === 'object' ? (raw as any) : null
     if (!event) return false
-    if (String(event.type || '').trim() === 'assistant_message_update') return applyAssistantMessageUpdate(event.payload)
+    const type = String(event.type || '').trim()
+    if (type === 'assistant_message_update') return applyAssistantMessageUpdate(event.payload)
+    if (type === 'run_started' || type === 'run_completed' || type === 'run_cancelled' || type === 'run_failed') return applyRunStateEvent(event.payload, event.runId)
     return false
   }
 

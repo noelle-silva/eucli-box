@@ -173,7 +173,7 @@ func (s *system) updateRunWithError(runID string, status types.RunStatus, reason
 	record.state.Reason = reason
 	record.state.Error = cloneErrorPayload(errPayload)
 	record.state.UpdatedAt = nowUTC()
-	return record.state, nil
+	return runStateSnapshot(record), nil
 }
 
 func (s *system) setRunSessionID(runID string, sessionID string) error {

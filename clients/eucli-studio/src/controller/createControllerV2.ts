@@ -37,7 +37,6 @@ import { normalizeMessageAttachments, normalizeMessageGroup } from '../domain/me
 import { validateFavoriteFolderName } from '../domain/favoriteValidator'
 import { normalizeChatModelOverride, normalizeMessageModelRef, buildMessageModelRef } from '../domain/modelRefUtils'
 import { normalizeReasoningEffort } from '../domain/reasoning'
-import { isAssistantGenerating } from '../domain/assistantRunState'
 import { moveListItemById, type ListMovePosition } from '../domain/listOrdering'
 import { detectDraftFileKind, addDraftFilePlaceholder, removeDraftFile, removeDraftImage as removeDraftImageFromList, fileExtLower } from '../domain/draftFileUtils'
 import type { DraftFileKind, DraftFileItem, DraftImageItem } from '../domain/draftFileUtils'
@@ -93,10 +92,12 @@ import { createEntityEditors } from './entityEditors'
 import { createChatOperations } from './chatOperations'
 import { createPersistence } from './persistence'
 import { updateRoleSessionTitle } from './ebRoleSession'
+import { getRunState, isTerminalRunStatus, listActiveRoleRuns, pollRunUntilTerminal, type EbRunState } from './ebRoleRun'
 import { createEbRunEventConsumer } from './ebRunEvents'
 import { createToolCatalog } from './toolCatalog'
 import { createModelRequestConfigController, defaultModelRequestConfigState } from './modelRequestConfig'
 import { addNativeToolsToPolicy, addToolsToPolicy, emptyRoleToolPolicy, removeNativeToolFromPolicy, removeToolFromPolicy, setToolRunMode } from '../domain/toolPolicy'
+import { removeEbRoleRunCard, upsertEbRoleRunCard } from '../domain/activeRunCards'
 
 export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilities }): {
   controller: AiChatController
@@ -184,6 +185,8 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     } as any,
     data: null as any,
   }
+  let disposed = false
+  const restoringRunIds = new Set<string>()
 
   // ============================================================
   // 2. UI CORE
@@ -287,30 +290,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       ;(state.draft as any).groupRandomMaxCount = 2
     }
     render()
-  }
-
-  function chatHasPendingAssistant(chat: any) {
-    const msgs = Array.isArray(chat?.messages) ? chat.messages : []
-    for (const m of msgs) {
-      if (!m || typeof m !== 'object') continue
-      if (isAssistantGenerating(m)) return true
-    }
-    return false
-  }
-
-  function chatHasPendingAssistantInBranch(chat: any, branchId: any, excludeMid?: any) {
-    const bid = normalizeBranchId(branchId || CHAT_DEFAULT_BRANCH_ID)
-    const ex = String(excludeMid || '').trim()
-    const msgs = Array.isArray(chat?.messages) ? chat.messages : []
-    for (const m of msgs) {
-      if (!m || typeof m !== 'object') continue
-      if (m.role !== 'assistant' || !isAssistantGenerating(m)) continue
-      const mid = String((m as any)?.id || '').trim()
-      if (ex && mid === ex) continue
-      const mb = normalizeBranchId((m as any)?.branchId || CHAT_DEFAULT_BRANCH_ID)
-      if (mb === bid) return true
-    }
-    return false
   }
 
   async function extractPdfText(file: File): Promise<string> {
@@ -581,6 +560,68 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     } finally {
       state.loading = false
     }
+  }
+
+  async function restoreActiveEbRoleRuns() {
+    const netRequest = capabilities.net?.request
+    if (typeof netRequest !== 'function') return
+    const runs = await listActiveRoleRuns(netRequest).catch(() => [])
+    const syncRunCard = (run: EbRunState) => {
+      const runId = String(run?.id || '').trim()
+      const roleId = String(run?.roleId || '').trim()
+      const sessionId = String(run?.sessionId || '').trim()
+      if (!runId || !roleId || !sessionId) return false
+      upsertEbRoleRunCard(state, {
+        runId,
+        roleId,
+        sessionId,
+        inputMessageId: String(run?.inputMessageId || '').trim(),
+        lastMessageId: String(run?.lastMessageId || run?.inputMessageId || '').trim(),
+        anchorMessageId: String(run?.inputMessageId || '').trim(),
+        dependencyMessageIds: Array.isArray(run?.dependencyMessageIds) ? run.dependencyMessageIds : [],
+        status: String(run?.status || 'running').trim() || 'running',
+        stream: !!run?.stream,
+      })
+      return true
+    }
+    const trackRestoredRun = (initialRun: EbRunState) => {
+      const runId = String(initialRun?.id || '').trim()
+      if (!runId || restoringRunIds.has(runId)) return
+      restoringRunIds.add(runId)
+      Promise.resolve()
+        .then(async () => {
+          let latest = await getRunState(netRequest, runId).catch(() => initialRun)
+          if (syncRunCard(latest)) render()
+          if (!isTerminalRunStatus(latest.status)) {
+            latest = await pollRunUntilTerminal(
+              netRequest,
+              latest,
+              async (nextRun) => {
+                latest = nextRun
+                if (syncRunCard(nextRun)) render()
+              },
+              { shouldContinue: () => !disposed },
+            )
+          }
+          const roleId = String(latest?.roleId || '').trim()
+          const sessionId = String(latest?.sessionId || '').trim()
+          if (roleId && sessionId && typeof reloadRoleSession === 'function') {
+            await reloadRoleSession(roleId, sessionId).catch(() => null)
+          }
+          removeEbRoleRunCard(state, runId)
+          render()
+        })
+        .finally(() => {
+          restoringRunIds.delete(runId)
+        })
+    }
+    let changed = false
+    for (const run of runs) {
+      if (!syncRunCard(run)) continue
+      changed = true
+      trackRestoredRun(run)
+    }
+    if (changed) render()
   }
 
   async function save(intent?: ChatSaveIntent) {
@@ -1871,8 +1912,8 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     },
     send: () => sendChat(),
     sendFromMid: (forkFromMid: any, opts?: any) => sendChat({ ...(opts && typeof opts === 'object' ? opts : {}), forkFromMid: String(forkFromMid || '') }),
-    stop: () => {
-      stopSending().catch(() => {})
+    stop: (runId?: any) => {
+      stopSending(runId).catch(() => {})
     },
     regenerateAssistant: (assistantMid: any) => regenerateAssistantMessage(String(assistantMid || '')),
     replyFromUserMessage: (userMid: any) => replyFromUserMessage(String(userMid || '')),
@@ -1960,15 +2001,18 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   // 21. INIT
   // ============================================================
   async function init() {
+    disposed = false
     await ensureRenderer().catch(() => {})
     await load()
     refreshModelGroups(false).catch(() => {})
     ebRunEvents.start()
+    await restoreActiveEbRoleRuns()
     startUiPollers()
     render()
   }
 
   function dispose() {
+    disposed = true
     ebRunEvents.stop()
     stopUiPollers()
     uiCore.dispose()

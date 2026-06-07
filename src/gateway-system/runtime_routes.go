@@ -38,6 +38,15 @@ func (s *system) handleGetRun(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusOK, state)
 }
 
+func (s *system) handleListActiveRuns(w http.ResponseWriter, r *http.Request) {
+	states, err := s.runtime.ListActiveRuns(r.Context())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, states)
+}
+
 func (s *system) handleCancelRun(w http.ResponseWriter, r *http.Request) {
 	runID, err := pathValue(r, "runID")
 	if err != nil {

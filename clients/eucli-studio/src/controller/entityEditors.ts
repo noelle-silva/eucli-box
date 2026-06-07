@@ -1,8 +1,8 @@
 import { now, uid, clamp, clampTemp, normImagePaths } from '../core/utils'
 import { createStateAccessors } from '../state/stateAccessors'
+import { activeEbRoleRunCardsForSession } from '../domain/activeRunCards'
 import { chatMetaFromChat, removeChatMeta, upsertChatMeta } from '../domain/chatMeta'
 import { NEW_ROLE_ID } from '../domain/constants'
-import { isAssistantGenerating } from '../domain/assistantRunState'
 import { emptyRoleToolPolicy, normalizeRoleToolPolicy } from '../domain/toolPolicy'
 import { clearPendingChatForTarget, createPendingChatEntry } from '../domain/pendingChat'
 import { activateComposerDraftForCurrentSession, saveActiveComposerDraftMirror } from '../domain/sessionComposerDrafts'
@@ -55,13 +55,8 @@ function shrinkImageDataUrl(dataUrl: string, maxSide: number): Promise<string> {
   })
 }
 
-function chatHasPendingAssistant(chat: any): boolean {
-  const msgs = Array.isArray(chat?.messages) ? chat.messages : []
-  for (const m of msgs) {
-    if (!m || typeof m !== 'object') continue
-    if (isAssistantGenerating(m)) return true
-  }
-  return false
+function roleSessionHasActiveRun(state: any, roleId: string, sessionId: string): boolean {
+  return activeEbRoleRunCardsForSession(state, roleId, sessionId).length > 0
 }
 
 function imageBasename(p: string): string {
@@ -800,8 +795,7 @@ export function createEntityEditors(deps: {
     const box = sa.ensureChatsBoxBare(rid)
     if (!box) return
     const before = Array.isArray(box.chats) ? box.chats : []
-    const target = before.find((c: any) => String(c?.id) === cid) || null
-    if (target && chatHasPendingAssistant(target)) return showToast?.('正在生成中，不能删除该会话', { kind: 'error' })
+    if (roleSessionHasActiveRun(state, rid, cid)) return showToast?.('该会话有真实运行中的任务，不能删除', { kind: 'error' })
 
     box.chats = before.filter((c: any) => String(c?.id) !== cid)
     box.chatMetas = removeChatMeta(box.chatMetas, cid, '新聊天')
@@ -824,8 +818,6 @@ export function createEntityEditors(deps: {
     const box = sa.ensureGroupChatsBoxBare(gid)
     if (!box) return
     const before = Array.isArray(box.chats) ? box.chats : []
-    const target = before.find((c: any) => String(c?.id) === cid) || null
-    if (target && chatHasPendingAssistant(target)) return showToast?.('正在生成中，不能删除该会话', { kind: 'error' })
 
     box.chats = before.filter((c: any) => String(c?.id) !== cid)
     box.chatMetas = removeChatMeta(box.chatMetas, cid, '群聊')

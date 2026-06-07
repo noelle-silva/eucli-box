@@ -13,6 +13,7 @@ type System interface {
 	SubmitToolConfirmation(ctx context.Context, confirmation types.ToolConfirmation) error
 	CancelRun(ctx context.Context, runID string) error
 	GetRun(ctx context.Context, runID string) (types.RunState, error)
+	ListActiveRuns(ctx context.Context) ([]types.RunState, error)
 	Subscribe(ctx context.Context) (<-chan types.RunEvent, func(), error)
 }
 
@@ -45,7 +46,6 @@ type ToolSystem interface {
 }
 
 type Config struct {
-	MaxSteps         int
 	ToolTimeout      time.Duration
 	MaxParallelTools int
 }
@@ -63,25 +63,25 @@ type system struct {
 }
 
 type runRecord struct {
-	runID             string
-	roleID            string
-	state             types.RunState
-	session           types.Session
-	messageParent     types.Message
-	inputMessageID    string
-	lastMessageID     string
-	anchorMessageID   string
-	activeAssistantID string
-	ownedMessageIDs   map[string]struct{}
-	deletedMessageIDs map[string]struct{}
-	dependencyIDs     map[string]struct{}
-	messageSnapshots  map[string]types.Message
-	forceBranchReply  bool
-	stream            bool
-	streamContent     string
-	reasoningEffort   types.ReasoningEffort
+	runID                   string
+	roleID                  string
+	state                   types.RunState
+	session                 types.Session
+	messageParent           types.Message
+	inputMessageID          string
+	lastMessageID           string
+	anchorMessageID         string
+	activeAssistantID       string
+	ownedMessageIDs         map[string]struct{}
+	deletedMessageIDs       map[string]struct{}
+	dependencyIDs           map[string]struct{}
+	messageSnapshots        map[string]types.Message
+	forceBranchReply        bool
+	stream                  bool
+	streamContent           string
+	reasoningEffort         types.ReasoningEffort
 	reasoningPersistPending bool
-	cancel            context.CancelFunc
+	cancel                  context.CancelFunc
 
 	pendingPlans   map[string]types.ToolRunPlan
 	confirmationCh chan types.ToolConfirmation
@@ -99,9 +99,6 @@ func NewSystem(config Config, storage StorageSystem, roles RoleSystem, providers
 	}
 	if tools == nil {
 		return nil, runtimeInvalid("tool system dependency is required", nil)
-	}
-	if config.MaxSteps <= 0 {
-		config.MaxSteps = 8
 	}
 	if config.ToolTimeout < 0 {
 		return nil, runtimeInvalid("tool timeout cannot be negative", nil)
@@ -125,7 +122,17 @@ func (s *system) getRunState(runID string) (types.RunState, bool) {
 	if !ok {
 		return types.RunState{}, false
 	}
-	return record.state, true
+	return runStateSnapshot(record), true
+}
+
+func runStateSnapshot(record *runRecord) types.RunState {
+	if record == nil {
+		return types.RunState{}
+	}
+	state := record.state
+	state.Error = cloneErrorPayload(state.Error)
+	state.DependencyMessageIDs = sortedRecordIDs(record.dependencyIDs)
+	return state
 }
 
 func (s *system) removeSubscriber(ch chan types.RunEvent) {

@@ -1,7 +1,6 @@
 import { clamp, now } from '../core/utils'
 import { VIEWER_ZOOM_MIN, MERMAID_VIEWER_ZOOM_MAX } from '../core/viewerZoom'
 import { splitChatKey, splitGroupChatKey } from '../domain/storageKeys'
-import { isAssistantGenerating } from '../domain/assistantRunState'
 import { runChatMutationTransaction } from '../domain/chatMutationTransaction'
 import { readActiveEbRoleRunCardsForSession } from '../domain/activeRunCards'
 import { messageMutationConflict } from '../domain/messageMutationConflicts'
@@ -206,10 +205,6 @@ export function createMermaidUi(deps: {
       activeRunCards: kind === 'role' ? readActiveEbRoleRunCardsForSession(s, targetId, cid) : [],
     })
     if (conflict.blocked) throw new Error(conflict.reason || '该消息正在被运行中的回复使用，无法编辑')
-    if (target.role === 'assistant') {
-      if (isAssistantGenerating(target)) throw new Error('该消息正在生成中，无法编辑')
-    }
-
     const verifySavedContent = async () => {
       const mid = String(messageId || '')
       if (targetId && cid && mid) {

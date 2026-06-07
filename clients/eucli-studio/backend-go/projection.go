@@ -919,7 +919,6 @@ func fromUIProvider(value any) map[string]any {
 
 func toUIChat(session map[string]any) map[string]any {
 	messages := []map[string]any{}
-	activeAssistantID := activeSessionAssistantMessageID(session)
 	for _, msg := range objectList(session["messages"]) {
 		createdAt := millisFromAny(msg["createdAt"])
 		updatedAt := millisFromAnyOrZero(msg["updatedAt"])
@@ -929,10 +928,6 @@ func toUIChat(session map[string]any) map[string]any {
 		uiMessage := map[string]any{"id": stringField(msg, "id"), "type": messageStorageType(msg), "role": messageRole(msg), "content": stringField(msg, "content"), "parentMid": stringField(msg, "parentMessageId"), "branchId": fallback(stringField(msg, "branchId"), "main"), "createdAt": createdAt, "updatedAt": updatedAt}
 		if errBox := objectMap(msg["error"]); stringField(errBox, "message") != "" {
 			uiMessage["error"] = errBox
-		}
-		if activeAssistantID != "" && stringField(uiMessage, "id") == activeAssistantID {
-			uiMessage["pending"] = true
-			uiMessage["streaming"] = true
 		}
 		if parts := objectList(msg["parts"]); len(parts) > 0 {
 			uiMessage["parts"] = anyList(parts)
@@ -955,7 +950,7 @@ func toUIChat(session map[string]any) map[string]any {
 		updatedAt = createdAt
 	}
 	branching := deriveUIBranching(messages, createdAt, updatedAt)
-	chat := map[string]any{"id": stringField(session, "id"), "title": fallback(stringField(session, "title"), "新聊天"), "createdAt": createdAt, "updatedAt": updatedAt, "branching": branching, "messages": anyList(messages)}
+	chat := map[string]any{"id": stringField(session, "id"), "title": fallback(stringField(session, "title"), "新聊天"), "status": stringField(session, "status"), "createdAt": createdAt, "updatedAt": updatedAt, "branching": branching, "messages": anyList(messages)}
 	if effort := normalizeReasoningEffort(stringField(objectMap(session["metadata"]), "reasoningEffort")); effort != "" {
 		chat["reasoningEffort"] = effort
 	}
@@ -1336,29 +1331,6 @@ func promptText(prompts []map[string]any) string {
 	for _, prompt := range prompts {
 		if stringField(prompt, "role") == "system" {
 			return stringField(prompt, "content")
-		}
-	}
-	return ""
-}
-
-func isSessionRunActive(session map[string]any) bool {
-	switch stringField(session, "status") {
-	case runStatusRunning, runStatusWaiting:
-		return true
-	default:
-		return false
-	}
-}
-
-func activeSessionAssistantMessageID(session map[string]any) string {
-	if !isSessionRunActive(session) {
-		return ""
-	}
-	messages := objectList(session["messages"])
-	for i := len(messages) - 1; i >= 0; i-- {
-		message := messages[i]
-		if messageStorageType(message) == "assistant" {
-			return stringField(message, "id")
 		}
 	}
 	return ""

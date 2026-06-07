@@ -2,6 +2,7 @@ package gateway
 
 func (s *system) registerRoutes() {
 	s.mux.HandleFunc("POST /api/runs", s.authWrap(s.handleStartRun))
+	s.mux.HandleFunc("GET /api/runs", s.authWrap(s.handleListActiveRuns))
 	s.mux.HandleFunc("GET /api/runs/{runID}", s.authWrap(s.handleGetRun))
 	s.mux.HandleFunc("POST /api/runs/{runID}/cancel", s.authWrap(s.handleCancelRun))
 	s.mux.HandleFunc("POST /api/tool-confirmations", s.authWrap(s.handleToolConfirmation))

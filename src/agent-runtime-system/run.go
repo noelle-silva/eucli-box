@@ -2,6 +2,7 @@ package agentruntime
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"time"
 
@@ -42,6 +43,37 @@ func (s *system) GetRun(ctx context.Context, runID string) (types.RunState, erro
 		return types.RunState{}, runtimeNotFound("run was not found", nil)
 	}
 	return state, nil
+}
+
+func (s *system) ListActiveRuns(ctx context.Context) ([]types.RunState, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, runtimeInvalid("list runs context is cancelled", err)
+	}
+	s.mu.Lock()
+	states := make([]types.RunState, 0, len(s.runs))
+	for _, record := range s.runs {
+		if record == nil || !isActiveRunStatus(record.state.Status) {
+			continue
+		}
+		states = append(states, runStateSnapshot(record))
+	}
+	s.mu.Unlock()
+	sort.SliceStable(states, func(i, j int) bool {
+		if !states[i].CreatedAt.Equal(states[j].CreatedAt) {
+			return states[i].CreatedAt.Before(states[j].CreatedAt)
+		}
+		return states[i].ID < states[j].ID
+	})
+	return states, nil
+}
+
+func isActiveRunStatus(status types.RunStatus) bool {
+	switch status {
+	case types.RunStatusCreated, types.RunStatusRunning, types.RunStatusWaitingConfirmation:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *system) CancelRun(ctx context.Context, runID string) error {
@@ -91,19 +123,11 @@ func (s *system) startRun(ctx context.Context, record *runRecord, request types.
 	markRunDependencyMessages(record, contextSession.Messages)
 	record.forceBranchReply = shouldForceBranchReply(session, assistantParent) || s.hasActiveRunAtAnchor(record)
 	lastMessageID := assistantParent.ID
-	if record.stream {
-		ensureRunAssistantMessage(record)
-		session = record.session
-		lastMessageID = record.lastMessageID
-	}
 	if err := s.setRunMessageIDs(record.runID, assistantParent.ID, lastMessageID); err != nil {
 		return state, types.Session{}, err
 	}
 	if err := s.saveRunSession(ctx, record, types.RunStatusRunning); err != nil {
 		return state, types.Session{}, err
-	}
-	if record.stream {
-		s.publishAssistantMessageUpdate(record)
 	}
 	state, _ = s.getRunState(record.runID)
 	return state, contextSession, nil
@@ -111,7 +135,7 @@ func (s *system) startRun(ctx context.Context, record *runRecord, request types.
 
 func (s *system) continueRun(ctx context.Context, record *runRecord, contextSession types.Session) {
 	assistantParent := record.messageParent
-	for step := 1; step <= s.config.MaxSteps; step++ {
+	for {
 		if err := ctx.Err(); err != nil {
 			s.cancelRunRecord(context.Background(), record, record.session)
 			return
@@ -186,7 +210,6 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 			return
 		}
 	}
-	s.failRunMessage(context.Background(), record, record.session, "run exceeded max steps")
 }
 
 func shouldRecordAssistantOutput(response types.ModelResponse) bool {

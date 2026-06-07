@@ -22,6 +22,7 @@ type RuntimeSystem interface {
 	SubmitToolConfirmation(ctx context.Context, confirmation types.ToolConfirmation) error
 	CancelRun(ctx context.Context, runID string) error
 	GetRun(ctx context.Context, runID string) (types.RunState, error)
+	ListActiveRuns(ctx context.Context) ([]types.RunState, error)
 	Subscribe(ctx context.Context) (<-chan types.RunEvent, func(), error)
 }
 

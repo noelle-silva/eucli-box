@@ -1,4 +1,3 @@
-import { isAssistantGenerating } from './assistantRunState'
 import type { EbRoleRunCard } from './activeRunCards'
 
 export type MessageMutationOperation = 'edit' | 'delete' | 'delete-subtree'
@@ -53,15 +52,6 @@ function collectSubtreeIds(children: Map<string, string[]>, rootId: string) {
   return ids
 }
 
-function activeAssistantIds(chat: any) {
-  const ids = new Set<string>()
-  for (const message of chatMessages(chat)) {
-    const id = text(message?.id)
-    if (id && isAssistantGenerating(message)) ids.add(id)
-  }
-  return ids
-}
-
 function activeRunMessageIds(cards: EbRoleRunCard[]) {
   const out: Array<{ id: string; runId: string }> = []
   for (const card of cards) {
@@ -91,11 +81,6 @@ export function messageMutationConflict(
   if (!tree.byId.has(targetId)) return { blocked: false, reason: '', messageId: targetId, runId: '' }
 
   const affectedIds = collectSubtreeIds(tree.children, targetId)
-  const activeAssistant = activeAssistantIds(chat)
-  for (const messageId of affectedIds) {
-    if (activeAssistant.has(messageId)) return { blocked: true, reason: operationReason(operation), messageId, runId: '' }
-  }
-
   const cards = Array.isArray(options?.activeRunCards) ? options.activeRunCards : []
   for (const item of activeRunMessageIds(cards)) {
     if (affectedIds.has(item.id)) return { blocked: true, reason: operationReason(operation), messageId: item.id, runId: item.runId }

@@ -22,8 +22,7 @@ import type { DraftFileItem } from '../domain/draftFileUtils'
 import { normalizeChatModelOverride } from '../domain/modelRefUtils'
 import { chatReasoningEffort } from '../domain/reasoning'
 import { createStateAccessors } from '../state/stateAccessors'
-import { hasActiveAssistantMessages } from '../domain/chatRunState'
-import { isAssistantGenerating, isAssistantRunInterrupted } from '../domain/assistantRunState'
+import { isAssistantRunInterrupted } from '../domain/assistantRunState'
 import {
   activeEbRoleRunCards,
   activeEbRoleRunCardsForSession,
@@ -48,7 +47,7 @@ import {
 import type { ChatSaveIntent } from '../domain/chatSaveIntent'
 import { deleteAssistantMessageBlock, editAssistantMessageBlock, replaceMessageText } from '../domain/assistantMessageBlockMutations'
 import type { AiChatShowToast } from '../gateway/capabilities'
-import { cancelRoleRun, getRunState, isTerminalRunStatus, runStateFailureError, sleepMs, startRoleRun, type EbRunState } from './ebRoleRun'
+import { cancelRoleRun, pollRunUntilTerminal, runStateFailureError, startRoleRun, type EbRunState } from './ebRoleRun'
 import { deleteRoleSessionMessage, deleteRoleSessionMessageSubtree, updateRoleSessionMessage } from './ebRoleSession'
 
 type SendChatOptions = {
@@ -88,22 +87,10 @@ export function createChatOperations(deps: {
     return [roleId, sessionId, userMessageId ? `user:${userMessageId}` : `parent:${parentMessageId}`, message, reasoningEffort].join('\n')
   }
 
-  function findActiveAssistantChild(chat: any, parentMid: string) {
-    const mid = String(parentMid || '').trim()
-    if (!mid) return null
-    const messages = Array.isArray(chat?.messages) ? chat.messages : []
-    return messages.find((message: any) => String(message?.role || '') === 'assistant' && String(message?.parentMid || '').trim() === mid && isAssistantGenerating(message)) || null
-  }
-
   function findActiveRunAtMessage(roleId: string, sessionId: string, messageId: string) {
     const mid = String(messageId || '').trim()
     if (!mid) return null
     return activeEbRoleRunCardsForSession(getState(), roleId, sessionId).find((card) => card.inputMessageId === mid || card.anchorMessageId === mid || card.lastMessageId === mid) || null
-  }
-
-  function activeBranchHasPendingAssistant(chat: any) {
-    const bid = normalizeBranchId(chat?.branching?.activeBranchId || CHAT_DEFAULT_BRANCH_ID)
-    return hasActiveAssistantMessages(chat, { branchId: bid })
   }
 
   function activeBranchMessagePath(chat: any) {
@@ -134,27 +121,12 @@ export function createChatOperations(deps: {
     return cards.some((card) => ebRoleRunCardIsOnMessagePath(card, path.ids, path.headMid))
   }
 
-  async function refreshIfPendingAssistantHasNoRunCard(roleId: string, sessionId: string, chat: any) {
-    if (!roleId || !sessionId || !chat) return chat
-    if (!activeBranchHasPendingAssistant(chat)) return chat
-    if (activeBranchHasActiveRun(roleId, sessionId, chat)) return chat
-    return (await refreshRoleSession(roleId, sessionId, undefined, { activate: false }).catch(() => null)) || chat
-  }
-
   function ensureStableComposerParent(roleId: string, sessionId: string, chat: any, parentMid: string, explicitParent: boolean) {
     const mid = String(parentMid || '').trim()
     if (!chat || !mid) return true
     const parent = findChatMessageById(chat, mid)
-    if (parent && isAssistantGenerating(parent)) {
-      showToast?.('这条 AI 回复还在生成中，不能作为新问题起点', { kind: 'error' })
-      return false
-    }
     if (parent && isAssistantRunInterrupted(parent)) {
       showToast?.('这条 AI 回复已失败或取消，请选择一条稳定回复后继续', { kind: 'error' })
-      return false
-    }
-    if (!explicitParent && parent && String((parent as any).role || '') === 'user' && findActiveAssistantChild(chat, mid)) {
-      showToast?.('这个问题的回答还在生成中，请从用户消息菜单并排生成，或选择一条稳定回复后继续', { kind: 'error' })
       return false
     }
     if (!explicitParent && parent && String((parent as any).role || '') === 'user' && findActiveRunAtMessage(roleId, sessionId, mid)) {
@@ -163,10 +135,6 @@ export function createChatOperations(deps: {
     }
     if (!explicitParent && activeBranchHasActiveRun(roleId, sessionId, chat)) {
       showToast?.('当前路线仍有运行中的任务，请停止或等待完成后再发送', { kind: 'error' })
-      return false
-    }
-    if (!explicitParent && activeBranchHasPendingAssistant(chat)) {
-      showToast?.('当前路线还在生成中，请选择一个稳定节点后再发送', { kind: 'error' })
       return false
     }
     return true
@@ -212,7 +180,7 @@ export function createChatOperations(deps: {
       inputMessageId,
       lastMessageId,
       anchorMessageId: String(fallback.anchorMessageId || current?.anchorMessageId || inputMessageId || '').trim(),
-      dependencyMessageIds: Array.isArray(fallback.dependencyMessageIds) ? fallback.dependencyMessageIds : current?.dependencyMessageIds || [],
+      dependencyMessageIds: run?.dependencyMessageIds?.length ? run.dependencyMessageIds : Array.isArray(fallback.dependencyMessageIds) ? fallback.dependencyMessageIds : current?.dependencyMessageIds || [],
       status: String(run?.status || current?.status || 'running').trim(),
       stream: !!run?.stream,
       cancelledByUser: !!current?.cancelledByUser,
@@ -307,7 +275,7 @@ export function createChatOperations(deps: {
     if (!mid || !chat) return mid
     const parent = findChatMessageById(chat, mid)
     if (!parent || String((parent as any).role || '') !== 'user') return mid
-    const hasRunningReply = !!findActiveAssistantChild(chat, mid) || !!findActiveRunAtMessage(roleId, sessionId, mid)
+    const hasRunningReply = !!findActiveRunAtMessage(roleId, sessionId, mid)
     if (!hasRunningReply) return mid
     return String((parent as any).parentMid || '').trim() || mid
   }
@@ -365,9 +333,8 @@ export function createChatOperations(deps: {
 
     if (sessionId) await refreshRunSession()
 
-    while (!isTerminalRunStatus(state.status)) {
-      await sleepMs(450)
-      state = await getRunState(netRequest, state.id)
+    state = await pollRunUntilTerminal(netRequest, state, async (nextState) => {
+      state = nextState
       followMessageId = String(state.lastMessageId || followMessageId || '').trim()
       syncEbRoleRunCard(state, { roleId: input.roleId, sessionId, lastMessageId: followMessageId, anchorMessageId: runAnchorMessageId, dependencyMessageIds, startedFromPending, pendingChatId: startedFromPendingChatId })
       onState?.(state)
@@ -376,7 +343,7 @@ export function createChatOperations(deps: {
         sessionId = nextSessionId
         if (!runSessionLoadedOnce && (startedFromPending || !input.sessionId)) await refreshRunSession()
       }
-    }
+    })
 
     followMessageId = String(state.lastMessageId || followMessageId || '').trim()
     await refreshTerminalRunSession()
@@ -704,10 +671,7 @@ export function createChatOperations(deps: {
 
     let chat = pendingChat ? null : currentChat
     let sessionId = String(chat?.id || '').trim()
-    if (sessionId) {
-      chat = await refreshIfPendingAssistantHasNoRunCard(rid, sessionId, chat)
-      sessionId = String(chat?.id || sessionId).trim()
-    }
+    if (sessionId) sessionId = String(chat?.id || sessionId).trim()
     const forkFromMid = String(opts?.forkFromMid || '').trim()
     const branchDraft = state.branchDraft && typeof state.branchDraft === 'object' ? state.branchDraft : null
     const branchDraftParentId =
@@ -760,8 +724,8 @@ export function createChatOperations(deps: {
     const activeRun = explicitRunId
       ? findEbRoleRunCard(state, explicitRunId)
       : latestEbRoleRunCardForSession(state, String(sa.activeRole()?.id || '').trim(), String(sa.activeChatFromData()?.id || '').trim()) || activeEbRoleRunCards(state).slice(-1)[0] || null
-    if (activeRun || explicitRunId) {
-      const runId = String(activeRun?.runId || explicitRunId).trim()
+    if (activeRun) {
+      const runId = String(activeRun.runId || '').trim()
       if (!runId) return showToast?.('当前运行尚未拿到 e-b run id，请稍候再试', { kind: 'error' })
       if (typeof netRequest !== 'function') return showToast?.('e-b 请求通道不可用', { kind: 'error' })
       try {
@@ -796,7 +760,7 @@ export function createChatOperations(deps: {
     if (!target || !mid) return false
     const assistant = findChatMessageById(target.chat, mid)
     if (!assistant || String((assistant as any).role || '') !== 'assistant') return showToast?.('只能重新生成 AI 消息', { kind: 'error' })
-    if (isAssistantGenerating(assistant)) return showToast?.('该消息正在生成中', { kind: 'error' })
+    if (!ensureRoleSessionMessageMutationAllowed(target, mid, 'edit')) return false
     const userMessageId = String((assistant as any).parentMid || '').trim()
     const userMessage = userMessageId ? findChatMessageById(target.chat, userMessageId) : null
     if (!userMessage || String((userMessage as any).role || '') !== 'user') return showToast?.('未找到对应的用户消息', { kind: 'error' })
@@ -856,7 +820,7 @@ export function createChatOperations(deps: {
     const msgs = Array.isArray(chat.messages) ? chat.messages : []
     const target = msgs.find((m: any) => String(m?.id || '') === mid) || null
     if (!target || target.role !== 'assistant') return showToast?.('只能从 AI 消息新建分支', { kind: 'error' })
-    if (hasActiveAssistantMessages({ messages: [target] })) return showToast?.('该消息正在生成中', { kind: 'error' })
+    if (!ensureRoleSessionMessageMutationAllowed({ roleId: String(role.id || '').trim(), sessionId: String(chat.id || '').trim(), chat }, mid, 'edit')) return false
 
     const userMid0 = String((target as any)?.parentMid || '').trim()
     const userMsg = userMid0 ? msgs.find((m: any) => String(m?.id || '') === userMid0) || null : null

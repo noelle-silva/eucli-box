@@ -189,17 +189,18 @@ type RunRequest struct {
 }
 
 type RunState struct {
-	ID             string        `json:"id"`
-	RoleID         string        `json:"roleId"`
-	SessionID      string        `json:"sessionId"`
-	InputMessageID string        `json:"inputMessageId,omitempty"`
-	LastMessageID  string        `json:"lastMessageId,omitempty"`
-	Stream         bool          `json:"stream,omitempty"`
-	Status         RunStatus     `json:"status"`
-	Reason         string        `json:"reason,omitempty"`
-	Error          *ErrorPayload `json:"error,omitempty"`
-	CreatedAt      time.Time     `json:"createdAt"`
-	UpdatedAt      time.Time     `json:"updatedAt"`
+	ID                   string        `json:"id"`
+	RoleID               string        `json:"roleId"`
+	SessionID            string        `json:"sessionId"`
+	InputMessageID       string        `json:"inputMessageId,omitempty"`
+	LastMessageID        string        `json:"lastMessageId,omitempty"`
+	DependencyMessageIDs []string      `json:"dependencyMessageIds,omitempty"`
+	Stream               bool          `json:"stream,omitempty"`
+	Status               RunStatus     `json:"status"`
+	Reason               string        `json:"reason,omitempty"`
+	Error                *ErrorPayload `json:"error,omitempty"`
+	CreatedAt            time.Time     `json:"createdAt"`
+	UpdatedAt            time.Time     `json:"updatedAt"`
 }
 
 type RunStreamDelta struct {

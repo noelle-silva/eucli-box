@@ -32,25 +32,59 @@ func TestReadReturnsLineWindowAndHash(t *testing.T) {
 	}
 }
 
-func TestWriteRejectsOutsideWorkspaceRoot(t *testing.T) {
+func TestAbsolutePathOutsideBaseCanBeReadWrittenAndEdited(t *testing.T) {
 	root := t.TempDir()
 	outside := t.TempDir()
-
-	output := Execute(context.Background(), toolInput(root, map[string]any{
+	target := filepath.Join(outside, "external.txt")
+	writeInput := toolInput(root, map[string]any{
 		"action":  "write",
-		"path":    filepath.Join(outside, "escape.txt"),
-		"content": "nope",
-	}))
+		"path":    target,
+		"content": "alpha\n",
+	})
 
-	if output.Status != types.ToolStatusFailed {
-		t.Fatalf("expected failed status, got %s", output.Status)
+	output := Execute(context.Background(), writeInput)
+
+	if output.Status != types.ToolStatusSuccess {
+		t.Fatalf("status = %s, error = %s", output.Status, output.Error)
 	}
-	if _, err := os.Stat(filepath.Join(outside, "escape.txt")); !os.IsNotExist(err) {
-		t.Fatalf("outside file was created or stat failed unexpectedly: %v", err)
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "alpha\n" {
+		t.Fatalf("outside write content = %q", string(data))
+	}
+
+	output = Execute(context.Background(), toolInput(root, map[string]any{
+		"action": "read",
+		"path":   target,
+	}))
+	if output.Status != types.ToolStatusSuccess {
+		t.Fatalf("status = %s, error = %s", output.Status, output.Error)
+	}
+	if !strings.Contains(output.Content, "1: alpha") {
+		t.Fatalf("outside read content = %q", output.Content)
+	}
+
+	output = Execute(context.Background(), toolInput(root, map[string]any{
+		"action":    "edit",
+		"path":      target,
+		"oldString": "alpha",
+		"newString": "beta",
+	}))
+	if output.Status != types.ToolStatusSuccess {
+		t.Fatalf("status = %s, error = %s", output.Status, output.Error)
+	}
+	data, err = os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "beta\n" {
+		t.Fatalf("outside edit content = %q", string(data))
 	}
 }
 
-func TestDefaultWorkspaceRootWorksThroughSymlinkEntry(t *testing.T) {
+func TestRelativePathsWorkThroughSymlinkBaseDirectory(t *testing.T) {
 	realRoot := t.TempDir()
 	writeTestFile(t, filepath.Join(realRoot, "inside.txt"), "inside\n")
 	linkRoot := filepath.Join(t.TempDir(), "linked-root")
@@ -65,7 +99,7 @@ func TestDefaultWorkspaceRootWorksThroughSymlinkEntry(t *testing.T) {
 			"action": "read",
 			"path":   "inside.txt",
 		},
-		DefaultConfig:        map[string]any{"workspaceRoots": []any{}},
+		DefaultConfig:        map[string]any{},
 		HostWorkingDirectory: linkRoot,
 	})
 
@@ -73,26 +107,39 @@ func TestDefaultWorkspaceRootWorksThroughSymlinkEntry(t *testing.T) {
 		t.Fatalf("status = %s, error = %s", output.Status, output.Error)
 	}
 	if !strings.Contains(output.Content, "inside") {
-		t.Fatalf("expected symlink workspace read content, got %q", output.Content)
+		t.Fatalf("expected symlink base read content, got %q", output.Content)
 	}
 }
 
-func TestToolCallCannotOverrideWorkspaceRoots(t *testing.T) {
+func TestSearchCanUseAbsolutePathOutsideBase(t *testing.T) {
 	root := t.TempDir()
 	outside := t.TempDir()
-	writeTestFile(t, filepath.Join(outside, "secret.txt"), "secret\n")
+	searchRoot := filepath.Join(outside, "search")
+	writeTestFile(t, filepath.Join(searchRoot, "hit.txt"), "needle\n")
 
 	output := Execute(context.Background(), toolInput(root, map[string]any{
-		"action":         "read",
-		"path":           filepath.Join(outside, "secret.txt"),
-		"workspaceRoots": []any{outside},
+		"action":  "glob",
+		"path":    searchRoot,
+		"pattern": "*.txt",
 	}))
 
-	if output.Status != types.ToolStatusFailed {
-		t.Fatalf("expected failed status, got %s", output.Status)
+	if output.Status != types.ToolStatusSuccess {
+		t.Fatalf("status = %s, error = %s", output.Status, output.Error)
 	}
-	if !strings.Contains(output.Error, "configuration-only") {
-		t.Fatalf("expected configuration-only error, got %q", output.Error)
+	if !strings.Contains(output.Content, "hit.txt") {
+		t.Fatalf("expected outside glob result, got %q", output.Content)
+	}
+
+	output = Execute(context.Background(), toolInput(root, map[string]any{
+		"action": "grep",
+		"path":   searchRoot,
+		"query":  "needle",
+	}))
+	if output.Status != types.ToolStatusSuccess {
+		t.Fatalf("status = %s, error = %s", output.Status, output.Error)
+	}
+	if !strings.Contains(output.Content, "hit.txt") {
+		t.Fatalf("expected outside grep result, got %q", output.Content)
 	}
 }
 
@@ -300,6 +347,34 @@ func TestApplyPatchRejectsDeletingBinaryFile(t *testing.T) {
 	}
 }
 
+func TestApplyPatchCanAddFileOutsideBase(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	target := filepath.Join(outside, "patched.txt")
+	patchText := strings.Join([]string{
+		"*** Begin Patch",
+		"*** Add File: " + target,
+		"+outside",
+		"*** End Patch",
+	}, "\n")
+
+	output := Execute(context.Background(), toolInput(root, map[string]any{
+		"action":    "apply_patch",
+		"patchText": patchText,
+	}))
+
+	if output.Status != types.ToolStatusSuccess {
+		t.Fatalf("status = %s, error = %s", output.Status, output.Error)
+	}
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "outside\n" {
+		t.Fatalf("outside patch content = %q", string(data))
+	}
+}
+
 func TestEditCreateRejectsMalformedExpectedHash(t *testing.T) {
 	root := t.TempDir()
 	target := filepath.Join(root, "created.txt")
@@ -458,7 +533,7 @@ func toolInput(root string, arguments map[string]any) types.ToolExecutionInput {
 		ActionID:             "test-action",
 		ToolName:             "file_operator",
 		Arguments:            arguments,
-		DefaultConfig:        map[string]any{"workspaceRoots": []any{root}},
+		DefaultConfig:        map[string]any{},
 		HostWorkingDirectory: root,
 	}
 }

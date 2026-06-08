@@ -3,7 +3,6 @@ package fileoperator
 import (
 	"fmt"
 	"math"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -20,7 +19,6 @@ const (
 )
 
 type Config struct {
-	WorkspaceRoots   []string
 	MaxFileBytes     int64
 	DefaultReadLines int
 	MaxReadLines     int
@@ -39,10 +37,6 @@ func loadConfig(input types.ToolExecutionInput) (Config, error) {
 		MaxSearchResults: defaultMaxSearchResult,
 	}
 	var err error
-	config.WorkspaceRoots, err = mergedStringSlice(input, "workspaceRoots")
-	if err != nil {
-		return Config{}, err
-	}
 	if config.MaxFileBytes, err = mergedInt64(input, "maxFileBytes", config.MaxFileBytes); err != nil {
 		return Config{}, err
 	}
@@ -97,7 +91,6 @@ func mergedValue(input types.ToolExecutionInput, key string) (any, bool) {
 
 func rejectConfigArguments(input types.ToolExecutionInput) error {
 	configKeys := []string{
-		"workspaceRoots",
 		"maxFileBytes",
 		"defaultReadLines",
 		"maxReadLines",
@@ -115,14 +108,6 @@ func rejectConfigArguments(input types.ToolExecutionInput) error {
 func argumentValue(input types.ToolExecutionInput, key string) (any, bool) {
 	value, ok := input.Arguments[key]
 	return value, ok && value != nil
-}
-
-func mergedString(input types.ToolExecutionInput, key string) (string, error) {
-	value, ok := mergedValue(input, key)
-	if !ok {
-		return "", nil
-	}
-	return stringValue(value, key)
 }
 
 func stringArgument(input types.ToolExecutionInput, key string, required bool) (string, error) {
@@ -188,45 +173,6 @@ func mergedInt64(input types.ToolExecutionInput, key string, fallback int64) (in
 		return 0, err
 	}
 	return int64(parsed), nil
-}
-
-func mergedStringSlice(input types.ToolExecutionInput, key string) ([]string, error) {
-	value, ok := mergedValue(input, key)
-	if !ok {
-		return nil, nil
-	}
-	switch typed := value.(type) {
-	case []string:
-		return cleanStringSlice(typed), nil
-	case []any:
-		items := make([]string, 0, len(typed))
-		for _, item := range typed {
-			text, ok := item.(string)
-			if !ok {
-				return nil, fmt.Errorf("config %q must contain only strings", key)
-			}
-			items = append(items, text)
-		}
-		return cleanStringSlice(items), nil
-	case string:
-		if strings.TrimSpace(typed) == "" {
-			return nil, nil
-		}
-		return cleanStringSlice(strings.Split(typed, string(filepath.ListSeparator))), nil
-	default:
-		return nil, fmt.Errorf("config %q must be a string array", key)
-	}
-}
-
-func cleanStringSlice(items []string) []string {
-	cleaned := make([]string, 0, len(items))
-	for _, item := range items {
-		item = strings.TrimSpace(item)
-		if item != "" {
-			cleaned = append(cleaned, item)
-		}
-	}
-	return cleaned
 }
 
 func stringValue(value any, key string) (string, error) {

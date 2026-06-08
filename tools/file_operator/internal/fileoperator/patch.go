@@ -174,7 +174,7 @@ func planAdd(operation patchOperation, config Config, policy PathPolicy) ([]patc
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
-	if err := ensureParentInsidePolicy(policy, resolved.Absolute); err != nil {
+	if err := ensureParentCreatable(resolved.Absolute); err != nil {
 		return nil, err
 	}
 	content, err := addedPatchContent(operation.Lines)
@@ -235,7 +235,7 @@ func planMoveUpdate(operation patchOperation, config Config, policy PathPolicy) 
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
-	if err := ensureParentInsidePolicy(policy, target.Absolute); err != nil {
+	if err := ensureParentCreatable(target.Absolute); err != nil {
 		return nil, err
 	}
 	original, _, err := readTextFile(source.Absolute, config.MaxFileBytes)

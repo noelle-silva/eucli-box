@@ -90,7 +90,7 @@ func createMissingByEdit(config Config, policy PathPolicy, resolved ResolvedPath
 	} else if !os.IsNotExist(err) {
 		return failure("edit file", err, metadata)
 	}
-	if err := ensureParentInsidePolicy(policy, resolved.Absolute); err != nil {
+	if err := ensureParentCreatable(resolved.Absolute); err != nil {
 		return failure("resolve edit parent", err, metadata)
 	}
 	contentBytes := []byte(content)

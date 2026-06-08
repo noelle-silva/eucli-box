@@ -78,7 +78,7 @@ func runGlob(ctx context.Context, input types.ToolExecutionInput, config Config,
 		if err != nil {
 			return nil
 		}
-		results = append(results, pathMatch{Path: path, Display: displayPath(policy.hostRoot, path), IsDir: entry.IsDir(), Size: info.Size(), Modified: info.ModTime().UnixNano()})
+		results = append(results, pathMatch{Path: path, Display: displayPath(policy.baseDir, path), IsDir: entry.IsDir(), Size: info.Size(), Modified: info.ModTime().UnixNano()})
 		return nil
 	})
 	if walkErr != nil {

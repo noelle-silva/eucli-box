@@ -19,9 +19,9 @@ func Execute(ctx context.Context, input types.ToolExecutionInput) types.ToolExec
 	if err != nil {
 		return failure("load file_operator config", err, nil)
 	}
-	policy, err := newPathPolicy(input.HostWorkingDirectory, config)
+	policy, err := newPathPolicy(input.HostWorkingDirectory)
 	if err != nil {
-		return failure("resolve file_operator workspace roots", err, nil)
+		return failure("resolve file_operator base directory", err, nil)
 	}
 	action, err := stringArgument(input, "action", true)
 	if err != nil {
@@ -50,10 +50,9 @@ func Execute(ctx context.Context, input types.ToolExecutionInput) types.ToolExec
 
 func baseMetadata(action string, resolved ResolvedPath) map[string]any {
 	return map[string]any{
-		"action":        action,
-		"path":          resolved.Display,
-		"absolutePath":  resolved.Absolute,
-		"workspaceRoot": resolved.Root,
+		"action":       action,
+		"path":         resolved.Display,
+		"absolutePath": resolved.Absolute,
 	}
 }
 

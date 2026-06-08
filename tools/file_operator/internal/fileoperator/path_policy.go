@@ -4,77 +4,40 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 )
 
 type PathPolicy struct {
-	hostRoot string
-	roots    []string
+	baseDir string
 }
 
 type ResolvedPath struct {
 	Requested string
 	Absolute  string
 	Display   string
-	Root      string
 }
 
-func newPathPolicy(hostWorkingDirectory string, config Config) (PathPolicy, error) {
-	hostRootInput, err := filepath.Abs(strings.TrimSpace(hostWorkingDirectory))
+func newPathPolicy(hostWorkingDirectory string) (PathPolicy, error) {
+	baseInput, err := filepath.Abs(strings.TrimSpace(hostWorkingDirectory))
 	if err != nil {
-		return PathPolicy{}, fmt.Errorf("resolve host working directory: %w", err)
+		return PathPolicy{}, fmt.Errorf("resolve base directory: %w", err)
 	}
-	info, err := os.Stat(hostRootInput)
+	info, err := os.Stat(baseInput)
 	if err != nil {
-		return PathPolicy{}, fmt.Errorf("host working directory does not exist: %w", err)
+		return PathPolicy{}, fmt.Errorf("base directory does not exist: %w", err)
 	}
 	if !info.IsDir() {
-		return PathPolicy{}, fmt.Errorf("host working directory is not a directory")
+		return PathPolicy{}, fmt.Errorf("base directory is not a directory")
 	}
-	hostRootReal, err := filepath.EvalSymlinks(hostRootInput)
+	baseReal, err := filepath.EvalSymlinks(baseInput)
 	if err != nil {
-		return PathPolicy{}, fmt.Errorf("resolve host working directory symlink: %w", err)
+		return PathPolicy{}, fmt.Errorf("resolve base directory symlink: %w", err)
 	}
-	hostRoot, err := filepath.Abs(hostRootReal)
+	baseDir, err := filepath.Abs(baseReal)
 	if err != nil {
-		return PathPolicy{}, fmt.Errorf("resolve real host working directory: %w", err)
+		return PathPolicy{}, fmt.Errorf("resolve real base directory: %w", err)
 	}
-	hostRoot = filepath.Clean(hostRoot)
-	roots := config.WorkspaceRoots
-	if len(roots) == 0 {
-		roots = []string{hostRoot}
-	}
-	resolvedRoots := make([]string, 0, len(roots))
-	for _, root := range roots {
-		root = strings.TrimSpace(root)
-		if root == "" {
-			continue
-		}
-		if !filepath.IsAbs(root) {
-			root = filepath.Join(hostRoot, root)
-		}
-		absRoot, err := filepath.Abs(root)
-		if err != nil {
-			return PathPolicy{}, fmt.Errorf("resolve workspace root %q: %w", root, err)
-		}
-		info, err := os.Stat(absRoot)
-		if err != nil {
-			return PathPolicy{}, fmt.Errorf("workspace root does not exist %q: %w", absRoot, err)
-		}
-		if !info.IsDir() {
-			return PathPolicy{}, fmt.Errorf("workspace root is not a directory: %q", absRoot)
-		}
-		realRoot, err := filepath.EvalSymlinks(absRoot)
-		if err != nil {
-			return PathPolicy{}, fmt.Errorf("resolve workspace root symlink %q: %w", absRoot, err)
-		}
-		resolvedRoots = append(resolvedRoots, filepath.Clean(realRoot))
-	}
-	if len(resolvedRoots) == 0 {
-		return PathPolicy{}, fmt.Errorf("at least one workspace root is required")
-	}
-	return PathPolicy{hostRoot: hostRoot, roots: resolvedRoots}, nil
+	return PathPolicy{baseDir: filepath.Clean(baseDir)}, nil
 }
 
 func (p PathPolicy) Resolve(inputPath string) (ResolvedPath, error) {
@@ -87,7 +50,7 @@ func (p PathPolicy) Resolve(inputPath string) (ResolvedPath, error) {
 	}
 	resolved := requested
 	if !filepath.IsAbs(resolved) {
-		resolved = filepath.Join(p.hostRoot, resolved)
+		resolved = filepath.Join(p.baseDir, resolved)
 	}
 	abs, err := filepath.Abs(resolved)
 	if err != nil {
@@ -97,15 +60,11 @@ func (p PathPolicy) Resolve(inputPath string) (ResolvedPath, error) {
 	if err != nil {
 		return ResolvedPath{}, fmt.Errorf("resolve real path: %w", err)
 	}
-	root, ok := p.allowedRoot(abs)
-	if !ok {
-		return ResolvedPath{}, fmt.Errorf("path is outside workspace roots: %s", abs)
-	}
 	display := abs
-	if rel, err := filepath.Rel(p.hostRoot, abs); err == nil && rel != "." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".." {
+	if rel, err := filepath.Rel(p.baseDir, abs); err == nil && rel != "." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".." {
 		display = filepath.ToSlash(rel)
 	}
-	return ResolvedPath{Requested: requested, Absolute: abs, Display: display, Root: root}, nil
+	return ResolvedPath{Requested: requested, Absolute: abs, Display: display}, nil
 }
 
 func (p PathPolicy) ResolveExisting(inputPath string) (ResolvedPath, error) {
@@ -144,26 +103,6 @@ func (p PathPolicy) canonicalPath(path string) (string, error) {
 	return filepath.Clean(filepath.Join(realParent, rel)), nil
 }
 
-func (p PathPolicy) allowedRoot(path string) (string, bool) {
-	for _, root := range p.roots {
-		if pathWithin(root, path) {
-			return root, true
-		}
-	}
-	return "", false
-}
-
-func pathWithin(base string, child string) bool {
-	base = filepath.Clean(base)
-	child = filepath.Clean(child)
-	if runtime.GOOS == "windows" {
-		base = strings.ToLower(base)
-		child = strings.ToLower(child)
-	}
-	rel, err := filepath.Rel(base, child)
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
-}
-
 func nearestExistingParent(path string) (string, error) {
 	current := filepath.Clean(path)
 	for {
@@ -185,17 +124,23 @@ func nearestExistingParent(path string) (string, error) {
 	}
 }
 
-func ensureParentInsidePolicy(policy PathPolicy, path string) error {
-	parent, err := nearestExistingParent(path)
-	if err != nil {
-		return err
+func ensureParentCreatable(path string) error {
+	current := filepath.Clean(filepath.Dir(path))
+	for {
+		info, err := os.Stat(current)
+		if err == nil {
+			if !info.IsDir() {
+				return fmt.Errorf("parent path is not a directory: %s", current)
+			}
+			return nil
+		}
+		if !os.IsNotExist(err) {
+			return err
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return fmt.Errorf("no existing parent found for %s", path)
+		}
+		current = parent
 	}
-	realParent, err := filepath.EvalSymlinks(parent)
-	if err != nil {
-		return err
-	}
-	if _, ok := policy.allowedRoot(filepath.Clean(realParent)); !ok {
-		return fmt.Errorf("parent directory is outside workspace roots: %s", realParent)
-	}
-	return nil
 }

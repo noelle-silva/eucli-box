@@ -20,7 +20,7 @@ func runWrite(input types.ToolExecutionInput, config Config, policy PathPolicy) 
 	if err != nil {
 		return failure("resolve write path", err, nil)
 	}
-	if err := ensureParentInsidePolicy(policy, resolved.Absolute); err != nil {
+	if err := ensureParentCreatable(resolved.Absolute); err != nil {
 		return failure("resolve write parent", err, baseMetadata("write", resolved))
 	}
 	metadata := baseMetadata("write", resolved)

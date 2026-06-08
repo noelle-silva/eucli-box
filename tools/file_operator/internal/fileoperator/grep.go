@@ -156,7 +156,7 @@ func grepFile(path string, root string, compiled *regexp.Regexp, include string,
 	lines := splitLines(string(data))
 	for index, line := range lines {
 		if compiled.MatchString(line) {
-			if !collector.Add(grepMatch{Path: displayPath(policy.hostRoot, resolved.Absolute), Line: index + 1, Text: line}) {
+			if !collector.Add(grepMatch{Path: displayPath(policy.baseDir, resolved.Absolute), Line: index + 1, Text: line}) {
 				return nil
 			}
 		}

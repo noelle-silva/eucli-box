@@ -59,6 +59,49 @@ func TestChatProjectionPreservesMessageParts(t *testing.T) {
 	}
 }
 
+func TestChatProjectionPreservesReasoningParts(t *testing.T) {
+	session := map[string]any{
+		"id":        "session-1",
+		"roleId":    "developer",
+		"title":     "Reasoning Parts",
+		"createdAt": "2026-06-03T10:00:00Z",
+		"updatedAt": "2026-06-03T10:00:00Z",
+		"messages": []any{map[string]any{
+			"id":              "m1",
+			"type":            "assistant",
+			"content":         "正式回答",
+			"parentMessageId": "u1",
+			"branchId":        "main",
+			"createdAt":       "2026-06-03T10:00:00Z",
+			"updatedAt":       "2026-06-03T10:00:00Z",
+			"parts": []any{map[string]any{
+				"id":     "reasoning-1",
+				"type":   "reasoning",
+				"text":   "先看上下文，再组织答案",
+				"source": "model",
+			}},
+		}},
+	}
+
+	ui := toUIChat(session)
+	messages := objectList(ui["messages"])
+	if len(messages) != 1 {
+		t.Fatalf("messages = %#v", ui["messages"])
+	}
+	if parts := objectList(messages[0]["parts"]); len(parts) != 1 || stringField(parts[0], "type") != "reasoning" || stringField(parts[0], "text") != "先看上下文，再组织答案" {
+		t.Fatalf("ui reasoning parts = %#v", messages[0]["parts"])
+	}
+
+	back := fromUIChat(ui, "developer")
+	backMessages := objectList(back["messages"])
+	if len(backMessages) != 1 {
+		t.Fatalf("back messages = %#v", back["messages"])
+	}
+	if parts := objectList(backMessages[0]["parts"]); len(parts) != 1 || stringField(parts[0], "type") != "reasoning" || stringField(parts[0], "source") != "model" {
+		t.Fatalf("back reasoning parts = %#v", backMessages[0]["parts"])
+	}
+}
+
 func TestChatProjectionPreservesReasoningEffort(t *testing.T) {
 	session := map[string]any{
 		"id":        "session-1",

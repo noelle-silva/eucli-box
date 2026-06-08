@@ -222,8 +222,33 @@ func updateRunAssistantContent(record *runRecord, content string) {
 	record.lastMessageID = record.messageParent.ID
 }
 
+func updateRunAssistantReasoning(record *runRecord, reasoning string, source string, signature string, data string) {
+	if _, ok := activeRunAssistant(record); !ok {
+		appendRunAssistantReply(record, "")
+	}
+	now := time.Now().UTC()
+	messageID := strings.TrimSpace(record.activeAssistantID)
+	if messageID == "" {
+		messageID = record.messageParent.ID
+	}
+	setMessageReasoningPart(&record.messageParent, reasoning, source, signature, data, now)
+	record.messageParent.UpdatedAt = now
+	for index := range record.session.Messages {
+		if record.session.Messages[index].ID != messageID {
+			continue
+		}
+		setMessageReasoningPart(&record.session.Messages[index], reasoning, source, signature, data, now)
+		record.session.Messages[index].UpdatedAt = now
+		record.messageParent = record.session.Messages[index]
+		break
+	}
+	record.session.UpdatedAt = now
+	record.session.LastActive = now
+	record.lastMessageID = record.messageParent.ID
+}
+
 func dropEmptyAssistantOutput(record *runRecord) {
-	if record.messageParent.Type != "assistant" || strings.TrimSpace(record.messageParent.ID) == "" || strings.TrimSpace(record.messageParent.Content) != "" || hasToolParts(record.messageParent) {
+	if record.messageParent.Type != "assistant" || strings.TrimSpace(record.messageParent.ID) == "" || strings.TrimSpace(record.messageParent.Content) != "" || hasToolParts(record.messageParent) || hasReasoningParts(record.messageParent) {
 		return
 	}
 	if len(record.session.Messages) == 0 || record.session.Messages[len(record.session.Messages)-1].ID != record.messageParent.ID {

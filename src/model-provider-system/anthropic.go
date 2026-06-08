@@ -21,11 +21,14 @@ type anthropicModelListResponse struct {
 type anthropicCompleteResponse struct {
 	ID      string `json:"id"`
 	Content []struct {
-		Type  string         `json:"type"`
-		Text  string         `json:"text"`
-		ID    string         `json:"id"`
-		Name  string         `json:"name"`
-		Input map[string]any `json:"input"`
+		Type      string         `json:"type"`
+		Text      string         `json:"text"`
+		Thinking  string         `json:"thinking"`
+		Signature string         `json:"signature"`
+		Data      string         `json:"data"`
+		ID        string         `json:"id"`
+		Name      string         `json:"name"`
+		Input     map[string]any `json:"input"`
 	} `json:"content"`
 }
 
@@ -36,15 +39,20 @@ type anthropicStreamPayload struct {
 	} `json:"message"`
 	Index        int `json:"index"`
 	ContentBlock struct {
-		Type  string         `json:"type"`
-		Text  string         `json:"text"`
-		ID    string         `json:"id"`
-		Name  string         `json:"name"`
-		Input map[string]any `json:"input"`
+		Type      string         `json:"type"`
+		Text      string         `json:"text"`
+		Thinking  string         `json:"thinking"`
+		Signature string         `json:"signature"`
+		Data      string         `json:"data"`
+		ID        string         `json:"id"`
+		Name      string         `json:"name"`
+		Input     map[string]any `json:"input"`
 	} `json:"content_block"`
 	Delta struct {
 		Type        string `json:"type"`
 		Text        string `json:"text"`
+		Thinking    string `json:"thinking"`
+		Signature   string `json:"signature"`
 		PartialJSON string `json:"partial_json"`
 	} `json:"delta"`
 }
@@ -57,12 +65,15 @@ type anthropicToolUseBuilder struct {
 }
 
 type anthropicStreamParser struct {
-	sse       *sseParser
-	onEvent   types.ModelStreamHandler
-	id        string
-	content   strings.Builder
-	toolUses  map[int]*anthropicToolUseBuilder
-	createdAt time.Time
+	sse                *sseParser
+	onEvent            types.ModelStreamHandler
+	id                 string
+	content            strings.Builder
+	reasoning          strings.Builder
+	reasoningSignature string
+	reasoningData      string
+	toolUses           map[int]*anthropicToolUseBuilder
+	createdAt          time.Time
 }
 
 func (anthropicAdapter) BuildListModelsRequest(provider types.Provider, timeout int64) (types.HTTPRequest, error) {
@@ -172,7 +183,7 @@ func (p *anthropicStreamParser) Finish(response types.HTTPResponse) (types.Model
 	if err := p.sse.Finish(); err != nil {
 		return types.ModelResponse{}, err
 	}
-	result := types.ModelResponse{ID: p.id, Content: p.content.String(), Raw: response.Body, CreatedAt: p.createdAt}
+	result := types.ModelResponse{ID: p.id, Content: p.content.String(), Reasoning: p.reasoning.String(), ReasoningSource: "an", ReasoningSignature: p.reasoningSignature, ReasoningData: p.reasoningData, Raw: response.Body, CreatedAt: p.createdAt}
 	indexes := make([]int, 0, len(p.toolUses))
 	for index := range p.toolUses {
 		indexes = append(indexes, index)
@@ -223,6 +234,11 @@ func (p *anthropicStreamParser) acceptEvent(event sseEvent) error {
 		if payload.ContentBlock.Type == "text" && payload.ContentBlock.Text != "" {
 			return p.appendText(payload.ContentBlock.Text)
 		}
+		if payload.ContentBlock.Type == "thinking" {
+			p.reasoningSignature = strings.TrimSpace(payload.ContentBlock.Signature)
+			p.reasoningData = strings.TrimSpace(payload.ContentBlock.Data)
+			return p.appendReasoning(payload.ContentBlock.Thinking)
+		}
 		if payload.ContentBlock.Type == "tool_use" {
 			builder := p.toolUses[payload.Index]
 			if builder == nil {
@@ -237,6 +253,14 @@ func (p *anthropicStreamParser) acceptEvent(event sseEvent) error {
 		switch payload.Delta.Type {
 		case "text_delta":
 			return p.appendText(payload.Delta.Text)
+		case "thinking_delta":
+			return p.appendReasoning(payload.Delta.Thinking)
+		case "signature_delta":
+			p.reasoningSignature += payload.Delta.Signature
+			if p.onEvent == nil {
+				return nil
+			}
+			return p.onEvent(types.ModelStreamEvent{Type: types.ModelStreamEventReasoningDelta, Reasoning: p.reasoning.String(), ReasoningSource: "an", ReasoningSignature: p.reasoningSignature, ReasoningData: p.reasoningData, CreatedAt: time.Now().UTC()})
 		case "input_json_delta":
 			builder := p.toolUses[payload.Index]
 			if builder == nil {
@@ -260,6 +284,17 @@ func (p *anthropicStreamParser) appendText(delta string) error {
 	return p.onEvent(types.ModelStreamEvent{Type: types.ModelStreamEventContentDelta, ContentDelta: delta, Content: p.content.String(), CreatedAt: time.Now().UTC()})
 }
 
+func (p *anthropicStreamParser) appendReasoning(delta string) error {
+	if delta == "" {
+		return nil
+	}
+	p.reasoning.WriteString(delta)
+	if p.onEvent == nil {
+		return nil
+	}
+	return p.onEvent(types.ModelStreamEvent{Type: types.ModelStreamEventReasoningDelta, ReasoningDelta: delta, Reasoning: p.reasoning.String(), ReasoningSource: "an", ReasoningSignature: p.reasoningSignature, ReasoningData: p.reasoningData, CreatedAt: time.Now().UTC()})
+}
+
 func (anthropicAdapter) ParseCompleteResponse(response types.HTTPResponse) (types.ModelResponse, error) {
 	if err := requireSuccess(response); err != nil {
 		return types.ModelResponse{}, err
@@ -278,9 +313,23 @@ func (anthropicAdapter) ParseCompleteResponse(response types.HTTPResponse) (type
 			} else {
 				result.Content += "\n" + item.Text
 			}
+		case "thinking":
+			if item.Thinking == "" && item.Signature == "" && item.Data == "" {
+				continue
+			}
+			if result.Reasoning == "" {
+				result.Reasoning = item.Thinking
+			} else {
+				result.Reasoning += item.Thinking
+			}
+			result.ReasoningSignature = strings.TrimSpace(item.Signature)
+			result.ReasoningData = strings.TrimSpace(item.Data)
 		case "tool_use":
 			result.ToolIntents = append(result.ToolIntents, types.ToolIntent{ID: item.ID, ToolName: item.Name, Arguments: item.Input, Source: types.ToolCallSourceNative, CreatedAt: createdAt})
 		}
+	}
+	if strings.TrimSpace(result.Reasoning) != "" || strings.TrimSpace(result.ReasoningSignature) != "" || strings.TrimSpace(result.ReasoningData) != "" {
+		result.ReasoningSource = "an"
 	}
 	return result, nil
 }
@@ -307,31 +356,55 @@ func anthropicMessages(messages []types.PromptMessage) ([]map[string]any, string
 				if err != nil {
 					return nil, "", err
 				}
-				converted = append(converted, map[string]any{"role": "assistant", "content": content})
+				converted = append(converted, map[string]any{"role": "assistant", "content": appendAnthropicReasoningContent(content, message)})
 				resultBlocks := anthropicToolResultBlocks(nativeToolParts)
 				if len(resultBlocks) > 0 {
 					converted = append(converted, map[string]any{"role": "user", "content": resultBlocks})
 				}
-				if text := textProtocolToolResultsText(textProtocolResultParts); text != "" {
-					converted = append(converted, map[string]any{"role": "user", "content": text})
-				}
+				converted = appendUserTextObservation(converted, textProtocolToolResultsText(textProtocolResultParts))
 				continue
 			}
 			content, err := anthropicMessageContent(message)
 			if err != nil {
 				return nil, "", err
 			}
+			if message.Role == "assistant" {
+				content = appendAnthropicReasoningContent(content, message)
+			}
 			converted = append(converted, map[string]any{"role": message.Role, "content": content})
 			if message.Role == "assistant" {
-				if text := textProtocolToolResultsText(textProtocolResultParts); text != "" {
-					converted = append(converted, map[string]any{"role": "user", "content": text})
-				}
+				converted = appendUserTextObservation(converted, textProtocolToolResultsText(textProtocolResultParts))
 			}
 		default:
 			return nil, "", providerInvalid("Anthropic messages only support system, user, and assistant roles", nil)
 		}
 	}
 	return converted, systemText, nil
+}
+
+func appendAnthropicReasoningContent(content any, message types.PromptMessage) any {
+	thinkingText := promptReasoningText(message)
+	carrierPart, hasCarrier := firstPromptReasoningPartForSource(message, "an")
+	if thinkingText == "" && !hasCarrier {
+		return content
+	}
+	block := map[string]any{"type": "thinking", "thinking": thinkingText}
+	if signature := strings.TrimSpace(carrierPart.Signature); signature != "" {
+		block["signature"] = signature
+	}
+	if data := strings.TrimSpace(carrierPart.Data); data != "" {
+		block["data"] = data
+	}
+	blocks, ok := content.([]map[string]any)
+	if ok {
+		return append([]map[string]any{block}, blocks...)
+	}
+	// content is a plain string (正文为空时返回 "")
+	// 当正文为空时，thinking 块作为唯一内容块，不额外加 text 块
+	if strings.TrimSpace(message.Content) == "" {
+		return []map[string]any{block}
+	}
+	return []map[string]any{block, map[string]any{"type": "text", "text": message.Content}}
 }
 
 func anthropicAssistantToolContent(message types.PromptMessage, toolParts []types.MessagePart) ([]map[string]any, error) {

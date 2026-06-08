@@ -98,6 +98,7 @@ function partPreview(part: any): string {
   const type = String((part as any).type || '').trim()
   if (type === 'text') return clampPreview((part as any).text)
   if (type === 'tool') return clampPreview(toolPartPreview(part))
+  if (type === 'reasoning') return ''
   return ''
 }
 

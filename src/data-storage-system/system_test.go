@@ -427,6 +427,81 @@ func TestSessionMessagePartsAreNormalized(t *testing.T) {
 	}
 }
 
+func TestSessionReasoningPartsAreNormalized(t *testing.T) {
+	system := newTestSystem(t)
+	now := time.Date(2026, 5, 30, 10, 0, 0, 0, time.UTC)
+	session := types.Session{
+		ID:        "session-reasoning-parts",
+		RoleID:    "developer",
+		Title:     "Reasoning Parts",
+		Status:    string(types.RunStatusCreated),
+		CreatedAt: now,
+		UpdatedAt: now,
+		Messages: []types.Message{{
+			ID:        "m1",
+			Type:      "assistant",
+			Content:   "正式回答",
+			BranchID:  "main",
+			CreatedAt: now,
+			UpdatedAt: now,
+			Parts:     []types.MessagePart{{Type: "reasoning", Text: "第一步分析\n第二步判断", Source: "model"}},
+		}},
+		LastActive: now,
+	}
+	if err := system.SaveSession(context.Background(), session); err != nil {
+		t.Fatalf("SaveSession() error = %v", err)
+	}
+	loaded, err := system.LoadSession(context.Background(), "developer", "session-reasoning-parts")
+	if err != nil {
+		t.Fatalf("LoadSession() error = %v", err)
+	}
+	if len(loaded.Messages) != 1 || len(loaded.Messages[0].Parts) != 2 {
+		t.Fatalf("parts = %#v", loaded.Messages)
+	}
+	if loaded.Messages[0].Parts[0].Type != "text" || loaded.Messages[0].Parts[0].Text != "正式回答" {
+		t.Fatalf("text part = %#v", loaded.Messages[0].Parts[0])
+	}
+	if loaded.Messages[0].Parts[1].Type != "reasoning" || loaded.Messages[0].Parts[1].Text != "第一步分析\n第二步判断" || loaded.Messages[0].Parts[1].Source != "model" {
+		t.Fatalf("reasoning part = %#v", loaded.Messages[0].Parts[1])
+	}
+}
+
+func TestSessionReasoningPartPreservesSource(t *testing.T) {
+	system := newTestSystem(t)
+	now := time.Date(2026, 5, 30, 10, 30, 0, 0, time.UTC)
+	session := types.Session{
+		ID:        "session-reasoning-source",
+		RoleID:    "developer",
+		Title:     "Reasoning Source",
+		Status:    string(types.RunStatusCreated),
+		CreatedAt: now,
+		UpdatedAt: now,
+		Messages: []types.Message{{
+			ID:        "m1",
+			Type:      "assistant",
+			Content:   "答复",
+			BranchID:  "main",
+			CreatedAt: now,
+			UpdatedAt: now,
+			Parts:     []types.MessagePart{{Type: "reasoning", Text: "按上下文推导", Source: "op"}},
+		}},
+		LastActive: now,
+	}
+	if err := system.SaveSession(context.Background(), session); err != nil {
+		t.Fatalf("SaveSession() error = %v", err)
+	}
+	loaded, err := system.LoadSession(context.Background(), "developer", "session-reasoning-source")
+	if err != nil {
+		t.Fatalf("LoadSession() error = %v", err)
+	}
+	if len(loaded.Messages) != 1 || len(loaded.Messages[0].Parts) != 2 {
+		t.Fatalf("parts = %#v", loaded.Messages)
+	}
+	if loaded.Messages[0].Parts[1].Type != "reasoning" || loaded.Messages[0].Parts[1].Source != "op" {
+		t.Fatalf("reasoning part source = %#v", loaded.Messages[0].Parts[1])
+	}
+}
+
 func TestSaveSessionMessagesRejectsExternallyEditedOwnedMessage(t *testing.T) {
 	system := newTestSystem(t)
 	now := time.Date(2026, 6, 5, 9, 0, 0, 0, time.UTC)

@@ -128,12 +128,27 @@ export function hasAssistantVisibleOutput(message: unknown) {
     if (!part || typeof part !== 'object') return false
     const type = String(part.type || '').trim()
     if (type === 'text') return !!String(part.text || '').trim()
+    if (type === 'reasoning') return !!String(part.text || '').trim()
+    return type === 'tool'
+  })
+}
+
+function hasAssistantPrimaryOutput(message: unknown) {
+  const m = message && typeof message === 'object' ? (message as any) : null
+  if (!m || m.role !== 'assistant') return false
+  const content = String(m.content ?? '').trim()
+  if (content && content !== ASSISTANT_RUNNING_CONTENT) return true
+  const parts = Array.isArray(m.parts) ? m.parts : []
+  return parts.some((part: any) => {
+    if (!part || typeof part !== 'object') return false
+    const type = String(part.type || '').trim()
+    if (type === 'text') return !!String(part.text || '').trim()
     return type === 'tool'
   })
 }
 
 export function isAssistantAwaitingFirstOutput(message: unknown) {
-  return isAssistantGenerating(message) && !hasAssistantVisibleOutput(message)
+  return isAssistantGenerating(message) && !hasAssistantPrimaryOutput(message)
 }
 
 export function assistantRunGenerationId(message: unknown) {

@@ -131,24 +131,34 @@ type ModelRequestConfig struct {
 }
 
 type ModelResponse struct {
-	ID          string       `json:"id"`
-	Content     string       `json:"content"`
-	ToolIntents []ToolIntent `json:"toolIntents,omitempty"`
-	Raw         []byte       `json:"raw,omitempty"`
-	CreatedAt   time.Time    `json:"createdAt"`
+	ID                 string       `json:"id"`
+	Content            string       `json:"content"`
+	Reasoning          string       `json:"reasoning,omitempty"`
+	ReasoningSource    string       `json:"reasoningSource,omitempty"`
+	ReasoningSignature string       `json:"reasoningSignature,omitempty"`
+	ReasoningData      string       `json:"reasoningData,omitempty"`
+	ToolIntents        []ToolIntent `json:"toolIntents,omitempty"`
+	Raw                []byte       `json:"raw,omitempty"`
+	CreatedAt          time.Time    `json:"createdAt"`
 }
 
 type ModelStreamEventType string
 
 const (
-	ModelStreamEventContentDelta ModelStreamEventType = "content_delta"
+	ModelStreamEventContentDelta   ModelStreamEventType = "content_delta"
+	ModelStreamEventReasoningDelta ModelStreamEventType = "reasoning_delta"
 )
 
 type ModelStreamEvent struct {
-	Type         ModelStreamEventType `json:"type"`
-	ContentDelta string               `json:"contentDelta,omitempty"`
-	Content      string               `json:"content,omitempty"`
-	CreatedAt    time.Time            `json:"createdAt"`
+	Type               ModelStreamEventType `json:"type"`
+	ContentDelta       string               `json:"contentDelta,omitempty"`
+	Content            string               `json:"content,omitempty"`
+	ReasoningDelta     string               `json:"reasoningDelta,omitempty"`
+	Reasoning          string               `json:"reasoning,omitempty"`
+	ReasoningSource    string               `json:"reasoningSource,omitempty"`
+	ReasoningSignature string               `json:"reasoningSignature,omitempty"`
+	ReasoningData      string               `json:"reasoningData,omitempty"`
+	CreatedAt          time.Time            `json:"createdAt"`
 }
 
 type ModelStreamHandler func(event ModelStreamEvent) error

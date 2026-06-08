@@ -100,6 +100,13 @@ func textProtocolToolResultsText(parts []types.MessagePart) string {
 	return "External tool results for text protocol requests:\n" + string(data)
 }
 
+func appendUserTextObservation(messages []map[string]any, text string) []map[string]any {
+	if strings.TrimSpace(text) == "" {
+		return messages
+	}
+	return append(messages, map[string]any{"role": "user", "content": text})
+}
+
 func textProtocolToolResultName(part types.MessagePart) string {
 	if strings.TrimSpace(part.ToolName) != "" {
 		return part.ToolName

@@ -166,6 +166,9 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 			} else {
 				updateRunAssistantContent(record, modelResponse.Content)
 			}
+			if strings.TrimSpace(modelResponse.Reasoning) != "" || strings.TrimSpace(modelResponse.ReasoningSignature) != "" || strings.TrimSpace(modelResponse.ReasoningData) != "" {
+				updateRunAssistantReasoning(record, modelResponse.Reasoning, modelResponse.ReasoningSource, modelResponse.ReasoningSignature, modelResponse.ReasoningData)
+			}
 		} else {
 			dropEmptyAssistantOutput(record)
 		}
@@ -213,7 +216,7 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 }
 
 func shouldRecordAssistantOutput(response types.ModelResponse) bool {
-	return strings.TrimSpace(response.Content) != "" || len(response.ToolIntents) == 0
+	return strings.TrimSpace(response.Content) != "" || strings.TrimSpace(response.Reasoning) != "" || strings.TrimSpace(response.ReasoningSignature) != "" || strings.TrimSpace(response.ReasoningData) != "" || len(response.ToolIntents) == 0
 }
 
 func (s *system) mergeTextToolRequests(ctx context.Context, response types.ModelResponse) (types.ModelResponse, error) {

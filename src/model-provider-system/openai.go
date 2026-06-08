@@ -22,8 +22,10 @@ type openAICompleteResponse struct {
 	ID      string `json:"id"`
 	Choices []struct {
 		Message struct {
-			Content   string `json:"content"`
-			ToolCalls []struct {
+			Content          string          `json:"content"`
+			ReasoningContent string          `json:"reasoning_content"`
+			Reasoning        json.RawMessage `json:"reasoning"`
+			ToolCalls        []struct {
 				ID       string `json:"id"`
 				Function struct {
 					Name      string `json:"name"`
@@ -38,8 +40,10 @@ type openAIStreamResponse struct {
 	ID      string `json:"id"`
 	Choices []struct {
 		Delta struct {
-			Content   string `json:"content"`
-			ToolCalls []struct {
+			Content          string          `json:"content"`
+			ReasoningContent string          `json:"reasoning_content"`
+			Reasoning        json.RawMessage `json:"reasoning"`
+			ToolCalls        []struct {
 				Index    int    `json:"index"`
 				ID       string `json:"id"`
 				Function struct {
@@ -58,12 +62,18 @@ type openAIToolCallBuilder struct {
 }
 
 type openAIStreamParser struct {
-	sse       *sseParser
-	onEvent   types.ModelStreamHandler
-	id        string
-	content   strings.Builder
-	toolCalls map[int]*openAIToolCallBuilder
-	createdAt time.Time
+	sse           *sseParser
+	onEvent       types.ModelStreamHandler
+	id            string
+	content       strings.Builder
+	reasoning     strings.Builder
+	reasoningData string
+	toolCalls     map[int]*openAIToolCallBuilder
+	createdAt     time.Time
+}
+
+type openAIReasoningPayload struct {
+	EncryptedContent string `json:"encrypted_content"`
 }
 
 func (openAIAdapter) BuildListModelsRequest(provider types.Provider, timeout int64) (types.HTTPRequest, error) {
@@ -162,7 +172,7 @@ func (p *openAIStreamParser) Finish(response types.HTTPResponse) (types.ModelRes
 	if err := p.sse.Finish(); err != nil {
 		return types.ModelResponse{}, err
 	}
-	result := types.ModelResponse{ID: p.id, Content: p.content.String(), Raw: response.Body, CreatedAt: p.createdAt}
+	result := types.ModelResponse{ID: p.id, Content: p.content.String(), Reasoning: p.reasoning.String(), ReasoningSource: "op", ReasoningData: p.reasoningData, Raw: response.Body, CreatedAt: p.createdAt}
 	indexes := make([]int, 0, len(p.toolCalls))
 	for index := range p.toolCalls {
 		indexes = append(indexes, index)
@@ -207,6 +217,27 @@ func (p *openAIStreamParser) acceptEvent(event sseEvent) error {
 				}
 			}
 		}
+		reasoningDelta := choice.Delta.ReasoningContent
+		reasoningData := ""
+		if text, data, err := parseOpenAIReasoningPayload(choice.Delta.Reasoning); err != nil {
+			return providerParseFailed("failed to parse OpenAI stream reasoning payload", err)
+		} else {
+			if reasoningDelta == "" {
+				reasoningDelta = text
+			}
+			reasoningData = data
+		}
+		if reasoningDelta != "" {
+			p.reasoning.WriteString(reasoningDelta)
+		}
+		if reasoningData != "" {
+			p.reasoningData = reasoningData
+		}
+		if (reasoningDelta != "" || reasoningData != "") && p.onEvent != nil {
+			if err := p.onEvent(types.ModelStreamEvent{Type: types.ModelStreamEventReasoningDelta, ReasoningDelta: reasoningDelta, Reasoning: p.reasoning.String(), ReasoningSource: "op", ReasoningData: p.reasoningData, CreatedAt: time.Now().UTC()}); err != nil {
+				return err
+			}
+		}
 		for _, toolCall := range choice.Delta.ToolCalls {
 			builder := p.toolCalls[toolCall.Index]
 			if builder == nil {
@@ -241,6 +272,18 @@ func (openAIAdapter) ParseCompleteResponse(response types.HTTPResponse) (types.M
 	}
 	message := payload.Choices[0].Message
 	result.Content = message.Content
+	result.Reasoning = message.ReasoningContent
+	text, data, err := parseOpenAIReasoningPayload(message.Reasoning)
+	if err != nil {
+		return types.ModelResponse{}, providerParseFailed("failed to parse OpenAI reasoning payload", err)
+	}
+	if result.Reasoning == "" {
+		result.Reasoning = text
+	}
+	result.ReasoningData = data
+	if strings.TrimSpace(result.Reasoning) != "" || strings.TrimSpace(result.ReasoningData) != "" {
+		result.ReasoningSource = "op"
+	}
 	for _, toolCall := range message.ToolCalls {
 		args, err := parseToolArguments(toolCall.Function.Arguments)
 		if err != nil {
@@ -249,6 +292,28 @@ func (openAIAdapter) ParseCompleteResponse(response types.HTTPResponse) (types.M
 		result.ToolIntents = append(result.ToolIntents, types.ToolIntent{ID: toolCall.ID, ToolName: toolCall.Function.Name, Arguments: args, Source: types.ToolCallSourceNative, Raw: toolCall.Function.Arguments, CreatedAt: result.CreatedAt})
 	}
 	return result, nil
+}
+
+func parseOpenAIReasoningPayload(raw json.RawMessage) (string, string, error) {
+	if len(raw) == 0 {
+		return "", "", nil
+	}
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return "", "", nil
+	}
+	if strings.HasPrefix(trimmed, "\"") {
+		var text string
+		if err := json.Unmarshal(raw, &text); err != nil {
+			return "", "", err
+		}
+		return text, "", nil
+	}
+	var payload openAIReasoningPayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return "", "", err
+	}
+	return "", strings.TrimSpace(payload.EncryptedContent), nil
 }
 
 func openAIMessages(messages []types.PromptMessage) ([]map[string]any, error) {
@@ -260,7 +325,7 @@ func openAIMessages(messages []types.PromptMessage) ([]map[string]any, error) {
 			if err := requireToolResults(nativeToolParts); err != nil {
 				return nil, err
 			}
-			assistant := map[string]any{"role": "assistant", "content": openAIMessageContent(message)}
+			assistant := openAIAssistantMessage(message)
 			toolCalls := make([]map[string]any, 0, len(nativeToolParts))
 			for _, part := range nativeToolParts {
 				arguments, err := toolArgumentsJSON(part)
@@ -277,19 +342,32 @@ func openAIMessages(messages []types.PromptMessage) ([]map[string]any, error) {
 				}
 				converted = append(converted, map[string]any{"role": "tool", "tool_call_id": part.CallID, "content": toolResultText(part)})
 			}
-			if text := textProtocolToolResultsText(textProtocolResultParts); text != "" {
-				converted = append(converted, map[string]any{"role": "user", "content": text})
-			}
+			converted = appendUserTextObservation(converted, textProtocolToolResultsText(textProtocolResultParts))
 			continue
 		}
-		converted = append(converted, map[string]any{"role": message.Role, "content": openAIMessageContent(message)})
 		if message.Role == "assistant" {
-			if text := textProtocolToolResultsText(textProtocolResultParts); text != "" {
-				converted = append(converted, map[string]any{"role": "user", "content": text})
-			}
+			converted = append(converted, openAIAssistantMessage(message))
+		} else {
+			converted = append(converted, map[string]any{"role": message.Role, "content": openAIMessageContent(message)})
+		}
+		if message.Role == "assistant" {
+			converted = appendUserTextObservation(converted, textProtocolToolResultsText(textProtocolResultParts))
 		}
 	}
 	return converted, nil
+}
+
+func openAIAssistantMessage(message types.PromptMessage) map[string]any {
+	assistant := map[string]any{"role": "assistant", "content": openAIMessageContent(message)}
+	if reasoning := promptReasoningText(message); reasoning != "" {
+		assistant["reasoning_content"] = reasoning
+	}
+	if part, ok := firstPromptReasoningPartForSource(message, "op"); ok {
+		if data := strings.TrimSpace(part.Data); data != "" {
+			assistant["reasoning"] = map[string]any{"encrypted_content": data}
+		}
+	}
+	return assistant
 }
 
 func openAIMessageContent(message types.PromptMessage) any {

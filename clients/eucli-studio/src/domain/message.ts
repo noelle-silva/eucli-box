@@ -112,6 +112,26 @@ export function normalizeMessageParts(input: any) {
       out.push({ id, type: 'text', text, createdAt: normalizeTimeMs((raw as any).createdAt, 0), updatedAt: normalizeTimeMs((raw as any).updatedAt, normalizeTimeMs((raw as any).createdAt, 0)) })
       continue
     }
+    if (type === 'reasoning') {
+      const text = String((raw as any).text || '')
+      const signature = String((raw as any).signature || '').trim()
+      const data = String((raw as any).data || '').trim()
+      if (!text && !signature && !data) continue
+      const part: any = {
+        id,
+        type: 'reasoning',
+        text,
+        source: String((raw as any).source || '').trim(),
+        signature,
+        data,
+        createdAt: normalizeTimeMs((raw as any).createdAt, 0),
+        updatedAt: normalizeTimeMs((raw as any).updatedAt, normalizeTimeMs((raw as any).createdAt, 0)),
+      }
+      const display = (raw as any).display && typeof (raw as any).display === 'object' && !Array.isArray((raw as any).display) ? (raw as any).display : null
+      if (display) part.display = { ...display }
+      out.push(part)
+      continue
+    }
     if (type !== 'tool') continue
     const callId = String((raw as any).callId || '').trim()
     const toolName = String((raw as any).toolName || '').trim()

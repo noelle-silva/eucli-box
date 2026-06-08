@@ -26,35 +26,69 @@ func (s *system) callModel(ctx context.Context, record *runRecord, roleContext t
 
 func (s *system) callModelStream(ctx context.Context, record *runRecord, request types.ModelRequest) (types.ModelResponse, error) {
 	record.streamContent = ""
+	record.streamReasoning = ""
+	record.streamReasoningSignature = ""
+	record.streamReasoningData = ""
 	response, err := s.providers.CompleteStream(ctx, request, func(event types.ModelStreamEvent) error {
-		if event.Type != types.ModelStreamEventContentDelta {
-			return nil
-		}
-		content := event.Content
-		if content == record.streamContent {
-			return nil
-		}
-		contentDelta := streamContentDelta(record.streamContent, content)
-		record.streamContent = content
-		_, hadAssistant := activeRunAssistant(record)
-		updateRunAssistantContent(record, content)
-		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
-			return err
-		}
-		if !hadAssistant {
-			if err := s.saveRunSession(ctx, record, types.RunStatusRunning); err != nil {
+		switch event.Type {
+		case types.ModelStreamEventContentDelta:
+			content := event.Content
+			if content == record.streamContent {
+				return nil
+			}
+			contentDelta := streamContentDelta(record.streamContent, content)
+			record.streamContent = content
+			_, hadAssistant := activeRunAssistant(record)
+			updateRunAssistantContent(record, content)
+			if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
 				return err
 			}
+			if !hadAssistant {
+				if err := s.saveRunSession(ctx, record, types.RunStatusRunning); err != nil {
+					return err
+				}
+			}
+			s.publish(record.runID, "model_stream_delta", types.RunStreamDelta{RunID: record.runID, RoleID: record.roleID, SessionID: record.session.ID, MessageID: record.messageParent.ID, ParentMessageID: record.messageParent.ParentMessageID, BranchID: record.messageParent.BranchID, ContentDelta: contentDelta, Content: content, CreatedAt: event.CreatedAt})
+			s.publishAssistantMessageUpdate(record)
+			return nil
+		case types.ModelStreamEventReasoningDelta:
+			reasoning := event.Reasoning
+			if reasoning == record.streamReasoning && event.ReasoningSignature == record.streamReasoningSignature && event.ReasoningData == record.streamReasoningData {
+				return nil
+			}
+			record.streamReasoning = reasoning
+			record.streamReasoningSignature = event.ReasoningSignature
+			record.streamReasoningData = event.ReasoningData
+			_, hadAssistant := activeRunAssistant(record)
+			updateRunAssistantReasoning(record, reasoning, event.ReasoningSource, event.ReasoningSignature, event.ReasoningData)
+			if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
+				return err
+			}
+			if !hadAssistant {
+				if err := s.saveRunSession(ctx, record, types.RunStatusRunning); err != nil {
+					return err
+				}
+			}
+			s.publishAssistantMessageUpdate(record)
+			return nil
+		default:
+			return nil
 		}
-		s.publish(record.runID, "model_stream_delta", types.RunStreamDelta{RunID: record.runID, RoleID: record.roleID, SessionID: record.session.ID, MessageID: record.messageParent.ID, ParentMessageID: record.messageParent.ParentMessageID, BranchID: record.messageParent.BranchID, ContentDelta: contentDelta, Content: content, CreatedAt: event.CreatedAt})
-		s.publishAssistantMessageUpdate(record)
-		return nil
 	})
 	if err != nil {
 		return types.ModelResponse{}, runtimeProviderFailed("failed to stream model request", err)
 	}
 	if strings.TrimSpace(response.Content) == "" && strings.TrimSpace(record.streamContent) != "" {
 		response.Content = record.streamContent
+	}
+	if strings.TrimSpace(response.Reasoning) == "" && strings.TrimSpace(record.streamReasoning) != "" {
+		response.Reasoning = record.streamReasoning
+	}
+	if strings.TrimSpace(response.ReasoningSignature) == "" && strings.TrimSpace(record.streamReasoningSignature) != "" {
+		response.ReasoningSignature = record.streamReasoningSignature
+	}
+	if strings.TrimSpace(response.ReasoningData) == "" && strings.TrimSpace(record.streamReasoningData) != "" {
+		response.ReasoningData = record.streamReasoningData
 	}
 	return response, nil
 }

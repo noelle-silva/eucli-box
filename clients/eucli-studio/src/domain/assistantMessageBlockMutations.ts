@@ -35,7 +35,7 @@ function parseJsonObject(text: string): { ok: true; value: Record<string, any> }
 
 function normalizeBlockRef(raw: any): AssistantMessageBlockRef | null {
   const kind = String(raw?.kind || '').trim() as AssistantMessageBlockKind
-  if (kind !== 'text' && kind !== 'tool_invocation' && kind !== 'tool_result') return null
+  if (kind !== 'text' && kind !== 'reasoning' && kind !== 'tool_invocation' && kind !== 'tool_result') return null
   const start = typeof raw?.start === 'number' && Number.isFinite(raw.start) ? Math.max(0, Math.floor(raw.start)) : undefined
   const end = typeof raw?.end === 'number' && Number.isFinite(raw.end) ? Math.max(0, Math.floor(raw.end)) : undefined
   return {
@@ -139,6 +139,7 @@ export function editAssistantMessageBlock(message: any, refRaw: any, text: unkno
   if (!message || typeof message !== 'object') return { ok: false, error: '消息无效' }
   if (!ref) return { ok: false, error: '消息块无效' }
   if (ref.kind === 'text') return editTextBlock(message, ref, String(text ?? ''))
+  if (ref.kind === 'reasoning') return { ok: false, error: '思考块不可编辑' }
   if (ref.kind === 'tool_invocation') return editInvocationBlock(message, ref, String(text ?? ''))
   if (ref.kind === 'tool_result') return editResultBlock(message, ref, String(text ?? ''))
   return { ok: false, error: '消息块不可编辑' }
@@ -149,6 +150,7 @@ export function deleteAssistantMessageBlock(message: any, refRaw: any): Mutation
   if (!message || typeof message !== 'object') return { ok: false, error: '消息无效' }
   if (!ref) return { ok: false, error: '消息块无效' }
   if (ref.kind === 'text') return deleteTextBlock(message, ref)
+  if (ref.kind === 'reasoning') return { ok: false, error: '思考块不可删除' }
   if (ref.kind === 'tool_invocation') return deleteInvocationBlock(message, ref)
   if (ref.kind === 'tool_result') return deleteResultBlock(message, ref)
   return { ok: false, error: '消息块不可删除' }

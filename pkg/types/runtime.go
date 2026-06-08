@@ -37,6 +37,8 @@ type MessagePart struct {
 	Type      string          `json:"type"`
 	Text      string          `json:"text,omitempty"`
 	Source    string          `json:"source,omitempty"`
+	Signature string          `json:"signature,omitempty"`
+	Data      string          `json:"data,omitempty"`
 	Raw       string          `json:"raw,omitempty"`
 	CallID    string          `json:"callId,omitempty"`
 	ToolName  string          `json:"toolName,omitempty"`

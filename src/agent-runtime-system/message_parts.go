@@ -53,9 +53,58 @@ func setMessageTextPart(message *types.Message, content string, now time.Time) {
 	message.Parts = parts
 }
 
+func setMessageReasoningPart(message *types.Message, reasoning string, source string, signature string, data string, now time.Time) {
+	parts := make([]types.MessagePart, 0, len(message.Parts)+1)
+	reasoningAdded := false
+	trimmedReasoning := strings.TrimSpace(reasoning)
+	trimmedSource := strings.TrimSpace(source)
+	trimmedSignature := strings.TrimSpace(signature)
+	trimmedData := strings.TrimSpace(data)
+	if trimmedReasoning != "" || trimmedSignature != "" || trimmedData != "" {
+		for _, part := range message.Parts {
+			if part.Type != "reasoning" {
+				continue
+			}
+			part.Text = reasoning
+			part.Source = trimmedSource
+			part.Signature = trimmedSignature
+			part.Data = trimmedData
+			if strings.TrimSpace(part.ID) == "" {
+				part.ID = utils.NewID("part")
+			}
+			if part.CreatedAt.IsZero() {
+				part.CreatedAt = now
+			}
+			part.UpdatedAt = now
+			parts = append(parts, part)
+			reasoningAdded = true
+			break
+		}
+		if !reasoningAdded {
+			parts = append(parts, types.MessagePart{ID: utils.NewID("part"), Type: "reasoning", Text: reasoning, Source: trimmedSource, Signature: trimmedSignature, Data: trimmedData, CreatedAt: now, UpdatedAt: now})
+		}
+	}
+	for _, part := range message.Parts {
+		if part.Type == "reasoning" {
+			continue
+		}
+		parts = append(parts, part)
+	}
+	message.Parts = parts
+}
+
 func hasToolParts(message types.Message) bool {
 	for _, part := range message.Parts {
 		if part.Type == "tool" {
+			return true
+		}
+	}
+	return false
+}
+
+func hasReasoningParts(message types.Message) bool {
+	for _, part := range message.Parts {
+		if part.Type == "reasoning" && (strings.TrimSpace(part.Text) != "" || strings.TrimSpace(part.Signature) != "" || strings.TrimSpace(part.Data) != "") {
 			return true
 		}
 	}

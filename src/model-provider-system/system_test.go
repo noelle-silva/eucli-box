@@ -195,6 +195,45 @@ func TestCompleteOpenAIUsesReasoningEffortAndOmitsTemperature(t *testing.T) {
 	}
 }
 
+func TestCompleteOpenAIParsesReasoningText(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["openai-main"] = testOpenAIProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"done","reasoning_content":"先分析上下文"}}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	response, err := system.Complete(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	if response.Content != "done" || response.Reasoning != "先分析上下文" {
+		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestCompleteOpenAIParsesEncryptedReasoningDataWithoutText(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["openai-main"] = testOpenAIProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"done","reasoning":{"encrypted_content":"ciphertext"}}}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	response, err := system.Complete(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	if response.Content != "done" {
+		t.Fatalf("content = %q", response.Content)
+	}
+	if response.Reasoning != "" {
+		t.Fatalf("reasoning text should be empty: %q", response.Reasoning)
+	}
+	if response.ReasoningData != "ciphertext" {
+		t.Fatalf("reasoningData = %q", response.ReasoningData)
+	}
+	if response.ReasoningSource != "op" {
+		t.Fatalf("reasoningSource = %q", response.ReasoningSource)
+	}
+}
+
 func TestCompleteAnthropicUsesReasoningEffortAndOmitsTemperature(t *testing.T) {
 	storage := newFakeProviderStorage()
 	provider := testAnthropicProvider()
@@ -217,6 +256,238 @@ func TestCompleteAnthropicUsesReasoningEffortAndOmitsTemperature(t *testing.T) {
 	}
 	if _, ok := body["temperature"]; ok {
 		t.Fatalf("temperature should be omitted when reasoning is enabled: %s", string(network.lastRequest.Body))
+	}
+}
+
+func TestCompleteAnthropicParsesThinkingText(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["anthropic-main"] = testAnthropicProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"msg-1","content":[{"type":"thinking","thinking":"先看问题结构"},{"type":"text","text":"done"}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	response, err := system.Complete(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	if response.Content != "done" || response.Reasoning != "先看问题结构" {
+		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestCompleteAnthropicParsesThinkingSignatureAndData(t *testing.T) {
+	// 思考记录必须携带签名和加密数据字段，用于多轮上下文连续
+	storage := newFakeProviderStorage()
+	storage.providers["anthropic-main"] = testAnthropicProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"msg-1","content":[{"type":"thinking","thinking":"先看结构","signature":"EosnCkYICxIMMb3LzNrMu","data":"encrypted_payload"},{"type":"text","text":"done"}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	response, err := system.Complete(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	if response.Reasoning != "先看结构" {
+		t.Fatalf("reasoning = %q", response.Reasoning)
+	}
+	if response.ReasoningSignature != "EosnCkYICxIMMb3LzNrMu" {
+		t.Fatalf("reasoningSignature = %q", response.ReasoningSignature)
+	}
+	if response.ReasoningData != "encrypted_payload" {
+		t.Fatalf("reasoningData = %q", response.ReasoningData)
+	}
+	if response.ReasoningSource != "an" {
+		t.Fatalf("reasoningSource = %q", response.ReasoningSource)
+	}
+}
+
+func TestCompleteAnthropicPreservesReasoningSourceWithoutVisibleThinkingText(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["anthropic-main"] = testAnthropicProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"msg-1","content":[{"type":"thinking","thinking":"","signature":"sig-only","data":"cipher-only"},{"type":"text","text":"done"}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	response, err := system.Complete(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	if response.Reasoning != "" {
+		t.Fatalf("reasoning = %q", response.Reasoning)
+	}
+	if response.ReasoningSignature != "sig-only" {
+		t.Fatalf("reasoningSignature = %q", response.ReasoningSignature)
+	}
+	if response.ReasoningData != "cipher-only" {
+		t.Fatalf("reasoningData = %q", response.ReasoningData)
+	}
+	if response.ReasoningSource != "an" {
+		t.Fatalf("reasoningSource = %q", response.ReasoningSource)
+	}
+}
+
+func TestCompleteOpenAISendsReasoningWithEncryptedData(t *testing.T) {
+	// OpenAI 历史消息中，加密数据走 reasoning.encrypted_content 结构
+	storage := newFakeProviderStorage()
+	storage.providers["openai-main"] = testOpenAIProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"done"}}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	_, err := system.Complete(context.Background(), types.ModelRequest{
+		Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"},
+		Messages: []types.PromptMessage{{
+			Role:    "assistant",
+			Content: "正式回答",
+			Parts: []types.MessagePart{
+				{Type: "reasoning", Text: "先分析", Source: "op", Signature: "sig1", Data: "encrypted"},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	bodyStr := string(network.lastRequest.Body)
+	// reasoning_content 字段传递文本内容
+	if !strings.Contains(bodyStr, `"reasoning_content":"先分析"`) {
+		t.Fatalf("reasoning_content missing: %s", bodyStr)
+	}
+	// 加密数据走 reasoning.encrypted_content
+	if !strings.Contains(bodyStr, `"reasoning"`) || !strings.Contains(bodyStr, `encrypted_content`) {
+		t.Fatalf("encrypted reasoning data missing: %s", bodyStr)
+	}
+}
+
+func TestCompleteOpenAISkipsAnthropicCarrierButKeepsVisibleReasoningTextOutOfProtocolCarrier(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["openai-main"] = testOpenAIProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"done"}}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	_, err := system.Complete(context.Background(), types.ModelRequest{
+		Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"},
+		Messages: []types.PromptMessage{{
+			Role:    "assistant",
+			Content: "正式回答",
+			Parts: []types.MessagePart{{
+				Type:      "reasoning",
+				Text:      "可见思考文字",
+				Source:    "an",
+				Signature: "anthropic-signature",
+				Data:      "anthropic-data",
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	bodyStr := string(network.lastRequest.Body)
+	if strings.Contains(bodyStr, "anthropic-data") || strings.Contains(bodyStr, "anthropic-signature") {
+		t.Fatalf("cross-provider carrier leaked into OpenAI request: %s", bodyStr)
+	}
+	if !strings.Contains(bodyStr, `"reasoning_content":"可见思考文字"`) {
+		t.Fatalf("visible reasoning text should still be carried: %s", bodyStr)
+	}
+	if strings.Contains(bodyStr, `encrypted_content`) {
+		t.Fatalf("cross-provider encrypted carrier should not be injected into OpenAI request: %s", bodyStr)
+	}
+}
+
+func TestCompleteAnthropicSendsThinkingBlockWithSignature(t *testing.T) {
+	// Anthropic 历史消息中，thinking 块必须携带 signature 字段
+	storage := newFakeProviderStorage()
+	storage.providers["anthropic-main"] = testAnthropicProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"msg-1","content":[{"type":"text","text":"done"}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	_, err := system.Complete(context.Background(), types.ModelRequest{
+		Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"},
+		Messages: []types.PromptMessage{{
+			Role:    "assistant",
+			Content: "正式回答",
+			Parts: []types.MessagePart{
+				{Type: "reasoning", Text: "先判断", Source: "an", Signature: "EosnCkYICxIM", Data: "encrypted"},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	bodyStr := string(network.lastRequest.Body)
+	// thinking 块必须在请求中出现
+	if !strings.Contains(bodyStr, `"type":"thinking"`) {
+		t.Fatalf("thinking block missing: %s", bodyStr)
+	}
+	if !strings.Contains(bodyStr, `"signature":"EosnCkYICxIM"`) {
+		t.Fatalf("signature missing from thinking block: %s", bodyStr)
+	}
+	if !strings.Contains(bodyStr, `"data":"encrypted"`) {
+		t.Fatalf("data missing from thinking block: %s", bodyStr)
+	}
+}
+
+func TestCompleteAnthropicSkipsOpenAICarrier(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["anthropic-main"] = testAnthropicProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"msg-1","content":[{"type":"text","text":"done"}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	_, err := system.Complete(context.Background(), types.ModelRequest{
+		Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"},
+		Messages: []types.PromptMessage{{
+			Role:    "assistant",
+			Content: "正式回答",
+			Parts: []types.MessagePart{{
+				Type:   "reasoning",
+				Text:   "可见思考文字",
+				Source: "op",
+				Data:   "openai-encrypted",
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	bodyStr := string(network.lastRequest.Body)
+	if strings.Contains(bodyStr, "openai-encrypted") {
+		t.Fatalf("cross-provider carrier leaked into Anthropic request: %s", bodyStr)
+	}
+	if !strings.Contains(bodyStr, `"type":"thinking"`) {
+		t.Fatalf("visible reasoning text should still be carried in Anthropic thinking block: %s", bodyStr)
+	}
+	if strings.Contains(bodyStr, `"data":"openai-encrypted"`) {
+		t.Fatalf("cross-provider encrypted carrier should not be injected into Anthropic request: %s", bodyStr)
+	}
+}
+
+func TestCompleteAnthropicUsesThinkingBlockWhenAssistantContentEmpty(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["anthropic-main"] = testAnthropicProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"msg-1","content":[{"type":"text","text":"done"}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	_, err := system.Complete(context.Background(), types.ModelRequest{
+		Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"},
+		Messages: []types.PromptMessage{{
+			Role:    "assistant",
+			Content: "",
+			Parts: []types.MessagePart{
+				{Type: "reasoning", Text: "仅有思考", Source: "an", Signature: "sig-only"},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(network.lastRequest.Body, &body); err != nil {
+		t.Fatalf("request body is invalid json: %v", err)
+	}
+	messages := body["messages"].([]any)
+	assistant := messages[0].(map[string]any)
+	blocks, ok := assistant["content"].([]any)
+	if !ok || len(blocks) != 1 {
+		t.Fatalf("assistant content = %#v body=%s", assistant["content"], string(network.lastRequest.Body))
+	}
+	thinking := blocks[0].(map[string]any)
+	if thinking["type"] != "thinking" || thinking["thinking"] != "仅有思考" || thinking["signature"] != "sig-only" {
+		t.Fatalf("thinking block = %#v", thinking)
 	}
 }
 
@@ -275,6 +546,49 @@ func TestCompleteOpenAISendsStructuredToolHistory(t *testing.T) {
 	toolMessage := messages[1].(map[string]any)
 	if toolMessage["role"] != "tool" || toolMessage["tool_call_id"] != "call-1" {
 		t.Fatalf("tool message = %#v", toolMessage)
+	}
+}
+
+func TestCompleteOpenAIUsesReasoningContentField(t *testing.T) {
+	// 思考记录必须走 reasoning_content 字段（协议专用），不得混入正文 content
+	storage := newFakeProviderStorage()
+	storage.providers["openai-main"] = testOpenAIProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"done"}}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	_, err := system.Complete(context.Background(), types.ModelRequest{
+		Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"},
+		Messages: []types.PromptMessage{{
+			Role:    "assistant",
+			Content: "正式回答",
+			Parts: []types.MessagePart{
+				{Type: "reasoning", Text: "先分析上下文再组织答案", Source: "model"},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(network.lastRequest.Body, &body); err != nil {
+		t.Fatalf("request body is invalid json: %v", err)
+	}
+	messages := body["messages"].([]any)
+	if len(messages) != 1 {
+		t.Fatalf("messages = %#v", messages)
+	}
+	assistant := messages[0].(map[string]any)
+	if assistant["role"] != "assistant" || assistant["content"] != "正式回答" {
+		t.Fatalf("assistant = %#v body=%s", assistant, string(network.lastRequest.Body))
+	}
+	// 思考记录必须在专用字段，不在正文
+	rc, ok := assistant["reasoning_content"]
+	if !ok || rc.(string) != "先分析上下文再组织答案" {
+		t.Fatalf("reasoning_content missing or wrong: %#v", assistant)
+	}
+	// 正文不能混入思考内容
+	if strings.Contains(assistant["content"].(string), "先分析上下文") {
+		t.Fatalf("reasoning leaked into content: %#v", assistant)
 	}
 }
 
@@ -418,6 +732,63 @@ func TestCompleteAnthropicSendsStructuredToolHistory(t *testing.T) {
 	}
 }
 
+func TestCompleteAnthropicUsesThinkingBlock(t *testing.T) {
+	// 思考记录必须走 thinking content block（协议专用），不得混入正文字符串
+	storage := newFakeProviderStorage()
+	storage.providers["anthropic-main"] = testAnthropicProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"msg-1","content":[{"type":"text","text":"done"}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	_, err := system.Complete(context.Background(), types.ModelRequest{
+		Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"},
+		Messages: []types.PromptMessage{{
+			Role:    "assistant",
+			Content: "正式回答",
+			Parts: []types.MessagePart{
+				{Type: "reasoning", Text: "先判断范围再给方案", Source: "model"},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(network.lastRequest.Body, &body); err != nil {
+		t.Fatalf("request body is invalid json: %v", err)
+	}
+	messages := body["messages"].([]any)
+	if len(messages) != 1 {
+		t.Fatalf("messages = %#v", messages)
+	}
+	assistant := messages[0].(map[string]any)
+	if assistant["role"] != "assistant" {
+		t.Fatalf("assistant = %#v body=%s", assistant, string(network.lastRequest.Body))
+	}
+	content := assistant["content"]
+	blocks, ok := content.([]any)
+	if !ok {
+		t.Fatalf("anthropic content should be []any, got %#v", content)
+	}
+	// 第一个块必须是 thinking 块
+	hasThinking := false
+	hasText := false
+	for _, b := range blocks {
+		bmap := b.(map[string]any)
+		if bmap["type"] == "thinking" && bmap["thinking"] == "先判断范围再给方案" {
+			hasThinking = true
+		}
+		if bmap["type"] == "text" && bmap["text"] == "正式回答" {
+			hasText = true
+		}
+	}
+	if !hasThinking {
+		t.Fatalf("thinking block missing: %s", string(network.lastRequest.Body))
+	}
+	if !hasText {
+		t.Fatalf("text block missing: %s", string(network.lastRequest.Body))
+	}
+}
+
 func TestCompleteAnthropicSendsTextProtocolResultAsObservation(t *testing.T) {
 	storage := newFakeProviderStorage()
 	storage.providers["anthropic-main"] = testAnthropicProvider()
@@ -456,7 +827,9 @@ func TestCompleteAnthropicRejectsToolHistoryWithoutResult(t *testing.T) {
 func TestCompleteStreamOpenAIEmitsDeltasAndAssemblesResponse(t *testing.T) {
 	storage := newFakeProviderStorage()
 	storage.providers["openai-main"] = testOpenAIProvider()
-	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`data: {"id":"chatcmpl-stream","choices":[{"delta":{"content":"he"}}]}
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`data: {"id":"chatcmpl-stream","choices":[{"delta":{"reasoning_content":"先分析问题"}}]}
+
+data: {"id":"chatcmpl-stream","choices":[{"delta":{"content":"he"}}]}
 
 data: {"id":"chatcmpl-stream","choices":[{"delta":{"content":"llo"}}]}
 
@@ -470,18 +843,27 @@ data: [DONE]
 	system := newTestProviderSystem(t, network, storage)
 
 	events := []string{}
+	reasoningEvents := []string{}
 	response, err := system.CompleteStream(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}, Temperature: 0.7, Tools: []types.ToolDefinition{{Name: "file-reader", Description: "Read file", InputSchema: map[string]any{"type": "object"}}}}, func(event types.ModelStreamEvent) error {
-		events = append(events, event.Content)
+		if event.Type == types.ModelStreamEventContentDelta {
+			events = append(events, event.Content)
+		}
+		if event.Type == types.ModelStreamEventReasoningDelta {
+			reasoningEvents = append(reasoningEvents, event.Reasoning)
+		}
 		return nil
 	})
 	if err != nil {
 		t.Fatalf("CompleteStream() error = %v", err)
 	}
-	if response.ID != "chatcmpl-stream" || response.Content != "hello" {
+	if response.ID != "chatcmpl-stream" || response.Content != "hello" || response.Reasoning != "先分析问题" {
 		t.Fatalf("response = %#v", response)
 	}
 	if len(events) != 2 || events[0] != "he" || events[1] != "hello" {
 		t.Fatalf("events = %#v", events)
+	}
+	if len(reasoningEvents) != 1 || reasoningEvents[0] != "先分析问题" {
+		t.Fatalf("reasoning events = %#v", reasoningEvents)
 	}
 	if len(response.ToolIntents) != 1 || response.ToolIntents[0].ToolName != "file-reader" || response.ToolIntents[0].Source != types.ToolCallSourceNative || response.ToolIntents[0].Arguments["path"] != "README.md" {
 		t.Fatalf("tool intents = %#v", response.ToolIntents)
@@ -492,6 +874,51 @@ data: [DONE]
 	}
 	if body["stream"] != true {
 		t.Fatalf("stream flag = %#v body=%s", body["stream"], string(network.lastRequest.Body))
+	}
+}
+
+func TestCompleteStreamAnthropicCarriesSignatureOnlyReasoningState(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["anthropic-main"] = testAnthropicProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`data: {"type":"message_start","message":{"id":"msg-stream"}}
+
+data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}
+
+data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig-final"}}
+
+data: {"type":"content_block_stop","index":0}
+
+data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}
+
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"done"}}
+
+data: {"type":"content_block_stop","index":1}
+
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null}}
+
+data: {"type":"message_stop"}
+
+`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	reasoningStates := []types.ModelStreamEvent{}
+	response, err := system.CompleteStream(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}, Temperature: 0.2}, func(event types.ModelStreamEvent) error {
+		if event.Type == types.ModelStreamEventReasoningDelta {
+			reasoningStates = append(reasoningStates, event)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("CompleteStream() error = %v", err)
+	}
+	if response.ReasoningSignature != "sig-final" {
+		t.Fatalf("response reasoning signature = %q", response.ReasoningSignature)
+	}
+	if len(reasoningStates) == 0 {
+		t.Fatalf("reasoning states = %#v", reasoningStates)
+	}
+	if reasoningStates[len(reasoningStates)-1].ReasoningSignature != "sig-final" {
+		t.Fatalf("last reasoning state = %#v", reasoningStates[len(reasoningStates)-1])
 	}
 }
 
@@ -522,6 +949,8 @@ func TestCompleteStreamAnthropicEmitsDeltas(t *testing.T) {
 	storage.providers["anthropic-main"] = testAnthropicProvider()
 	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`data: {"type":"message_start","message":{"id":"msg-stream"}}
 
+data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"先看上下文"}}
+
 data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"he"}}
 
 data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"llo"}}
@@ -530,18 +959,27 @@ data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text
 	system := newTestProviderSystem(t, network, storage)
 
 	events := []string{}
+	reasoningEvents := []string{}
 	response, err := system.CompleteStream(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}, Temperature: 0.2}, func(event types.ModelStreamEvent) error {
-		events = append(events, event.Content)
+		if event.Type == types.ModelStreamEventContentDelta {
+			events = append(events, event.Content)
+		}
+		if event.Type == types.ModelStreamEventReasoningDelta {
+			reasoningEvents = append(reasoningEvents, event.Reasoning)
+		}
 		return nil
 	})
 	if err != nil {
 		t.Fatalf("CompleteStream() error = %v", err)
 	}
-	if response.ID != "msg-stream" || response.Content != "hello" {
+	if response.ID != "msg-stream" || response.Content != "hello" || response.Reasoning != "先看上下文" {
 		t.Fatalf("response = %#v", response)
 	}
 	if len(events) != 2 || events[0] != "he" || events[1] != "hello" {
 		t.Fatalf("events = %#v", events)
+	}
+	if len(reasoningEvents) != 1 || reasoningEvents[0] != "先看上下文" {
+		t.Fatalf("reasoning events = %#v", reasoningEvents)
 	}
 	var body map[string]any
 	if err := json.Unmarshal(network.lastRequest.Body, &body); err != nil {

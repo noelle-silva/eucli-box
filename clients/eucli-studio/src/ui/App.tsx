@@ -3932,6 +3932,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                     const messageAwaitingFirstOutput = messageGenerating && isAssistantAwaitingFirstOutput(m)
                     const messageError = !isUser && (m as any)?.error && typeof (m as any).error === 'object' ? (m as any).error : null
                     const assistantParts = Array.isArray((m as any)?.parts) ? (m as any).parts : []
+                    const hasReasoningParts = assistantParts.some((part: any) => String(part?.type || '').trim() === 'reasoning' && !!String(part?.text || '').trim())
                     const canEdit = !isDisplayOnlyPendingRunTail && !isEditing && !!mid && !messageMutationBlocked(mid, 'edit')
                     const canDeleteMessage = !isDisplayOnlyPendingRunTail && !!mid && !messageMutationBlocked(mid, 'delete')
                     const contentLines = userMessageCollapseEnabled && isUser ? content.split(/\r?\n/) : []
@@ -4101,18 +4102,21 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                                 />
                               ) : null}
                             </Stack>
-                          ) : messageAwaitingFirstOutput ? (
+                          ) : messageAwaitingFirstOutput && !hasReasoningParts ? (
                             <AssistantReplyPendingIndicator />
                           ) : (
-                            <AssistantMessageBlocks
-                              controller={controller}
-                              text={content}
-                              parts={assistantParts}
-                              mid={mid}
-                              renderSafetyPolicyKey={renderSafetyPolicy}
-                              chatRootRef={chatRootRef}
-                              disabled={!canEdit}
-                            />
+                            <Stack spacing={1}>
+                              <AssistantMessageBlocks
+                                controller={controller}
+                                text={content}
+                                parts={assistantParts}
+                                mid={mid}
+                                renderSafetyPolicyKey={renderSafetyPolicy}
+                                chatRootRef={chatRootRef}
+                                disabled={!canEdit}
+                              />
+                              {messageAwaitingFirstOutput ? <AssistantReplyPendingIndicator /> : null}
+                            </Stack>
                           )}
 
                           {isDisplayOnlyPendingRunTail ? null : isEditing ? (

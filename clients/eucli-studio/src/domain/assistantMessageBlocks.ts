@@ -10,10 +10,11 @@ export type AssistantMessageRenderSegment =
   | { type: 'text'; id: string; text: string; start: number; end: number }
   | { type: 'text_protocol_tool'; id: string; request: any; part: any | null; start: number; end: number }
 
-export type AssistantMessageBlockKind = 'text' | 'tool_invocation' | 'tool_result' | 'diagnostic'
+export type AssistantMessageBlockKind = 'text' | 'reasoning' | 'tool_invocation' | 'tool_result' | 'diagnostic'
 
 export type AssistantMessageBlock =
   | { kind: 'text'; id: string; text: string; start: number; end: number; parts: any[] }
+  | { kind: 'reasoning'; id: string; part: any }
   | { kind: 'tool_invocation'; id: string; part: any; start?: number; end?: number }
   | { kind: 'tool_result'; id: string; part: any; start?: number; end?: number }
   | { kind: 'diagnostic'; id: string; reason: string; part?: any }
@@ -78,7 +79,12 @@ export function planAssistantMessageBlocks(contentRaw: unknown, partsRaw: any[])
   const content = String(contentRaw ?? '')
   const toolParts = assistantToolParts(partsRaw)
   const inlineParts = textProtocolToolParts(partsRaw)
+  const reasoningParts = (Array.isArray(partsRaw) ? partsRaw : []).filter((part: any) => String(part?.type || '').trim() === 'reasoning' && String(part?.text || '').trim())
   const blocks: AssistantMessageBlock[] = []
+
+  reasoningParts.forEach((part: any, index: number) => {
+    blocks.push({ kind: 'reasoning', id: String(part?.id || `reasoning:${index}`), part })
+  })
 
   if (content.trim() || inlineParts.length) blocks.push({ kind: 'text', id: `text:0:${content.length}`, text: content, start: 0, end: content.length, parts: inlineParts })
 

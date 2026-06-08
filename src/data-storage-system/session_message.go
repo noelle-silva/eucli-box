@@ -119,10 +119,12 @@ func normalizeSessionMessageParts(message types.Message, now time.Time) []types.
 		parts = append(parts, normalizeTextPart(firstPartOfType(message.Parts, "text"), message.Content, now, seen))
 	}
 	for _, part := range message.Parts {
-		if strings.TrimSpace(part.Type) != "tool" {
-			continue
+		switch strings.TrimSpace(part.Type) {
+		case "tool":
+			parts = append(parts, normalizeToolPart(part, now, seen))
+		case "reasoning":
+			parts = append(parts, normalizeReasoningPart(part, now, seen))
 		}
-		parts = append(parts, normalizeToolPart(part, now, seen))
 	}
 	return parts
 }
@@ -184,6 +186,32 @@ func normalizeToolPart(part types.MessagePart, now time.Time, seen map[string]st
 			part.Result.Metadata = map[string]any{}
 		}
 	}
+	if len(part.Display) == 0 {
+		part.Display = nil
+	}
+	if part.CreatedAt.IsZero() {
+		part.CreatedAt = now
+	}
+	if part.UpdatedAt.IsZero() {
+		part.UpdatedAt = part.CreatedAt
+	}
+	return part
+}
+
+func normalizeReasoningPart(part types.MessagePart, now time.Time, seen map[string]struct{}) types.MessagePart {
+	part.Type = "reasoning"
+	part.ID = normalizeMessagePartID(part.ID, seen)
+	part.Text = strings.TrimSpace(part.Text)
+	part.CallID = ""
+	part.ToolName = ""
+	part.Source = strings.TrimSpace(part.Source)
+	part.Signature = strings.TrimSpace(part.Signature)
+	part.Data = strings.TrimSpace(part.Data)
+	part.Raw = ""
+	part.Input = nil
+	part.State = ""
+	part.Decision = nil
+	part.Result = nil
 	if len(part.Display) == 0 {
 		part.Display = nil
 	}

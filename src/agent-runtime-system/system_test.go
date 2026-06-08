@@ -230,10 +230,11 @@ func TestStartRunStreamCreatesAssistantAndPublishesDeltas(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.block = make(chan struct{})
 	fakes.provider.streamEvents = []types.ModelStreamEvent{
+		{Type: types.ModelStreamEventReasoningDelta, ReasoningDelta: "先想一下", Reasoning: "先想一下", CreatedAt: time.Now().UTC()},
 		{Type: types.ModelStreamEventContentDelta, ContentDelta: "he", Content: "he", CreatedAt: time.Now().UTC()},
 		{Type: types.ModelStreamEventContentDelta, ContentDelta: "llo", Content: "hello", CreatedAt: time.Now().UTC()},
 	}
-	fakes.provider.streamResponse = types.ModelResponse{ID: "stream-1", Content: "hello"}
+	fakes.provider.streamResponse = types.ModelResponse{ID: "stream-1", Content: "hello", Reasoning: "先想一下"}
 	system := newTestRuntime(t, fakes, Config{})
 	events, unsubscribe, err := system.Subscribe(context.Background())
 	if err != nil {
@@ -263,11 +264,26 @@ func TestStartRunStreamCreatesAssistantAndPublishesDeltas(t *testing.T) {
 	if len(session.Messages) != 2 || session.Messages[1].Content != "hello" || session.Messages[1].ID != final.LastMessageID {
 		t.Fatalf("final stream messages = %#v", session.Messages)
 	}
+	if part := reasoningPartByType(session.Messages[1]); part == nil || part.Text != "先想一下" {
+		t.Fatalf("reasoning part = %#v", session.Messages[1].Parts)
+	}
 	gotDeltas := []string{}
+	gotReasoning := []string{}
 	deadline := time.After(2 * time.Second)
-	for len(gotDeltas) < 2 {
+	for len(gotDeltas) < 2 || len(gotReasoning) < 1 {
 		select {
 		case event := <-events:
+			if event.Type == "assistant_message_update" {
+				payload, ok := event.Payload.(types.RunAssistantMessageUpdate)
+				if !ok {
+					t.Fatalf("assistant update payload = %#v", event.Payload)
+				}
+				part := reasoningPartByType(payload.Message)
+				if part != nil && part.Text != "" {
+					gotReasoning = append(gotReasoning, part.Text)
+				}
+				continue
+			}
 			if event.Type != "model_stream_delta" {
 				continue
 			}
@@ -282,6 +298,9 @@ func TestStartRunStreamCreatesAssistantAndPublishesDeltas(t *testing.T) {
 	}
 	if gotDeltas[0] != "he" || gotDeltas[1] != "hello" {
 		t.Fatalf("stream deltas = %#v", gotDeltas)
+	}
+	if gotReasoning[0] != "先想一下" {
+		t.Fatalf("reasoning updates = %#v", gotReasoning)
 	}
 }
 
@@ -829,6 +848,34 @@ func TestRunDoesNotPublishEmptyWaitingAssistantAfterToolResults(t *testing.T) {
 	}
 }
 
+func TestRunPersistsReasoningWhenToolIntentHasNoVisibleAssistantText(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{
+		{ID: "m1", Content: "", Reasoning: "先判断该调用哪个工具", ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}}}},
+		{ID: "m2", Content: "final"},
+	}
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tool"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	session := fakes.storage.lastSession()
+	if len(session.Messages) < 2 {
+		t.Fatalf("messages = %#v", session.Messages)
+	}
+	part := reasoningPartByType(session.Messages[1])
+	if part == nil || part.Text != "先判断该调用哪个工具" {
+		t.Fatalf("reasoning part = %#v", session.Messages[1].Parts)
+	}
+	if session.Messages[len(session.Messages)-1].Content != "final" {
+		t.Fatalf("final assistant content = %#v", session.Messages)
+	}
+}
+
 func TestRunExecutesToolBatchWithParallelLimit(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.responses = []types.ModelResponse{
@@ -1036,6 +1083,15 @@ func TestRunContinuesWhenToolPrepareReturnsError(t *testing.T) {
 func toolPartByCallID(message types.Message, callID string) *types.MessagePart {
 	for index := range message.Parts {
 		if message.Parts[index].Type == "tool" && message.Parts[index].CallID == callID {
+			return &message.Parts[index]
+		}
+	}
+	return nil
+}
+
+func reasoningPartByType(message types.Message) *types.MessagePart {
+	for index := range message.Parts {
+		if message.Parts[index].Type == "reasoning" {
 			return &message.Parts[index]
 		}
 	}

@@ -9,6 +9,7 @@ import { planAssistantMessageBlocks, type AssistantMessageBlock } from '../../re
 import { renderAssistantToolDiagnosticHtml, renderAssistantToolInvocationHtml, renderAssistantToolResultHtml } from '../../render/assistantToolHtml'
 import { AssistantMessageHost } from '../../render/assistantMessageHost'
 import type { AiChatToastOptions } from '../../gateway/capabilities'
+import { AssistantReasoningPanel } from './AssistantReasoningPanel'
 
 type AssistantMessageBlocksProps = {
   controller: any
@@ -24,12 +25,14 @@ type EditingBlock = { id: string; text: string }
 
 function blockTitle(block: AssistantMessageBlock) {
   if (block.kind === 'text') return '消息正文'
+  if (block.kind === 'reasoning') return '思考过程'
   if (block.kind === 'tool_invocation') return '工具调用'
   if (block.kind === 'tool_result') return '工具返回'
   return '渲染诊断'
 }
 
 function blockTone(block: AssistantMessageBlock) {
+  if (block.kind === 'reasoning') return { borderColor: 'rgba(245, 158, 11, .22)', bgcolor: 'rgba(245, 158, 11, .045)' }
   if (block.kind === 'tool_invocation') return { borderColor: 'rgba(2,132,199,.22)', bgcolor: 'rgba(2,132,199,.035)' }
   if (block.kind === 'tool_result') return { borderColor: 'rgba(22,163,74,.24)', bgcolor: 'rgba(22,163,74,.035)' }
   if (block.kind === 'diagnostic') return { borderColor: 'rgba(220,38,38,.24)', bgcolor: 'rgba(220,38,38,.035)' }
@@ -69,6 +72,7 @@ function invocationEditText(part: any) {
 
 function blockEditText(block: AssistantMessageBlock) {
   if (block.kind === 'text') return block.text
+  if (block.kind === 'reasoning') return String(block.part?.text || '')
   if (block.kind === 'tool_invocation') return invocationEditText(block.part)
   if (block.kind === 'tool_result') {
     const result = block.part?.result && typeof block.part.result === 'object' ? block.part.result : null
@@ -79,6 +83,7 @@ function blockEditText(block: AssistantMessageBlock) {
 
 function blockCopyText(block: AssistantMessageBlock) {
   if (block.kind === 'text') return block.text
+  if (block.kind === 'reasoning') return String(block.part?.text || '')
   if (block.kind === 'tool_invocation') return invocationEditText(block.part)
   if (block.kind === 'tool_result') {
     const result = block.part?.result && typeof block.part.result === 'object' ? block.part.result : null
@@ -147,6 +152,9 @@ export function AssistantMessageBlocks(props: AssistantMessageBlocksProps) {
               <AssistantMessageHost controller={controller} className="prose" text={block.text} parts={block.parts} mid={mid} renderSafetyPolicyKey={renderSafetyPolicyKey} chatRootRef={chatRootRef} />
             </Box>
           )
+        }
+        if (block.kind === 'reasoning') {
+          return <AssistantReasoningPanel key={block.id} controller={controller} mid={mid} text={String(block.part?.text || '')} renderSafetyPolicyKey={renderSafetyPolicyKey} chatRootRef={chatRootRef} />
         }
         const isEditing = editing.id === block.id
         const tone = blockTone(block)

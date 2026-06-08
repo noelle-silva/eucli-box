@@ -63,25 +63,28 @@ type system struct {
 }
 
 type runRecord struct {
-	runID                   string
-	roleID                  string
-	state                   types.RunState
-	session                 types.Session
-	messageParent           types.Message
-	inputMessageID          string
-	lastMessageID           string
-	anchorMessageID         string
-	activeAssistantID       string
-	ownedMessageIDs         map[string]struct{}
-	deletedMessageIDs       map[string]struct{}
-	dependencyIDs           map[string]struct{}
-	messageSnapshots        map[string]types.Message
-	forceBranchReply        bool
-	stream                  bool
-	streamContent           string
-	reasoningEffort         types.ReasoningEffort
-	reasoningPersistPending bool
-	cancel                  context.CancelFunc
+	runID                    string
+	roleID                   string
+	state                    types.RunState
+	session                  types.Session
+	messageParent            types.Message
+	inputMessageID           string
+	lastMessageID            string
+	anchorMessageID          string
+	activeAssistantID        string
+	ownedMessageIDs          map[string]struct{}
+	deletedMessageIDs        map[string]struct{}
+	dependencyIDs            map[string]struct{}
+	messageSnapshots         map[string]types.Message
+	forceBranchReply         bool
+	stream                   bool
+	streamContent            string
+	streamReasoning          string
+	streamReasoningSignature string
+	streamReasoningData      string
+	reasoningEffort          types.ReasoningEffort
+	reasoningPersistPending  bool
+	cancel                   context.CancelFunc
 
 	pendingPlans   map[string]types.ToolRunPlan
 	confirmationCh chan types.ToolConfirmation

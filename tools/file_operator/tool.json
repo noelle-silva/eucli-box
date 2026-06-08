@@ -1,0 +1,132 @@
+{
+  "id": "file_operator",
+  "name": "file_operator",
+  "description": "Read, search, write, edit, and patch text files inside configured workspace roots through one bounded local file tool.",
+  "promptDescription": "Use file_operator for normal workspace file work instead of shell_command. It is a bounded text-file tool with one required [action]: read, list, glob, grep, write, edit, or apply_patch. Paths are relative to the e-b host working directory unless absolute, and every path must stay inside configured workspace roots; if no workspaceRoots are configured, only the host working directory is allowed. This tool is for text files and rejects binary content, unsafe null bytes, files over maxFileBytes, and outputs over configured limits. Recommended workflow: use glob/grep to locate files, read the exact file or range, then edit/write/apply_patch. Keep the hash returned by read and pass it as expectedHash when using write or edit on an existing file to avoid overwriting a changed file. read: inspect a file or directory using [path], optional [offset] and [limit]; file output is line-numbered and includes hash, totalLines, nextOffset, and truncation metadata. list: list directory entries using [path]. glob: find paths by [path] plus [pattern], supporting *, ?, and **. grep: search text using [path] plus regex [query]; optional [include] filters files by glob, [ignoreCase] enables case-insensitive matching, and [showHidden] includes hidden paths. write: create or replace a text file using [path] and [content]; use expectedHash for existing files when you previously read them. edit: perform exact replacement using [path], [oldString], [newString], optional [replaceAll], and optional expectedHash; oldString must be unique unless replaceAll is true; empty oldString only creates a missing file and fails for existing files. apply_patch: apply structured patchText with *** Begin Patch / *** End Patch and file sections: *** Add File, *** Delete File, *** Update File, optional *** Move to. Patch update lines use space for context, - for removed lines, + for added lines, and @@ separators; old patch text must match uniquely. apply_patch plans all operations before writing and rejects ambiguous or unsafe text. Configuration-only fields such as workspaceRoots and maxFileBytes cannot be supplied as tool-call arguments. If a result says truncated=true, narrow the path/query or continue with offset/limit instead of assuming the result is complete.",
+  "type": "local",
+  "directory": ".",
+  "userConfigSchema": {
+    "type": "object",
+    "properties": {
+      "workspaceRoots": {
+        "type": "array",
+        "items": { "type": "string" },
+        "title": "Workspace Roots",
+        "description": "Directories this tool may access. Relative roots resolve from the e-b host working directory. Empty means only the host working directory."
+      },
+      "maxFileBytes": {
+        "type": "integer",
+        "title": "Max File Bytes",
+        "description": "Maximum text file size accepted for read/edit/write operations."
+      },
+      "defaultReadLines": {
+        "type": "integer",
+        "title": "Default Read Lines",
+        "description": "Default number of lines returned by read/list when the model omits limit."
+      },
+      "maxReadLines": {
+        "type": "integer",
+        "title": "Max Read Lines",
+        "description": "Maximum read/list lines returned per call."
+      },
+      "maxLineChars": {
+        "type": "integer",
+        "title": "Max Line Chars",
+        "description": "Maximum visible characters per returned text line."
+      },
+      "maxOutputChars": {
+        "type": "integer",
+        "title": "Max Output Chars",
+        "description": "Maximum visible characters returned per tool call."
+      },
+      "maxSearchResults": {
+        "type": "integer",
+        "title": "Max Search Results",
+        "description": "Maximum glob/grep matches returned per call."
+      }
+    },
+    "additionalProperties": false
+  },
+  "defaultConfig": {
+    "workspaceRoots": [],
+    "maxFileBytes": 10485760,
+    "defaultReadLines": 2000,
+    "maxReadLines": 2000,
+    "maxLineChars": 2000,
+    "maxOutputChars": 50000,
+    "maxSearchResults": 100
+  },
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["read", "list", "glob", "grep", "write", "edit", "apply_patch"],
+        "description": "Operation to run: read, list, glob, grep, write, edit, or apply_patch."
+      },
+      "path": {
+        "type": "string",
+        "description": "Target file or directory path. Relative paths resolve from the e-b host working directory and must stay inside workspace roots."
+      },
+      "pattern": {
+        "type": "string",
+        "description": "Glob pattern for action=glob. Supports *, ?, and **. Example: **/*.go."
+      },
+      "query": {
+        "type": "string",
+        "description": "Regular expression query for action=grep. Use grep before reading many files."
+      },
+      "include": {
+        "type": "string",
+        "description": "Optional glob pattern limiting grep files, for example *.go or **/*.ts."
+      },
+      "content": {
+        "type": "string",
+        "description": "Full text content for action=write. Binary/null-byte content is rejected."
+      },
+      "oldString": {
+        "type": "string",
+        "description": "Exact old text for action=edit. It must be unique unless replaceAll is true. Empty oldString creates a missing file with newString and fails for existing files."
+      },
+      "newString": {
+        "type": "string",
+        "description": "Replacement text for action=edit. Final file content must remain valid bounded text."
+      },
+      "replaceAll": {
+        "type": "boolean",
+        "description": "For action=edit, replace every occurrence instead of requiring oldString to be unique."
+      },
+      "patchText": {
+        "type": "string",
+        "description": "Patch text for action=apply_patch. Use *** Begin Patch and *** End Patch with Add File, Delete File, Update File, optional Move to, and space/-/+ update lines."
+      },
+      "expectedHash": {
+        "type": "string",
+        "description": "Optional sha256 hash from a previous read. For existing files, pass it to write/edit so the operation fails if the file changed."
+      },
+      "offset": {
+        "type": "integer",
+        "description": "1-based line or entry offset for read/list. Use nextOffset from a truncated read/list result to continue."
+      },
+      "limit": {
+        "type": "integer",
+        "description": "Maximum lines or entries for read/list. Clamped by configuration."
+      },
+      "maxOutputChars": {
+        "type": "integer",
+        "description": "Maximum visible characters returned for this call. Clamped by configuration; lowering this is allowed, raising hard limits is not."
+      },
+      "ignoreCase": {
+        "type": "boolean",
+        "description": "For action=grep, use case-insensitive regular expression matching."
+      },
+      "showHidden": {
+        "type": "boolean",
+        "description": "For action=list/glob/grep, include hidden files and folders."
+      }
+    },
+    "required": ["action"],
+    "additionalProperties": false
+  },
+  "binaries": []
+}

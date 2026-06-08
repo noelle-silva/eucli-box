@@ -1,45 +1,45 @@
 # file_operator
 
-`file_operator` is the unified text-file tool for normal file work. It reads, lists, searches, writes, edits, and applies structured patches through one local tool entry.
+`file_operator` 是统一的文本文件操作工具。它通过一个本地工具入口完成读取、列目录、搜索、写入、精确编辑和结构化补丁操作。
 
-## Path Behavior
+## 路径行为
 
-- Relative paths resolve from the e-b host working directory.
-- Absolute paths are allowed and may point outside the current project.
-- Access is still limited by the operating system permissions of the running process.
-- The tool no longer has a workspace-root allowlist. This is intentional so it can operate on files in other work areas when the user asks for them.
+- 相对路径从 e-b 宿主运行位置开始解析。
+- 绝对路径可以指向当前项目外的文件或目录。
+- 实际能访问哪里，仍然受运行进程的操作系统权限限制。
+- 工具不再使用工作区目录白名单。这是有意设计，目的是在用户明确给出外部位置时，也能处理其他工作区域里的文本文件。
 
-## Safety Boundaries
+## 安全边界
 
-- Text files only. Binary-like content and null bytes are rejected.
-- Large files are rejected by the configured size limit.
-- `write` and `edit` support `expectedHash` so a stale read does not overwrite newer content.
-- `edit` requires a unique match unless `replaceAll` is explicitly set.
-- `apply_patch` plans the full change before writing, so a planning failure does not leave earlier partial changes.
-- Patch delete and move operations keep the text-file boundary; they do not act as a general binary file remover.
+- 只处理文本文件；疑似二进制内容和空字节会被拒绝。
+- 超过大小限制的文件会被拒绝。
+- 写入和精确编辑支持 `expectedHash`，避免基于过期内容覆盖新变化。
+- 精确编辑默认要求旧内容只出现一次，除非明确使用 `replaceAll`。
+- 结构化补丁会先规划完整变更，再真正写入；如果规划失败，不会留下前半段修改。
+- 补丁里的删除和移动仍然遵守文本文件边界，不会把这个工具变成通用二进制文件删除器。
 
-## Recommended Workflow
+## 推荐使用流程
 
-1. Use `glob` or `grep` to find candidate files.
-2. Use `read` to inspect the exact file or line window.
-3. Use `edit`, `write`, or `apply_patch` for the smallest safe change.
-4. Pass `expectedHash` when changing an existing file that was previously read.
+1. 先用 `glob` 或 `grep` 找到候选文件。
+2. 再用 `read` 查看准确文件或指定行范围。
+3. 最后用 `edit`、`write` 或 `apply_patch` 做最小安全修改。
+4. 修改已经读取过的现有文件时，尽量带上 `expectedHash`。
 
-## Actions
+## 操作类型
 
-- `read`: read a file or list a directory with line or entry windows.
-- `list`: list directory entries.
-- `glob`: find files by glob pattern.
-- `grep`: search text by regular expression.
-- `write`: create or replace a bounded text file.
-- `edit`: perform exact text replacement.
-- `apply_patch`: apply a structured multi-file patch.
+- `read`：读取文件，或按窗口查看目录内容。
+- `list`：列出目录条目。
+- `glob`：按通配模式查找路径。
+- `grep`：按正则表达式搜索文本。
+- `write`：创建或替换有大小限制的文本文件。
+- `edit`：执行精确文本替换。
+- `apply_patch`：应用结构化的多文件补丁。
 
-## Configuration
+## 配置项
 
-- `maxFileBytes`: maximum accepted text file size.
-- `defaultReadLines`: default read/list window size.
-- `maxReadLines`: maximum read/list window size.
-- `maxLineChars`: maximum visible characters per returned line.
-- `maxOutputChars`: maximum visible characters per tool call.
-- `maxSearchResults`: maximum glob/grep matches per call.
+- `maxFileBytes`：允许处理的最大文本文件大小。
+- `defaultReadLines`：读取或列目录时的默认窗口大小。
+- `maxReadLines`：读取或列目录时的最大窗口大小。
+- `maxLineChars`：单行返回内容的最大可见字符数。
+- `maxOutputChars`：单次工具调用返回内容的最大可见字符数。
+- `maxSearchResults`：搜索路径或搜索文本时的最大结果数。

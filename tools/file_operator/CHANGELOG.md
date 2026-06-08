@@ -1,9 +1,9 @@
-# Changelog
+# 更新记录
 
-## Unreleased
+## 未发布
 
-- Added the unified `file_operator` local text-file tool.
-- Added read, list, glob, grep, write, edit, and structured patch actions.
-- Added text safety checks, size limits, stale-write protection, unique edit matching, and all-or-nothing patch planning.
-- Removed the workspace-root allowlist so absolute paths can target files outside the current project when the operating system permits it.
-- Added tool-local documentation for path behavior, safety boundaries, workflow, actions, and configuration.
+- 新增统一的 `file_operator` 本地文本文件工具。
+- 新增读取、列目录、路径搜索、文本搜索、写入、精确编辑和结构化补丁能力。
+- 新增文本安全检查、大小限制、过期内容保护、唯一匹配编辑和补丁先规划后写入机制。
+- 移除工作区目录白名单，让绝对路径可以在操作系统允许时指向当前项目外的文件。
+- 新增工具目录内的中文说明文档，说明路径行为、安全边界、推荐流程、操作类型和配置项。

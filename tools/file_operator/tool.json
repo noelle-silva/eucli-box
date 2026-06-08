@@ -1,8 +1,8 @@
 {
   "id": "file_operator",
   "name": "file_operator",
-  "description": "Read, search, write, edit, and patch bounded text files using relative or absolute paths.",
-  "promptDescription": "Use file_operator for normal file work instead of shell_command. It is a bounded text-file tool with one required [action]: read, list, glob, grep, write, edit, or apply_patch. Relative paths resolve from the e-b host working directory. Absolute paths are allowed and may point outside the current project when the running process has operating-system permission. This tool is for text files and rejects binary content, unsafe null bytes, files over maxFileBytes, and outputs over configured limits. Recommended workflow: use glob/grep to locate files, read the exact file or range, then edit/write/apply_patch. Keep the hash returned by read and pass it as expectedHash when using write or edit on an existing file to avoid overwriting a changed file. read: inspect a file or directory using [path], optional [offset] and [limit]; file output is line-numbered and includes hash, totalLines, nextOffset, and truncation metadata. list: list directory entries using [path]. glob: find paths by [path] plus [pattern], supporting *, ?, and **. grep: search text using [path] plus regex [query]; optional [include] filters files by glob, [ignoreCase] enables case-insensitive matching, and [showHidden] includes hidden paths. write: create or replace a text file using [path] and [content]; use expectedHash for existing files when you previously read them. edit: perform exact replacement using [path], [oldString], [newString], optional [replaceAll], and optional expectedHash; oldString must be unique unless replaceAll is true; empty oldString only creates a missing file and fails for existing files. apply_patch: apply structured patchText with *** Begin Patch / *** End Patch and file sections: *** Add File, *** Delete File, *** Update File, optional *** Move to. Patch update lines use space for context, - for removed lines, + for added lines, and @@ separators; old patch text must match uniquely. apply_patch plans all operations before writing so a later planning failure does not leave earlier partial changes. Delete and move operations still preserve the text-file boundary and reject non-text targets.",
+  "description": "使用相对路径或绝对路径读取、搜索、写入、编辑和补丁修改受限文本文件。",
+  "promptDescription": "使用 file_operator 处理常规文件工作，而不是用 shell_command 做普通文件操作。它是一个受限文本文件工具，必须提供一个 action：read、list、glob、grep、write、edit 或 apply_patch。相对路径从 e-b 宿主运行位置解析；绝对路径允许指向当前项目外的位置，前提是运行进程具有操作系统权限。本工具只处理文本文件，会拒绝二进制内容、危险空字节、超过 maxFileBytes 的文件，以及超过配置限制的输出。推荐流程：先用 glob/grep 定位文件，再用 read 查看准确文件或范围，最后用 edit/write/apply_patch 修改。读取文件后，请保留 read 返回的 hash；修改现有文件时，把它作为 expectedHash 传给 write 或 edit，避免覆盖已经变化的文件。read：使用 path 读取文件或目录，可选 offset 和 limit；文件输出带行号，并返回 hash、totalLines、nextOffset 和截断信息。list：使用 path 列出目录条目。glob：使用 path 和 pattern 查找路径，支持 *、? 和 **。grep：使用 path 和正则 query 搜索文本；include 可用通配模式过滤文件，ignoreCase 开启忽略大小写，showHidden 包含隐藏路径。write：使用 path 和 content 创建或替换文本文件；修改已读取过的现有文件时使用 expectedHash。edit：使用 path、oldString、newString 做精确替换，可选 replaceAll 和 expectedHash；oldString 默认必须唯一，除非 replaceAll 为 true；空 oldString 只允许创建缺失文件，目标已存在时会失败。apply_patch：使用结构化 patchText，格式为 *** Begin Patch / *** End Patch，中间包含 *** Add File、*** Delete File、*** Update File，可选 *** Move to；补丁更新行中，空格表示上下文，- 表示删除行，+ 表示新增行，@@ 表示分隔；旧补丁文本必须唯一匹配。apply_patch 会先规划所有操作再写入，因此后续规划失败不会留下前置半截修改。删除和移动操作仍然保持文本文件边界，会拒绝非文本目标。",
   "type": "local",
   "directory": ".",
   "userConfigSchema": {
@@ -10,33 +10,33 @@
     "properties": {
       "maxFileBytes": {
         "type": "integer",
-        "title": "Max File Bytes",
-        "description": "Maximum text file size accepted for read/edit/write/patch operations."
+        "title": "最大文件字节数",
+        "description": "读取、编辑、写入和补丁操作可接受的最大文本文件大小。"
       },
       "defaultReadLines": {
         "type": "integer",
-        "title": "Default Read Lines",
-        "description": "Default number of lines returned by read/list when the model omits limit."
+        "title": "默认读取行数",
+        "description": "模型未提供 limit 时，read/list 默认返回的行数或条目数。"
       },
       "maxReadLines": {
         "type": "integer",
-        "title": "Max Read Lines",
-        "description": "Maximum read/list lines returned per call."
+        "title": "最大读取行数",
+        "description": "每次 read/list 调用最多返回的行数或条目数。"
       },
       "maxLineChars": {
         "type": "integer",
-        "title": "Max Line Chars",
-        "description": "Maximum visible characters per returned text line."
+        "title": "单行最大字符数",
+        "description": "返回文本中每一行最多展示的可见字符数。"
       },
       "maxOutputChars": {
         "type": "integer",
-        "title": "Max Output Chars",
-        "description": "Maximum visible characters returned per tool call."
+        "title": "最大输出字符数",
+        "description": "每次工具调用最多返回的可见字符数。"
       },
       "maxSearchResults": {
         "type": "integer",
-        "title": "Max Search Results",
-        "description": "Maximum glob/grep matches returned per call."
+        "title": "最大搜索结果数",
+        "description": "glob/grep 每次调用最多返回的匹配结果数。"
       }
     },
     "additionalProperties": false
@@ -55,67 +55,67 @@
       "action": {
         "type": "string",
         "enum": ["read", "list", "glob", "grep", "write", "edit", "apply_patch"],
-        "description": "Operation to run: read, list, glob, grep, write, edit, or apply_patch."
+        "description": "要执行的操作：read、list、glob、grep、write、edit 或 apply_patch。"
       },
       "path": {
         "type": "string",
-        "description": "Target file or directory path. Relative paths resolve from the e-b host working directory; absolute paths are allowed."
+        "description": "目标文件或目录路径。相对路径从 e-b 宿主运行位置解析；绝对路径允许使用。"
       },
       "pattern": {
         "type": "string",
-        "description": "Glob pattern for action=glob. Supports *, ?, and **. Example: **/*.go."
+        "description": "action=glob 时使用的通配模式，支持 *、? 和 **。示例：**/*.go。"
       },
       "query": {
         "type": "string",
-        "description": "Regular expression query for action=grep. Use grep before reading many files."
+        "description": "action=grep 时使用的正则表达式。读取大量文件前，优先用 grep 定位内容。"
       },
       "include": {
         "type": "string",
-        "description": "Optional glob pattern limiting grep files, for example *.go or **/*.ts."
+        "description": "grep 的可选文件过滤通配模式，例如 *.go 或 **/*.ts。"
       },
       "content": {
         "type": "string",
-        "description": "Full text content for action=write. Binary/null-byte content is rejected."
+        "description": "action=write 时写入的完整文本内容。二进制内容和空字节会被拒绝。"
       },
       "oldString": {
         "type": "string",
-        "description": "Exact old text for action=edit. It must be unique unless replaceAll is true. Empty oldString creates a missing file and fails for existing files."
+        "description": "action=edit 时要替换的精确旧文本。默认必须唯一；replaceAll 为 true 时可替换全部匹配。空 oldString 只允许创建缺失文件，目标已存在时会失败。"
       },
       "newString": {
         "type": "string",
-        "description": "Replacement text for action=edit. Final file content must remain valid bounded text."
+        "description": "action=edit 时使用的新文本。最终文件内容必须仍是受限文本内容。"
       },
       "replaceAll": {
         "type": "boolean",
-        "description": "For action=edit, replace every occurrence instead of requiring oldString to be unique."
+        "description": "action=edit 时替换所有匹配项，而不是要求 oldString 唯一。"
       },
       "patchText": {
         "type": "string",
-        "description": "Patch text for action=apply_patch. Use *** Begin Patch and *** End Patch with Add File, Delete File, Update File, optional Move to, and space/-/+ update lines."
+        "description": "action=apply_patch 时使用的补丁文本。使用 *** Begin Patch 和 *** End Patch，文件段支持 Add File、Delete File、Update File、可选 Move to，以及空格/-/+ 更新行。"
       },
       "expectedHash": {
         "type": "string",
-        "description": "Optional sha256 hash from a previous read. For existing files, pass it to write/edit so the operation fails if the file changed."
+        "description": "可选的 sha256 值，来自之前的 read。修改现有文件时传入它，如果文件已经变化，write/edit 会失败。"
       },
       "offset": {
         "type": "integer",
-        "description": "1-based line or entry offset for read/list. Use nextOffset from a truncated read/list result to continue."
+        "description": "read/list 的 1 基行号或条目偏移。可使用截断结果中的 nextOffset 继续读取。"
       },
       "limit": {
         "type": "integer",
-        "description": "Maximum lines or entries for read/list. Clamped by configuration."
+        "description": "read/list 最多返回的行数或条目数，会受到配置上限约束。"
       },
       "maxOutputChars": {
         "type": "integer",
-        "description": "Maximum visible characters returned for this call. Clamped by configuration; lowering this is allowed, raising hard limits is not."
+        "description": "本次调用最多返回的可见字符数。允许降低显示量，但不能突破配置硬上限。"
       },
       "ignoreCase": {
         "type": "boolean",
-        "description": "For action=grep, use case-insensitive regular expression matching."
+        "description": "action=grep 时启用忽略大小写的正则匹配。"
       },
       "showHidden": {
         "type": "boolean",
-        "description": "For action=list/glob/grep, include hidden files and folders."
+        "description": "action=list/glob/grep 时包含隐藏文件和隐藏目录。"
       }
     },
     "required": ["action"],

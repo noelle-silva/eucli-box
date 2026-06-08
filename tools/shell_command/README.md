@@ -88,6 +88,8 @@ Provider 的可执行文件路径写在 `config.json` 中，并且必须是相�
 
 工具不会在 bundled Provider 缺失时偷偷回退到宿主机系统里的 shell。
 
+启动 Provider 时，工具会注入统一的 UTF-8 运行环境提示，用于让会遵守运行环境约定的外部程序优先输出 UTF-8。这个机制可以改善 Python、类 Unix 工具等常见第三方程序在 Windows 中文区域设置下的输出，但不承诺能强制所有旧式 Windows 原生程序改变编码。
+
 ## 输入参数
 
 必填参数：
@@ -116,6 +118,15 @@ Provider 的可执行文件路径写在 `config.json` 中，并且必须是相�
 - `workdir`
 - `truncated`
 - `maxOutputChars`
+- `encoding`
+- `invalidUTF8`
+- `utf8ReplacementCount`
+- `stdoutInvalidUTF8`
+- `stderrInvalidUTF8`
+- `combinedInvalidUTF8`
+- `stdoutUTF8ReplacementCount`
+- `stderrUTF8ReplacementCount`
+- `combinedUTF8ReplacementCount`
 - `error`
 
 判断命令是否成功时，优先看工具状态和 `exitCode`。
@@ -170,6 +181,7 @@ Provider 选择建议：
 - 继续下一步前，先检查 `stdout`、`stderr` 和 `combinedOutput`。
 - 如果 `timedOut == true`，说明命令超时，不要假设命令已经完整完成。
 - 如果 `truncated == true`，说明返回内容被截断，只能看到部分输出。
+- 如果 `invalidUTF8 == true`，说明捕获到非 UTF-8 字节，工具已把不可展示的字节替换为 `?`，并在内容开头加入编码警告。
 
 ## 直接调试入口
 

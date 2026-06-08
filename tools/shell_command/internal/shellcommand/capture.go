@@ -3,7 +3,15 @@ package shellcommand
 import (
 	"strings"
 	"sync"
+	"unicode/utf8"
 )
+
+type capturedText struct {
+	Text             string
+	Truncated        bool
+	InvalidUTF8      bool
+	ReplacementCount int
+}
 
 type limitedBuffer struct {
 	mu        sync.Mutex
@@ -38,19 +46,40 @@ func (b *limitedBuffer) Write(payload []byte) (int, error) {
 	return len(payload), nil
 }
 
-func (b *limitedBuffer) Snapshot() (string, bool) {
+func (b *limitedBuffer) Snapshot() capturedText {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	text := strings.ToValidUTF8(string(b.data), "?")
-	truncated := b.truncated
-	if b.charLimit > 0 {
-		runes := []rune(text)
-		if len(runes) > b.charLimit {
-			text = string(runes[:b.charLimit])
+	return normalizeCapturedText(b.data, b.charLimit, b.truncated)
+}
+
+func normalizeCapturedText(data []byte, charLimit int, byteTruncated bool) capturedText {
+	var builder strings.Builder
+	builder.Grow(len(data))
+	truncated := byteTruncated
+	invalidCount := 0
+	runeCount := 0
+	for index := 0; index < len(data); {
+		if charLimit > 0 && runeCount >= charLimit {
 			truncated = true
+			break
 		}
+		r, size := utf8.DecodeRune(data[index:])
+		if r == utf8.RuneError && size == 1 {
+			if byteTruncated && !utf8.FullRune(data[index:]) {
+				truncated = true
+				break
+			}
+			builder.WriteByte('?')
+			invalidCount++
+			index++
+			runeCount++
+			continue
+		}
+		builder.WriteRune(r)
+		index += size
+		runeCount++
 	}
-	return text, truncated
+	return capturedText{Text: builder.String(), Truncated: truncated, InvalidUTF8: invalidCount > 0, ReplacementCount: invalidCount}
 }
 
 type streamCapture struct {

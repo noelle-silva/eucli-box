@@ -10,14 +10,22 @@ import (
 )
 
 type processResult struct {
-	Stdout         string
-	Stderr         string
-	CombinedOutput string
-	ExitCode       int
-	TimedOut       bool
-	DurationMs     int64
-	Truncated      bool
-	Error          string
+	Stdout                       string
+	Stderr                       string
+	CombinedOutput               string
+	ExitCode                     int
+	TimedOut                     bool
+	DurationMs                   int64
+	Truncated                    bool
+	InvalidUTF8                  bool
+	UTF8ReplacementCount         int
+	StdoutInvalidUTF8            bool
+	StderrInvalidUTF8            bool
+	StdoutUTF8ReplacementCount   int
+	StderrUTF8ReplacementCount   int
+	CombinedInvalidUTF8          bool
+	CombinedUTF8ReplacementCount int
+	Error                        string
 }
 
 func runProviderCommand(ctx context.Context, provider selectedProvider, request commandRequest, workdir string) processResult {
@@ -65,9 +73,11 @@ func runProviderCommand(ctx context.Context, provider selectedProvider, request 
 			exitCode = exitErr.ExitCode()
 		}
 	}
-	stdoutText, stdoutTruncated := stdout.Snapshot()
-	stderrText, stderrTruncated := stderr.Snapshot()
-	combinedText, combinedTruncated := combined.Snapshot()
+	stdoutText := stdout.Snapshot()
+	stderrText := stderr.Snapshot()
+	combinedText := combined.Snapshot()
+	invalidUTF8 := stdoutText.InvalidUTF8 || stderrText.InvalidUTF8 || combinedText.InvalidUTF8
+	utf8ReplacementCount := max(stdoutText.ReplacementCount+stderrText.ReplacementCount, combinedText.ReplacementCount)
 	errorMessage := ""
 	if timedOut {
 		errorMessage = fmt.Sprintf("command timed out after %dms", request.TimeoutMs)
@@ -75,14 +85,22 @@ func runProviderCommand(ctx context.Context, provider selectedProvider, request 
 		errorMessage = waitErr.Error()
 	}
 	return processResult{
-		Stdout:         stdoutText,
-		Stderr:         stderrText,
-		CombinedOutput: combinedText,
-		ExitCode:       exitCode,
-		TimedOut:       timedOut,
-		DurationMs:     elapsedMs(startedAt),
-		Truncated:      stdoutTruncated || stderrTruncated || combinedTruncated,
-		Error:          errorMessage,
+		Stdout:                       stdoutText.Text,
+		Stderr:                       stderrText.Text,
+		CombinedOutput:               combinedText.Text,
+		ExitCode:                     exitCode,
+		TimedOut:                     timedOut,
+		DurationMs:                   elapsedMs(startedAt),
+		Truncated:                    stdoutText.Truncated || stderrText.Truncated || combinedText.Truncated,
+		InvalidUTF8:                  invalidUTF8,
+		UTF8ReplacementCount:         utf8ReplacementCount,
+		StdoutInvalidUTF8:            stdoutText.InvalidUTF8,
+		StderrInvalidUTF8:            stderrText.InvalidUTF8,
+		StdoutUTF8ReplacementCount:   stdoutText.ReplacementCount,
+		StderrUTF8ReplacementCount:   stderrText.ReplacementCount,
+		CombinedInvalidUTF8:          combinedText.InvalidUTF8,
+		CombinedUTF8ReplacementCount: combinedText.ReplacementCount,
+		Error:                        errorMessage,
 	}
 }
 

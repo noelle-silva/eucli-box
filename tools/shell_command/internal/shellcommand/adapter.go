@@ -5,6 +5,12 @@ import (
 	"strings"
 )
 
+var utf8ProviderEnvironment = []string{
+	"LANG=C.UTF-8",
+	"LC_ALL=C.UTF-8",
+	"PYTHONIOENCODING=utf-8",
+}
+
 func providerArgs(provider ProviderConfig, command string) ([]string, error) {
 	switch strings.TrimSpace(provider.Kind) {
 	case "git-bash":
@@ -21,9 +27,35 @@ func providerArgs(provider ProviderConfig, command string) ([]string, error) {
 func providerEnv(provider ProviderConfig, base []string) []string {
 	env := append([]string{}, base...)
 	if strings.ToLower(strings.TrimSpace(provider.Encoding)) == "utf-8" {
-		env = append(env, "LANG=C.UTF-8", "LC_ALL=C.UTF-8")
+		env = applyEnvironmentOverrides(env, utf8ProviderEnvironment)
 	}
 	return env
+}
+
+func applyEnvironmentOverrides(base []string, overrides []string) []string {
+	overrideKeys := map[string]struct{}{}
+	for _, override := range overrides {
+		key, ok := environmentKey(override)
+		if ok {
+			overrideKeys[strings.ToUpper(key)] = struct{}{}
+		}
+	}
+	env := make([]string, 0, len(base)+len(overrides))
+	for _, entry := range base {
+		key, ok := environmentKey(entry)
+		if ok {
+			if _, exists := overrideKeys[strings.ToUpper(key)]; exists {
+				continue
+			}
+		}
+		env = append(env, entry)
+	}
+	return append(env, overrides...)
+}
+
+func environmentKey(entry string) (string, bool) {
+	key, _, ok := strings.Cut(entry, "=")
+	return key, ok && key != ""
 }
 
 func powershellCommand(command string) string {

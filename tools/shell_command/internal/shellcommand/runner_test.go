@@ -71,6 +71,45 @@ func TestExecuteTruncatesCapturedOutput(t *testing.T) {
 	if len([]rune(result.Content)) != 12 {
 		t.Fatalf("content length = %d, content = %q", len([]rune(result.Content)), result.Content)
 	}
+	if result.Metadata["invalidUTF8"] != false || result.Metadata["utf8ReplacementCount"] != 0 {
+		t.Fatalf("encoding metadata = %#v", result.Metadata)
+	}
+}
+
+func TestExecuteDoesNotMarkByteTruncationAsInvalidUTF8(t *testing.T) {
+	fixture := newShellCommandFixture(t)
+	result := Execute(context.Background(), types.ToolExecutionInput{
+		Arguments:            map[string]any{"command": "partial-byte-truncate", "maxOutputChars": 1},
+		ToolDirectory:        fixture.toolDir,
+		HostWorkingDirectory: fixture.hostDir,
+	})
+	if result.Status != types.ToolStatusSuccess || result.Metadata["truncated"] != true {
+		t.Fatalf("result = %#v", result)
+	}
+	if result.Content != "界" {
+		t.Fatalf("content = %q", result.Content)
+	}
+	if result.Metadata["invalidUTF8"] != false || result.Metadata["utf8ReplacementCount"] != 0 {
+		t.Fatalf("encoding metadata = %#v", result.Metadata)
+	}
+}
+
+func TestExecuteMarksInvalidUTF8Output(t *testing.T) {
+	fixture := newShellCommandFixture(t)
+	result := Execute(context.Background(), types.ToolExecutionInput{
+		Arguments:            map[string]any{"command": "invalid-utf8"},
+		ToolDirectory:        fixture.toolDir,
+		HostWorkingDirectory: fixture.hostDir,
+	})
+	if result.Status != types.ToolStatusSuccess {
+		t.Fatalf("status = %s, error = %s", result.Status, result.Error)
+	}
+	if result.Metadata["invalidUTF8"] != true || result.Metadata["utf8ReplacementCount"] != 1 || result.Metadata["stdoutInvalidUTF8"] != true {
+		t.Fatalf("encoding metadata = %#v", result.Metadata)
+	}
+	if !strings.Contains(result.Content, "Command output contained non-UTF-8 bytes") || !strings.Contains(result.Content, "?ok") {
+		t.Fatalf("content = %q", result.Content)
+	}
 }
 
 func TestExecuteUsesUserConfigDefaults(t *testing.T) {
@@ -102,6 +141,29 @@ func TestExecuteFailsWhenBundledProviderMissing(t *testing.T) {
 	if result.Status != types.ToolStatusFailed || !strings.Contains(result.Error, "bundled executable is missing") {
 		t.Fatalf("result = %#v", result)
 	}
+}
+
+func TestProviderEnvAddsUTF8RuntimeHints(t *testing.T) {
+	env := providerEnv(ProviderConfig{Encoding: "utf-8"}, []string{"EXISTING=value", "LANG=legacy", "PythonIoEncoding=gbk"})
+	for _, expected := range []string{"EXISTING=value", "LANG=C.UTF-8", "LC_ALL=C.UTF-8", "PYTHONIOENCODING=utf-8"} {
+		if !containsEnv(env, expected) {
+			t.Fatalf("env missing %q: %#v", expected, env)
+		}
+	}
+	for _, unexpected := range []string{"LANG=legacy", "PythonIoEncoding=gbk"} {
+		if containsEnv(env, unexpected) {
+			t.Fatalf("env contains stale entry %q: %#v", unexpected, env)
+		}
+	}
+}
+
+func containsEnv(env []string, expected string) bool {
+	for _, entry := range env {
+		if entry == expected {
+			return true
+		}
+	}
+	return false
 }
 
 type shellCommandFixture struct {
@@ -185,6 +247,10 @@ func main() {
 		time.Sleep(200 * time.Millisecond)
 	case "large":
 		fmt.Print(strings.Repeat("界", 30))
+	case "partial-byte-truncate":
+		fmt.Print("界界")
+	case "invalid-utf8":
+		_, _ = os.Stdout.Write([]byte{0xff, 'o', 'k'})
 	default:
 		fmt.Println(command)
 	}

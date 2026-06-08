@@ -27,16 +27,25 @@ func Execute(ctx context.Context, input types.ToolExecutionInput) types.ToolExec
 	}
 	result := runProviderCommand(ctx, provider, request, workdir)
 	metadata := map[string]any{
-		"stdout":         result.Stdout,
-		"stderr":         result.Stderr,
-		"combinedOutput": result.CombinedOutput,
-		"exitCode":       result.ExitCode,
-		"timedOut":       result.TimedOut,
-		"durationMs":     result.DurationMs,
-		"workdir":        workdir,
-		"provider":       provider.Config.ID,
-		"truncated":      result.Truncated,
-		"maxOutputChars": request.MaxOutputChars,
+		"stdout":                       result.Stdout,
+		"stderr":                       result.Stderr,
+		"combinedOutput":               result.CombinedOutput,
+		"exitCode":                     result.ExitCode,
+		"timedOut":                     result.TimedOut,
+		"durationMs":                   result.DurationMs,
+		"workdir":                      workdir,
+		"provider":                     provider.Config.ID,
+		"truncated":                    result.Truncated,
+		"maxOutputChars":               request.MaxOutputChars,
+		"encoding":                     provider.Config.Encoding,
+		"invalidUTF8":                  result.InvalidUTF8,
+		"utf8ReplacementCount":         result.UTF8ReplacementCount,
+		"stdoutInvalidUTF8":            result.StdoutInvalidUTF8,
+		"stderrInvalidUTF8":            result.StderrInvalidUTF8,
+		"stdoutUTF8ReplacementCount":   result.StdoutUTF8ReplacementCount,
+		"stderrUTF8ReplacementCount":   result.StderrUTF8ReplacementCount,
+		"combinedInvalidUTF8":          result.CombinedInvalidUTF8,
+		"combinedUTF8ReplacementCount": result.CombinedUTF8ReplacementCount,
 	}
 	if strings.TrimSpace(request.Description) != "" {
 		metadata["description"] = request.Description
@@ -66,6 +75,18 @@ func failure(scope string, err error, metadata map[string]any) types.ToolExecuti
 }
 
 func outputContent(result processResult) string {
+	content := resultContent(result)
+	if result.InvalidUTF8 {
+		warning := fmt.Sprintf("[shell_command warning] Command output contained non-UTF-8 bytes; %d byte(s) were replaced with '?'.", result.UTF8ReplacementCount)
+		if strings.TrimSpace(content) == "" {
+			return warning
+		}
+		return warning + "\n" + content
+	}
+	return content
+}
+
+func resultContent(result processResult) string {
 	if strings.TrimSpace(result.CombinedOutput) != "" {
 		return result.CombinedOutput
 	}

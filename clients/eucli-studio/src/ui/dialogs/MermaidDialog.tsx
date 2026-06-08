@@ -183,7 +183,6 @@ export function MermaidDialog(props: { open: boolean; controller: any; mermaid: 
     setOffset(clampOffset(next, stageSize, contentSize, safeFit, nz))
     setZoom(nz)
     zoomRef.current = nz
-    controller.actions.mermaidSetScale(nz)
   })
 
   const zoomBy = useEvent((factor: number) => {
@@ -196,7 +195,6 @@ export function MermaidDialog(props: { open: boolean; controller: any; mermaid: 
     userInteractedRef.current = false
     setZoom(1)
     zoomRef.current = 1
-    controller.actions.mermaidSetScale(1)
     const iw = Number(contentSize.w || 0)
     const ih = Number(contentSize.h || 0)
     const sw = Number(stageSize.w || 0)

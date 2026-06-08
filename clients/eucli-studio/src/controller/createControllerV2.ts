@@ -878,6 +878,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     loadSplitMeta: loadSplitMetaCached,
     getSplitMetaCache,
     emit,
+    subscribeDirectEvents: (capabilities.host as any)?.directEvents?.subscribe,
     activeTargetKind,
     activeChatFromData,
     ensureActiveChatLoaded,
@@ -919,7 +920,10 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     clearPendingGroupChat,
     setDraft: (key: any, value: any) => {
       const k = String(key || '')
-      if (k === 'input') setActiveComposerInput(state, value)
+      if (k === 'input') {
+        setActiveComposerInput(state, value)
+        return
+      }
       else if (k) (state.draft as any)[k] = value
       emit()
     },
@@ -1844,7 +1848,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       if (!k) return
       if (k === 'input') {
         setActiveComposerInput(state, value)
-        emit()
         return
       }
       ;(state.draft as any)[k] = value

@@ -70,6 +70,7 @@ import PsychologySparkIcon from '@mui/icons-material/PsychologyAlt'
 import { IMAGE_VIEWER_ZOOM_MAX, MERMAID_VIEWER_ZOOM_MAX, VIEWER_ZOOM_MIN } from '../core/viewerZoom'
 import { ProviderConfigEditor } from './components/ProviderConfigEditor'
 import { useAiChatState } from './hooks/useAiChatState'
+import { useDeferredChatSwitch } from './hooks/useDeferredChatSwitch'
 import { useEvent } from './hooks/useEvent'
 import { findAtMentionTrigger } from './utils/mention'
 import { ProvidersDialog } from './dialogs/ProvidersDialog'
@@ -82,24 +83,24 @@ import { MermaidDialog } from './dialogs/MermaidDialog'
 import { ImageDialog } from './dialogs/ImageDialog'
 import { RoleAvatarCropper } from './components/avatar/RoleAvatarCropper'
 import { StandaloneWindowControls, type WindowControlActions } from './components/StandaloneWindowControls'
-import { AssistantMessageBlocks } from './components/AssistantMessageBlocks'
 import { RolesSettingsPanel } from './settings/RolesSettingsPanel'
 import { AiToolsSettingsPanel } from './settings/AiToolsSettingsPanel'
 import { EbSettingsPanel } from './settings/EbSettingsPanel'
 import { ModelGroupsSettingsPanel } from './settings/ModelGroupsSettingsPanel'
 import { SettingsPageLayout, type SettingsTabValue } from './settings/SettingsNavigationBar'
 import { AI_STUDIO_CHAT_ROOT_ID } from '../runtime/aiStudioGlobals'
-import { ASSISTANT_RUNNING_CONTENT, assistantRunGenerationId, isAssistantAwaitingFirstOutput, isAssistantGenerating } from '../domain/assistantRunState'
+import { ASSISTANT_RUNNING_CONTENT, assistantRunGenerationId, isAssistantGenerating } from '../domain/assistantRunState'
+import { activeRunCardForAssistantMessage, isStaleAssistantPlaceholder, messageVisibleText } from '../domain/chatMessageDisplay'
 import { formatModelRefDisplayText } from '../domain/modelRefUtils'
 import { pendingChatForTarget } from '../domain/pendingChat'
 import { chatNavigationFromOrderedChats } from '../domain/chatNavigation'
 import { chatSessionRunSummaryFromChat, normalizeChatSessionRunStatus, type ChatSessionRunStatus } from '../domain/chatSessionRunStatus'
 import { sortChatListItemsForDisplay } from '../domain/chatListOrdering'
 import { filterEbRoleRunCardsOnMessagePath, readActiveEbRoleRunCardsForSession } from '../domain/activeRunCards'
-import { messageMutationConflict, type MessageMutationOperation } from '../domain/messageMutationConflicts'
-import { AssistantReplyPendingIndicator } from './components/AssistantReplyPendingIndicator'
-import { AssistantErrorNotice } from './components/AssistantErrorNotice'
+import { createMessageMutationGuard, type MessageMutationOperation } from '../domain/messageMutationConflicts'
 import { ChatSessionRunIndicator, type ChatSessionRunIndicatorKind } from './components/ChatSessionRunIndicator'
+import { ChatMessageList } from './components/ChatMessageList'
+import { StickerInlineImage } from './components/MessageMedia'
 import type { AiChatToastOptions } from '../gateway/capabilities'
 import { REASONING_EFFORT_OPTIONS, chatReasoningEffort, effectiveReasoningEffort, modelReasoningProfileFromModelRef, reasoningEffortLabel } from '../domain/reasoning'
 
@@ -174,27 +175,6 @@ function snippetText(raw: any, maxLen = 26) {
   const one = s.replace(/\s+/g, ' ').trim()
   if (one.length <= maxLen) return one
   return one.slice(0, Math.max(0, maxLen - 1)).trimEnd() + '…'
-}
-
-function messageVisibleText(message: any) {
-  const raw = String(message?.content || '')
-  if (String(message?.role || '') === 'assistant' && raw.trim() === ASSISTANT_RUNNING_CONTENT) return ''
-  return raw
-}
-
-function isStaleAssistantPlaceholder(message: any, hasActiveRun: boolean) {
-  if (hasActiveRun) return false
-  if (String(message?.role || '') !== 'assistant') return false
-  if (String(message?.content || '').trim() !== ASSISTANT_RUNNING_CONTENT) return false
-  if (Array.isArray(message?.parts) && message.parts.length) return false
-  return !(message?.error && typeof message.error === 'object')
-}
-
-function activeRunCardForAssistantMessage(cards: any[], message: any) {
-  const mid = String(message?.id || '').trim()
-  const generationId = assistantRunGenerationId(message)
-  if (!mid && !generationId) return null
-  return (Array.isArray(cards) ? cards : []).find((card: any) => String(card?.lastMessageId || '').trim() === mid || (generationId && String(card?.runId || '').trim() === generationId)) || null
 }
 
 function numericTimeValue(value: unknown) {
@@ -435,157 +415,241 @@ function buildChatTreeLayout(messagesRaw: any[], opts?: { maxNodes?: number }) {
 
 const TOPBAR_H = 40
 
-function RefImageThumb(props: { controller: any; path: string }) {
-  const { controller, path } = props
-  const [src, setSrc] = React.useState('')
+function ComposerInputControls(props: {
+  controller: any
+  draftKey: string
+  initialValue: string
+  inputRef: React.MutableRefObject<HTMLTextAreaElement | HTMLInputElement | null>
+  disabled: boolean
+  draftFilesPending: boolean
+  draftFilesWarn: boolean
+  hasDraftNonText: boolean
+  activeTargetKind: 'role' | 'group'
+  activeGroup: any
+  roles: any[]
+  activeStopRunId: string
+  formatModelRefText: (modelRef: any) => string
+  onSend: () => void
+  onStop: () => void
+  onPaste: (e: React.ClipboardEvent) => void
+}) {
+  const {
+    controller,
+    draftKey,
+    initialValue,
+    inputRef,
+    disabled,
+    draftFilesPending,
+    draftFilesWarn,
+    hasDraftNonText,
+    activeTargetKind,
+    activeGroup,
+    roles,
+    activeStopRunId,
+    formatModelRefText,
+    onSend,
+    onStop,
+    onPaste,
+  } = props
+  const localInputRef = React.useRef<HTMLTextAreaElement | HTMLInputElement | null>(null)
+  const [value, setValue] = React.useState(() => String(initialValue || ''))
+  const [atPicker, setAtPicker] = React.useState<null | { triggerIndex: number; cursorIndex: number; query: string }>(null)
+
+  const setInputRef = React.useCallback(
+    (el: HTMLTextAreaElement | HTMLInputElement | null) => {
+      localInputRef.current = el
+      inputRef.current = el
+    },
+    [inputRef],
+  )
 
   React.useEffect(() => {
-    let alive = true
-    const api = controller?.capabilities
-    if (!api?.files?.images?.read) return
-    api.files.images
-      .read({ scope: 'data', path })
-      .then((url: string) => {
-        if (!alive) return
-        setSrc(String(url || ''))
-      })
-      .catch(() => {})
-    return () => {
-      alive = false
-    }
-  }, [controller, path])
+    setValue(String(initialValue || ''))
+    setAtPicker(null)
+  }, [draftKey, initialValue])
 
-  return (
-    <Box
-      component="img"
-      data-fw-img="1"
-      src={src || undefined}
-      alt="image"
-      sx={{
-        width: 160,
-        height: 110,
-        objectFit: 'cover',
-        borderRadius: 2,
-        border: '1px solid',
-        borderColor: 'divider',
-        bgcolor: 'action.hover',
-        cursor: 'zoom-in',
-      }}
-    />
-  )
-}
+  const closeAtPicker = useEvent(() => setAtPicker(null))
 
-const stickerSrcCache = new Map<string, string>()
+  const syncAtPicker = useEvent((text?: string, cursorIndex?: number) => {
+    if (disabled) return closeAtPicker()
+    if (activeTargetKind !== 'group' || !activeGroup) return closeAtPicker()
 
-function StickerInlineImage(props: { controller: any; path: string; label: string; size?: number }) {
-  const { controller, path, label, size } = props
-  const [src, setSrc] = React.useState('')
-
-  React.useEffect(() => {
-    const p = String(path || '').trim()
-    if (!p) return
-
-    const cached = stickerSrcCache.get(p)
-    if (typeof cached === 'string' && cached) {
-      setSrc(cached)
-      return
-    }
-
-    let alive = true
-    const api = controller?.capabilities
-    if (!api?.files?.images?.read) return
-
-    api.files.images
-      .read({ scope: 'data', path: p })
-      .then((url: string) => {
-        if (!alive) return
-        const u = String(url || '')
-        if (u.startsWith('data:')) stickerSrcCache.set(p, u)
-        setSrc(u)
-      })
-      .catch(() => {})
-
-    return () => {
-      alive = false
-    }
-  }, [controller, path])
-
-  const s = clampNum(Number(size || 90), 32, 240)
-
-  return (
-    <Box
-      component="img"
-      data-fw-img="1"
-      src={src || undefined}
-      alt={label || 'sticker'}
-      sx={{
-        width: s,
-        height: s,
-        objectFit: 'contain',
-        display: 'inline-block',
-        verticalAlign: 'middle',
-        borderRadius: 12,
-        border: '1px solid',
-        borderColor: 'divider',
-        bgcolor: 'action.hover',
-        cursor: 'zoom-in',
-      }}
-    />
-  )
-}
-
-type StickerSeg =
-  | { kind: 'text'; text: string }
-  | { kind: 'sticker'; raw: string; category: string; name: string }
-
-function splitStickerSegments(input: string): StickerSeg[] {
-  const s = String(input || '')
-  if (!s) return [{ kind: 'text', text: '' }]
-
-  const out: StickerSeg[] = []
-  const re = /\[\[\s*(?:sticker|表情包)\s*:\s*([^\]\n]{1,220}?)\s*\]\]/g
-  let last = 0
-  let m: RegExpExecArray | null = null
-
-  while ((m = re.exec(s))) {
-    const idx = m.index
-    const full = String(m[0] || '')
-    const inner = String(m[1] || '').trim().replace(/\\/g, '/')
-
-    if (idx > last) out.push({ kind: 'text', text: s.slice(last, idx) })
-
-    const parts = inner
-      .split('/')
+    const memberIds = (Array.isArray((activeGroup as any)?.memberRoleIds) ? ((activeGroup as any).memberRoleIds as any[]) : [])
       .map((x) => String(x || '').trim())
       .filter((x) => !!x)
-    if (parts.length === 2) {
-      out.push({ kind: 'sticker', raw: full, category: parts[0], name: parts[1] })
-    } else {
-      out.push({ kind: 'text', text: full })
+    if (!memberIds.length) return closeAtPicker()
+
+    const el = localInputRef.current as any
+    const currentValue = typeof text === 'string' ? text : el && typeof el.value === 'string' ? String(el.value || '') : value
+    const cursor =
+      typeof cursorIndex === 'number'
+        ? cursorIndex
+        : el && typeof el.selectionStart === 'number'
+          ? Number(el.selectionStart || 0)
+          : currentValue.length
+
+    const hit = findAtMentionTrigger(currentValue, cursor)
+    if (!hit) return closeAtPicker()
+    setAtPicker(hit)
+  })
+
+  const atPickerOptions = React.useMemo(() => {
+    if (!atPicker) return []
+    if (activeTargetKind !== 'group' || !activeGroup) return []
+    const memberIds = (Array.isArray((activeGroup as any)?.memberRoleIds) ? ((activeGroup as any).memberRoleIds as any[]) : [])
+      .map((x) => String(x || '').trim())
+      .filter((x) => !!x)
+    if (!memberIds.length) return []
+    const memberRoles = memberIds.map((rid) => roles.find((r: any) => String(r?.id || '') === rid) || null).filter((x) => !!x) as any[]
+    const q = String(atPicker.query || '').trim().toLowerCase()
+    if (!q) return memberRoles.slice(0, 30)
+    return memberRoles
+      .filter((r: any) => String(r?.name || '').toLowerCase().includes(q) || String(r?.id || '').toLowerCase().includes(q))
+      .slice(0, 30)
+  }, [atPicker, activeTargetKind, activeGroup, roles])
+
+  const setDraftInput = useEvent((next: string) => {
+    setValue(next)
+    controller.actions.setDraft('input', next)
+  })
+
+  const applyAtPickRole = useEvent((role: any) => {
+    const el = localInputRef.current as any
+    const currentValue = el && typeof el.value === 'string' ? String(el.value || '') : value
+    const cursor = el && typeof el.selectionStart === 'number' ? Number(el.selectionStart || 0) : currentValue.length
+    const hit = atPicker ? findAtMentionTrigger(currentValue, cursor) : null
+    if (!hit) return closeAtPicker()
+
+    const rawName = String(role?.name || '').trim()
+    const safeName = rawName.replace(/[{}]/g, '').slice(0, 80) || 'AI'
+    const insert = `@{${safeName}} `
+    const next = currentValue.slice(0, hit.triggerIndex) + insert + currentValue.slice(hit.cursorIndex)
+    setDraftInput(next)
+    closeAtPicker()
+
+    requestAnimationFrame(() => {
+      try {
+        el?.focus?.()
+        const pos = Math.min(next.length, hit.triggerIndex + insert.length)
+        el?.setSelectionRange?.(pos, pos)
+      } catch (_) {}
+    })
+  })
+
+  const sendFromInput = useEvent(() => {
+    closeAtPicker()
+    onSend()
+  })
+
+  const onInputKeyDown = useEvent((e: React.KeyboardEvent) => {
+    if (atPicker) {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        closeAtPicker()
+        return
+      }
+      if (e.key === 'Enter' && !e.shiftKey && atPickerOptions.length) {
+        e.preventDefault()
+        applyAtPickRole(atPickerOptions[0])
+        return
+      }
     }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      sendFromInput()
+    }
+  })
 
-    last = idx + full.length
-  }
-
-  if (last < s.length) out.push({ kind: 'text', text: s.slice(last) })
-  return out.length ? out : [{ kind: 'text', text: s }]
-}
-
-function StickerText(props: { controller: any; text: string; stickerMap: any }) {
-  const { controller, text, stickerMap } = props
-  const segs = React.useMemo(() => splitStickerSegments(String(text || '')), [text])
+  const sendDisabled = disabled || draftFilesPending || (!String(value || '').trim() && !hasDraftNonText)
 
   return (
-    <Typography sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
-      {segs.map((seg, i) => {
-        if (seg.kind === 'text') return <React.Fragment key={i}>{seg.text}</React.Fragment>
-        const cat = String(seg.category || '').trim()
-        const name = String(seg.name || '').trim()
-        const relPath = stickerMap && typeof stickerMap === 'object' ? String(stickerMap?.[cat]?.[name]?.relPath || '') : ''
-        if (!relPath) return <React.Fragment key={i}>{seg.raw}</React.Fragment>
-        return <StickerInlineImage key={i} controller={controller} path={relPath} label={`${cat}/${name}`} />
-      })}
-    </Typography>
+    <>
+      <TextField
+        fullWidth
+        multiline
+        minRows={2}
+        maxRows={8}
+        variant="outlined"
+        placeholder="输入消息…（Enter 发送 / Shift+Enter 换行；支持粘贴图片/选择文件）"
+        value={value}
+        inputRef={setInputRef}
+        onChange={(e) => {
+          const next = e.target.value
+          setDraftInput(next)
+          syncAtPicker(next, typeof (e.target as any).selectionStart === 'number' ? Number((e.target as any).selectionStart || 0) : next.length)
+        }}
+        onKeyDown={onInputKeyDown}
+        onKeyUp={() => syncAtPicker()}
+        onClick={() => syncAtPicker()}
+        onPaste={onPaste}
+        disabled={disabled}
+        sx={{
+          '& .MuiOutlinedInput-notchedOutline': { border: 0 },
+          '&:hover .MuiOutlinedInput-notchedOutline': { border: 0 },
+          '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': { border: 0 },
+        }}
+      />
+
+      <Popover
+        open={!!atPicker && !!localInputRef.current && activeTargetKind === 'group' && !!activeGroup}
+        anchorEl={(localInputRef.current as any) || undefined}
+        onClose={closeAtPicker}
+        anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        disableAutoFocus
+        disableEnforceFocus
+        PaperProps={{ sx: { width: 280, maxHeight: 320, overflow: 'hidden' } }}
+      >
+        <Box sx={{ p: 0.5, maxHeight: 320, overflowY: 'auto' }}>
+          <Typography variant="caption" color="text.secondary" sx={{ px: 1, display: 'block', pb: 0.5 }}>
+            点名回答：选择要被 @ 的角色
+          </Typography>
+          {atPickerOptions.length ? (
+            <List dense sx={{ py: 0 }}>
+              {atPickerOptions.map((r: any) => {
+                const id = String(r?.id || '')
+                const name = String(r?.name || '')
+                const avatar = String(r?.avatar || '🙂')
+                const avatarImage = String(r?.avatarImage || '')
+                const modelRefText = formatModelRefText(r?.modelRef)
+                return (
+                  <ListItemButton
+                    key={id || name}
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      applyAtPickRole(r)
+                    }}
+                    sx={{ borderRadius: 1 }}
+                  >
+                    <ListItemAvatar sx={{ minWidth: 40 }}>
+                      <Avatar src={avatarImage || undefined} sx={{ width: 28, height: 28, fontSize: 16 }}>
+                        {avatar}
+                      </Avatar>
+                    </ListItemAvatar>
+                    <ListItemText primary={name || '未命名角色'} secondary={modelRefText || '未配置模型'} />
+                  </ListItemButton>
+                )
+              })}
+            </List>
+          ) : (
+            <Typography variant="body2" sx={{ px: 1, py: 1 }} color="text.secondary">
+              没找到匹配的角色
+            </Typography>
+          )}
+        </Box>
+      </Popover>
+
+      {activeStopRunId ? (
+        <Button variant="contained" color="error" onClick={onStop} disabled={disabled} sx={{ borderRadius: 999 }}>
+          停止
+        </Button>
+      ) : null}
+
+      <Button variant="contained" color={draftFilesWarn ? 'warning' : 'primary'} onClick={sendFromInput} disabled={sendDisabled} sx={{ borderRadius: 999 }}>
+        发送
+      </Button>
+    </>
   )
 }
 
@@ -645,15 +709,21 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const activeGroupId = String((s.draft as any)?.activeGroupId || (data?.ui as any)?.activeGroupId || '')
   const activeRole = controller.activeRole()
   const activeGroup = activeTargetKind === 'group' ? (groups.find((g: any) => String(g?.id || '') === activeGroupId) || null) : null
-  const activeChat = controller.activeChat()
   const activeChatTargetId = activeTargetKind === 'group' ? activeGroupId : String(activeRole?.id || '')
-  const activeChatId = String(activeChat?.id || '')
+  const activeChatSelectionBox = activeChatTargetId ? (activeTargetKind === 'group' ? (data as any)?.chatsByGroup?.[activeChatTargetId] : data?.chatsByRole?.[activeChatTargetId]) : null
+  const activeChat = controller.activeChat()
+  const selectedActiveChatId = String(activeChat?.id || activeChatSelectionBox?.activeChatId || '').trim()
+  const selectedActiveChatKey = selectedActiveChatId ? `${activeTargetKind}:${activeChatTargetId}:${selectedActiveChatId}` : ''
+  const chatSwitch = useDeferredChatSwitch(controller, activeChat, selectedActiveChatId, selectedActiveChatKey)
+  const renderChat = chatSwitch.renderChat
+  const renderChatId = chatSwitch.renderChatId
+  const activeChatId = chatSwitch.activeChatId
   const openingChatMeta = (() => {
     if (activeChat || !data) return null
     const targetId = String(activeChatTargetId || '').trim()
     if (!targetId) return null
-    const box = activeTargetKind === 'group' ? (data as any)?.chatsByGroup?.[targetId] : data?.chatsByRole?.[targetId]
-    const openingChatId = String(box?.activeChatId || '').trim()
+    const box = activeChatSelectionBox
+    const openingChatId = String(activeChatId || box?.activeChatId || '').trim()
     if (!openingChatId) return null
     const metas = Array.isArray(box?.chatMetas) ? box.chatMetas : []
     return metas.find((m: any) => String(m?.id || '') === openingChatId) || null
@@ -809,7 +879,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     [s, data],
   )
 
-  const favoriteChildrenMap = (() => {
+  const favoriteChildrenMap = React.useMemo(() => {
     const map: Record<string, any[]> = {}
     for (const f of favoriteFolders) {
       const pid = String((f as any)?.parentId || '')
@@ -820,7 +890,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
       list.sort((a: any, b: any) => Number(a?.createdAt || 0) - Number(b?.createdAt || 0))
     }
     return map
-  })()
+  }, [favoriteFolders])
 
   const collectFavoriteFolderSubtreeIds = React.useCallback(
     (folderId: string) => {
@@ -1030,7 +1100,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     clearChatSessionRunNotice(targetKind, tid, cid)
     if (targetKind === 'group') controller.actions.setActiveGroup?.(tid)
     else controller.actions.setActiveRole?.(tid)
-    controller.actions.setActiveChat?.(cid)
+    chatSwitch.requestSwitch(cid, { force: true })
     closeChatPicker()
   })
 
@@ -1278,8 +1348,6 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const [tempModelProviderId, setTempModelProviderId] = React.useState('')
   const [tempModelPick, setTempModelPick] = React.useState('')
   const composerInputRef = React.useRef<HTMLTextAreaElement | HTMLInputElement | null>(null)
-  const [atPicker, setAtPicker] = React.useState<null | { triggerIndex: number; cursorIndex: number; query: string }>(null)
-  const closeAtPicker = useEvent(() => setAtPicker(null))
 
   const focusComposerSoon = useEvent(() => {
     if (page !== 'chat') return
@@ -1481,8 +1549,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     scheduleTreeViewTransform()
   })
 
-  const chatAllMessagesRaw: any[] = Array.isArray(activeChat?.messages) ? (activeChat.messages as any[]) : []
-  const chatAllById = (() => {
+  const chatAllMessagesRaw: any[] = Array.isArray(renderChat?.messages) ? (renderChat.messages as any[]) : []
+  const chatAllById = React.useMemo(() => {
     const m = new Map<string, any>()
     for (const it of chatAllMessagesRaw) {
       const id = String(it?.id || '').trim()
@@ -1490,8 +1558,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
       m.set(id, it)
     }
     return m
-  })()
-  const chatAllIndexById = (() => {
+  }, [chatAllMessagesRaw, chatAllMessagesRaw.length, Number((renderChat as any)?.updatedAt || 0)])
+  const chatAllIndexById = React.useMemo(() => {
     const m = new Map<string, number>()
     for (let i = 0; i < chatAllMessagesRaw.length; i++) {
       const id = String(chatAllMessagesRaw[i]?.id || '').trim()
@@ -1499,8 +1567,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
       m.set(id, i)
     }
     return m
-  })()
-  const prevAiMidByAssistantId = (() => {
+  }, [chatAllMessagesRaw, chatAllMessagesRaw.length, Number((renderChat as any)?.updatedAt || 0)])
+  const prevAiMidByAssistantId = React.useMemo(() => {
     const out = new Map<string, string>()
     const msgs = chatAllMessagesRaw
 
@@ -1545,19 +1613,20 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
       out.set(mid, findPrevAi(mid))
     }
     return out
-  })()
-  const activeSessionRunCards = readActiveEbRoleRunCardsForSession(s, String(activeRole?.id || '').trim(), String(activeChat?.id || '').trim())
+  }, [chatAllMessagesRaw, chatAllMessagesRaw.length, Number((renderChat as any)?.updatedAt || 0), chatAllById, chatAllIndexById])
+  const activeSessionRunCards = readActiveEbRoleRunCardsForSession(s, String(activeRole?.id || '').trim(), renderChatId)
   const activeSessionRunCardsKey = activeSessionRunCards
     .map((card: any) => `${String(card?.runId || '')}:${String(card?.lastMessageId || '')}:${String(card?.status || '')}:${Number(card?.updatedAt || 0)}`)
     .join('|')
+  const activeChatRunCards = renderChatId === activeChatId ? activeSessionRunCards : readActiveEbRoleRunCardsForSession(s, String(activeRole?.id || '').trim(), activeChatId)
   const treeLayout = React.useMemo(() => {
-    if (!activeChat) return null
+    if (!renderChat || !treeOpen) return null
     const treeMessages = chatAllMessagesRaw.filter((message: any) => {
       const hasActiveRun = !!activeRunCardForAssistantMessage(activeSessionRunCards, message) && isAssistantGenerating(message)
       return !isStaleAssistantPlaceholder(message, hasActiveRun)
     })
     return buildChatTreeLayout(treeMessages, { maxNodes: 900 })
-  }, [String(activeChat?.id || ''), Number((activeChat as any)?.updatedAt || 0), chatAllMessagesRaw.length, activeSessionRunCardsKey])
+  }, [renderChatId, Number((renderChat as any)?.updatedAt || 0), treeOpen, chatAllMessagesRaw.length, activeSessionRunCardsKey])
   const treeRender = React.useMemo(() => {
     const tl: any = treeLayout
     if (!tl || !Array.isArray(tl.nodes) || tl.nodes.length === 0) return null
@@ -1617,8 +1686,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     String(sendPathAnchor.chatId || '') === String(activeChat?.id || '') ? String(sendPathAnchor.parentMid || '').trim() : ''
   const activeSendPathRunId = activeSendPathAnchorMid ? String(sendPathAnchor.runId || '').trim() : ''
   const activeSendPathRunCard = activeSendPathRunId ? activeSessionRunCards.find((card: any) => String(card?.runId || '').trim() === activeSendPathRunId) || null : null
-  const activeSendPathFollowMid = (() => {
-    if (!activeChat || !activeSendPathAnchorMid) return ''
+  const activeSendPathFollowMid = React.useMemo(() => {
+    if (!renderChat || !activeSendPathAnchorMid) return ''
     const runCardMid = String(activeSendPathRunCard?.lastMessageId || '').trim()
     if (runCardMid && chatAllById.has(runCardMid)) return runCardMid
 
@@ -1636,10 +1705,10 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     const inputMid = String(sendPathAnchor.inputMessageId || '').trim()
     if (inputMid && chatAllById.has(inputMid)) return inputMid
     return activeSendPathAnchorMid
-  })()
+  }, [renderChatId, activeSendPathAnchorMid, activeSendPathRunCard, activeSendPathRunId, sendPathAnchor.lastMessageId, sendPathAnchor.inputMessageId, chatAllById, chatAllMessagesRaw, chatAllMessagesRaw.length])
   const treeFocusMid = String(treeSelectedMid || activeSendPathFollowMid || activeSendPathAnchorMid || '').trim()
-  const allMessages: any[] = (() => {
-    const chat: any = activeChat
+  const allMessages: any[] = React.useMemo(() => {
+    const chat: any = renderChat
     const msgs = chatAllMessagesRaw
     if (!chat || !Array.isArray(msgs) || msgs.length === 0) return []
 
@@ -1676,17 +1745,21 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
 
     out.reverse()
     return out.length ? out : msgs
-  })()
-  const activeVisibleMessageIds = new Set(allMessages.map((message: any) => String(message?.id || '').trim()).filter(Boolean))
+  }, [renderChatId, Number((renderChat as any)?.updatedAt || 0), activeBranchIdUi, branchDraftKey, treeSelectedMid, activeSendPathAnchorMid, activeSendPathFollowMid, chatAllMessagesRaw, chatAllMessagesRaw.length])
+  const activeVisibleMessageIds = React.useMemo(() => new Set(allMessages.map((message: any) => String(message?.id || '').trim()).filter(Boolean)), [allMessages])
   const activeVisibleHeadMid = allMessages.length ? String(allMessages[allMessages.length - 1]?.id || '').trim() : ''
-  const activeVisibleRunCards = filterEbRoleRunCardsOnMessagePath(activeSessionRunCards, activeVisibleMessageIds, activeVisibleHeadMid)
+  const activeVisibleRunCards = React.useMemo(
+    () => filterEbRoleRunCardsOnMessagePath(activeSessionRunCards, activeVisibleMessageIds, activeVisibleHeadMid),
+    [activeSessionRunCardsKey, activeVisibleMessageIds, activeVisibleHeadMid],
+  )
   const latestActiveVisibleRunCard = activeVisibleRunCards.length ? activeVisibleRunCards[activeVisibleRunCards.length - 1] : null
-  const activeStopRunId = String(latestActiveVisibleRunCard?.runId || '').trim()
+  const activeStopRunCard = activeChatRunCards.length ? activeChatRunCards[activeChatRunCards.length - 1] : null
+  const activeStopRunId = String(activeStopRunCard?.runId || latestActiveVisibleRunCard?.runId || '').trim()
   const activeRunCardForMessage = (message: any) => {
     return activeRunCardForAssistantMessage(activeVisibleRunCards, message)
   }
 
-  const assistantSiblingsByPrevAiMid = (() => {
+  const assistantSiblingsByPrevAiMid = React.useMemo(() => {
     const map = new Map<string, any[]>()
     for (const m of chatAllMessagesRaw) {
       if (!m || m.role !== 'assistant') continue
@@ -1708,8 +1781,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
       map.set(k, list)
     }
     return map
-  })()
-  const msgIndexById = (() => {
+  }, [chatAllMessagesRaw, chatAllMessagesRaw.length, Number((renderChat as any)?.updatedAt || 0), prevAiMidByAssistantId])
+  const msgIndexById = React.useMemo(() => {
     const m = new Map<string, number>()
     for (let i = 0; i < allMessages.length; i++) {
       const id = String(allMessages[i]?.id || '')
@@ -1717,8 +1790,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
       if (!m.has(id)) m.set(id, i)
     }
     return m
-  })()
-  const groupedAttMsgsByRootMid = (() => {
+  }, [allMessages])
+  const groupedAttMsgsByRootMid = React.useMemo(() => {
     const map = new Map<string, any[]>()
     for (const m of allMessages) {
       if (!m || m.role !== 'user') continue
@@ -1730,8 +1803,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
       map.set(parent, list)
     }
     return map
-  })()
-  const renderMessages = (() => {
+  }, [allMessages])
+  const renderMessages = React.useMemo(() => {
     const out: any[] = []
     for (const m of allMessages) {
       if (!m) continue
@@ -1745,9 +1818,9 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
       out.push(m)
     }
     return out
-  })()
+  }, [allMessages, activeSessionRunCardsKey, activeVisibleRunCards])
   const showActiveRunTailPending = !!latestActiveVisibleRunCard && !renderMessages.some((message: any) => !!activeRunCardForMessage(message) && isAssistantGenerating(message))
-  const activeRunTailPendingMessage = (() => {
+  const activeRunTailPendingMessage = React.useMemo(() => {
     if (!showActiveRunTailPending || !latestActiveVisibleRunCard) return null
     const runId = String(latestActiveVisibleRunCard?.runId || '').trim()
     if (!runId) return null
@@ -1770,8 +1843,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
         updatedAt: Number(latestActiveVisibleRunCard?.updatedAt || t || Date.now()),
       },
     }
-  })()
-  const displayRenderMessages = activeRunTailPendingMessage ? [...renderMessages, activeRunTailPendingMessage] : renderMessages
+  }, [showActiveRunTailPending, latestActiveVisibleRunCard, activeTargetKind])
+  const displayRenderMessages = React.useMemo(() => activeRunTailPendingMessage ? [...renderMessages, activeRunTailPendingMessage] : renderMessages, [activeRunTailPendingMessage, renderMessages])
 
   const lastMsg = renderMessages.length ? renderMessages[renderMessages.length - 1] : null
   const lastMsgId = String(lastMsg?.id || '')
@@ -1822,10 +1895,14 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const hasChatReasoningOverride = !!activeChatReasoningEffort
 
   const uiBusy = !!s.loading
-  const messageMutationBlocked = (mid: any, operation: MessageMutationOperation = 'edit') => {
+  const messageMutationGuard = React.useMemo(
+    () => createMessageMutationGuard(renderChat, { activeRunCards: activeSessionRunCards }),
+    [renderChat, renderChatId, Number((renderChat as any)?.updatedAt || 0), activeSessionRunCardsKey],
+  )
+  const messageMutationBlocked = useEvent((mid: any, operation: MessageMutationOperation = 'edit') => {
     if (s.loading || uiBusy) return true
-    return messageMutationConflict(activeChat, mid, { operation, activeRunCards: activeSessionRunCards }).blocked
-  }
+    return messageMutationGuard.blocked(mid, operation)
+  })
   const jumpToMessage = useEvent((mid0: string) => {
     // 重要：树视图的缩放/平移是用 ref 更新的（为了性能不频繁 setState）。
     // 但一旦触发 React render（比如点击节点），useLayoutEffect 会用 treePan/treeScale 覆盖 ref。
@@ -2321,8 +2398,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const attachViewItem = (() => {
     const mid = String(attachView.mid || '').trim()
     const idx = Math.floor(Number(attachView.idx ?? -1))
-    if (!mid || !activeChat || !Array.isArray((activeChat as any).messages) || idx < 0) return null
-    const m = (activeChat as any).messages.find((x: any) => String(x?.id || '') === mid) || null
+    if (!mid || !renderChat || !Array.isArray((renderChat as any).messages) || idx < 0) return null
+    const m = (renderChat as any).messages.find((x: any) => String(x?.id || '') === mid) || null
     const atts = m && Array.isArray(m.attachments) ? m.attachments : []
     const a = idx >= 0 && idx < atts.length ? atts[idx] : null
     if (!a) return null
@@ -2503,7 +2580,6 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
 
   const onSend = useEvent(() => {
     if (draftFilesPending) return controller?.capabilities?.ui?.showToast?.('文件解析中，请稍候…')
-    closeAtPicker()
     const warns = draftFiles
       .map((f: any) => {
         if (!f || f.pending) return null
@@ -2948,15 +3024,16 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     if (page !== 'chat') return
     const mid = String(editingMsg.mid || '')
     if (!mid) return
-    const msgs = Array.isArray(activeChat?.messages) ? activeChat.messages : []
+    const msgs = Array.isArray(renderChat?.messages) ? renderChat.messages : []
     if (!msgs.some((m: any) => String(m?.id || '') === mid)) setEditingMsg({ mid: '', text: '' })
-  }, [page, activeChat?.id, (activeChat?.messages || []).length, editingMsg.mid])
+  }, [page, renderChatId, (renderChat?.messages || []).length, editingMsg.mid])
 
   const startEditMessage = useEvent((mid: string, text: string) => {
     if (!mid) return
     if (messageMutationBlocked(mid, 'edit')) return
     setEditingMsg({ mid, text: String(text ?? '') })
   })
+  const setEditingMsgText = useEvent((text: string) => setEditingMsg((p) => ({ ...p, text: String(text ?? '') })))
   const cancelEditMessage = useEvent(() => setEditingMsg({ mid: '', text: '' }))
   const saveEditMessage = useEvent(async () => {
     const mid = String(editingMsg.mid || '')
@@ -2975,6 +3052,29 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
         () => controller.capabilities?.ui?.showToast?.('已复制', { kind: 'success' }),
         () => controller.capabilities?.ui?.showToast?.('复制失败', { kind: 'error' }),
       )
+  })
+
+  const switchBranchSibling = useEvent((mid: string, direction: -1 | 1, nextMid: string) => {
+    const id = String(mid || '').trim()
+    if (!id) return
+    stickToBottomRef.current = false
+    autoScrollBlockUntilRef.current = Date.now() + 1200
+    clearSendPathAnchor()
+    const followMid = String(nextMid || '').trim()
+    if (followMid) setBranchNav({ mid: followMid, at: Date.now() })
+    controller.actions.switchBranchSibling?.(id, direction)
+  })
+
+  const openRegenConfirm = useEvent((mid: string, role: 'assistant' | 'user') => {
+    const id = String(mid || '').trim()
+    if (!id) return
+    setRegen({ mid: id, role: role === 'user' ? 'user' : 'assistant' })
+  })
+
+  const openDeleteMessageConfirm = useEvent((mid: string, role: 'assistant' | 'user') => {
+    const id = String(mid || '').trim()
+    if (!id) return
+    setConfirmDelMsg({ mid: id, role: role === 'user' ? 'user' : 'assistant' })
   })
 
   const openRolePicker = useEvent((e: React.MouseEvent<HTMLElement>) => {
@@ -3047,92 +3147,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     controller.actions.addDraftImagesFromFiles(files)
   })
 
-  const syncAtPicker = useEvent((text?: string, cursorIndex?: number) => {
-    if (s.loading) return closeAtPicker()
-    if (activeTargetKind !== 'group' || !activeGroup) return closeAtPicker()
-
-    const members0 = Array.isArray((activeGroup as any)?.memberRoleIds) ? ((activeGroup as any).memberRoleIds as any[]) : []
-    const memberIds = members0.map((x) => String(x || '').trim()).filter((x) => !!x)
-    if (!memberIds.length) return closeAtPicker()
-
-    const el = composerInputRef.current as any
-    const v =
-      typeof text === 'string'
-        ? text
-        : el && typeof el.value === 'string'
-          ? String(el.value || '')
-          : String(s.draft?.input || '')
-    const c0 =
-      typeof cursorIndex === 'number'
-        ? cursorIndex
-        : el && typeof el.selectionStart === 'number'
-          ? Number(el.selectionStart || 0)
-          : v.length
-
-    const hit = findAtMentionTrigger(v, c0)
-    if (!hit) return closeAtPicker()
-    setAtPicker(hit)
-  })
-
-  const atPickerOptions = React.useMemo(() => {
-    if (!atPicker) return []
-    if (activeTargetKind !== 'group' || !activeGroup) return []
-    const members0 = Array.isArray((activeGroup as any)?.memberRoleIds) ? ((activeGroup as any).memberRoleIds as any[]) : []
-    const memberIds = members0.map((x) => String(x || '').trim()).filter((x) => !!x)
-    if (!memberIds.length) return []
-    const memberRoles = memberIds.map((rid) => roles.find((r: any) => String(r?.id || '') === rid) || null).filter((x) => !!x) as any[]
-    const q = String(atPicker.query || '').trim().toLowerCase()
-    if (!q) return memberRoles.slice(0, 30)
-    return memberRoles
-      .filter((r: any) => String(r?.name || '').toLowerCase().includes(q) || String(r?.id || '').toLowerCase().includes(q))
-      .slice(0, 30)
-  }, [atPicker, activeTargetKind, activeGroup, roles])
-
-  const applyAtPickRole = useEvent((role: any) => {
-    const el = composerInputRef.current as any
-    if (!el) return
-    const v = typeof el.value === 'string' ? String(el.value || '') : String(s.draft?.input || '')
-    const cursor = typeof el.selectionStart === 'number' ? Number(el.selectionStart || 0) : v.length
-    const hit = atPicker ? findAtMentionTrigger(v, cursor) : null
-    if (!hit) return closeAtPicker()
-
-    const rawName = String(role?.name || '').trim()
-    const safeName = rawName.replace(/[{}]/g, '').slice(0, 80) || 'AI'
-    const insert = `@{${safeName}} `
-    const next = v.slice(0, hit.triggerIndex) + insert + v.slice(hit.cursorIndex)
-    controller.actions.setDraft('input', next)
-    closeAtPicker()
-
-    requestAnimationFrame(() => {
-      try {
-        el.focus?.()
-        const pos = Math.min(next.length, hit.triggerIndex + insert.length)
-        el.setSelectionRange?.(pos, pos)
-      } catch (_) {}
-    })
-  })
-
-  const onKeyDown = useEvent((e: React.KeyboardEvent) => {
-    if (atPicker) {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        closeAtPicker()
-        return
-      }
-      if (e.key === 'Enter' && !e.shiftKey && atPickerOptions.length) {
-        e.preventDefault()
-        applyAtPickRole(atPickerOptions[0])
-        return
-      }
-    }
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      onSend()
-    }
-  })
-
   const msgMenuMid = String(msgMenu.mid || '')
-  const msgMenuMessages = Array.isArray(activeChat?.messages) ? activeChat.messages : []
+  const msgMenuMessages = Array.isArray(renderChat?.messages) ? renderChat.messages : []
   const msgMenuIndex = msgMenuMid ? msgMenuMessages.findIndex((m: any) => String(m?.id || '') === msgMenuMid) : -1
   const msgMenuMsg = msgMenuIndex >= 0 ? msgMenuMessages[msgMenuIndex] : null
   const msgMenuText = messageVisibleText(msgMenuMsg)
@@ -3661,7 +3677,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                 <Tooltip title={chatNav.lockedReason || (chatNav.olderId ? '切换到较旧会话' : '没有更旧的会话')}>
                   <span>
                     <IconButton
-                      onClick={() => controller.actions.setActiveChat(chatNav.olderId)}
+                      onClick={() => chatSwitch.requestSwitch(chatNav.olderId)}
                       size="small"
                       disabled={!!chatNav.lockedReason || !chatNav.olderId}
                       aria-label="切换到较旧会话"
@@ -3673,7 +3689,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                 <Tooltip title={chatNav.lockedReason || (chatNav.newerId ? '切换到较新会话' : '没有更新的会话')}>
                   <span>
                     <IconButton
-                      onClick={() => controller.actions.setActiveChat(chatNav.newerId)}
+                      onClick={() => chatSwitch.requestSwitch(chatNav.newerId)}
                       size="small"
                       disabled={!!chatNav.lockedReason || !chatNav.newerId}
                       aria-label="切换到较新会话"
@@ -3757,7 +3773,14 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                   <Typography variant="body2" color="text.secondary">
                     请选择角色
                   </Typography>
-                ) : !activeChat ? (
+                ) : chatSwitch.switching ? (
+                  <Box role="status" aria-live="polite" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, color: 'text.secondary' }}>
+                    <CircularProgress size={18} thickness={4.4} color="inherit" />
+                    <Typography variant="body2" color="text.secondary">
+                      正在切换会话…
+                    </Typography>
+                  </Box>
+                ) : !renderChat ? (
                   openingChatMeta ? (
                     <Box role="status" aria-live="polite" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, color: 'text.secondary' }}>
                       <CircularProgress size={18} thickness={4.4} color="inherit" />
@@ -3770,495 +3793,49 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                       还没有消息。输入内容并发送。
                     </Typography>
                   )
-              ) : !Array.isArray(activeChat.messages) || activeChat.messages.length === 0 ? (
+              ) : !Array.isArray(renderChat.messages) || renderChat.messages.length === 0 ? (
                 <Typography variant="body2" color="text.secondary">
                   还没有消息。输入内容并发送。
                 </Typography>
               ) : (
-                <Stack spacing={1.25}>
-                  {displayRenderMessages.map((m: any) => {
-                      const content = messageVisibleText(m)
-                      const isToolResponse = content.startsWith('<<<[TOOL_RESPONSE]>>>')
-                      const mid = String(m?.id || '')
-                      const isDisplayOnlyPendingRunTail = !!(m as any)?.displayOnlyPendingRunTail
-                      const isToolExpanded = !!mid && expandedToolMsgIds.has(mid)
-                      const isEditing = !isDisplayOnlyPendingRunTail && editingMsg.mid === mid
-
-                     if (isToolResponse) {
-                       const resultTags = content.match(/<<\[RESULT-\d+\]>>/g) || []
-                       const count = resultTags.length
-                       const names = Array.from(content.matchAll(/tool_name:「start」([\s\S]*?)「end」/g))
-                         .map((x) => String(x?.[1] || '').trim())
-                         .filter(Boolean)
-                       const statuses = Array.from(content.matchAll(/status:「start」([\s\S]*?)「end」/g))
-                         .map((x) => String(x?.[1] || '').trim())
-                         .filter(Boolean)
-                       const pairs = names.slice(0, 3).map((n, i) => {
-                         const st = statuses[i] || ''
-                         return st ? `${n}（${st}）` : n
-                       })
-                       const summary = count ? `${count}项：${pairs.join('，')}${count > 3 ? '…' : ''}` : pairs.length ? pairs.join('，') : '工具结果'
-                       const time = controller.fmtTime(Number(m?.createdAt || 0))
-
-                       return (
-                         <Stack key={mid} direction="row" justifyContent="flex-start">
-                           <Paper
-                             variant="outlined"
-                             data-mid={mid}
-                              onContextMenu={isEditing ? undefined : (e) => onMessageContextMenu(e, mid, 'user')}
-                              sx={{
-                                width: '100%',
-                                maxWidth: '100%',
-                                px: 1.25,
-                                py: 1.1,
-                                bgcolor: 'rgba(2, 132, 199, .05)',
-                                borderColor: 'rgba(2, 132, 199, .20)',
-                              }}
-                            >
-                              <Stack
-                                direction="row"
-                                alignItems="center"
-                                spacing={1}
-                                role={isEditing ? undefined : 'button'}
-                                tabIndex={isEditing ? -1 : 0}
-                                aria-label={isEditing ? '工具返回（编辑中）' : isToolExpanded ? '收起工具返回' : '展开工具返回'}
-                                aria-expanded={isEditing ? undefined : isToolExpanded}
-                                onClick={isEditing ? undefined : () => toggleExpandedToolMsg(mid)}
-                                onKeyDown={
-                                  isEditing
-                                    ? undefined
-                                    : (e) => {
-                                        const k = String((e as any)?.key || '')
-                                        if (k === 'Enter' || k === ' ') {
-                                          e.preventDefault()
-                                          toggleExpandedToolMsg(mid)
-                                        }
-                                      }
-                                }
-                                sx={{ mb: 0.5, cursor: isEditing ? 'default' : 'pointer', userSelect: 'none' }}
-                              >
-                                <StorageIcon sx={{ fontSize: 18, color: 'rgba(2, 132, 199, .85)' }} />
-                                <Typography variant="body2" sx={{ fontWeight: 900 }}>
-                                  工具返回
-                                </Typography>
-                                {summary ? (
-                                  <Typography variant="caption" color="text.secondary" sx={{ minWidth: 0 }} noWrap>
-                                    {summary}
-                                  </Typography>
-                                ) : null}
-                                <Box sx={{ flex: 1 }} />
-                                <Box sx={{ display: 'flex', alignItems: 'center', color: 'text.secondary' }}>
-                                  {isToolExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-                                </Box>
-                                <Typography variant="caption" color="text.secondary">
-                                  {time}
-                                </Typography>
-                              </Stack>
-
-                              {isEditing ? (
-                                <Box sx={{ mt: 0.75 }}>
-                                  <TextField
-                                    autoFocus
-                                    fullWidth
-                                    multiline
-                                    minRows={3}
-                                    size="small"
-                                    placeholder="编辑工具返回…"
-                                    value={editingMsg.text}
-                                    onChange={(e) => setEditingMsg((p) => ({ ...p, text: e.target.value }))}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Escape') cancelEditMessage()
-                                      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) saveEditMessage()
-                                    }}
-                                    sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#fff' } }}
-                                  />
-                                  <Stack direction="row" spacing={1} sx={{ mt: 1 }} justifyContent="flex-end">
-                                    <Button size="small" variant="contained" onClick={saveEditMessage} disabled={!editingMsg.mid || messageMutationBlocked(editingMsg.mid, 'edit')}>
-                                      保存
-                                    </Button>
-                                    <Button size="small" onClick={cancelEditMessage} disabled={s.loading || uiBusy}>
-                                      取消
-                                    </Button>
-                                  </Stack>
-                                </Box>
-                              ) : (
-                                <Collapse in={isToolExpanded} timeout={160} unmountOnExit>
-                                  <Box
-                                    sx={{
-                                      mt: 0.75,
-                                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                                      fontSize: 12,
-                                      whiteSpace: 'pre-wrap',
-                                      overflowWrap: 'anywhere',
-                                      wordBreak: 'break-word',
-                                      bgcolor: 'rgba(255,255,255,.7)',
-                                      border: '1px solid rgba(2, 132, 199, .18)',
-                                      borderRadius: 2,
-                                      px: 1,
-                                      py: 0.75,
-                                    }}
-                                  >
-                                    {content}
-                                  </Box>
-                                </Collapse>
-                              )}
-                            </Paper>
-                          </Stack>
-                        )
-                     }
-
-                    const displayRole: 'user' | 'assistant' = m?.role === 'user' ? 'user' : 'assistant'
-                    const isUser = displayRole === 'user'
-                    const speakerRoleId = !isUser ? String((m as any)?.speakerRoleId || '') : ''
-                    const speakerRole =
-                      !isUser && activeTargetKind === 'group'
-                        ? roles.find((r0: any) => String(r0?.id || '') === speakerRoleId) || null
-                        : !isUser
-                          ? activeRole
-                          : null
-                    const roleName = String((speakerRole as any)?.name || (activeTargetKind === 'group' ? 'AI' : activeRole?.name || 'AI'))
-                    const roleAvatarEmoji = String((speakerRole as any)?.avatar || '🤖')
-                    const roleAvatarImage = String((speakerRole as any)?.avatarImage || '')
-                    const roleModelText = !isUser ? formatModelRefText((m as any)?.modelRef) : ''
-                    const time = controller.fmtTime(Number(m?.createdAt || 0))
-                    const imgPaths = isUser ? (Array.isArray(m?.images) ? m.images : []) : []
-                    const rootAttachments = isUser && Array.isArray(m?.attachments) ? m.attachments : []
-                    const legacyAttMsgs = isUser ? (groupedAttMsgsByRootMid.get(String(m?.id || '').trim()) || []) : []
-                    const fileAttachmentItems = [
-                      ...rootAttachments.map((a: any, idx: number) => ({ mid, idx, attachment: a })),
-                      ...legacyAttMsgs.map((am: any) => ({ mid: String(am?.id || '').trim(), idx: 0, attachment: am && Array.isArray(am.attachments) ? am.attachments[0] : null })),
-                    ].filter((item: any) => item.mid && item.attachment)
-                    const messageGenerating = !!activeRunCardForMessage(m) && isAssistantGenerating(m)
-                    const messageAwaitingFirstOutput = messageGenerating && isAssistantAwaitingFirstOutput(m)
-                    const messageError = !isUser && (m as any)?.error && typeof (m as any).error === 'object' ? (m as any).error : null
-                    const assistantParts = Array.isArray((m as any)?.parts) ? (m as any).parts : []
-                    const hasReasoningParts = assistantParts.some((part: any) => String(part?.type || '').trim() === 'reasoning' && !!String(part?.text || '').trim())
-                    const canEdit = !isDisplayOnlyPendingRunTail && !isEditing && !!mid && !messageMutationBlocked(mid, 'edit')
-                    const canDeleteMessage = !isDisplayOnlyPendingRunTail && !!mid && !messageMutationBlocked(mid, 'delete')
-                    const contentLines = userMessageCollapseEnabled && isUser ? content.split(/\r?\n/) : []
-                    const canCollapse = userMessageCollapseEnabled && isUser && !isEditing && contentLines.length > userMessageCollapseLines
-                    const isExpanded = !canCollapse || expandedUserMsgIds.has(mid)
-                    const shownContent = canCollapse && !isExpanded ? contentLines.slice(0, userMessageCollapseLines).join('\n') : content
-
-                    let regenRole: 'assistant' | 'user' = isUser ? 'user' : 'assistant'
-                    let regenMid = isDisplayOnlyPendingRunTail ? '' : mid
-                    let regenBlocked = isUser || !regenMid ? false : messageMutationBlocked(regenMid, 'edit')
-                    if (isUser && !isDisplayOnlyPendingRunTail) {
-                      const msgs = chatAllMessagesRaw
-                      const fullIdx = msgs.findIndex((x: any) => String(x?.id || '') === mid)
-                      for (let j = fullIdx + 1; j < msgs.length; j++) {
-                        const next = msgs[j]
-                        if (!next) continue
-                        if (next.role === 'assistant') {
-                          regenRole = 'assistant'
-                          regenMid = String(next?.id || '')
-                          regenBlocked = messageMutationBlocked(regenMid, 'edit')
-                          break
-                        }
-                        if (next.role === 'user') break
-                      }
-                    } else if (!isDisplayOnlyPendingRunTail) {
-                      regenRole = 'assistant'
-                      regenMid = mid
-                      regenBlocked = messageMutationBlocked(regenMid, 'edit')
-                    }
-
-                    const branchPrevAiMid = !isUser && !isDisplayOnlyPendingRunTail ? String(prevAiMidByAssistantId.get(mid) || '').trim() : ''
-                    const branchSiblings = !isUser && branchPrevAiMid ? assistantSiblingsByPrevAiMid.get(branchPrevAiMid) || [] : []
-                    const branchIndex = !isUser ? branchSiblings.findIndex((x: any) => String(x?.id || '') === mid) : -1
-                    const canSwitchBranch = !isUser && branchSiblings.length >= 2 && branchIndex >= 0
-                    return (
-                      <Stack key={mid} direction="row" justifyContent={isUser ? 'flex-end' : 'flex-start'}>
-                        <Paper
-                          variant="outlined"
-                          data-mid={mid}
-                          onContextMenu={isEditing || isDisplayOnlyPendingRunTail ? undefined : (e) => onMessageContextMenu(e, mid, isUser ? 'user' : 'assistant')}
-                          sx={{
-                            width: isUser ? 'auto' : '100%',
-                            maxWidth: isUser ? 920 : '100%',
-                            px: 1.5,
-                            py: 1.25,
-                            bgcolor: isUser ? 'rgba(25,118,210,.06)' : 'transparent',
-                            borderColor: isUser ? 'rgba(25,118,210,.22)' : 'transparent',
-                          }}
-                        >
-                          <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.75 }}>
-                            {isUser ? (
-                              <Typography variant="body2" sx={{ fontWeight: 900 }}>
-                                你
-                              </Typography>
-                            ) : (
-                              <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
-                                <Avatar src={roleAvatarImage || undefined} sx={{ width: 66, height: 66, fontSize: 28 }}>
-                                  {roleAvatarEmoji}
-                                </Avatar>
-                                <Stack spacing={0} sx={{ minWidth: 0 }}>
-                                  <Typography variant="subtitle1" sx={{ fontWeight: 900, minWidth: 0, fontSize: 20 }} noWrap>
-                                    {roleName}
-                                  </Typography>
-                                  {roleModelText ? (
-                                    <Typography variant="caption" color="text.secondary" sx={{ minWidth: 0, lineHeight: 1.2 }} noWrap>
-                                      {roleModelText}
-                                    </Typography>
-                                  ) : null}
-                                </Stack>
-                              </Stack>
-                            )}
-                            <Box sx={{ flex: 1 }} />
-                            <Typography variant="caption" color="text.secondary">
-                              {time}
-                            </Typography>
-                          </Stack>
-
-                          {imgPaths.length ? (
-                            <Stack direction="row" spacing={1} sx={{ mb: 1, flexWrap: 'wrap' }}>
-                              {imgPaths.slice(0, 8).map((p: string) => (
-                                <RefImageThumb key={p} controller={controller} path={String(p || '')} />
-                              ))}
-                            </Stack>
-                          ) : null}
-
-                          {isEditing ? (
-                            <TextField
-                              autoFocus
-                              fullWidth
-                              multiline
-                              minRows={3}
-                              size="small"
-                              placeholder={isUser ? '编辑用户消息…' : '编辑 AI 回复…'}
-                              value={editingMsg.text}
-                              onChange={(e) => setEditingMsg((p) => ({ ...p, text: e.target.value }))}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Escape') cancelEditMessage()
-                                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) saveEditMessage()
-                              }}
-                              sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#fff' } }}
-                            />
-                          ) : isUser ? (
-                            <Box>
-                              {shownContent ? (
-                                stickersEnabled ? (
-                                  <StickerText controller={controller} text={shownContent} stickerMap={stickerMap} />
-                                ) : (
-                                  <Typography sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{shownContent}</Typography>
-                                )
-                              ) : fileAttachmentItems.length ? (
-                                <Typography variant="body2" color="text.secondary">
-                                  （附件）
-                                </Typography>
-                              ) : null}
-                              {canCollapse ? (
-                                <Box sx={{ textAlign: 'right' }}>
-                                  <Button
-                                    size="small"
-                                    variant="text"
-                                    onClick={() => toggleExpandedUserMsg(mid)}
-                                    aria-label={isExpanded ? '收起用户消息' : '展开用户消息'}
-                                    aria-expanded={isExpanded}
-                                    sx={{ mt: 0.25, minWidth: 0, px: 0.5, borderRadius: 2 }}
-                                  >
-                                    {isExpanded ? `收起（共${contentLines.length}行）` : `展开（共${contentLines.length}行）`}
-                                  </Button>
-                                </Box>
-                              ) : null}
-                              {fileAttachmentItems.length ? (
-                                <Stack direction="row" spacing={0.75} sx={{ mt: 0.75, flexWrap: 'wrap' }}>
-                                  {fileAttachmentItems.slice(0, 20).map((item: any) => {
-                                    const a = item.attachment
-                                    const targetMid = String(item.mid || '').trim()
-                                    if (!a || !targetMid) return null
-                                    const name = String(a?.name || '文件')
-                                    const pct = clampNum(Math.round(Number(a?.sendPct ?? 100)), 0, 100)
-                                    const fullLen = clampNum(Math.round(Number(a?.fullLen ?? 0)), 0, 10_000_000)
-                                    const sendLen = clampNum(Math.round(Number(a?.sendLen ?? String(a?.text || '').length ?? 0)), 0, fullLen || 0)
-                                    const label = `${name}（${pct}%：${sendLen}/${fullLen}）`
-                                    return (
-                                      <Chip
-                                        key={`${targetMid}:${String(a?.id || item.idx || 0)}`}
-                                        size="small"
-                                        icon={<AttachFileIcon fontSize="small" />}
-                                        label={label}
-                                        variant="outlined"
-                                        onClick={(e) => openAttachView(e as any, targetMid, Number(item.idx || 0))}
-                                        sx={{ maxWidth: 520 }}
-                                      />
-                                    )
-                                  })}
-                                </Stack>
-                              ) : null}
-                            </Box>
-                          ) : messageError ? (
-                            <Stack spacing={1}>
-                              <AssistantErrorNotice error={messageError} />
-                              {content || assistantParts.length ? (
-                                <AssistantMessageBlocks
-                                  controller={controller}
-                                  text={content}
-                                  parts={assistantParts}
-                                  mid={mid}
-                                  renderSafetyPolicyKey={renderSafetyPolicy}
-                                  chatRootRef={chatRootRef}
-                                  disabled={!canEdit}
-                                />
-                              ) : null}
-                            </Stack>
-                          ) : messageAwaitingFirstOutput && !hasReasoningParts ? (
-                            <AssistantReplyPendingIndicator />
-                          ) : (
-                            <Stack spacing={1}>
-                              <AssistantMessageBlocks
-                                controller={controller}
-                                text={content}
-                                parts={assistantParts}
-                                mid={mid}
-                                renderSafetyPolicyKey={renderSafetyPolicy}
-                                chatRootRef={chatRootRef}
-                                disabled={!canEdit}
-                              />
-                              {messageAwaitingFirstOutput ? <AssistantReplyPendingIndicator /> : null}
-                            </Stack>
-                          )}
-
-                          {isDisplayOnlyPendingRunTail ? null : isEditing ? (
-                            <Stack direction="row" spacing={1} sx={{ mt: 1 }} justifyContent="flex-end">
-                              <Button size="small" variant="contained" onClick={saveEditMessage} disabled={!editingMsg.mid || messageMutationBlocked(editingMsg.mid, 'edit')}>
-                                保存
-                              </Button>
-                              <Button size="small" onClick={cancelEditMessage} disabled={s.loading || uiBusy}>
-                                取消
-                              </Button>
-                            </Stack>
-                          ) : (
-                            <Stack direction="row" spacing={0.5} sx={{ mt: 0.5 }} justifyContent="flex-end">
-                              {!isUser ? (
-                                <>
-                                  <Tooltip title="上一个分支">
-                                    <span>
-                                      <IconButton
-                                        aria-label="上一个分支"
-                                        size="small"
-                                        disabled={!canSwitchBranch || s.loading || uiBusy}
-                                        onClick={() => {
-                                          if (!canSwitchBranch) return
-                                          const len = branchSiblings.length
-                                          if (!len) return
-                                          const next = branchSiblings[(branchIndex - 1 + len) % len]
-                                          const nextMid = String(next?.id || '').trim()
-                                          stickToBottomRef.current = false
-                                          autoScrollBlockUntilRef.current = Date.now() + 1200
-                                          clearSendPathAnchor()
-                                          if (nextMid) setBranchNav({ mid: nextMid, at: Date.now() })
-                                          controller.actions.switchBranchSibling?.(mid, -1)
-                                        }}
-                                      >
-                                        <ChevronLeftIcon fontSize="inherit" />
-                                      </IconButton>
-                                    </span>
-                                  </Tooltip>
-
-                                  <Tooltip title="下一个分支">
-                                    <span>
-                                      <IconButton
-                                        aria-label="下一个分支"
-                                        size="small"
-                                        disabled={!canSwitchBranch || s.loading || uiBusy}
-                                        onClick={() => {
-                                          if (!canSwitchBranch) return
-                                          const len = branchSiblings.length
-                                          if (!len) return
-                                          const next = branchSiblings[(branchIndex + 1 + len) % len]
-                                          const nextMid = String(next?.id || '').trim()
-                                          stickToBottomRef.current = false
-                                          autoScrollBlockUntilRef.current = Date.now() + 1200
-                                          clearSendPathAnchor()
-                                          if (nextMid) setBranchNav({ mid: nextMid, at: Date.now() })
-                                          controller.actions.switchBranchSibling?.(mid, 1)
-                                        }}
-                                      >
-                                        <ChevronRightIcon fontSize="inherit" />
-                                      </IconButton>
-                                    </span>
-                                  </Tooltip>
-                                </>
-                              ) : null}
-
-                              <Tooltip title="重新回复">
-                                <span>
-                                  <IconButton
-                                    aria-label="重新回复"
-                                    size="small"
-                                    disabled={!regenMid || s.loading || uiBusy || (regenRole === 'assistant' && regenBlocked)}
-                                    onClick={() => {
-                                      if (!regenMid) return
-                                      setRegen({ mid: regenMid, role: regenRole })
-                                    }}
-                                  >
-                                    <RestartAltIcon fontSize="inherit" />
-                                  </IconButton>
-                                </span>
-                              </Tooltip>
-
-                              {!isUser ? (
-                                <>
-                                  <Tooltip title="编辑">
-                                    <span>
-                                      <IconButton aria-label="编辑消息" size="small" disabled={!canEdit} onClick={() => startEditMessage(mid, content)}>
-                                        <EditOutlinedIcon fontSize="inherit" />
-                                      </IconButton>
-                                    </span>
-                                  </Tooltip>
-
-                                  <Tooltip title="复制">
-                                    <IconButton aria-label="复制内容" size="small" disabled={!mid} onClick={() => copyMessageText(content)}>
-                                      <ContentCopyIcon fontSize="inherit" />
-                                    </IconButton>
-                                  </Tooltip>
-
-                                  <Tooltip title="删除">
-                                    <span>
-                                      <IconButton aria-label="删除消息" size="small" disabled={!canDeleteMessage} onClick={() => setConfirmDelMsg({ mid, role: displayRole })}>
-                                        <DeleteOutlineIcon fontSize="inherit" />
-                                      </IconButton>
-                                    </span>
-                                  </Tooltip>
-                                </>
-                              ) : null}
-
-                              {isUser ? (
-                                <>
-                                  <Tooltip title="编辑">
-                                    <span>
-                                      <IconButton aria-label="编辑消息" size="small" disabled={!canEdit} onClick={() => startEditMessage(mid, content)}>
-                                        <EditOutlinedIcon fontSize="inherit" />
-                                      </IconButton>
-                                    </span>
-                                  </Tooltip>
-
-                                  <Tooltip title="复制">
-                                    <IconButton
-                                      aria-label="复制内容"
-                                      size="small"
-                                      onClick={() => copyMessageText(content)}
-                                    >
-                                      <ContentCopyIcon fontSize="inherit" />
-                                    </IconButton>
-                                  </Tooltip>
-                                </>
-                              ) : null}
-                            </Stack>
-                          )}
-
-                          {messageGenerating && !isDisplayOnlyPendingRunTail ? (
-                            <Box sx={{ mt: 1 }}>
-                              <Chip size="small" label={m?.streaming ? '生成中（流式）' : '生成中'} />
-                            </Box>
-                          ) : null}
-                        </Paper>
-                      </Stack>
-                    )
-                  })}
-                </Stack>
-               )}
+                <ChatMessageList
+                  controller={controller}
+                  messages={displayRenderMessages}
+                  roles={roles}
+                  activeRole={activeRole}
+                  activeTargetKind={activeTargetKind}
+                  activeVisibleRunCards={activeVisibleRunCards}
+                  groupedAttMsgsByRootMid={groupedAttMsgsByRootMid}
+                  prevAiMidByAssistantId={prevAiMidByAssistantId}
+                  assistantSiblingsByPrevAiMid={assistantSiblingsByPrevAiMid}
+                  chatAllMessagesRaw={chatAllMessagesRaw}
+                  expandedToolMsgIds={expandedToolMsgIds}
+                  expandedUserMsgIds={expandedUserMsgIds}
+                  editingMsg={editingMsg}
+                  loading={s.loading}
+                  uiBusy={uiBusy}
+                  userMessageCollapseEnabled={userMessageCollapseEnabled}
+                  userMessageCollapseLines={userMessageCollapseLines}
+                  stickersEnabled={stickersEnabled}
+                  stickerMap={stickerMap}
+                  renderSafetyPolicyKey={renderSafetyPolicy}
+                  chatRootRef={chatRootRef}
+                  formatModelRefText={formatModelRefText}
+                  messageMutationBlocked={messageMutationBlocked}
+                  onMessageContextMenu={onMessageContextMenu}
+                  onToggleToolMessage={toggleExpandedToolMsg}
+                  onToggleUserMessage={toggleExpandedUserMsg}
+                  onEditTextChange={setEditingMsgText}
+                  onCancelEditMessage={cancelEditMessage}
+                  onSaveEditMessage={saveEditMessage}
+                  onStartEditMessage={startEditMessage}
+                  onCopyMessageText={copyMessageText}
+                  onOpenAttachView={openAttachView}
+                  onSwitchBranchSibling={switchBranchSibling}
+                  onRegenerate={openRegenConfirm}
+                  onDeleteMessage={openDeleteMessageConfirm}
+                />
+              )}
              </Box>
 
              <Popover
@@ -4631,6 +4208,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                 }}
               >
                 {treeOpen && effectiveTreeView === 'right' ? (
+                  <>
                   <Box
                     onPointerDown={onTreeSplitterPointerDown}
                     onPointerMove={onTreeSplitterPointerMove}
@@ -4660,7 +4238,6 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                   >
                     <Box className="fw-split-line" sx={{ width: 1, bgcolor: 'rgba(0,0,0,.18)' }} />
                   </Box>
-                ) : null}
                 <Box sx={{ position: 'relative', width: '100%', height: '100%', userSelect: 'none', WebkitUserSelect: 'none' }}>
                   <Tooltip title="重置视图">
                     <span>
@@ -4965,6 +4542,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                     )}
                   </Box>
                 </Box>
+                  </>
+                ) : null}
               </Box>
 
               <Dialog
@@ -5441,106 +5020,24 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                     </Tooltip>
                   ) : null}
 
-                  <TextField
-                    fullWidth
-                    multiline
-                    minRows={2}
-                    maxRows={8}
-                    variant="outlined"
-                    placeholder="输入消息…（Enter 发送 / Shift+Enter 换行；支持粘贴图片/选择文件）"
-                    value={String(s.draft?.input || '')}
-                    inputRef={(el) => {
-                      composerInputRef.current = el as any
-                    }}
-                    onChange={(e) => {
-                      controller.actions.setDraft('input', e.target.value)
-                      syncAtPicker(e.target.value, typeof (e.target as any).selectionStart === 'number' ? Number((e.target as any).selectionStart || 0) : e.target.value.length)
-                    }}
-                    onKeyDown={onKeyDown}
-                    onKeyUp={() => syncAtPicker()}
-                    onClick={() => syncAtPicker()}
-                    onPaste={onPaste}
+                  <ComposerInputControls
+                    controller={controller}
+                    draftKey={String((s as any).activeSessionComposerDraftKey || `${activeTargetKind}:${activeChatTargetId}:${activeChatId || '__new__'}`)}
+                    initialValue={String(s.draft?.input || '')}
+                    inputRef={composerInputRef}
                     disabled={s.loading || !activeRole}
-                    sx={{
-                      '& .MuiOutlinedInput-notchedOutline': { border: 0 },
-                      '&:hover .MuiOutlinedInput-notchedOutline': { border: 0 },
-                      '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': { border: 0 },
-                    }}
+                    draftFilesPending={draftFilesPending}
+                    draftFilesWarn={draftFilesWarn}
+                    hasDraftNonText={!!((s.draft?.images || []).length || hasDraftFiles)}
+                    activeTargetKind={activeTargetKind}
+                    activeGroup={activeGroup}
+                    roles={roles}
+                    activeStopRunId={activeStopRunId}
+                    formatModelRefText={formatModelRefText}
+                    onSend={onSend}
+                    onStop={onStop}
+                    onPaste={onPaste}
                   />
-
-                  <Popover
-                    open={!!atPicker && !!composerInputRef.current && activeTargetKind === 'group' && !!activeGroup}
-                    anchorEl={(composerInputRef.current as any) || undefined}
-                    onClose={closeAtPicker}
-                    anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
-                    transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-                    disableAutoFocus
-                    disableEnforceFocus
-                    PaperProps={{ sx: { width: 280, maxHeight: 320, overflow: 'hidden' } }}
-                  >
-                    <Box sx={{ p: 0.5, maxHeight: 320, overflowY: 'auto' }}>
-                      <Typography variant="caption" color="text.secondary" sx={{ px: 1, display: 'block', pb: 0.5 }}>
-                        点名回答：选择要被 @ 的角色
-                      </Typography>
-                      {atPickerOptions.length ? (
-                        <List dense sx={{ py: 0 }}>
-                          {atPickerOptions.map((r: any) => {
-                            const id = String(r?.id || '')
-                            const name = String(r?.name || '')
-                            const avatar = String(r?.avatar || '🙂')
-                            const avatarImage = String(r?.avatarImage || '')
-                            const modelRefText = formatModelRefText(r?.modelRef)
-                            return (
-                              <ListItemButton
-                                key={id || name}
-                                onMouseDown={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  applyAtPickRole(r)
-                                }}
-                                sx={{ borderRadius: 1 }}
-                              >
-                                <ListItemAvatar sx={{ minWidth: 40 }}>
-                                  <Avatar src={avatarImage || undefined} sx={{ width: 28, height: 28, fontSize: 16 }}>
-                                    {avatar}
-                                  </Avatar>
-                                </ListItemAvatar>
-                                <ListItemText
-                                  primary={name || '未命名角色'}
-                                  secondary={modelRefText || '未配置模型'}
-                                />
-                              </ListItemButton>
-                            )
-                          })}
-                        </List>
-                      ) : (
-                        <Typography variant="body2" sx={{ px: 1, py: 1 }} color="text.secondary">
-                          没找到匹配的角色
-                        </Typography>
-                      )}
-                    </Box>
-                  </Popover>
-
-                  {activeStopRunId ? (
-                    <Button variant="contained" color="error" onClick={onStop} disabled={s.loading || !activeRole} sx={{ borderRadius: 999 }}>
-                      停止
-                    </Button>
-                  ) : null}
-
-                  <Button
-                    variant="contained"
-                    color={draftFilesWarn ? 'warning' : 'primary'}
-                    onClick={onSend}
-                    disabled={
-                      s.loading ||
-                      !activeRole ||
-                      draftFilesPending ||
-                      (!String(s.draft?.input || '').trim() && !(s.draft?.images || []).length && !hasDraftFiles)
-                    }
-                    sx={{ borderRadius: 999 }}
-                  >
-                    发送
-                  </Button>
                 </Stack>
 
                 {hasChatOverride ? (
@@ -6065,7 +5562,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                               selected={on}
                               onClick={() => {
                                 clearChatSessionRunNotice('group', String((activeGroup as any)?.id || ''), String(c?.id || ''))
-                                controller.actions.setActiveChat(String(c?.id || ''))
+                                chatSwitch.requestSwitch(String(c?.id || ''))
                                 closeChatPicker()
                               }}
                               onContextMenu={(e) =>
@@ -6161,7 +5658,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                             selected={on}
                             onClick={() => {
                               clearChatSessionRunNotice('role', String(role?.id || ''), String(c?.id || ''))
-                              controller.actions.setActiveChat(String(c?.id || ''))
+                              chatSwitch.requestSwitch(String(c?.id || ''))
                               closeChatPicker()
                             }}
                             onContextMenu={(e) =>

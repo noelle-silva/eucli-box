@@ -89,6 +89,29 @@ export function messageMutationConflict(
   return { blocked: false, reason: '', messageId: targetId, runId: '' }
 }
 
+export function createMessageMutationGuard(chat: any, options?: { activeRunCards?: EbRoleRunCard[] }) {
+  const tree = buildMessageTree(chat)
+  const runRefs = activeRunMessageIds(Array.isArray(options?.activeRunCards) ? options.activeRunCards : [])
+
+  return {
+    conflict(targetMessageId: unknown, operation: MessageMutationOperation = 'edit'): MessageMutationConflict {
+      const targetId = text(targetMessageId)
+      if (!chat || !targetId) return { blocked: false, reason: '', messageId: targetId, runId: '' }
+      if (!tree.byId.has(targetId)) return { blocked: false, reason: '', messageId: targetId, runId: '' }
+
+      const affectedIds = collectSubtreeIds(tree.children, targetId)
+      for (const item of runRefs) {
+        if (affectedIds.has(item.id)) return { blocked: true, reason: operationReason(operation), messageId: item.id, runId: item.runId }
+      }
+
+      return { blocked: false, reason: '', messageId: targetId, runId: '' }
+    },
+    blocked(targetMessageId: unknown, operation: MessageMutationOperation = 'edit') {
+      return this.conflict(targetMessageId, operation).blocked
+    },
+  }
+}
+
 export function canMutateMessage(chat: any, targetMessageId: unknown, options?: { operation?: MessageMutationOperation; activeRunCards?: EbRoleRunCard[] }) {
   return !messageMutationConflict(chat, targetMessageId, options).blocked
 }

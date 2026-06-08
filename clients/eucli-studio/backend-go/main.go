@@ -29,7 +29,7 @@ func run() error {
 		return err
 	}
 	hub := newEventHub()
-	svc := newService(store)
+	svc := newService(store, hub)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go newEventBridge(store, hub).run(ctx)

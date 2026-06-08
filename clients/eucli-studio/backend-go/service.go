@@ -13,11 +13,13 @@ type service struct {
 	config     *configStore
 	eb         *ebClient
 	projection *projectionService
+	runtime    *runtimeStore
+	hub        *eventHub
 }
 
-func newService(config *configStore) *service {
+func newService(config *configStore, hub *eventHub) *service {
 	eb := newEBClient(config)
-	return &service{config: config, eb: eb, projection: newProjectionService(config, eb)}
+	return &service{config: config, eb: eb, projection: newProjectionService(config, eb), runtime: newRuntimeStore(), hub: hub}
 }
 
 func (s *service) dispatch(ctx context.Context, method string, params json.RawMessage) (any, error) {
@@ -52,17 +54,33 @@ func (s *service) dispatch(ctx context.Context, method string, params json.RawMe
 		if err != nil {
 			return nil, err
 		}
+		if logicalKey, ok := runtimeLogicalKey(key); ok {
+			value, exists := s.runtime.get(logicalKey)
+			if !exists {
+				return nil, nil
+			}
+			return value, nil
+		}
 		return s.projection.get(ctx, key)
 	case "aiChat.storageSet":
 		key, value, err := storageSetPayload(params)
 		if err != nil {
 			return nil, err
 		}
+		if logicalKey, ok := runtimeLogicalKey(key); ok {
+			s.runtime.set(logicalKey, value)
+			s.broadcastRuntimeStorageSet(logicalKey, value)
+			return map[string]any{}, nil
+		}
 		return map[string]any{}, s.projection.set(ctx, key, value)
 	case "aiChat.storageRemove":
 		key, err := storageKey(params)
 		if err != nil {
 			return nil, err
+		}
+		if logicalKey, ok := runtimeLogicalKey(key); ok {
+			s.runtime.remove(logicalKey)
+			return map[string]any{}, nil
 		}
 		return map[string]any{}, s.projection.remove(ctx, key)
 	case "aiChat.imageRead":
@@ -76,6 +94,20 @@ func (s *service) dispatch(ctx context.Context, method string, params json.RawMe
 	default:
 		return nil, newError("METHOD_NOT_FOUND", "未知请求："+method)
 	}
+}
+
+func (s *service) broadcastRuntimeStorageSet(logicalKey string, value any) {
+	if logicalKey != chatUpdatedNoticeRuntimeKey || s.hub == nil {
+		return
+	}
+
+	// Chat-updated notices are the event-driven refresh root for the UI. They are
+	// written only after the durable chat write path succeeds, so broadcasting
+	// them here makes the real data change speak for itself. Do not route this
+	// through projection/e-b storage: the notice is a runtime coordination fact,
+	// not business data, and using it as the primary signal keeps the UI from
+	// falling back to high-frequency polling for normal updates.
+	s.hub.broadcast(eventFrame{Type: "event", Name: directEventChatUpdated, Payload: value})
 }
 
 func (s *service) handleImageRead(ctx context.Context, params json.RawMessage) (any, error) {

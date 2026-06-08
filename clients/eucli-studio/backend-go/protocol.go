@@ -4,6 +4,8 @@ import "encoding/json"
 
 const directProtocolVersion = 2
 
+const directEventChatUpdated = "aiChat.chat.updated"
+
 type requestFrame struct {
 	ID     string          `json:"id"`
 	Type   string          `json:"type"`

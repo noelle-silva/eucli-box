@@ -1,6 +1,10 @@
-// AI Studio UI 轮询模块
-// 由 V2 controller 组装使用
-// 职责：定时轮询 stream 状态、同步 chat 索引、处理跨 tab 聊天更新通知
+// AI Studio UI 刷新同步模块
+// 由 V2 controller 组装使用。
+//
+// 刷新秩序规范：真实数据变化必须优先由底层主动发声，UI 只同步对应
+// 目标/会话并统一刷新一次；定时检查只负责低频校准和断线漏消息后的
+// 对账，不能重新变成高频主通道。输入、拖拽、缩放、弹窗开合等临时
+// 视觉动作不属于真实数据变化，不允许接入这里触发整页刷新。
 
 import { now } from '../core/utils'
 import { chatMetaFromChat, chatMetasFromBox, upsertChatMeta } from '../domain/chatMeta'
@@ -10,6 +14,13 @@ import { normalizeStoredChat } from '../storage/normalizeStoredChat'
 import { isStoredChatNewerThanCurrent, mergeChatFromStorage } from '../domain/chatStorageSync'
 import { pendingChatForTarget } from '../domain/pendingChat'
 import { readActiveEbRoleRunCardsForSession } from '../domain/activeRunCards'
+import { AI_CHAT_DIRECT_EVENT } from '../protocol/aiChatProtocol'
+
+type DirectEventSubscription = (listener: (event: any) => void) => () => void
+
+const UI_RECONCILE_TICK_MS = 5000
+const UI_META_RECONCILE_MS = 15000
+const UI_NOTICE_RECONCILE_MS = 15000
 
 export function createUiPolling(deps: {
   getState: () => any
@@ -18,6 +29,7 @@ export function createUiPolling(deps: {
   loadSplitMeta: () => Promise<any>
   getSplitMetaCache: () => any
   emit: () => void
+  subscribeDirectEvents?: DirectEventSubscription
   activeTargetKind: () => string
   activeChatFromData: () => any
   ensureActiveChatLoaded?: () => Promise<any>
@@ -25,10 +37,13 @@ export function createUiPolling(deps: {
 }) {
   let uiPollTimer = 0
   let uiLastMetaCheckMs = 0
+  let uiLastNoticeCheckMs = 0
   let uiLastMetaUpdatedAt = 0
   let uiChatSyncing = false
   let uiLastChatUpdatedNoticeId = ''
   let uiPollingDisposed = false
+  let unsubscribeDirectEvents: (() => void) | null = null
+  let chatUpdatedNoticeChain = Promise.resolve()
 
   function hasActiveRoleRunInSession(roleId: string, chatId: string) {
     return readActiveEbRoleRunCardsForSession(deps.getState(), roleId, chatId).length > 0
@@ -211,20 +226,39 @@ export function createUiPolling(deps: {
     return true
   }
 
-  async function applyChatUpdatedNoticeOnce() {
+  async function applyChatUpdatedNoticeOnce(noticeOverride?: any) {
     const state = deps.getState()
     if (state.loading || !state.data) return false
     let raw = null
-    try {
-      raw = await deps.rtStorage.get(UI_CHAT_UPDATED_NOTICE_KEY)
-    } catch (_) {
-      raw = null
+    if (noticeOverride && typeof noticeOverride === 'object') {
+      raw = noticeOverride
+    } else {
+      try {
+        raw = await deps.rtStorage.get(UI_CHAT_UPDATED_NOTICE_KEY)
+      } catch (_) {
+        raw = null
+      }
     }
     if (!raw || typeof raw !== 'object') return false
 
     const nid = String((raw as any).id || '')
     if (!nid || nid === uiLastChatUpdatedNoticeId) return false
-    uiLastChatUpdatedNoticeId = nid
+
+    const markNoticeApplied = () => {
+      // A notice is marked only after the UI has either applied it or proved the
+      // visible data is already current. Seeing a notice is not the same as
+      // reconciling it; marking too early would make the low-frequency checker
+      // skip the only remaining copy of a missed update.
+      uiLastChatUpdatedNoticeId = nid
+    }
+
+    const hasNoticeChatInActiveTarget = () => {
+      const latestState = deps.getState()
+      const latestBox = kind === 'group' ? (latestState.data as any)?.chatsByGroup?.[tid] : latestState.data?.chatsByRole?.[tid]
+      const latestMetas = Array.isArray(latestBox?.chatMetas) ? latestBox.chatMetas : []
+      const latestChats = Array.isArray(latestBox?.chats) ? latestBox.chats : []
+      return latestMetas.some((c: any) => String(c?.id || '') === cid) || latestChats.some((c: any) => String(c?.id || '') === cid)
+    }
 
     const kind = String((raw as any).targetKind || '').trim() === 'group' ? 'group' : 'role'
     const tid = String((raw as any).targetId || (raw as any).roleId || '').trim()
@@ -242,11 +276,24 @@ export function createUiPolling(deps: {
 
     const activeBox = kind === 'group' ? (state.data as any)?.chatsByGroup?.[tid] : state.data?.chatsByRole?.[tid]
     const activeChatId = String(deps.activeChatFromData()?.id || activeBox?.activeChatId || '').trim()
+    if (!activeChatId) {
+      // A notice for the current target can be the first chat created by another
+      // window/client. In that case there is no active chat yet, so the correct
+      // root action is to reconcile the target index before looking for a chat.
+      await syncActiveTargetChatsFromStorage()
+      if (!hasNoticeChatInActiveTarget()) return false
+      markNoticeApplied()
+      return true
+    }
     if (activeChatId && cid === activeChatId) {
       if (kind === 'role' && hasActiveRoleRunInSession(tid, cid)) return false
       const currentUpdatedAt = Number(deps.activeChatFromData()?.updatedAt || 0)
-      if (updatedAt && currentUpdatedAt && updatedAt <= currentUpdatedAt) return false
+      if (updatedAt && currentUpdatedAt && updatedAt <= currentUpdatedAt) {
+        markNoticeApplied()
+        return false
+      }
       const ok = kind === 'group' ? await syncGroupChatByIdFromStorage(tid, cid) : await syncChatByIdFromStorage(tid, cid)
+      if (ok) markNoticeApplied()
       return !!ok
     }
 
@@ -255,10 +302,44 @@ export function createUiPolling(deps: {
     const it = metas.find((c: any) => String(c?.id || '') === cid) || null
     if (it && updatedAt && Number(it.updatedAt || 0) !== updatedAt) {
       it.updatedAt = updatedAt
+      markNoticeApplied()
+      return true
+    }
+    if (it && updatedAt && Number(it.updatedAt || 0) === updatedAt) markNoticeApplied()
+    if (!it) {
+      // A notice for a non-active chat may point to a newly-created chat that is
+      // not in the local target list yet. Reconcile the target index, then mark
+      // the notice only if that concrete chat is now visible locally.
+      await syncActiveTargetChatsFromStorage()
+      if (!hasNoticeChatInActiveTarget()) return false
+      markNoticeApplied()
       return true
     }
 
     return false
+  }
+
+  function enqueueChatUpdatedNotice(raw: any) {
+    // Direct chat-updated events are the normal path: the storage write has
+    // already succeeded, so the UI can reconcile exactly the touched chat.
+    // The promise chain keeps bursts ordered and prevents overlapping storage
+    // reads from making the page compete with itself during active clicking.
+    chatUpdatedNoticeChain = chatUpdatedNoticeChain
+      .then(async () => {
+        if (uiPollingDisposed) return
+        const changed = await applyChatUpdatedNoticeOnce(raw)
+        if (changed) deps.emit()
+      })
+      .catch(() => {})
+  }
+
+  function startDirectEventSubscription() {
+    if (unsubscribeDirectEvents) return
+    if (typeof deps.subscribeDirectEvents !== 'function') return
+    unsubscribeDirectEvents = deps.subscribeDirectEvents((event: any) => {
+      if (String(event?.name || '').trim() !== AI_CHAT_DIRECT_EVENT.chatUpdated) return
+      enqueueChatUpdatedNotice(event?.payload)
+    })
   }
 
   async function uiPollTick() {
@@ -266,19 +347,19 @@ export function createUiPolling(deps: {
     const state = deps.getState()
     if (state.loading || !state.data) return
 
-    let chat = deps.activeChatFromData() || (await deps.ensureActiveChatLoaded?.().catch(() => null))
-    if (!chat) return
-
-    try {
-      const changedByNotice = await applyChatUpdatedNoticeOnce()
-      if (changedByNotice) {
-        chat = deps.activeChatFromData()
-        deps.emit()
-      }
-    } catch (_) {}
+    const t1 = now()
+    if (t1 - uiLastNoticeCheckMs > UI_NOTICE_RECONCILE_MS) {
+      uiLastNoticeCheckMs = t1
+      try {
+        const changedByNotice = await applyChatUpdatedNoticeOnce()
+        if (changedByNotice) {
+          deps.emit()
+        }
+      } catch (_) {}
+    }
 
     const t2 = now()
-    if (t2 - uiLastMetaCheckMs > 900) {
+    if (t2 - uiLastMetaCheckMs > UI_META_RECONCILE_MS) {
       uiLastMetaCheckMs = t2
       const activeKind = deps.activeTargetKind() === 'group' ? 'group' : 'role'
       const activeTid =
@@ -292,6 +373,7 @@ export function createUiPolling(deps: {
           const updatedAt = Number(activeMeta?.updatedAt || 0)
           if (updatedAt && updatedAt !== uiLastMetaUpdatedAt) {
             await syncActiveTargetChatsFromStorage(meta)
+            uiLastMetaUpdatedAt = updatedAt
             deps.emit()
           }
         } catch (_) {}
@@ -302,10 +384,11 @@ export function createUiPolling(deps: {
 
   function startUiPollers() {
     if (uiPollingDisposed) return
+    startDirectEventSubscription()
     if (uiPollTimer) return
     uiPollTimer = window.setInterval(() => {
       uiPollTick().catch(() => {})
-    }, 350)
+    }, UI_RECONCILE_TICK_MS)
   }
 
   function stopUiPollers() {
@@ -313,6 +396,10 @@ export function createUiPolling(deps: {
     if (uiPollTimer) {
       window.clearInterval(uiPollTimer)
       uiPollTimer = 0
+    }
+    if (unsubscribeDirectEvents) {
+      unsubscribeDirectEvents()
+      unsubscribeDirectEvents = null
     }
   }
 

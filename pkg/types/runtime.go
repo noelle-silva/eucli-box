@@ -21,6 +21,7 @@ type Message struct {
 	ToolID          string              `json:"toolId,omitempty"`
 	ToolName        string              `json:"toolName,omitempty"`
 	Reason          string              `json:"reason,omitempty"`
+	TokenEstimate   int                 `json:"tokenEstimate,omitempty"`
 	CreatedAt       time.Time           `json:"createdAt"`
 	UpdatedAt       time.Time           `json:"updatedAt"`
 }

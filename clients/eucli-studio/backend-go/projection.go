@@ -926,6 +926,9 @@ func toUIChat(session map[string]any) map[string]any {
 			updatedAt = createdAt
 		}
 		uiMessage := map[string]any{"id": stringField(msg, "id"), "type": messageStorageType(msg), "role": messageRole(msg), "content": stringField(msg, "content"), "parentMid": stringField(msg, "parentMessageId"), "branchId": fallback(stringField(msg, "branchId"), "main"), "createdAt": createdAt, "updatedAt": updatedAt}
+		if tokenEstimate := intField(msg, "tokenEstimate", 0); tokenEstimate > 0 {
+			uiMessage["tokenEstimate"] = tokenEstimate
+		}
 		if errBox := objectMap(msg["error"]); stringField(errBox, "message") != "" {
 			uiMessage["error"] = errBox
 		}
@@ -1046,6 +1049,9 @@ func fromUIChat(value any, roleID string) map[string]any {
 	messages := []any{}
 	for _, msg := range objectList(chat["messages"]) {
 		message := map[string]any{"id": stringField(msg, "id"), "type": messageStorageType(msg), "content": stringField(msg, "content"), "parentMessageId": stringField(msg, "parentMid"), "branchId": fallback(stringField(msg, "branchId"), "main"), "createdAt": timeFromMillis(msg["createdAt"]), "updatedAt": timeFromMillis(msg["updatedAt"])}
+		if tokenEstimate := intField(msg, "tokenEstimate", 0); tokenEstimate > 0 {
+			message["tokenEstimate"] = tokenEstimate
+		}
 		if errBox := objectMap(msg["error"]); stringField(errBox, "message") != "" {
 			message["error"] = errBox
 		}
@@ -1245,6 +1251,18 @@ func numberField(m map[string]any, key string, fallback float64) float64 {
 		return n
 	}
 	return fallback
+}
+func intField(m map[string]any, key string, fallback int) int {
+	switch value := m[key].(type) {
+	case float64:
+		return int(value)
+	case int64:
+		return int(value)
+	case int:
+		return value
+	default:
+		return fallback
+	}
 }
 func boolField(m map[string]any, key string, fallback bool) bool {
 	if v, ok := m[key].(bool); ok {

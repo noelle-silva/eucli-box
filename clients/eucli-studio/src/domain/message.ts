@@ -83,6 +83,7 @@ export function normalizeChatMessage(input: any, options?: { activeBranchId?: un
     parts: normalizeMessageParts((m as any).parts),
     images: normImagePaths((m as any).images),
     attachments: normalizeMessageAttachments((m as any).attachments),
+    tokenEstimate: normalizeMessageTokenEstimate((m as any).tokenEstimate),
     ...normalizeMessageGroup(m),
     branchId: normalizeBranchId((m as any).branchId || options?.activeBranchId || CHAT_DEFAULT_BRANCH_ID),
     parentMid: normalizeMessageParentMid(m),
@@ -96,6 +97,11 @@ export function normalizeChatMessage(input: any, options?: { activeBranchId?: un
   if (error) out.error = error
   if ((m as any).assistantRun && typeof (m as any).assistantRun === 'object') out.assistantRun = { ...(m as any).assistantRun }
   return out
+}
+
+export function normalizeMessageTokenEstimate(input: any) {
+  const value = Math.max(0, Math.floor(Number(input || 0)))
+  return Number.isFinite(value) ? value : 0
 }
 
 export function normalizeMessageParts(input: any) {

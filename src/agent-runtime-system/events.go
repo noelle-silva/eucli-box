@@ -72,6 +72,7 @@ func cloneRunMessageSnapshot(message types.Message) types.Message {
 	if len(message.Attachments) > 0 {
 		message.Attachments = append([]types.MessageAttachment(nil), message.Attachments...)
 	}
+	message.TokenEstimate = types.EstimateMessageTokenCount(message)
 	return message
 }
 

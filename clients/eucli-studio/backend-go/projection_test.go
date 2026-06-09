@@ -19,6 +19,7 @@ func TestChatProjectionPreservesMessageParts(t *testing.T) {
 			"id":              "m1",
 			"type":            "assistant",
 			"content":         "checking",
+			"tokenEstimate":   float64(12),
 			"parentMessageId": "u1",
 			"branchId":        "main",
 			"createdAt":       "2026-06-03T10:00:00Z",
@@ -45,6 +46,9 @@ func TestChatProjectionPreservesMessageParts(t *testing.T) {
 	if messages[0]["role"] != "assistant" || messages[0]["type"] != "assistant" {
 		t.Fatalf("ui message role/type = %#v", messages[0])
 	}
+	if got := intField(messages[0], "tokenEstimate", 0); got != 12 {
+		t.Fatalf("ui token estimate = %d, want 12", got)
+	}
 	if parts := objectList(messages[0]["parts"]); len(parts) != 1 || stringField(parts[0], "source") != "text_protocol" || stringField(parts[0], "raw") == "" || stringField(parts[0], "callId") != "call-1" {
 		t.Fatalf("ui parts = %#v", messages[0]["parts"])
 	}
@@ -53,6 +57,9 @@ func TestChatProjectionPreservesMessageParts(t *testing.T) {
 	backMessages := objectList(back["messages"])
 	if len(backMessages) != 1 {
 		t.Fatalf("back messages = %#v", back["messages"])
+	}
+	if got := intField(backMessages[0], "tokenEstimate", 0); got != 12 {
+		t.Fatalf("back token estimate = %d, want 12", got)
 	}
 	if parts := objectList(backMessages[0]["parts"]); len(parts) != 1 || stringField(parts[0], "source") != "text_protocol" || stringField(parts[0], "raw") == "" || stringField(parts[0], "toolName") != "shell_command" {
 		t.Fatalf("back parts = %#v", backMessages[0]["parts"])

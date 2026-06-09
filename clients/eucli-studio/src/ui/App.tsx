@@ -98,6 +98,7 @@ import { chatSessionRunSummaryFromChat, normalizeChatSessionRunStatus, type Chat
 import { sortChatListItemsForDisplay } from '../domain/chatListOrdering'
 import { filterEbRoleRunCardsOnMessagePath, readActiveEbRoleRunCardsForSession } from '../domain/activeRunCards'
 import { createMessageMutationGuard, type MessageMutationOperation } from '../domain/messageMutationConflicts'
+import { formatTokenEstimate, sumMessageTokenEstimate } from '../domain/messageTokenUsage'
 import { ChatSessionRunIndicator, type ChatSessionRunIndicatorKind } from './components/ChatSessionRunIndicator'
 import { ChatMessageList } from './components/ChatMessageList'
 import { StickerInlineImage } from './components/MessageMedia'
@@ -1845,6 +1846,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     }
   }, [showActiveRunTailPending, latestActiveVisibleRunCard, activeTargetKind])
   const displayRenderMessages = React.useMemo(() => activeRunTailPendingMessage ? [...renderMessages, activeRunTailPendingMessage] : renderMessages, [activeRunTailPendingMessage, renderMessages])
+  const activeContextTokenUsageText = React.useMemo(() => formatTokenEstimate(sumMessageTokenEstimate(allMessages)), [allMessages])
 
   const lastMsg = renderMessages.length ? renderMessages[renderMessages.length - 1] : null
   const lastMsgId = String(lastMsg?.id || '')
@@ -5062,6 +5064,10 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                     </Button>
                   </Stack>
                 ) : null}
+
+                <Typography variant="caption" color="text.secondary" sx={{ px: 0.5, textAlign: 'center' }}>
+                  {`上下文约 ${activeContextTokenUsageText}`}
+                </Typography>
               </Stack>
             </Box>
         </Box>

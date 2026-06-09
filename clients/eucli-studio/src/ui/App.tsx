@@ -50,7 +50,6 @@ import SearchIcon from '@mui/icons-material/Search'
 import ImageIcon from '@mui/icons-material/Image'
 import AttachFileIcon from '@mui/icons-material/AttachFile'
 import SettingsIcon from '@mui/icons-material/Settings'
-import StorageIcon from '@mui/icons-material/Storage'
 import ZoomInIcon from '@mui/icons-material/ZoomIn'
 import ZoomOutIcon from '@mui/icons-material/ZoomOut'
 import RestartAltIcon from '@mui/icons-material/RestartAlt'
@@ -66,7 +65,6 @@ import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import DriveFileMoveOutlinedIcon from '@mui/icons-material/DriveFileMoveOutlined'
 import UnfoldLessIcon from '@mui/icons-material/UnfoldLess'
-import PsychologySparkIcon from '@mui/icons-material/PsychologyAlt'
 import { IMAGE_VIEWER_ZOOM_MAX, MERMAID_VIEWER_ZOOM_MAX, VIEWER_ZOOM_MIN } from '../core/viewerZoom'
 import { ProviderConfigEditor } from './components/ProviderConfigEditor'
 import { useAiChatState } from './hooks/useAiChatState'
@@ -98,7 +96,7 @@ import { chatSessionRunSummaryFromChat, normalizeChatSessionRunStatus, type Chat
 import { sortChatListItemsForDisplay } from '../domain/chatListOrdering'
 import { filterEbRoleRunCardsOnMessagePath, readActiveEbRoleRunCardsForSession } from '../domain/activeRunCards'
 import { createMessageMutationGuard, type MessageMutationOperation } from '../domain/messageMutationConflicts'
-import { formatTokenEstimate, sumMessageTokenEstimate } from '../domain/messageTokenUsage'
+import { formatTokenEstimate, formatTokenEstimateShort, sumMessageTokenEstimate } from '../domain/messageTokenUsage'
 import { ChatSessionRunIndicator, type ChatSessionRunIndicatorKind } from './components/ChatSessionRunIndicator'
 import { ChatMessageList } from './components/ChatMessageList'
 import { StickerInlineImage } from './components/MessageMedia'
@@ -416,6 +414,38 @@ function buildChatTreeLayout(messagesRaw: any[], opts?: { maxNodes?: number }) {
 
 const TOPBAR_H = 40
 
+const composerToolIconButtonSx = {
+  width: 36,
+  height: 36,
+  borderRadius: '999px',
+  bgcolor: 'transparent',
+  color: 'text.secondary',
+  '&:hover': { bgcolor: 'rgba(0,0,0,.08)', color: 'text.primary' },
+  '&.Mui-disabled': { bgcolor: 'transparent' },
+}
+
+const composerToolTextButtonSx = {
+  minWidth: 0,
+  maxWidth: 220,
+  height: 34,
+  px: 1.25,
+  borderRadius: '999px',
+  bgcolor: 'transparent',
+  color: 'text.secondary',
+  border: 0,
+  textTransform: 'none',
+  fontWeight: 800,
+  fontSize: 12,
+  '&:hover': { bgcolor: 'rgba(0,0,0,.08)', color: 'text.primary', border: 0 },
+  '&.Mui-disabled': { bgcolor: 'transparent', border: 0 },
+}
+
+const composerContextButtonSx = {
+  ...composerToolTextButtonSx,
+  borderRadius: 2,
+  maxWidth: 120,
+}
+
 function ComposerInputControls(props: {
   controller: any
   draftKey: string
@@ -430,6 +460,7 @@ function ComposerInputControls(props: {
   roles: any[]
   activeStopRunId: string
   formatModelRefText: (modelRef: any) => string
+  toolbarStart?: React.ReactNode
   onSend: () => void
   onStop: () => void
   onPaste: (e: React.ClipboardEvent) => void
@@ -448,6 +479,7 @@ function ComposerInputControls(props: {
     roles,
     activeStopRunId,
     formatModelRefText,
+    toolbarStart,
     onSend,
     onStop,
     onPaste,
@@ -641,15 +673,23 @@ function ComposerInputControls(props: {
         </Box>
       </Popover>
 
-      {activeStopRunId ? (
-        <Button variant="contained" color="error" onClick={onStop} disabled={disabled} sx={{ borderRadius: 999 }}>
-          停止
-        </Button>
-      ) : null}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap', px: 0.25 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap', flex: 1, minWidth: 0, pl: 1 }}>
+          {toolbarStart}
+        </Box>
 
-      <Button variant="contained" color={draftFilesWarn ? 'warning' : 'primary'} onClick={sendFromInput} disabled={sendDisabled} sx={{ borderRadius: 999 }}>
-        发送
-      </Button>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, ml: 'auto', pr: 1 }}>
+          {activeStopRunId ? (
+            <Button variant="contained" color="error" onClick={onStop} disabled={disabled} sx={{ borderRadius: 999 }}>
+              停止
+            </Button>
+          ) : null}
+
+          <Button variant="contained" color={draftFilesWarn ? 'warning' : 'primary'} onClick={sendFromInput} disabled={sendDisabled} sx={{ borderRadius: 999 }}>
+            发送
+          </Button>
+        </Box>
+      </Box>
     </>
   )
 }
@@ -1343,12 +1383,14 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     parentId: '',
   })
   const [confirmClearFavoriteFolder, setConfirmClearFavoriteFolder] = React.useState<{ open: boolean; folderId: string }>({ open: false, folderId: '' })
+  const [attachmentPickerEl, setAttachmentPickerEl] = React.useState<HTMLElement | null>(null)
   const [tempModelPickerEl, setTempModelPickerEl] = React.useState<HTMLElement | null>(null)
   const [reasoningPickerEl, setReasoningPickerEl] = React.useState<HTMLElement | null>(null)
   const [fileAdjust, setFileAdjust] = React.useState<{ el: HTMLElement | null; id: string }>({ el: null, id: '' })
   const [tempModelProviderId, setTempModelProviderId] = React.useState('')
   const [tempModelPick, setTempModelPick] = React.useState('')
   const composerInputRef = React.useRef<HTMLTextAreaElement | HTMLInputElement | null>(null)
+  const draftFilePickerInputRef = React.useRef<HTMLInputElement | null>(null)
 
   const focusComposerSoon = useEvent(() => {
     if (page !== 'chat') return
@@ -1846,7 +1888,9 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     }
   }, [showActiveRunTailPending, latestActiveVisibleRunCard, activeTargetKind])
   const displayRenderMessages = React.useMemo(() => activeRunTailPendingMessage ? [...renderMessages, activeRunTailPendingMessage] : renderMessages, [activeRunTailPendingMessage, renderMessages])
-  const activeContextTokenUsageText = React.useMemo(() => formatTokenEstimate(sumMessageTokenEstimate(allMessages)), [allMessages])
+  const activeContextTokenUsage = React.useMemo(() => sumMessageTokenEstimate(allMessages), [allMessages])
+  const activeContextTokenUsageText = React.useMemo(() => formatTokenEstimate(activeContextTokenUsage), [activeContextTokenUsage])
+  const activeContextTokenUsageShortText = React.useMemo(() => formatTokenEstimateShort(activeContextTokenUsage), [activeContextTokenUsage])
 
   const lastMsg = renderMessages.length ? renderMessages[renderMessages.length - 1] : null
   const lastMsgId = String(lastMsg?.id || '')
@@ -2599,7 +2643,16 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     sendFromComposer()
   })
   const onStop = useEvent(() => controller.actions.stop?.(activeStopRunId))
-  const onPickDraftImages = useEvent(() => controller.actions.pickDraftImages())
+  const closeAttachmentPicker = useEvent(() => setAttachmentPickerEl(null))
+  const openAttachmentPicker = useEvent((e: React.MouseEvent<HTMLElement>) => setAttachmentPickerEl(e.currentTarget))
+  const onPickDraftImages = useEvent(() => {
+    controller.actions.pickDraftImages()
+    closeAttachmentPicker()
+  })
+  const onPickDraftFiles = useEvent(() => {
+    draftFilePickerInputRef.current?.click?.()
+    closeAttachmentPicker()
+  })
   const onPickFilesChanged = useEvent((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files ? Array.from(e.target.files) : []
     e.target.value = ''
@@ -4930,147 +4983,114 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                   </Stack>
                 ) : null}
 
-                <Stack direction="row" spacing={1} alignItems="flex-end">
-                  <Tooltip title="图片">
-                    <span>
-                      <IconButton
-                        aria-label="选择图片"
-                        onClick={onPickDraftImages}
-                        disabled={s.loading || !activeRole}
-                        size="small"
-                        sx={{
-                          bgcolor: 'rgba(0,0,0,.05)',
-                          borderRadius: '999px',
-                          width: 36,
-                          height: 36,
-                          '&:hover': { bgcolor: 'rgba(0,0,0,.09)' },
-                        }}
-                      >
-                        <ImageIcon fontSize="small" />
-                      </IconButton>
-                    </span>
-                  </Tooltip>
+                <input
+                  ref={draftFilePickerInputRef}
+                  hidden
+                  type="file"
+                  multiple
+                  accept=".txt,.md,.pdf,.docx,.ppt,.pptx,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                  onChange={onPickFilesChanged}
+                />
 
-                  <Tooltip title="文件（txt/md/pdf/docx/ppt/pptx）">
-                    <span>
-                      <IconButton
-                        aria-label="选择文件"
-                        component="label"
-                        disabled={s.loading || !activeRole}
-                        size="small"
-                        sx={{
-                          bgcolor: 'rgba(0,0,0,.05)',
-                          borderRadius: '999px',
-                          width: 36,
-                          height: 36,
-                          '&:hover': { bgcolor: 'rgba(0,0,0,.09)' },
-                        }}
-                      >
-                        <AttachFileIcon fontSize="small" />
-                        <input
-                          hidden
-                          type="file"
-                          multiple
-                          accept=".txt,.md,.pdf,.docx,.ppt,.pptx,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
-                          onChange={onPickFilesChanged}
-                        />
-                      </IconButton>
-                    </span>
-                  </Tooltip>
+                <ComposerInputControls
+                  controller={controller}
+                  draftKey={String((s as any).activeSessionComposerDraftKey || `${activeTargetKind}:${activeChatTargetId}:${activeChatId || '__new__'}`)}
+                  initialValue={String(s.draft?.input || '')}
+                  inputRef={composerInputRef}
+                  disabled={s.loading || !activeRole}
+                  draftFilesPending={draftFilesPending}
+                  draftFilesWarn={draftFilesWarn}
+                  hasDraftNonText={!!((s.draft?.images || []).length || hasDraftFiles)}
+                  activeTargetKind={activeTargetKind}
+                  activeGroup={activeGroup}
+                  roles={roles}
+                  activeStopRunId={activeStopRunId}
+                  formatModelRefText={formatModelRefText}
+                  toolbarStart={(
+                    <>
+                      <Tooltip title="添加图片或文件">
+                        <span>
+                          <IconButton
+                            aria-label="添加图片或文件"
+                            onClick={openAttachmentPicker}
+                            disabled={s.loading || !activeRole}
+                            size="small"
+                            sx={composerToolIconButtonSx}
+                          >
+                            <AddIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
 
+                      <Tooltip title={hasChatOverride ? `临时模型：${formatModelRefText(chatOverride)}` : `角色模型：${effectiveModelId || '未配置模型'}`}>
+                        <span>
+                          <Button
+                            aria-label="临时切换模型"
+                            onClick={openTempModelPicker}
+                            disabled={s.loading || !activeRole || !providers.length}
+                            size="small"
+                            variant="text"
+                            sx={{ ...composerToolTextButtonSx, color: hasChatOverride ? 'primary.main' : 'text.secondary' }}
+                          >
+                            <Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {effectiveModelId || '未配置模型'}
+                            </Box>
+                          </Button>
+                        </span>
+                      </Tooltip>
 
-                  <Tooltip title="临时切换模型">
-                    <span>
-                      <IconButton
-                        aria-label="临时切换模型"
-                        onClick={openTempModelPicker}
-                        disabled={s.loading || !activeRole || !providers.length}
-                        size="small"
-                        sx={{
-                          bgcolor: 'rgba(0,0,0,.05)',
-                          borderRadius: '999px',
-                          width: 36,
-                          height: 36,
-                          '&:hover': { bgcolor: 'rgba(0,0,0,.09)' },
-                        }}
-                      >
-                        <StorageIcon fontSize="small" />
-                      </IconButton>
-                    </span>
-                  </Tooltip>
+                      {reasoningProfile.supportsReasoning ? (
+                        <Tooltip title={`思考等级：${activeReasoningLabel || '默认'}`}>
+                          <span>
+                            <Button
+                              aria-label="选择思考等级"
+                              onClick={openReasoningPicker}
+                              disabled={s.loading || !activeRole}
+                              size="small"
+                              variant="text"
+                              sx={{ ...composerToolTextButtonSx, color: hasChatReasoningOverride ? 'primary.main' : 'text.secondary' }}
+                            >
+                              {activeReasoningLabel || '默认'}
+                            </Button>
+                          </span>
+                        </Tooltip>
+                      ) : null}
 
-                  {reasoningProfile.supportsReasoning ? (
-                    <Tooltip title={`思考等级：${activeReasoningLabel || '默认'}`}>
-                      <span>
-                        <IconButton
-                          aria-label="选择思考等级"
-                          onClick={openReasoningPicker}
-                          disabled={s.loading || !activeRole}
-                          size="small"
-                          sx={{
-                            bgcolor: hasChatReasoningOverride ? 'rgba(124,58,237,.12)' : 'rgba(0,0,0,.05)',
-                            color: hasChatReasoningOverride ? 'primary.main' : 'inherit',
-                            borderRadius: '999px',
-                            width: 36,
-                            height: 36,
-                            '&:hover': { bgcolor: hasChatReasoningOverride ? 'rgba(124,58,237,.18)' : 'rgba(0,0,0,.09)' },
-                          }}
-                        >
-                          <PsychologySparkIcon fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                  ) : null}
-
-                  <ComposerInputControls
-                    controller={controller}
-                    draftKey={String((s as any).activeSessionComposerDraftKey || `${activeTargetKind}:${activeChatTargetId}:${activeChatId || '__new__'}`)}
-                    initialValue={String(s.draft?.input || '')}
-                    inputRef={composerInputRef}
-                    disabled={s.loading || !activeRole}
-                    draftFilesPending={draftFilesPending}
-                    draftFilesWarn={draftFilesWarn}
-                    hasDraftNonText={!!((s.draft?.images || []).length || hasDraftFiles)}
-                    activeTargetKind={activeTargetKind}
-                    activeGroup={activeGroup}
-                    roles={roles}
-                    activeStopRunId={activeStopRunId}
-                    formatModelRefText={formatModelRefText}
-                    onSend={onSend}
-                    onStop={onStop}
-                    onPaste={onPaste}
-                  />
-                </Stack>
-
-                {hasChatOverride ? (
-                  <Stack direction="row" spacing={1} alignItems="center" sx={{ px: 0.5 }}>
-                    <Typography variant="caption" color="text.secondary" sx={{ flex: 1, minWidth: 0 }} noWrap>
-                      {`临时模型：${formatModelRefText(chatOverride)}`}
-                    </Typography>
-
-                    <Button size="small" variant="text" onClick={() => controller.actions.clearChatModelOverride?.()} disabled={s.loading}>
-                      清除
-                    </Button>
-                  </Stack>
-                ) : null}
-
-                {reasoningProfile.supportsReasoning && hasChatReasoningOverride ? (
-                  <Stack direction="row" spacing={1} alignItems="center" sx={{ px: 0.5 }}>
-                    <Typography variant="caption" color="text.secondary" sx={{ flex: 1, minWidth: 0 }} noWrap>
-                      {`当前会话思考等级：${activeReasoningLabel}`}
-                    </Typography>
-                    <Button size="small" variant="text" onClick={clearReasoningEffort} disabled={s.loading}>
-                      恢复默认
-                    </Button>
-                  </Stack>
-                ) : null}
-
-                <Typography variant="caption" color="text.secondary" sx={{ px: 0.5, textAlign: 'center' }}>
-                  {`上下文约 ${activeContextTokenUsageText}`}
-                </Typography>
+                      <Tooltip title={`上下文约 ${activeContextTokenUsageText}`}>
+                        <span>
+                          <Button aria-label={`上下文约 ${activeContextTokenUsageText}`} size="small" variant="text" sx={composerContextButtonSx}>
+                            {activeContextTokenUsageShortText}
+                          </Button>
+                        </span>
+                      </Tooltip>
+                    </>
+                  )}
+                  onSend={onSend}
+                  onStop={onStop}
+                  onPaste={onPaste}
+                />
               </Stack>
             </Box>
         </Box>
+
+        <Popover
+          open={!!attachmentPickerEl}
+          anchorEl={attachmentPickerEl}
+          onClose={closeAttachmentPicker}
+          anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+          transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        >
+          <Box data-area="composer-attachment-picker" sx={{ width: 248, p: 1 }}>
+            <Stack spacing={0.5}>
+              <Button startIcon={<ImageIcon fontSize="small" />} variant="text" onClick={onPickDraftImages} disabled={s.loading || !activeRole} sx={{ justifyContent: 'flex-start', borderRadius: 2 }}>
+                图片
+              </Button>
+              <Button startIcon={<AttachFileIcon fontSize="small" />} variant="text" onClick={onPickDraftFiles} disabled={s.loading || !activeRole} sx={{ justifyContent: 'flex-start', borderRadius: 2 }}>
+                文件（txt/md/pdf/docx/ppt/pptx）
+              </Button>
+            </Stack>
+          </Box>
+        </Popover>
 
         <Popover
           open={!!tempModelPickerEl}

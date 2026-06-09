@@ -18,3 +18,12 @@ export function formatTokenEstimate(tokens: number) {
   const text = scaled >= 10 ? Math.round(scaled).toString() : scaled.toFixed(1).replace(/\.0$/, '')
   return `${text}k tokens`
 }
+
+export function formatTokenEstimateShort(tokens: number) {
+  const value = Math.max(0, Math.floor(Number(tokens || 0)))
+  if (!Number.isFinite(value) || value <= 0) return '0k'
+
+  const scaled = value / 1000
+  const text = scaled >= 10 ? Math.round(scaled).toString() : scaled.toFixed(1).replace(/\.0$/, '')
+  return `${text}k`
+}

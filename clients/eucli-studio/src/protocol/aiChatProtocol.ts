@@ -1,3 +1,5 @@
+import type { ErrorPayload } from '../domain/errorPayload'
+
 export const AI_CHAT_DIRECT_PROTOCOL_VERSION = 2
 
 export const AI_CHAT_DIRECT_METHOD = {
@@ -43,7 +45,7 @@ export type AiChatDirectResponse<T = unknown> = {
   type: 'response'
   ok: boolean
   result?: T
-  error?: { code?: string; message: string; details?: unknown }
+  error?: ErrorPayload
 }
 
 export type AiChatDirectEvent = {

@@ -1139,14 +1139,14 @@ func TestRunFailureStoresAssistantErrorWithoutFailureMessage(t *testing.T) {
 		t.Fatalf("StartRun() error = %v", err)
 	}
 	final := waitRun(t, system, state.ID)
-	if final.Status != types.RunStatusFailed || final.Error == nil || final.Error.Message != "upstream says no" {
+	if final.Status != types.RunStatusFailed || final.Error == nil || final.Error.Message != "failed to complete model request" || final.Error.Cause == nil || final.Error.Cause.Message != "upstream says no" {
 		t.Fatalf("final = %#v", final)
 	}
 	session := fakes.storage.lastSession()
 	if len(session.Messages) != 2 {
 		t.Fatalf("messages = %#v", session.Messages)
 	}
-	if session.Messages[1].Type != "assistant" || session.Messages[1].Error == nil || session.Messages[1].Error.Message != "upstream says no" {
+	if session.Messages[1].Type != "assistant" || session.Messages[1].Error == nil || session.Messages[1].Error.Message != "failed to complete model request" || session.Messages[1].Error.Cause == nil || session.Messages[1].Error.Cause.Message != "upstream says no" {
 		t.Fatalf("assistant error = %#v", session.Messages[1])
 	}
 	for _, message := range session.Messages {

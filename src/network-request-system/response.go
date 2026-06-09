@@ -17,7 +17,7 @@ func normalizeResponse(resp *http.Response, started int64, monitor *timeoutMonit
 		if monitor.timedOut() || errors.Is(err, context.DeadlineExceeded) || errors.Is(resp.Request.Context().Err(), context.DeadlineExceeded) {
 			return types.HTTPResponse{}, requestTimeout("http request timed out", err)
 		}
-		return types.HTTPResponse{}, requestFailed("failed to read http response body", err)
+		return types.HTTPResponse{}, connectionLost("failed to read http response body: "+err.Error(), err)
 	}
 	return types.HTTPResponse{
 		StatusCode: resp.StatusCode,
@@ -50,7 +50,7 @@ func normalizeStreamResponse(resp *http.Response, started int64, onChunk types.H
 			if monitor.timedOut() || errors.Is(err, context.DeadlineExceeded) || errors.Is(resp.Request.Context().Err(), context.DeadlineExceeded) {
 				return types.HTTPResponse{}, requestTimeout("http request timed out", err)
 			}
-			return types.HTTPResponse{}, requestFailed("failed to read http response body", err)
+			return types.HTTPResponse{}, connectionLost("failed to read http response body: "+err.Error(), err)
 		}
 	}
 	return types.HTTPResponse{StatusCode: resp.StatusCode, Headers: cloneHeaders(resp.Header), Body: body.Bytes(), Duration: time.Since(time.Unix(0, started))}, nil

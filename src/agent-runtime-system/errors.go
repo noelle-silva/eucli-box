@@ -39,14 +39,12 @@ func runtimeStateInvalid(message string, cause error) error {
 }
 
 func errorPayloadFromError(err error, fallback string) *types.ErrorPayload {
+	if payload := apperrors.BuildErrorPayload(err); payload != nil {
+		return payload
+	}
 	message := strings.TrimSpace(fallback)
 	if err != nil && message == "" {
 		message = strings.TrimSpace(err.Error())
-	}
-	appErr := innermostAppError(err)
-	if appErr != nil {
-		message = strings.TrimSpace(appErr.Message)
-		return &types.ErrorPayload{Code: appErr.Code, Message: message, System: appErr.System, Details: appErr.Details}
 	}
 	if message == "" {
 		return nil
@@ -59,11 +57,27 @@ func runFailureFromError(err error, fallback string) (string, *types.ErrorPayloa
 	if payload == nil {
 		return strings.TrimSpace(fallback), nil
 	}
-	reason := strings.TrimSpace(payload.Message)
+	reason := mostSpecificErrorMessage(payload)
 	if reason == "" {
 		reason = strings.TrimSpace(fallback)
 	}
 	return reason, payload
+}
+
+func mostSpecificErrorMessage(payload *types.ErrorPayload) string {
+	if payload == nil {
+		return ""
+	}
+	message := strings.TrimSpace(payload.Message)
+	if next := mostSpecificErrorMessage(payload.Cause); next != "" {
+		message = next
+	}
+	for _, cause := range payload.Causes {
+		if next := mostSpecificErrorMessage(cause); next != "" {
+			message = next
+		}
+	}
+	return message
 }
 
 func innermostAppError(err error) *apperrors.AppError {

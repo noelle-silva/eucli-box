@@ -27,10 +27,12 @@ type Message struct {
 }
 
 type ErrorPayload struct {
-	Code    string `json:"code,omitempty"`
-	Message string `json:"message"`
-	System  string `json:"system,omitempty"`
-	Details any    `json:"details,omitempty"`
+	Code    string          `json:"code,omitempty"`
+	Message string          `json:"message"`
+	System  string          `json:"system,omitempty"`
+	Details any             `json:"details,omitempty"`
+	Cause   *ErrorPayload   `json:"cause,omitempty"`
+	Causes  []*ErrorPayload `json:"causes,omitempty"`
 }
 
 type MessagePart struct {

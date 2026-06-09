@@ -1,6 +1,9 @@
 package main
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 const directProtocolVersion = 2
 
@@ -22,9 +25,12 @@ type responseFrame struct {
 }
 
 type responseError struct {
-	Code    string `json:"code,omitempty"`
-	Message string `json:"message"`
-	Details any    `json:"details,omitempty"`
+	Code    string           `json:"code,omitempty"`
+	Message string           `json:"message"`
+	System  string           `json:"system,omitempty"`
+	Details any              `json:"details,omitempty"`
+	Cause   *responseError   `json:"cause,omitempty"`
+	Causes  []*responseError `json:"causes,omitempty"`
 }
 
 type eventFrame struct {
@@ -58,10 +64,60 @@ func errorResponseFor(id string, err error) responseFrame {
 			code = coded.Code()
 		}
 		if detailed, ok := err.(detailedError); ok {
-			return responseFrame{ID: id, Type: "response", OK: false, Error: &responseError{Code: code, Message: message, Details: detailed.Details()}}
+			return responseFrame{ID: id, Type: "response", OK: false, Error: errorPayloadFor(code, message, detailed.Details())}
 		}
 	}
 	return responseFrame{ID: id, Type: "response", OK: false, Error: &responseError{Code: code, Message: message}}
+}
+
+func errorPayloadFor(code string, message string, details any) *responseError {
+	if payload, ok := details.(map[string]any); ok {
+		if raw, ok := payload["error"].(map[string]any); ok {
+			return responseErrorFromMap(raw)
+		}
+		if raw, ok := payload["json"].(map[string]any); ok {
+			if errBox, ok := raw["error"].(map[string]any); ok {
+				return responseErrorFromMap(errBox)
+			}
+		}
+	}
+	return &responseError{Code: code, Message: message, Details: details}
+}
+
+func responseErrorFromMap(raw map[string]any) *responseError {
+	message := stringValue(raw, "message")
+	if message == "" {
+		message = "请求失败"
+	}
+	out := &responseError{Code: stringValue(raw, "code"), Message: message, System: stringValue(raw, "system"), Details: raw["details"]}
+	if cause, ok := raw["cause"].(map[string]any); ok {
+		out.Cause = responseErrorFromMap(cause)
+	}
+	if causes, ok := raw["causes"].([]any); ok {
+		out.Causes = responseErrorsFromList(causes)
+	}
+	return out
+}
+
+func responseErrorsFromList(raw []any) []*responseError {
+	if len(raw) == 0 {
+		return nil
+	}
+	result := make([]*responseError, 0, len(raw))
+	for _, item := range raw {
+		if cause, ok := item.(map[string]any); ok {
+			result = append(result, responseErrorFromMap(cause))
+		}
+	}
+	return result
+}
+
+func stringValue(raw map[string]any, key string) string {
+	value, ok := raw[key].(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(value)
 }
 
 type codedError interface {

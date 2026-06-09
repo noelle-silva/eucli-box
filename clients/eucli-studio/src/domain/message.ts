@@ -2,19 +2,10 @@ import { now, uid, clamp, normImagePaths, normalizeTimeMs } from '../core/utils'
 import { CHAT_ATTACHMENT_KINDS, CHAT_DEFAULT_BRANCH_ID, CHAT_MSG_GROUP_ROLES } from './constants'
 import { normalizeBranchId } from './branching'
 import { normalizeMessageModelRef } from './modelRefUtils'
+import { normalizeErrorPayload } from './errorPayload'
 
 export function normalizeMessageError(input: any) {
-  const raw = input && typeof input === 'object' ? input : null
-  if (!raw) return null
-  const message = String((raw as any).message || '').trim()
-  if (!message) return null
-  const out: any = { message }
-  const code = String((raw as any).code || '').trim()
-  const system = String((raw as any).system || '').trim()
-  if (code) out.code = code
-  if (system) out.system = system
-  if (Object.prototype.hasOwnProperty.call(raw, 'details')) out.details = (raw as any).details
-  return out
+  return normalizeErrorPayload(input)
 }
 
 export function normalizeMessageAttachments(input: any) {

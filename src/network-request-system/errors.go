@@ -15,3 +15,23 @@ func requestFailed(message string, cause error) error {
 func requestTimeout(message string, cause error) error {
 	return apperrors.Wrap(systemName, "network.timeout", message, cause)
 }
+
+func dnsFailed(message string, cause error) error {
+	return apperrors.Wrap(systemName, "network.dns_failed", message, cause)
+}
+
+func connectionRefused(message string, cause error) error {
+	return apperrors.Wrap(systemName, "network.connection_refused", message, cause)
+}
+
+func connectionFailed(message string, cause error) error {
+	return apperrors.Wrap(systemName, "network.connection_failed", message, cause)
+}
+
+func tlsFailed(message string, cause error) error {
+	return apperrors.Wrap(systemName, "network.tls_failed", message, cause)
+}
+
+func connectionLost(message string, cause error) error {
+	return apperrors.Wrap(systemName, "network.connection_lost", message, cause)
+}

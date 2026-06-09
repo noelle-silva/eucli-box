@@ -107,10 +107,25 @@ func normalizeErrorPayload(errorPayload *types.ErrorPayload) *types.ErrorPayload
 	errorPayload.Code = strings.TrimSpace(errorPayload.Code)
 	errorPayload.Message = strings.TrimSpace(errorPayload.Message)
 	errorPayload.System = strings.TrimSpace(errorPayload.System)
+	errorPayload.Cause = normalizeErrorPayload(errorPayload.Cause)
+	errorPayload.Causes = normalizeErrorPayloads(errorPayload.Causes)
 	if errorPayload.Message == "" {
 		return nil
 	}
 	return errorPayload
+}
+
+func normalizeErrorPayloads(errorPayloads []*types.ErrorPayload) []*types.ErrorPayload {
+	if len(errorPayloads) == 0 {
+		return nil
+	}
+	result := make([]*types.ErrorPayload, 0, len(errorPayloads))
+	for _, errorPayload := range errorPayloads {
+		if normalized := normalizeErrorPayload(errorPayload); normalized != nil {
+			result = append(result, normalized)
+		}
+	}
+	return result
 }
 
 func normalizeSessionMessageParts(message types.Message, now time.Time) []types.MessagePart {

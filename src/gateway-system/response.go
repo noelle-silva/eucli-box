@@ -2,10 +2,10 @@ package gateway
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 
 	apperrors "eucli-box/pkg/errors"
+	"eucli-box/pkg/types"
 )
 
 type successResponse struct {
@@ -13,14 +13,7 @@ type successResponse struct {
 }
 
 type errorResponse struct {
-	Error responseError `json:"error"`
-}
-
-type responseError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-	System  string `json:"system"`
-	Details any    `json:"details,omitempty"`
+	Error types.ErrorPayload `json:"error"`
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
@@ -38,16 +31,37 @@ func writeNoContent(w http.ResponseWriter) {
 }
 
 func writeError(w http.ResponseWriter, err error) {
-	var appErr *apperrors.AppError
-	if errors.As(err, &appErr) {
-		inner := resolveInnerAppError(err)
-		if inner != nil {
-			appErr = inner
+	payload := errorPayloadForResponse(err)
+	writeJSON(w, statusForPayload(&payload), errorResponse{Error: payload})
+}
+
+func errorPayloadForResponse(err error) types.ErrorPayload {
+	if payload := apperrors.BuildErrorPayload(err); payload != nil {
+		if payload.Code == "" && payload.System == "" {
+			return types.ErrorPayload{Code: "gateway.internal_error", Message: "internal gateway error", System: systemName, Cause: payload}
 		}
-		writeJSON(w, statusForCode(appErr.Code), errorResponse{Error: responseError{Code: appErr.Code, Message: appErr.Message, System: appErr.System, Details: appErr.Details}})
-		return
+		return *payload
 	}
-	writeJSON(w, http.StatusInternalServerError, errorResponse{Error: responseError{Code: "gateway.internal_error", Message: err.Error(), System: systemName}})
+	return types.ErrorPayload{Code: "gateway.internal_error", Message: "internal gateway error", System: systemName}
+}
+
+func statusForPayload(payload *types.ErrorPayload) int {
+	if payload == nil {
+		return http.StatusInternalServerError
+	}
+	status := statusForCode(payload.Code)
+	if status != http.StatusInternalServerError {
+		return status
+	}
+	if status := statusForPayload(payload.Cause); status != http.StatusInternalServerError {
+		return status
+	}
+	for _, cause := range payload.Causes {
+		if status := statusForPayload(cause); status != http.StatusInternalServerError {
+			return status
+		}
+	}
+	return http.StatusInternalServerError
 }
 
 func statusForCode(code string) int {

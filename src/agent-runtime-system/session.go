@@ -313,7 +313,20 @@ func cloneErrorPayload(payload *types.ErrorPayload) *types.ErrorPayload {
 	if payload == nil {
 		return nil
 	}
-	return &types.ErrorPayload{Code: payload.Code, Message: payload.Message, System: payload.System, Details: payload.Details}
+	return &types.ErrorPayload{Code: payload.Code, Message: payload.Message, System: payload.System, Details: payload.Details, Cause: cloneErrorPayload(payload.Cause), Causes: cloneErrorPayloads(payload.Causes)}
+}
+
+func cloneErrorPayloads(payloads []*types.ErrorPayload) []*types.ErrorPayload {
+	if len(payloads) == 0 {
+		return nil
+	}
+	cloned := make([]*types.ErrorPayload, 0, len(payloads))
+	for _, payload := range payloads {
+		if clonedPayload := cloneErrorPayload(payload); clonedPayload != nil {
+			cloned = append(cloned, clonedPayload)
+		}
+	}
+	return cloned
 }
 
 func assistantReplyBranchID(session types.Session, parent types.Message, assistantID string) string {

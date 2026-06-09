@@ -3,8 +3,11 @@ package networkrequest
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"eucli-box/pkg/types"
@@ -36,7 +39,7 @@ func (c *client) do(prepared preparedRequest) (types.HTTPResponse, error) {
 		if isRequestTimeout(err, prepared.request.Context(), monitor) {
 			return types.HTTPResponse{}, requestTimeout("http request timed out", err)
 		}
-		return types.HTTPResponse{}, requestFailed("http request failed", err)
+		return types.HTTPResponse{}, classifyRequestError(err)
 	}
 	defer resp.Body.Close()
 	return normalizeResponse(resp, prepared.started, monitor)
@@ -53,7 +56,7 @@ func (c *client) doStream(prepared preparedRequest, onChunk types.HTTPStreamHand
 		if isRequestTimeout(err, prepared.request.Context(), monitor) {
 			return types.HTTPResponse{}, requestTimeout("http request timed out", err)
 		}
-		return types.HTTPResponse{}, requestFailed("http request failed", err)
+		return types.HTTPResponse{}, classifyRequestError(err)
 	}
 	monitor.touch()
 	defer resp.Body.Close()
@@ -70,4 +73,58 @@ func isRequestTimeout(err error, ctx context.Context, monitor *timeoutMonitor) b
 		return true
 	}
 	return isTimeout(err) || errors.Is(ctx.Err(), context.DeadlineExceeded)
+}
+
+func classifyRequestError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var urlErr *url.Error
+	if !errors.As(err, &urlErr) || urlErr.Err == nil {
+		return requestFailed("http request failed: "+err.Error(), err)
+	}
+	if errors.Is(urlErr.Err, context.DeadlineExceeded) {
+		return requestTimeout("http request timed out", urlErr)
+	}
+	var dnsErr *net.DNSError
+	if errors.As(urlErr.Err, &dnsErr) {
+		return dnsFailed(fmt.Sprintf("DNS lookup failed for %s: %s", dnsErr.Name, dnsErr.Err), urlErr)
+	}
+	var opErr *net.OpError
+	if errors.As(urlErr.Err, &opErr) {
+		if opErr.Op == "dial" {
+			message := fmt.Sprintf("connection to %s failed: %s", opErr.Addr, opErr.Err)
+			if isConnectionRefusedMessage(message) {
+				return connectionRefused(message, urlErr)
+			}
+			return connectionFailed(message, urlErr)
+		}
+		op := strings.ToLower(opErr.Op)
+		if strings.Contains(op, "tls") || strings.Contains(op, "handshake") {
+			return tlsFailed(fmt.Sprintf("TLS handshake with %s failed: %s", opErr.Addr, opErr.Err), urlErr)
+		}
+		if opErr.Op == "read" {
+			return connectionLost(fmt.Sprintf("connection lost while reading from %s: %s", opErr.Addr, opErr.Err), urlErr)
+		}
+	}
+	message := urlErr.Err.Error()
+	lowerMessage := strings.ToLower(message)
+	if isConnectionRefusedMessage(message) {
+		return connectionRefused("connection refused: "+message, urlErr)
+	}
+	if strings.Contains(lowerMessage, "no such host") {
+		return dnsFailed("DNS lookup failed: "+message, urlErr)
+	}
+	if strings.Contains(lowerMessage, "connection reset") || strings.Contains(message, "EOF") {
+		return connectionLost("connection lost: "+message, urlErr)
+	}
+	if strings.Contains(lowerMessage, "tls") || strings.Contains(lowerMessage, "certificate") {
+		return tlsFailed("TLS handshake failed: "+message, urlErr)
+	}
+	return requestFailed("http request failed: "+message, urlErr)
+}
+
+func isConnectionRefusedMessage(message string) bool {
+	lower := strings.ToLower(message)
+	return strings.Contains(lower, "connection refused") || strings.Contains(lower, "actively refused")
 }

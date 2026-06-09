@@ -211,7 +211,8 @@ class AiChatReconnectableDirectClient implements AiChatDirectClient {
       this.pending.delete(response.id)
       if (item.timer) clearTimeout(item.timer)
       if (response.ok) item.resolve(response.result)
-      else item.reject(new AiChatDirectError(response.error?.code || 'DIRECT_ERROR', response.error?.message || '请求失败', response.error?.details))
+      else if (response.error) item.reject(new AiChatDirectError(response.error.code, response.error.message || '请求失败', response.error.details, response.error.system, response.error.cause, response.error.causes))
+      else item.reject(new AiChatDirectError('DIRECT_ERROR', '请求失败'))
       return
     }
 

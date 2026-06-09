@@ -2,13 +2,10 @@ package gateway
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"time"
 
 	"github.com/gorilla/websocket"
-
-	apperrors "eucli-box/pkg/errors"
 )
 
 func (s *system) handleEventsWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -30,7 +27,7 @@ func (s *system) handleEventsWebSocket(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	events, unsubscribe, err := s.runtime.Subscribe(ctx)
 	if err != nil {
-		_ = conn.WriteJSON(errorResponse{Error: responseError{Code: "gateway.websocket_failed", Message: err.Error(), System: systemName}})
+		_ = conn.WriteJSON(errorResponse{Error: errorPayloadForResponse(gatewayWebSocketFailed("failed to subscribe run events", err))})
 		return
 	}
 	defer unsubscribe()
@@ -73,18 +70,4 @@ func (s *system) closeConnections() {
 		_ = conn.Close()
 		delete(s.connections, conn)
 	}
-}
-
-func resolveInnerAppError(err error) *apperrors.AppError {
-	var appErr *apperrors.AppError
-	if errors.As(err, &appErr) {
-		if cause := appErr.Unwrap(); cause != nil {
-			var inner *apperrors.AppError
-			if errors.As(cause, &inner) {
-				return inner
-			}
-		}
-		return appErr
-	}
-	return nil
 }

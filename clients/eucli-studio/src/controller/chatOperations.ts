@@ -22,7 +22,6 @@ import type { DraftFileItem } from '../domain/draftFileUtils'
 import { normalizeChatModelOverride } from '../domain/modelRefUtils'
 import { chatReasoningEffort } from '../domain/reasoning'
 import { createStateAccessors } from '../state/stateAccessors'
-import { isAssistantRunInterrupted } from '../domain/assistantRunState'
 import {
   activeEbRoleRunCards,
   activeEbRoleRunCardsForSession,
@@ -125,10 +124,6 @@ export function createChatOperations(deps: {
     const mid = String(parentMid || '').trim()
     if (!chat || !mid) return true
     const parent = findChatMessageById(chat, mid)
-    if (parent && isAssistantRunInterrupted(parent)) {
-      showToast?.('这条 AI 回复已失败或取消，请选择一条稳定回复后继续', { kind: 'error' })
-      return false
-    }
     if (!explicitParent && parent && String((parent as any).role || '') === 'user' && findActiveRunAtMessage(roleId, sessionId, mid)) {
       showToast?.('这个问题已有运行中的回答，请从用户消息菜单并排生成，或选择一条稳定回复后继续', { kind: 'error' })
       return false
@@ -216,8 +211,7 @@ export function createChatOperations(deps: {
   function followRunResultBranch(chat: any, follow: { previousMessageIds: Set<string>; ancestorMessageId?: string; messageId?: string } | null | undefined) {
     if (!follow || !chat) return false
     const explicitMessageId = String(follow.messageId || '').trim()
-    if (explicitMessageId && activateChatBranchByMessage(chat, explicitMessageId)) return true
-    const targetMessageId = findNewestNewLeafMessageId(chat, follow.previousMessageIds, follow.ancestorMessageId)
+    const targetMessageId = findNewestNewLeafMessageId(chat, follow.previousMessageIds, follow.ancestorMessageId, explicitMessageId)
     if (!targetMessageId) return false
     return activateChatBranchByMessage(chat, targetMessageId)
   }
@@ -294,7 +288,7 @@ export function createChatOperations(deps: {
     const startedFromPending = !!pendingAtStart
     const startedFromPendingChatId = String(pendingAtStart?.id || '').trim()
     let followPendingOnce = startedFromPending
-    const followAnchor = roleSessionViewAnchor(input.roleId, String(input.sessionId || '').trim())
+    let followViewAnchor = roleSessionViewAnchor(input.roleId, String(input.sessionId || '').trim())
     startingRoleRunKeys.add(startKey)
     let state: EbRunState
     try {
@@ -314,20 +308,24 @@ export function createChatOperations(deps: {
 
     const refreshRunSession = async () => {
       if (!sessionId) return
-      const shouldFollowNow = (followPendingOnce && roleRunPendingViewStillCurrent(input.roleId, sessionId, startedFromPendingChatId)) || roleSessionViewUnchanged(input.roleId, sessionId, followAnchor)
+      const shouldFollowNow = (followPendingOnce && roleRunPendingViewStillCurrent(input.roleId, sessionId, startedFromPendingChatId)) || roleSessionViewUnchanged(input.roleId, sessionId, followViewAnchor)
+      let followed = false
       await refreshRoleSession(input.roleId, sessionId, (chat) => {
-        if (shouldFollowNow) followRunResultBranch(chat, follow ? { ...follow, messageId: followMessageId } : null)
+        if (shouldFollowNow) followed = followRunResultBranch(chat, follow ? { ...follow, messageId: followMessageId } : null)
       }, { activate: shouldFollowNow })
+      if (followed) followViewAnchor = roleSessionViewAnchor(input.roleId, sessionId)
       followPendingOnce = false
       runSessionLoadedOnce = true
     }
 
     const refreshTerminalRunSession = async () => {
       if (!sessionId) return
-      const shouldFollowNow = roleSessionViewUnchanged(input.roleId, sessionId, followAnchor)
+      const shouldFollowNow = roleSessionViewUnchanged(input.roleId, sessionId, followViewAnchor)
+      let followed = false
       await refreshRoleSession(input.roleId, sessionId, (chat) => {
-        if (shouldFollowNow) followRunResultBranch(chat, follow ? { ...follow, messageId: followMessageId } : null)
+        if (shouldFollowNow) followed = followRunResultBranch(chat, follow ? { ...follow, messageId: followMessageId } : null)
       }, { activate: shouldFollowNow })
+      if (followed) followViewAnchor = roleSessionViewAnchor(input.roleId, sessionId)
       runSessionLoadedOnce = true
     }
 

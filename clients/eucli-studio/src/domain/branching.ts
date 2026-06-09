@@ -246,7 +246,7 @@ function messageSortValue(message: any) {
   return { createdAt: isFinite(createdAt) ? createdAt : 0, updatedAt: isFinite(updatedAt) ? updatedAt : 0, id: String(message?.id || '') }
 }
 
-export function findNewestNewLeafMessageId(chat: any, previousMessageIds: Set<string>, ancestorMessageId?: any) {
+export function findNewestNewLeafMessageId(chat: any, previousMessageIds: Set<string>, ancestorMessageId?: any, preferredMessageId?: any) {
   const previous = previousMessageIds instanceof Set ? previousMessageIds : new Set<string>()
   const { messages, byId, children } = chatMessageTree(chat)
   const candidates = messages.filter((message: any) => {
@@ -260,6 +260,9 @@ export function findNewestNewLeafMessageId(chat: any, previousMessageIds: Set<st
     const id = String(message?.id || '').trim()
     return id && !(children.get(id) || []).length
   })
+  const preferred = String(preferredMessageId || '').trim()
+  if (preferred && leaves.some((message: any) => String(message?.id || '').trim() === preferred)) return preferred
+
   const pool = leaves.length ? leaves : candidates
   pool.sort((left: any, right: any) => {
     const l = messageSortValue(left)

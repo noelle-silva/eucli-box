@@ -87,7 +87,7 @@ type runRecord struct {
 	cancel                   context.CancelFunc
 
 	pendingPlans   map[string]types.ToolRunPlan
-	confirmationCh chan types.ToolConfirmation
+	confirmationCh chan toolConfirmationRequest
 }
 
 func NewSystem(config Config, storage StorageSystem, roles RoleSystem, providers ProviderSystem, tools ToolSystem) (System, error) {

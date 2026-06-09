@@ -855,6 +855,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     createParallelBranchFromAssistantMessage,
     switchBranchByAssistantSibling,
     setActiveBranch,
+    submitToolConfirmationDecision,
     deleteMessage,
     deleteMessageSubtree,
     editMessage,
@@ -1918,11 +1919,12 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     stop: (runId?: any) => {
       stopSending(runId).catch(() => {})
     },
-    regenerateAssistant: (assistantMid: any) => regenerateAssistantMessage(String(assistantMid || '')),
-    replyFromUserMessage: (userMid: any) => replyFromUserMessage(String(userMid || '')),
+    regenerateAssistant: (assistantMid: any, opts?: any) => regenerateAssistantMessage(String(assistantMid || ''), opts && typeof opts === 'object' ? opts : undefined),
+    replyFromUserMessage: (userMid: any, opts?: any) => replyFromUserMessage(String(userMid || ''), opts && typeof opts === 'object' ? opts : undefined),
     createBranchFromAssistant: (assistantMid: any) => createParallelBranchFromAssistantMessage(String(assistantMid || '')),
     switchBranchSibling: (assistantMid: any, delta: any) => switchBranchByAssistantSibling(String(assistantMid || ''), Number(delta || 0)).catch(() => {}),
     setActiveBranch: (branchId: any) => setActiveBranch(String(branchId || '')).catch(() => {}),
+    submitToolConfirmation: (input: any) => submitToolConfirmationDecision(input),
     setChatModelOverride: async (providerId: any, modelId: any) => {
       const pid = String(providerId || '').trim()
       const mid = String(modelId || '').trim()

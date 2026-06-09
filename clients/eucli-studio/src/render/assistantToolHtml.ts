@@ -12,6 +12,8 @@ function toolPartStateText(state0: any) {
   const state = String(state0 || '').trim()
   if (state === 'requested') return '已请求'
   if (state === 'needs_confirmation') return '等待确认'
+  if (state === 'approved') return '已同意'
+  if (state === 'rejected') return '已拒绝'
   if (state === 'running') return '运行中'
   if (state === 'completed') return '已完成'
   if (state === 'error') return '失败'
@@ -29,8 +31,8 @@ function chip(label: unknown, tone = '') {
 
 function stateTone(state0: any) {
   const state = String(state0 || '').trim()
-  if (state === 'completed') return 'success'
-  if (state === 'error' || state === 'denied' || state === 'cancelled') return 'danger'
+  if (state === 'completed' || state === 'approved') return 'success'
+  if (state === 'error' || state === 'denied' || state === 'rejected' || state === 'cancelled') return 'danger'
   if (state === 'running' || state === 'needs_confirmation') return 'warning'
   return ''
 }

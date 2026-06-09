@@ -923,6 +923,15 @@ func TestRunWaitsForMultipleToolConfirmationsThenExecutesBatch(t *testing.T) {
 	if interim.Status != types.RunStatusWaitingConfirmation {
 		t.Fatalf("interim status = %s", interim.Status)
 	}
+	interimSession := fakes.storage.lastSession()
+	part1 := toolPartByCallID(interimSession.Messages[1], "intent-1")
+	part2 := toolPartByCallID(interimSession.Messages[1], "intent-2")
+	if part1 == nil || part1.State != "needs_confirmation" || part1.Decision == nil || part1.Decision.Status != types.PermissionStatusNeedsConfirmation {
+		t.Fatalf("first pending part = %#v", part1)
+	}
+	if part2 == nil || part2.State != "approved" || part2.Decision == nil || part2.Decision.Status != types.PermissionStatusAllowed {
+		t.Fatalf("second approved part = %#v", part2)
+	}
 	if err := system.SubmitToolConfirmation(context.Background(), types.ToolConfirmation{DecisionID: "decision-1", Approved: true}); err != nil {
 		t.Fatalf("SubmitToolConfirmation(decision-1) error = %v", err)
 	}

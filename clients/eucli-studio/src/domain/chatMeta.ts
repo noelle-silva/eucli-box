@@ -26,6 +26,8 @@ function toolStateText(value: unknown): string {
   const state = String(value || '').trim()
   if (state === 'requested') return '已请求'
   if (state === 'needs_confirmation') return '等待确认'
+  if (state === 'approved') return '已同意'
+  if (state === 'rejected') return '已拒绝'
   if (state === 'running') return '运行中'
   if (state === 'completed') return '已完成'
   if (state === 'error') return '失败'

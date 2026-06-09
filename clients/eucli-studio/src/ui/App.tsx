@@ -125,11 +125,12 @@ type SendPathAnchor = {
   runId: string
   inputMessageId: string
   lastMessageId: string
+  existingMessageIds: string[]
   nonce: number
 }
 
 function emptySendPathAnchor(): SendPathAnchor {
-  return { chatId: '', branchId: '', parentMid: '', runId: '', inputMessageId: '', lastMessageId: '', nonce: 0 }
+  return { chatId: '', branchId: '', parentMid: '', runId: '', inputMessageId: '', lastMessageId: '', existingMessageIds: [], nonce: 0 }
 }
 
 type DataDirectoryStatus = {
@@ -1731,8 +1732,13 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const activeSendPathRunCard = activeSendPathRunId ? activeSessionRunCards.find((card: any) => String(card?.runId || '').trim() === activeSendPathRunId) || null : null
   const activeSendPathFollowMid = React.useMemo(() => {
     if (!renderChat || !activeSendPathAnchorMid) return ''
+    const existingIds = new Set(Array.isArray(sendPathAnchor.existingMessageIds) ? sendPathAnchor.existingMessageIds.map((id: any) => String(id || '').trim()).filter(Boolean) : [])
+    const canFollowRunMid = (mid0: any) => {
+      const mid = String(mid0 || '').trim()
+      return !!mid && chatAllById.has(mid) && !existingIds.has(mid)
+    }
     const runCardMid = String(activeSendPathRunCard?.lastMessageId || '').trim()
-    if (runCardMid && chatAllById.has(runCardMid)) return runCardMid
+    if (canFollowRunMid(runCardMid)) return runCardMid
 
     if (activeSendPathRunId) {
       for (let i = chatAllMessagesRaw.length - 1; i >= 0; i--) {
@@ -1743,12 +1749,12 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     }
 
     const lastMid = String(sendPathAnchor.lastMessageId || '').trim()
-    if (lastMid && chatAllById.has(lastMid)) return lastMid
+    if (canFollowRunMid(lastMid)) return lastMid
 
     const inputMid = String(sendPathAnchor.inputMessageId || '').trim()
-    if (inputMid && chatAllById.has(inputMid)) return inputMid
+    if (canFollowRunMid(inputMid)) return inputMid
     return activeSendPathAnchorMid
-  }, [renderChatId, activeSendPathAnchorMid, activeSendPathRunCard, activeSendPathRunId, sendPathAnchor.lastMessageId, sendPathAnchor.inputMessageId, chatAllById, chatAllMessagesRaw, chatAllMessagesRaw.length])
+  }, [renderChatId, activeSendPathAnchorMid, activeSendPathRunCard, activeSendPathRunId, sendPathAnchor.lastMessageId, sendPathAnchor.inputMessageId, sendPathAnchor.existingMessageIds, chatAllById, chatAllMessagesRaw, chatAllMessagesRaw.length])
   const treeFocusMid = String(treeSelectedMid || activeSendPathFollowMid || activeSendPathAnchorMid || '').trim()
   const allMessages: any[] = React.useMemo(() => {
     const chat: any = renderChat
@@ -2579,40 +2585,55 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
 
   const [sendWarn, setSendWarn] = React.useState<{ open: boolean; items: any[] }>({ open: false, items: [] })
   const closeSendWarn = useEvent(() => setSendWarn({ open: false, items: [] }))
-  const sendFromComposer = useEvent(() => {
+  const beginRunPathFollow = useEvent((parentMid0: string) => {
+    const parentMid = String(parentMid0 || '').trim()
+    if (!parentMid || !activeChat) return null
+    const chatId = String(activeChat?.id || '')
+    const nonce = ++sendPathAnchorNonceRef.current
+    const existingMessageIds = Array.isArray(chatAllMessagesRaw)
+      ? chatAllMessagesRaw.map((message: any) => String(message?.id || '').trim()).filter(Boolean)
+      : []
     stickToBottomRef.current = true
+    setSendPathAnchor({ ...emptySendPathAnchor(), chatId, branchId: activeBranchIdUi, parentMid, existingMessageIds, nonce })
+    setTreeSelectedMid('')
+
+    const onRunState = (run: any) => {
+      const runId = String(run?.id || '').trim()
+      setSendPathAnchor((current) => {
+        if (String(current?.chatId || '') !== chatId) return current
+        if (String(current?.parentMid || '') !== parentMid) return current
+        if (Number(current?.nonce || 0) !== nonce) return current
+        return {
+          ...current,
+          runId,
+          inputMessageId: String(run?.inputMessageId || current.inputMessageId || '').trim(),
+          lastMessageId: String(run?.lastMessageId || current.lastMessageId || run?.inputMessageId || current.inputMessageId || '').trim(),
+        }
+      })
+    }
+
+    const clear = () => {
+      setSendPathAnchor((current) => {
+        if (String(current?.chatId || '') !== chatId) return current
+        if (String(current?.parentMid || '') !== parentMid) return current
+        if (Number(current?.nonce || 0) !== nonce) return current
+        return emptySendPathAnchor()
+      })
+    }
+
+    return { onRunState, clear }
+  })
+
+  const sendFromComposer = useEvent(() => {
     const selectedMid = String(treeSelectedMid || '').trim()
     const branchDraftMid = String((branchDraft as any)?.forkFromMid || '').trim()
     const mid = selectedMid || branchDraftMid
     if (mid && activeChat) {
-      const chatId = String(activeChat?.id || '')
-      const nonce = ++sendPathAnchorNonceRef.current
-      setSendPathAnchor({ ...emptySendPathAnchor(), chatId, branchId: activeBranchIdUi, parentMid: mid, nonce })
-      setTreeSelectedMid('')
-      const onRunState = (run: any) => {
-        const runId = String(run?.id || '').trim()
-        setSendPathAnchor((current) => {
-          if (String(current?.chatId || '') !== chatId) return current
-          if (String(current?.parentMid || '') !== mid) return current
-          if (Number(current?.nonce || 0) !== nonce) return current
-          return {
-            ...current,
-            runId,
-            inputMessageId: String(run?.inputMessageId || current.inputMessageId || '').trim(),
-            lastMessageId: String(run?.lastMessageId || current.lastMessageId || run?.inputMessageId || current.inputMessageId || '').trim(),
-          }
-        })
-      }
+      const follow = beginRunPathFollow(mid)
+      if (!follow) return
       Promise.resolve()
-        .then(() => controller.actions.sendFromMid?.(mid, { onRunState }))
-        .finally(() => {
-          setSendPathAnchor((current) => {
-            if (String(current?.chatId || '') !== chatId) return current
-            if (String(current?.parentMid || '') !== mid) return current
-            if (Number(current?.nonce || 0) !== nonce) return current
-            return emptySendPathAnchor()
-          })
-        })
+        .then(() => controller.actions.sendFromMid?.(mid, { onRunState: follow.onRunState }))
+        .finally(() => follow.clear())
       return
     }
     clearSendPathAnchor()
@@ -3124,6 +3145,16 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     const id = String(mid || '').trim()
     if (!id) return
     setRegen({ mid: id, role: role === 'user' ? 'user' : 'assistant' })
+  })
+
+  const regenPathParentMid = useEvent((mid0: string, role0: 'assistant' | 'user') => {
+    const mid = String(mid0 || '').trim()
+    if (!mid) return ''
+    if (role0 === 'user') return mid
+    const message = chatAllById.get(mid) || null
+    const parentMid = String((message as any)?.parentMid || '').trim()
+    const parent = parentMid ? chatAllById.get(parentMid) || null : null
+    return parent && String((parent as any)?.role || '') === 'user' ? parentMid : ''
   })
 
   const openDeleteMessageConfirm = useEvent((mid: string, role: 'assistant' | 'user') => {
@@ -4208,8 +4239,14 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                       const mid = regen.mid
                       const role = regen.role
                       setRegen({ mid: '', role: 'assistant' })
-                      if (role === 'assistant') controller.actions.regenerateAssistant?.(mid)
-                      else controller.actions.replyFromUserMessage?.(mid)
+                      const parentMid = regenPathParentMid(mid, role)
+                      const follow = parentMid ? beginRunPathFollow(parentMid) : null
+                      Promise.resolve()
+                        .then(() => {
+                          if (role === 'assistant') return controller.actions.regenerateAssistant?.(mid, follow ? { onRunState: follow.onRunState } : undefined)
+                          return controller.actions.replyFromUserMessage?.(mid, follow ? { onRunState: follow.onRunState } : undefined)
+                        })
+                        .finally(() => follow?.clear())
                     }}
                    disabled={!regen.mid || s.loading || uiBusy}
                   >

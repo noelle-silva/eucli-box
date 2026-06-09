@@ -5,16 +5,18 @@ import {
   planTextProtocolToolRanges,
   textProtocolToolParts,
 } from './textProtocolTools'
+import { isPendingToolConfirmationPart } from './toolConfirmation'
 
 export type AssistantMessageRenderSegment =
   | { type: 'text'; id: string; text: string; start: number; end: number }
   | { type: 'text_protocol_tool'; id: string; request: any; part: any | null; start: number; end: number }
 
-export type AssistantMessageBlockKind = 'text' | 'reasoning' | 'tool_invocation' | 'tool_result' | 'diagnostic'
+export type AssistantMessageBlockKind = 'text' | 'reasoning' | 'tool_confirmation' | 'tool_invocation' | 'tool_result' | 'diagnostic'
 
 export type AssistantMessageBlock =
   | { kind: 'text'; id: string; text: string; start: number; end: number; parts: any[] }
   | { kind: 'reasoning'; id: string; part: any }
+  | { kind: 'tool_confirmation'; id: string; part: any }
   | { kind: 'tool_invocation'; id: string; part: any; start?: number; end?: number }
   | { kind: 'tool_result'; id: string; part: any; start?: number; end?: number }
   | { kind: 'diagnostic'; id: string; reason: string; part?: any }
@@ -52,6 +54,7 @@ function pushToolBlocks(blocks: AssistantMessageBlock[], part: any, opts?: { sta
   const id = assistantToolPartId(part, opts?.index || blocks.length)
   const start = typeof opts?.start === 'number' ? opts.start : undefined
   const end = typeof opts?.end === 'number' ? opts.end : undefined
+  if (isPendingToolConfirmationPart(part)) blocks.push({ kind: 'tool_confirmation', id: `tool-confirmation:${id}`, part })
   if (!isToolInvocationHidden(part)) blocks.push({ kind: 'tool_invocation', id: `tool-invocation:${id}`, part, start, end })
   if (part?.result && typeof part.result === 'object' && !isToolResultHidden(part)) blocks.push({ kind: 'tool_result', id: `tool-result:${id}`, part, start, end })
 }
@@ -90,6 +93,7 @@ export function planAssistantMessageBlocks(contentRaw: unknown, partsRaw: any[])
 
   toolParts.forEach((part: any, index: number) => {
     if (isTextProtocolToolPart(part)) {
+      if (isPendingToolConfirmationPart(part)) blocks.push({ kind: 'tool_confirmation', id: `tool-confirmation:${assistantToolPartId(part, index)}`, part })
       return
     }
     pushToolBlocks(blocks, part, { index })

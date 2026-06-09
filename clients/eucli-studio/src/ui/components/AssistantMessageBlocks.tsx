@@ -9,7 +9,9 @@ import { planAssistantMessageBlocks, type AssistantMessageBlock } from '../../re
 import { renderAssistantToolDiagnosticHtml, renderAssistantToolInvocationHtml, renderAssistantToolResultHtml } from '../../render/assistantToolHtml'
 import { AssistantMessageHost } from '../../render/assistantMessageHost'
 import type { AiChatToastOptions } from '../../gateway/capabilities'
+import { readToolConfirmationInfo } from '../../domain/toolConfirmation'
 import { AssistantReasoningPanel } from './AssistantReasoningPanel'
+import { ToolConfirmationCard } from './ToolConfirmationCard'
 
 type AssistantMessageBlocksProps = {
   controller: any
@@ -26,6 +28,7 @@ type EditingBlock = { id: string; text: string }
 function blockTitle(block: AssistantMessageBlock) {
   if (block.kind === 'text') return '消息正文'
   if (block.kind === 'reasoning') return '思考过程'
+  if (block.kind === 'tool_confirmation') return '工具确认'
   if (block.kind === 'tool_invocation') return '工具调用'
   if (block.kind === 'tool_result') return '工具返回'
   return '渲染诊断'
@@ -68,6 +71,10 @@ function prettyJson(value: any) {
 
 function invocationEditText(part: any) {
   return prettyJson(part?.input && typeof part.input === 'object' ? part.input : {})
+}
+
+function submitKey(decisionId: string, approved: boolean) {
+  return `${decisionId}:${approved ? 'approve' : 'deny'}`
 }
 
 function blockEditText(block: AssistantMessageBlock) {
@@ -122,10 +129,12 @@ export function AssistantMessageBlocks(props: AssistantMessageBlocksProps) {
   const blocks = React.useMemo(() => planAssistantMessageBlocks(text, parts), [text, parts])
   const [editing, setEditing] = React.useState<EditingBlock>({ id: '', text: '' })
   const [deleting, setDeleting] = React.useState<AssistantMessageBlock | null>(null)
+  const [submittingConfirmation, setSubmittingConfirmation] = React.useState('')
 
   React.useEffect(() => {
     setEditing({ id: '', text: '' })
     setDeleting(null)
+    setSubmittingConfirmation('')
   }, [mid, text, parts])
 
   const saveEdit = async (block: AssistantMessageBlock) => {
@@ -139,6 +148,21 @@ export function AssistantMessageBlocks(props: AssistantMessageBlocksProps) {
     if (!block) return
     const ok = await Promise.resolve(controller.actions.deleteMessageBlock?.(mid, blockMutationRef(block)))
     if (ok === true) setDeleting(null)
+  }
+
+  const submitToolConfirmationDecision = async (info: NonNullable<ReturnType<typeof readToolConfirmationInfo>>, approved: boolean) => {
+    const action = controller?.actions?.submitToolConfirmation
+    if (typeof action !== 'function') {
+      showToast(controller, '当前客户端未接入工具确认提交', { kind: 'error' })
+      return
+    }
+    const key = submitKey(info.decisionId, approved)
+    setSubmittingConfirmation(key)
+    try {
+      await Promise.resolve(action({ messageId: mid, decisionId: info.decisionId, approved }))
+    } finally {
+      setSubmittingConfirmation((current) => (current === key ? '' : current))
+    }
   }
 
   if (!blocks.length) return null
@@ -155,6 +179,20 @@ export function AssistantMessageBlocks(props: AssistantMessageBlocksProps) {
         }
         if (block.kind === 'reasoning') {
           return <AssistantReasoningPanel key={block.id} controller={controller} mid={mid} text={String(block.part?.text || '')} renderSafetyPolicyKey={renderSafetyPolicyKey} chatRootRef={chatRootRef} />
+        }
+        if (block.kind === 'tool_confirmation') {
+          const info = readToolConfirmationInfo(block.part)
+          if (!info) return null
+          const approveKey = submitKey(info.decisionId, true)
+          const rejectKey = submitKey(info.decisionId, false)
+          return (
+            <ToolConfirmationCard
+              key={block.id}
+              info={info}
+              submitting={submittingConfirmation === approveKey || submittingConfirmation === rejectKey}
+              onDecision={(approved) => submitToolConfirmationDecision(info, approved)}
+            />
+          )
         }
         const isEditing = editing.id === block.id
         const tone = blockTone(block)

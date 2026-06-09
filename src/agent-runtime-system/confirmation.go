@@ -7,6 +7,11 @@ import (
 	"eucli-box/pkg/types"
 )
 
+type toolConfirmationRequest struct {
+	confirmation types.ToolConfirmation
+	done         chan error
+}
+
 func (s *system) SubmitToolConfirmation(ctx context.Context, confirmation types.ToolConfirmation) error {
 	if err := ctx.Err(); err != nil {
 		return runtimeInvalid("submit confirmation cancelled", err)
@@ -39,8 +44,19 @@ func (s *system) SubmitToolConfirmation(ctx context.Context, confirmation types.
 	}
 	delete(target.pendingPlans, decisionID)
 	s.mu.Unlock()
-	ch <- confirmation
-	return nil
+	done := make(chan error, 1)
+	request := toolConfirmationRequest{confirmation: confirmation, done: done}
+	select {
+	case ch <- request:
+	case <-ctx.Done():
+		return runtimeInvalid("submit confirmation cancelled", ctx.Err())
+	}
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return runtimeInvalid("submit confirmation cancelled", ctx.Err())
+	}
 }
 
 func (s *system) waitForConfirmation(ctx context.Context, record *runRecord, plan types.ToolRunPlan) (types.ToolRunPlan, error) {
@@ -69,12 +85,13 @@ func (s *system) waitForConfirmations(ctx context.Context, record *runRecord, pl
 		}
 		plansByDecisionID[decisionID] = plan
 	}
-	confirmationCh := make(chan types.ToolConfirmation, len(plans))
-	cleanup := func() {
+	confirmationCh := make(chan toolConfirmationRequest, len(plans))
+	cleanup := func(err error) {
 		s.mu.Lock()
 		record.pendingPlans = nil
 		record.confirmationCh = nil
 		s.mu.Unlock()
+		drainToolConfirmationRequests(confirmationCh, err)
 	}
 	s.mu.Lock()
 	record.pendingPlans = clonePendingPlans(plansByDecisionID)
@@ -82,7 +99,7 @@ func (s *system) waitForConfirmations(ctx context.Context, record *runRecord, pl
 	s.mu.Unlock()
 	_, err := s.updateRun(record.runID, types.RunStatusWaitingConfirmation, "waiting for tool confirmation")
 	if err != nil {
-		cleanup()
+		cleanup(err)
 		return nil, err
 	}
 	s.publishAssistantMessageUpdate(record)
@@ -92,34 +109,48 @@ func (s *system) waitForConfirmations(ctx context.Context, record *runRecord, pl
 	confirmedByDecisionID := make(map[string]types.ToolRunPlan, len(plans))
 	for len(confirmedByDecisionID) < len(plans) {
 		select {
-		case confirmation := <-confirmationCh:
+		case request := <-confirmationCh:
+			confirmation := request.confirmation
 			decisionID := strings.TrimSpace(confirmation.DecisionID)
 			plan, ok := plansByDecisionID[decisionID]
 			if !ok {
-				cleanup()
-				return nil, runtimeNotFound("pending confirmation was not found", nil)
+				err := runtimeNotFound("pending confirmation was not found", nil)
+				finishToolConfirmationRequest(request, err)
+				cleanup(err)
+				return nil, err
 			}
 			if _, exists := confirmedByDecisionID[decisionID]; exists {
-				cleanup()
-				return nil, runtimeStateInvalid("tool confirmation was already submitted", nil)
+				err := runtimeStateInvalid("tool confirmation was already submitted", nil)
+				finishToolConfirmationRequest(request, err)
+				cleanup(err)
+				return nil, err
 			}
 			confirmed, err := s.tools.ApplyConfirmation(ctx, plan, confirmation)
 			if err != nil {
-				cleanup()
-				return nil, runtimeToolFailed("failed to apply tool confirmation", err)
+				err := runtimeToolFailed("failed to apply tool confirmation", err)
+				finishToolConfirmationRequest(request, err)
+				cleanup(err)
+				return nil, err
 			}
 			confirmedByDecisionID[decisionID] = confirmed
+			if err := s.recordAppliedToolConfirmation(ctx, record, confirmed); err != nil {
+				finishToolConfirmationRequest(request, err)
+				cleanup(err)
+				return nil, err
+			}
+			finishToolConfirmationRequest(request, nil)
 			if confirmed.Decision.Status == types.PermissionStatusAllowed {
 				s.publish(record.runID, "tool_confirmation_applied", confirmed.Decision)
 			} else {
 				s.publish(record.runID, "tool_confirmation_rejected", confirmed.Decision)
 			}
 		case <-ctx.Done():
-			cleanup()
-			return nil, runtimeInvalid("run cancelled while waiting for confirmation", ctx.Err())
+			err := runtimeInvalid("run cancelled while waiting for confirmation", ctx.Err())
+			cleanup(err)
+			return nil, err
 		}
 	}
-	cleanup()
+	cleanup(nil)
 	_, err = s.updateRun(record.runID, types.RunStatusRunning, "")
 	if err != nil {
 		return nil, err
@@ -130,6 +161,40 @@ func (s *system) waitForConfirmations(ctx context.Context, record *runRecord, pl
 		confirmed = append(confirmed, confirmedByDecisionID[plan.Decision.ID])
 	}
 	return confirmed, nil
+}
+
+func finishToolConfirmationRequest(request toolConfirmationRequest, err error) {
+	if request.done == nil {
+		return
+	}
+	request.done <- err
+}
+
+func drainToolConfirmationRequests(ch <-chan toolConfirmationRequest, err error) {
+	for {
+		select {
+		case request := <-ch:
+			finishToolConfirmationRequest(request, err)
+		default:
+			return
+		}
+	}
+}
+
+func (s *system) recordAppliedToolConfirmation(ctx context.Context, record *runRecord, plan types.ToolRunPlan) error {
+	state := "rejected"
+	if plan.Decision.Status == types.PermissionStatusAllowed {
+		state = "approved"
+	}
+	upsertRunToolPart(record, plan.Action, state, &plan.Decision, nil)
+	if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
+		return err
+	}
+	if err := s.saveRunSession(ctx, record, types.RunStatusWaitingConfirmation); err != nil {
+		return err
+	}
+	s.publishAssistantMessageUpdate(record)
+	return nil
 }
 
 func clonePendingPlans(plans map[string]types.ToolRunPlan) map[string]types.ToolRunPlan {

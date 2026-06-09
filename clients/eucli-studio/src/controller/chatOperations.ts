@@ -46,11 +46,15 @@ import {
 import type { ChatSaveIntent } from '../domain/chatSaveIntent'
 import { deleteAssistantMessageBlock, editAssistantMessageBlock, replaceMessageText } from '../domain/assistantMessageBlockMutations'
 import type { AiChatShowToast } from '../gateway/capabilities'
-import { cancelRoleRun, pollRunUntilTerminal, runStateFailureError, startRoleRun, type EbRunState } from './ebRoleRun'
+import { cancelRoleRun, pollRunUntilTerminal, runStateFailureError, startRoleRun, submitToolConfirmation as submitToolConfirmationRequest, type EbRunState } from './ebRoleRun'
 import { deleteRoleSessionMessage, deleteRoleSessionMessageSubtree, updateRoleSessionMessage } from './ebRoleSession'
 
 type SendChatOptions = {
   forkFromMid?: string
+  onRunState?: (run: EbRunState) => void
+}
+
+type ExistingMessageRunOptions = {
   onRunState?: (run: EbRunState) => void
 }
 
@@ -369,7 +373,7 @@ export function createChatOperations(deps: {
     return { roleId, sessionId, chat }
   }
 
-  async function runRoleFromUserMessage(input: { roleId: string; sessionId: string; userMessageId: string }, operationText: string) {
+  async function runRoleFromUserMessage(input: { roleId: string; sessionId: string; userMessageId: string }, operationText: string, opts?: ExistingMessageRunOptions) {
     const state = getState()
     const userMessageId = String(input.userMessageId || '').trim()
     if (!userMessageId) return false
@@ -384,7 +388,7 @@ export function createChatOperations(deps: {
         acceptedRunId = String(run?.id || '').trim()
         syncEbRoleRunCard(run, { roleId: input.roleId, sessionId: input.sessionId, anchorMessageId: userMessageId })
         renderComposer()
-      }, { previousMessageIds, ancestorMessageId: userMessageId })
+      }, { previousMessageIds, ancestorMessageId: userMessageId }, (run) => opts?.onRunState?.(run))
       return true
     } catch (e) {
       const msg = String((e as any)?.message || e || `${operationText}失败`)
@@ -416,6 +420,47 @@ export function createChatOperations(deps: {
     if (!conflict.blocked) return true
     showToast?.(conflict.reason || '这条消息正在被运行中的回复使用，稍后再操作', { kind: 'error' })
     return false
+  }
+
+  function chatHasPendingToolConfirmation(chat: any, messageId: string, decisionId: string) {
+    const message = findChatMessageById(chat, messageId)
+    const parts = Array.isArray((message as any)?.parts) ? (message as any).parts : []
+    return parts.some((part: any) => {
+      const decision = part?.decision && typeof part.decision === 'object' ? part.decision : null
+      return String(part?.type || '') === 'tool'
+        && String(part?.state || '').trim() === 'needs_confirmation'
+        && String(decision?.status || '').trim() === 'needs_confirmation'
+        && String(decision?.id || '').trim() === decisionId
+    })
+  }
+
+  async function submitToolConfirmationDecision(input: { messageId?: string; decisionId?: string; approved?: boolean }) {
+    const state = getState()
+    if (state.loading || !state.data) return false
+    const target = await activeRoleSessionMutationTarget('确认')
+    const messageId = String(input?.messageId || '').trim()
+    const decisionId = String(input?.decisionId || '').trim()
+    if (!target || !messageId || !decisionId) return false
+    if (!chatHasPendingToolConfirmation(target.chat, messageId, decisionId)) {
+      showToast?.('确认项已更新，请刷新会话后再试', { kind: 'error' })
+      return false
+    }
+    if (typeof netRequest !== 'function') {
+      showToast?.('e-b 请求通道不可用', { kind: 'error' })
+      return false
+    }
+    try {
+      const approved = !!input?.approved
+      await submitToolConfirmationRequest(netRequest, { decisionId, approved, reason: approved ? '' : '用户拒绝工具调用' })
+      showToast?.(approved ? '已同意工具执行' : '已拒绝工具执行', { kind: 'success' })
+      await refreshRoleSession(target.roleId, target.sessionId, undefined, { activate: false })
+      render()
+      return true
+    } catch (e: any) {
+      showToast?.(String(e?.message || e || '工具确认提交失败'), { kind: 'error' })
+      render()
+      return false
+    }
   }
 
   async function applyRoleSessionMessageMutation(messageId: any, operationText: string, operation: MessageMutationOperation, mutate: (message: any) => { ok: true } | { ok: false; error: string }) {
@@ -745,7 +790,7 @@ export function createChatOperations(deps: {
 
   // ============ regenerate assistant message ============
 
-  async function regenerateAssistantMessage(assistantMid: any) {
+  async function regenerateAssistantMessage(assistantMid: any, opts?: ExistingMessageRunOptions) {
     const state = getState()
     if (state.loading || !state.data) return
 
@@ -762,7 +807,7 @@ export function createChatOperations(deps: {
     const userMessageId = String((assistant as any).parentMid || '').trim()
     const userMessage = userMessageId ? findChatMessageById(target.chat, userMessageId) : null
     if (!userMessage || String((userMessage as any).role || '') !== 'user') return showToast?.('未找到对应的用户消息', { kind: 'error' })
-    return runRoleFromUserMessage({ roleId: target.roleId, sessionId: target.sessionId, userMessageId }, '重新回复')
+    return runRoleFromUserMessage({ roleId: target.roleId, sessionId: target.sessionId, userMessageId }, '重新回复', opts)
   }
 
   // ============ regenerate group assistant message ============
@@ -775,7 +820,7 @@ export function createChatOperations(deps: {
 
   // ============ reply from user message ============
 
-  async function replyFromUserMessage(userMid: any) {
+  async function replyFromUserMessage(userMid: any, opts?: ExistingMessageRunOptions) {
     const state = getState()
     if (state.loading || !state.data) return
 
@@ -788,7 +833,7 @@ export function createChatOperations(deps: {
     if (!target || !userMessageId) return false
     const userMessage = findChatMessageById(target.chat, userMessageId)
     if (!userMessage || String((userMessage as any).role || '') !== 'user') return showToast?.('只能从用户消息继续回复', { kind: 'error' })
-    return runRoleFromUserMessage({ roleId: target.roleId, sessionId: target.sessionId, userMessageId }, '继续回复')
+    return runRoleFromUserMessage({ roleId: target.roleId, sessionId: target.sessionId, userMessageId }, '继续回复', opts)
   }
 
   // ============ reply from user message in group ============
@@ -1047,6 +1092,7 @@ export function createChatOperations(deps: {
     createParallelBranchFromAssistantMessage,
     switchBranchByAssistantSibling,
     setActiveBranch,
+    submitToolConfirmationDecision,
     deleteMessage,
     deleteMessageSubtree,
     editMessage,

@@ -395,7 +395,7 @@ func normalizeSessionMetadata(metadata map[string]string) map[string]string {
 		if key == "" || value == "" {
 			continue
 		}
-		if key == "reasoningEffort" {
+		if key == types.SessionMetadataReasoningEffort {
 			effort := types.TrimReasoningEffort(types.ReasoningEffort(value))
 			if types.IsReasoningEffort(effort) {
 				out[key] = string(effort)
@@ -403,6 +403,9 @@ func normalizeSessionMetadata(metadata map[string]string) map[string]string {
 			continue
 		}
 		out[key] = value
+	}
+	if _, ok := types.ModelOverrideFromSessionMetadata(out); !ok {
+		out = types.ClearModelOverrideSessionMetadata(out)
 	}
 	if len(out) == 0 {
 		return nil

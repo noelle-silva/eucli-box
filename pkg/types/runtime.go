@@ -192,15 +192,16 @@ const (
 )
 
 type RunRequest struct {
-	RoleID           string          `json:"roleId"`
-	SessionID        string          `json:"sessionId"`
-	Message          string          `json:"message"`
-	Attachments      []RunAttachment `json:"attachments,omitempty"`
-	ParentMessageID  string          `json:"parentMessageId,omitempty"`
-	UserMessageID    string          `json:"userMessageId,omitempty"`
-	ContextMessageID string          `json:"contextMessageId,omitempty"`
-	ReasoningEffort  ReasoningEffort `json:"reasoningEffort,omitempty"`
-	Stream           bool            `json:"stream,omitempty"`
+	RoleID           string           `json:"roleId"`
+	SessionID        string           `json:"sessionId"`
+	Message          string           `json:"message"`
+	Attachments      []RunAttachment  `json:"attachments,omitempty"`
+	ParentMessageID  string           `json:"parentMessageId,omitempty"`
+	UserMessageID    string           `json:"userMessageId,omitempty"`
+	ContextMessageID string           `json:"contextMessageId,omitempty"`
+	ModelOverride    *ModelCoordinate `json:"modelOverride,omitempty"`
+	ReasoningEffort  ReasoningEffort  `json:"reasoningEffort,omitempty"`
+	Stream           bool             `json:"stream,omitempty"`
 }
 
 type RunState struct {

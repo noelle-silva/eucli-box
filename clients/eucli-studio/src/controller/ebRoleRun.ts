@@ -43,7 +43,7 @@ export function isTerminalRunStatus(status: unknown) {
   return value === 'completed' || value === 'failed' || value === 'cancelled' || value === 'canceled'
 }
 
-export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: string; sessionId?: string; message?: string; attachments?: any[]; parentMessageId?: string; userMessageId?: string; contextMessageId?: string; stream?: boolean; reasoningEffort?: string }) {
+export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: string; sessionId?: string; message?: string; attachments?: any[]; parentMessageId?: string; userMessageId?: string; contextMessageId?: string; stream?: boolean; reasoningEffort?: string; modelOverride?: any }) {
   const body = {
     roleId: String(input.roleId || '').trim(),
     sessionId: String(input.sessionId || '').trim(),
@@ -52,6 +52,7 @@ export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: st
     parentMessageId: String(input.parentMessageId || '').trim(),
     userMessageId: String(input.userMessageId || '').trim(),
     contextMessageId: String(input.contextMessageId || '').trim(),
+    modelOverride: input.modelOverride && typeof input.modelOverride === 'object' ? input.modelOverride : null,
     reasoningEffort: String(input.reasoningEffort || '').trim(),
     stream: !!input.stream,
   }
@@ -68,6 +69,7 @@ export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: st
   if (!body.parentMessageId) delete (body as any).parentMessageId
   if (!body.userMessageId) delete (body as any).userMessageId
   if (!body.contextMessageId) delete (body as any).contextMessageId
+  if (!body.modelOverride) delete (body as any).modelOverride
   if (!body.message) delete (body as any).message
   if (!body.attachments.length) delete (body as any).attachments
   if (!body.sessionId) delete (body as any).sessionId

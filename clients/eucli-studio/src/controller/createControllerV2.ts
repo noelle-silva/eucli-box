@@ -35,7 +35,7 @@ import { splitRoleKey, splitChatKey, splitGroupKey, splitGroupChatKey } from '..
 import { normalizeBranchId } from '../domain/branching'
 import { normalizeMessageAttachments, normalizeMessageGroup } from '../domain/message'
 import { validateFavoriteFolderName } from '../domain/favoriteValidator'
-import { normalizeChatModelOverride, normalizeMessageModelRef, buildMessageModelRef } from '../domain/modelRefUtils'
+import { normalizeChatModelOverride } from '../domain/modelRefUtils'
 import { normalizeReasoningEffort } from '../domain/reasoning'
 import { moveListItemById, type ListMovePosition } from '../domain/listOrdering'
 import { detectDraftFileKind, addDraftFilePlaceholder, removeDraftFile, removeDraftImage as removeDraftImageFromList, fileExtLower } from '../domain/draftFileUtils'
@@ -620,6 +620,25 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     await saveCurrentChat(intent)
   }
 
+  let chatSettingsSave: Promise<void> | null = null
+  let chatSettingsSaveTail: Promise<void> = Promise.resolve()
+
+  function trackChatSettingsSave(work: () => Promise<void>) {
+    const run = chatSettingsSaveTail.catch(() => {}).then(work)
+    chatSettingsSaveTail = run
+    chatSettingsSave = run
+    run.finally(() => {
+      if (chatSettingsSave === run) chatSettingsSave = null
+      if (chatSettingsSaveTail === run) chatSettingsSaveTail = Promise.resolve()
+    }).catch(() => {})
+    return run
+  }
+
+  async function waitForChatSettingsSave() {
+    const run = chatSettingsSave
+    if (run) await run
+  }
+
   // ============================================================
   // 10. IMAGE UTILS
   // ============================================================
@@ -816,6 +835,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     ensureActiveChatLoaded,
     ensureChatLoaded: (kind: 'role' | 'group', targetId: string, chatId: string) => ensureChatLoaded(kind, targetId, chatId),
     reloadRoleSession,
+    waitForChatSettingsSave,
     emit,
     render,
     renderComposer,
@@ -1905,22 +1925,66 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     setActiveBranch: (branchId: any) => setActiveBranch(String(branchId || '')).catch(() => {}),
     submitToolConfirmation: (input: any) => submitToolConfirmationDecision(input),
     setChatModelOverride: async (providerId: any, modelId: any) => {
+      if (!state.data) return
       const pid = String(providerId || '').trim()
       const mid = String(modelId || '').trim()
       if (!pid || !mid) return api.ui?.showToast?.('供应商/模型 不能为空', { kind: 'error' })
-      api.ui?.showToast?.('当前会话临时模型尚未接入 e-b 真实根动作，已阻止本地假覆盖', { kind: 'error' })
+      const kind = activeTargetKind()
+      if (kind !== 'role') return api.ui?.showToast?.('群组会话临时模型尚未接入 e-b 真实根动作', { kind: 'error' })
+      const target = activeRole()
+      const targetId = String((target as any)?.id || '').trim()
+      if (!targetId) return
+      const pending = state.pendingChat && String(state.pendingChat.roleId || '') === targetId ? state.pendingChat.chat : null
+      if (!pending) await ensureActiveChatLoaded()
+      const chat = pending || activeChatFromData()
+      if (!chat) return api.ui?.showToast?.('请先创建或选择会话', { kind: 'error' })
+      const previousOverride = (chat as any).modelOverride
+      const nextOverride = { kind: 'provider', providerId: pid, groupId: '', modelId: mid }
+      ;(chat as any).modelOverride = nextOverride
+      chat.updatedAt = now()
+      emit()
+      try {
+        await trackChatSettingsSave(async () => {
+          if (!pending) await save()
+        })
+      } catch (e) {
+        if ((chat as any).modelOverride === nextOverride) {
+          if (previousOverride === undefined) delete (chat as any).modelOverride
+          else (chat as any).modelOverride = previousOverride
+          emit()
+        }
+        return api.ui?.showToast?.(String((e as any)?.message || e || '当前会话临时模型保存失败'), { kind: 'error' })
+      }
+      api.ui?.showToast?.('当前会话临时模型已保存', { kind: 'success' })
     },
     clearChatModelOverride: async () => {
       if (!state.data) return
-      await ensureActiveChatLoaded()
-      const chat = activeChatFromData()
+      const kind = activeTargetKind()
+      if (kind !== 'role') return
+      const target = activeRole()
+      const targetId = String((target as any)?.id || '').trim()
+      if (!targetId) return
+      const pending = state.pendingChat && String(state.pendingChat.roleId || '') === targetId ? state.pendingChat.chat : null
+      if (!pending) await ensureActiveChatLoaded()
+      const chat = pending || activeChatFromData()
       if (!chat) return
       if (!(chat as any).modelOverride) return
-      try { delete chat.modelOverride } catch (_e) { chat.modelOverride = null }
+      const previousOverride = (chat as any).modelOverride
+      try { delete (chat as any).modelOverride } catch (_e) { ;(chat as any).modelOverride = null }
       chat.updatedAt = now()
-      save().catch(() => {})
       emit()
-      api.ui?.showToast?.('已清除未接入 e-b 的本地临时模型覆盖', { kind: 'success' })
+      try {
+        await trackChatSettingsSave(async () => {
+          if (!pending) await save()
+        })
+      } catch (e) {
+        if (!(chat as any).modelOverride) {
+          ;(chat as any).modelOverride = previousOverride
+          emit()
+        }
+        return api.ui?.showToast?.(String((e as any)?.message || e || '当前会话临时模型清除失败'), { kind: 'error' })
+      }
+      api.ui?.showToast?.('已清除当前会话临时模型', { kind: 'success' })
     },
     setChatReasoningEffort: async (effort: any) => {
       if (!state.data) return
@@ -1933,11 +1997,25 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       const pending = state.pendingChat && String(state.pendingChat.roleId || '') === targetId ? state.pendingChat.chat : null
       const chat = pending || activeChatFromData()
       if (!chat) return
+      const previousEffort = (chat as any).reasoningEffort
+      const nextEffort = next
       if (next) (chat as any).reasoningEffort = next
       else delete (chat as any).reasoningEffort
       chat.updatedAt = now()
-      if (!pending) save().catch(() => {})
       emit()
+      try {
+        await trackChatSettingsSave(async () => {
+          if (!pending) await save()
+        })
+      } catch (e) {
+        const currentEffort = String((chat as any).reasoningEffort || '').trim()
+        if (currentEffort === String(nextEffort || '').trim()) {
+          if (previousEffort === undefined) delete (chat as any).reasoningEffort
+          else (chat as any).reasoningEffort = previousEffort
+          emit()
+        }
+        return api.ui?.showToast?.(String((e as any)?.message || e || '当前会话思考等级保存失败'), { kind: 'error' })
+      }
     },
     deleteMessage: (messageId: any) => deleteMessage(String(messageId || '')),
     deleteMessageSubtree: (messageId: any) => deleteMessageSubtree(String(messageId || '')),

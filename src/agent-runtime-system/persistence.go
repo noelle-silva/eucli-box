@@ -45,14 +45,25 @@ func runSessionMessageSave(record *runRecord, status types.RunStatus) types.Sess
 }
 
 func runMetadataPatch(record *runRecord) map[string]string {
-	if record == nil || !record.reasoningPersistPending {
+	if record == nil {
 		return nil
 	}
-	effort := types.TrimReasoningEffort(record.reasoningEffort)
-	if effort == "" {
+	patch := map[string]string{}
+	if record.reasoningPersistPending {
+		effort := types.TrimReasoningEffort(record.reasoningEffort)
+		if effort != "" {
+			patch[types.SessionMetadataReasoningEffort] = string(effort)
+		}
+	}
+	if record.modelOverridePersistPending {
+		for key, value := range types.ModelOverrideSessionMetadataPatch(record.modelOverride) {
+			patch[key] = value
+		}
+	}
+	if len(patch) == 0 {
 		return nil
 	}
-	return map[string]string{"reasoningEffort": string(effort)}
+	return patch
 }
 
 func runMessageWrites(record *runRecord) []types.SessionMessageWrite {
@@ -119,7 +130,15 @@ func markRunSessionSaveAccepted(record *runRecord, save types.SessionMessageSave
 		record.messageSnapshots = map[string]types.Message{}
 	}
 	if len(save.MetadataPatch) > 0 {
-		record.reasoningPersistPending = false
+		if _, ok := save.MetadataPatch[types.SessionMetadataReasoningEffort]; ok {
+			record.reasoningPersistPending = false
+		}
+		for key := range save.MetadataPatch {
+			if types.IsSessionModelOverrideMetadataKey(key) {
+				record.modelOverridePersistPending = false
+				break
+			}
+		}
 	}
 	for _, write := range save.Writes {
 		messageID := strings.TrimSpace(write.Message.ID)

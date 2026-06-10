@@ -131,6 +131,33 @@ func TestChatProjectionPreservesReasoningEffort(t *testing.T) {
 	}
 }
 
+func TestChatProjectionPreservesModelOverride(t *testing.T) {
+	session := map[string]any{
+		"id":        "session-1",
+		"roleId":    "developer",
+		"title":     "Model Override",
+		"createdAt": "2026-06-03T10:00:00Z",
+		"updatedAt": "2026-06-03T10:00:00Z",
+		"metadata": map[string]any{
+			"modelOverride.kind":       "provider",
+			"modelOverride.providerId": "openai-main",
+			"modelOverride.modelId":    "gpt-4.1-mini",
+		},
+		"messages": []any{},
+	}
+
+	ui := toUIChat(session)
+	modelOverride := objectMap(ui["modelOverride"])
+	if stringField(modelOverride, "providerId") != "openai-main" || stringField(modelOverride, "modelId") != "gpt-4.1-mini" {
+		t.Fatalf("ui model override = %#v", ui["modelOverride"])
+	}
+	back := fromUIChat(ui, "developer")
+	metadata := objectMap(back["metadata"])
+	if metadata["modelOverride.providerId"] != "openai-main" || metadata["modelOverride.modelId"] != "gpt-4.1-mini" {
+		t.Fatalf("back metadata = %#v", metadata)
+	}
+}
+
 func TestLegacyToolMessageProjectsAsAssistantSide(t *testing.T) {
 	message := map[string]any{"type": "tool", "content": "ok"}
 	if role := messageRole(message); role != "assistant" {

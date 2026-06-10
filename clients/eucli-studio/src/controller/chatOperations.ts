@@ -19,7 +19,7 @@ import {
 import { looksLikeImageDataUrl } from '../domain/textProcessing'
 import { detectDraftFileKind, addDraftFilePlaceholder } from '../domain/draftFileUtils'
 import type { DraftFileItem } from '../domain/draftFileUtils'
-import { normalizeChatModelOverride } from '../domain/modelRefUtils'
+import { normalizeChatModelOverride, normalizeModelRef, type ModelRef } from '../domain/modelRefUtils'
 import { chatReasoningEffort } from '../domain/reasoning'
 import { createStateAccessors } from '../state/stateAccessors'
 import {
@@ -58,6 +58,19 @@ type ExistingMessageRunOptions = {
   onRunState?: (run: EbRunState) => void
 }
 
+type RoleRunInput = {
+  roleId: string
+  sessionId: string
+  message?: string
+  attachments?: any[]
+  parentMessageId?: string
+  userMessageId?: string
+  contextMessageId?: string
+  stream?: boolean
+  reasoningEffort?: string
+  modelOverride?: ModelRef | null
+}
+
 export function createChatOperations(deps: {
   getState: () => any
   pickImageFiles?: (maxCount: number) => Promise<any[]>
@@ -67,6 +80,7 @@ export function createChatOperations(deps: {
   ensureActiveChatLoaded?: () => Promise<any>
   ensureChatLoaded?: (kind: 'role' | 'group', targetId: string, chatId: string) => Promise<any>
   reloadRoleSession?: (roleId: string, sessionId: string) => Promise<any>
+  waitForChatSettingsSave?: () => Promise<void>
   emit: () => void
   render: () => void
   renderComposer: () => void
@@ -74,13 +88,23 @@ export function createChatOperations(deps: {
   readImageFileAsDataUrl: (file: File) => Promise<string>
   extractTextFromFile: (file: File, kind: string) => Promise<string>
 }) {
-  const { getState, pickImageFiles, netRequest, showToast, save, ensureActiveChatLoaded, ensureChatLoaded, reloadRoleSession, emit, render, renderComposer, scrollToBottomSoon, readImageFileAsDataUrl, extractTextFromFile } = deps
+  const { getState, pickImageFiles, netRequest, showToast, save, ensureActiveChatLoaded, ensureChatLoaded, reloadRoleSession, waitForChatSettingsSave, emit, render, renderComposer, scrollToBottomSoon, readImageFileAsDataUrl, extractTextFromFile } = deps
 
   const sa = createStateAccessors({ getState })
   const cancelledRunIds = new Set<string>()
   const startingRoleRunKeys = new Set<string>()
 
-  function roleRunStartKey(input: { roleId: string; sessionId?: string; parentMessageId?: string; userMessageId?: string; contextMessageId?: string; message?: string; reasoningEffort?: string }) {
+  async function waitForCurrentChatSettingsSave() {
+    try {
+      await waitForChatSettingsSave?.()
+      return true
+    } catch (e) {
+      showToast?.(String((e as any)?.message || e || '当前会话设置保存失败'), { kind: 'error' })
+      return false
+    }
+  }
+
+  function roleRunStartKey(input: RoleRunInput) {
     const roleId = String(input.roleId || '').trim()
     const sessionId = String(input.sessionId || '').trim()
     const parentMessageId = String(input.parentMessageId || '').trim()
@@ -88,7 +112,16 @@ export function createChatOperations(deps: {
     const contextMessageId = String(input.contextMessageId || '').trim()
     const message = String(input.message || '').trim()
     const reasoningEffort = String(input.reasoningEffort || '').trim()
-    return [roleId, sessionId, contextMessageId ? `context:${contextMessageId}` : userMessageId ? `user:${userMessageId}` : `parent:${parentMessageId}`, message, reasoningEffort].join('\n')
+    return [roleId, sessionId, contextMessageId ? `context:${contextMessageId}` : userMessageId ? `user:${userMessageId}` : `parent:${parentMessageId}`, message, reasoningEffort, roleRunModelOverrideKey(input.modelOverride)].join('\n')
+  }
+
+  function roleRunModelOverrideKey(value: unknown) {
+    const ref = normalizeModelRef(value)
+    return ref ? JSON.stringify({ kind: ref.kind, providerId: ref.providerId, groupId: ref.groupId, modelId: ref.modelId }) : ''
+  }
+
+  function currentRoleChatModelOverride() {
+    return normalizeChatModelOverride(sa.activeChatFromData())
   }
 
   function findActiveRunAtMessage(roleId: string, sessionId: string, messageId: string) {
@@ -281,7 +314,7 @@ export function createChatOperations(deps: {
   }
 
   async function runRoleMessageViaEb(
-    input: { roleId: string; sessionId: string; message?: string; attachments?: any[]; parentMessageId?: string; userMessageId?: string; contextMessageId?: string; stream?: boolean; reasoningEffort?: string },
+    input: RoleRunInput,
     onAccepted?: (run: EbRunState) => void,
     follow?: { previousMessageIds: Set<string>; ancestorMessageId?: string },
     onState?: (run: EbRunState) => void,
@@ -379,6 +412,7 @@ export function createChatOperations(deps: {
     const state = getState()
     const userMessageId = String(input.userMessageId || '').trim()
     if (!userMessageId) return false
+    if (!(await waitForCurrentChatSettingsSave())) return false
     const chatBeforeRun = sa.activeChatFromData()
     const previousMessageIds = collectChatMessageIds(chatBeforeRun)
     const followAnchor = roleSessionViewAnchor(input.roleId, input.sessionId)
@@ -386,7 +420,8 @@ export function createChatOperations(deps: {
     try {
       renderComposer()
       const reasoningEffort = chatReasoningEffort(sa.activeChatFromData())
-      await runRoleMessageViaEb({ roleId: input.roleId, sessionId: input.sessionId, userMessageId, reasoningEffort, stream: !!state.data?.settings?.streamEnabled }, (run) => {
+      const modelOverride = currentRoleChatModelOverride()
+      await runRoleMessageViaEb({ roleId: input.roleId, sessionId: input.sessionId, userMessageId, reasoningEffort, modelOverride, stream: !!state.data?.settings?.streamEnabled }, (run) => {
         acceptedRunId = String(run?.id || '').trim()
         syncEbRoleRunCard(run, { roleId: input.roleId, sessionId: input.sessionId, anchorMessageId: userMessageId })
         renderComposer()
@@ -421,13 +456,15 @@ export function createChatOperations(deps: {
     const state = getState()
     const contextMessageId = String(input.contextMessageId || '').trim()
     if (!contextMessageId) return false
+    if (!(await waitForCurrentChatSettingsSave())) return false
     const chatBeforeRun = sa.activeChatFromData()
     const previousMessageIds = collectChatMessageIds(chatBeforeRun)
     let acceptedRunId = ''
     try {
       renderComposer()
       const reasoningEffort = chatReasoningEffort(sa.activeChatFromData())
-      await runRoleMessageViaEb({ roleId: input.roleId, sessionId: input.sessionId, contextMessageId, reasoningEffort, stream: !!state.data?.settings?.streamEnabled }, (run) => {
+      const modelOverride = currentRoleChatModelOverride()
+      await runRoleMessageViaEb({ roleId: input.roleId, sessionId: input.sessionId, contextMessageId, reasoningEffort, modelOverride, stream: !!state.data?.settings?.streamEnabled }, (run) => {
         acceptedRunId = String(run?.id || '').trim()
         syncEbRoleRunCard(run, { roleId: input.roleId, sessionId: input.sessionId, anchorMessageId: contextMessageId })
         renderComposer()
@@ -708,6 +745,7 @@ export function createChatOperations(deps: {
   async function sendChat(opts?: SendChatOptions) {
     const state = getState()
     if (state.loading || !state.data) return
+    if (!(await waitForCurrentChatSettingsSave())) return
 
     if (sa.activeTargetKind() === 'group') {
       await sendGroupChat(opts)
@@ -737,10 +775,7 @@ export function createChatOperations(deps: {
     const pendingChat = pendingChatForTarget(state, 'role', rid)
     const loadedChat = pendingChat ? null : await ensureActiveChatLoaded?.().catch(() => null)
     const currentChat = pendingChat ? null : loadedChat || sa.activeChatFromData()
-    const chatForModel = pendingChat ? null : currentChat
-    if (normalizeChatModelOverride(chatForModel)) {
-      return showToast?.('当前会话临时模型尚未接入 e-b 真实根动作，请先清除当前会话临时模型', { kind: 'error' })
-    }
+    const modelOverride = normalizeChatModelOverride(pendingChat || currentChat)
 
     let chat = pendingChat ? null : currentChat
     let sessionId = String(chat?.id || '').trim()
@@ -760,7 +795,7 @@ export function createChatOperations(deps: {
     try {
       renderComposer()
       const reasoningEffort = chatReasoningEffort(pendingChat || currentChat)
-      await runRoleMessageViaEb({ roleId: rid, sessionId, message: input, attachments, parentMessageId, reasoningEffort, stream: !!state.data?.settings?.streamEnabled }, (run) => {
+      await runRoleMessageViaEb({ roleId: rid, sessionId, message: input, attachments, parentMessageId, reasoningEffort, modelOverride, stream: !!state.data?.settings?.streamEnabled }, (run) => {
         acceptedRunId = String(run?.id || '').trim()
         syncEbRoleRunCard(run, { roleId: rid, sessionId, anchorMessageId: parentMessageId })
         clearComposerDraftByKey(state, draftKey)

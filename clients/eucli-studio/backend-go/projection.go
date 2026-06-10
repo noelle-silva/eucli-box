@@ -954,8 +954,12 @@ func toUIChat(session map[string]any) map[string]any {
 	}
 	branching := deriveUIBranching(messages, createdAt, updatedAt)
 	chat := map[string]any{"id": stringField(session, "id"), "title": fallback(stringField(session, "title"), "新聊天"), "status": stringField(session, "status"), "createdAt": createdAt, "updatedAt": updatedAt, "branching": branching, "messages": anyList(messages)}
-	if effort := normalizeReasoningEffort(stringField(objectMap(session["metadata"]), "reasoningEffort")); effort != "" {
+	metadata := objectMap(session["metadata"])
+	if effort := normalizeReasoningEffort(stringField(metadata, "reasoningEffort")); effort != "" {
 		chat["reasoningEffort"] = effort
+	}
+	if modelOverride := modelOverrideFromMetadata(metadata); stringField(modelOverride, "modelId") != "" {
+		chat["modelOverride"] = modelOverride
 	}
 	return chat
 }
@@ -1066,10 +1070,45 @@ func fromUIChat(value any, roleID string) map[string]any {
 	}
 	updatedAt := timeFromMillis(chat["updatedAt"])
 	session := map[string]any{"id": stringField(chat, "id"), "roleId": roleID, "title": fallback(stringField(chat, "title"), "新聊天"), "status": "created", "messages": messages, "createdAt": timeFromMillis(chat["createdAt"]), "updatedAt": updatedAt, "lastActive": updatedAt}
+	metadata := map[string]any{}
 	if effort := normalizeReasoningEffort(stringField(chat, "reasoningEffort")); effort != "" {
-		session["metadata"] = map[string]any{"reasoningEffort": effort}
+		metadata["reasoningEffort"] = effort
+	}
+	if modelOverride := normalizeUIModelRef(chat["modelOverride"]); stringField(modelOverride, "modelId") != "" {
+		metadata["modelOverride.kind"] = stringField(modelOverride, "kind")
+		metadata["modelOverride.providerId"] = stringField(modelOverride, "providerId")
+		metadata["modelOverride.groupId"] = stringField(modelOverride, "groupId")
+		metadata["modelOverride.modelId"] = stringField(modelOverride, "modelId")
+	}
+	if len(metadata) > 0 {
+		session["metadata"] = metadata
 	}
 	return session
+}
+
+func modelOverrideFromMetadata(metadata map[string]any) map[string]any {
+	return normalizeUIModelRef(map[string]any{"kind": stringField(metadata, "modelOverride.kind"), "providerId": stringField(metadata, "modelOverride.providerId"), "groupId": stringField(metadata, "modelOverride.groupId"), "modelId": stringField(metadata, "modelOverride.modelId")})
+}
+
+func normalizeUIModelRef(value any) map[string]any {
+	ref := objectMap(value)
+	kind := stringField(ref, "kind")
+	providerID := stringField(ref, "providerId")
+	groupID := stringField(ref, "groupId")
+	modelID := stringField(ref, "modelId")
+	if modelID == "" {
+		return nil
+	}
+	if kind == "model_group" || groupID != "" {
+		if groupID == "" {
+			return nil
+		}
+		return map[string]any{"kind": "model_group", "providerId": "", "groupId": groupID, "modelId": modelID}
+	}
+	if providerID == "" {
+		return nil
+	}
+	return map[string]any{"kind": "provider", "providerId": providerID, "groupId": "", "modelId": modelID}
 }
 
 func toUIMessageAttachments(attachments []map[string]any) ([]any, []any) {

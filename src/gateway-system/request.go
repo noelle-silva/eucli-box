@@ -67,7 +67,23 @@ func validateRunRequest(request types.RunRequest) error {
 	if effort := types.TrimReasoningEffort(request.ReasoningEffort); effort != "" && !types.IsReasoningEffort(effort) {
 		return gatewayInvalid("reasoningEffort is invalid", nil)
 	}
+	if override := modelOverrideFromRunRequest(request); hasModelOverrideInput(override) {
+		if _, ok := types.NormalizeModelOverrideCoordinate(override); !ok {
+			return gatewayInvalid("modelOverride is invalid", nil)
+		}
+	}
 	return nil
+}
+
+func modelOverrideFromRunRequest(request types.RunRequest) types.ModelCoordinate {
+	if request.ModelOverride == nil {
+		return types.ModelCoordinate{}
+	}
+	return *request.ModelOverride
+}
+
+func hasModelOverrideInput(coordinate types.ModelCoordinate) bool {
+	return strings.TrimSpace(coordinate.Kind) != "" || strings.TrimSpace(coordinate.ProviderID) != "" || strings.TrimSpace(coordinate.GroupID) != "" || strings.TrimSpace(coordinate.ModelID) != ""
 }
 
 func runInputCount(values ...bool) int {

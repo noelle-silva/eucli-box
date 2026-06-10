@@ -123,6 +123,49 @@ func TestStartRunPassesReasoningEffortToModelAndSessionMetadata(t *testing.T) {
 	}
 }
 
+func TestStartRunUsesModelOverrideAndSessionMetadata(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
+	system := newTestRuntime(t, fakes, Config{})
+	override := types.ModelCoordinate{Kind: types.ModelCoordinateKindProvider, ProviderID: "anthropic-main", ModelID: "claude-sonnet-4"}
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello", ModelOverride: &override})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	request := fakes.provider.lastRequest()
+	if request.Coordinate.Kind != types.ModelCoordinateKindProvider || request.Coordinate.ProviderID != "anthropic-main" || request.Coordinate.ModelID != "claude-sonnet-4" {
+		t.Fatalf("model coordinate = %#v", request.Coordinate)
+	}
+	session := fakes.storage.lastSession()
+	if session.Metadata[types.SessionMetadataModelOverrideKind] != types.ModelCoordinateKindProvider || session.Metadata[types.SessionMetadataModelOverrideProviderID] != "anthropic-main" || session.Metadata[types.SessionMetadataModelOverrideModelID] != "claude-sonnet-4" {
+		t.Fatalf("session metadata = %#v", session.Metadata)
+	}
+}
+
+func TestStartRunUsesExistingSessionModelOverride(t *testing.T) {
+	fakes := newRuntimeFakes()
+	now := time.Now().UTC()
+	fakes.storage.sessions["developer/session-1"] = types.Session{ID: "session-1", RoleID: "developer", Title: "Existing", Metadata: map[string]string{types.SessionMetadataModelOverrideKind: types.ModelCoordinateKindProvider, types.SessionMetadataModelOverrideProviderID: "anthropic-main", types.SessionMetadataModelOverrideModelID: "claude-sonnet-4"}, Messages: []types.Message{{ID: "u1", Type: "user", Content: "hello", BranchID: "main", CreatedAt: now, UpdatedAt: now}}, CreatedAt: now, UpdatedAt: now, LastActive: now}
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "u1"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	request := fakes.provider.lastRequest()
+	if request.Coordinate.ProviderID != "anthropic-main" || request.Coordinate.ModelID != "claude-sonnet-4" {
+		t.Fatalf("model coordinate = %#v", request.Coordinate)
+	}
+}
+
 func TestRunMessageSaveDoesNotOverwriteNewerSessionReasoningEffort(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.block = make(chan struct{})
@@ -1545,6 +1588,7 @@ func (f *fakeRuntimeStorage) SaveSessionMessages(ctx context.Context, save types
 		merged.Messages = nil
 	}
 	merged.Status = string(save.Status)
+	merged.Metadata = fakeApplySessionMetadataPatch(merged.Metadata, save.MetadataPatch)
 	for _, condition := range save.Conditions {
 		messageID := strings.TrimSpace(condition.MessageID)
 		if messageID == "" && condition.Expected != nil {
@@ -1581,6 +1625,35 @@ func (f *fakeRuntimeStorage) SaveSessionMessages(ctx context.Context, save types
 	merged = validated
 	f.sessions[key] = merged
 	return nil
+}
+
+func fakeApplySessionMetadataPatch(current map[string]string, patch map[string]string) map[string]string {
+	if len(patch) == 0 {
+		return current
+	}
+	out := make(map[string]string, len(current)+len(patch))
+	for key, value := range current {
+		key = strings.TrimSpace(key)
+		if key != "" {
+			out[key] = value
+		}
+	}
+	for key, value := range patch {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		if value == "" {
+			delete(out, key)
+			continue
+		}
+		out[key] = value
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func fakeValidateMessageExpected(session types.Session, messageID string, expected *types.Message) error {

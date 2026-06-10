@@ -14,7 +14,11 @@ func (s *system) callModel(ctx context.Context, record *runRecord, roleContext t
 	if err != nil {
 		return types.ModelResponse{}, err
 	}
-	request := types.ModelRequest{Coordinate: roleContext.ModelConfig.Coordinate, Temperature: roleContext.ModelConfig.Temperature, Messages: messages, ReasoningEffort: record.reasoningEffort, Tools: roleContext.NativeTools, Stream: record.stream}
+	coordinate := roleContext.ModelConfig.Coordinate
+	if override, ok := types.NormalizeModelOverrideCoordinate(record.modelOverride); ok {
+		coordinate = override
+	}
+	request := types.ModelRequest{Coordinate: coordinate, Temperature: roleContext.ModelConfig.Temperature, Messages: messages, ReasoningEffort: record.reasoningEffort, Tools: roleContext.NativeTools, Stream: record.stream}
 	return s.callModelWithRetry(ctx, record, request)
 }
 

@@ -86,9 +86,33 @@ func TestStartRunRouteAcceptsParentMessageID(t *testing.T) {
 	}
 }
 
+func TestStartRunRouteAcceptsModelOverride(t *testing.T) {
+	fakes := newGatewayFakes()
+	system := newTestGateway(t, fakes)
+	req := httptest.NewRequest(http.MethodPost, "/api/runs", strings.NewReader(`{"roleId":"developer","message":"hello","modelOverride":{"kind":"provider","providerId":"anthropic-main","modelId":"claude-sonnet-4"}}`))
+	rec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if fakes.runtime.started.ModelOverride == nil || fakes.runtime.started.ModelOverride.ProviderID != "anthropic-main" || fakes.runtime.started.ModelOverride.ModelID != "claude-sonnet-4" {
+		t.Fatalf("started = %#v", fakes.runtime.started)
+	}
+}
+
 func TestStartRunRouteRejectsAmbiguousRunTarget(t *testing.T) {
 	system := newTestGateway(t, newGatewayFakes())
 	req := httptest.NewRequest(http.MethodPost, "/api/runs", strings.NewReader(`{"roleId":"developer","sessionId":"session-1","message":"hello","userMessageId":"u1"}`))
+	rec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestStartRunRouteRejectsInvalidModelOverride(t *testing.T) {
+	system := newTestGateway(t, newGatewayFakes())
+	req := httptest.NewRequest(http.MethodPost, "/api/runs", strings.NewReader(`{"roleId":"developer","message":"hello","modelOverride":{"kind":"provider","modelId":"claude-sonnet-4"}}`))
 	rec := httptest.NewRecorder()
 	system.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {

@@ -17,7 +17,8 @@ func (s *system) StartRun(ctx context.Context, request types.RunRequest) (types.
 	runCtx, cancel := context.WithCancel(context.Background())
 	now := nowUTC()
 	state := types.RunState{ID: utils.NewID("run"), RoleID: request.RoleID, SessionID: request.SessionID, Stream: request.Stream, Status: types.RunStatusCreated, CreatedAt: now, UpdatedAt: now}
-	record := &runRecord{runID: state.ID, roleID: request.RoleID, state: state, stream: request.Stream, reasoningEffort: types.TrimReasoningEffort(request.ReasoningEffort), cancel: cancel}
+	modelOverride, _ := types.NormalizeModelOverrideCoordinate(modelOverrideFromRunRequest(request))
+	record := &runRecord{runID: state.ID, roleID: request.RoleID, state: state, stream: request.Stream, modelOverride: modelOverride, reasoningEffort: types.TrimReasoningEffort(request.ReasoningEffort), cancel: cancel}
 	s.mu.Lock()
 	s.runs[state.ID] = record
 	s.mu.Unlock()
@@ -105,6 +106,7 @@ func (s *system) startRun(ctx context.Context, record *runRecord, request types.
 		return state, types.Session{}, err
 	}
 	applyRunReasoningEffort(record, &session)
+	applyRunModelOverride(record, &session)
 	if record.state.SessionID == "" {
 		if err := s.setRunSessionID(record.runID, session.ID); err != nil {
 			return state, types.Session{}, err
@@ -264,7 +266,23 @@ func validateRunRequest(ctx context.Context, request types.RunRequest) error {
 	if effort := types.TrimReasoningEffort(request.ReasoningEffort); effort != "" && !types.IsReasoningEffort(effort) {
 		return runtimeInvalid("reasoningEffort is invalid", nil)
 	}
+	if override := modelOverrideFromRunRequest(request); hasModelOverrideInput(override) {
+		if _, ok := types.NormalizeModelOverrideCoordinate(override); !ok {
+			return runtimeInvalid("modelOverride is invalid", nil)
+		}
+	}
 	return nil
+}
+
+func modelOverrideFromRunRequest(request types.RunRequest) types.ModelCoordinate {
+	if request.ModelOverride == nil {
+		return types.ModelCoordinate{}
+	}
+	return *request.ModelOverride
+}
+
+func hasModelOverrideInput(coordinate types.ModelCoordinate) bool {
+	return strings.TrimSpace(coordinate.Kind) != "" || strings.TrimSpace(coordinate.ProviderID) != "" || strings.TrimSpace(coordinate.GroupID) != "" || strings.TrimSpace(coordinate.ModelID) != ""
 }
 
 func runInputCount(values ...bool) int {
@@ -281,7 +299,7 @@ func applyRunReasoningEffort(record *runRecord, session *types.Session) {
 	if record == nil || session == nil {
 		return
 	}
-	const key = "reasoningEffort"
+	const key = types.SessionMetadataReasoningEffort
 	effort := types.TrimReasoningEffort(record.reasoningEffort)
 	if effort == "" && session.Metadata != nil {
 		effort = types.TrimReasoningEffort(types.ReasoningEffort(session.Metadata[key]))
@@ -297,6 +315,23 @@ func applyRunReasoningEffort(record *runRecord, session *types.Session) {
 		record.reasoningPersistPending = true
 	}
 	session.Metadata[key] = string(effort)
+}
+
+func applyRunModelOverride(record *runRecord, session *types.Session) {
+	if record == nil || session == nil {
+		return
+	}
+	if normalized, ok := types.NormalizeModelOverrideCoordinate(record.modelOverride); ok {
+		record.modelOverride = normalized
+		if current, currentOK := types.ModelOverrideFromSessionMetadata(session.Metadata); !currentOK || !types.SameModelOverrideCoordinate(current, normalized) {
+			record.modelOverridePersistPending = true
+		}
+		session.Metadata = types.PutModelOverrideSessionMetadata(session.Metadata, normalized)
+		return
+	}
+	if current, ok := types.ModelOverrideFromSessionMetadata(session.Metadata); ok {
+		record.modelOverride = current
+	}
 }
 
 func (s *system) prepareRunSession(ctx context.Context, session types.Session, request types.RunRequest) (types.Session, types.Session, types.Message, error) {

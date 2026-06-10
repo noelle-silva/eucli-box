@@ -1,10 +1,11 @@
-export function normalizeChatModelOverride(chat: unknown): { kind: string; providerId: string; groupId: string; modelId: string } | null {
-  const c = chat && typeof chat === 'object' ? (chat as Record<string, unknown>) : null
-  const o = c && c.modelOverride && typeof c.modelOverride === 'object' ? (c.modelOverride as Record<string, unknown>) : null
-  const kind = String(o?.kind || '').trim() === 'model_group' || String(o?.groupId || '').trim() ? 'model_group' : 'provider'
-  const providerId = String(o?.providerId || '').trim()
-  const groupId = String(o?.groupId || '').trim()
-  const modelId = String(o?.modelId || '').trim()
+export type ModelRef = { kind: string; providerId: string; groupId: string; modelId: string }
+
+export function normalizeModelRef(value: unknown): ModelRef | null {
+  const ref = value && typeof value === 'object' ? (value as Record<string, unknown>) : null
+  const kind = String(ref?.kind || '').trim() === 'model_group' || String(ref?.groupId || '').trim() ? 'model_group' : 'provider'
+  const providerId = String(ref?.providerId || '').trim()
+  const groupId = String(ref?.groupId || '').trim()
+  const modelId = String(ref?.modelId || '').trim()
   if (!modelId) return null
   if (kind === 'model_group') {
     if (!groupId) return null
@@ -14,20 +15,14 @@ export function normalizeChatModelOverride(chat: unknown): { kind: string; provi
   return { kind, providerId, groupId: '', modelId }
 }
 
-export function normalizeMessageModelRef(message: unknown): { kind: string; providerId: string; groupId: string; modelId: string } | null {
+export function normalizeChatModelOverride(chat: unknown): ModelRef | null {
+  const c = chat && typeof chat === 'object' ? (chat as Record<string, unknown>) : null
+  return normalizeModelRef(c?.modelOverride)
+}
+
+export function normalizeMessageModelRef(message: unknown): ModelRef | null {
   const m = message && typeof message === 'object' ? (message as Record<string, unknown>) : null
-  const r = m && (m as any).modelRef && typeof (m as any).modelRef === 'object' ? (m as any).modelRef as Record<string, unknown> : null
-  const kind = String(r?.kind || '').trim() === 'model_group' || String(r?.groupId || '').trim() ? 'model_group' : 'provider'
-  const providerId = String(r?.providerId || '').trim()
-  const groupId = String(r?.groupId || '').trim()
-  const modelId = String(r?.modelId || '').trim()
-  if (!modelId) return null
-  if (kind === 'model_group') {
-    if (!groupId) return null
-    return { kind, providerId: '', groupId, modelId }
-  }
-  if (!providerId) return null
-  return { kind, providerId, groupId: '', modelId }
+  return normalizeModelRef((m as any)?.modelRef)
 }
 
 export function buildMessageModelRef(providerId: unknown, modelId: unknown): { kind: string; providerId: string; groupId: string; modelId: string } | null {

@@ -20,7 +20,6 @@ func (s *system) callModel(ctx context.Context, record *runRecord, roleContext t
 
 func (s *system) callModelWithRetry(ctx context.Context, record *runRecord, request types.ModelRequest) (types.ModelResponse, error) {
 	maxAttempts := modelRetryLimit(record.stream)
-	failures := []types.RunRetryFailure{}
 	for attempt := 0; ; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return types.ModelResponse{}, err
@@ -31,7 +30,7 @@ func (s *system) callModelWithRetry(ctx context.Context, record *runRecord, requ
 			return response, nil
 		}
 		nextAttempt := attempt + 1
-		failures = append(failures, newRunRetryFailure(nextAttempt, err))
+		failure := errorPayloadFromError(err, "")
 		if nextAttempt > maxAttempts {
 			_, _ = s.setRunRetry(record.runID, nil)
 			return types.ModelResponse{}, err
@@ -41,7 +40,7 @@ func (s *system) callModelWithRetry(ctx context.Context, record *runRecord, requ
 			_, _ = s.setRunRetry(record.runID, nil)
 			return types.ModelResponse{}, err
 		}
-		retry := newRunRetryInfo(nextAttempt, maxAttempts, decision.Delay, retryMessage(nextAttempt, maxAttempts, decision.Message), failures)
+		retry := newRunRetryInfo(nextAttempt, maxAttempts, decision.Delay, retryMessage(nextAttempt, maxAttempts, decision.Message), failure)
 		if state, setErr := s.setRunRetry(record.runID, retry); setErr == nil {
 			s.publish(record.runID, "run_retrying", state)
 			s.publishAssistantMessageUpdate(record)

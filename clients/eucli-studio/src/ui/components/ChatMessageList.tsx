@@ -83,9 +83,8 @@ function runRetryLabel(retry: any) {
   return `${message}${wait}`
 }
 
-function runRetryFailures(retry: any) {
-  const failures = Array.isArray(retry?.failures) ? retry.failures : []
-  return failures.filter((failure: any) => failure?.error && typeof failure.error === 'object')
+function runRetryFailure(retry: any) {
+  return retry?.failure && typeof retry.failure === 'object' ? retry.failure : null
 }
 
 // 消息区是整页最重的显示承载区。它只接收真实消息材料和消息内操作，
@@ -287,7 +286,7 @@ export const ChatMessageList = React.memo(function ChatMessageList(props: ChatMe
         const messageGenerating = !!activeRunCard && isAssistantGenerating(m)
         const messageAwaitingFirstOutput = messageGenerating && isAssistantAwaitingFirstOutput(m)
         const retryLabel = runRetryLabel(activeRunCard?.retry)
-        const retryFailures = runRetryFailures(activeRunCard?.retry)
+        const retryFailure = runRetryFailure(activeRunCard?.retry)
         const messageError = !isUser && (m as any)?.error && typeof (m as any).error === 'object' ? (m as any).error : null
         const assistantParts = Array.isArray((m as any)?.parts) ? (m as any).parts : []
         const hasReasoningParts = assistantParts.some((part: any) => String(part?.type || '').trim() === 'reasoning' && !!String(part?.text || '').trim())
@@ -446,12 +445,10 @@ export const ChatMessageList = React.memo(function ChatMessageList(props: ChatMe
                     </Stack>
                   ) : null}
                 </Box>
-              ) : messageError || retryFailures.length ? (
+              ) : messageError || retryFailure ? (
                 <Stack spacing={1}>
                   {messageError ? <AssistantErrorNotice error={messageError} /> : null}
-                  {retryFailures.map((failure: any, index: number) => (
-                    <AssistantErrorNotice key={`${Number(failure?.attempt || index + 1)}:${String(failure?.occurredAt || index)}`} error={failure.error} title={`第 ${Number(failure?.attempt || index + 1)} 次请求失败`} />
-                  ))}
+                  {retryFailure ? <AssistantErrorNotice error={retryFailure} title="本次请求失败" /> : null}
                   {content || assistantParts.length ? (
                     <AssistantMessageBlocks
                       controller={controller}

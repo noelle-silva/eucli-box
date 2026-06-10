@@ -36,18 +36,12 @@ type ErrorPayload struct {
 }
 
 type RunRetryInfo struct {
-	Attempt     int               `json:"attempt"`
-	MaxAttempts int               `json:"maxAttempts"`
-	RetryAt     time.Time         `json:"retryAt"`
-	DelayMs     int               `json:"delayMs"`
-	Message     string            `json:"message,omitempty"`
-	Failures    []RunRetryFailure `json:"failures,omitempty"`
-}
-
-type RunRetryFailure struct {
-	Attempt    int           `json:"attempt"`
-	Error      *ErrorPayload `json:"error,omitempty"`
-	OccurredAt time.Time     `json:"occurredAt"`
+	Attempt     int           `json:"attempt"`
+	MaxAttempts int           `json:"maxAttempts"`
+	RetryAt     time.Time     `json:"retryAt"`
+	DelayMs     int           `json:"delayMs"`
+	Message     string        `json:"message,omitempty"`
+	Failure     *ErrorPayload `json:"failure,omitempty"`
 }
 
 type MessagePart struct {

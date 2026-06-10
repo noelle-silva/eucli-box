@@ -335,12 +335,7 @@ func cloneRunRetryInfo(retry *types.RunRetryInfo) *types.RunRetryInfo {
 		return nil
 	}
 	cloned := *retry
-	if len(retry.Failures) > 0 {
-		cloned.Failures = make([]types.RunRetryFailure, 0, len(retry.Failures))
-		for _, failure := range retry.Failures {
-			cloned.Failures = append(cloned.Failures, types.RunRetryFailure{Attempt: failure.Attempt, Error: cloneErrorPayload(failure.Error), OccurredAt: failure.OccurredAt})
-		}
-	}
+	cloned.Failure = cloneErrorPayload(retry.Failure)
 	return &cloned
 }
 

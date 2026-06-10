@@ -23,13 +23,7 @@ export type EbRoleRunRetryInfo = {
   retryAt: string
   delayMs: number
   message: string
-  failures: EbRoleRunRetryFailure[]
-}
-
-export type EbRoleRunRetryFailure = {
-  attempt: number
-  error: ErrorPayload | null
-  occurredAt: string
+  failure: ErrorPayload | null
 }
 
 function timeNow() {
@@ -69,22 +63,8 @@ function normalizeEbRoleRunRetryInfo(value: unknown): EbRoleRunRetryInfo | null 
     retryAt: text(raw.retryAt),
     delayMs: Math.max(0, Math.floor(Number(raw.delayMs || 0))),
     message: text(raw.message),
-    failures: normalizeEbRoleRunRetryFailures(raw.failures),
+    failure: normalizeErrorPayload(raw.failure),
   }
-}
-
-function normalizeEbRoleRunRetryFailures(value: unknown): EbRoleRunRetryFailure[] {
-  const list = Array.isArray(value) ? value : []
-  const out: EbRoleRunRetryFailure[] = []
-  for (const item of list) {
-    const raw = isObject(item) ? item : null
-    if (!raw) continue
-    const attempt = Math.max(0, Math.floor(Number(raw.attempt || 0)))
-    const error = normalizeErrorPayload(raw.error)
-    if (!attempt || !error) continue
-    out.push({ attempt, error, occurredAt: text(raw.occurredAt) })
-  }
-  return out
 }
 
 export function isTerminalEbRunStatus(value: unknown) {

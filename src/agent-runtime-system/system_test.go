@@ -354,11 +354,8 @@ func TestModelRetryPublishesFailureAndThenCompletes(t *testing.T) {
 	if retrying.Retry.Attempt != 1 || retrying.Retry.MaxAttempts != modelRetryMaxAttempts || retrying.Retry.DelayMs != 1 {
 		t.Fatalf("retry info = %#v", retrying.Retry)
 	}
-	if len(retrying.Retry.Failures) != 1 {
-		t.Fatalf("retry failures = %#v", retrying.Retry.Failures)
-	}
-	failure := retrying.Retry.Failures[0]
-	if failure.Attempt != 1 || failure.Error == nil || failure.Error.Message != "failed to complete model request" || failure.Error.Cause == nil || failure.Error.Cause.Message != "upstream temporarily busy" {
+	failure := retrying.Retry.Failure
+	if failure == nil || failure.Message != "failed to complete model request" || failure.Cause == nil || failure.Cause.Message != "upstream temporarily busy" {
 		t.Fatalf("retry failure = %#v", failure)
 	}
 	final := waitRun(t, system, state.ID)
@@ -402,7 +399,7 @@ func TestModelRetryWaitingCanBeCancelled(t *testing.T) {
 		t.Fatalf("StartRun() error = %v", err)
 	}
 	retrying := waitRunRetrying(t, events, state.ID)
-	if retrying.Retry == nil || len(retrying.Retry.Failures) != 1 {
+	if retrying.Retry == nil || retrying.Retry.Failure == nil {
 		t.Fatalf("retrying = %#v", retrying)
 	}
 	if err := system.CancelRun(context.Background(), state.ID); err != nil {

@@ -22,13 +22,7 @@ export type EbRunRetryInfo = {
   retryAt: string
   delayMs: number
   message: string
-  failures: EbRunRetryFailure[]
-}
-
-export type EbRunRetryFailure = {
-  attempt: number
-  error: ErrorPayload | null
-  occurredAt: string
+  failure: ErrorPayload | null
 }
 
 function normalizeTextList(value: unknown) {
@@ -162,22 +156,8 @@ function normalizeRunRetryInfo(value: any): EbRunRetryInfo | null {
     retryAt: String(raw.retryAt || '').trim(),
     delayMs: Math.max(0, Math.floor(Number(raw.delayMs || 0))),
     message: String(raw.message || '').trim(),
-    failures: normalizeRunRetryFailures(raw.failures),
+    failure: normalizeErrorPayload(raw.failure),
   }
-}
-
-function normalizeRunRetryFailures(value: any): EbRunRetryFailure[] {
-  const list = Array.isArray(value) ? value : []
-  const out: EbRunRetryFailure[] = []
-  for (const item of list) {
-    const raw = item && typeof item === 'object' ? item : null
-    if (!raw) continue
-    const attempt = Math.max(0, Math.floor(Number(raw.attempt || 0)))
-    const error = normalizeErrorPayload(raw.error)
-    if (!attempt || !error) continue
-    out.push({ attempt, error, occurredAt: String(raw.occurredAt || '').trim() })
-  }
-  return out
 }
 
 export function runStateFailureError(state: EbRunState) {

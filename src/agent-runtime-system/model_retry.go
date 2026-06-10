@@ -288,30 +288,15 @@ func intFromAny(value any) (int, bool) {
 	}
 }
 
-func newRunRetryInfo(attempt int, maxAttempts int, delay time.Duration, message string, failures []types.RunRetryFailure) *types.RunRetryInfo {
+func newRunRetryInfo(attempt int, maxAttempts int, delay time.Duration, message string, failure *types.ErrorPayload) *types.RunRetryInfo {
 	return &types.RunRetryInfo{
 		Attempt:     attempt,
 		MaxAttempts: maxAttempts,
 		RetryAt:     time.Now().UTC().Add(delay),
 		DelayMs:     int(delay / time.Millisecond),
 		Message:     strings.TrimSpace(message),
-		Failures:    cloneRunRetryFailures(failures),
+		Failure:     cloneErrorPayload(failure),
 	}
-}
-
-func newRunRetryFailure(attempt int, err error) types.RunRetryFailure {
-	return types.RunRetryFailure{Attempt: attempt, Error: errorPayloadFromError(err, ""), OccurredAt: time.Now().UTC()}
-}
-
-func cloneRunRetryFailures(failures []types.RunRetryFailure) []types.RunRetryFailure {
-	if len(failures) == 0 {
-		return nil
-	}
-	out := make([]types.RunRetryFailure, 0, len(failures))
-	for _, failure := range failures {
-		out = append(out, types.RunRetryFailure{Attempt: failure.Attempt, Error: cloneErrorPayload(failure.Error), OccurredAt: failure.OccurredAt})
-	}
-	return out
 }
 
 func retryMessage(attempt int, maxAttempts int, message string) string {

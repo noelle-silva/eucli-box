@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"eucli-box/pkg/types"
 )
@@ -14,6 +15,59 @@ func (s *system) callModel(ctx context.Context, record *runRecord, roleContext t
 		return types.ModelResponse{}, err
 	}
 	request := types.ModelRequest{Coordinate: roleContext.ModelConfig.Coordinate, Temperature: roleContext.ModelConfig.Temperature, Messages: messages, ReasoningEffort: record.reasoningEffort, Tools: roleContext.NativeTools, Stream: record.stream}
+	return s.callModelWithRetry(ctx, record, request)
+}
+
+func (s *system) callModelWithRetry(ctx context.Context, record *runRecord, request types.ModelRequest) (types.ModelResponse, error) {
+	maxAttempts := modelRetryLimit(record.stream)
+	failures := []types.RunRetryFailure{}
+	for attempt := 0; ; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return types.ModelResponse{}, err
+		}
+		response, err := s.callModelOnce(ctx, record, request)
+		if err == nil {
+			_, _ = s.setRunRetry(record.runID, nil)
+			return response, nil
+		}
+		nextAttempt := attempt + 1
+		failures = append(failures, newRunRetryFailure(nextAttempt, err))
+		if nextAttempt > maxAttempts {
+			_, _ = s.setRunRetry(record.runID, nil)
+			return types.ModelResponse{}, err
+		}
+		decision := modelRetryDecisionForError(err, nextAttempt)
+		if !decision.Retryable {
+			_, _ = s.setRunRetry(record.runID, nil)
+			return types.ModelResponse{}, err
+		}
+		retry := newRunRetryInfo(nextAttempt, maxAttempts, decision.Delay, retryMessage(nextAttempt, maxAttempts, decision.Message), failures)
+		if state, setErr := s.setRunRetry(record.runID, retry); setErr == nil {
+			s.publish(record.runID, "run_retrying", state)
+			s.publishAssistantMessageUpdate(record)
+		}
+		if err := sleepModelRetry(ctx, decision.Delay); err != nil {
+			_, _ = s.setRunRetry(record.runID, nil)
+			return types.ModelResponse{}, err
+		}
+	}
+}
+
+func sleepModelRetry(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return ctx.Err()
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return ctx.Err()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (s *system) callModelOnce(ctx context.Context, record *runRecord, request types.ModelRequest) (types.ModelResponse, error) {
 	if record.stream {
 		return s.callModelStream(ctx, record, request)
 	}

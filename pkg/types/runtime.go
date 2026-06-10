@@ -35,6 +35,21 @@ type ErrorPayload struct {
 	Causes  []*ErrorPayload `json:"causes,omitempty"`
 }
 
+type RunRetryInfo struct {
+	Attempt     int               `json:"attempt"`
+	MaxAttempts int               `json:"maxAttempts"`
+	RetryAt     time.Time         `json:"retryAt"`
+	DelayMs     int               `json:"delayMs"`
+	Message     string            `json:"message,omitempty"`
+	Failures    []RunRetryFailure `json:"failures,omitempty"`
+}
+
+type RunRetryFailure struct {
+	Attempt    int           `json:"attempt"`
+	Error      *ErrorPayload `json:"error,omitempty"`
+	OccurredAt time.Time     `json:"occurredAt"`
+}
+
 type MessagePart struct {
 	ID        string          `json:"id"`
 	Type      string          `json:"type"`
@@ -204,6 +219,7 @@ type RunState struct {
 	Stream               bool          `json:"stream,omitempty"`
 	Status               RunStatus     `json:"status"`
 	Reason               string        `json:"reason,omitempty"`
+	Retry                *RunRetryInfo `json:"retry"`
 	Error                *ErrorPayload `json:"error,omitempty"`
 	CreatedAt            time.Time     `json:"createdAt"`
 	UpdatedAt            time.Time     `json:"updatedAt"`
@@ -228,6 +244,7 @@ type RunAssistantMessageUpdate struct {
 	Stream    bool          `json:"stream,omitempty"`
 	Status    RunStatus     `json:"status,omitempty"`
 	Reason    string        `json:"reason,omitempty"`
+	Retry     *RunRetryInfo `json:"retry"`
 	Error     *ErrorPayload `json:"error,omitempty"`
 	Message   Message       `json:"message"`
 	CreatedAt time.Time     `json:"createdAt"`

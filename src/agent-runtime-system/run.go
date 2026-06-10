@@ -148,6 +148,10 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 		}
 		modelResponse, err := s.callModel(ctx, record, roleContext)
 		if err != nil {
+			if ctx.Err() != nil {
+				s.cancelRunRecord(context.Background(), record, record.session)
+				return
+			}
 			s.failRun(context.Background(), record, record.session, err)
 			return
 		}

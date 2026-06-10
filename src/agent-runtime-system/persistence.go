@@ -171,7 +171,22 @@ func (s *system) updateRunWithError(runID string, status types.RunStatus, reason
 	}
 	record.state.Status = status
 	record.state.Reason = reason
+	if status != types.RunStatusRunning {
+		record.state.Retry = nil
+	}
 	record.state.Error = cloneErrorPayload(errPayload)
+	record.state.UpdatedAt = nowUTC()
+	return runStateSnapshot(record), nil
+}
+
+func (s *system) setRunRetry(runID string, retry *types.RunRetryInfo) (types.RunState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.runs[runID]
+	if !ok {
+		return types.RunState{}, runtimeNotFound("run was not found", nil)
+	}
+	record.state.Retry = cloneRunRetryInfo(retry)
 	record.state.UpdatedAt = nowUTC()
 	return runStateSnapshot(record), nil
 }

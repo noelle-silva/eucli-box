@@ -91,15 +91,16 @@ function ErrorNode(props: { error: ErrorPayload; depth?: number }) {
   )
 }
 
-export function AssistantErrorNotice(props: { error: any }) {
+export function AssistantErrorNotice(props: { error: any; title?: string }) {
   const raw = normalizeErrorPayload(props.error)
   if (!raw) return null
+  const title = String(props.title || '请求失败追溯链').trim()
 
   return (
     <Alert severity="error" variant="outlined" sx={{ borderRadius: 2, alignItems: 'flex-start' }}>
       <Stack spacing={0.75} sx={{ minWidth: 0 }}>
         <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>
-          请求失败追溯链
+          {title}
         </Typography>
         <ErrorNode error={raw} />
       </Stack>

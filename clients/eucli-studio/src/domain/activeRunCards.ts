@@ -1,3 +1,5 @@
+import { normalizeErrorPayload, type ErrorPayload } from './errorPayload'
+
 export type EbRoleRunCard = {
   kind: 'eb-role-run'
   runId: string
@@ -9,9 +11,25 @@ export type EbRoleRunCard = {
   dependencyMessageIds: string[]
   status: string
   stream: boolean
+  retry: EbRoleRunRetryInfo | null
   cancelledByUser: boolean
   createdAt: number
   updatedAt: number
+}
+
+export type EbRoleRunRetryInfo = {
+  attempt: number
+  maxAttempts: number
+  retryAt: string
+  delayMs: number
+  message: string
+  failures: EbRoleRunRetryFailure[]
+}
+
+export type EbRoleRunRetryFailure = {
+  attempt: number
+  error: ErrorPayload | null
+  occurredAt: string
 }
 
 function timeNow() {
@@ -35,6 +53,36 @@ function textList(value: unknown) {
     if (!id || seen.has(id)) continue
     seen.add(id)
     out.push(id)
+  }
+  return out
+}
+
+function normalizeEbRoleRunRetryInfo(value: unknown): EbRoleRunRetryInfo | null {
+  const raw = isObject(value) ? value : null
+  if (!raw) return null
+  const attempt = Math.max(0, Math.floor(Number(raw.attempt || 0)))
+  const maxAttempts = Math.max(0, Math.floor(Number(raw.maxAttempts || 0)))
+  if (!attempt || !maxAttempts) return null
+  return {
+    attempt,
+    maxAttempts,
+    retryAt: text(raw.retryAt),
+    delayMs: Math.max(0, Math.floor(Number(raw.delayMs || 0))),
+    message: text(raw.message),
+    failures: normalizeEbRoleRunRetryFailures(raw.failures),
+  }
+}
+
+function normalizeEbRoleRunRetryFailures(value: unknown): EbRoleRunRetryFailure[] {
+  const list = Array.isArray(value) ? value : []
+  const out: EbRoleRunRetryFailure[] = []
+  for (const item of list) {
+    const raw = isObject(item) ? item : null
+    if (!raw) continue
+    const attempt = Math.max(0, Math.floor(Number(raw.attempt || 0)))
+    const error = normalizeErrorPayload(raw.error)
+    if (!attempt || !error) continue
+    out.push({ attempt, error, occurredAt: text(raw.occurredAt) })
   }
   return out
 }
@@ -63,6 +111,7 @@ function normalizeEbRoleRunCard(value: unknown): EbRoleRunCard | null {
     dependencyMessageIds: textList(raw.dependencyMessageIds),
     status: text(raw.status) || 'running',
     stream: !!raw.stream,
+    retry: normalizeEbRoleRunRetryInfo(raw.retry),
     cancelledByUser: !!raw.cancelledByUser,
     createdAt: Number.isFinite(createdAt) && createdAt > 0 ? createdAt : t,
     updatedAt: Number.isFinite(updatedAt) && updatedAt > 0 ? updatedAt : t,
@@ -148,6 +197,7 @@ export function upsertEbRoleRunCard(state: any, patchRaw: Partial<EbRoleRunCard>
   const index = cards.findIndex((card) => card.runId === runId)
   const current = index >= 0 ? cards[index] : null
   const t = timeNow()
+  const hasRetryPatch = Object.prototype.hasOwnProperty.call(patchRaw, 'retry')
   const next: EbRoleRunCard = {
     kind: 'eb-role-run',
     runId,
@@ -159,6 +209,7 @@ export function upsertEbRoleRunCard(state: any, patchRaw: Partial<EbRoleRunCard>
     dependencyMessageIds: textList(patchRaw.dependencyMessageIds).length ? textList(patchRaw.dependencyMessageIds) : current?.dependencyMessageIds || [],
     status: text(patchRaw.status) || current?.status || 'running',
     stream: typeof patchRaw.stream === 'boolean' ? patchRaw.stream : !!current?.stream,
+    retry: hasRetryPatch ? normalizeEbRoleRunRetryInfo(patchRaw.retry) : current?.retry || null,
     cancelledByUser: typeof patchRaw.cancelledByUser === 'boolean' ? patchRaw.cancelledByUser : !!current?.cancelledByUser,
     createdAt: current?.createdAt || t,
     updatedAt: t,

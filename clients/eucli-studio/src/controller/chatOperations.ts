@@ -183,6 +183,7 @@ export function createChatOperations(deps: {
       dependencyMessageIds: run?.dependencyMessageIds?.length ? run.dependencyMessageIds : Array.isArray(fallback.dependencyMessageIds) ? fallback.dependencyMessageIds : current?.dependencyMessageIds || [],
       status: String(run?.status || current?.status || 'running').trim(),
       stream: !!run?.stream,
+      retry: run?.retry,
       cancelledByUser: !!current?.cancelledByUser,
     })
   }

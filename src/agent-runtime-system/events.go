@@ -48,7 +48,7 @@ func (s *system) publishAssistantMessageUpdate(record *runRecord) {
 	}
 	state, _ := s.getRunState(record.runID)
 	now := time.Now().UTC()
-	s.publish(record.runID, "assistant_message_update", types.RunAssistantMessageUpdate{RunID: record.runID, RoleID: record.roleID, SessionID: record.session.ID, Stream: record.stream, Status: state.Status, Reason: state.Reason, Error: cloneErrorPayload(state.Error), Message: cloneRunMessageSnapshot(message), CreatedAt: now})
+	s.publish(record.runID, "assistant_message_update", types.RunAssistantMessageUpdate{RunID: record.runID, RoleID: record.roleID, SessionID: record.session.ID, Stream: record.stream, Status: state.Status, Reason: state.Reason, Retry: cloneRunRetryInfo(state.Retry), Error: cloneErrorPayload(state.Error), Message: cloneRunMessageSnapshot(message), CreatedAt: now})
 }
 
 func currentRunAssistantMessage(record *runRecord) (types.Message, bool) {

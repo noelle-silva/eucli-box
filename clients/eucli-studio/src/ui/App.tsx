@@ -1660,7 +1660,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   }, [chatAllMessagesRaw, chatAllMessagesRaw.length, Number((renderChat as any)?.updatedAt || 0), chatAllById, chatAllIndexById])
   const activeSessionRunCards = readActiveEbRoleRunCardsForSession(s, String(activeRole?.id || '').trim(), renderChatId)
   const activeSessionRunCardsKey = activeSessionRunCards
-    .map((card: any) => `${String(card?.runId || '')}:${String(card?.lastMessageId || '')}:${String(card?.status || '')}:${Number(card?.updatedAt || 0)}`)
+    .map((card: any) => `${String(card?.runId || '')}:${String(card?.lastMessageId || '')}:${String(card?.status || '')}:${String(card?.retry?.attempt || '')}:${String(card?.retry?.retryAt || '')}:${Array.isArray(card?.retry?.failures) ? card.retry.failures.length : 0}:${Number(card?.updatedAt || 0)}`)
     .join('|')
   const activeChatRunCards = renderChatId === activeChatId ? activeSessionRunCards : readActiveEbRoleRunCardsForSession(s, String(activeRole?.id || '').trim(), activeChatId)
   const treeLayout = React.useMemo(() => {

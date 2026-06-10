@@ -581,6 +581,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
         dependencyMessageIds: Array.isArray(run?.dependencyMessageIds) ? run.dependencyMessageIds : [],
         status: String(run?.status || 'running').trim() || 'running',
         stream: !!run?.stream,
+        retry: run?.retry,
       })
       return true
     }

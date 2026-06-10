@@ -333,6 +333,90 @@ func TestListActiveRunsReturnsOnlyLiveRuns(t *testing.T) {
 	}
 }
 
+func TestModelRetryPublishesFailureAndThenCompletes(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.errors = []error{retryableProviderServiceError("upstream temporarily busy", "1")}
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done after retry"}}
+	system := newTestRuntime(t, fakes, Config{})
+	events, unsubscribe, err := system.Subscribe(context.Background())
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	defer unsubscribe()
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	retrying := waitRunRetrying(t, events, state.ID)
+	if retrying.Status != types.RunStatusRunning || retrying.Error != nil || retrying.Retry == nil {
+		t.Fatalf("retrying state = %#v", retrying)
+	}
+	if retrying.Retry.Attempt != 1 || retrying.Retry.MaxAttempts != modelRetryMaxAttempts || retrying.Retry.DelayMs != 1 {
+		t.Fatalf("retry info = %#v", retrying.Retry)
+	}
+	if len(retrying.Retry.Failures) != 1 {
+		t.Fatalf("retry failures = %#v", retrying.Retry.Failures)
+	}
+	failure := retrying.Retry.Failures[0]
+	if failure.Attempt != 1 || failure.Error == nil || failure.Error.Message != "failed to complete model request" || failure.Error.Cause == nil || failure.Error.Cause.Message != "upstream temporarily busy" {
+		t.Fatalf("retry failure = %#v", failure)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted || final.Retry != nil || final.Error != nil {
+		t.Fatalf("final = %#v", final)
+	}
+	if got := fakes.provider.callCount(); got != 2 {
+		t.Fatalf("model call count = %d", got)
+	}
+}
+
+func TestModelRetrySkipsPermanentFailure(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.errors = []error{apperrors.New("model-provider-system", "provider.invalid_request", "bad request")}
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusFailed || final.Retry != nil || final.Error == nil {
+		t.Fatalf("final = %#v", final)
+	}
+	if got := fakes.provider.callCount(); got != 1 {
+		t.Fatalf("model call count = %d", got)
+	}
+}
+
+func TestModelRetryWaitingCanBeCancelled(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.errors = []error{retryableProviderServiceError("upstream asks to wait", "1000")}
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "should not be used"}}
+	system := newTestRuntime(t, fakes, Config{})
+	events, unsubscribe, err := system.Subscribe(context.Background())
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	defer unsubscribe()
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	retrying := waitRunRetrying(t, events, state.ID)
+	if retrying.Retry == nil || len(retrying.Retry.Failures) != 1 {
+		t.Fatalf("retrying = %#v", retrying)
+	}
+	if err := system.CancelRun(context.Background(), state.ID); err != nil {
+		t.Fatalf("CancelRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCancelled || final.Error != nil || final.Retry != nil {
+		t.Fatalf("final = %#v", final)
+	}
+	if got := fakes.provider.callCount(); got != 1 {
+		t.Fatalf("model call count = %d", got)
+	}
+}
+
 func TestStartRunFromUserMessageAppendsAssistantSibling(t *testing.T) {
 	fakes := newRuntimeFakes()
 	now := time.Now().UTC()
@@ -1374,6 +1458,30 @@ func waitStatus(t *testing.T, system System, runID string, status types.RunStatu
 	return types.RunState{}
 }
 
+func waitRunRetrying(t *testing.T, events <-chan types.RunEvent, runID string) types.RunState {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case event := <-events:
+			if event.RunID != runID || event.Type != "run_retrying" {
+				continue
+			}
+			payload, ok := event.Payload.(types.RunState)
+			if !ok {
+				t.Fatalf("run_retrying payload = %#v", event.Payload)
+			}
+			return payload
+		case <-deadline:
+			t.Fatalf("run_retrying event was not published for %s", runID)
+		}
+	}
+}
+
+func retryableProviderServiceError(message string, retryAfterMs string) error {
+	return apperrors.WrapWithDetails("model-provider-system", "provider.service_failed", message, nil, map[string]any{"statusCode": 429, "headers": map[string][]string{"retry-after-ms": []string{retryAfterMs}}})
+}
+
 func waitStoredSessionStatus(t *testing.T, storage *fakeRuntimeStorage, status types.RunStatus) types.Session {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -1671,9 +1779,11 @@ func fakeRuntimeNativeTools(tools []types.ToolDefinition, names []string) []type
 type fakeRuntimeProvider struct {
 	mu              sync.Mutex
 	responses       []types.ModelResponse
+	errors          []error
 	streamEvents    []types.ModelStreamEvent
 	streamResponse  types.ModelResponse
 	streamResponses []types.ModelResponse
+	streamErrors    []error
 	alwaysTool      bool
 	calls           int
 	requests        []types.ModelRequest
@@ -1682,9 +1792,6 @@ type fakeRuntimeProvider struct {
 }
 
 func (f *fakeRuntimeProvider) Complete(ctx context.Context, request types.ModelRequest) (types.ModelResponse, error) {
-	if f.err != nil {
-		return types.ModelResponse{}, f.err
-	}
 	if f.block != nil {
 		select {
 		case <-f.block:
@@ -1696,6 +1803,16 @@ func (f *fakeRuntimeProvider) Complete(ctx context.Context, request types.ModelR
 	defer f.mu.Unlock()
 	f.calls++
 	f.requests = append(f.requests, request)
+	if f.err != nil {
+		return types.ModelResponse{}, f.err
+	}
+	if len(f.errors) > 0 {
+		err := f.errors[0]
+		f.errors = f.errors[1:]
+		if err != nil {
+			return types.ModelResponse{}, err
+		}
+	}
 	if f.alwaysTool {
 		return types.ModelResponse{ID: "m", Content: "tool", ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader"}}}, nil
 	}
@@ -1708,9 +1825,6 @@ func (f *fakeRuntimeProvider) Complete(ctx context.Context, request types.ModelR
 }
 
 func (f *fakeRuntimeProvider) CompleteStream(ctx context.Context, request types.ModelRequest, onEvent types.ModelStreamHandler) (types.ModelResponse, error) {
-	if f.err != nil {
-		return types.ModelResponse{}, f.err
-	}
 	if f.block != nil {
 		select {
 		case <-f.block:
@@ -1721,6 +1835,18 @@ func (f *fakeRuntimeProvider) CompleteStream(ctx context.Context, request types.
 	f.mu.Lock()
 	f.calls++
 	f.requests = append(f.requests, request)
+	if f.err != nil {
+		f.mu.Unlock()
+		return types.ModelResponse{}, f.err
+	}
+	if len(f.streamErrors) > 0 {
+		err := f.streamErrors[0]
+		f.streamErrors = f.streamErrors[1:]
+		if err != nil {
+			f.mu.Unlock()
+			return types.ModelResponse{}, err
+		}
+	}
 	events := append([]types.ModelStreamEvent(nil), f.streamEvents...)
 	response := f.streamResponse
 	if len(f.streamResponses) > 0 {

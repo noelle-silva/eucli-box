@@ -66,6 +66,28 @@ function clampNum(n: number, min: number, max: number) {
   return x
 }
 
+function retryDelaySeconds(retry: any) {
+  const retryAt = Date.parse(String(retry?.retryAt || ''))
+  if (isFinite(retryAt) && retryAt > 0) return Math.max(0, Math.ceil((retryAt - Date.now()) / 1000))
+  return Math.max(0, Math.ceil(Number(retry?.delayMs || 0) / 1000))
+}
+
+function runRetryLabel(retry: any) {
+  if (!retry || typeof retry !== 'object') return ''
+  const attempt = Math.max(0, Math.floor(Number(retry.attempt || 0)))
+  const maxAttempts = Math.max(0, Math.floor(Number(retry.maxAttempts || 0)))
+  if (!attempt || !maxAttempts) return ''
+  const seconds = retryDelaySeconds(retry)
+  const wait = seconds > 0 ? `，约 ${seconds} 秒后继续` : ''
+  const message = String(retry.message || '模型请求失败，正在自动重试').trim()
+  return `${message}${wait}`
+}
+
+function runRetryFailures(retry: any) {
+  const failures = Array.isArray(retry?.failures) ? retry.failures : []
+  return failures.filter((failure: any) => failure?.error && typeof failure.error === 'object')
+}
+
 // 消息区是整页最重的显示承载区。它只接收真实消息材料和消息内操作，
 // 顶栏按钮、弹层开关、搜索输入等轻交互不能让这里重新构造每条消息。
 export const ChatMessageList = React.memo(function ChatMessageList(props: ChatMessageListProps) {
@@ -261,8 +283,11 @@ export const ChatMessageList = React.memo(function ChatMessageList(props: ChatMe
           ...rootAttachments.map((a: any, idx: number) => ({ mid, idx, attachment: a })),
           ...legacyAttMsgs.map((am: any) => ({ mid: String(am?.id || '').trim(), idx: 0, attachment: am && Array.isArray(am.attachments) ? am.attachments[0] : null })),
         ].filter((item: any) => item.mid && item.attachment)
-        const messageGenerating = !!activeRunCardForAssistantMessage(activeVisibleRunCards, m) && isAssistantGenerating(m)
+        const activeRunCard = activeRunCardForAssistantMessage(activeVisibleRunCards, m)
+        const messageGenerating = !!activeRunCard && isAssistantGenerating(m)
         const messageAwaitingFirstOutput = messageGenerating && isAssistantAwaitingFirstOutput(m)
+        const retryLabel = runRetryLabel(activeRunCard?.retry)
+        const retryFailures = runRetryFailures(activeRunCard?.retry)
         const messageError = !isUser && (m as any)?.error && typeof (m as any).error === 'object' ? (m as any).error : null
         const assistantParts = Array.isArray((m as any)?.parts) ? (m as any).parts : []
         const hasReasoningParts = assistantParts.some((part: any) => String(part?.type || '').trim() === 'reasoning' && !!String(part?.text || '').trim())
@@ -421,9 +446,12 @@ export const ChatMessageList = React.memo(function ChatMessageList(props: ChatMe
                     </Stack>
                   ) : null}
                 </Box>
-              ) : messageError ? (
+              ) : messageError || retryFailures.length ? (
                 <Stack spacing={1}>
-                  <AssistantErrorNotice error={messageError} />
+                  {messageError ? <AssistantErrorNotice error={messageError} /> : null}
+                  {retryFailures.map((failure: any, index: number) => (
+                    <AssistantErrorNotice key={`${Number(failure?.attempt || index + 1)}:${String(failure?.occurredAt || index)}`} error={failure.error} title={`第 ${Number(failure?.attempt || index + 1)} 次请求失败`} />
+                  ))}
                   {content || assistantParts.length ? (
                     <AssistantMessageBlocks
                       controller={controller}
@@ -570,9 +598,9 @@ export const ChatMessageList = React.memo(function ChatMessageList(props: ChatMe
                 </Stack>
               )}
 
-              {messageGenerating && !isDisplayOnlyPendingRunTail ? (
+              {messageGenerating ? (
                 <Box sx={{ mt: 1 }}>
-                  <Chip size="small" label={m?.streaming ? '生成中（流式）' : '生成中'} />
+                  <Chip size="small" color={retryLabel ? 'warning' : 'default'} label={retryLabel || (m?.streaming ? '生成中（流式）' : '生成中')} />
                 </Box>
               ) : null}
             </Paper>

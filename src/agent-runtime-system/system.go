@@ -135,6 +135,7 @@ func runStateSnapshot(record *runRecord) types.RunState {
 	}
 	state := record.state
 	state.Error = cloneErrorPayload(state.Error)
+	state.Retry = cloneRunRetryInfo(state.Retry)
 	state.DependencyMessageIDs = sortedRecordIDs(record.dependencyIDs)
 	return state
 }

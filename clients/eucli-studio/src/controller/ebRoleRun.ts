@@ -12,7 +12,23 @@ export type EbRunState = {
   stream: boolean
   status: string
   reason: string
+  retry: EbRunRetryInfo | null
   error: ErrorPayload | null
+}
+
+export type EbRunRetryInfo = {
+  attempt: number
+  maxAttempts: number
+  retryAt: string
+  delayMs: number
+  message: string
+  failures: EbRunRetryFailure[]
+}
+
+export type EbRunRetryFailure = {
+  attempt: number
+  error: ErrorPayload | null
+  occurredAt: string
 }
 
 function normalizeTextList(value: unknown) {
@@ -129,8 +145,39 @@ export function normalizeRunState(value: any): EbRunState {
     stream: !!state.stream,
     status: String(state.status || '').trim(),
     reason: String(state.reason || '').trim(),
+    retry: normalizeRunRetryInfo(state.retry),
     error,
   }
+}
+
+function normalizeRunRetryInfo(value: any): EbRunRetryInfo | null {
+  const raw = value && typeof value === 'object' ? value : null
+  if (!raw) return null
+  const attempt = Math.max(0, Math.floor(Number(raw.attempt || 0)))
+  const maxAttempts = Math.max(0, Math.floor(Number(raw.maxAttempts || 0)))
+  if (!attempt || !maxAttempts) return null
+  return {
+    attempt,
+    maxAttempts,
+    retryAt: String(raw.retryAt || '').trim(),
+    delayMs: Math.max(0, Math.floor(Number(raw.delayMs || 0))),
+    message: String(raw.message || '').trim(),
+    failures: normalizeRunRetryFailures(raw.failures),
+  }
+}
+
+function normalizeRunRetryFailures(value: any): EbRunRetryFailure[] {
+  const list = Array.isArray(value) ? value : []
+  const out: EbRunRetryFailure[] = []
+  for (const item of list) {
+    const raw = item && typeof item === 'object' ? item : null
+    if (!raw) continue
+    const attempt = Math.max(0, Math.floor(Number(raw.attempt || 0)))
+    const error = normalizeErrorPayload(raw.error)
+    if (!attempt || !error) continue
+    out.push({ attempt, error, occurredAt: String(raw.occurredAt || '').trim() })
+  }
+  return out
 }
 
 export function runStateFailureError(state: EbRunState) {

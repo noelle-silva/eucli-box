@@ -116,7 +116,7 @@ export function createEbRunEventConsumer(deps: {
     const roleId = String(payload?.roleId || '').trim()
     const sessionId = String(payload?.sessionId || '').trim()
     if (!roleId || !sessionId) return false
-    upsertEbRoleRunCard(state, {
+    const patch: any = {
       runId,
       roleId,
       sessionId,
@@ -126,7 +126,9 @@ export function createEbRunEventConsumer(deps: {
       dependencyMessageIds: Array.isArray(payload?.dependencyMessageIds) ? payload.dependencyMessageIds : [],
       status: status || 'running',
       stream: !!payload?.stream,
-    })
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'retry')) patch.retry = payload.retry
+    upsertEbRoleRunCard(state, patch)
     scheduleRender()
     return true
   }
@@ -183,7 +185,7 @@ export function createEbRunEventConsumer(deps: {
     if (isTerminalEbRunStatus(payload.status)) {
       removeEbRoleRunCard(state, runId)
     } else {
-      upsertEbRoleRunCard(state, {
+      const patch: any = {
         runId,
         roleId,
         sessionId,
@@ -193,7 +195,9 @@ export function createEbRunEventConsumer(deps: {
         dependencyMessageIds: Array.isArray(payload?.dependencyMessageIds) ? payload.dependencyMessageIds : [],
         status: String(payload.status || 'running').trim() || 'running',
         stream: !!payload.stream,
-      })
+      }
+      if (Object.prototype.hasOwnProperty.call(payload, 'retry')) patch.retry = payload.retry
+      upsertEbRoleRunCard(state, patch)
     }
     chat.updatedAt = Math.max(Number(chat.updatedAt || 0), eventTime)
     const branch = ensureChatBranch(chat, branchId)
@@ -235,7 +239,7 @@ export function createEbRunEventConsumer(deps: {
     if (!event) return false
     const type = String(event.type || '').trim()
     if (type === 'assistant_message_update') return applyAssistantMessageUpdate(event.payload)
-    if (type === 'run_started' || type === 'run_completed' || type === 'run_cancelled' || type === 'run_failed') return applyRunStateEvent(event.payload, event.runId)
+    if (type === 'run_started' || type === 'run_retrying' || type === 'run_completed' || type === 'run_cancelled' || type === 'run_failed') return applyRunStateEvent(event.payload, event.runId)
     return false
   }
 

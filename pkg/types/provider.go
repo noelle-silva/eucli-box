@@ -162,12 +162,3 @@ type ModelStreamEvent struct {
 }
 
 type ModelStreamHandler func(event ModelStreamEvent) error
-
-type CallRecord struct {
-	ID         string    `json:"id"`
-	ProviderID string    `json:"providerId"`
-	ModelID    string    `json:"modelId"`
-	Success    bool      `json:"success"`
-	ErrorCode  string    `json:"errorCode,omitempty"`
-	CreatedAt  time.Time `json:"createdAt"`
-}

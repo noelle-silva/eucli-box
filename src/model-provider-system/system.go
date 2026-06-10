@@ -39,7 +39,6 @@ type StorageSystem interface {
 	SaveModelRequestConfig(ctx context.Context, config types.ModelRequestConfig) (types.ModelRequestConfig, error)
 	LoadModelGroups(ctx context.Context) ([]types.ModelGroup, error)
 	SaveModelGroups(ctx context.Context, groups []types.ModelGroup) ([]types.ModelGroup, error)
-	SaveCallRecord(ctx context.Context, record types.CallRecord) error
 }
 
 type Config struct {

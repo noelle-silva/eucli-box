@@ -1061,7 +1061,6 @@ func (f *fakeNetwork) DoStream(ctx context.Context, req types.HTTPRequest, onChu
 type fakeProviderStorage struct {
 	providers          map[string]types.Provider
 	modelGroups        []types.ModelGroup
-	callRecords        []types.CallRecord
 	modelRequestConfig types.ModelRequestConfig
 }
 
@@ -1118,11 +1117,6 @@ func (f *fakeProviderStorage) LoadModelGroups(ctx context.Context) ([]types.Mode
 func (f *fakeProviderStorage) SaveModelGroups(ctx context.Context, groups []types.ModelGroup) ([]types.ModelGroup, error) {
 	f.modelGroups = groups
 	return f.modelGroups, nil
-}
-
-func (f *fakeProviderStorage) SaveCallRecord(ctx context.Context, record types.CallRecord) error {
-	f.callRecords = append(f.callRecords, record)
-	return nil
 }
 
 func assertAppErrorCode(t *testing.T, err error, code string) {

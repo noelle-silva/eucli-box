@@ -66,8 +66,6 @@ type System interface {
 	LoadModelGroups(ctx context.Context) ([]types.ModelGroup, error)
 	SaveModelGroups(ctx context.Context, groups []types.ModelGroup) ([]types.ModelGroup, error)
 
-	SaveCallRecord(ctx context.Context, record types.CallRecord) error
-
 	RebuildIndexes(ctx context.Context) error
 }
 

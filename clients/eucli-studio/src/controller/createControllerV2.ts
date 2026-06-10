@@ -43,14 +43,6 @@ import type { DraftFileKind, DraftFileItem, DraftImageItem } from '../domain/dra
 import { validateStickerCategoryName, validateStickerName } from '../domain/stickerValidator'
 import { favoriteChatRefKey, normalizeFavorites, collectFavoriteFolderSubtreeIds } from '../domain/favorites'
 import {
-  limitHistory,
-  looksLikeImageDataUrl,
-  escapeFence,
-  extractMermaidCodeFromAiReply,
-  tokenizeFencesForReplace,
-  replaceMermaidFenceOnce,
-} from '../domain/textProcessing'
-import {
   normalizeSplitMeta,
   normalizeData,
   normalizeRenderSafetyPolicy,
@@ -487,7 +479,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   // ============================================================
   // 6.1. UI RUNTIME CACHES
   // ============================================================
-  const uiStreamCache = new Map<string, any>()
   const uiRefImgCache = new Map<string, string>()
   const uiRefImgPending = new Set<string>()
 
@@ -730,17 +721,9 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   const mermaidUi = createMermaidUi({
     getState: () => state,
     assistantRenderer,
-    save,
     emit,
-    loadSplitMeta: loadSplitMetaCached,
-    storage,
-    aiGenerateChatTitle: undefined, // filled later
-    locateMessageInActiveChat,
-    getStickerRelPath,
-    uiStreamCache,
   })
   const {
-    renderAssistantInto: _mermaidRenderAssistantInto,
     mermaidItemsFromDom,
     applyMermaidScaleDom,
     renderMermaidModalDom,
@@ -748,8 +731,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     cancelMermaidDrag: mermaidCancelDrag,
     onMouseMoveMermaid: mermaidMouseMove,
     onMouseUpMermaid: mermaidMouseUp,
-    enqueueMermaidFixWrite,
-    patchMessageContentSilent,
   } = mermaidUi
 
   // ============================================================
@@ -907,8 +888,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     cancelMermaidDrag: mermaidCancelDrag,
     onMouseMoveMermaid: mermaidMouseMove,
     onMouseUpMermaid: mermaidMouseUp,
-    enqueueMermaidFixWrite,
-    patchMessageContentSilent,
     activeRole,
     activeChat,
     activeGroup,
@@ -1632,30 +1611,29 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     aiFixMermaid: (messageId: any, mermaidSrc: any, renderErrorMsg: any) => {
       let t0 = 0
       const cost = () => ((now() - t0) / 1000).toFixed(1)
+      let roleId = ''
+      let sessionId = ''
+      let mid = ''
       return Promise.resolve()
         .then(() => {
-	        const located = locateMessageInActiveChat(String(messageId || ''))
-	        if (!located || String(located.kind || '') !== 'role') throw new Error('仅角色会话已接入 Mermaid AI 修复根动作')
-	        const sessionId = String(located.chat?.id || '').trim()
-	        const roleId = String(located.targetId || '').trim()
-	        const mid = String(messageId || '').trim()
-	        if (!roleId || !sessionId || !mid) throw new Error('Mermaid 修复上下文不完整')
+          const located = locateMessageInActiveChat(String(messageId || ''))
+          if (!located || String(located.kind || '') !== 'role') throw new Error('仅角色会话已接入 Mermaid AI 修复根动作')
+          sessionId = String(located.chat?.id || '').trim()
+          roleId = String(located.targetId || '').trim()
+          mid = String(messageId || '').trim()
+          if (!roleId || !sessionId || !mid) throw new Error('Mermaid 修复上下文不完整')
           t0 = now()
           api.ui?.showToast?.('AI 修复 Mermaid 中…')
-	        return aiFixMermaidInMessage(roleId, sessionId, mid, String(mermaidSrc || ''), String(renderErrorMsg || ''))
+          return aiFixMermaidInMessage(roleId, sessionId, mid, String(mermaidSrc || ''), String(renderErrorMsg || ''))
         })
         .then((fixed: any) => {
-	        const updatedContent = String((fixed as any)?.updatedContent || '').trim()
-	        const nextMermaid = String((fixed as any)?.mermaidSource || '').trim()
-	        if (updatedContent) {
-	          return patchMessageContentSilent(String(messageId || ''), updatedContent)
-	            .then(() => {
-	              api.ui?.showToast?.(`Mermaid 已修复（${cost()}s）`, { kind: 'success' })
-	              return nextMermaid || fixed
-	            })
-	        }
-          api.ui?.showToast?.(`Mermaid 已修复（${cost()}s）`, { kind: 'success' })
-          return fixed
+          const nextMermaid = String((fixed as any)?.mermaidSource || '').trim()
+          return reloadRoleSession(roleId, sessionId).then(() => {
+            if (!activeChatFromData()) throw new Error('Mermaid 修复已完成，但刷新最新会话失败')
+            emit()
+            api.ui?.showToast?.(`Mermaid 已修复（${cost()}s）`, { kind: 'success' })
+            return nextMermaid || fixed
+          })
         })
         .catch((e: any) => {
           const msg = String(e?.message || e || 'AI 修复 Mermaid 失败')
@@ -1973,8 +1951,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     cancelMermaidDrag: evCancelMermaidDrag,
     onMouseMoveMermaid: mermaidMouseMove,
     onMouseUpMermaid: mermaidMouseUp,
-    enqueueMermaidFixWrite,
-    patchMessageContentSilent,
     // Internal helpers exposed as actions for eventHandlers
     save: () => save(),
     render,

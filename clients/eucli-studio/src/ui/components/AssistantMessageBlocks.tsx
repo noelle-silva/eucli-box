@@ -91,6 +91,7 @@ function blockEditText(block: AssistantMessageBlock) {
 function blockCopyText(block: AssistantMessageBlock) {
   if (block.kind === 'text') return block.text
   if (block.kind === 'reasoning') return String(block.part?.text || '')
+  if (block.kind === 'tool_confirmation') return ''
   if (block.kind === 'tool_invocation') return invocationEditText(block.part)
   if (block.kind === 'tool_result') {
     const result = block.part?.result && typeof block.part.result === 'object' ? block.part.result : null

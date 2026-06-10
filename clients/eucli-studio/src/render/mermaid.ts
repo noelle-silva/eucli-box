@@ -96,8 +96,8 @@ export function createMermaidSupport(opts: { mermaidInited: BoolRef; mermaidSvgC
     if (state === 'ok') {
       btn.innerHTML = ICON_OK
       btn.setAttribute('data-state', 'ok')
-      btn.setAttribute('title', '已替换')
-      btn.setAttribute('aria-label', '已替换')
+      btn.setAttribute('title', '已刷新')
+      btn.setAttribute('aria-label', '已刷新')
       return
     }
     if (state === 'fail') {
@@ -240,16 +240,13 @@ export function createMermaidSupport(opts: { mermaidInited: BoolRef; mermaidSvgC
 
       Promise.resolve()
         .then(() => fn(messageId, src, errMsg))
-        .then((fixed: any) => {
+        .then(() => {
           try {
-            const next = String(fixed || '').trim()
-            if (next && srcEl instanceof HTMLElement) srcEl.textContent = next
             const msgEl = box?.querySelector?.('.mermaid-error-msg')
-            if (next && msgEl instanceof HTMLElement) msgEl.textContent = '已替换，正在重新渲染…'
+            if (msgEl instanceof HTMLElement) msgEl.textContent = '已修复，正在刷新…'
           } catch (_) {}
 
           setMermaidFixBtnState(btn, 'ok')
-          capabilities.ui.showToast?.('Mermaid 已替换', { kind: 'success' })
 
           try {
             if (midEl instanceof HTMLElement && messageId) {

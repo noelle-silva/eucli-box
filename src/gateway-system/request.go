@@ -48,17 +48,18 @@ func validateRunRequest(request types.RunRequest) error {
 	hasAttachments := len(request.Attachments) > 0
 	hasMessage := strings.TrimSpace(request.Message) != "" || hasAttachments
 	hasUserMessageID := strings.TrimSpace(request.UserMessageID) != ""
-	if hasMessage == hasUserMessageID {
-		return gatewayInvalid("exactly one of message or userMessageId is required", nil)
+	hasContextMessageID := strings.TrimSpace(request.ContextMessageID) != ""
+	if runInputCount(hasMessage, hasUserMessageID, hasContextMessageID) != 1 {
+		return gatewayInvalid("exactly one of message, userMessageId, or contextMessageId is required", nil)
 	}
-	if hasUserMessageID && strings.TrimSpace(request.ParentMessageID) != "" {
-		return gatewayInvalid("parentMessageId cannot be combined with userMessageId", nil)
+	if (hasUserMessageID || hasContextMessageID) && strings.TrimSpace(request.ParentMessageID) != "" {
+		return gatewayInvalid("parentMessageId cannot be combined with userMessageId or contextMessageId", nil)
 	}
-	if hasUserMessageID && hasAttachments {
-		return gatewayInvalid("attachments cannot be combined with userMessageId", nil)
+	if (hasUserMessageID || hasContextMessageID) && hasAttachments {
+		return gatewayInvalid("attachments cannot be combined with userMessageId or contextMessageId", nil)
 	}
-	if hasUserMessageID && strings.TrimSpace(request.SessionID) == "" {
-		return gatewayInvalid("sessionId is required when userMessageId is provided", nil)
+	if (hasUserMessageID || hasContextMessageID) && strings.TrimSpace(request.SessionID) == "" {
+		return gatewayInvalid("sessionId is required when userMessageId or contextMessageId is provided", nil)
 	}
 	if strings.TrimSpace(request.ParentMessageID) != "" && strings.TrimSpace(request.SessionID) == "" {
 		return gatewayInvalid("sessionId is required when parentMessageId is provided", nil)
@@ -67,6 +68,16 @@ func validateRunRequest(request types.RunRequest) error {
 		return gatewayInvalid("reasoningEffort is invalid", nil)
 	}
 	return nil
+}
+
+func runInputCount(values ...bool) int {
+	count := 0
+	for _, value := range values {
+		if value {
+			count++
+		}
+	}
+	return count
 }
 
 func validateRole(role types.Role) error {

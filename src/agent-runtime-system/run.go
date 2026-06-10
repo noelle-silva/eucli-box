@@ -117,11 +117,12 @@ func (s *system) startRun(ctx context.Context, record *runRecord, request types.
 	record.session = session
 	record.messageParent = assistantParent
 	record.anchorMessageID = assistantParent.ID
-	if strings.TrimSpace(request.UserMessageID) == "" {
+	if strings.TrimSpace(request.UserMessageID) == "" && strings.TrimSpace(request.ContextMessageID) == "" {
 		markRunInputMessage(record, assistantParent)
 	}
 	markRunDependencyMessages(record, contextSession.Messages)
-	record.forceBranchReply = shouldForceBranchReply(session, assistantParent) || s.hasActiveRunAtAnchor(record)
+	record.forceBranchReply = shouldForceRunBranchReply(session, assistantParent, request) || s.hasActiveRunAtAnchor(record)
+	record.forceNewAssistantReply = strings.TrimSpace(request.ContextMessageID) != ""
 	lastMessageID := assistantParent.ID
 	if err := s.setRunMessageIDs(record.runID, assistantParent.ID, lastMessageID); err != nil {
 		return state, types.Session{}, err
@@ -161,7 +162,7 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 		}
 		assistantOutputRecorded := shouldRecordAssistantOutput(modelResponse)
 		if assistantOutputRecorded {
-			if record.messageParent.Type != "assistant" {
+			if record.forceNewAssistantReply || record.messageParent.Type != "assistant" {
 				appendRunAssistantReply(record, modelResponse.Content)
 			} else {
 				updateRunAssistantContent(record, modelResponse.Content)
@@ -240,17 +241,18 @@ func validateRunRequest(ctx context.Context, request types.RunRequest) error {
 	hasAttachments := len(request.Attachments) > 0
 	hasMessage := strings.TrimSpace(request.Message) != "" || hasAttachments
 	hasUserMessageID := strings.TrimSpace(request.UserMessageID) != ""
-	if hasMessage == hasUserMessageID {
-		return runtimeInvalid("exactly one of message or userMessageId is required", nil)
+	hasContextMessageID := strings.TrimSpace(request.ContextMessageID) != ""
+	if runInputCount(hasMessage, hasUserMessageID, hasContextMessageID) != 1 {
+		return runtimeInvalid("exactly one of message, userMessageId, or contextMessageId is required", nil)
 	}
-	if hasUserMessageID && strings.TrimSpace(request.ParentMessageID) != "" {
-		return runtimeInvalid("parentMessageId cannot be combined with userMessageId", nil)
+	if (hasUserMessageID || hasContextMessageID) && strings.TrimSpace(request.ParentMessageID) != "" {
+		return runtimeInvalid("parentMessageId cannot be combined with userMessageId or contextMessageId", nil)
 	}
-	if hasUserMessageID && hasAttachments {
-		return runtimeInvalid("attachments cannot be combined with userMessageId", nil)
+	if (hasUserMessageID || hasContextMessageID) && hasAttachments {
+		return runtimeInvalid("attachments cannot be combined with userMessageId or contextMessageId", nil)
 	}
-	if hasUserMessageID && strings.TrimSpace(request.SessionID) == "" {
-		return runtimeInvalid("session id is required when userMessageId is provided", nil)
+	if (hasUserMessageID || hasContextMessageID) && strings.TrimSpace(request.SessionID) == "" {
+		return runtimeInvalid("session id is required when userMessageId or contextMessageId is provided", nil)
 	}
 	if strings.TrimSpace(request.ParentMessageID) != "" && strings.TrimSpace(request.SessionID) == "" {
 		return runtimeInvalid("session id is required when parentMessageId is provided", nil)
@@ -259,6 +261,16 @@ func validateRunRequest(ctx context.Context, request types.RunRequest) error {
 		return runtimeInvalid("reasoningEffort is invalid", nil)
 	}
 	return nil
+}
+
+func runInputCount(values ...bool) int {
+	count := 0
+	for _, value := range values {
+		if value {
+			count++
+		}
+	}
+	return count
 }
 
 func applyRunReasoningEffort(record *runRecord, session *types.Session) {
@@ -284,6 +296,13 @@ func applyRunReasoningEffort(record *runRecord, session *types.Session) {
 }
 
 func (s *system) prepareRunSession(ctx context.Context, session types.Session, request types.RunRequest) (types.Session, types.Session, types.Message, error) {
+	if strings.TrimSpace(request.ContextMessageID) != "" {
+		contextSession, parent, err := sessionContextThroughMessage(session, request.ContextMessageID)
+		if err != nil {
+			return session, types.Session{}, types.Message{}, err
+		}
+		return session, contextSession, parent, nil
+	}
 	if strings.TrimSpace(request.UserMessageID) == "" {
 		var err error
 		session, err = s.appendUserMessageForRun(ctx, session, request)
@@ -297,11 +316,18 @@ func (s *system) prepareRunSession(ctx context.Context, session types.Session, r
 		}
 		return session, contextSession, parent, nil
 	}
-	contextSession, parent, err := sessionContextThroughMessage(session, request.UserMessageID)
+	contextSession, parent, err := sessionContextThroughUserMessage(session, request.UserMessageID)
 	if err != nil {
 		return session, types.Session{}, types.Message{}, err
 	}
 	return session, contextSession, parent, nil
+}
+
+func shouldForceRunBranchReply(session types.Session, parent types.Message, request types.RunRequest) bool {
+	if strings.TrimSpace(request.ContextMessageID) != "" {
+		return hasAnyChild(session.Messages, parent.ID)
+	}
+	return shouldForceBranchReply(session, parent)
 }
 
 func lastSessionMessage(session types.Session) types.Message {

@@ -182,6 +182,7 @@ func appendRunAssistantReply(record *runRecord, content string) {
 	record.messageParent = lastSessionMessage(record.session)
 	record.lastMessageID = record.messageParent.ID
 	record.activeAssistantID = record.messageParent.ID
+	record.forceNewAssistantReply = false
 	markRunOwnedMessage(record, record.messageParent.ID)
 }
 
@@ -396,15 +397,12 @@ func branchIDFromMessageID(messageID string) string {
 func sessionContextThroughMessage(session types.Session, messageID string) (types.Session, types.Message, error) {
 	messageID = strings.TrimSpace(messageID)
 	if messageID == "" {
-		return types.Session{}, types.Message{}, runtimeInvalid("userMessageId is required", nil)
+		return types.Session{}, types.Message{}, runtimeInvalid("message id is required", nil)
 	}
 	byID := messagesByID(session.Messages)
 	target, ok := byID[messageID]
 	if !ok {
-		return types.Session{}, types.Message{}, runtimeNotFound("user message was not found", nil)
-	}
-	if target.Type != "user" {
-		return types.Session{}, types.Message{}, runtimeInvalid("userMessageId must reference a user message", nil)
+		return types.Session{}, types.Message{}, runtimeNotFound("message was not found", nil)
 	}
 
 	chain := []types.Message{}
@@ -435,6 +433,17 @@ func sessionContextThroughMessage(session types.Session, messageID string) (type
 	}
 	contextSession := session
 	contextSession.Messages = chain
+	return contextSession, target, nil
+}
+
+func sessionContextThroughUserMessage(session types.Session, messageID string) (types.Session, types.Message, error) {
+	contextSession, target, err := sessionContextThroughMessage(session, messageID)
+	if err != nil {
+		return types.Session{}, types.Message{}, err
+	}
+	if target.Type != "user" {
+		return types.Session{}, types.Message{}, runtimeInvalid("userMessageId must reference a user message", nil)
+	}
 	return contextSession, target, nil
 }
 

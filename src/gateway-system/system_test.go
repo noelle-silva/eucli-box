@@ -58,6 +58,20 @@ func TestStartRunRouteAcceptsUserMessageID(t *testing.T) {
 	}
 }
 
+func TestStartRunRouteAcceptsContextMessageID(t *testing.T) {
+	fakes := newGatewayFakes()
+	system := newTestGateway(t, fakes)
+	req := httptest.NewRequest(http.MethodPost, "/api/runs", strings.NewReader(`{"roleId":"developer","sessionId":"session-1","contextMessageId":"a1"}`))
+	rec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if fakes.runtime.started.ContextMessageID != "a1" || fakes.runtime.started.Message != "" || fakes.runtime.started.SessionID != "session-1" {
+		t.Fatalf("started = %#v", fakes.runtime.started)
+	}
+}
+
 func TestStartRunRouteAcceptsParentMessageID(t *testing.T) {
 	fakes := newGatewayFakes()
 	system := newTestGateway(t, fakes)

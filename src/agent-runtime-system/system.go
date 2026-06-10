@@ -77,6 +77,7 @@ type runRecord struct {
 	dependencyIDs            map[string]struct{}
 	messageSnapshots         map[string]types.Message
 	forceBranchReply         bool
+	forceNewAssistantReply   bool
 	stream                   bool
 	streamContent            string
 	streamReasoning          string

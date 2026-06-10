@@ -33,7 +33,7 @@ export function isTerminalRunStatus(status: unknown) {
   return value === 'completed' || value === 'failed' || value === 'cancelled' || value === 'canceled'
 }
 
-export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: string; sessionId?: string; message?: string; attachments?: any[]; parentMessageId?: string; userMessageId?: string; stream?: boolean; reasoningEffort?: string }) {
+export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: string; sessionId?: string; message?: string; attachments?: any[]; parentMessageId?: string; userMessageId?: string; contextMessageId?: string; stream?: boolean; reasoningEffort?: string }) {
   const body = {
     roleId: String(input.roleId || '').trim(),
     sessionId: String(input.sessionId || '').trim(),
@@ -41,6 +41,7 @@ export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: st
     attachments: Array.isArray(input.attachments) ? input.attachments : [],
     parentMessageId: String(input.parentMessageId || '').trim(),
     userMessageId: String(input.userMessageId || '').trim(),
+    contextMessageId: String(input.contextMessageId || '').trim(),
     reasoningEffort: String(input.reasoningEffort || '').trim(),
     stream: !!input.stream,
   }
@@ -48,13 +49,15 @@ export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: st
   const hasAttachments = body.attachments.length > 0
   const hasMessage = !!body.message || hasAttachments
   const hasUserMessageId = !!body.userMessageId
-  if (hasMessage === hasUserMessageId) throw new Error('必须且只能指定输入内容或用户消息')
-  if (body.parentMessageId && hasUserMessageId) throw new Error('父消息和用户消息不能同时指定')
-  if (hasUserMessageId && hasAttachments) throw new Error('从已有用户消息继续生成时不能携带新附件')
+  const hasContextMessageId = !!body.contextMessageId
+  if ([hasMessage, hasUserMessageId, hasContextMessageId].filter(Boolean).length !== 1) throw new Error('必须且只能指定输入内容、用户消息或上下文消息')
+  if (body.parentMessageId && (hasUserMessageId || hasContextMessageId)) throw new Error('父消息不能和用户消息或上下文消息同时指定')
+  if ((hasUserMessageId || hasContextMessageId) && hasAttachments) throw new Error('从已有消息继续生成时不能携带新附件')
   if (body.parentMessageId && !body.sessionId) throw new Error('会话无效')
-  if (hasUserMessageId && !body.sessionId) throw new Error('会话无效')
+  if ((hasUserMessageId || hasContextMessageId) && !body.sessionId) throw new Error('会话无效')
   if (!body.parentMessageId) delete (body as any).parentMessageId
   if (!body.userMessageId) delete (body as any).userMessageId
+  if (!body.contextMessageId) delete (body as any).contextMessageId
   if (!body.message) delete (body as any).message
   if (!body.attachments.length) delete (body as any).attachments
   if (!body.sessionId) delete (body as any).sessionId

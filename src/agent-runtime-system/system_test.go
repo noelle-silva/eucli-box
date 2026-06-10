@@ -409,6 +409,84 @@ func TestStartRunFromUserMessageUsesOnlyParentChainContext(t *testing.T) {
 	}
 }
 
+func TestStartRunFromContextUserMessageAppendsAssistantSibling(t *testing.T) {
+	fakes := newRuntimeFakes()
+	now := time.Now().UTC()
+	fakes.storage.sessions["developer/session-1"] = types.Session{
+		ID:        "session-1",
+		RoleID:    "developer",
+		Title:     "Regenerate User Context",
+		Status:    string(types.RunStatusCompleted),
+		CreatedAt: now,
+		UpdatedAt: now,
+		Messages: []types.Message{
+			{ID: "u1", Type: "user", Content: "question", BranchID: "main", CreatedAt: now, UpdatedAt: now},
+			{ID: "a1", Type: "assistant", Content: "old answer", ParentMessageID: "u1", BranchID: "main", CreatedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second)},
+		},
+		LastActive: now.Add(time.Second),
+	}
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "regenerated"}}
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", ContextMessageID: "u1"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	assertPromptMessageIDs(t, fakes.provider.lastPromptMessageIDs(), []string{"u1"})
+	session := fakes.storage.sessions["developer/session-1"]
+	last := session.Messages[len(session.Messages)-1]
+	if last.Type != "assistant" || last.Content != "regenerated" || last.ParentMessageID != "u1" {
+		t.Fatalf("last message = %#v", last)
+	}
+	if last.BranchID == "" || last.BranchID == "main" {
+		t.Fatalf("last branch id = %q", last.BranchID)
+	}
+}
+
+func TestStartRunFromContextMessageAppendsAssistantSibling(t *testing.T) {
+	fakes := newRuntimeFakes()
+	now := time.Now().UTC()
+	fakes.storage.sessions["developer/session-1"] = types.Session{
+		ID:        "session-1",
+		RoleID:    "developer",
+		Title:     "Regenerate",
+		Status:    string(types.RunStatusCompleted),
+		CreatedAt: now,
+		UpdatedAt: now,
+		Messages: []types.Message{
+			{ID: "u1", Type: "user", Content: "question", BranchID: "main", CreatedAt: now, UpdatedAt: now},
+			{ID: "a1", Type: "assistant", Content: "tool result answer", ParentMessageID: "u1", BranchID: "main", CreatedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second)},
+			{ID: "u2", Type: "user", Content: "follow up", ParentMessageID: "a1", BranchID: "main", CreatedAt: now.Add(2 * time.Second), UpdatedAt: now.Add(2 * time.Second)},
+		},
+		LastActive: now.Add(2 * time.Second),
+	}
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "regenerated"}}
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", ContextMessageID: "a1"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	assertPromptMessageIDs(t, fakes.provider.lastPromptMessageIDs(), []string{"u1", "a1"})
+	session := fakes.storage.sessions["developer/session-1"]
+	if session.Messages[1].Content != "tool result answer" {
+		t.Fatalf("original assistant was changed: %#v", session.Messages[1])
+	}
+	last := session.Messages[len(session.Messages)-1]
+	if last.Type != "assistant" || last.Content != "regenerated" || last.ParentMessageID != "a1" {
+		t.Fatalf("last message = %#v", last)
+	}
+	if last.BranchID == "" || last.BranchID == "main" {
+		t.Fatalf("last branch id = %q", last.BranchID)
+	}
+}
+
 func TestStartRunWithParentMessageIDAppendsUserAtSelectedMessage(t *testing.T) {
 	fakes := newRuntimeFakes()
 	now := time.Now().UTC()

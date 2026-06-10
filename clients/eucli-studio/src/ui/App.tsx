@@ -3154,7 +3154,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     const message = chatAllById.get(mid) || null
     const parentMid = String((message as any)?.parentMid || '').trim()
     const parent = parentMid ? chatAllById.get(parentMid) || null : null
-    return parent && String((parent as any)?.role || '') === 'user' ? parentMid : ''
+    return parent ? parentMid : ''
   })
 
   const openDeleteMessageConfirm = useEvent((mid: string, role: 'assistant' | 'user') => {
@@ -4227,7 +4227,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                 <DialogTitle>确认重新回复？</DialogTitle>
                 <DialogContent>
                   <Typography variant="body2" color="text.secondary">
-                    {regen.role === 'assistant' ? '这会基于同一条用户消息生成一个新的 AI 回复版本。' : '这会基于该用户消息生成一条新的 AI 回复。'}
+                    {regen.role === 'assistant' ? '这会基于该回复之前的上下文生成一个新的 AI 回复版本。' : '这会基于该用户消息生成一条新的 AI 回复。'}
                   </Typography>
                 </DialogContent>
                 <DialogActions>

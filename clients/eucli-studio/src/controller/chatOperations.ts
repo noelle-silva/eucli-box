@@ -80,14 +80,15 @@ export function createChatOperations(deps: {
   const cancelledRunIds = new Set<string>()
   const startingRoleRunKeys = new Set<string>()
 
-  function roleRunStartKey(input: { roleId: string; sessionId?: string; parentMessageId?: string; userMessageId?: string; message?: string; reasoningEffort?: string }) {
+  function roleRunStartKey(input: { roleId: string; sessionId?: string; parentMessageId?: string; userMessageId?: string; contextMessageId?: string; message?: string; reasoningEffort?: string }) {
     const roleId = String(input.roleId || '').trim()
     const sessionId = String(input.sessionId || '').trim()
     const parentMessageId = String(input.parentMessageId || '').trim()
     const userMessageId = String(input.userMessageId || '').trim()
+    const contextMessageId = String(input.contextMessageId || '').trim()
     const message = String(input.message || '').trim()
     const reasoningEffort = String(input.reasoningEffort || '').trim()
-    return [roleId, sessionId, userMessageId ? `user:${userMessageId}` : `parent:${parentMessageId}`, message, reasoningEffort].join('\n')
+    return [roleId, sessionId, contextMessageId ? `context:${contextMessageId}` : userMessageId ? `user:${userMessageId}` : `parent:${parentMessageId}`, message, reasoningEffort].join('\n')
   }
 
   function findActiveRunAtMessage(roleId: string, sessionId: string, messageId: string) {
@@ -279,7 +280,7 @@ export function createChatOperations(deps: {
   }
 
   async function runRoleMessageViaEb(
-    input: { roleId: string; sessionId: string; message?: string; attachments?: any[]; parentMessageId?: string; userMessageId?: string; stream?: boolean; reasoningEffort?: string },
+    input: { roleId: string; sessionId: string; message?: string; attachments?: any[]; parentMessageId?: string; userMessageId?: string; contextMessageId?: string; stream?: boolean; reasoningEffort?: string },
     onAccepted?: (run: EbRunState) => void,
     follow?: { previousMessageIds: Set<string>; ancestorMessageId?: string },
     onState?: (run: EbRunState) => void,
@@ -304,7 +305,7 @@ export function createChatOperations(deps: {
     onAccepted?.(state)
     let sessionId = String(state.sessionId || input.sessionId || '').trim()
     let followMessageId = String(state.lastMessageId || '').trim()
-    const runAnchorMessageId = String(follow?.ancestorMessageId || input.userMessageId || input.parentMessageId || '').trim()
+    const runAnchorMessageId = String(follow?.ancestorMessageId || input.contextMessageId || input.userMessageId || input.parentMessageId || '').trim()
     const dependencyMessageIds = dependencyMessageIdsForRunStart(sa.activeChatFromData(), runAnchorMessageId)
     syncEbRoleRunCard(state, { roleId: input.roleId, sessionId, lastMessageId: followMessageId, anchorMessageId: runAnchorMessageId, dependencyMessageIds, startedFromPending, pendingChatId: startedFromPendingChatId })
     onState?.(state)
@@ -413,6 +414,34 @@ export function createChatOperations(deps: {
     const sessionId = String(chat?.id || '').trim()
     if (!roleId || !sessionId) return null
     return { roleId, sessionId, chat }
+  }
+
+  async function runRoleFromContextMessage(input: { roleId: string; sessionId: string; contextMessageId: string }, operationText: string, opts?: ExistingMessageRunOptions) {
+    const state = getState()
+    const contextMessageId = String(input.contextMessageId || '').trim()
+    if (!contextMessageId) return false
+    const chatBeforeRun = sa.activeChatFromData()
+    const previousMessageIds = collectChatMessageIds(chatBeforeRun)
+    let acceptedRunId = ''
+    try {
+      renderComposer()
+      const reasoningEffort = chatReasoningEffort(sa.activeChatFromData())
+      await runRoleMessageViaEb({ roleId: input.roleId, sessionId: input.sessionId, contextMessageId, reasoningEffort, stream: !!state.data?.settings?.streamEnabled }, (run) => {
+        acceptedRunId = String(run?.id || '').trim()
+        syncEbRoleRunCard(run, { roleId: input.roleId, sessionId: input.sessionId, anchorMessageId: contextMessageId })
+        renderComposer()
+      }, { previousMessageIds, ancestorMessageId: contextMessageId }, (run) => opts?.onRunState?.(run))
+      return true
+    } catch (e) {
+      const msg = String((e as any)?.message || e || `${operationText}失败`)
+      if (acceptedRunId && cancelledRunIds.has(acceptedRunId)) showToast?.('已停止', { kind: 'success' })
+      else showToast?.(msg, { kind: 'error' })
+      return false
+    } finally {
+      if (acceptedRunId) finishRoleRun(acceptedRunId)
+      render()
+      scrollToBottomSoon()
+    }
   }
 
   function ensureRoleSessionMessageMutationAllowed(target: { roleId: string; sessionId: string; chat: any }, messageId: string, operation: MessageMutationOperation) {
@@ -804,10 +833,10 @@ export function createChatOperations(deps: {
     const assistant = findChatMessageById(target.chat, mid)
     if (!assistant || String((assistant as any).role || '') !== 'assistant') return showToast?.('只能重新生成 AI 消息', { kind: 'error' })
     if (!ensureRoleSessionMessageMutationAllowed(target, mid, 'edit')) return false
-    const userMessageId = String((assistant as any).parentMid || '').trim()
-    const userMessage = userMessageId ? findChatMessageById(target.chat, userMessageId) : null
-    if (!userMessage || String((userMessage as any).role || '') !== 'user') return showToast?.('未找到对应的用户消息', { kind: 'error' })
-    return runRoleFromUserMessage({ roleId: target.roleId, sessionId: target.sessionId, userMessageId }, '重新回复', opts)
+    const contextMessageId = String((assistant as any).parentMid || '').trim()
+    if (!contextMessageId) return showToast?.('未找到可用于重新回复的上文', { kind: 'error' })
+    if (!findChatMessageById(target.chat, contextMessageId)) return showToast?.('未找到可用于重新回复的上文', { kind: 'error' })
+    return runRoleFromContextMessage({ roleId: target.roleId, sessionId: target.sessionId, contextMessageId }, '重新回复', opts)
   }
 
   // ============ regenerate group assistant message ============

@@ -61,6 +61,8 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("GET /api/assist/chat-title/config", s.authWrap(s.handleLoadChatTitleNamingConfig))
 	s.mux.HandleFunc("PUT /api/assist/chat-title/config", s.authWrap(s.handleSaveChatTitleNamingConfig))
 	s.mux.HandleFunc("POST /api/assist/chat-title", s.authWrap(s.handleGenerateChatTitle))
+	s.mux.HandleFunc("GET /api/assist/context-compression/config", s.authWrap(s.handleLoadContextCompressionConfig))
+	s.mux.HandleFunc("PUT /api/assist/context-compression/config", s.authWrap(s.handleSaveContextCompressionConfig))
 
 	s.mux.HandleFunc("GET /ws/events", s.handleEventsWebSocket)
 }

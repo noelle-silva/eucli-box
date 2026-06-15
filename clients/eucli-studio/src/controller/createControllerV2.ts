@@ -30,6 +30,9 @@ import {
   DEFAULT_MERMAID_FIX_SYSTEM_PROMPT,
   DEFAULT_CHAT_TITLE_NAMING_SYSTEM_PROMPT,
   DEFAULT_STICKER_NAMING_SYSTEM_PROMPT,
+  DEFAULT_CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES,
+  CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MIN,
+  CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MAX,
 } from '../domain/constants'
 import { splitRoleKey, splitChatKey, splitGroupKey, splitGroupChatKey } from '../domain/storageKeys'
 import { normalizeBranchId } from '../domain/branching'
@@ -1440,6 +1443,40 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
       if (!state.data.settings.aiServices.stickerNaming || typeof state.data.settings.aiServices.stickerNaming !== 'object') state.data.settings.aiServices.stickerNaming = {} as any
       state.data.settings.aiServices.stickerNaming.systemPrompt = DEFAULT_STICKER_NAMING_SYSTEM_PROMPT
+      saveMeta().catch(() => {})
+      emit()
+    },
+    setContextCompressionProviderId: (providerId: any) => {
+      if (!state.data) return
+      const pid = String(providerId || '')
+      if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
+      if (!state.data.settings.aiServices.contextCompression || typeof state.data.settings.aiServices.contextCompression !== 'object') state.data.settings.aiServices.contextCompression = {} as any
+      state.data.settings.aiServices.contextCompression.providerId = pid
+      state.data.settings.aiServices.contextCompression.modelId = ''
+      state.data.settings.aiServices.contextCompression.customModelId = ''
+      saveMeta().catch(() => {})
+      emit()
+    },
+    setContextCompressionModelId: (modelId: any) => {
+      if (!state.data) return
+      const mid = String(modelId || '')
+      if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
+      if (!state.data.settings.aiServices.contextCompression || typeof state.data.settings.aiServices.contextCompression !== 'object') state.data.settings.aiServices.contextCompression = {} as any
+      state.data.settings.aiServices.contextCompression.modelId = mid
+      state.data.settings.aiServices.contextCompression.customModelId = ''
+      saveMeta().catch(() => {})
+      emit()
+    },
+    setContextCompressionRetainRecentMessages: (value: any) => {
+      if (!state.data) return
+      const count = clamp(
+        Math.round(Number(value || DEFAULT_CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES)),
+        CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MIN,
+        CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MAX,
+      )
+      if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
+      if (!state.data.settings.aiServices.contextCompression || typeof state.data.settings.aiServices.contextCompression !== 'object') state.data.settings.aiServices.contextCompression = {} as any
+      state.data.settings.aiServices.contextCompression.retainRecentMessages = count
       saveMeta().catch(() => {})
       emit()
     },

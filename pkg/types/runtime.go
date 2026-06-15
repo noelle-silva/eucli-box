@@ -13,6 +13,7 @@ type Message struct {
 	ID              string              `json:"id"`
 	Type            string              `json:"type"`
 	Content         string              `json:"content"`
+	Control         *MessageControl     `json:"control,omitempty"`
 	Error           *ErrorPayload       `json:"error,omitempty"`
 	Parts           []MessagePart       `json:"parts,omitempty"`
 	Attachments     []MessageAttachment `json:"attachments,omitempty"`
@@ -24,6 +25,24 @@ type Message struct {
 	TokenEstimate   int                 `json:"tokenEstimate,omitempty"`
 	CreatedAt       time.Time           `json:"createdAt"`
 	UpdatedAt       time.Time           `json:"updatedAt"`
+}
+
+const (
+	MessageTypeSystemControl = "system_control"
+
+	MessageControlKindCompressionBoundary = "compression_boundary"
+	MessageControlKindCompressionSummary  = "compression_summary"
+)
+
+type MessageControl struct {
+	Kind                     string `json:"kind"`
+	CommandName              string `json:"commandName,omitempty"`
+	Source                   string `json:"source,omitempty"`
+	SourceText               string `json:"sourceText,omitempty"`
+	RetainRecentMessages     int    `json:"retainRecentMessages,omitempty"`
+	PreviousSummaryMessageID string `json:"previousSummaryMessageId,omitempty"`
+	CompressedUntilMessageID string `json:"compressedUntilMessageId,omitempty"`
+	SummaryVersion           int    `json:"summaryVersion,omitempty"`
 }
 
 type ErrorPayload struct {

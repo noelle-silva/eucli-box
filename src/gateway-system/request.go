@@ -52,6 +52,9 @@ func validateRunRequest(request types.RunRequest) error {
 	if runInputCount(hasMessage, hasUserMessageID, hasContextMessageID) != 1 {
 		return gatewayInvalid("exactly one of message, userMessageId, or contextMessageId is required", nil)
 	}
+	if err := validateRunSlashCommand(request); err != nil {
+		return err
+	}
 	if (hasUserMessageID || hasContextMessageID) && strings.TrimSpace(request.ParentMessageID) != "" {
 		return gatewayInvalid("parentMessageId cannot be combined with userMessageId or contextMessageId", nil)
 	}
@@ -73,6 +76,38 @@ func validateRunRequest(request types.RunRequest) error {
 		}
 	}
 	return nil
+}
+
+func validateRunSlashCommand(request types.RunRequest) error {
+	command, hasCommand, err := parseRunSlashCommand(request.Message)
+	if err != nil {
+		return gatewayInvalid(err.Error(), err)
+	}
+	if !hasCommand {
+		return nil
+	}
+	if command != "/compact" {
+		return gatewayInvalid("unknown slash command", nil)
+	}
+	if len(request.Attachments) > 0 {
+		return gatewayInvalid("/compact does not accept attachments", nil)
+	}
+	return nil
+}
+
+func parseRunSlashCommand(message string) (string, bool, error) {
+	text := strings.TrimLeft(message, " \t\r\n")
+	if !strings.HasPrefix(text, "/") {
+		return "", false, nil
+	}
+	fields := strings.Fields(text)
+	if len(fields) == 0 {
+		return "", false, nil
+	}
+	if len(fields) > 1 {
+		return fields[0], true, gatewayInvalid("slash command arguments are not supported", nil)
+	}
+	return fields[0], true, nil
 }
 
 func modelOverrideFromRunRequest(request types.RunRequest) types.ModelCoordinate {

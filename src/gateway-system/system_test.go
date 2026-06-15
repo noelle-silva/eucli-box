@@ -732,11 +732,12 @@ func (f *fakeGatewayTools) SaveToolUserConfig(ctx context.Context, toolID string
 }
 
 type fakeGatewayStickers struct {
-	categories map[string]map[string]types.StickerItem
-	images     map[string]string
-	config     types.StickerNamingConfig
-	mermaid    types.MermaidFixConfig
-	title      types.ChatTitleNamingConfig
+	categories        map[string]map[string]types.StickerItem
+	images            map[string]string
+	config            types.StickerNamingConfig
+	mermaid           types.MermaidFixConfig
+	title             types.ChatTitleNamingConfig
+	compressionConfig types.ContextCompressionConfig
 }
 
 func newFakeGatewayStickers() *fakeGatewayStickers {
@@ -747,6 +748,12 @@ func newFakeGatewayStickers() *fakeGatewayStickers {
 		config:     types.StickerNamingConfig{Enabled: true, Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, SystemPrompt: types.DefaultStickerNamingSystemPrompt, Temperature: 0.2, UpdatedAt: now},
 		mermaid:    types.MermaidFixConfig{Enabled: true, Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, SystemPrompt: types.DefaultMermaidFixSystemPrompt, Temperature: 0.2, UpdatedAt: now},
 		title:      types.ChatTitleNamingConfig{Enabled: true, Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, SystemPrompt: types.DefaultChatTitleNamingSystemPrompt, Temperature: 0.2, UpdatedAt: now},
+		compressionConfig: types.ContextCompressionConfig{
+			Coordinate:           types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"},
+			RetainRecentMessages: types.DefaultContextCompressionRetainRecentMessages,
+			Temperature:          0.2,
+			UpdatedAt:            now,
+		},
 	}
 }
 
@@ -850,6 +857,15 @@ func (f *fakeGatewayStickers) LoadChatTitleNamingConfig(ctx context.Context) (ty
 func (f *fakeGatewayStickers) SaveChatTitleNamingConfig(ctx context.Context, config types.ChatTitleNamingConfig) (types.ChatTitleNamingConfig, error) {
 	f.title = config
 	return f.title, nil
+}
+
+func (f *fakeGatewayStickers) LoadContextCompressionConfig(ctx context.Context) (types.ContextCompressionConfig, error) {
+	return f.compressionConfig, nil
+}
+
+func (f *fakeGatewayStickers) SaveContextCompressionConfig(ctx context.Context, config types.ContextCompressionConfig) (types.ContextCompressionConfig, error) {
+	f.compressionConfig = config
+	return f.compressionConfig, nil
 }
 
 type fakeGatewayAssist struct{ stickers *fakeGatewayStickers }

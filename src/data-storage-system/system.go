@@ -61,6 +61,8 @@ type System interface {
 	SaveMermaidFixConfig(ctx context.Context, config types.MermaidFixConfig) (types.MermaidFixConfig, error)
 	LoadChatTitleNamingConfig(ctx context.Context) (types.ChatTitleNamingConfig, error)
 	SaveChatTitleNamingConfig(ctx context.Context, config types.ChatTitleNamingConfig) (types.ChatTitleNamingConfig, error)
+	LoadContextCompressionConfig(ctx context.Context) (types.ContextCompressionConfig, error)
+	SaveContextCompressionConfig(ctx context.Context, config types.ContextCompressionConfig) (types.ContextCompressionConfig, error)
 	LoadModelRequestConfig(ctx context.Context) (types.ModelRequestConfig, error)
 	SaveModelRequestConfig(ctx context.Context, config types.ModelRequestConfig) (types.ModelRequestConfig, error)
 	LoadModelGroups(ctx context.Context) ([]types.ModelGroup, error)

@@ -231,6 +231,7 @@ func (p *projectionService) saveAssistConfigs(ctx context.Context, settings map[
 		{config: objectMap(services["stickerNaming"]), path: "/api/assist/stickers/name/config"},
 		{config: objectMap(services["mermaidFix"]), path: "/api/assist/mermaid-fix/config"},
 		{config: objectMap(services["chatTitleNaming"]), path: "/api/assist/chat-title/config"},
+		{config: objectMap(services["contextCompression"]), path: "/api/assist/context-compression/config"},
 	}
 	for _, req := range requests {
 		if len(req.config) == 0 {
@@ -238,7 +239,11 @@ func (p *projectionService) saveAssistConfigs(ctx context.Context, settings map[
 		}
 		providerID := stringField(req.config, "providerId")
 		modelID := stringField(req.config, "modelId")
-		if _, err := p.eb.request(ctx, ebRequest{Method: "PUT", Path: req.path, Body: mustJSON(map[string]any{"enabled": boolField(req.config, "enabled", false), "modelPick": modelID, "coordinate": map[string]any{"providerId": providerID, "modelId": modelID}, "systemPrompt": stringField(req.config, "systemPrompt"), "temperature": 0.2})}); err != nil {
+		body := map[string]any{"enabled": boolField(req.config, "enabled", false), "modelPick": modelID, "coordinate": map[string]any{"providerId": providerID, "modelId": modelID}, "systemPrompt": stringField(req.config, "systemPrompt"), "temperature": 0.2}
+		if req.path == "/api/assist/context-compression/config" {
+			body = map[string]any{"modelPick": modelID, "coordinate": map[string]any{"providerId": providerID, "modelId": modelID}, "retainRecentMessages": intField(req.config, "retainRecentMessages", 15), "temperature": 0.2}
+		}
+		if _, err := p.eb.request(ctx, ebRequest{Method: "PUT", Path: req.path, Body: mustJSON(body)}); err != nil {
 			return err
 		}
 	}
@@ -254,9 +259,10 @@ var derivedProjectionSettingKeys = map[string]struct{}{
 }
 
 var assistProjectionSettingKeys = map[string]struct{}{
-	"stickerNaming":   {},
-	"mermaidFix":      {},
-	"chatTitleNaming": {},
+	"stickerNaming":      {},
+	"mermaidFix":         {},
+	"chatTitleNaming":    {},
+	"contextCompression": {},
 }
 
 func mergeProjectionSettingsForMetaSave(existing map[string]any, incoming map[string]any) map[string]any {
@@ -364,10 +370,12 @@ func (p *projectionService) loadAssistConfig(ctx context.Context, path string) (
 		modelID = modelPick
 	}
 	return map[string]any{
-		"enabled":      boolField(config, "enabled", false),
-		"providerId":   stringField(objectMap(config["coordinate"]), "providerId"),
-		"modelId":      modelID,
-		"systemPrompt": stringField(config, "systemPrompt"),
+		"enabled":              boolField(config, "enabled", false),
+		"providerId":           stringField(objectMap(config["coordinate"]), "providerId"),
+		"modelId":              modelID,
+		"systemPrompt":         stringField(config, "systemPrompt"),
+		"retainRecentMessages": intField(config, "retainRecentMessages", 15),
+		"updatedAt":            millisFromAnyOrZero(config["updatedAt"]),
 	}, nil
 }
 
@@ -389,6 +397,10 @@ func (p *projectionService) meta(ctx context.Context) (any, error) {
 		return nil, err
 	}
 	stickerNaming, err := p.loadAssistConfig(ctx, "/api/assist/stickers/name/config")
+	if err != nil {
+		return nil, err
+	}
+	contextCompression, err := p.loadAssistConfig(ctx, "/api/assist/context-compression/config")
 	if err != nil {
 		return nil, err
 	}
@@ -445,13 +457,13 @@ func (p *projectionService) meta(ctx context.Context) (any, error) {
 		modelGroupFolders[id] = folderFor(projection.ModelGroupFolders, id, stringField(group, "name"), "模型组")
 		updatedAt = stableUpdatedAt(updatedAt, millisFromAnyOrZero(group["updatedAt"]), millisFromAnyOrZero(group["createdAt"]))
 	}
-	updatedAt = stableUpdatedAt(updatedAt, millisFromAnyOrZero(mermaidFix["updatedAt"]), millisFromAnyOrZero(chatTitleNaming["updatedAt"]), millisFromAnyOrZero(stickerNaming["updatedAt"]))
+	updatedAt = stableUpdatedAt(updatedAt, millisFromAnyOrZero(mermaidFix["updatedAt"]), millisFromAnyOrZero(chatTitleNaming["updatedAt"]), millisFromAnyOrZero(stickerNaming["updatedAt"]), millisFromAnyOrZero(contextCompression["updatedAt"]))
 	return map[string]any{
 		"schemaVersion":     splitSchemaVersion,
 		"dataVersion":       uiVersion,
 		"updatedAt":         updatedAt,
 		"ui":                projection.UI,
-		"settings":          mergeSettings(projection.Settings, providers, mermaidFix, chatTitleNaming, stickerNaming),
+		"settings":          mergeSettings(projection.Settings, providers, mermaidFix, chatTitleNaming, stickerNaming, contextCompression),
 		"roleOrder":         roleOrder,
 		"roleFolders":       roleFolders,
 		"chatIndexByRole":   chatIndexByRole,
@@ -926,6 +938,9 @@ func toUIChat(session map[string]any) map[string]any {
 			updatedAt = createdAt
 		}
 		uiMessage := map[string]any{"id": stringField(msg, "id"), "type": messageStorageType(msg), "role": messageRole(msg), "content": stringField(msg, "content"), "parentMid": stringField(msg, "parentMessageId"), "branchId": fallback(stringField(msg, "branchId"), "main"), "createdAt": createdAt, "updatedAt": updatedAt}
+		if control := objectMap(msg["control"]); stringField(control, "kind") != "" {
+			uiMessage["control"] = control
+		}
 		if tokenEstimate := intField(msg, "tokenEstimate", 0); tokenEstimate > 0 {
 			uiMessage["tokenEstimate"] = tokenEstimate
 		}
@@ -1053,6 +1068,9 @@ func fromUIChat(value any, roleID string) map[string]any {
 	messages := []any{}
 	for _, msg := range objectList(chat["messages"]) {
 		message := map[string]any{"id": stringField(msg, "id"), "type": messageStorageType(msg), "content": stringField(msg, "content"), "parentMessageId": stringField(msg, "parentMid"), "branchId": fallback(stringField(msg, "branchId"), "main"), "createdAt": timeFromMillis(msg["createdAt"]), "updatedAt": timeFromMillis(msg["updatedAt"])}
+		if control := objectMap(msg["control"]); stringField(control, "kind") != "" {
+			message["control"] = control
+		}
 		if tokenEstimate := intField(msg, "tokenEstimate", 0); tokenEstimate > 0 {
 			message["tokenEstimate"] = tokenEstimate
 		}
@@ -1154,7 +1172,7 @@ func fromUIMessageAttachments(files []map[string]any, images []string) []any {
 	return attachments
 }
 
-func mergeSettings(settings map[string]any, providers []map[string]any, mermaidFix map[string]any, chatTitleNaming map[string]any, stickerNaming map[string]any) map[string]any {
+func mergeSettings(settings map[string]any, providers []map[string]any, mermaidFix map[string]any, chatTitleNaming map[string]any, stickerNaming map[string]any, contextCompression map[string]any) map[string]any {
 	out := map[string]any{"streamEnabled": true, "transparentChatBg": false, "chatBgOpacity": 0, "chatBgBlur": 0, "topbarOpacity": 100, "topbarBlur": 0, "composerOpacity": 86, "composerBlur": 10, "branchTree": map[string]any{"dir": "lr", "view": "float", "followSelected": true, "modalHotkey": ""}, "renderSafetyPolicy": "original", "userMessageCollapseEnabled": false, "userMessageCollapseLines": 8, "attachments": map[string]any{"sendLimitChars": 80000, "maxFileSizeMbByKind": map[string]any{"txt": 10, "md": 10, "pdf": 10, "docx": 10, "ppt": 10}}, "stickers": map[string]any{"enabled": false, "categories": []any{}, "map": map[string]any{}}, "providers": []any{}}
 	for k, v := range settings {
 		out[k] = v
@@ -1168,6 +1186,7 @@ func mergeSettings(settings map[string]any, providers []map[string]any, mermaidF
 	aiServices["mermaidFix"] = mermaidFix
 	aiServices["chatTitleNaming"] = chatTitleNaming
 	aiServices["stickerNaming"] = stickerNaming
+	aiServices["contextCompression"] = contextCompression
 	out["aiServices"] = aiServices
 	return out
 }
@@ -1395,6 +1414,8 @@ func promptText(prompts []map[string]any) string {
 
 func messageRole(message map[string]any) string {
 	switch messageStorageType(message) {
+	case "system_control":
+		return "system"
 	case "assistant", "tool", "tool_request", "tool_confirmation":
 		return "assistant"
 	}
@@ -1407,7 +1428,7 @@ func messageStorageType(message map[string]any) string {
 		messageType = stringField(message, "role")
 	}
 	switch messageType {
-	case "assistant", "tool", "tool_request", "tool_confirmation", "failure":
+	case "assistant", "tool", "tool_request", "tool_confirmation", "failure", "system_control":
 		return messageType
 	default:
 		return "user"

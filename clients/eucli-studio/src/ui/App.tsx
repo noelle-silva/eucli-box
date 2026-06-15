@@ -102,6 +102,12 @@ import { ChatMessageList } from './components/ChatMessageList'
 import { StickerInlineImage } from './components/MessageMedia'
 import type { AiChatToastOptions } from '../gateway/capabilities'
 import { REASONING_EFFORT_OPTIONS, chatReasoningEffort, effectiveReasoningEffort, modelReasoningProfileFromModelRef, reasoningEffortLabel } from '../domain/reasoning'
+import {
+  DEFAULT_CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES,
+  CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MIN,
+  CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MAX,
+} from '../domain/constants'
+import { isSystemControlMessage } from '../domain/message'
 
 type SettingsTab = SettingsTabValue
 
@@ -128,6 +134,8 @@ type SendPathAnchor = {
   existingMessageIds: string[]
   nonce: number
 }
+
+type ChatTreeNodeRole = 'user' | 'assistant' | 'system'
 
 function emptySendPathAnchor(): SendPathAnchor {
   return { chatId: '', branchId: '', parentMid: '', runId: '', inputMessageId: '', lastMessageId: '', existingMessageIds: [], nonce: 0 }
@@ -175,6 +183,57 @@ function snippetText(raw: any, maxLen = 26) {
   const one = s.replace(/\s+/g, ' ').trim()
   if (one.length <= maxLen) return one
   return one.slice(0, Math.max(0, maxLen - 1)).trimEnd() + '…'
+}
+
+function normalizeChatTreeNodeRole(role: unknown): ChatTreeNodeRole {
+  const value = String(role || '').trim()
+  if (value === 'assistant') return 'assistant'
+  if (value === 'system') return 'system'
+  return 'user'
+}
+
+function ChatTreeNodeShape(props: { role: ChatTreeNodeRole; text: string; isSelected: boolean; w: number; h: number; clipId: string }) {
+  const { role, text, isSelected, w, h, clipId } = props
+  if (role === 'assistant') {
+    return (
+      <>
+        <circle cx={w / 2} cy={h / 2} r={(isSelected ? 10 : 8) + 6} fill="transparent" pointerEvents="all" />
+        {isSelected ? (
+          <>
+            <circle cx={w / 2} cy={h / 2} r={26} fill="rgba(34,197,94,.14)" style={{ filter: 'drop-shadow(0 0 20px rgba(34,197,94,.85))' }} />
+            <circle cx={w / 2} cy={h / 2} r={18} fill="rgba(34,197,94,.26)" style={{ filter: 'drop-shadow(0 0 10px rgba(34,197,94,.75))' }} />
+          </>
+        ) : null}
+        <circle cx={w / 2} cy={h / 2} r={isSelected ? 10 : 8} fill="#22c55e" />
+        <title>{text || 'AI'}</title>
+      </>
+    )
+  }
+
+  const isSystem = role === 'system'
+  const fill = isSystem ? 'rgba(124,58,237,.08)' : '#ffffff'
+  const border = isSystem ? 'rgba(124,58,237,.42)' : 'transparent'
+  const textFill = isSystem ? 'rgba(88,28,135,.92)' : 'rgba(0,0,0,.82)'
+
+  return (
+    <>
+      <defs>
+        <clipPath id={clipId}>
+          <rect x={10} y={6} width={Math.max(0, w - 20)} height={Math.max(0, h - 12)} rx={8} />
+        </clipPath>
+      </defs>
+      {isSelected ? (
+        <>
+          <rect x={-10} y={-10} width={w + 20} height={h + 20} rx={18} fill="rgba(34,197,94,.10)" style={{ filter: 'drop-shadow(0 0 22px rgba(34,197,94,.85))' }} />
+          <rect x={-4} y={-4} width={w + 8} height={h + 8} rx={14} fill="rgba(34,197,94,.20)" style={{ filter: 'drop-shadow(0 0 12px rgba(34,197,94,.75))' }} />
+        </>
+      ) : null}
+      <rect x={0} y={0} width={w} height={h} rx={12} fill={fill} stroke={border} strokeWidth={isSystem ? 1 : 0} />
+      <text x={12} y={h / 2} fill={textFill} fontSize={12} fontWeight={isSystem ? 800 : 400} dominantBaseline="middle" clipPath={`url(#${clipId})`} style={{ pointerEvents: 'none' }}>
+        {text}
+      </text>
+    </>
+  )
 }
 
 function numericTimeValue(value: unknown) {
@@ -285,8 +344,15 @@ function buildChatTreeLayout(messagesRaw: any[], opts?: { maxNodes?: number }) {
     .map((m: any) => {
       const id = String(m?.id || '').trim()
       if (!id) return null
-      const role = m?.role === 'assistant' ? 'assistant' : 'user'
-      const content = messageVisibleText(m)
+      const role: ChatTreeNodeRole = isSystemControlMessage(m) ? 'system' : m?.role === 'assistant' ? 'assistant' : 'user'
+      const controlKind = String(m?.control?.kind || '').trim()
+      const content = role === 'system'
+        ? controlKind === 'compression_summary'
+          ? '上下文摘要'
+          : controlKind === 'compression_boundary'
+            ? '压缩边界'
+            : messageVisibleText(m) || '系统记录'
+        : messageVisibleText(m)
       const parentMid = String((m as any)?.parentMid || '').trim()
       const createdAt = Number(m?.createdAt || 0)
       const branchId = String((m as any)?.branchId || '').trim()
@@ -4512,12 +4578,10 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                             const y = Number(n?.y || 0)
                             const w = Number((treeRender as any).nodeW || 168)
                             const h = Number((treeRender as any).nodeH || 44)
-                            const role = String(n?.role || '')
+                            const role = normalizeChatTreeNodeRole(n?.role)
                             const text = String(n?.text || '')
                             const isSelected = id === String(treeFocusMid || '')
-                            const isAi = role === 'assistant'
                             const clipId = `fw-tree-clip-${svgSafeId(id)}`
-                            const nodeFill = '#ffffff'
 
                             return (
                               <g key={id} transform={`translate(${Math.round(x)},${Math.round(y)})`}>
@@ -4537,88 +4601,12 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                                     setTreePop({ id, at: Date.now() })
                                     jumpToMessage(id)
                                   }}
+                                  onContextMenu={role === 'system' ? undefined : (ev) => onTreeNodeContextMenu(ev, id, role === 'assistant' ? 'assistant' : 'user')}
                                   onPointerDown={(ev) => {
                                     ev.stopPropagation()
                                   }}
                                 >
-                                  {isAi ? (
-                                    <>
-                                      <circle
-                                        cx={w / 2}
-                                        cy={h / 2}
-                                        r={(isSelected ? 10 : 8) + 6}
-                                        fill="transparent"
-                                        pointerEvents="all"
-                                      />
-                                      {isSelected ? (
-                                        <>
-                                          <circle
-                                            cx={w / 2}
-                                            cy={h / 2}
-                                            r={26}
-                                            fill="rgba(34,197,94,.14)"
-                                            style={{ filter: 'drop-shadow(0 0 20px rgba(34,197,94,.85))' }}
-                                          />
-                                          <circle
-                                            cx={w / 2}
-                                            cy={h / 2}
-                                            r={18}
-                                            fill="rgba(34,197,94,.26)"
-                                            style={{ filter: 'drop-shadow(0 0 10px rgba(34,197,94,.75))' }}
-                                          />
-                                        </>
-                                      ) : null}
-                                      <circle
-                                        cx={w / 2}
-                                        cy={h / 2}
-                                        r={isSelected ? 10 : 8}
-                                        fill="#22c55e"
-                                      />
-                                      <title>{text || 'AI'}</title>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <defs>
-                                        <clipPath id={clipId}>
-                                          <rect x={10} y={6} width={Math.max(0, w - 20)} height={Math.max(0, h - 12)} rx={8} />
-                                        </clipPath>
-                                      </defs>
-                                      {isSelected ? (
-                                        <>
-                                          <rect
-                                            x={-10}
-                                            y={-10}
-                                            width={w + 20}
-                                            height={h + 20}
-                                            rx={18}
-                                            fill="rgba(34,197,94,.10)"
-                                            style={{ filter: 'drop-shadow(0 0 22px rgba(34,197,94,.85))' }}
-                                          />
-                                          <rect
-                                            x={-4}
-                                            y={-4}
-                                            width={w + 8}
-                                            height={h + 8}
-                                            rx={14}
-                                            fill="rgba(34,197,94,.20)"
-                                            style={{ filter: 'drop-shadow(0 0 12px rgba(34,197,94,.75))' }}
-                                          />
-                                        </>
-                                      ) : null}
-                                      <rect x={0} y={0} width={w} height={h} rx={12} fill={nodeFill} />
-                                      <text
-                                        x={12}
-                                        y={h / 2}
-                                        fill="rgba(0,0,0,.82)"
-                                        fontSize={12}
-                                        dominantBaseline="middle"
-                                        clipPath={`url(#${clipId})`}
-                                        style={{ pointerEvents: 'none' }}
-                                      >
-                                        {text}
-                                      </text>
-                                    </>
-                                  )}
+                                  <ChatTreeNodeShape role={role} text={text} isSelected={isSelected} w={w} h={h} clipId={clipId} />
                                 </g>
                               </g>
                             )
@@ -4827,10 +4815,9 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                             const y = Number(n?.y || 0)
                             const w = Number((treeRender as any).nodeW || 168)
                             const h = Number((treeRender as any).nodeH || 44)
-                            const role = String(n?.role || '')
+                            const role = normalizeChatTreeNodeRole(n?.role)
                             const text = String(n?.text || '')
                             const isSelected = id === String(treeFocusMid || '')
-                            const isAi = role === 'assistant'
                             const clipId = `fw-tree-clip-${svgSafeId(id)}`
 
                             return (
@@ -4851,80 +4838,12 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                                     setTreePop({ id, at: Date.now() })
                                     jumpToMessage(id)
                                   }}
-                                  onContextMenu={(ev) => {
-                                    onTreeNodeContextMenu(ev, id, isAi ? 'assistant' : 'user')
-                                  }}
+                                  onContextMenu={role === 'system' ? undefined : (ev) => onTreeNodeContextMenu(ev, id, role === 'assistant' ? 'assistant' : 'user')}
                                   onPointerDown={(ev) => {
                                     ev.stopPropagation()
                                   }}
                                 >
-                                  {isAi ? (
-                                    <>
-                                      <circle cx={w / 2} cy={h / 2} r={(isSelected ? 10 : 8) + 6} fill="transparent" pointerEvents="all" />
-                                      {isSelected ? (
-                                        <>
-                                          <circle
-                                            cx={w / 2}
-                                            cy={h / 2}
-                                            r={26}
-                                            fill="rgba(34,197,94,.14)"
-                                            style={{ filter: 'drop-shadow(0 0 20px rgba(34,197,94,.85))' }}
-                                          />
-                                          <circle
-                                            cx={w / 2}
-                                            cy={h / 2}
-                                            r={18}
-                                            fill="rgba(34,197,94,.26)"
-                                            style={{ filter: 'drop-shadow(0 0 10px rgba(34,197,94,.75))' }}
-                                          />
-                                        </>
-                                      ) : null}
-                                      <circle cx={w / 2} cy={h / 2} r={isSelected ? 10 : 8} fill="#22c55e" />
-                                      <title>{text || 'AI'}</title>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <defs>
-                                        <clipPath id={clipId}>
-                                          <rect x={10} y={6} width={Math.max(0, w - 20)} height={Math.max(0, h - 12)} rx={8} />
-                                        </clipPath>
-                                      </defs>
-                                      {isSelected ? (
-                                        <>
-                                          <rect
-                                            x={-10}
-                                            y={-10}
-                                            width={w + 20}
-                                            height={h + 20}
-                                            rx={18}
-                                            fill="rgba(34,197,94,.10)"
-                                            style={{ filter: 'drop-shadow(0 0 22px rgba(34,197,94,.85))' }}
-                                          />
-                                          <rect
-                                            x={-4}
-                                            y={-4}
-                                            width={w + 8}
-                                            height={h + 8}
-                                            rx={14}
-                                            fill="rgba(34,197,94,.20)"
-                                            style={{ filter: 'drop-shadow(0 0 12px rgba(34,197,94,.75))' }}
-                                          />
-                                        </>
-                                      ) : null}
-                                      <rect x={0} y={0} width={w} height={h} rx={12} fill="#ffffff" />
-                                      <text
-                                        x={12}
-                                        y={h / 2}
-                                        fill="rgba(0,0,0,.82)"
-                                        fontSize={12}
-                                        dominantBaseline="middle"
-                                        clipPath={`url(#${clipId})`}
-                                        style={{ pointerEvents: 'none' }}
-                                      >
-                                        {text}
-                                      </text>
-                                    </>
-                                  )}
+                                  <ChatTreeNodeShape role={role} text={text} isSelected={isSelected} w={w} h={h} clipId={clipId} />
                                 </g>
                               </g>
                             )
@@ -7307,6 +7226,17 @@ function PluginSettingsPage(props: {
   }
 
   if (tab === 'services') {
+    const ccCfg = (data?.settings?.aiServices?.contextCompression && typeof (data.settings.aiServices as any).contextCompression === 'object') ? (data.settings.aiServices as any).contextCompression : {}
+    const ccProviderId = String(ccCfg.providerId || providers?.[0]?.id || '')
+    const ccModelPick = String(ccCfg.modelId || '')
+    const ccRetainRecentMessages = Math.round(
+      clampNum(
+        Number(ccCfg.retainRecentMessages ?? DEFAULT_CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES),
+        CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MIN,
+        CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MAX,
+      ),
+    )
+
     const mmCfg = (data?.settings?.aiServices?.mermaidFix && typeof data.settings.aiServices.mermaidFix === 'object') ? data.settings.aiServices.mermaidFix : {}
     const mmEnabled = !!mmCfg.enabled
     const mmProviderId = String(mmCfg.providerId || providers?.[0]?.id || '')
@@ -7331,6 +7261,10 @@ function PluginSettingsPage(props: {
     const snDefaultPrompt = String(controller?.defaults?.stickerNamingSystemPrompt || '')
     const snPromptChanged = !!snDefaultPrompt && snSystemPrompt.trim() !== snDefaultPrompt.trim()
 
+    const ccP = providers.find((x: any) => String(x?.id || '') === ccProviderId) || null
+    const ccModelItems = registeredModelItems(ccP)
+    const ccHasPickInList = !!ccModelPick && ccModelItems.some((x: any) => x.id === ccModelPick)
+
     const mmP = providers.find((x: any) => String(x?.id || '') === mmProviderId) || null
     const mmModelItems = registeredModelItems(mmP)
     const mmHasPickInList = !!mmModelPick && mmModelItems.some((x: any) => x.id === mmModelPick)
@@ -7353,6 +7287,104 @@ function PluginSettingsPage(props: {
             <Divider />
 
             <Stack spacing={1.25}>
+              <Stack spacing={1.25}>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Typography sx={{ fontWeight: 900 }}>上下文压缩</Typography>
+                  <Box sx={{ flex: 1 }} />
+                  <Chip size="small" variant="outlined" label="/compact" />
+                </Stack>
+
+                <Typography variant="caption" color="text.secondary">
+                  手动输入 /compact 时，用这里选择的模型把较早聊天整理成摘要；原始消息仍保留，只影响后续发给模型的上下文。
+                </Typography>
+
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', sm: 'center' }}>
+                  <FormControl size="small" fullWidth>
+                    <InputLabel id="context-compression-provider">供应商</InputLabel>
+                    <Select
+                      labelId="context-compression-provider"
+                      value={ccProviderId}
+                      label="供应商"
+                      onChange={(e) => controller.actions.setContextCompressionProviderId?.(e.target.value)}
+                      disabled={loading || !providers.length}
+                    >
+                      {providers.map((pp: any) => {
+                        const id = String(pp?.id || '')
+                        return (
+                          <MenuItem key={id} value={id}>
+                            {id}
+                          </MenuItem>
+                        )
+                      })}
+                    </Select>
+                  </FormControl>
+
+                  <FormControl size="small" fullWidth>
+                    <InputLabel id="context-compression-model">登记模型</InputLabel>
+                    <Select
+                      labelId="context-compression-model"
+                      value={ccHasPickInList ? ccModelPick : ''}
+                      label="登记模型"
+                      onChange={(e) => controller.actions.setContextCompressionModelId?.(e.target.value)}
+                      disabled={loading || !ccProviderId}
+                    >
+                      <MenuItem value="">
+                        <em>请选择…</em>
+                      </MenuItem>
+                      {ccModelItems.map((item: any) => (
+                        <MenuItem key={item.id} value={item.id}>
+                          {item.hint ? `${item.label} / ${item.hint}` : item.label}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Stack>
+
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', sm: 'center' }}>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Typography variant="body2" sx={{ fontWeight: 900 }}>
+                        压缩后保留最近原文
+                      </Typography>
+                      <Box sx={{ flex: 1 }} />
+                      <Typography variant="caption" color="text.secondary">
+                        {Math.round(ccRetainRecentMessages)} 条
+                      </Typography>
+                    </Stack>
+                    <Slider
+                      size="small"
+                      value={ccRetainRecentMessages}
+                      min={CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MIN}
+                      max={CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MAX}
+                      step={1}
+                      onChange={(_e, v) => controller.actions.setContextCompressionRetainRecentMessages?.(Array.isArray(v) ? v[0] : v)}
+                      disabled={loading}
+                    />
+                  </Box>
+
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="保留条数"
+                    value={Math.round(ccRetainRecentMessages)}
+                    onChange={(e) => controller.actions.setContextCompressionRetainRecentMessages?.(e.target.value)}
+                    inputProps={{
+                      min: CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MIN,
+                      max: CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MAX,
+                      step: 1,
+                    }}
+                    disabled={loading}
+                    sx={{ width: { xs: '100%', sm: 150 } }}
+                  />
+                </Stack>
+
+                <Typography variant="caption" color="text.secondary">
+                  仅可选择供应商设置中已登记的模型；如列表为空，请先到供应商设置刷新原始列表并登记模型。
+                </Typography>
+              </Stack>
+
+              <Divider sx={{ my: 1.25 }} />
+
               <Stack direction="row" spacing={1} alignItems="center">
                 <Typography sx={{ fontWeight: 900 }}>Mermaid AI 修复</Typography>
                 <Box sx={{ flex: 1 }} />

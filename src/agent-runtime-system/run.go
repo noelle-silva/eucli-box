@@ -14,11 +14,16 @@ func (s *system) StartRun(ctx context.Context, request types.RunRequest) (types.
 	if err := validateRunRequest(ctx, request); err != nil {
 		return types.RunState{}, err
 	}
+	compactRun := isCompactRunRequest(request)
+	stream := request.Stream && !compactRun
 	runCtx, cancel := context.WithCancel(context.Background())
 	now := nowUTC()
-	state := types.RunState{ID: utils.NewID("run"), RoleID: request.RoleID, SessionID: request.SessionID, Stream: request.Stream, Status: types.RunStatusCreated, CreatedAt: now, UpdatedAt: now}
+	state := types.RunState{ID: utils.NewID("run"), RoleID: request.RoleID, SessionID: request.SessionID, Stream: stream, Status: types.RunStatusCreated, CreatedAt: now, UpdatedAt: now}
 	modelOverride, _ := types.NormalizeModelOverrideCoordinate(modelOverrideFromRunRequest(request))
-	record := &runRecord{runID: state.ID, roleID: request.RoleID, state: state, stream: request.Stream, modelOverride: modelOverride, reasoningEffort: types.TrimReasoningEffort(request.ReasoningEffort), cancel: cancel}
+	record := &runRecord{runID: state.ID, roleID: request.RoleID, state: state, stream: stream, modelOverride: modelOverride, reasoningEffort: types.TrimReasoningEffort(request.ReasoningEffort), cancel: cancel}
+	if compactRun {
+		record.commandName = compactCommandName
+	}
 	s.mu.Lock()
 	s.runs[state.ID] = record
 	s.mu.Unlock()
@@ -31,7 +36,11 @@ func (s *system) StartRun(ctx context.Context, request types.RunRequest) (types.
 		}
 		return state, nil
 	}
-	go s.continueRun(runCtx, record, contextSession)
+	if compactRun {
+		go s.continueCompactRun(runCtx, record, contextSession)
+	} else {
+		go s.continueRun(runCtx, record, contextSession)
+	}
 	return state, nil
 }
 
@@ -101,9 +110,13 @@ func (s *system) startRun(ctx context.Context, record *runRecord, request types.
 		return state, types.Session{}, err
 	}
 	s.publish(record.runID, "run_started", state)
+	compactRun := record.commandName == compactCommandName
 	session, err := s.loadOrCreateSession(ctx, request)
 	if err != nil {
 		return state, types.Session{}, err
+	}
+	if compactRun && strings.TrimSpace(request.SessionID) == "" {
+		return state, types.Session{}, runtimeInvalid("当前没有可压缩的会话", nil)
 	}
 	applyRunReasoningEffort(record, &session)
 	applyRunModelOverride(record, &session)
@@ -112,25 +125,41 @@ func (s *system) startRun(ctx context.Context, record *runRecord, request types.
 			return state, types.Session{}, err
 		}
 	}
-	session, contextSession, assistantParent, err := s.prepareRunSession(ctx, session, request)
+	var contextSession types.Session
+	var assistantParent types.Message
+	if compactRun {
+		contextSession, assistantParent, err = prepareCompactRunSession(session, request)
+	} else {
+		session, contextSession, assistantParent, err = s.prepareRunSession(ctx, session, request)
+		contextSession = compactedContextSession(contextSession)
+	}
 	if err != nil {
 		return state, types.Session{}, err
 	}
 	record.session = session
 	record.messageParent = assistantParent
 	record.anchorMessageID = assistantParent.ID
-	if strings.TrimSpace(request.UserMessageID) == "" && strings.TrimSpace(request.ContextMessageID) == "" {
+	if !compactRun && strings.TrimSpace(request.UserMessageID) == "" && strings.TrimSpace(request.ContextMessageID) == "" {
 		markRunInputMessage(record, assistantParent)
 	}
 	markRunDependencyMessages(record, contextSession.Messages)
+	if compactRun && s.hasActiveRunInDependencyPath(record) {
+		return state, types.Session{}, runtimeStateInvalid("当前分支路径仍有运行中的任务，请完成后再压缩", nil)
+	}
 	record.forceBranchReply = shouldForceRunBranchReply(session, assistantParent, request) || s.hasActiveRunAtAnchor(record)
 	record.forceNewAssistantReply = strings.TrimSpace(request.ContextMessageID) != ""
 	lastMessageID := assistantParent.ID
-	if err := s.setRunMessageIDs(record.runID, assistantParent.ID, lastMessageID); err != nil {
+	inputMessageID := assistantParent.ID
+	if compactRun {
+		inputMessageID = ""
+	}
+	if err := s.setRunMessageIDs(record.runID, inputMessageID, lastMessageID); err != nil {
 		return state, types.Session{}, err
 	}
-	if err := s.saveRunSession(ctx, record, types.RunStatusRunning); err != nil {
-		return state, types.Session{}, err
+	if !compactRun {
+		if err := s.saveRunSession(ctx, record, types.RunStatusRunning); err != nil {
+			return state, types.Session{}, err
+		}
 	}
 	state, _ = s.getRunState(record.runID)
 	return state, contextSession, nil
@@ -250,6 +279,9 @@ func validateRunRequest(ctx context.Context, request types.RunRequest) error {
 	hasContextMessageID := strings.TrimSpace(request.ContextMessageID) != ""
 	if runInputCount(hasMessage, hasUserMessageID, hasContextMessageID) != 1 {
 		return runtimeInvalid("exactly one of message, userMessageId, or contextMessageId is required", nil)
+	}
+	if err := validateRunSlashCommand(request); err != nil {
+		return err
 	}
 	if (hasUserMessageID || hasContextMessageID) && strings.TrimSpace(request.ParentMessageID) != "" {
 		return runtimeInvalid("parentMessageId cannot be combined with userMessageId or contextMessageId", nil)

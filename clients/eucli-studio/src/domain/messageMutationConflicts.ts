@@ -1,4 +1,5 @@
 import type { EbRoleRunCard } from './activeRunCards'
+import { isSystemControlMessage } from './message'
 
 export type MessageMutationOperation = 'edit' | 'delete' | 'delete-subtree'
 
@@ -68,6 +69,46 @@ function operationReason(operation: MessageMutationOperation) {
   return '这条消息正在被运行中的回复依赖，等对应任务结束后再删除'
 }
 
+function compressedSourceMessageIds(messages: any[]) {
+  const byId = new Map<string, any>()
+  for (const message of messages) {
+    const id = text(message?.id)
+    if (id && !byId.has(id)) byId.set(id, message)
+  }
+
+  const protectedIds = new Set<string>()
+  for (const message of messages) {
+    if (!isSystemControlMessage(message) || text(message?.control?.kind) !== 'compression_summary') continue
+    let current = text(message?.control?.compressedUntilMessageId)
+    const seen = new Set<string>()
+    while (current && !seen.has(current)) {
+      seen.add(current)
+      const item = byId.get(current)
+      if (!item) break
+      if (isSystemControlMessage(item) && text(item?.control?.kind) === 'compression_summary') break
+      protectedIds.add(current)
+      current = text(item?.parentMid || item?.parentMessageId)
+    }
+  }
+  return protectedIds
+}
+
+function staticMutationBlockReason(chat: any, targetMessageId: string, operation: MessageMutationOperation) {
+  const tree = buildMessageTree(chat)
+  const target = tree.byId.get(targetMessageId)
+  if (!target) return ''
+
+  const affectedIds = operation === 'delete-subtree' ? collectSubtreeIds(tree.children, targetMessageId) : new Set<string>([targetMessageId])
+  const sourceIds = compressedSourceMessageIds(Array.from(tree.byId.values()))
+
+  for (const id of affectedIds) {
+    const message = tree.byId.get(id)
+    if (isSystemControlMessage(message)) return '压缩标记和摘要不能被普通编辑或删除'
+    if (sourceIds.has(id)) return '已被上下文摘要覆盖的历史消息不能被普通编辑或删除'
+  }
+  return ''
+}
+
 export function messageMutationConflict(
   chat: any,
   targetMessageId: unknown,
@@ -79,6 +120,9 @@ export function messageMutationConflict(
 
   const tree = buildMessageTree(chat)
   if (!tree.byId.has(targetId)) return { blocked: false, reason: '', messageId: targetId, runId: '' }
+
+  const staticReason = staticMutationBlockReason(chat, targetId, operation)
+  if (staticReason) return { blocked: true, reason: staticReason, messageId: targetId, runId: '' }
 
   const affectedIds = collectSubtreeIds(tree.children, targetId)
   const cards = Array.isArray(options?.activeRunCards) ? options.activeRunCards : []
@@ -98,6 +142,9 @@ export function createMessageMutationGuard(chat: any, options?: { activeRunCards
       const targetId = text(targetMessageId)
       if (!chat || !targetId) return { blocked: false, reason: '', messageId: targetId, runId: '' }
       if (!tree.byId.has(targetId)) return { blocked: false, reason: '', messageId: targetId, runId: '' }
+
+      const staticReason = staticMutationBlockReason(chat, targetId, operation)
+      if (staticReason) return { blocked: true, reason: staticReason, messageId: targetId, runId: '' }
 
       const affectedIds = collectSubtreeIds(tree.children, targetId)
       for (const item of runRefs) {

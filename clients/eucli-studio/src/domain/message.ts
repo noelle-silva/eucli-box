@@ -52,11 +52,13 @@ export function hasExplicitMessageParentLinks(messages: any[]) {
 export function normalizeChatMessage(input: any, options?: { activeBranchId?: unknown; toolMessagesAsAssistant?: boolean }) {
   const m = input && typeof input === 'object' ? input : {}
   const messageType0 = String((m as any).type || (m as any).role || '').trim()
-  const messageType = ['assistant', 'tool', 'tool_request', 'tool_confirmation', 'failure'].includes(messageType0) ? messageType0 : 'user'
+  const messageType = ['assistant', 'tool', 'tool_request', 'tool_confirmation', 'failure', 'system_control'].includes(messageType0) ? messageType0 : 'user'
   const role0 = String((m as any).role || '').trim()
   const toolMessagesAsAssistant = options?.toolMessagesAsAssistant !== false
   const role =
-    role0 === 'assistant'
+    messageType === 'system_control' || role0 === 'system'
+      ? 'system'
+      : role0 === 'assistant'
       ? 'assistant'
       : messageType === 'assistant'
         ? 'assistant'
@@ -84,10 +86,37 @@ export function normalizeChatMessage(input: any, options?: { activeBranchId?: un
   }
   if (typeof (m as any).pending === 'boolean') out.pending = !!(m as any).pending
   if (typeof (m as any).streaming === 'boolean') out.streaming = !!(m as any).streaming
+  const control = normalizeMessageControl((m as any).control)
+  if (control) out.control = control
   const error = normalizeMessageError((m as any).error)
   if (error) out.error = error
   if ((m as any).assistantRun && typeof (m as any).assistantRun === 'object') out.assistantRun = { ...(m as any).assistantRun }
   return out
+}
+
+export function normalizeMessageControl(input: any) {
+  const raw = input && typeof input === 'object' && !Array.isArray(input) ? input : null
+  if (!raw) return null
+  const kind = String(raw.kind || '').trim()
+  if (!kind) return null
+  return {
+    kind,
+    commandName: String(raw.commandName || '').trim(),
+    source: String(raw.source || '').trim(),
+    sourceText: String(raw.sourceText || '').trim(),
+    retainRecentMessages: Math.max(0, Math.floor(Number(raw.retainRecentMessages || 0))),
+    previousSummaryMessageId: String(raw.previousSummaryMessageId || '').trim(),
+    compressedUntilMessageId: String(raw.compressedUntilMessageId || '').trim(),
+    summaryVersion: Math.max(0, Math.floor(Number(raw.summaryVersion || 0))),
+  }
+}
+
+export function isSystemControlMessage(message: any) {
+  return String(message?.type || '').trim() === 'system_control' || (String(message?.role || '').trim() === 'system' && !!message?.control)
+}
+
+export function isCompressionSummaryMessage(message: any) {
+  return isSystemControlMessage(message) && String(message?.control?.kind || '').trim() === 'compression_summary'
 }
 
 export function normalizeMessageTokenEstimate(input: any) {

@@ -70,6 +70,7 @@ func normalizeSessionMessages(messages []types.Message, now time.Time) []types.M
 		seen[message.ID] = struct{}{}
 
 		message.Type = normalizeMessageType(message.Type)
+		message.Control = normalizeMessageControl(message.Type, message.Control)
 		message.Error = normalizeErrorPayload(message.Error)
 		message.Attachments = normalizeSessionMessageAttachments(message.Attachments)
 		if message.Content == "" {
@@ -277,6 +278,8 @@ func normalizeSessionTitle(title string) string {
 
 func normalizeMessageType(messageType string) string {
 	switch strings.TrimSpace(messageType) {
+	case types.MessageTypeSystemControl:
+		return types.MessageTypeSystemControl
 	case "assistant":
 		return "assistant"
 	case "tool":
@@ -290,6 +293,29 @@ func normalizeMessageType(messageType string) string {
 	default:
 		return "user"
 	}
+}
+
+func normalizeMessageControl(messageType string, control *types.MessageControl) *types.MessageControl {
+	if strings.TrimSpace(messageType) != types.MessageTypeSystemControl || control == nil {
+		return nil
+	}
+	normalized := *control
+	normalized.Kind = strings.TrimSpace(normalized.Kind)
+	normalized.CommandName = strings.TrimSpace(normalized.CommandName)
+	normalized.Source = strings.TrimSpace(normalized.Source)
+	normalized.SourceText = strings.TrimSpace(normalized.SourceText)
+	normalized.PreviousSummaryMessageID = strings.TrimSpace(normalized.PreviousSummaryMessageID)
+	normalized.CompressedUntilMessageID = strings.TrimSpace(normalized.CompressedUntilMessageID)
+	if normalized.RetainRecentMessages < 0 {
+		normalized.RetainRecentMessages = 0
+	}
+	if normalized.SummaryVersion < 0 {
+		normalized.SummaryVersion = 0
+	}
+	if normalized.Kind == "" {
+		return nil
+	}
+	return &normalized
 }
 
 func normalizeSessionMessageAttachments(attachments []types.MessageAttachment) []types.MessageAttachment {
@@ -429,6 +455,9 @@ func (s *system) UpdateSessionMessage(ctx context.Context, roleID string, sessio
 	}
 	now := time.Now().UTC()
 	session = normalizeSessionForStorage(session, now)
+	if reason := protectedSessionMessageMutationReason(session, messageID); reason != "" {
+		return types.Message{}, storageInvalid(reason, nil)
+	}
 	updatedIndex := -1
 	for i := range session.Messages {
 		if session.Messages[i].ID != messageID {
@@ -484,6 +513,9 @@ func (s *system) DeleteSessionMessage(ctx context.Context, roleID string, sessio
 	}
 	now := time.Now().UTC()
 	session = normalizeSessionForStorage(session, now)
+	if reason := protectedSessionMessageMutationReason(session, messageID); reason != "" {
+		return types.Session{}, storageInvalid(reason, nil)
+	}
 	parentID := ""
 	found := false
 	for _, message := range session.Messages {
@@ -535,6 +567,9 @@ func (s *system) DeleteSessionMessageSubtree(ctx context.Context, roleID string,
 	}
 	now := time.Now().UTC()
 	session = normalizeSessionForStorage(session, now)
+	if reason := protectedSessionMessageSubtreeMutationReason(session, messageID); reason != "" {
+		return types.Session{}, storageInvalid(reason, nil)
+	}
 	children := map[string][]string{}
 	found := false
 	for _, message := range session.Messages {

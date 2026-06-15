@@ -22,6 +22,7 @@ type messageStorageRecord struct {
 	ID              string                    `json:"id"`
 	Type            string                    `json:"type"`
 	Content         string                    `json:"content,omitempty"`
+	Control         *types.MessageControl     `json:"control,omitempty"`
 	Error           *types.ErrorPayload       `json:"error,omitempty"`
 	Parts           []types.MessagePart       `json:"parts,omitempty"`
 	Attachments     []types.MessageAttachment `json:"attachments,omitempty"`
@@ -62,6 +63,7 @@ func toMessageStorageRecord(message types.Message) messageStorageRecord {
 		ID:              message.ID,
 		Type:            message.Type,
 		Content:         content,
+		Control:         message.Control,
 		Error:           message.Error,
 		Parts:           message.Parts,
 		Attachments:     message.Attachments,

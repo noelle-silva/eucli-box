@@ -8,6 +8,9 @@ import {
   DEFAULT_MERMAID_FIX_SYSTEM_PROMPT,
   DEFAULT_CHAT_TITLE_NAMING_SYSTEM_PROMPT,
   DEFAULT_STICKER_NAMING_SYSTEM_PROMPT,
+  DEFAULT_CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES,
+  CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MIN,
+  CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MAX,
 } from './constants'
 import {
   normalizeBranchId,
@@ -191,6 +194,19 @@ export function normalizeData(raw: any) {
   if (sn.modelId === '__custom__') sn.modelId = ''
   sn.customModelId = ''
   if (typeof sn.systemPrompt !== 'string') sn.systemPrompt = DEFAULT_STICKER_NAMING_SYSTEM_PROMPT
+
+  if (!as.contextCompression || typeof as.contextCompression !== 'object') as.contextCompression = {}
+  const cc = as.contextCompression as any
+  if (typeof cc.providerId !== 'string') cc.providerId = fallbackPid
+  if (!cc.providerId || !d.settings.providers.some((p: any) => String(p?.id || '') === String(cc.providerId || ''))) cc.providerId = fallbackPid
+  if (typeof cc.modelId !== 'string') cc.modelId = ''
+  if (cc.modelId === '__custom__') cc.modelId = ''
+  cc.customModelId = ''
+  cc.retainRecentMessages = clamp(
+    Math.round(Number(cc.retainRecentMessages || DEFAULT_CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES)),
+    CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MIN,
+    CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MAX,
+  )
 
   for (const p of d.settings.providers) {
     if (!p || typeof p !== 'object') continue

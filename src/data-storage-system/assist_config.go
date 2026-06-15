@@ -36,6 +36,19 @@ func (s *system) SaveChatTitleNamingConfig(ctx context.Context, config types.Cha
 	return config, nil
 }
 
+func (s *system) LoadContextCompressionConfig(ctx context.Context) (types.ContextCompressionConfig, error) {
+	return loadMetaConfig(ctx, s.paths.contextCompressionConfigFile(), defaultContextCompressionConfig(), normalizeContextCompressionConfig)
+}
+
+func (s *system) SaveContextCompressionConfig(ctx context.Context, config types.ContextCompressionConfig) (types.ContextCompressionConfig, error) {
+	config = normalizeContextCompressionConfig(config)
+	config.UpdatedAt = time.Now().UTC()
+	if err := writeJSON(ctx, s.paths.contextCompressionConfigFile(), config); err != nil {
+		return types.ContextCompressionConfig{}, err
+	}
+	return config, nil
+}
+
 func loadMetaConfig[T any](ctx context.Context, target string, fallback T, normalize func(T) T) (T, error) {
 	if !dataFileExists(target) {
 		return normalize(fallback), nil
@@ -59,6 +72,10 @@ func defaultChatTitleNamingConfig() types.ChatTitleNamingConfig {
 	return normalizeChatTitleNamingConfig(types.ChatTitleNamingConfig{})
 }
 
+func defaultContextCompressionConfig() types.ContextCompressionConfig {
+	return normalizeContextCompressionConfig(types.ContextCompressionConfig{})
+}
+
 func normalizeMermaidFixConfig(config types.MermaidFixConfig) types.MermaidFixConfig {
 	config.ModelPick, config.CustomModelID, config.Coordinate = normalizeAssistModelSelection(config.ModelPick, config.CustomModelID, config.Coordinate)
 	config.SystemPrompt = strings.TrimSpace(config.SystemPrompt)
@@ -79,6 +96,26 @@ func normalizeChatTitleNamingConfig(config types.ChatTitleNamingConfig) types.Ch
 	config.SystemPrompt = strings.TrimSpace(config.SystemPrompt)
 	if config.SystemPrompt == "" {
 		config.SystemPrompt = types.DefaultChatTitleNamingSystemPrompt
+	}
+	if config.Temperature <= 0 {
+		config.Temperature = 0.2
+	}
+	if config.UpdatedAt.IsZero() {
+		config.UpdatedAt = time.Now().UTC()
+	}
+	return config
+}
+
+func normalizeContextCompressionConfig(config types.ContextCompressionConfig) types.ContextCompressionConfig {
+	config.ModelPick, config.CustomModelID, config.Coordinate = normalizeAssistModelSelection(config.ModelPick, config.CustomModelID, config.Coordinate)
+	if config.RetainRecentMessages <= 0 {
+		config.RetainRecentMessages = types.DefaultContextCompressionRetainRecentMessages
+	}
+	if config.RetainRecentMessages < types.ContextCompressionRetainRecentMessagesMin {
+		config.RetainRecentMessages = types.ContextCompressionRetainRecentMessagesMin
+	}
+	if config.RetainRecentMessages > types.ContextCompressionRetainRecentMessagesMax {
+		config.RetainRecentMessages = types.ContextCompressionRetainRecentMessagesMax
 	}
 	if config.Temperature <= 0 {
 		config.Temperature = 0.2

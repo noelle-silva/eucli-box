@@ -23,6 +23,7 @@ type StorageSystem interface {
 	LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error)
 	SaveSessionMessageAttachment(ctx context.Context, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
 	LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error)
+	LoadContextCompressionConfig(ctx context.Context) (types.ContextCompressionConfig, error)
 }
 
 type RoleSystem interface {
@@ -83,6 +84,7 @@ type runRecord struct {
 	streamReasoning             string
 	streamReasoningSignature    string
 	streamReasoningData         string
+	commandName                 string
 	modelOverride               types.ModelCoordinate
 	modelOverridePersistPending bool
 	reasoningEffort             types.ReasoningEffort

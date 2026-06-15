@@ -12,6 +12,7 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt'
 import StorageIcon from '@mui/icons-material/Storage'
 import { isAssistantAwaitingFirstOutput, isAssistantGenerating } from '../../domain/assistantRunState'
 import { activeRunCardForAssistantMessage, messageVisibleText } from '../../domain/chatMessageDisplay'
+import { isCompressionSummaryMessage, isSystemControlMessage } from '../../domain/message'
 import type { MessageMutationOperation } from '../../domain/messageMutationConflicts'
 import { AssistantErrorNotice } from './AssistantErrorNotice'
 import { AssistantMessageBlocks } from './AssistantMessageBlocks'
@@ -137,6 +138,73 @@ export const ChatMessageList = React.memo(function ChatMessageList(props: ChatMe
         const isDisplayOnlyPendingRunTail = !!(m as any)?.displayOnlyPendingRunTail
         const isToolExpanded = !!mid && expandedToolMsgIds.has(mid)
         const isEditing = !isDisplayOnlyPendingRunTail && editingMsg.mid === mid
+
+        if (isSystemControlMessage(m)) {
+          const isSummary = isCompressionSummaryMessage(m)
+          const time = controller.fmtTime(Number(m?.createdAt || 0))
+          const retain = Math.max(0, Math.floor(Number(m?.control?.retainRecentMessages || 0)))
+          const version = Math.max(0, Math.floor(Number(m?.control?.summaryVersion || 0)))
+          return (
+            <Stack key={mid} direction="row" justifyContent="center">
+              <Paper
+                variant="outlined"
+                data-mid={mid}
+                sx={{
+                  width: '100%',
+                  maxWidth: 980,
+                  px: 1.5,
+                  py: 1.2,
+                  bgcolor: isSummary ? 'rgba(124, 58, 237, .055)' : 'rgba(15, 23, 42, .035)',
+                  borderColor: isSummary ? 'rgba(124, 58, 237, .22)' : 'rgba(15, 23, 42, .12)',
+                  borderRadius: 3,
+                }}
+              >
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: isSummary ? 0.75 : 0 }}>
+                  <Chip size="small" color={isSummary ? 'secondary' : 'default'} label={isSummary ? '上下文摘要' : '压缩边界'} />
+                  <Typography variant="body2" sx={{ fontWeight: 900 }}>
+                    {isSummary ? '上下文摘要' : '已执行 /compact'}
+                  </Typography>
+                  {isSummary && retain ? (
+                    <Typography variant="caption" color="text.secondary">
+                      保留最近 {retain} 条原文
+                    </Typography>
+                  ) : null}
+                  {isSummary && version ? (
+                    <Typography variant="caption" color="text.secondary">
+                      第 {version} 版
+                    </Typography>
+                  ) : null}
+                  <Box sx={{ flex: 1 }} />
+                  <Typography variant="caption" color="text.secondary">
+                    {time}
+                  </Typography>
+                </Stack>
+                {isSummary ? (
+                  <Box
+                    sx={{
+                      whiteSpace: 'pre-wrap',
+                      overflowWrap: 'anywhere',
+                      wordBreak: 'break-word',
+                      fontSize: 13,
+                      lineHeight: 1.65,
+                      bgcolor: 'rgba(255,255,255,.72)',
+                      border: '1px solid rgba(124, 58, 237, .12)',
+                      borderRadius: 2,
+                      px: 1.25,
+                      py: 1,
+                    }}
+                  >
+                    {content}
+                  </Box>
+                ) : (
+                  <Typography variant="body2" color="text.secondary">
+                    {content || '上下文已压缩。'}
+                  </Typography>
+                )}
+              </Paper>
+            </Stack>
+          )
+        }
 
         if (isToolResponse) {
           const resultTags = content.match(/<<\[RESULT-\d+\]>>/g) || []

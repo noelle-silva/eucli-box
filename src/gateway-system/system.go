@@ -86,6 +86,8 @@ type StickerSystem interface {
 	SaveMermaidFixConfig(ctx context.Context, config types.MermaidFixConfig) (types.MermaidFixConfig, error)
 	LoadChatTitleNamingConfig(ctx context.Context) (types.ChatTitleNamingConfig, error)
 	SaveChatTitleNamingConfig(ctx context.Context, config types.ChatTitleNamingConfig) (types.ChatTitleNamingConfig, error)
+	LoadContextCompressionConfig(ctx context.Context) (types.ContextCompressionConfig, error)
+	SaveContextCompressionConfig(ctx context.Context, config types.ContextCompressionConfig) (types.ContextCompressionConfig, error)
 }
 
 type AIAssistSystem interface {

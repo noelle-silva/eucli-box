@@ -1561,13 +1561,29 @@ func newRuntimeFakes() *runtimeFakes {
 }
 
 type fakeRuntimeStorage struct {
-	mu       sync.Mutex
-	sessions map[string]types.Session
-	images   map[string]string
+	mu                sync.Mutex
+	sessions          map[string]types.Session
+	images            map[string]string
+	compressionConfig types.ContextCompressionConfig
 }
 
 func newFakeRuntimeStorage() *fakeRuntimeStorage {
-	return &fakeRuntimeStorage{sessions: map[string]types.Session{}, images: map[string]string{}}
+	return &fakeRuntimeStorage{
+		sessions: map[string]types.Session{},
+		images:   map[string]string{},
+		compressionConfig: types.ContextCompressionConfig{
+			Coordinate:           types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"},
+			RetainRecentMessages: types.DefaultContextCompressionRetainRecentMessages,
+			Temperature:          0.2,
+			UpdatedAt:            time.Now().UTC(),
+		},
+	}
+}
+
+func (f *fakeRuntimeStorage) LoadContextCompressionConfig(ctx context.Context) (types.ContextCompressionConfig, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.compressionConfig, nil
 }
 
 func (f *fakeRuntimeStorage) SaveSession(ctx context.Context, session types.Session) error {

@@ -67,6 +67,10 @@ func currentRunAssistantMessage(record *runRecord) (types.Message, bool) {
 }
 
 func cloneRunMessageSnapshot(message types.Message) types.Message {
+	if message.Control != nil {
+		control := *message.Control
+		message.Control = &control
+	}
 	message.Error = cloneErrorPayload(message.Error)
 	message.Parts = cloneRunMessageParts(message.Parts)
 	if len(message.Attachments) > 0 {

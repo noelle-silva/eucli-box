@@ -181,6 +181,11 @@ func (s *system) runtimeMessageToPrompt(ctx context.Context, message types.Messa
 	}
 	switch message.Type {
 	case "user", "assistant":
+	case types.MessageTypeSystemControl:
+		role = "system"
+		if isCompressionSummaryMessage(message) {
+			content = compressionSummaryPromptContent(message)
+		}
 	case "tool":
 		role = "user"
 		content = fmt.Sprintf("Tool %s returned: %s", message.ToolName, message.Content)

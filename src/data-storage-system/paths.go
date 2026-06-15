@@ -48,6 +48,10 @@ func (p paths) chatTitleNamingConfigFile() string {
 	return filepath.Join(p.metaRoot(), "chat-title-naming.json")
 }
 
+func (p paths) contextCompressionConfigFile() string {
+	return filepath.Join(p.metaRoot(), "context-compression.json")
+}
+
 func (p paths) modelRequestConfigFile() string {
 	return filepath.Join(p.metaRoot(), "model-request.json")
 }

@@ -513,6 +513,35 @@ const composerContextButtonSx = {
   maxWidth: 120,
 }
 
+type ComposerSlashCommand = {
+  command: string
+  title: string
+  description: string
+  keywords: string[]
+}
+
+const COMPOSER_SLASH_COMMANDS: ComposerSlashCommand[] = [
+  {
+    command: '/compact',
+    title: '上下文压缩',
+    description: '整理较早聊天，后续使用摘要加最近原文继续。',
+    keywords: ['compact', 'context', 'compression', 'summary', '压缩', '摘要', '上下文'],
+  },
+]
+
+function findSlashCommandTrigger(text: string, cursorIndex: number) {
+  const value = String(text || '')
+  if (!value.startsWith('/')) return null
+  const cursor = clampNum(Math.floor(Number(cursorIndex || 0)), 0, value.length)
+  const firstSpace = value.search(/\s/)
+  if (firstSpace >= 0 && cursor > firstSpace) return null
+  const tokenEnd = firstSpace >= 0 ? Math.min(cursor, firstSpace) : cursor
+  if (tokenEnd < 1) return { query: '' }
+  const token = value.slice(1, tokenEnd)
+  if (/\s/.test(token)) return null
+  return { query: token.trim().toLowerCase() }
+}
+
 function ComposerInputControls(props: {
   controller: any
   draftKey: string
@@ -554,6 +583,7 @@ function ComposerInputControls(props: {
   const localInputRef = React.useRef<HTMLTextAreaElement | HTMLInputElement | null>(null)
   const [value, setValue] = React.useState(() => String(initialValue || ''))
   const [atPicker, setAtPicker] = React.useState<null | { triggerIndex: number; cursorIndex: number; query: string }>(null)
+  const [slashPicker, setSlashPicker] = React.useState<null | { query: string; selectedIndex: number }>(null)
 
   const setInputRef = React.useCallback(
     (el: HTMLTextAreaElement | HTMLInputElement | null) => {
@@ -566,12 +596,58 @@ function ComposerInputControls(props: {
   React.useEffect(() => {
     setValue(String(initialValue || ''))
     setAtPicker(null)
+    setSlashPicker(null)
   }, [draftKey, initialValue])
 
   const closeAtPicker = useEvent(() => setAtPicker(null))
+  const closeSlashPicker = useEvent(() => setSlashPicker(null))
+
+  const slashCommandOptions = React.useMemo(() => {
+    if (!slashPicker) return []
+    const q = String(slashPicker.query || '').trim().toLowerCase()
+    if (!q) return COMPOSER_SLASH_COMMANDS
+    return COMPOSER_SLASH_COMMANDS.filter((item) => {
+      const haystack = [item.command, item.title, item.description, ...item.keywords].join(' ').toLowerCase()
+      return haystack.includes(q)
+    })
+  }, [slashPicker])
+
+  React.useEffect(() => {
+    if (!slashPicker) return
+    if (!slashCommandOptions.length) {
+      if (slashPicker.query) closeSlashPicker()
+      return
+    }
+    if (slashPicker.selectedIndex >= 0 && slashPicker.selectedIndex < slashCommandOptions.length) return
+    setSlashPicker((current) => (current ? { ...current, selectedIndex: 0 } : current))
+  }, [slashPicker, slashCommandOptions.length, closeSlashPicker])
+
+  const syncSlashPicker = useEvent((text?: string, cursorIndex?: number) => {
+    if (disabled) {
+      closeSlashPicker()
+      return false
+    }
+    const el = localInputRef.current as any
+    const currentValue = typeof text === 'string' ? text : el && typeof el.value === 'string' ? String(el.value || '') : value
+    const cursor =
+      typeof cursorIndex === 'number'
+        ? cursorIndex
+        : el && typeof el.selectionStart === 'number'
+          ? Number(el.selectionStart || 0)
+          : currentValue.length
+    const hit = findSlashCommandTrigger(currentValue, cursor)
+    if (!hit) {
+      closeSlashPicker()
+      return false
+    }
+    setSlashPicker((current) => ({ query: hit.query, selectedIndex: current && current.query === hit.query ? Math.max(0, current.selectedIndex) : 0 }))
+    closeAtPicker()
+    return true
+  })
 
   const syncAtPicker = useEvent((text?: string, cursorIndex?: number) => {
     if (disabled) return closeAtPicker()
+    if (syncSlashPicker(text, cursorIndex)) return closeAtPicker()
     if (activeTargetKind !== 'group' || !activeGroup) return closeAtPicker()
 
     const memberIds = (Array.isArray((activeGroup as any)?.memberRoleIds) ? ((activeGroup as any).memberRoleIds as any[]) : [])
@@ -613,6 +689,21 @@ function ComposerInputControls(props: {
     controller.actions.setDraft('input', next)
   })
 
+  const sendSlashCommand = useEvent((command: string) => {
+    const next = String(command || '').trim()
+    if (!next) return
+    setDraftInput(next)
+    closeSlashPicker()
+    closeAtPicker()
+    requestAnimationFrame(() => {
+      try {
+        localInputRef.current?.focus?.()
+        ;(localInputRef.current as any)?.setSelectionRange?.(next.length, next.length)
+      } catch (_) {}
+      onSend()
+    })
+  })
+
   const applyAtPickRole = useEvent((role: any) => {
     const el = localInputRef.current as any
     const currentValue = el && typeof el.value === 'string' ? String(el.value || '') : value
@@ -638,10 +729,37 @@ function ComposerInputControls(props: {
 
   const sendFromInput = useEvent(() => {
     closeAtPicker()
+    closeSlashPicker()
     onSend()
   })
 
   const onInputKeyDown = useEvent((e: React.KeyboardEvent) => {
+    if (slashPicker) {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        closeSlashPicker()
+        return
+      }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        if (!slashCommandOptions.length) return
+        const delta = e.key === 'ArrowDown' ? 1 : -1
+        setSlashPicker((current) => {
+          if (!current) return current
+          const count = slashCommandOptions.length
+          return { ...current, selectedIndex: (current.selectedIndex + delta + count) % count }
+        })
+        return
+      }
+      if ((e.key === 'Enter' && !e.shiftKey) || e.key === ' ') {
+        if (!slashCommandOptions.length) return
+        e.preventDefault()
+        const selected = slashCommandOptions[clampNum(Math.floor(Number(slashPicker.selectedIndex || 0)), 0, slashCommandOptions.length - 1)]
+        if (selected) sendSlashCommand(selected.command)
+        return
+      }
+    }
+
     if (atPicker) {
       if (e.key === 'Escape') {
         e.preventDefault()
@@ -676,7 +794,9 @@ function ComposerInputControls(props: {
         onChange={(e) => {
           const next = e.target.value
           setDraftInput(next)
-          syncAtPicker(next, typeof (e.target as any).selectionStart === 'number' ? Number((e.target as any).selectionStart || 0) : next.length)
+          if (!syncSlashPicker(next, typeof (e.target as any).selectionStart === 'number' ? Number((e.target as any).selectionStart || 0) : next.length)) {
+            syncAtPicker(next, typeof (e.target as any).selectionStart === 'number' ? Number((e.target as any).selectionStart || 0) : next.length)
+          }
         }}
         onKeyDown={onInputKeyDown}
         onKeyUp={() => syncAtPicker()}
@@ -689,6 +809,84 @@ function ComposerInputControls(props: {
           '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': { border: 0 },
         }}
       />
+
+      <Popover
+        open={!!slashPicker && !!localInputRef.current}
+        anchorEl={(localInputRef.current as any) || undefined}
+        onClose={closeSlashPicker}
+        anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        disableAutoFocus
+        disableEnforceFocus
+        PaperProps={{
+          sx: {
+            width: 360,
+            maxWidth: 'calc(100vw - 32px)',
+            maxHeight: 340,
+            overflow: 'hidden',
+            borderRadius: 3,
+            border: '1px solid rgba(124,58,237,.20)',
+            boxShadow: '0 18px 42px rgba(88,28,135,.18)',
+          },
+        }}
+      >
+        <Box sx={{ p: 0.75, maxHeight: 340, overflowY: 'auto', bgcolor: 'rgba(250,245,255,.96)' }}>
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ px: 1, pb: 0.75 }}>
+            <Chip size="small" color="secondary" label="/" />
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="caption" sx={{ display: 'block', fontWeight: 900, color: 'secondary.dark' }}>
+                命令表
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                上下键选择，回车/空格发送
+              </Typography>
+            </Box>
+          </Stack>
+
+          {slashCommandOptions.length ? (
+            <List dense sx={{ py: 0 }}>
+              {slashCommandOptions.map((item, index) => {
+                const selected = index === clampNum(Math.floor(Number(slashPicker?.selectedIndex || 0)), 0, Math.max(0, slashCommandOptions.length - 1))
+                return (
+                  <ListItemButton
+                    key={item.command}
+                    selected={selected}
+                    onMouseEnter={() => setSlashPicker((current) => (current ? { ...current, selectedIndex: index } : current))}
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      sendSlashCommand(item.command)
+                    }}
+                    sx={{
+                      borderRadius: 2,
+                      alignItems: 'flex-start',
+                      gap: 1,
+                      '&.Mui-selected': {
+                        bgcolor: 'rgba(124,58,237,.14)',
+                      },
+                      '&.Mui-selected:hover': {
+                        bgcolor: 'rgba(124,58,237,.18)',
+                      },
+                    }}
+                  >
+                    <Chip size="small" variant={selected ? 'filled' : 'outlined'} color="secondary" label={item.command} sx={{ mt: 0.25, fontWeight: 900 }} />
+                    <ListItemText
+                      primary={item.title}
+                      secondary={item.description}
+                      primaryTypographyProps={{ fontWeight: 900, fontSize: 13 }}
+                      secondaryTypographyProps={{ fontSize: 12 }}
+                    />
+                  </ListItemButton>
+                )
+              })}
+            </List>
+          ) : (
+            <Typography variant="body2" sx={{ px: 1, py: 1 }} color="text.secondary">
+              没有匹配的命令
+            </Typography>
+          )}
+        </Box>
+      </Popover>
 
       <Popover
         open={!!atPicker && !!localInputRef.current && activeTargetKind === 'group' && !!activeGroup}

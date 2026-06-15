@@ -25,6 +25,7 @@ import CloseIcon from '@mui/icons-material/Close'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import SettingsIcon from '@mui/icons-material/Settings'
 import { useEvent } from '../hooks/useEvent'
+import { ToolPromptDescriptionSection } from './ToolPromptDescriptionSection'
 
 type AiToolsSettingsPanelProps = {
   controller: any
@@ -204,6 +205,8 @@ function ToolConfigDialog(props: { controller: any; tools: any }) {
                   </Typography>
                 </Stack>
               </Paper>
+
+              <ToolPromptDescriptionSection controller={controller} tool={selectedTool} tools={tools} />
 
               <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2 }}>
                 <Stack spacing={1.25}>

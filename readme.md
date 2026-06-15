@@ -23,6 +23,26 @@ eucli-box 是一个本地 AI 工作台后端与配套工具集合，负责角色
 
 ## 当前重点能力
 
+### AI 工具提示说明编辑
+
+可以在客户端的“设置 → AI 工具 → 查看/配置”中，为单个工具填写用户版本的提示说明。
+
+填写后，这个工具在所有角色中都会使用用户版本说明来介绍自己；清空或点击“恢复默认”后，会回到工具包自带的默认说明。
+
+### 使用方式
+
+1. 打开客户端设置里的“AI 工具”。
+2. 选择一个工具并进入“查看/配置”。
+3. 在“工具提示说明”中填写自定义说明。
+4. 保存工具配置后生效。
+5. 如需回到工具包默认说明，点击“恢复默认”并保存。
+
+### 行为边界
+
+- 这个能力跟着工具走，不跟着角色走；同一个工具的自定义说明会影响所有使用它的角色。
+- 自定义说明是完全覆盖，不是追加补充；填写后 AI 只看到用户版本说明。
+- 恢复默认不会删除工具本身，只会清除用户版本说明。
+
 ### 手动上下文压缩
 
 当一个会话变长后，可以在当前聊天中输入 `/compact` 主动整理上下文。
@@ -55,9 +75,14 @@ eucli-box 是一个本地 AI 工作台后端与配套工具集合，负责角色
 - `.dev-management/design-decisions/context-compression-strategy.md`
 - `.dev-management/design-decisions/context-compression-implementation-plan.md`
 
+与 AI 工具提示说明编辑相关的文档：
+
+- `.dev-management/implementation-docs/ai-tool-prompt-description-edit-readme.md`
+- `.dev-management/implementation-docs/ai-tool-prompt-description-edit-changelog.md`
+
 ## 验证命令
 
-本次上下文压缩功能已通过以下检查：
+常用验证命令：
 
 ```bash
 go test ./...
@@ -65,4 +90,4 @@ pnpm exec tsc --noEmit
 pnpm build:ui
 ```
 
-其中前端构建会提示部分打包文件体积较大，这是现有构建体积提示，不是上下文压缩功能错误。
+其中前端构建会提示部分打包文件体积较大，这是现有构建体积提示，不是本次功能错误。

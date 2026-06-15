@@ -41,7 +41,7 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("GET /api/tools", s.authWrap(s.handleListTools))
 	s.mux.HandleFunc("POST /api/tools", s.authWrap(s.handleSaveTool))
 	s.mux.HandleFunc("GET /api/tools/{toolID}", s.authWrap(s.handleLoadTool))
-	s.mux.HandleFunc("PUT /api/tools/{toolID}/user-config", s.authWrap(s.handleSaveToolUserConfig))
+	s.mux.HandleFunc("PUT /api/tools/{toolID}/user-config", s.authWrap(s.handleSaveToolUserSettings))
 
 	s.mux.HandleFunc("GET /api/stickers", s.authWrap(s.handleLoadStickerLibrary))
 	s.mux.HandleFunc("GET /api/stickers/image", s.authWrap(s.handleLoadStickerImage))

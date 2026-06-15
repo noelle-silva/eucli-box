@@ -1,21 +1,40 @@
 package types
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 type ToolDefinition struct {
-	ID                string         `json:"id"`
-	Name              string         `json:"name"`
-	Description       string         `json:"description"`
-	PromptDescription string         `json:"promptDescription,omitempty"`
-	Type              string         `json:"type"`
-	InputSchema       map[string]any `json:"inputSchema,omitempty"`
-	UserConfigSchema  map[string]any `json:"userConfigSchema,omitempty"`
-	UserConfig        map[string]any `json:"userConfig,omitempty"`
-	DefaultConfig     map[string]any `json:"defaultConfig,omitempty"`
-	Directory         string         `json:"directory,omitempty"`
-	Binaries          []ToolBinary   `json:"binaries,omitempty"`
-	CreatedAt         time.Time      `json:"createdAt"`
-	UpdatedAt         time.Time      `json:"updatedAt"`
+	ID                        string         `json:"id"`
+	Name                      string         `json:"name"`
+	Description               string         `json:"description"`
+	PromptDescription         string         `json:"promptDescription,omitempty"`
+	PromptDescriptionOverride string         `json:"promptDescriptionOverride,omitempty"`
+	Type                      string         `json:"type"`
+	InputSchema               map[string]any `json:"inputSchema,omitempty"`
+	UserConfigSchema          map[string]any `json:"userConfigSchema,omitempty"`
+	UserConfig                map[string]any `json:"userConfig,omitempty"`
+	DefaultConfig             map[string]any `json:"defaultConfig,omitempty"`
+	Directory                 string         `json:"directory,omitempty"`
+	Binaries                  []ToolBinary   `json:"binaries,omitempty"`
+	CreatedAt                 time.Time      `json:"createdAt"`
+	UpdatedAt                 time.Time      `json:"updatedAt"`
+}
+
+type ToolUserSettings struct {
+	UserConfig                map[string]any `json:"userConfig"`
+	PromptDescriptionOverride string         `json:"promptDescriptionOverride,omitempty"`
+}
+
+func ToolPromptDescription(tool ToolDefinition) string {
+	if override := tool.PromptDescriptionOverride; strings.TrimSpace(override) != "" {
+		return override
+	}
+	if promptDescription := tool.PromptDescription; strings.TrimSpace(promptDescription) != "" {
+		return promptDescription
+	}
+	return tool.Description
 }
 
 type ToolBinary struct {

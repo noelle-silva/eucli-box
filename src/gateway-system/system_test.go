@@ -275,10 +275,10 @@ func TestProviderAndToolRoutes(t *testing.T) {
 	if refreshRec.Code != http.StatusOK || !strings.Contains(refreshRec.Body.String(), "gpt-4.1") {
 		t.Fatalf("refresh status = %d body=%s", refreshRec.Code, refreshRec.Body.String())
 	}
-	configReq := httptest.NewRequest(http.MethodPut, "/api/tools/file-reader/user-config", strings.NewReader(`{"userConfig":{"limit":20}}`))
+	configReq := httptest.NewRequest(http.MethodPut, "/api/tools/file-reader/user-config", strings.NewReader(`{"userConfig":{"limit":20},"promptDescriptionOverride":"Read files only when requested"}`))
 	configRec := httptest.NewRecorder()
 	system.Handler().ServeHTTP(configRec, configReq)
-	if configRec.Code != http.StatusOK || !strings.Contains(configRec.Body.String(), "\"limit\":20") {
+	if configRec.Code != http.StatusOK || !strings.Contains(configRec.Body.String(), "\"limit\":20") || !strings.Contains(configRec.Body.String(), "Read files only when requested") {
 		t.Fatalf("tool config status = %d body=%s", configRec.Code, configRec.Body.String())
 	}
 
@@ -724,9 +724,10 @@ func (f *fakeGatewayTools) ListTools(ctx context.Context) ([]types.ToolSummary, 
 	return tools, nil
 }
 
-func (f *fakeGatewayTools) SaveToolUserConfig(ctx context.Context, toolID string, userConfig map[string]any) (types.ToolDefinition, error) {
+func (f *fakeGatewayTools) SaveToolUserSettings(ctx context.Context, toolID string, settings types.ToolUserSettings) (types.ToolDefinition, error) {
 	tool := f.tools[toolID]
-	tool.UserConfig = userConfig
+	tool.UserConfig = settings.UserConfig
+	tool.PromptDescriptionOverride = settings.PromptDescriptionOverride
 	f.tools[toolID] = tool
 	return tool, nil
 }

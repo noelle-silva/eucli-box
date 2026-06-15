@@ -66,8 +66,5 @@ func buildTextToolInstructions(tools []types.ToolDefinition) string {
 }
 
 func toolPromptDescription(tool types.ToolDefinition) string {
-	if promptDescription := strings.TrimSpace(tool.PromptDescription); promptDescription != "" {
-		return promptDescription
-	}
-	return strings.TrimSpace(tool.Description)
+	return types.ToolPromptDescription(tool)
 }

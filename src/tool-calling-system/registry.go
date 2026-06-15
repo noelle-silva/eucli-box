@@ -44,13 +44,13 @@ func (s *system) ListTools(ctx context.Context) ([]types.ToolSummary, error) {
 	return tools, nil
 }
 
-func (s *system) SaveToolUserConfig(ctx context.Context, toolID string, userConfig map[string]any) (types.ToolDefinition, error) {
+func (s *system) SaveToolUserSettings(ctx context.Context, toolID string, settings types.ToolUserSettings) (types.ToolDefinition, error) {
 	if strings.TrimSpace(toolID) == "" {
 		return types.ToolDefinition{}, toolInvalid("tool id is required", nil)
 	}
-	tool, err := s.storage.SaveToolUserConfig(ctx, toolID, userConfig)
+	tool, err := s.storage.SaveToolUserSettings(ctx, toolID, settings)
 	if err != nil {
-		return types.ToolDefinition{}, toolStorageFailed("failed to save tool user config", err)
+		return types.ToolDefinition{}, toolStorageFailed("failed to save tool user settings", err)
 	}
 	return tool, nil
 }

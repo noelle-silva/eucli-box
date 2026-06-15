@@ -61,7 +61,7 @@ func (s *system) ListTools(ctx context.Context) ([]types.ToolSummary, error) {
 	return summaries, nil
 }
 
-func (s *system) SaveToolUserConfig(ctx context.Context, toolID string, userConfig map[string]any) (types.ToolDefinition, error) {
+func (s *system) SaveToolUserSettings(ctx context.Context, toolID string, settings types.ToolUserSettings) (types.ToolDefinition, error) {
 	id, err := cleanID(toolID)
 	if err != nil {
 		return types.ToolDefinition{}, err
@@ -77,10 +77,11 @@ func (s *system) SaveToolUserConfig(ctx context.Context, toolID string, userConf
 	if strings.TrimSpace(tool.ID) != id {
 		return types.ToolDefinition{}, storageInvalid("tool id does not match path", nil)
 	}
-	if userConfig == nil {
-		userConfig = map[string]any{}
+	if settings.UserConfig == nil {
+		settings.UserConfig = map[string]any{}
 	}
-	tool.UserConfig = userConfig
+	tool.UserConfig = settings.UserConfig
+	tool.PromptDescriptionOverride = settings.PromptDescriptionOverride
 	tool.UpdatedAt = time.Now().UTC()
 	if err := writeJSON(ctx, target, tool); err != nil {
 		return types.ToolDefinition{}, err

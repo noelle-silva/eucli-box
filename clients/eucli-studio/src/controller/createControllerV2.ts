@@ -117,7 +117,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     sideTab: 'roles' as string,
     models: { loading: false, error: '', items: [] as any[] },
     modelGroups: defaultModelGroupsState(),
-    tools: { loading: false, error: '', items: [] as any[], fetchedAt: 0, detailLoading: false, detailError: '', selectedToolId: '', selectedTool: null as any, configDraft: {} as Record<string, any>, saving: false, saveError: '' },
+    tools: { loading: false, error: '', items: [] as any[], fetchedAt: 0, detailLoading: false, detailError: '', selectedToolId: '', selectedTool: null as any, configDraft: {} as Record<string, any>, promptDescriptionDraft: '', saving: false, saveError: '' },
     modelRequestConfig: defaultModelRequestConfigState(),
     pendingChat: null as any,
     pendingGroupChat: null as any,
@@ -691,7 +691,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     emit,
     showToast: api.ui?.showToast,
   })
-  const { refreshTools, openToolConfig, closeToolConfig, setToolConfigValue, removeToolConfigValue, saveSelectedToolConfig } = toolCatalog
+  const { refreshTools, openToolConfig, closeToolConfig, setToolConfigValue, removeToolConfigValue, setToolPromptDescriptionDraft, resetToolPromptDescriptionDraftToDefault, saveSelectedToolConfig } = toolCatalog
 
   const modelRequestConfigController = createModelRequestConfigController({
     getState: () => state,
@@ -1518,6 +1518,8 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     closeToolConfig: () => closeToolConfig(),
     setToolConfigValue: (path: any, value: any) => setToolConfigValue(path, value),
     removeToolConfigValue: (path: any) => removeToolConfigValue(path),
+    setToolPromptDescriptionDraft: (value: any) => setToolPromptDescriptionDraft(value),
+    resetToolPromptDescriptionDraftToDefault: () => resetToolPromptDescriptionDraftToDefault(),
     saveSelectedToolConfig: () => saveSelectedToolConfig(),
     refreshModelRequestConfig: (force: any) => refreshModelRequestConfig(!!force),
     setModelRequestConfigDraft: (key: any, value: any) => setModelRequestConfigDraft(key, value),

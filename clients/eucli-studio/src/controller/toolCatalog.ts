@@ -46,14 +46,14 @@ export function createToolCatalog(deps: {
   async function openToolConfig(toolIdRaw: any) {
     const toolId = String(toolIdRaw || '').trim()
     if (!toolId) return null
-    patchCatalog({ detailLoading: true, detailError: '', selectedToolId: toolId, selectedTool: null, configDraft: {}, saveError: '' })
+    patchCatalog({ detailLoading: true, detailError: '', selectedToolId: toolId, selectedTool: null, configDraft: {}, promptDescriptionDraft: '', saveError: '' })
     deps.emit()
     try {
       const response = await deps.netRequest({ method: 'GET', path: `/api/tools/${encodeURIComponent(toolId)}`, timeoutMs: 15000 })
       const status = Number(response?.status || 0)
       if (status < 200 || status >= 300) throw new Error(`HTTP ${status}`)
       const tool = normalizeToolDefinition(response?.body)
-      patchCatalog({ detailLoading: false, detailError: '', selectedToolId: String(tool.id || toolId), selectedTool: tool, configDraft: clonePlainObject(tool.userConfig), saveError: '' })
+      patchCatalog({ detailLoading: false, detailError: '', selectedToolId: String(tool.id || toolId), selectedTool: tool, configDraft: clonePlainObject(tool.userConfig), promptDescriptionDraft: String(tool.promptDescriptionOverride ?? ''), saveError: '' })
       return tool
     } catch (e: any) {
       const error = String(e?.message || e || '工具详情加载失败')
@@ -66,7 +66,7 @@ export function createToolCatalog(deps: {
   }
 
   function closeToolConfig() {
-    patchCatalog({ selectedToolId: '', selectedTool: null, configDraft: {}, detailError: '', saveError: '' })
+    patchCatalog({ selectedToolId: '', selectedTool: null, configDraft: {}, promptDescriptionDraft: '', detailError: '', saveError: '' })
     deps.emit()
   }
 
@@ -90,21 +90,32 @@ export function createToolCatalog(deps: {
     deps.emit()
   }
 
+  function setToolPromptDescriptionDraft(value: any) {
+    patchCatalog({ promptDescriptionDraft: String(value ?? ''), saveError: '' })
+    deps.emit()
+  }
+
+  function resetToolPromptDescriptionDraftToDefault() {
+    patchCatalog({ promptDescriptionDraft: '', saveError: '' })
+    deps.emit()
+  }
+
   async function saveSelectedToolConfig() {
     const { catalog } = currentCatalog()
     const toolId = String(catalog.selectedToolId || catalog.selectedTool?.id || '').trim()
     if (!toolId) return false
 
     const userConfig = clonePlainObject(catalog.configDraft)
+    const promptDescriptionOverride = String(catalog.promptDescriptionDraft ?? '')
 
     patchCatalog({ saving: true, saveError: '' })
     deps.emit()
     try {
-      const response = await deps.netRequest({ method: 'PUT', path: `/api/tools/${encodeURIComponent(toolId)}/user-config`, body: { userConfig }, timeoutMs: 15000 })
+      const response = await deps.netRequest({ method: 'PUT', path: `/api/tools/${encodeURIComponent(toolId)}/user-config`, body: { userConfig, promptDescriptionOverride }, timeoutMs: 15000 })
       const status = Number(response?.status || 0)
       if (status < 200 || status >= 300) throw new Error(`HTTP ${status}`)
       const tool = normalizeToolDefinition(response?.body)
-      patchCatalog({ saving: false, saveError: '', selectedTool: tool, selectedToolId: String(tool.id || toolId), configDraft: clonePlainObject(tool.userConfig) })
+      patchCatalog({ saving: false, saveError: '', selectedTool: tool, selectedToolId: String(tool.id || toolId), configDraft: clonePlainObject(tool.userConfig), promptDescriptionDraft: String(tool.promptDescriptionOverride ?? '') })
       await refreshTools(true)
       deps.showToast?.('工具配置已保存', { kind: 'success' })
       return true
@@ -118,7 +129,7 @@ export function createToolCatalog(deps: {
     }
   }
 
-  return { refreshTools, openToolConfig, closeToolConfig, setToolConfigValue, removeToolConfigValue, saveSelectedToolConfig }
+  return { refreshTools, openToolConfig, closeToolConfig, setToolConfigValue, removeToolConfigValue, setToolPromptDescriptionDraft, resetToolPromptDescriptionDraftToDefault, saveSelectedToolConfig }
 }
 
 function defaultToolCatalogState() {
@@ -132,6 +143,7 @@ function defaultToolCatalogState() {
     selectedToolId: '',
     selectedTool: null as any,
     configDraft: {} as Record<string, any>,
+    promptDescriptionDraft: '',
     saving: false,
     saveError: '',
   }
@@ -166,6 +178,7 @@ function normalizeToolDefinition(value: any): any {
     name: String((source as any).name || (source as any).id || '').trim(),
     description: String((source as any).description || '').trim(),
     promptDescription: String((source as any).promptDescription || '').trim(),
+    promptDescriptionOverride: String((source as any).promptDescriptionOverride ?? ''),
     type: String((source as any).type || '').trim(),
     inputSchema: objectOrNull((source as any).inputSchema),
     userConfigSchema: objectOrNull((source as any).userConfigSchema),

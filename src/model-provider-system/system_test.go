@@ -508,9 +508,13 @@ func TestCompleteUsesConfiguredTimeout(t *testing.T) {
 }
 
 func TestModelToolDescriptionPrefersPromptDescription(t *testing.T) {
-	tool := types.ToolDefinition{Description: "Short description", PromptDescription: "Detailed prompt usage"}
-	if got := modelToolDescription(tool); got != "Detailed prompt usage" {
+	tool := types.ToolDefinition{Description: "Short description", PromptDescription: "Detailed prompt usage", PromptDescriptionOverride: "User prompt usage"}
+	if got := modelToolDescription(tool); got != "User prompt usage" {
 		t.Fatalf("description = %q", got)
+	}
+	tool.PromptDescriptionOverride = ""
+	if got := modelToolDescription(tool); got != "Detailed prompt usage" {
+		t.Fatalf("prompt description = %q", got)
 	}
 	tool.PromptDescription = ""
 	if got := modelToolDescription(tool); got != "Short description" {

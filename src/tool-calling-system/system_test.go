@@ -71,7 +71,7 @@ func TestTextToolInstructionsPreferPromptDescription(t *testing.T) {
 	}
 }
 
-func TestSaveToolUserConfigUpdatesOnlyUserConfig(t *testing.T) {
+func TestSaveToolUserSettingsUpdatesConfigAndPromptOverride(t *testing.T) {
 	storage := newFakeToolStorage()
 	system := newTestToolSystem(t, &fakePermission{}, storage, Config{})
 	tool := types.ToolDefinition{ID: "shell_command", Name: "shell_command", Description: "Run shell command", Type: "local", DefaultConfig: map[string]any{"provider": "git-bash"}}
@@ -79,12 +79,23 @@ func TestSaveToolUserConfigUpdatesOnlyUserConfig(t *testing.T) {
 		t.Fatalf("SaveTool() error = %v", err)
 	}
 
-	updated, err := system.SaveToolUserConfig(context.Background(), tool.ID, map[string]any{"timeoutMs": float64(2000)})
+	updated, err := system.SaveToolUserSettings(context.Background(), tool.ID, types.ToolUserSettings{UserConfig: map[string]any{"timeoutMs": float64(2000)}, PromptDescriptionOverride: "Run one safe command"})
 	if err != nil {
-		t.Fatalf("SaveToolUserConfig() error = %v", err)
+		t.Fatalf("SaveToolUserSettings() error = %v", err)
 	}
-	if updated.UserConfig["timeoutMs"] != float64(2000) || updated.DefaultConfig["provider"] != "git-bash" || updated.Description != tool.Description {
+	if updated.UserConfig["timeoutMs"] != float64(2000) || updated.PromptDescriptionOverride != "Run one safe command" || updated.DefaultConfig["provider"] != "git-bash" || updated.Description != tool.Description {
 		t.Fatalf("updated tool = %#v", updated)
+	}
+}
+
+func TestTextToolInstructionsPreferPromptDescriptionOverride(t *testing.T) {
+	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{})
+	prompt, err := system.TextToolInstructions(context.Background(), []types.ToolDefinition{{ID: "shell_command", Name: "shell_command", Description: "Short description", PromptDescription: "Detailed prompt usage", PromptDescriptionOverride: "User prompt usage"}})
+	if err != nil {
+		t.Fatalf("TextToolInstructions() error = %v", err)
+	}
+	if !strings.Contains(prompt.Content, "User prompt usage") || strings.Contains(prompt.Content, "Detailed prompt usage") || strings.Contains(prompt.Content, "Short description") {
+		t.Fatalf("prompt = %s", prompt.Content)
 	}
 }
 
@@ -407,12 +418,13 @@ func (f *fakeToolStorage) ListTools(ctx context.Context) ([]types.ToolSummary, e
 	return summaries, nil
 }
 
-func (f *fakeToolStorage) SaveToolUserConfig(ctx context.Context, toolID string, userConfig map[string]any) (types.ToolDefinition, error) {
+func (f *fakeToolStorage) SaveToolUserSettings(ctx context.Context, toolID string, settings types.ToolUserSettings) (types.ToolDefinition, error) {
 	tool, ok := f.tools[toolID]
 	if !ok {
 		return types.ToolDefinition{}, errors.New("tool missing")
 	}
-	tool.UserConfig = userConfig
+	tool.UserConfig = settings.UserConfig
+	tool.PromptDescriptionOverride = settings.PromptDescriptionOverride
 	f.tools[toolID] = tool
 	return tool, nil
 }

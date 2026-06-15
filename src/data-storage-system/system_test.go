@@ -660,7 +660,7 @@ func TestLoadToolResolvesRelativeDirectoryAgainstToolFolder(t *testing.T) {
 	}
 }
 
-func TestSaveToolUserConfigPreservesToolDefinition(t *testing.T) {
+func TestSaveToolUserSettingsPreservesToolDefinition(t *testing.T) {
 	system := newTestSystem(t)
 	tool := types.ToolDefinition{
 		ID:          "shell_command",
@@ -682,12 +682,15 @@ func TestSaveToolUserConfigPreservesToolDefinition(t *testing.T) {
 		t.Fatalf("SaveTool() error = %v", err)
 	}
 
-	updated, err := system.SaveToolUserConfig(context.Background(), tool.ID, map[string]any{"timeoutMs": float64(2000)})
+	updated, err := system.SaveToolUserSettings(context.Background(), tool.ID, types.ToolUserSettings{UserConfig: map[string]any{"timeoutMs": float64(2000)}, PromptDescriptionOverride: "Use shell carefully"})
 	if err != nil {
-		t.Fatalf("SaveToolUserConfig() error = %v", err)
+		t.Fatalf("SaveToolUserSettings() error = %v", err)
 	}
 	if updated.UserConfig["timeoutMs"] != float64(2000) {
 		t.Fatalf("userConfig = %#v", updated.UserConfig)
+	}
+	if updated.PromptDescriptionOverride != "Use shell carefully" {
+		t.Fatalf("promptDescriptionOverride = %q", updated.PromptDescriptionOverride)
 	}
 	if updated.Name != tool.Name || updated.Description != tool.Description || updated.Type != tool.Type || updated.DefaultConfig["provider"] != "git-bash" || len(updated.Binaries) != 1 || updated.UserConfigSchema["type"] != "object" {
 		t.Fatalf("tool definition was not preserved: %#v", updated)

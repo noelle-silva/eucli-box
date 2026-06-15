@@ -19,15 +19,15 @@ const (
 )
 
 var (
-	roleKeyPattern        = regexp.MustCompile(`^roles/([^/]+)/role$`)
-	groupKeyPattern       = regexp.MustCompile(`^groups/([^/]+)/group$`)
-	providerKeyPattern    = regexp.MustCompile(`^providers/([^/]+)/provider$`)
-	modelGroupKeyPattern  = regexp.MustCompile(`^model-groups/([^/]+)/model-group$`)
-	chatKeyPattern        = regexp.MustCompile(`^chats/([^/]+)/([^/]+)/chat$`)
-	roleChatIndexPattern  = regexp.MustCompile(`^chats/([^/]+)/index$`)
-	groupChatKeyPattern   = regexp.MustCompile(`^groups/([^/]+)/chats/([^/]+)$`)
-	groupChatIndexPattern = regexp.MustCompile(`^groups/([^/]+)/chats/index$`)
-	roleAvatarPathPattern = regexp.MustCompile(`^roles/([^/]+)/avatar\.(png|jpg|jpeg|webp)$`)
+	roleKeyPattern         = regexp.MustCompile(`^roles/([^/]+)/role$`)
+	groupKeyPattern        = regexp.MustCompile(`^groups/([^/]+)/group$`)
+	providerKeyPattern     = regexp.MustCompile(`^providers/([^/]+)/provider$`)
+	modelGroupKeyPattern   = regexp.MustCompile(`^model-groups/([^/]+)/model-group$`)
+	chatKeyPattern         = regexp.MustCompile(`^chats/([^/]+)/([^/]+)/chat$`)
+	roleChatIndexPattern   = regexp.MustCompile(`^chats/([^/]+)/index$`)
+	groupChatKeyPattern    = regexp.MustCompile(`^groups/([^/]+)/chats/([^/]+)$`)
+	groupChatIndexPattern  = regexp.MustCompile(`^groups/([^/]+)/chats/index$`)
+	roleAvatarPathPattern  = regexp.MustCompile(`^roles/([^/]+)/avatar\.(png|jpg|jpeg|webp)$`)
 	groupAvatarPathPattern = regexp.MustCompile(`^groups/([^/]+)/avatar\.(png|jpg|jpeg|webp)$`)
 )
 
@@ -103,11 +103,11 @@ func (p *projectionService) set(ctx context.Context, key string, value any) erro
 	if match := roleChatIndexPattern.FindStringSubmatch(key); match != nil {
 		return p.saveRoleChatIndex(ctx, match[1], value)
 	}
-	if match := groupChatKeyPattern.FindStringSubmatch(key); match != nil {
-		return p.saveGroupSession(ctx, match[1], value)
-	}
 	if match := groupChatIndexPattern.FindStringSubmatch(key); match != nil {
 		return p.saveGroupChatIndex(ctx, match[1], value)
+	}
+	if match := groupChatKeyPattern.FindStringSubmatch(key); match != nil {
+		return p.saveGroupSession(ctx, match[1], value)
 	}
 	if key == "meta/index" {
 		return p.saveMeta(ctx, value)
@@ -214,6 +214,9 @@ func (p *projectionService) remove(ctx context.Context, key string) error {
 		}
 		_, err = p.eb.request(ctx, ebRequest{Method: "DELETE", Path: fmt.Sprintf("/api/roles/%s/sessions/%s", roleID, match[2])})
 		return err
+	}
+	if match := groupChatIndexPattern.FindStringSubmatch(key); match != nil {
+		return p.saveGroupChatIndex(ctx, match[1], map[string]any{"activeChatId": ""})
 	}
 	if match := groupChatKeyPattern.FindStringSubmatch(key); match != nil {
 		groupID, err := p.groupIDByFolder(ctx, match[1])

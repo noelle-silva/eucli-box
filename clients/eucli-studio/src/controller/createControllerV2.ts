@@ -662,23 +662,22 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     if (run) await run
   }
 
-  async function activeChatSettingsTarget() {
+  async function activeRoleChatSettingsTarget() {
     if (!state.data) return null
-    const kind: 'role' | 'group' = activeTargetKind() === 'group' ? 'group' : 'role'
-    const target = kind === 'group' ? activeGroup() : activeRole()
+    if (activeTargetKind() !== 'role') return null
+    const target = activeRole()
     const targetId = String((target as any)?.id || '').trim()
     if (!targetId) return null
-    const pendingChat = pendingChatForTarget(state, kind, targetId)
+    const pendingChat = pendingChatForTarget(state, 'role', targetId)
     if (!pendingChat) await ensureActiveChatLoaded()
     const chat = pendingChat || activeChatFromData()
     if (!chat) return null
-    return { kind, targetId, pendingChat, chat }
+    return { targetId, pendingChat, chat }
   }
 
-  async function saveChatSettingsTarget(target: { kind: 'role' | 'group'; targetId: string; pendingChat: any; chat: any }) {
+  async function saveRoleChatSettingsTarget(target: { targetId: string; pendingChat: any; chat: any }) {
     if (target.pendingChat) return
-    if (target.kind === 'group') await saveGroupChat(target.targetId, target.chat)
-    else await saveRoleChat(target.targetId, target.chat)
+    await saveRoleChat(target.targetId, target.chat)
   }
 
   // ============================================================
@@ -2015,7 +2014,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       const pid = String(providerId || '').trim()
       const mid = String(modelId || '').trim()
       if (!pid || !mid) return api.ui?.showToast?.('供应商/模型 不能为空', { kind: 'error' })
-      const target = await activeChatSettingsTarget()
+      const target = await activeRoleChatSettingsTarget()
       if (!target) return api.ui?.showToast?.('请先创建或选择会话', { kind: 'error' })
       const chat = target.chat
       const previousOverride = (chat as any).modelOverride
@@ -2025,7 +2024,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       emit()
       try {
         await trackChatSettingsSave(async () => {
-          await saveChatSettingsTarget(target)
+          await saveRoleChatSettingsTarget(target)
         })
       } catch (e) {
         if ((chat as any).modelOverride === nextOverride) {
@@ -2039,7 +2038,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     },
     clearChatModelOverride: async () => {
       if (!state.data) return
-      const target = await activeChatSettingsTarget()
+      const target = await activeRoleChatSettingsTarget()
       if (!target) return
       const chat = target.chat
       if (!(chat as any).modelOverride) return
@@ -2049,7 +2048,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       emit()
       try {
         await trackChatSettingsSave(async () => {
-          await saveChatSettingsTarget(target)
+          await saveRoleChatSettingsTarget(target)
         })
       } catch (e) {
         if (!(chat as any).modelOverride) {
@@ -2063,7 +2062,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     setChatReasoningEffort: async (effort: any) => {
       if (!state.data) return
       const next = normalizeReasoningEffort(effort)
-      const target = await activeChatSettingsTarget()
+      const target = await activeRoleChatSettingsTarget()
       if (!target) return
       const chat = target.chat
       const previousEffort = (chat as any).reasoningEffort
@@ -2074,7 +2073,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       emit()
       try {
         await trackChatSettingsSave(async () => {
-          await saveChatSettingsTarget(target)
+          await saveRoleChatSettingsTarget(target)
         })
       } catch (e) {
         const currentEffort = String((chat as any).reasoningEffort || '').trim()

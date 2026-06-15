@@ -421,7 +421,6 @@ export function normalizeData(raw: any) {
         const fallbackHeadMid = messages.length ? String((messages[messages.length - 1] as any)?.id || '') : ''
         const branching = normalizeChatBranching((cc as any).branching, fallbackHeadMid, createdAt, updatedAt)
         const activeBranchId = normalizeBranchId((branching as any).activeBranchId)
-        const modelOverride = normalizeChatModelOverride(cc)
 
         const out: any = {
           id: cid,
@@ -432,10 +431,6 @@ export function normalizeData(raw: any) {
           branching,
           messages: messages.filter((m: any) => m && typeof m === 'object').map((m: any) => normalizeChatMessage(m, { activeBranchId, toolMessagesAsAssistant: false })),
         }
-
-        if (modelOverride) out.modelOverride = modelOverride
-        const reasoningEffort = normalizeReasoningEffort((cc as any).reasoningEffort)
-        if (reasoningEffort) out.reasoningEffort = reasoningEffort
 
         const branches0 = Array.isArray(out.branching?.branches) ? out.branching.branches : []
         const idSet = new Set<string>()

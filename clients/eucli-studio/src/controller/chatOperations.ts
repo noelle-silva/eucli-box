@@ -559,7 +559,7 @@ export function createChatOperations(deps: {
     }
   }
 
-  async function runGroupSpeakerSequence(input: { groupId: string; sessionId: string; roleIds: string[]; operationText: string; contextMessageId?: string; message?: string; attachments?: any[]; parentMessageId?: string; modelOverride?: ModelRef | null; reasoningEffort?: string; clearComposerDraftKey?: string }, opts?: ExistingMessageRunOptions) {
+  async function runGroupSpeakerSequence(input: { groupId: string; sessionId: string; roleIds: string[]; operationText: string; contextMessageId?: string; message?: string; attachments?: any[]; parentMessageId?: string; clearComposerDraftKey?: string }, opts?: ExistingMessageRunOptions) {
     const state = getState()
     const groupId = String(input.groupId || '').trim()
     let sessionId = String(input.sessionId || '').trim()
@@ -587,8 +587,6 @@ export function createChatOperations(deps: {
           roleId,
           groupId,
           sessionId,
-          reasoningEffort: String(input.reasoningEffort || chatReasoningEffort(chatBeforeRun) || '').trim(),
-          modelOverride: typeof input.modelOverride !== 'undefined' ? input.modelOverride : normalizeChatModelOverride(chatBeforeRun),
           stream: !!state.data?.settings?.streamEnabled,
         }
         if (isFirstMessageRun) {
@@ -1003,8 +1001,6 @@ export function createChatOperations(deps: {
     const currentChat = (await ensureActiveChatLoaded?.().catch(() => null)) || sa.activeChatFromData()
     const pendingChat = pendingChatForTarget(state, 'group', groupId)
     const sessionChat = pendingChat ? null : currentChat
-    const modelOverride = normalizeChatModelOverride(pendingChat || sessionChat)
-    const reasoningEffort = chatReasoningEffort(pendingChat || sessionChat)
     const speakerPlan = buildGroupSpeakerPlan(group, (roleId) => !!sa.getRoleById(roleId))
     if (speakerPlan.error) return showToast?.(speakerPlan.error, { kind: 'error' })
 
@@ -1019,8 +1015,6 @@ export function createChatOperations(deps: {
       message: input,
       attachments,
       parentMessageId,
-      modelOverride,
-      reasoningEffort,
       clearComposerDraftKey: draftKey,
       operationText: '群组发送',
     }, opts)

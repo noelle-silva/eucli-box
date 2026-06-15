@@ -1655,6 +1655,13 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const [tempModelPick, setTempModelPick] = React.useState('')
   const composerInputRef = React.useRef<HTMLTextAreaElement | HTMLInputElement | null>(null)
   const draftFilePickerInputRef = React.useRef<HTMLInputElement | null>(null)
+  const roleSessionControlsEnabled = activeTargetKind === 'role'
+
+  React.useEffect(() => {
+    if (roleSessionControlsEnabled) return
+    setTempModelPickerEl(null)
+    setReasoningPickerEl(null)
+  }, [roleSessionControlsEnabled])
 
   const focusComposerSoon = useEvent(() => {
     if (page !== 'chat') return
@@ -2945,6 +2952,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   })
   const closeTempModelPicker = useEvent(() => setTempModelPickerEl(null))
   const openTempModelPicker = useEvent((e: React.MouseEvent<HTMLElement>) => {
+    if (!roleSessionControlsEnabled) return
     if (!activeRole) return
     if (!providers.length) return controller?.capabilities?.ui?.showToast?.('暂无供应商', { kind: 'error' })
 
@@ -2986,6 +2994,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     closeTempModelPicker()
   })
   const openReasoningPicker = useEvent((e: React.MouseEvent<HTMLElement>) => {
+    if (!roleSessionControlsEnabled) return
     if (!reasoningProfile.supportsReasoning) return
     setReasoningPickerEl(e.currentTarget)
   })
@@ -5175,24 +5184,26 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                         </span>
                       </Tooltip>
 
-                      <Tooltip title={hasChatOverride ? `临时模型：${formatModelRefText(chatOverride)}` : `角色模型：${effectiveModelId || '未配置模型'}`}>
-                        <span>
-                          <Button
-                            aria-label="临时切换模型"
-                            onClick={openTempModelPicker}
-                            disabled={s.loading || !activeRole || !providers.length}
-                            size="small"
-                            variant="text"
-                            sx={{ ...composerToolTextButtonSx, color: hasChatOverride ? 'primary.main' : 'text.secondary' }}
-                          >
-                            <Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {effectiveModelId || '未配置模型'}
-                            </Box>
-                          </Button>
-                        </span>
-                      </Tooltip>
+                      {roleSessionControlsEnabled ? (
+                        <Tooltip title={hasChatOverride ? `临时模型：${formatModelRefText(chatOverride)}` : `角色模型：${effectiveModelId || '未配置模型'}`}>
+                          <span>
+                            <Button
+                              aria-label="临时切换模型"
+                              onClick={openTempModelPicker}
+                              disabled={s.loading || !activeRole || !providers.length}
+                              size="small"
+                              variant="text"
+                              sx={{ ...composerToolTextButtonSx, color: hasChatOverride ? 'primary.main' : 'text.secondary' }}
+                            >
+                              <Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {effectiveModelId || '未配置模型'}
+                              </Box>
+                            </Button>
+                          </span>
+                        </Tooltip>
+                      ) : null}
 
-                      {reasoningProfile.supportsReasoning ? (
+                      {roleSessionControlsEnabled && reasoningProfile.supportsReasoning ? (
                         <Tooltip title={`思考等级：${activeReasoningLabel || '默认'}`}>
                           <span>
                             <Button
@@ -5246,7 +5257,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
         </Popover>
 
         <Popover
-          open={!!tempModelPickerEl}
+          open={roleSessionControlsEnabled && !!tempModelPickerEl}
           anchorEl={tempModelPickerEl}
           onClose={closeTempModelPicker}
           anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
@@ -5332,7 +5343,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
         </Popover>
 
         <Popover
-          open={!!reasoningPickerEl}
+          open={roleSessionControlsEnabled && !!reasoningPickerEl}
           anchorEl={reasoningPickerEl}
           onClose={closeReasoningPicker}
           anchorOrigin={{ vertical: 'top', horizontal: 'left' }}

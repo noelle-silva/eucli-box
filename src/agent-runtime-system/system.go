@@ -21,7 +21,9 @@ type StorageSystem interface {
 	SaveSession(ctx context.Context, session types.Session) error
 	SaveSessionMessages(ctx context.Context, save types.SessionMessageSave) error
 	LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error)
+	LoadGroupSession(ctx context.Context, groupID string, sessionID string) (types.Session, error)
 	SaveSessionMessageAttachment(ctx context.Context, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
+	SaveGroupSessionMessageAttachment(ctx context.Context, groupID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
 	LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error)
 	LoadContextCompressionConfig(ctx context.Context) (types.ContextCompressionConfig, error)
 }
@@ -66,6 +68,7 @@ type system struct {
 type runRecord struct {
 	runID                       string
 	roleID                      string
+	groupID                     string
 	state                       types.RunState
 	session                     types.Session
 	messageParent               types.Message

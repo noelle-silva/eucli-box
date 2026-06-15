@@ -18,9 +18,14 @@ export function normalizeStoredChat(chat: any, kind: StoredChatKind) {
         chats: [{ ...chat, title: String(chat?.title || '').trim() || fallbackTitle }],
       },
     },
-    groups: [],
-    chatsByGroup: {},
-    ui: {},
+    groups: kind === 'group' ? [{ id: '__lazy_group__', name: '__lazy__', createdAt: 1, updatedAt: 1, memberRoleIds: [], roundRobinOrder: [], random: { weightsByRoleId: {}, minCount: 1, maxCount: 1 } }] : [],
+    chatsByGroup: kind === 'group'
+      ? { __lazy_group__: { activeChatId: id, chats: [{ ...chat, title: String(chat?.title || '').trim() || fallbackTitle }] } }
+      : {},
+    ui: { activeTargetKind: kind, activeRoleId: '__lazy_role__', activeGroupId: kind === 'group' ? '__lazy_group__' : '' },
   }
-  return normalizeData(data).chatsByRole.__lazy_role__.chats[0] || null
+  const normalized = normalizeData(data) as any
+  return kind === 'group'
+    ? normalized.chatsByGroup.__lazy_group__.chats[0] || null
+    : normalized.chatsByRole.__lazy_role__.chats[0] || null
 }

@@ -14,6 +14,7 @@ const defaultSessionBranchID = "main"
 func normalizeSessionForStorage(session types.Session, now time.Time) types.Session {
 	session.ID = strings.TrimSpace(session.ID)
 	session.RoleID = strings.TrimSpace(session.RoleID)
+	session.GroupID = strings.TrimSpace(session.GroupID)
 	session.Title = normalizeSessionTitle(session.Title)
 	if session.Status == "" {
 		session.Status = string(types.RunStatusCreated)
@@ -70,6 +71,7 @@ func normalizeSessionMessages(messages []types.Message, now time.Time) []types.M
 		seen[message.ID] = struct{}{}
 
 		message.Type = normalizeMessageType(message.Type)
+		message.SpeakerRoleID = strings.TrimSpace(message.SpeakerRoleID)
 		message.Control = normalizeMessageControl(message.Type, message.Control)
 		message.Error = normalizeErrorPayload(message.Error)
 		message.Attachments = normalizeSessionMessageAttachments(message.Attachments)
@@ -389,9 +391,21 @@ func normalizeBranchID(branchID string) string {
 }
 
 func (s *system) UpdateSessionTitle(ctx context.Context, roleID string, sessionID string, title string) (types.Session, error) {
+	return s.updateSessionTitle(ctx, roleSessionScope(roleID), sessionID, title)
+}
+
+func (s *system) UpdateGroupSessionTitle(ctx context.Context, groupID string, sessionID string, title string) (types.Session, error) {
+	return s.updateSessionTitle(ctx, groupSessionScope(groupID), sessionID, title)
+}
+
+func (s *system) updateSessionTitle(ctx context.Context, scope sessionScope, sessionID string, title string) (types.Session, error) {
 	s.sessionMu.Lock()
 	defer s.sessionMu.Unlock()
-	session, err := s.LoadSession(ctx, roleID, sessionID)
+	scope, err := cleanSessionScope(scope)
+	if err != nil {
+		return types.Session{}, err
+	}
+	session, err := s.loadSession(ctx, scope, sessionID)
 	if err != nil {
 		return types.Session{}, err
 	}
@@ -404,10 +418,10 @@ func (s *system) UpdateSessionTitle(ctx context.Context, roleID string, sessionI
 	if _, err := s.writeSessionData(ctx, session, now); err != nil {
 		return types.Session{}, err
 	}
-	if err := s.rebuildSessionIndexes(ctx, roleID); err != nil {
+	if err := s.rebuildSessionIndexesForScope(ctx, scope); err != nil {
 		return types.Session{}, err
 	}
-	return s.LoadSession(ctx, roleID, sessionID)
+	return s.loadSession(ctx, scope, sessionID)
 }
 
 func normalizeSessionMetadata(metadata map[string]string) map[string]string {
@@ -440,8 +454,20 @@ func normalizeSessionMetadata(metadata map[string]string) map[string]string {
 }
 
 func (s *system) UpdateSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string, patch types.SessionMessagePatch) (types.Message, error) {
+	return s.updateSessionMessage(ctx, roleSessionScope(roleID), sessionID, messageID, patch)
+}
+
+func (s *system) UpdateGroupSessionMessage(ctx context.Context, groupID string, sessionID string, messageID string, patch types.SessionMessagePatch) (types.Message, error) {
+	return s.updateSessionMessage(ctx, groupSessionScope(groupID), sessionID, messageID, patch)
+}
+
+func (s *system) updateSessionMessage(ctx context.Context, scope sessionScope, sessionID string, messageID string, patch types.SessionMessagePatch) (types.Message, error) {
 	s.sessionMu.Lock()
 	defer s.sessionMu.Unlock()
+	scope, err := cleanSessionScope(scope)
+	if err != nil {
+		return types.Message{}, err
+	}
 	messageID = strings.TrimSpace(messageID)
 	if messageID == "" {
 		return types.Message{}, storageInvalid("message id is required", nil)
@@ -449,7 +475,7 @@ func (s *system) UpdateSessionMessage(ctx context.Context, roleID string, sessio
 	if patch.Content == nil && patch.Parts == nil {
 		return types.Message{}, storageInvalid("message patch is empty", nil)
 	}
-	session, err := s.LoadSession(ctx, roleID, sessionID)
+	session, err := s.loadSession(ctx, scope, sessionID)
 	if err != nil {
 		return types.Message{}, err
 	}
@@ -494,20 +520,32 @@ func (s *system) UpdateSessionMessage(ctx context.Context, roleID string, sessio
 	if _, err := s.writeSessionData(ctx, session, now); err != nil {
 		return types.Message{}, err
 	}
-	if err := s.rebuildSessionIndexes(ctx, roleID); err != nil {
+	if err := s.rebuildSessionIndexesForScope(ctx, scope); err != nil {
 		return types.Message{}, err
 	}
 	return updatedMessage, nil
 }
 
 func (s *system) DeleteSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error) {
+	return s.deleteSessionMessage(ctx, roleSessionScope(roleID), sessionID, messageID)
+}
+
+func (s *system) DeleteGroupSessionMessage(ctx context.Context, groupID string, sessionID string, messageID string) (types.Session, error) {
+	return s.deleteSessionMessage(ctx, groupSessionScope(groupID), sessionID, messageID)
+}
+
+func (s *system) deleteSessionMessage(ctx context.Context, scope sessionScope, sessionID string, messageID string) (types.Session, error) {
 	s.sessionMu.Lock()
 	defer s.sessionMu.Unlock()
+	scope, err := cleanSessionScope(scope)
+	if err != nil {
+		return types.Session{}, err
+	}
 	messageID = strings.TrimSpace(messageID)
 	if messageID == "" {
 		return types.Session{}, storageInvalid("message id is required", nil)
 	}
-	session, err := s.LoadSession(ctx, roleID, sessionID)
+	session, err := s.loadSession(ctx, scope, sessionID)
 	if err != nil {
 		return types.Session{}, err
 	}
@@ -548,20 +586,32 @@ func (s *system) DeleteSessionMessage(ctx context.Context, roleID string, sessio
 	if _, err := s.writeSessionData(ctx, session, now); err != nil {
 		return types.Session{}, err
 	}
-	if err := s.rebuildSessionIndexes(ctx, roleID); err != nil {
+	if err := s.rebuildSessionIndexesForScope(ctx, scope); err != nil {
 		return types.Session{}, err
 	}
-	return s.LoadSession(ctx, roleID, sessionID)
+	return s.loadSession(ctx, scope, sessionID)
 }
 
 func (s *system) DeleteSessionMessageSubtree(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error) {
+	return s.deleteSessionMessageSubtree(ctx, roleSessionScope(roleID), sessionID, messageID)
+}
+
+func (s *system) DeleteGroupSessionMessageSubtree(ctx context.Context, groupID string, sessionID string, messageID string) (types.Session, error) {
+	return s.deleteSessionMessageSubtree(ctx, groupSessionScope(groupID), sessionID, messageID)
+}
+
+func (s *system) deleteSessionMessageSubtree(ctx context.Context, scope sessionScope, sessionID string, messageID string) (types.Session, error) {
 	s.sessionMu.Lock()
 	defer s.sessionMu.Unlock()
+	scope, err := cleanSessionScope(scope)
+	if err != nil {
+		return types.Session{}, err
+	}
 	messageID = strings.TrimSpace(messageID)
 	if messageID == "" {
 		return types.Session{}, storageInvalid("message id is required", nil)
 	}
-	session, err := s.LoadSession(ctx, roleID, sessionID)
+	session, err := s.loadSession(ctx, scope, sessionID)
 	if err != nil {
 		return types.Session{}, err
 	}
@@ -615,8 +665,8 @@ func (s *system) DeleteSessionMessageSubtree(ctx context.Context, roleID string,
 	if _, err := s.writeSessionData(ctx, session, now); err != nil {
 		return types.Session{}, err
 	}
-	if err := s.rebuildSessionIndexes(ctx, roleID); err != nil {
+	if err := s.rebuildSessionIndexesForScope(ctx, scope); err != nil {
 		return types.Session{}, err
 	}
-	return s.LoadSession(ctx, roleID, sessionID)
+	return s.loadSession(ctx, scope, sessionID)
 }

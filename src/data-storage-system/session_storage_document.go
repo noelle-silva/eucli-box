@@ -9,6 +9,7 @@ import (
 type sessionStorageDocument struct {
 	ID         string                 `json:"id"`
 	RoleID     string                 `json:"roleId"`
+	GroupID    string                 `json:"groupId,omitempty"`
 	Title      string                 `json:"title"`
 	Status     string                 `json:"status"`
 	Messages   []messageStorageRecord `json:"messages"`
@@ -21,6 +22,7 @@ type sessionStorageDocument struct {
 type messageStorageRecord struct {
 	ID              string                    `json:"id"`
 	Type            string                    `json:"type"`
+	SpeakerRoleID   string                    `json:"speakerRoleId,omitempty"`
 	Content         string                    `json:"content,omitempty"`
 	Control         *types.MessageControl     `json:"control,omitempty"`
 	Error           *types.ErrorPayload       `json:"error,omitempty"`
@@ -44,6 +46,7 @@ func toSessionStorageDocument(session types.Session) sessionStorageDocument {
 	return sessionStorageDocument{
 		ID:         session.ID,
 		RoleID:     session.RoleID,
+		GroupID:    session.GroupID,
 		Title:      session.Title,
 		Status:     session.Status,
 		Messages:   messages,
@@ -62,6 +65,7 @@ func toMessageStorageRecord(message types.Message) messageStorageRecord {
 	return messageStorageRecord{
 		ID:              message.ID,
 		Type:            message.Type,
+		SpeakerRoleID:   message.SpeakerRoleID,
 		Content:         content,
 		Control:         message.Control,
 		Error:           message.Error,

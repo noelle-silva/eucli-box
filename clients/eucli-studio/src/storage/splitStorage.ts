@@ -379,6 +379,95 @@ export function createSplitStorage(deps: {
     await saveChatEntry('group', groupId, chat, intent)
   }
 
+  async function setActiveGroupChatSelection(groupIdRaw: any, chatIdRaw: any) {
+    const groupId = String(groupIdRaw || '').trim()
+    const chatId = String(chatIdRaw || '').trim()
+    if (!groupId) return
+    await withSplitMetaWrite(async () => {
+      const meta = (await loadSplitMeta()) || splitMetaCache
+      if (!meta) throw new Error('存储未初始化')
+      const folder = String((meta as any)?.groupFolders?.[groupId] || '').trim()
+      if (!folder) throw new Error('群组不存在')
+      const key = splitGroupChatIndexKey(folder)
+      const idx0 = await storage.get(key).catch(() => null)
+      const idx = idx0 && typeof idx0 === 'object'
+        ? { ...idx0 }
+        : { schemaVersion: SPLIT_SCHEMA_VERSION, groupId, groupFolder: folder, activeChatId: '', chatIds: [], chatUpdatedAt: {}, chatMetas: [] }
+      ;(idx as any).activeChatId = chatId
+      ;(idx as any).updatedAt = now()
+      await storage.set(key, idx)
+      const chatIndexByGroup = { ...((meta as any).chatIndexByGroup || {}) }
+      chatIndexByGroup[groupId] = { ...(chatIndexByGroup[groupId] || {}), ...(idx as any) }
+      splitMetaCache = { ...meta, chatIndexByGroup }
+    })
+  }
+
+  async function removeGroupChatEntry(groupIdRaw: any, chatIdRaw: any) {
+    const groupId = String(groupIdRaw || '').trim()
+    const chatId = String(chatIdRaw || '').trim()
+    if (!groupId || !chatId) return
+    await withSplitMetaWrite(async () => {
+      const meta = (await loadSplitMeta()) || splitMetaCache
+      if (!meta) throw new Error('存储未初始化')
+      const nextMeta = await updateStoredChatIndexEntry(storage, 'group', groupId, chatId, { remove: true }, meta)
+      const folder = String((meta as any)?.groupFolders?.[groupId] || '').trim()
+      if (folder) await storage.remove(splitGroupChatKey(folder, chatId)).catch(() => {})
+      splitMetaCache = nextMeta || meta
+    })
+  }
+
+  async function saveGroupEntity(group: any) {
+    const groupId = String(group?.id || '').trim()
+    if (!groupId || !group || typeof group !== 'object') throw new Error('群组无效')
+
+    await withSplitMetaWrite(async () => {
+      const meta = (await loadSplitMeta()) || splitMetaCache
+      if (!meta) throw new Error('存储未初始化')
+
+      const groupOrder = stringList((meta as any).groupOrder)
+      if (!groupOrder.includes(groupId)) groupOrder.unshift(groupId)
+
+      const groupFolders = stringMap((meta as any).groupFolders)
+      if (!groupFolders[groupId]) {
+        groupFolders[groupId] = uniqueFolder(groupFolderName(group), new Set(Object.values(groupFolders)), groupId, 'group')
+      }
+      const folder = groupFolders[groupId]
+
+      await writeRequired(storage, splitGroupKey(folder), group)
+      await _syncGroupAvatarFile(folder, group)
+      await writeRequired(storage, splitGroupsIndexKey(), { schemaVersion: SPLIT_SCHEMA_VERSION, updatedAt: now(), groupOrder, groupFolders })
+
+      splitMetaCache = { ...meta, groupOrder, groupFolders }
+    })
+  }
+
+  async function removeGroupEntity(groupIdRaw: any) {
+    const groupId = String(groupIdRaw || '').trim()
+    if (!groupId) throw new Error('群组无效')
+
+    await withSplitMetaWrite(async () => {
+      const meta = (await loadSplitMeta()) || splitMetaCache
+      if (!meta) throw new Error('存储未初始化')
+
+      const groupOrder = stringList((meta as any).groupOrder).filter((id) => id !== groupId)
+      const groupFolders = stringMap((meta as any).groupFolders)
+      const folder = groupFolders[groupId]
+      if (!folder) throw new Error('群组不存在')
+
+      const chatIndexByGroup = { ...((meta as any).chatIndexByGroup || {}) }
+      const oldIndex = chatIndexByGroup[groupId] || {}
+      delete chatIndexByGroup[groupId]
+      delete groupFolders[groupId]
+
+      await removeRequired(storage, splitGroupKey(folder))
+      await storage.remove(splitGroupChatIndexKey(folder)).catch(() => {})
+      for (const chatId of stringList(oldIndex.chatIds)) await storage.remove(splitGroupChatKey(folder, chatId)).catch(() => {})
+      await writeRequired(storage, splitGroupsIndexKey(), { schemaVersion: SPLIT_SCHEMA_VERSION, updatedAt: now(), groupOrder, groupFolders })
+
+      splitMetaCache = { ...meta, groupOrder, groupFolders, chatIndexByGroup }
+    })
+  }
+
   async function saveRoleEntity(role: any) {
     const roleId = String(role?.id || '').trim()
     if (!roleId || !role || typeof role !== 'object') throw new Error('角色无效')
@@ -706,11 +795,15 @@ export function createSplitStorage(deps: {
     ensureSplitStoreReady,
     saveRoleEntity,
     removeRoleEntity,
+    saveGroupEntity,
+    removeGroupEntity,
     saveProviderEntity,
     removeProviderEntity,
     saveRoleChat,
     setActiveRoleChatSelection,
     removeRoleChatEntry,
+    setActiveGroupChatSelection,
+    removeGroupChatEntry,
     saveRoleOrder,
     saveGroupChat,
     touchGroupChatUpdatedAt,

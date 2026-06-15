@@ -404,7 +404,7 @@ func TestWebSocketForwardsRuntimeEvents(t *testing.T) {
 
 func newTestGateway(t *testing.T, fakes *gatewayFakes) System {
 	t.Helper()
-	system, err := NewSystem(Config{}, fakes.runtime, fakes.roles, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.assist)
+	system, err := NewSystem(Config{}, fakes.runtime, fakes.roles, fakes.groups, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.assist)
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -414,6 +414,7 @@ func newTestGateway(t *testing.T, fakes *gatewayFakes) System {
 type gatewayFakes struct {
 	runtime   *fakeGatewayRuntime
 	roles     *fakeGatewayRoles
+	groups    *fakeGatewayGroups
 	providers *fakeGatewayProviders
 	tools     *fakeGatewayTools
 	sessions  *fakeGatewaySessions
@@ -423,7 +424,7 @@ type gatewayFakes struct {
 
 func newGatewayFakes() *gatewayFakes {
 	stickers := newFakeGatewayStickers()
-	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, assist: &fakeGatewayAssist{stickers: stickers}}
+	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), groups: newFakeGatewayGroups(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, assist: &fakeGatewayAssist{stickers: stickers}}
 }
 
 type fakeGatewaySessions struct {
@@ -438,17 +439,28 @@ func newFakeGatewaySessions() *fakeGatewaySessions {
 func (f *fakeGatewaySessions) CreateSession(ctx context.Context, roleID string, title string) (types.Session, error) {
 	now := time.Now().UTC()
 	session := types.Session{ID: "session-created", RoleID: roleID, Title: title, Status: string(types.RunStatusCreated), Messages: []types.Message{}, CreatedAt: now, LastActive: now}
-	f.sessions[session.RoleID+"/"+session.ID] = session
+	f.sessions[f.sessionKey(session)] = session
+	return session, nil
+}
+
+func (f *fakeGatewaySessions) CreateGroupSession(ctx context.Context, groupID string, title string) (types.Session, error) {
+	now := time.Now().UTC()
+	session := types.Session{ID: "session-created", GroupID: groupID, Title: title, Status: string(types.RunStatusCreated), Messages: []types.Message{}, CreatedAt: now, LastActive: now}
+	f.sessions[f.sessionKey(session)] = session
 	return session, nil
 }
 
 func (f *fakeGatewaySessions) SaveSession(ctx context.Context, session types.Session) error {
-	f.sessions[session.RoleID+"/"+session.ID] = session
+	f.sessions[f.sessionKey(session)] = session
 	return nil
 }
 
 func (f *fakeGatewaySessions) LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error) {
 	return f.sessions[roleID+"/"+sessionID], nil
+}
+
+func (f *fakeGatewaySessions) LoadGroupSession(ctx context.Context, groupID string, sessionID string) (types.Session, error) {
+	return f.sessions["groups/"+groupID+"/"+sessionID], nil
 }
 
 func (f *fakeGatewaySessions) ListSessions(ctx context.Context, roleID string) ([]types.SessionSummary, error) {
@@ -462,8 +474,24 @@ func (f *fakeGatewaySessions) ListSessions(ctx context.Context, roleID string) (
 	return out, nil
 }
 
+func (f *fakeGatewaySessions) ListGroupSessions(ctx context.Context, groupID string) ([]types.SessionSummary, error) {
+	out := []types.SessionSummary{}
+	for _, s := range f.sessions {
+		if s.GroupID != groupID {
+			continue
+		}
+		out = append(out, types.SessionSummary{ID: s.ID, GroupID: s.GroupID, Title: s.Title, Status: s.Status, LastActive: s.LastActive})
+	}
+	return out, nil
+}
+
 func (f *fakeGatewaySessions) DeleteSession(ctx context.Context, roleID string, sessionID string) error {
 	delete(f.sessions, roleID+"/"+sessionID)
+	return nil
+}
+
+func (f *fakeGatewaySessions) DeleteGroupSession(ctx context.Context, groupID string, sessionID string) error {
+	delete(f.sessions, "groups/"+groupID+"/"+sessionID)
 	return nil
 }
 
@@ -472,6 +500,14 @@ func (f *fakeGatewaySessions) UpdateSessionTitle(ctx context.Context, roleID str
 	session.Title = title
 	session.UpdatedAt = time.Now().UTC()
 	f.sessions[roleID+"/"+sessionID] = session
+	return session, nil
+}
+
+func (f *fakeGatewaySessions) UpdateGroupSessionTitle(ctx context.Context, groupID string, sessionID string, title string) (types.Session, error) {
+	session := f.sessions["groups/"+groupID+"/"+sessionID]
+	session.Title = title
+	session.UpdatedAt = time.Now().UTC()
+	f.sessions["groups/"+groupID+"/"+sessionID] = session
 	return session, nil
 }
 
@@ -494,6 +530,10 @@ func (f *fakeGatewaySessions) UpdateSessionMessage(ctx context.Context, roleID s
 	return updated, nil
 }
 
+func (f *fakeGatewaySessions) UpdateGroupSessionMessage(ctx context.Context, groupID string, sessionID string, messageID string, patch types.SessionMessagePatch) (types.Message, error) {
+	return f.updateSessionMessageByKey("groups/"+groupID+"/"+sessionID, messageID, patch)
+}
+
 func (f *fakeGatewaySessions) DeleteSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error) {
 	session := f.sessions[roleID+"/"+sessionID]
 	next := make([]types.Message, 0, len(session.Messages))
@@ -507,8 +547,55 @@ func (f *fakeGatewaySessions) DeleteSessionMessage(ctx context.Context, roleID s
 	return session, nil
 }
 
+func (f *fakeGatewaySessions) DeleteGroupSessionMessage(ctx context.Context, groupID string, sessionID string, messageID string) (types.Session, error) {
+	return f.deleteSessionMessageByKey("groups/"+groupID+"/"+sessionID, messageID)
+}
+
 func (f *fakeGatewaySessions) DeleteSessionMessageSubtree(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error) {
 	return f.DeleteSessionMessage(ctx, roleID, sessionID, messageID)
+}
+
+func (f *fakeGatewaySessions) DeleteGroupSessionMessageSubtree(ctx context.Context, groupID string, sessionID string, messageID string) (types.Session, error) {
+	return f.DeleteGroupSessionMessage(ctx, groupID, sessionID, messageID)
+}
+
+func (f *fakeGatewaySessions) sessionKey(session types.Session) string {
+	if strings.TrimSpace(session.GroupID) != "" {
+		return "groups/" + session.GroupID + "/" + session.ID
+	}
+	return session.RoleID + "/" + session.ID
+}
+
+func (f *fakeGatewaySessions) updateSessionMessageByKey(key string, messageID string, patch types.SessionMessagePatch) (types.Message, error) {
+	session := f.sessions[key]
+	updated := types.Message{}
+	for i := range session.Messages {
+		if session.Messages[i].ID == messageID {
+			if patch.Content != nil {
+				session.Messages[i].Content = *patch.Content
+			}
+			if patch.Parts != nil {
+				session.Messages[i].Parts = append([]types.MessagePart(nil), (*patch.Parts)...)
+			}
+			session.Messages[i].UpdatedAt = time.Now().UTC()
+			updated = session.Messages[i]
+		}
+	}
+	f.sessions[key] = session
+	return updated, nil
+}
+
+func (f *fakeGatewaySessions) deleteSessionMessageByKey(key string, messageID string) (types.Session, error) {
+	session := f.sessions[key]
+	next := make([]types.Message, 0, len(session.Messages))
+	for _, message := range session.Messages {
+		if message.ID != messageID {
+			next = append(next, message)
+		}
+	}
+	session.Messages = next
+	f.sessions[key] = session
+	return session, nil
 }
 
 func (f *fakeGatewaySessions) LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error) {
@@ -643,6 +730,56 @@ func (f *fakeGatewayRoles) LoadRoleAvatar(ctx context.Context, roleID string) (s
 }
 func (f *fakeGatewayRoles) DeleteRoleAvatar(ctx context.Context, roleID string) error {
 	delete(f.avatars, roleID)
+	return nil
+}
+
+type fakeGatewayGroups struct {
+	groups  map[string]types.ChatGroup
+	avatars map[string]string
+}
+
+func newFakeGatewayGroups() *fakeGatewayGroups {
+	return &fakeGatewayGroups{groups: map[string]types.ChatGroup{}, avatars: map[string]string{}}
+}
+
+func (f *fakeGatewayGroups) SaveChatGroup(ctx context.Context, group types.ChatGroup) error {
+	f.groups[group.ID] = group
+	return nil
+}
+
+func (f *fakeGatewayGroups) LoadChatGroup(ctx context.Context, groupID string) (types.ChatGroup, error) {
+	group, ok := f.groups[groupID]
+	if !ok {
+		return types.ChatGroup{}, errors.New("group missing")
+	}
+	return group, nil
+}
+
+func (f *fakeGatewayGroups) ListChatGroups(ctx context.Context) ([]types.ChatGroupSummary, error) {
+	groups := make([]types.ChatGroupSummary, 0, len(f.groups))
+	for _, group := range f.groups {
+		groups = append(groups, types.ChatGroupSummary{ID: group.ID, Name: group.Name, Avatar: group.Avatar, UpdatedAt: group.UpdatedAt})
+	}
+	return groups, nil
+}
+
+func (f *fakeGatewayGroups) DeleteChatGroup(ctx context.Context, groupID string) error {
+	delete(f.groups, groupID)
+	delete(f.avatars, groupID)
+	return nil
+}
+
+func (f *fakeGatewayGroups) SaveChatGroupAvatar(ctx context.Context, groupID string, dataURL string) error {
+	f.avatars[groupID] = dataURL
+	return nil
+}
+
+func (f *fakeGatewayGroups) LoadChatGroupAvatar(ctx context.Context, groupID string) (string, error) {
+	return f.avatars[groupID], nil
+}
+
+func (f *fakeGatewayGroups) DeleteChatGroupAvatar(ctx context.Context, groupID string) error {
+	delete(f.avatars, groupID)
 	return nil
 }
 

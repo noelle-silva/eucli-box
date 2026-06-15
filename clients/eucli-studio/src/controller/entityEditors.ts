@@ -1,8 +1,8 @@
 import { now, uid, clamp, clampTemp, normImagePaths } from '../core/utils'
 import { createStateAccessors } from '../state/stateAccessors'
-import { activeEbRoleRunCardsForSession } from '../domain/activeRunCards'
+import { activeEbRoleRunCards, activeEbRoleRunCardsForSession, activeEbRunCardsForTarget } from '../domain/activeRunCards'
 import { chatMetaFromChat, removeChatMeta, upsertChatMeta } from '../domain/chatMeta'
-import { NEW_ROLE_ID } from '../domain/constants'
+import { NEW_GROUP_ID, NEW_ROLE_ID } from '../domain/constants'
 import { emptyRoleToolPolicy, normalizeRoleToolPolicy } from '../domain/toolPolicy'
 import { clearPendingChatForTarget, createPendingChatEntry } from '../domain/pendingChat'
 import { activateComposerDraftForCurrentSession, saveActiveComposerDraftMirror } from '../domain/sessionComposerDrafts'
@@ -59,6 +59,16 @@ function roleSessionHasActiveRun(state: any, roleId: string, sessionId: string):
   return activeEbRoleRunCardsForSession(state, roleId, sessionId).length > 0
 }
 
+function groupSessionHasActiveRun(state: any, groupId: string, sessionId: string): boolean {
+  return activeEbRunCardsForTarget(state, 'group', groupId, sessionId).length > 0
+}
+
+function groupHasActiveRun(state: any, groupId: string): boolean {
+  const gid = String(groupId || '').trim()
+  if (!gid) return false
+  return activeEbRoleRunCards(state).some((card) => String(card?.groupId || '').trim() === gid)
+}
+
 function imageBasename(p: string): string {
   const s = String(p || '')
   const a = s.lastIndexOf('/')
@@ -78,6 +88,8 @@ export function createEntityEditors(deps: {
   save: () => Promise<void>
   saveRoleEntity?: (role: any) => Promise<void>
   removeRoleEntity?: (roleId: any) => Promise<void>
+  saveGroupEntity?: (group: any) => Promise<void>
+  removeGroupEntity?: (groupId: any) => Promise<void>
   saveProviderEntity?: (provider: any) => Promise<void>
   removeProviderEntity?: (providerId: any) => Promise<void>
   render: () => void
@@ -88,13 +100,15 @@ export function createEntityEditors(deps: {
   ensureChatLoaded?: (rid: string, cid: string) => Promise<any>
   ensureGroupChatLoaded?: (gid: string, cid: string) => Promise<any>
   renameRoleChatInStore?: (rid: string, cid: string, title: string) => Promise<void>
+  renameGroupChatInStore?: (gid: string, cid: string, title: string) => Promise<void>
   removeChatInStore?: (kind: 'role' | 'group', targetId: string, chatId: string) => Promise<void>
   setRoleActiveChatSelection?: (roleId: string, chatId: string) => Promise<void>
+  setGroupActiveChatSelection?: (groupId: string, chatId: string) => Promise<void>
   removeLoadedChat?: (kind: 'role' | 'group', targetId: string, chatId: string) => void
   cleanupFavoriteRefsForTarget: (kind: string, targetId: string) => void
   cleanupFavoriteRefsForChat: (targetKind: string, targetId: string, chatId: string) => void
 }) {
-  const { getState, save, saveRoleEntity, removeRoleEntity, saveProviderEntity, removeProviderEntity, render, closeModal, showToast, pickImageFiles, filesImages, ensureChatLoaded, ensureGroupChatLoaded, renameRoleChatInStore, removeChatInStore, setRoleActiveChatSelection, removeLoadedChat, cleanupFavoriteRefsForTarget, cleanupFavoriteRefsForChat } = deps
+  const { getState, save, saveRoleEntity, removeRoleEntity, saveGroupEntity, removeGroupEntity, saveProviderEntity, removeProviderEntity, render, closeModal, showToast, pickImageFiles, filesImages, ensureChatLoaded, ensureGroupChatLoaded, renameRoleChatInStore, renameGroupChatInStore, removeChatInStore, setRoleActiveChatSelection, setGroupActiveChatSelection, removeLoadedChat, cleanupFavoriteRefsForTarget, cleanupFavoriteRefsForChat } = deps
   const sa = createStateAccessors({ getState })
 
   function scrollToBottomSoon() {
@@ -381,7 +395,23 @@ export function createEntityEditors(deps: {
   // ===== Group CRUD =====
 
   function openNewGroupEditor() {
-    showToast?.('群组编辑尚未接入 e-b 真实群组根动作，已阻止本地假群组创建', { kind: 'error' })
+    const state = getState()
+    if (!state.data) return
+    ;(state.draft as any).editGroupId = NEW_GROUP_ID
+    ;(state.draft as any).groupName = '新群组'
+    ;(state.draft as any).groupAvatar = '👥'
+    ;(state.draft as any).groupAvatarImage = ''
+    ;(state.draft as any).groupAvatarImageCropSrc = ''
+    ;(state.draft as any).groupPrompt = ''
+    ;(state.draft as any).groupMode = 'roundRobin'
+    const roleIds = Array.isArray(state.data.roles) ? state.data.roles.map((role: any) => String(role?.id || '').trim()).filter(Boolean).slice(0, 3) : []
+    ;(state.draft as any).groupMemberRoleIds = roleIds
+    ;(state.draft as any).groupRoundRobinOrder = roleIds.slice()
+    ;(state.draft as any).groupRandomWeights = Object.fromEntries(roleIds.map((roleId: string) => [roleId, 1]))
+    ;(state.draft as any).groupRandomMinCount = 1
+    ;(state.draft as any).groupRandomMaxCount = Math.max(1, Math.min(2, roleIds.length || 1))
+    state.modal = 'group'
+    render()
   }
 
   function createGroup() {
@@ -389,19 +419,126 @@ export function createEntityEditors(deps: {
   }
 
   function openGroupEditor(groupId: any) {
-    if (!String(groupId || '').trim()) return
-    showToast?.('群组编辑尚未接入 e-b 真实群组根动作，已阻止本地假群组编辑', { kind: 'error' })
+    const state = getState()
+    if (!state.data) return
+    const gid = String(groupId || '').trim()
+    if (!gid) return
+    const group = (state.data as any).groups?.find((item: any) => String(item?.id || '') === gid) || null
+    if (!group) return
+    const random = group.random && typeof group.random === 'object' ? group.random : {}
+    ;(state.draft as any).editGroupId = gid
+    ;(state.draft as any).groupName = String(group.name || '')
+    ;(state.draft as any).groupAvatar = String(group.avatar || '')
+    ;(state.draft as any).groupAvatarImage = looksLikeImageDataUrl(group.avatarImage) ? String(group.avatarImage || '') : ''
+    ;(state.draft as any).groupAvatarImageCropSrc = ''
+    ;(state.draft as any).groupPrompt = String(group.prompt || '')
+    ;(state.draft as any).groupMode = String(group.mode || '') === 'random' ? 'random' : 'roundRobin'
+    const memberRoleIds = Array.isArray(group.memberRoleIds) ? group.memberRoleIds.map((id: any) => String(id || '').trim()).filter(Boolean) : []
+    ;(state.draft as any).groupMemberRoleIds = memberRoleIds
+    ;(state.draft as any).groupRoundRobinOrder = Array.isArray(group.roundRobinOrder) ? group.roundRobinOrder.map((id: any) => String(id || '').trim()).filter((id: string) => memberRoleIds.includes(id)) : memberRoleIds.slice()
+    ;(state.draft as any).groupRandomWeights = random.weightsByRoleId && typeof random.weightsByRoleId === 'object' ? { ...random.weightsByRoleId } : {}
+    ;(state.draft as any).groupRandomMinCount = Math.max(1, Math.round(Number(random.minCount || 1)))
+    ;(state.draft as any).groupRandomMaxCount = Math.max(1, Math.round(Number(random.maxCount || Math.min(2, memberRoleIds.length || 1))))
+    state.modal = 'group'
+    render()
   }
 
   async function saveGroupEditor() {
-    showToast?.('群组保存尚未接入 e-b 真实群组根动作，已阻止本地假群组保存', { kind: 'error' })
+    const state = getState()
+    if (!state.data) return
+    const gid = String((state.draft as any).editGroupId || '').trim()
+    const isNew = gid === NEW_GROUP_ID
+    const name = String((state.draft as any).groupName || '').replace(/\s+/g, ' ').trim() || '未命名群组'
+    const avatar = String((state.draft as any).groupAvatar || '').trim() || '👥'
+    const avatarImage = looksLikeImageDataUrl((state.draft as any).groupAvatarImage) ? String((state.draft as any).groupAvatarImage || '') : ''
+    const prompt = String((state.draft as any).groupPrompt || '').trim()
+    const mode = String((state.draft as any).groupMode || '') === 'random' ? 'random' : 'roundRobin'
+    const roleIdSet = new Set((Array.isArray(state.data.roles) ? state.data.roles : []).map((role: any) => String(role?.id || '').trim()).filter(Boolean))
+    const memberRoleIds = Array.isArray((state.draft as any).groupMemberRoleIds) ? (state.draft as any).groupMemberRoleIds.map((id: any) => String(id || '').trim()).filter((id: string) => id && roleIdSet.has(id)) : []
+    if (!memberRoleIds.length) return showToast?.('请至少选择一个成员角色', { kind: 'error' })
+    const order = Array.isArray((state.draft as any).groupRoundRobinOrder) ? (state.draft as any).groupRoundRobinOrder.map((id: any) => String(id || '').trim()).filter((id: string) => memberRoleIds.includes(id)) : []
+    const seen = new Set(order)
+    for (const roleId of memberRoleIds) if (!seen.has(roleId)) order.push(roleId)
+    const weightsSource = (state.draft as any).groupRandomWeights && typeof (state.draft as any).groupRandomWeights === 'object' ? (state.draft as any).groupRandomWeights : {}
+    const weightsByRoleId: Record<string, number> = {}
+    for (const roleId of memberRoleIds) weightsByRoleId[roleId] = Math.max(0, Math.round(Number(weightsSource[roleId] ?? 1)))
+    let minCount = clamp(Math.round(Number((state.draft as any).groupRandomMinCount || 1)), 1, 20)
+    let maxCount = clamp(Math.round(Number((state.draft as any).groupRandomMaxCount || Math.min(2, memberRoleIds.length || 1))), 1, 20)
+    minCount = Math.min(minCount, memberRoleIds.length)
+    maxCount = Math.min(Math.max(maxCount, minCount), memberRoleIds.length)
+
+    if (isNew) {
+      const groupId = uid('g')
+      const group = { id: groupId, name, avatar, avatarImage, prompt, mode, memberRoleIds, roundRobinOrder: order, random: { weightsByRoleId, minCount, maxCount }, createdAt: now(), updatedAt: now() }
+      try {
+        if (typeof saveGroupEntity !== 'function') throw new Error('群组保存通道不可用')
+        await saveGroupEntity(group)
+        if (!Array.isArray((state.data as any).groups)) (state.data as any).groups = []
+        ;(state.data as any).groups.unshift(group)
+        if (!(state.data as any).chatsByGroup || typeof (state.data as any).chatsByGroup !== 'object') (state.data as any).chatsByGroup = {}
+        ;(state.data as any).chatsByGroup[groupId] = { activeChatId: '', chatMetas: [], chats: [] }
+        ;(state.draft as any).activeTargetKind = 'group'
+        ;(state.draft as any).activeGroupId = groupId
+        showToast?.('群组已保存', { kind: 'success' })
+        closeModal()
+      } catch (e: any) {
+        showToast?.(String(e?.message || e || '群组保存失败'), { kind: 'error' })
+        render()
+      }
+      return
+    }
+
+    const group = (state.data as any).groups?.find((item: any) => String(item?.id || '') === gid) || null
+    if (!group) return
+    const previous = { ...group, memberRoleIds: Array.isArray(group.memberRoleIds) ? group.memberRoleIds.slice() : [], roundRobinOrder: Array.isArray(group.roundRobinOrder) ? group.roundRobinOrder.slice() : [], random: group.random && typeof group.random === 'object' ? { ...group.random, weightsByRoleId: { ...(group.random.weightsByRoleId || {}) } } : group.random }
+    Object.assign(group, { name, avatar, avatarImage, prompt, mode, memberRoleIds, roundRobinOrder: order, random: { weightsByRoleId, minCount, maxCount }, updatedAt: now() })
+    try {
+      await saveGroupEntity?.(group)
+      showToast?.('群组已保存', { kind: 'success' })
+      closeModal()
+    } catch (e: any) {
+      Object.assign(group, previous)
+      showToast?.(String(e?.message || e || '群组保存失败'), { kind: 'error' })
+      render()
+    }
   }
 
-  function deleteGroup(groupId: any) {
+  async function deleteGroup(groupId: any) {
+    const state = getState()
+    if (!state.data) return false
     const gid = String(groupId || '').trim()
     if (!gid) return false
-    showToast?.('群组删除尚未接入 e-b 真实群组根动作，已阻止本地假群组删除', { kind: 'error' })
-    return false
+    const previousGroups = Array.isArray((state.data as any).groups) ? (state.data as any).groups.slice() : []
+    const previousChatsByGroup = (state.data as any).chatsByGroup && typeof (state.data as any).chatsByGroup === 'object' ? { ...(state.data as any).chatsByGroup } : {}
+    const previousActiveGroupId = String((state.draft as any).activeGroupId || '')
+    const previousActiveTargetKind = String((state.draft as any).activeTargetKind || '')
+    if (groupHasActiveRun(state, gid)) {
+      showToast?.('该群组有真实运行中的任务，不能删除', { kind: 'error' })
+      return false
+    }
+    ;(state.data as any).groups = previousGroups.filter((group: any) => String(group?.id || '') !== gid)
+    if ((state.data as any).chatsByGroup && typeof (state.data as any).chatsByGroup === 'object') delete (state.data as any).chatsByGroup[gid]
+    if (String((state.draft as any).activeGroupId || '') === gid) {
+      ;(state.draft as any).activeGroupId = String((state.data as any).groups?.[0]?.id || '')
+      if (!(state.draft as any).activeGroupId) {
+        ;(state.draft as any).activeTargetKind = 'role'
+      }
+    }
+    try {
+      await removeGroupEntity?.(gid)
+      cleanupFavoriteRefsForTarget('group', gid)
+      showToast?.('群组已删除', { kind: 'success' })
+      render()
+      return true
+    } catch (e: any) {
+      ;(state.data as any).groups = previousGroups
+      ;(state.data as any).chatsByGroup = previousChatsByGroup
+      ;(state.draft as any).activeGroupId = previousActiveGroupId
+      ;(state.draft as any).activeTargetKind = previousActiveTargetKind
+      showToast?.(String(e?.message || e || '群组删除失败'), { kind: 'error' })
+      render()
+      return false
+    }
   }
 
   // ===== Provider CRUD =====
@@ -589,9 +726,19 @@ export function createEntityEditors(deps: {
   }
 
   function createChatForActiveGroup() {
+    const state = getState()
     const group = sa.activeGroup()
     if (!group) return showToast?.('请先选择群组', { kind: 'error' })
-    showToast?.('群组会话尚未接入 e-b 真实会话根动作，已阻止本地假会话创建', { kind: 'error' })
+    const pending = createPendingChatEntry('group', String((group as any).id || ''), '群聊')
+    if (!pending) return
+    saveActiveComposerDraftMirror(state)
+    state.pendingChat = null
+    state.pendingGroupChat = pending
+    state.branchDraft = null
+    state.sideTab = 'chats'
+    activateComposerDraftForCurrentSession(state)
+    render()
+    scrollToBottomSoon()
   }
 
   async function createChatForActiveTarget() {
@@ -631,7 +778,7 @@ export function createEntityEditors(deps: {
     if (!boxHasChatRef(box, cid)) return
     box.activeChatId = cid
     activateComposerDraftForCurrentSession(state)
-    save().catch(() => {})
+    ;(setGroupActiveChatSelection?.(String((group as any).id || ''), cid) || save()).catch(() => {})
     render()
     scrollToBottomSoon()
     loadPickedChatInBackground('group', String((group as any).id || ''), cid, ensureGroupChatLoaded)
@@ -689,15 +836,40 @@ export function createEntityEditors(deps: {
     return true
   }
 
-  async function renameGroupChatTitle(groupId: any, chatId: any, _title: any) {
+  async function renameGroupChatTitle(groupId: any, chatId: any, title: any) {
     const state = getState()
     if (!state.data) return false
     const gid = String(groupId || '').trim()
     const cid = String(chatId || '').trim()
     if (!gid || !cid) return false
 
-    showToast?.('群组会话标题尚未接入 e-b 真实群组会话根动作，已阻止本地假修改', { kind: 'error' })
-    return false
+    const box = sa.ensureGroupChatsBoxBare(gid)
+    if (!box) return false
+    let t = String(title ?? '').replace(/\s+/g, ' ').trim()
+    if (t.length > 80) t = t.slice(0, 80).trim()
+    t = t || '群聊'
+
+    try {
+      if (typeof renameGroupChatInStore !== 'function') throw new Error('群聊标题保存通道不可用')
+      await renameGroupChatInStore(gid, cid, t)
+    } catch (e: any) {
+      showToast?.(String(e?.message || e || '群聊标题保存失败'), { kind: 'error' })
+      render()
+      return false
+    }
+
+    const chats = Array.isArray(box.chats) ? box.chats : []
+    const chat = chats.find((item: any) => String(item?.id || '') === cid) || null
+    if (chat) {
+      chat.title = t
+      chat.updatedAt = now()
+      box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chat, '群聊'), '群聊')
+    } else {
+      const old = Array.isArray(box.chatMetas) ? box.chatMetas.find((item: any) => String(item?.id || '') === cid) : null
+      box.chatMetas = upsertChatMeta(box.chatMetas, { id: cid, title: t, createdAt: Number(old?.createdAt || now()), updatedAt: now(), lastMessagePreview: String(old?.lastMessagePreview || ''), messageCount: Number(old?.messageCount || 0), hasPending: !!old?.hasPending }, '群聊')
+    }
+    render()
+    return true
   }
 
   // ===== Image path collection =====
@@ -818,6 +990,7 @@ export function createEntityEditors(deps: {
     const box = sa.ensureGroupChatsBoxBare(gid)
     if (!box) return
     const before = Array.isArray(box.chats) ? box.chats : []
+    if (groupSessionHasActiveRun(state, gid, cid)) return showToast?.('该群聊有真实运行中的任务，不能删除', { kind: 'error' })
 
     box.chats = before.filter((c: any) => String(c?.id) !== cid)
     box.chatMetas = removeChatMeta(box.chatMetas, cid, '群聊')
@@ -826,7 +999,7 @@ export function createEntityEditors(deps: {
 
     removeLoadedChat?.('group', gid, cid)
     void removeChatInStore?.('group', gid, cid).catch(() => {})
-    void save().catch(() => {})
+    void (setGroupActiveChatSelection?.(gid, String(box.activeChatId || '')) || save()).catch(() => {})
     render()
   }
 

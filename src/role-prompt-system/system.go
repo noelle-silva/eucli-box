@@ -28,6 +28,7 @@ type StorageSystem interface {
 	SaveRoleAvatar(ctx context.Context, roleID string, dataURL string) error
 	LoadRoleAvatar(ctx context.Context, roleID string) (string, error)
 	DeleteRoleAvatar(ctx context.Context, roleID string) error
+	LoadChatGroup(ctx context.Context, groupID string) (types.ChatGroup, error)
 }
 
 type ProviderSystem interface {

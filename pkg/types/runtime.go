@@ -12,6 +12,7 @@ const (
 type Message struct {
 	ID              string              `json:"id"`
 	Type            string              `json:"type"`
+	SpeakerRoleID   string              `json:"speakerRoleId,omitempty"`
 	Content         string              `json:"content"`
 	Control         *MessageControl     `json:"control,omitempty"`
 	Error           *ErrorPayload       `json:"error,omitempty"`
@@ -181,6 +182,7 @@ type RunAttachment struct {
 type Session struct {
 	ID         string            `json:"id"`
 	RoleID     string            `json:"roleId"`
+	GroupID    string            `json:"groupId,omitempty"`
 	Title      string            `json:"title"`
 	Status     string            `json:"status"`
 	Messages   []Message         `json:"messages"`
@@ -193,6 +195,7 @@ type Session struct {
 type SessionSummary struct {
 	ID         string    `json:"id"`
 	RoleID     string    `json:"roleId"`
+	GroupID    string    `json:"groupId,omitempty"`
 	Title      string    `json:"title"`
 	Status     string    `json:"status"`
 	UpdatedAt  time.Time `json:"updatedAt"`
@@ -212,6 +215,7 @@ const (
 
 type RunRequest struct {
 	RoleID           string           `json:"roleId"`
+	GroupID          string           `json:"groupId,omitempty"`
 	SessionID        string           `json:"sessionId"`
 	Message          string           `json:"message"`
 	Attachments      []RunAttachment  `json:"attachments,omitempty"`
@@ -226,6 +230,7 @@ type RunRequest struct {
 type RunState struct {
 	ID                   string        `json:"id"`
 	RoleID               string        `json:"roleId"`
+	GroupID              string        `json:"groupId,omitempty"`
 	SessionID            string        `json:"sessionId"`
 	InputMessageID       string        `json:"inputMessageId,omitempty"`
 	LastMessageID        string        `json:"lastMessageId,omitempty"`
@@ -242,6 +247,7 @@ type RunState struct {
 type RunStreamDelta struct {
 	RunID           string    `json:"runId"`
 	RoleID          string    `json:"roleId"`
+	GroupID         string    `json:"groupId,omitempty"`
 	SessionID       string    `json:"sessionId"`
 	MessageID       string    `json:"messageId"`
 	ParentMessageID string    `json:"parentMessageId,omitempty"`
@@ -254,6 +260,7 @@ type RunStreamDelta struct {
 type RunAssistantMessageUpdate struct {
 	RunID     string        `json:"runId"`
 	RoleID    string        `json:"roleId"`
+	GroupID   string        `json:"groupId,omitempty"`
 	SessionID string        `json:"sessionId"`
 	Stream    bool          `json:"stream,omitempty"`
 	Status    RunStatus     `json:"status,omitempty"`
@@ -267,6 +274,7 @@ type RunAssistantMessageUpdate struct {
 type RunEvent struct {
 	ID        string    `json:"id"`
 	RunID     string    `json:"runId"`
+	GroupID   string    `json:"groupId,omitempty"`
 	Type      string    `json:"type"`
 	Payload   any       `json:"payload,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`

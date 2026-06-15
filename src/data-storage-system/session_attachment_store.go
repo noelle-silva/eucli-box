@@ -18,33 +18,42 @@ const maxMessageAttachmentTextRunes = 10_000_000
 var sessionAttachmentAllowedImageMIMEs = map[string]string{"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
 
 func (s *system) SaveSessionMessageAttachment(ctx context.Context, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
+	return s.saveSessionMessageAttachment(ctx, roleSessionScope(roleID), sessionID, attachment)
+}
+
+func (s *system) SaveGroupSessionMessageAttachment(ctx context.Context, groupID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
+	return s.saveSessionMessageAttachment(ctx, groupSessionScope(groupID), sessionID, attachment)
+}
+
+func (s *system) saveSessionMessageAttachment(ctx context.Context, scope sessionScope, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
 	if err := ctx.Err(); err != nil {
 		return types.MessageAttachment{}, storageWriteFailed("write cancelled", err)
 	}
-	if _, err := cleanID(roleID); err != nil {
+	scope, err := cleanSessionScope(scope)
+	if err != nil {
 		return types.MessageAttachment{}, err
 	}
 	if _, err := cleanID(sessionID); err != nil {
 		return types.MessageAttachment{}, err
 	}
-	if _, err := s.paths.sessionDataFile(roleID, sessionID); err != nil {
+	if _, err := s.sessionDataFile(scope, sessionID); err != nil {
 		return types.MessageAttachment{}, err
 	}
 
 	kind := normalizeMessageAttachmentKind(attachment.Kind)
 	if kind == "image" {
-		return s.saveSessionImageAttachment(ctx, roleID, sessionID, attachment)
+		return s.saveSessionImageAttachment(ctx, scope, sessionID, attachment)
 	}
 	return normalizeTextMessageAttachment(attachment, kind)
 }
 
-func (s *system) saveSessionImageAttachment(ctx context.Context, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
+func (s *system) saveSessionImageAttachment(ctx context.Context, scope sessionScope, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
 	image, err := decodeImageDataURL(attachment.DataURL, sessionAttachmentAllowedImageMIMEs)
 	if err != nil {
 		return types.MessageAttachment{}, storageInvalid("message image attachment must be a png, jpg, webp, or gif data url", err)
 	}
 	attachmentID := utils.NewID("att")
-	dir, err := s.paths.sessionAttachmentDir(roleID, sessionID, attachmentID)
+	dir, err := s.sessionAttachmentDir(scope, sessionID, attachmentID)
 	if err != nil {
 		return types.MessageAttachment{}, err
 	}
@@ -55,7 +64,7 @@ func (s *system) saveSessionImageAttachment(ctx context.Context, roleID string, 
 	if err := writeSingleImageFile(ctx, dir, fileName, image); err != nil {
 		return types.MessageAttachment{}, storageWriteFailed("failed to write session image attachment", err)
 	}
-	return types.MessageAttachment{ID: attachmentID, Kind: "image", Name: normalizeAttachmentName(attachment.Name, "图片"), Mime: image.Mime, Path: filepath.ToSlash(filepath.Join("sessions", roleID, sessionID, "attachments", attachmentID, fileName))}, nil
+	return types.MessageAttachment{ID: attachmentID, Kind: "image", Name: normalizeAttachmentName(attachment.Name, "图片"), Mime: image.Mime, Path: sessionAttachmentRelPath(scope, sessionID, attachmentID, fileName)}, nil
 }
 
 func normalizeTextMessageAttachment(attachment types.RunAttachment, kind string) (types.MessageAttachment, error) {
@@ -105,22 +114,44 @@ func (s *system) LoadSessionAttachmentImage(ctx context.Context, relPath string)
 func (s *system) sessionAttachmentImagePath(relPath string) (string, string, error) {
 	relPath = filepath.ToSlash(strings.TrimSpace(relPath))
 	parts := strings.Split(relPath, "/")
-	if len(parts) != 6 || parts[0] != "sessions" || parts[3] != "attachments" {
+	if len(parts) != 6 && len(parts) != 7 {
 		return "", "", storageInvalid("session attachment image path is invalid", nil)
 	}
-	roleID, err := cleanID(parts[1])
+	if parts[0] != "sessions" {
+		return "", "", storageInvalid("session attachment image path is invalid", nil)
+	}
+	var scope sessionScope
+	var sessionID string
+	var attachmentID string
+	var fileName string
+	if len(parts) == 7 {
+		if parts[1] != "groups" || parts[4] != "attachments" {
+			return "", "", storageInvalid("session attachment image path is invalid", nil)
+		}
+		scope = groupSessionScope(parts[2])
+		sessionID = parts[3]
+		attachmentID = parts[5]
+		fileName = strings.TrimSpace(parts[6])
+	} else {
+		if parts[3] != "attachments" {
+			return "", "", storageInvalid("session attachment image path is invalid", nil)
+		}
+		scope = roleSessionScope(parts[1])
+		sessionID = parts[2]
+		attachmentID = parts[4]
+		fileName = strings.TrimSpace(parts[5])
+	}
+	scope, err := cleanSessionScope(scope)
 	if err != nil {
 		return "", "", err
 	}
-	sessionID, err := cleanID(parts[2])
+	if _, err := cleanID(sessionID); err != nil {
+		return "", "", err
+	}
+	attachmentID, err = cleanID(attachmentID)
 	if err != nil {
 		return "", "", err
 	}
-	attachmentID, err := cleanID(parts[4])
-	if err != nil {
-		return "", "", err
-	}
-	fileName := strings.TrimSpace(parts[5])
 	if !strings.HasPrefix(fileName, "image.") {
 		return "", "", storageInvalid("session attachment image filename is invalid", nil)
 	}
@@ -128,7 +159,7 @@ func (s *system) sessionAttachmentImagePath(relPath string) (string, string, err
 	if !ok {
 		return "", "", storageInvalid("session attachment image extension is unsupported", nil)
 	}
-	dir, err := s.paths.sessionAttachmentDir(roleID, sessionID, attachmentID)
+	dir, err := s.sessionAttachmentDir(scope, sessionID, attachmentID)
 	if err != nil {
 		return "", "", err
 	}
@@ -137,6 +168,24 @@ func (s *system) sessionAttachmentImagePath(relPath string) (string, string, err
 		return "", "", storageInvalid("path escapes session attachment directory", nil)
 	}
 	return joined, mime, nil
+}
+
+func (s *system) sessionAttachmentDir(scope sessionScope, sessionID string, attachmentID string) (string, error) {
+	scope, err := cleanSessionScope(scope)
+	if err != nil {
+		return "", err
+	}
+	if scope.Kind == sessionScopeGroup {
+		return s.paths.groupSessionAttachmentDir(scope.ID, sessionID, attachmentID)
+	}
+	return s.paths.sessionAttachmentDir(scope.ID, sessionID, attachmentID)
+}
+
+func sessionAttachmentRelPath(scope sessionScope, sessionID string, attachmentID string, fileName string) string {
+	if scope.Kind == sessionScopeGroup {
+		return filepath.ToSlash(filepath.Join("sessions", "groups", scope.ID, sessionID, "attachments", attachmentID, fileName))
+	}
+	return filepath.ToSlash(filepath.Join("sessions", scope.ID, sessionID, "attachments", attachmentID, fileName))
 }
 
 func normalizeMessageAttachmentKind(kind string) string {

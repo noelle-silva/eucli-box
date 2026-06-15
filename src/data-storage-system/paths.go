@@ -21,11 +21,12 @@ func newPaths(root string) (paths, error) {
 }
 
 func (p paths) baseDirs() []string {
-	return []string{p.root, p.sessionsRoot(), p.rolesRoot(), p.providersRoot(), p.toolsRoot(), p.stickersRoot(), p.recycleRoot(), p.metaRoot()}
+	return []string{p.root, p.sessionsRoot(), p.sessionGroupsRoot(), p.rolesRoot(), p.groupsRoot(), p.providersRoot(), p.toolsRoot(), p.stickersRoot(), p.recycleRoot(), p.metaRoot()}
 }
 
 func (p paths) sessionsRoot() string  { return filepath.Join(p.root, "sessions") }
 func (p paths) rolesRoot() string     { return filepath.Join(p.root, "roles") }
+func (p paths) groupsRoot() string    { return filepath.Join(p.root, "groups") }
 func (p paths) providersRoot() string { return filepath.Join(p.root, "providers") }
 func (p paths) toolsRoot() string     { return filepath.Join(p.root, "tools") }
 func (p paths) stickersRoot() string  { return filepath.Join(p.root, "stickers") }
@@ -72,8 +73,28 @@ func (p paths) roleDataFile(roleID string) (string, error) {
 	return filepath.Join(dir, "data.json"), nil
 }
 
+func (p paths) groupDir(groupID string) (string, error) {
+	return p.safeJoin(p.groupsRoot(), groupID)
+}
+
+func (p paths) groupDataFile(groupID string) (string, error) {
+	dir, err := p.groupDir(groupID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "data.json"), nil
+}
+
 func (p paths) sessionRoleDir(roleID string) (string, error) {
 	return p.safeJoin(p.sessionsRoot(), roleID)
+}
+
+func (p paths) sessionGroupsRoot() string {
+	return filepath.Join(p.sessionsRoot(), "groups")
+}
+
+func (p paths) sessionGroupDir(groupID string) (string, error) {
+	return p.safeJoin(p.sessionGroupsRoot(), groupID)
 }
 
 func (p paths) sessionDir(roleID string, sessionID string) (string, error) {
@@ -102,6 +123,38 @@ func (p paths) sessionAttachmentsDir(roleID string, sessionID string) (string, e
 
 func (p paths) sessionAttachmentDir(roleID string, sessionID string, attachmentID string) (string, error) {
 	dir, err := p.sessionAttachmentsDir(roleID, sessionID)
+	if err != nil {
+		return "", err
+	}
+	return p.safeJoin(dir, attachmentID)
+}
+
+func (p paths) groupSessionDir(groupID string, sessionID string) (string, error) {
+	groupDir, err := p.sessionGroupDir(groupID)
+	if err != nil {
+		return "", err
+	}
+	return p.safeJoin(groupDir, sessionID)
+}
+
+func (p paths) groupSessionDataFile(groupID string, sessionID string) (string, error) {
+	dir, err := p.groupSessionDir(groupID, sessionID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "data.json"), nil
+}
+
+func (p paths) groupSessionAttachmentsDir(groupID string, sessionID string) (string, error) {
+	dir, err := p.groupSessionDir(groupID, sessionID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "attachments"), nil
+}
+
+func (p paths) groupSessionAttachmentDir(groupID string, sessionID string, attachmentID string) (string, error) {
+	dir, err := p.groupSessionAttachmentsDir(groupID, sessionID)
 	if err != nil {
 		return "", err
 	}

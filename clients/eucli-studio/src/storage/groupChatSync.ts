@@ -7,12 +7,12 @@ import { normalizeStoredChat } from './normalizeStoredChat'
 export function createGroupChatSync(deps: {
   storage: { get: (k: string) => Promise<any>; set: (k: string, v: any) => Promise<void> }
   getState: () => any
-  setState: (data: any) => void
   loadSplitMeta: () => Promise<any>
   getSplitMetaCache: () => any
   withSplitMetaWrite: <T>(fn: () => Promise<T>) => Promise<T>
+  hasActiveGroupRunInSession: (groupId: string, chatId: string) => boolean
 }) {
-  const { storage, getState, setState, loadSplitMeta, getSplitMetaCache, withSplitMetaWrite } = deps
+  const { storage, getState, loadSplitMeta, getSplitMetaCache, withSplitMetaWrite, hasActiveGroupRunInSession } = deps
 
   let uiLastMetaUpdatedAt = 0
   let uiChatSyncing = false
@@ -131,7 +131,7 @@ export function createGroupChatSync(deps: {
         const metaUpdatedAt = Number((wantUpdatedAt as any)?.[activeChatId] || 0)
         const cur = curById.get(activeChatId) || null
         const curUpdatedAt = Number(cur?.updatedAt || 0)
-        if (isStoredChatNewerThanCurrent(metaUpdatedAt, curUpdatedAt)) {
+        if (!hasActiveGroupRunInSession(gid, activeChatId) && isStoredChatNewerThanCurrent(metaUpdatedAt, curUpdatedAt)) {
           const c0 = await storage.get(splitGroupChatKey(folder, activeChatId))
           const c1 = c0 && typeof c0 === 'object' ? normalizeStoredChat(c0, 'group') : null
           if (c1) {

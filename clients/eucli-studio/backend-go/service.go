@@ -121,6 +121,13 @@ func (s *service) handleImageRead(ctx context.Context, params json.RawMessage) (
 	if strings.HasPrefix(filepath.ToSlash(req.Path), "sessions/") {
 		return s.eb.request(ctx, ebRequest{Method: "GET", Path: "/api/session-attachments/image", Query: mustJSON(map[string]any{"path": filepath.ToSlash(req.Path)})})
 	}
+	if groupAvatarPathPattern.MatchString(strings.TrimSpace(filepath.ToSlash(req.Path))) {
+		groupID, err := s.projection.groupIDByAvatarPath(ctx, req.Path)
+		if err != nil {
+			return nil, err
+		}
+		return s.eb.request(ctx, ebRequest{Method: "GET", Path: fmt.Sprintf("/api/groups/%s/avatar", groupID)})
+	}
 	roleID, err := s.projection.roleIDByAvatarPath(ctx, req.Path)
 	if err != nil {
 		return nil, err
@@ -135,7 +142,18 @@ func (s *service) handleImageWrite(ctx context.Context, params json.RawMessage) 
 	}
 	roleID, err := s.projection.roleIDByAvatarPath(ctx, req.Path)
 	if err != nil {
-		return nil, err
+		groupID, groupErr := s.projection.groupIDByAvatarPath(ctx, req.Path)
+		if groupErr != nil {
+			return nil, err
+		}
+		if req.DataURL == "" {
+			return nil, newError("BAD_REQUEST", "image data url is required")
+		}
+		_, err = s.eb.request(ctx, ebRequest{Method: "PUT", Path: fmt.Sprintf("/api/groups/%s/avatar", groupID), Body: mustJSON(map[string]any{"dataUrl": req.DataURL})})
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"relPath": req.Path}, nil
 	}
 	if req.DataURL == "" {
 		return nil, newError("BAD_REQUEST", "image data url is required")
@@ -154,7 +172,15 @@ func (s *service) handleImageDelete(ctx context.Context, params json.RawMessage)
 	}
 	roleID, err := s.projection.roleIDByAvatarPath(ctx, req.Path)
 	if err != nil {
-		return nil, err
+		groupID, groupErr := s.projection.groupIDByAvatarPath(ctx, req.Path)
+		if groupErr != nil {
+			return nil, err
+		}
+		_, err = s.eb.request(ctx, ebRequest{Method: "DELETE", Path: fmt.Sprintf("/api/groups/%s/avatar", groupID)})
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{}, nil
 	}
 	_, err = s.eb.request(ctx, ebRequest{Method: "DELETE", Path: fmt.Sprintf("/api/roles/%s/avatar", roleID)})
 	if err != nil {

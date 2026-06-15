@@ -94,7 +94,7 @@ import { pendingChatForTarget } from '../domain/pendingChat'
 import { chatNavigationFromOrderedChats } from '../domain/chatNavigation'
 import { chatSessionRunSummaryFromChat, normalizeChatSessionRunStatus, type ChatSessionRunStatus } from '../domain/chatSessionRunStatus'
 import { sortChatListItemsForDisplay } from '../domain/chatListOrdering'
-import { filterEbRoleRunCardsOnMessagePath, readActiveEbRoleRunCardsForSession } from '../domain/activeRunCards'
+import { filterEbRoleRunCardsOnMessagePath, readActiveEbRunCardsForTarget } from '../domain/activeRunCards'
 import { createMessageMutationGuard, type MessageMutationOperation } from '../domain/messageMutationConflicts'
 import { formatTokenEstimate, formatTokenEstimateShort, sumMessageTokenEstimate } from '../domain/messageTokenUsage'
 import { ChatSessionRunIndicator, type ChatSessionRunIndicatorKind } from './components/ChatSessionRunIndicator'
@@ -1177,10 +1177,9 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
       const tid = String(targetId || '')
       const cid = String(chatId || '')
       if (!tid || !cid) return false
-      if (targetKind === 'group') return false
-      const box = data?.chatsByRole?.[tid]
+      const box = targetKind === 'group' ? data?.chatsByGroup?.[tid] : data?.chatsByRole?.[tid]
       const meta = Array.isArray(box?.chatMetas) ? box.chatMetas.find((m: any) => String(m?.id || '') === cid) : null
-      return readActiveEbRoleRunCardsForSession(s, tid, cid).length > 0 || normalizeChatSessionRunStatus(meta?.runStatus || meta?.status) === 'running'
+      return readActiveEbRunCardsForTarget(s, targetKind, tid, cid).length > 0 || normalizeChatSessionRunStatus(meta?.runStatus || meta?.status) === 'running'
     },
     [s, data],
   )
@@ -1922,11 +1921,11 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     }
     return out
   }, [chatAllMessagesRaw, chatAllMessagesRaw.length, Number((renderChat as any)?.updatedAt || 0), chatAllById, chatAllIndexById])
-  const activeSessionRunCards = readActiveEbRoleRunCardsForSession(s, String(activeRole?.id || '').trim(), renderChatId)
+  const activeSessionRunCards = readActiveEbRunCardsForTarget(s, activeTargetKind, String(activeChatTargetId || ''), renderChatId)
   const activeSessionRunCardsKey = activeSessionRunCards
     .map((card: any) => `${String(card?.runId || '')}:${String(card?.lastMessageId || '')}:${String(card?.status || '')}:${String(card?.retry?.attempt || '')}:${String(card?.retry?.retryAt || '')}:${String(card?.retry?.failure?.message || '')}:${Number(card?.updatedAt || 0)}`)
     .join('|')
-  const activeChatRunCards = renderChatId === activeChatId ? activeSessionRunCards : readActiveEbRoleRunCardsForSession(s, String(activeRole?.id || '').trim(), activeChatId)
+  const activeChatRunCards = renderChatId === activeChatId ? activeSessionRunCards : readActiveEbRunCardsForTarget(s, activeTargetKind, String(activeChatTargetId || ''), activeChatId)
   const treeLayout = React.useMemo(() => {
     if (!renderChat || !treeOpen) return null
     const treeMessages = chatAllMessagesRaw.filter((message: any) => {

@@ -256,7 +256,7 @@ func (s *system) hasActiveRunAtAnchor(record *runRecord) bool {
 		if other == nil || other.runID == record.runID {
 			continue
 		}
-		if strings.TrimSpace(other.roleID) != strings.TrimSpace(record.roleID) {
+		if !sameRunTarget(other, record) {
 			continue
 		}
 		if strings.TrimSpace(other.state.SessionID) != strings.TrimSpace(record.session.ID) {
@@ -270,6 +270,18 @@ func (s *system) hasActiveRunAtAnchor(record *runRecord) bool {
 		}
 	}
 	return false
+}
+
+func sameRunTarget(left *runRecord, right *runRecord) bool {
+	if left == nil || right == nil {
+		return false
+	}
+	leftGroupID := strings.TrimSpace(left.groupID)
+	rightGroupID := strings.TrimSpace(right.groupID)
+	if leftGroupID != "" || rightGroupID != "" {
+		return leftGroupID != "" && leftGroupID == rightGroupID
+	}
+	return strings.TrimSpace(left.roleID) == strings.TrimSpace(right.roleID)
 }
 
 func canTransition(from types.RunStatus, to types.RunStatus) bool {

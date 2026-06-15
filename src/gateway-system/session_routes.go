@@ -28,6 +28,20 @@ func (s *system) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusOK, sessions)
 }
 
+func (s *system) handleListGroupSessions(w http.ResponseWriter, r *http.Request) {
+	groupID, err := pathValue(r, "groupID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	sessions, err := s.sessions.ListGroupSessions(r.Context(), groupID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, sessions)
+}
+
 func (s *system) handleLoadSession(w http.ResponseWriter, r *http.Request) {
 	roleID, err := pathValue(r, "roleID")
 	if err != nil {
@@ -40,6 +54,19 @@ func (s *system) handleLoadSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session, err := s.sessions.LoadSession(r.Context(), roleID, sessionID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, session)
+}
+
+func (s *system) handleLoadGroupSession(w http.ResponseWriter, r *http.Request) {
+	groupID, sessionID, ok := groupSessionPathValues(w, r)
+	if !ok {
+		return
+	}
+	session, err := s.sessions.LoadGroupSession(r.Context(), groupID, sessionID)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -70,6 +97,29 @@ func (s *system) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusCreated, session)
 }
 
+func (s *system) handleCreateGroupSession(w http.ResponseWriter, r *http.Request) {
+	groupID, err := pathValue(r, "groupID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	request, err := decodeJSON[createSessionRequest](r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if _, err := s.groups.LoadChatGroup(r.Context(), groupID); err != nil {
+		writeError(w, err)
+		return
+	}
+	session, err := s.sessions.CreateGroupSession(r.Context(), groupID, request.Title)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusCreated, session)
+}
+
 func (s *system) handleSaveSession(w http.ResponseWriter, r *http.Request) {
 	roleID, err := pathValue(r, "roleID")
 	if err != nil {
@@ -82,6 +132,28 @@ func (s *system) handleSaveSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := validateSession(roleID, session); err != nil {
+		writeError(w, err)
+		return
+	}
+	if err := s.sessions.SaveSession(r.Context(), session); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeNoContent(w)
+}
+
+func (s *system) handleSaveGroupSession(w http.ResponseWriter, r *http.Request) {
+	groupID, err := pathValue(r, "groupID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	session, err := decodeJSON[types.Session](r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if err := validateGroupSession(groupID, session); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -110,6 +182,18 @@ func (s *system) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 	writeNoContent(w)
 }
 
+func (s *system) handleDeleteGroupSession(w http.ResponseWriter, r *http.Request) {
+	groupID, sessionID, ok := groupSessionPathValues(w, r)
+	if !ok {
+		return
+	}
+	if err := s.sessions.DeleteGroupSession(r.Context(), groupID, sessionID); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeNoContent(w)
+}
+
 func (s *system) handleUpdateSessionTitle(w http.ResponseWriter, r *http.Request) {
 	roleID, err := pathValue(r, "roleID")
 	if err != nil {
@@ -127,6 +211,24 @@ func (s *system) handleUpdateSessionTitle(w http.ResponseWriter, r *http.Request
 		return
 	}
 	session, err := s.sessions.UpdateSessionTitle(r.Context(), roleID, sessionID, request.Title)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, session)
+}
+
+func (s *system) handleUpdateGroupSessionTitle(w http.ResponseWriter, r *http.Request) {
+	groupID, sessionID, ok := groupSessionPathValues(w, r)
+	if !ok {
+		return
+	}
+	request, err := decodeJSON[updateSessionTitleRequest](r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	session, err := s.sessions.UpdateGroupSessionTitle(r.Context(), groupID, sessionID, request.Title)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -163,6 +265,24 @@ func (s *system) handleUpdateSessionMessage(w http.ResponseWriter, r *http.Reque
 	writeData(w, http.StatusOK, message)
 }
 
+func (s *system) handleUpdateGroupSessionMessage(w http.ResponseWriter, r *http.Request) {
+	groupID, sessionID, messageID, ok := groupSessionMessagePathValues(w, r)
+	if !ok {
+		return
+	}
+	request, err := decodeJSON[types.SessionMessagePatch](r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	message, err := s.sessions.UpdateGroupSessionMessage(r.Context(), groupID, sessionID, messageID, request)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, message)
+}
+
 func (s *system) handleDeleteSessionMessage(w http.ResponseWriter, r *http.Request) {
 	roleID, err := pathValue(r, "roleID")
 	if err != nil {
@@ -187,6 +307,19 @@ func (s *system) handleDeleteSessionMessage(w http.ResponseWriter, r *http.Reque
 	writeData(w, http.StatusOK, session)
 }
 
+func (s *system) handleDeleteGroupSessionMessage(w http.ResponseWriter, r *http.Request) {
+	groupID, sessionID, messageID, ok := groupSessionMessagePathValues(w, r)
+	if !ok {
+		return
+	}
+	session, err := s.sessions.DeleteGroupSessionMessage(r.Context(), groupID, sessionID, messageID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, session)
+}
+
 func (s *system) handleDeleteSessionMessageSubtree(w http.ResponseWriter, r *http.Request) {
 	roleID, err := pathValue(r, "roleID")
 	if err != nil {
@@ -204,6 +337,19 @@ func (s *system) handleDeleteSessionMessageSubtree(w http.ResponseWriter, r *htt
 		return
 	}
 	session, err := s.sessions.DeleteSessionMessageSubtree(r.Context(), roleID, sessionID, messageID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, session)
+}
+
+func (s *system) handleDeleteGroupSessionMessageSubtree(w http.ResponseWriter, r *http.Request) {
+	groupID, sessionID, messageID, ok := groupSessionMessagePathValues(w, r)
+	if !ok {
+		return
+	}
+	session, err := s.sessions.DeleteGroupSessionMessageSubtree(r.Context(), groupID, sessionID, messageID)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -242,4 +388,31 @@ func (s *system) handleLoadSessionAttachmentImage(w http.ResponseWriter, r *http
 		return
 	}
 	writeData(w, http.StatusOK, dataURL)
+}
+
+func groupSessionPathValues(w http.ResponseWriter, r *http.Request) (string, string, bool) {
+	groupID, err := pathValue(r, "groupID")
+	if err != nil {
+		writeError(w, err)
+		return "", "", false
+	}
+	sessionID, err := pathValue(r, "sessionID")
+	if err != nil {
+		writeError(w, err)
+		return "", "", false
+	}
+	return groupID, sessionID, true
+}
+
+func groupSessionMessagePathValues(w http.ResponseWriter, r *http.Request) (string, string, string, bool) {
+	groupID, sessionID, ok := groupSessionPathValues(w, r)
+	if !ok {
+		return "", "", "", false
+	}
+	messageID, err := pathValue(r, "messageID")
+	if err != nil {
+		writeError(w, err)
+		return "", "", "", false
+	}
+	return groupID, sessionID, messageID, true
 }

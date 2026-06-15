@@ -4,6 +4,7 @@ export type EbRoleRunCard = {
   kind: 'eb-role-run'
   runId: string
   roleId: string
+  groupId: string
   sessionId: string
   inputMessageId: string
   lastMessageId: string
@@ -84,6 +85,7 @@ function normalizeEbRoleRunCard(value: unknown): EbRoleRunCard | null {
     kind: 'eb-role-run',
     runId,
     roleId: text(raw.roleId),
+    groupId: text(raw.groupId),
     sessionId: text(raw.sessionId),
     inputMessageId: text(raw.inputMessageId),
     lastMessageId: text(raw.lastMessageId),
@@ -119,7 +121,19 @@ export function readActiveEbRoleRunCardsForSession(state: any, roleIdRaw: unknow
   const roleId = text(roleIdRaw)
   const sessionId = text(sessionIdRaw)
   if (!roleId || !sessionId) return []
-  return readActiveEbRoleRunCards(state).filter((card) => card.roleId === roleId && card.sessionId === sessionId)
+  return readActiveEbRoleRunCards(state).filter((card) => !card.groupId && card.roleId === roleId && card.sessionId === sessionId)
+}
+
+export function readActiveEbRunCardsForTarget(state: any, targetKindRaw: unknown, targetIdRaw: unknown, sessionIdRaw: unknown) {
+  const targetKind = text(targetKindRaw) === 'group' ? 'group' : 'role'
+  const targetId = text(targetIdRaw)
+  const sessionId = text(sessionIdRaw)
+  if (!targetId || !sessionId) return []
+  return readActiveEbRoleRunCards(state).filter((card) => {
+    if (card.sessionId !== sessionId) return false
+    if (targetKind === 'group') return card.groupId === targetId
+    return !card.groupId && card.roleId === targetId
+  })
 }
 
 export function activeEbRoleRunCards(state: any) {
@@ -130,11 +144,28 @@ export function activeEbRoleRunCardsForSession(state: any, roleIdRaw: unknown, s
   const roleId = text(roleIdRaw)
   const sessionId = text(sessionIdRaw)
   if (!roleId || !sessionId) return []
-  return activeEbRoleRunCards(state).filter((card) => card.roleId === roleId && card.sessionId === sessionId)
+  return activeEbRoleRunCards(state).filter((card) => !card.groupId && card.roleId === roleId && card.sessionId === sessionId)
+}
+
+export function activeEbRunCardsForTarget(state: any, targetKindRaw: unknown, targetIdRaw: unknown, sessionIdRaw: unknown) {
+  const targetKind = text(targetKindRaw) === 'group' ? 'group' : 'role'
+  const targetId = text(targetIdRaw)
+  const sessionId = text(sessionIdRaw)
+  if (!targetId || !sessionId) return []
+  return activeEbRoleRunCards(state).filter((card) => {
+    if (card.sessionId !== sessionId) return false
+    if (targetKind === 'group') return card.groupId === targetId
+    return !card.groupId && card.roleId === targetId
+  })
 }
 
 export function latestEbRoleRunCardForSession(state: any, roleIdRaw: unknown, sessionIdRaw: unknown) {
   const cards = activeEbRoleRunCardsForSession(state, roleIdRaw, sessionIdRaw)
+  return cards.length ? cards[cards.length - 1] : null
+}
+
+export function latestEbRunCardForTarget(state: any, targetKindRaw: unknown, targetIdRaw: unknown, sessionIdRaw: unknown) {
+  const cards = activeEbRunCardsForTarget(state, targetKindRaw, targetIdRaw, sessionIdRaw)
   return cards.length ? cards[cards.length - 1] : null
 }
 
@@ -182,6 +213,7 @@ export function upsertEbRoleRunCard(state: any, patchRaw: Partial<EbRoleRunCard>
     kind: 'eb-role-run',
     runId,
     roleId: text(patchRaw.roleId) || current?.roleId || '',
+    groupId: text((patchRaw as any).groupId) || current?.groupId || '',
     sessionId: text(patchRaw.sessionId) || current?.sessionId || '',
     inputMessageId: text(patchRaw.inputMessageId) || current?.inputMessageId || '',
     lastMessageId: text(patchRaw.lastMessageId) || current?.lastMessageId || text(patchRaw.inputMessageId) || current?.inputMessageId || '',

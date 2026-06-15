@@ -36,6 +36,16 @@ type RoleSystem interface {
 	DeleteRoleAvatar(ctx context.Context, roleID string) error
 }
 
+type ChatGroupSystem interface {
+	SaveChatGroup(ctx context.Context, group types.ChatGroup) error
+	LoadChatGroup(ctx context.Context, groupID string) (types.ChatGroup, error)
+	ListChatGroups(ctx context.Context) ([]types.ChatGroupSummary, error)
+	DeleteChatGroup(ctx context.Context, groupID string) error
+	SaveChatGroupAvatar(ctx context.Context, groupID string, dataURL string) error
+	LoadChatGroupAvatar(ctx context.Context, groupID string) (string, error)
+	DeleteChatGroupAvatar(ctx context.Context, groupID string) error
+}
+
 type ProviderSystem interface {
 	SaveProvider(ctx context.Context, provider types.Provider) error
 	LoadProvider(ctx context.Context, providerID string) (types.Provider, error)
@@ -57,14 +67,22 @@ type ToolSystem interface {
 
 type SessionSystem interface {
 	CreateSession(ctx context.Context, roleID string, title string) (types.Session, error)
+	CreateGroupSession(ctx context.Context, groupID string, title string) (types.Session, error)
 	SaveSession(ctx context.Context, session types.Session) error
 	LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error)
+	LoadGroupSession(ctx context.Context, groupID string, sessionID string) (types.Session, error)
 	ListSessions(ctx context.Context, roleID string) ([]types.SessionSummary, error)
+	ListGroupSessions(ctx context.Context, groupID string) ([]types.SessionSummary, error)
 	DeleteSession(ctx context.Context, roleID string, sessionID string) error
+	DeleteGroupSession(ctx context.Context, groupID string, sessionID string) error
 	UpdateSessionTitle(ctx context.Context, roleID string, sessionID string, title string) (types.Session, error)
+	UpdateGroupSessionTitle(ctx context.Context, groupID string, sessionID string, title string) (types.Session, error)
 	UpdateSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string, patch types.SessionMessagePatch) (types.Message, error)
+	UpdateGroupSessionMessage(ctx context.Context, groupID string, sessionID string, messageID string, patch types.SessionMessagePatch) (types.Message, error)
 	DeleteSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error)
+	DeleteGroupSessionMessage(ctx context.Context, groupID string, sessionID string, messageID string) (types.Session, error)
 	DeleteSessionMessageSubtree(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error)
+	DeleteGroupSessionMessageSubtree(ctx context.Context, groupID string, sessionID string, messageID string) (types.Session, error)
 	LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error)
 	LoadSessionFavorites(ctx context.Context) (types.SessionFavorites, error)
 	SaveSessionFavorites(ctx context.Context, favorites types.SessionFavorites) (types.SessionFavorites, error)
@@ -107,6 +125,7 @@ type system struct {
 	config    Config
 	runtime   RuntimeSystem
 	roles     RoleSystem
+	groups    ChatGroupSystem
 	providers ProviderSystem
 	tools     ToolSystem
 	sessions  SessionSystem
@@ -120,12 +139,15 @@ type system struct {
 	connections map[*websocket.Conn]struct{}
 }
 
-func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, providers ProviderSystem, tools ToolSystem, sessions SessionSystem, stickers StickerSystem, assist AIAssistSystem) (System, error) {
+func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups ChatGroupSystem, providers ProviderSystem, tools ToolSystem, sessions SessionSystem, stickers StickerSystem, assist AIAssistSystem) (System, error) {
 	if runtime == nil {
 		return nil, gatewayInvalid("runtime system dependency is required", nil)
 	}
 	if roles == nil {
 		return nil, gatewayInvalid("role system dependency is required", nil)
+	}
+	if groups == nil {
+		return nil, gatewayInvalid("group system dependency is required", nil)
 	}
 	if providers == nil {
 		return nil, gatewayInvalid("provider system dependency is required", nil)
@@ -158,6 +180,7 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, providers
 		config:      config,
 		runtime:     runtime,
 		roles:       roles,
+		groups:      groups,
 		providers:   providers,
 		tools:       tools,
 		sessions:    sessions,

@@ -119,11 +119,12 @@ func newTestRoleSystem(t *testing.T, storage StorageSystem, providers ProviderSy
 
 type fakeRoleStorage struct {
 	roles   map[string]types.Role
+	groups  map[string]types.ChatGroup
 	avatars map[string]string
 }
 
 func newFakeRoleStorage() *fakeRoleStorage {
-	return &fakeRoleStorage{roles: map[string]types.Role{}, avatars: map[string]string{}}
+	return &fakeRoleStorage{roles: map[string]types.Role{}, groups: map[string]types.ChatGroup{}, avatars: map[string]string{}}
 }
 
 func (f *fakeRoleStorage) SaveRole(ctx context.Context, role types.Role) error {
@@ -169,6 +170,14 @@ func (f *fakeRoleStorage) LoadRoleAvatar(ctx context.Context, roleID string) (st
 func (f *fakeRoleStorage) DeleteRoleAvatar(ctx context.Context, roleID string) error {
 	delete(f.avatars, roleID)
 	return nil
+}
+
+func (f *fakeRoleStorage) LoadChatGroup(ctx context.Context, groupID string) (types.ChatGroup, error) {
+	group, ok := f.groups[groupID]
+	if !ok {
+		return types.ChatGroup{}, errors.New("group missing")
+	}
+	return group, nil
 }
 
 type fakeProviderResolver struct {

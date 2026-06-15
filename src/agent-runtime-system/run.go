@@ -18,9 +18,9 @@ func (s *system) StartRun(ctx context.Context, request types.RunRequest) (types.
 	stream := request.Stream && !compactRun
 	runCtx, cancel := context.WithCancel(context.Background())
 	now := nowUTC()
-	state := types.RunState{ID: utils.NewID("run"), RoleID: request.RoleID, SessionID: request.SessionID, Stream: stream, Status: types.RunStatusCreated, CreatedAt: now, UpdatedAt: now}
+	state := types.RunState{ID: utils.NewID("run"), RoleID: request.RoleID, GroupID: strings.TrimSpace(request.GroupID), SessionID: request.SessionID, Stream: stream, Status: types.RunStatusCreated, CreatedAt: now, UpdatedAt: now}
 	modelOverride, _ := types.NormalizeModelOverrideCoordinate(modelOverrideFromRunRequest(request))
-	record := &runRecord{runID: state.ID, roleID: request.RoleID, state: state, stream: stream, modelOverride: modelOverride, reasoningEffort: types.TrimReasoningEffort(request.ReasoningEffort), cancel: cancel}
+	record := &runRecord{runID: state.ID, roleID: request.RoleID, groupID: state.GroupID, state: state, stream: stream, modelOverride: modelOverride, reasoningEffort: types.TrimReasoningEffort(request.ReasoningEffort), cancel: cancel}
 	if compactRun {
 		record.commandName = compactCommandName
 	}
@@ -273,6 +273,11 @@ func validateRunRequest(ctx context.Context, request types.RunRequest) error {
 	if strings.TrimSpace(request.RoleID) == "" {
 		return runtimeInvalid("role id is required", nil)
 	}
+	if strings.TrimSpace(request.GroupID) != "" {
+		if _, err := cleanRuntimeID(request.GroupID); err != nil {
+			return err
+		}
+	}
 	hasAttachments := len(request.Attachments) > 0
 	hasMessage := strings.TrimSpace(request.Message) != "" || hasAttachments
 	hasUserMessageID := strings.TrimSpace(request.UserMessageID) != ""
@@ -304,6 +309,17 @@ func validateRunRequest(ctx context.Context, request types.RunRequest) error {
 		}
 	}
 	return nil
+}
+
+func cleanRuntimeID(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", runtimeInvalid("id is required", nil)
+	}
+	if strings.Contains(value, "/") || strings.Contains(value, "\\") || value == "." || value == ".." {
+		return "", runtimeInvalid("id is invalid", nil)
+	}
+	return value, nil
 }
 
 func modelOverrideFromRunRequest(request types.RunRequest) types.ModelCoordinate {

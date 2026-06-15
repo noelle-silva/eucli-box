@@ -12,11 +12,110 @@ import (
 	"eucli-box/pkg/utils"
 )
 
+type sessionScopeKind string
+
+const (
+	sessionScopeRole  sessionScopeKind = "role"
+	sessionScopeGroup sessionScopeKind = "group"
+)
+
+type sessionScope struct {
+	Kind sessionScopeKind
+	ID   string
+}
+
+func roleSessionScope(roleID string) sessionScope {
+	return sessionScope{Kind: sessionScopeRole, ID: strings.TrimSpace(roleID)}
+}
+
+func groupSessionScope(groupID string) sessionScope {
+	return sessionScope{Kind: sessionScopeGroup, ID: strings.TrimSpace(groupID)}
+}
+
+func sessionScopeFromSession(session types.Session) (sessionScope, error) {
+	groupID := strings.TrimSpace(session.GroupID)
+	roleID := strings.TrimSpace(session.RoleID)
+	if groupID != "" {
+		if roleID != "" {
+			return sessionScope{}, storageInvalid("session cannot belong to both role and group", nil)
+		}
+		return cleanSessionScope(groupSessionScope(groupID))
+	}
+	return cleanSessionScope(roleSessionScope(roleID))
+}
+
+func cleanSessionScope(scope sessionScope) (sessionScope, error) {
+	scope.ID = strings.TrimSpace(scope.ID)
+	if scope.Kind != sessionScopeRole && scope.Kind != sessionScopeGroup {
+		return sessionScope{}, storageInvalid("session scope is invalid", nil)
+	}
+	if _, err := cleanID(scope.ID); err != nil {
+		return sessionScope{}, err
+	}
+	return scope, nil
+}
+
+func (s *system) sessionDataFile(scope sessionScope, sessionID string) (string, error) {
+	scope, err := cleanSessionScope(scope)
+	if err != nil {
+		return "", err
+	}
+	if scope.Kind == sessionScopeGroup {
+		return s.paths.groupSessionDataFile(scope.ID, sessionID)
+	}
+	return s.paths.sessionDataFile(scope.ID, sessionID)
+}
+
+func (s *system) sessionDir(scope sessionScope, sessionID string) (string, error) {
+	scope, err := cleanSessionScope(scope)
+	if err != nil {
+		return "", err
+	}
+	if scope.Kind == sessionScopeGroup {
+		return s.paths.groupSessionDir(scope.ID, sessionID)
+	}
+	return s.paths.sessionDir(scope.ID, sessionID)
+}
+
+func (s *system) sessionAttachmentsDir(scope sessionScope, sessionID string) (string, error) {
+	scope, err := cleanSessionScope(scope)
+	if err != nil {
+		return "", err
+	}
+	if scope.Kind == sessionScopeGroup {
+		return s.paths.groupSessionAttachmentsDir(scope.ID, sessionID)
+	}
+	return s.paths.sessionAttachmentsDir(scope.ID, sessionID)
+}
+
+func (s *system) sessionScopeDir(scope sessionScope) (string, error) {
+	scope, err := cleanSessionScope(scope)
+	if err != nil {
+		return "", err
+	}
+	if scope.Kind == sessionScopeGroup {
+		return s.paths.sessionGroupDir(scope.ID)
+	}
+	return s.paths.sessionRoleDir(scope.ID)
+}
+
 func (s *system) CreateSession(ctx context.Context, roleID string, title string) (types.Session, error) {
-	roleID = strings.TrimSpace(roleID)
-	if _, err := cleanID(roleID); err != nil {
+	scope, err := cleanSessionScope(roleSessionScope(roleID))
+	if err != nil {
 		return types.Session{}, err
 	}
+	return s.createSession(ctx, scope, title)
+}
+
+func (s *system) CreateGroupSession(ctx context.Context, groupID string, title string) (types.Session, error) {
+	scope, err := cleanSessionScope(groupSessionScope(groupID))
+	if err != nil {
+		return types.Session{}, err
+	}
+	return s.createSession(ctx, scope, title)
+}
+
+func (s *system) createSession(ctx context.Context, scope sessionScope, title string) (types.Session, error) {
 	sessionTitle := strings.TrimSpace(title)
 	if sessionTitle == "" {
 		sessionTitle = types.DefaultSessionTitle
@@ -24,13 +123,17 @@ func (s *system) CreateSession(ctx context.Context, roleID string, title string)
 	now := time.Now().UTC()
 	session := types.Session{
 		ID:         utils.NewID("session"),
-		RoleID:     roleID,
 		Title:      normalizeSessionTitle(sessionTitle),
 		Status:     string(types.RunStatusCreated),
 		Messages:   []types.Message{},
 		CreatedAt:  now,
 		UpdatedAt:  now,
 		LastActive: now,
+	}
+	if scope.Kind == sessionScopeGroup {
+		session.GroupID = scope.ID
+	} else {
+		session.RoleID = scope.ID
 	}
 	if err := s.SaveSession(ctx, session); err != nil {
 		return types.Session{}, err
@@ -63,20 +166,21 @@ func (s *system) SaveSessionMessages(ctx context.Context, save types.SessionMess
 
 func (s *system) writeSessionData(ctx context.Context, session types.Session, now time.Time) (types.Session, error) {
 	session = normalizeSessionForStorage(session, now)
-	if _, err := cleanID(session.RoleID); err != nil {
+	scope, err := sessionScopeFromSession(session)
+	if err != nil {
 		return types.Session{}, err
 	}
 	if _, err := cleanID(session.ID); err != nil {
 		return types.Session{}, err
 	}
-	target, err := s.paths.sessionDataFile(session.RoleID, session.ID)
+	target, err := s.sessionDataFile(scope, session.ID)
 	if err != nil {
 		return types.Session{}, err
 	}
 	if err := writeJSON(ctx, target, toSessionStorageDocument(session)); err != nil {
 		return types.Session{}, err
 	}
-	attachmentsDir, err := s.paths.sessionAttachmentsDir(session.RoleID, session.ID)
+	attachmentsDir, err := s.sessionAttachmentsDir(scope, session.ID)
 	if err != nil {
 		return types.Session{}, err
 	}
@@ -87,7 +191,15 @@ func (s *system) writeSessionData(ctx context.Context, session types.Session, no
 }
 
 func (s *system) LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error) {
-	target, err := s.paths.sessionDataFile(roleID, sessionID)
+	return s.loadSession(ctx, roleSessionScope(roleID), sessionID)
+}
+
+func (s *system) LoadGroupSession(ctx context.Context, groupID string, sessionID string) (types.Session, error) {
+	return s.loadSession(ctx, groupSessionScope(groupID), sessionID)
+}
+
+func (s *system) loadSession(ctx context.Context, scope sessionScope, sessionID string) (types.Session, error) {
+	target, err := s.sessionDataFile(scope, sessionID)
 	if err != nil {
 		return types.Session{}, err
 	}
@@ -100,7 +212,7 @@ func (s *system) LoadSession(ctx context.Context, roleID string, sessionID strin
 
 func (s *system) mergeSessionMessageSave(ctx context.Context, save types.SessionMessageSave, now time.Time) (types.Session, error) {
 	session := save.Session
-	if _, err := cleanID(session.RoleID); err != nil {
+	if _, err := sessionScopeFromSession(session); err != nil {
 		return types.Session{}, err
 	}
 	if _, err := cleanID(session.ID); err != nil {
@@ -155,7 +267,11 @@ func (s *system) mergeSessionMessageSave(ctx context.Context, save types.Session
 }
 
 func (s *system) readSessionForMessageSave(ctx context.Context, fallback types.Session, now time.Time) (types.Session, bool, error) {
-	loaded, err := s.LoadSession(ctx, fallback.RoleID, fallback.ID)
+	scope, err := sessionScopeFromSession(fallback)
+	if err != nil {
+		return types.Session{}, false, err
+	}
+	loaded, err := s.loadSession(ctx, scope, fallback.ID)
 	if err == nil {
 		return loaded, true, nil
 	}
@@ -393,18 +509,26 @@ func upsertStoredSessionMessage(session types.Session, message types.Message) ty
 }
 
 func (s *system) ListSessions(ctx context.Context, roleID string) ([]types.SessionSummary, error) {
-	roleDir, err := s.paths.sessionRoleDir(roleID)
+	return s.listSessions(ctx, roleSessionScope(roleID))
+}
+
+func (s *system) ListGroupSessions(ctx context.Context, groupID string) ([]types.SessionSummary, error) {
+	return s.listSessions(ctx, groupSessionScope(groupID))
+}
+
+func (s *system) listSessions(ctx context.Context, scope sessionScope) ([]types.SessionSummary, error) {
+	scopeDir, err := s.sessionScopeDir(scope)
 	if err != nil {
 		return nil, err
 	}
-	sessions, err := readObjects[types.Session](ctx, roleDir)
+	sessions, err := readObjects[types.Session](ctx, scopeDir)
 	if err != nil {
 		return nil, err
 	}
 	summaries := make([]types.SessionSummary, 0, len(sessions))
 	for _, session := range sessions {
 		session = normalizeSessionForStorage(session, time.Now().UTC())
-		summaries = append(summaries, types.SessionSummary{ID: session.ID, RoleID: session.RoleID, Title: session.Title, Status: session.Status, UpdatedAt: session.UpdatedAt, LastActive: session.LastActive})
+		summaries = append(summaries, types.SessionSummary{ID: session.ID, RoleID: session.RoleID, GroupID: session.GroupID, Title: session.Title, Status: session.Status, UpdatedAt: session.UpdatedAt, LastActive: session.LastActive})
 	}
 	sort.Slice(summaries, func(i, j int) bool {
 		return summaries[i].LastActive.After(summaries[j].LastActive)
@@ -413,11 +537,23 @@ func (s *system) ListSessions(ctx context.Context, roleID string) ([]types.Sessi
 }
 
 func (s *system) DeleteSession(ctx context.Context, roleID string, sessionID string) error {
-	dir, err := s.paths.sessionDir(roleID, sessionID)
+	return s.deleteSession(ctx, roleSessionScope(roleID), sessionID)
+}
+
+func (s *system) DeleteGroupSession(ctx context.Context, groupID string, sessionID string) error {
+	return s.deleteSession(ctx, groupSessionScope(groupID), sessionID)
+}
+
+func (s *system) deleteSession(ctx context.Context, scope sessionScope, sessionID string) error {
+	dir, err := s.sessionDir(scope, sessionID)
 	if err != nil {
 		return err
 	}
-	if err := moveToRecycle(ctx, s.paths, types.StorageItemSession, sessionID, dir); err != nil {
+	recycleID := sessionID
+	if scope.Kind == sessionScopeGroup {
+		recycleID = "groups-" + scope.ID + "-" + sessionID
+	}
+	if err := moveToRecycle(ctx, s.paths, types.StorageItemSession, recycleID, dir); err != nil {
 		return err
 	}
 	return s.rebuildAllSessionIndexes(ctx)

@@ -13,7 +13,7 @@ import { splitChatKey, splitGroupChatKey, splitGroupChatIndexKey, splitRoleChatI
 import { normalizeStoredChat } from '../storage/normalizeStoredChat'
 import { isStoredChatNewerThanCurrent, mergeChatFromStorage } from '../domain/chatStorageSync'
 import { pendingChatForTarget } from '../domain/pendingChat'
-import { readActiveEbRoleRunCardsForSession } from '../domain/activeRunCards'
+import { readActiveEbRunCardsForTarget } from '../domain/activeRunCards'
 import { AI_CHAT_DIRECT_EVENT } from '../protocol/aiChatProtocol'
 
 type DirectEventSubscription = (listener: (event: any) => void) => () => void
@@ -45,8 +45,8 @@ export function createUiPolling(deps: {
   let unsubscribeDirectEvents: (() => void) | null = null
   let chatUpdatedNoticeChain = Promise.resolve()
 
-  function hasActiveRoleRunInSession(roleId: string, chatId: string) {
-    return readActiveEbRoleRunCardsForSession(deps.getState(), roleId, chatId).length > 0
+  function hasActiveRunInSession(targetKind: 'role' | 'group', targetId: string, chatId: string) {
+    return readActiveEbRunCardsForTarget(deps.getState(), targetKind, targetId, chatId).length > 0
   }
 
   async function loadActiveTargetIndexMeta(activeKind: 'role' | 'group', activeTid: string) {
@@ -140,7 +140,7 @@ export function createUiPolling(deps: {
         const metaUpdatedAt = Number((wantUpdatedAt as any)?.[activeChatId] || 0)
         const cur = curById.get(activeChatId) || null
         const curUpdatedAt = Number(cur?.updatedAt || 0)
-        if (!hasActiveRoleRunInSession(rid, activeChatId) && isStoredChatNewerThanCurrent(metaUpdatedAt, curUpdatedAt)) {
+        if (!hasActiveRunInSession('role', rid, activeChatId) && isStoredChatNewerThanCurrent(metaUpdatedAt, curUpdatedAt)) {
           const c0 = await deps.storage.get(splitChatKey(folder, activeChatId))
           const c1 = c0 && typeof c0 === 'object' ? normalizeStoredChat(c0, 'role') : null
           if (c1) {
@@ -173,7 +173,7 @@ export function createUiPolling(deps: {
     const rid = String(roleId || '').trim()
     const cid = String(chatId || '').trim()
     if (!rid || !cid) return false
-    if (hasActiveRoleRunInSession(rid, cid)) return false
+    if (hasActiveRunInSession('role', rid, cid)) return false
 
     const target = await loadTargetFolderMeta('role', rid)
     const folder = String(target?.folder || '')
@@ -203,6 +203,7 @@ export function createUiPolling(deps: {
     const gid = String(groupId || '').trim()
     const cid = String(chatId || '').trim()
     if (!gid || !cid) return false
+    if (hasActiveRunInSession('group', gid, cid)) return false
 
     const target = await loadTargetFolderMeta('group', gid)
     const folder = String(target?.folder || '')
@@ -286,7 +287,7 @@ export function createUiPolling(deps: {
       return true
     }
     if (activeChatId && cid === activeChatId) {
-      if (kind === 'role' && hasActiveRoleRunInSession(tid, cid)) return false
+      if (hasActiveRunInSession(kind, tid, cid)) return false
       const currentUpdatedAt = Number(deps.activeChatFromData()?.updatedAt || 0)
       if (updatedAt && currentUpdatedAt && updatedAt <= currentUpdatedAt) {
         markNoticeApplied()

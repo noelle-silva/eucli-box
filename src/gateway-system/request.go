@@ -192,3 +192,22 @@ func validateSession(routeRoleID string, session types.Session) error {
 	}
 	return nil
 }
+
+func validateGroupSession(routeGroupID string, session types.Session) error {
+	if strings.TrimSpace(routeGroupID) == "" {
+		return gatewayInvalid("groupID is required", nil)
+	}
+	if strings.TrimSpace(session.GroupID) == "" {
+		return gatewayInvalid("session groupId is required", nil)
+	}
+	if strings.TrimSpace(session.GroupID) != strings.TrimSpace(routeGroupID) {
+		return gatewayInvalid("session groupId does not match route groupID", nil)
+	}
+	if strings.TrimSpace(session.RoleID) != "" {
+		return gatewayInvalid("group session roleId must be empty", nil)
+	}
+	if strings.TrimSpace(session.ID) == "" {
+		return gatewayInvalid("session id is required", nil)
+	}
+	return nil
+}

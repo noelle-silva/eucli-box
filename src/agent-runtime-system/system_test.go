@@ -1589,7 +1589,7 @@ func (f *fakeRuntimeStorage) LoadContextCompressionConfig(ctx context.Context) (
 func (f *fakeRuntimeStorage) SaveSession(ctx context.Context, session types.Session) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.sessions[session.RoleID+"/"+session.ID] = session
+	f.sessions[f.sessionKey(session)] = session
 	return nil
 }
 
@@ -1597,7 +1597,7 @@ func (f *fakeRuntimeStorage) SaveSessionMessages(ctx context.Context, save types
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	session := save.Session
-	key := session.RoleID + "/" + session.ID
+	key := f.sessionKey(session)
 	merged, ok := f.sessions[key]
 	if !ok {
 		merged = session
@@ -1765,6 +1765,23 @@ func (f *fakeRuntimeStorage) LoadSession(ctx context.Context, roleID string, ses
 	return session, nil
 }
 
+func (f *fakeRuntimeStorage) LoadGroupSession(ctx context.Context, groupID string, sessionID string) (types.Session, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	session, ok := f.sessions["groups/"+groupID+"/"+sessionID]
+	if !ok {
+		return types.Session{}, errors.New("group session missing")
+	}
+	return session, nil
+}
+
+func (f *fakeRuntimeStorage) sessionKey(session types.Session) string {
+	if strings.TrimSpace(session.GroupID) != "" {
+		return "groups/" + session.GroupID + "/" + session.ID
+	}
+	return session.RoleID + "/" + session.ID
+}
+
 func (f *fakeRuntimeStorage) lastSession() types.Session {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -1804,6 +1821,17 @@ func (f *fakeRuntimeStorage) SaveSessionMessageAttachment(ctx context.Context, r
 	defer f.mu.Unlock()
 	if attachment.Kind == "image" {
 		path := "sessions/" + roleID + "/" + sessionID + "/attachments/att-image/image.png"
+		f.images[path] = attachment.DataURL
+		return types.MessageAttachment{ID: "att-image", Kind: "image", Name: attachment.Name, Mime: "image/png", Path: path}, nil
+	}
+	return types.MessageAttachment{ID: "att-text", Kind: attachment.Kind, Name: attachment.Name, Lang: attachment.Lang, Text: attachment.Text, FullLen: attachment.FullLen, SendLen: attachment.SendLen, SendPct: attachment.SendPct}, nil
+}
+
+func (f *fakeRuntimeStorage) SaveGroupSessionMessageAttachment(ctx context.Context, groupID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if attachment.Kind == "image" {
+		path := "sessions/groups/" + groupID + "/" + sessionID + "/attachments/att-image/image.png"
 		f.images[path] = attachment.DataURL
 		return types.MessageAttachment{ID: "att-image", Kind: "image", Name: attachment.Name, Mime: "image/png", Path: path}, nil
 	}

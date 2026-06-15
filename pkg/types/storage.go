@@ -7,6 +7,7 @@ type StorageItemKind string
 const (
 	StorageItemSession         StorageItemKind = "session"
 	StorageItemRole            StorageItemKind = "role"
+	StorageItemGroup           StorageItemKind = "group"
 	StorageItemProvider        StorageItemKind = "provider"
 	StorageItemTool            StorageItemKind = "tool"
 	StorageItemStickerCategory StorageItemKind = "sticker_category"

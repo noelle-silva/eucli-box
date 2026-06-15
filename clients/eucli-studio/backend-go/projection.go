@@ -20,11 +20,15 @@ const (
 
 var (
 	roleKeyPattern        = regexp.MustCompile(`^roles/([^/]+)/role$`)
+	groupKeyPattern       = regexp.MustCompile(`^groups/([^/]+)/group$`)
 	providerKeyPattern    = regexp.MustCompile(`^providers/([^/]+)/provider$`)
 	modelGroupKeyPattern  = regexp.MustCompile(`^model-groups/([^/]+)/model-group$`)
 	chatKeyPattern        = regexp.MustCompile(`^chats/([^/]+)/([^/]+)/chat$`)
 	roleChatIndexPattern  = regexp.MustCompile(`^chats/([^/]+)/index$`)
+	groupChatKeyPattern   = regexp.MustCompile(`^groups/([^/]+)/chats/([^/]+)$`)
+	groupChatIndexPattern = regexp.MustCompile(`^groups/([^/]+)/chats/index$`)
 	roleAvatarPathPattern = regexp.MustCompile(`^roles/([^/]+)/avatar\.(png|jpg|jpeg|webp)$`)
+	groupAvatarPathPattern = regexp.MustCompile(`^groups/([^/]+)/avatar\.(png|jpg|jpeg|webp)$`)
 )
 
 type projectionService struct {
@@ -49,16 +53,15 @@ func (p *projectionService) get(ctx context.Context, key string) (any, error) {
 	case "model-groups/index":
 		return p.modelGroupsIndex(ctx)
 	case "groups/index":
-		cfg, err := p.config.load()
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"groupOrder": []any{}, "groupFolders": map[string]any{}, "updatedAt": stableUpdatedAt(cfg.Projection.UpdatedAt)}, nil
+		return p.groupsIndex(ctx)
 	case sessionFavoritesKey:
 		return p.loadFavorites(ctx)
 	}
 	if match := roleKeyPattern.FindStringSubmatch(key); match != nil {
 		return p.roleByFolder(ctx, match[1])
+	}
+	if match := groupKeyPattern.FindStringSubmatch(key); match != nil {
+		return p.groupByFolder(ctx, match[1])
 	}
 	if match := providerKeyPattern.FindStringSubmatch(key); match != nil {
 		return p.providerByFolder(ctx, match[1])
@@ -72,12 +75,21 @@ func (p *projectionService) get(ctx context.Context, key string) (any, error) {
 	if match := chatKeyPattern.FindStringSubmatch(key); match != nil {
 		return p.chatByFolder(ctx, match[1], match[2])
 	}
+	if match := groupChatIndexPattern.FindStringSubmatch(key); match != nil {
+		return p.groupChatIndex(ctx, match[1])
+	}
+	if match := groupChatKeyPattern.FindStringSubmatch(key); match != nil {
+		return p.groupChatByFolder(ctx, match[1], match[2])
+	}
 	return nil, nil
 }
 
 func (p *projectionService) set(ctx context.Context, key string, value any) error {
 	if match := roleKeyPattern.FindStringSubmatch(key); match != nil {
 		return p.saveRole(ctx, match[1], value)
+	}
+	if match := groupKeyPattern.FindStringSubmatch(key); match != nil {
+		return p.saveGroup(ctx, match[1], value)
 	}
 	if match := providerKeyPattern.FindStringSubmatch(key); match != nil {
 		return p.saveProvider(ctx, match[1], value)
@@ -90,6 +102,12 @@ func (p *projectionService) set(ctx context.Context, key string, value any) erro
 	}
 	if match := roleChatIndexPattern.FindStringSubmatch(key); match != nil {
 		return p.saveRoleChatIndex(ctx, match[1], value)
+	}
+	if match := groupChatKeyPattern.FindStringSubmatch(key); match != nil {
+		return p.saveGroupSession(ctx, match[1], value)
+	}
+	if match := groupChatIndexPattern.FindStringSubmatch(key); match != nil {
+		return p.saveGroupChatIndex(ctx, match[1], value)
 	}
 	if key == "meta/index" {
 		return p.saveMeta(ctx, value)
@@ -110,9 +128,9 @@ func (p *projectionService) set(ctx context.Context, key string, value any) erro
 		return p.saveStickers(value)
 	}
 	if key == "groups/index" {
-		return nil
+		return p.saveGroupsIndex(value)
 	}
-	if strings.HasPrefix(key, "groups/") || strings.HasPrefix(key, "runtime/") {
+	if strings.HasPrefix(key, "runtime/") {
 		return newError("NOT_IMPLEMENTED", "storage key 未接入 e-b 根动作："+key)
 	}
 	return newError("NOT_IMPLEMENTED", "未知 storage key："+key)
@@ -133,6 +151,23 @@ func (p *projectionService) remove(ctx context.Context, key string) error {
 		_, err = p.config.updateProjection(func(projection *projectionConfig) {
 			delete(projection.RoleFolders, roleID)
 			delete(projection.ActiveChatByRole, roleID)
+		})
+		return err
+	}
+	if match := groupKeyPattern.FindStringSubmatch(key); match != nil {
+		groupID, err := p.groupIDByFolder(ctx, match[1])
+		if isNotFoundError(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := p.eb.request(ctx, ebRequest{Method: "DELETE", Path: fmt.Sprintf("/api/groups/%s", groupID)}); err != nil {
+			return err
+		}
+		_, err = p.config.updateProjection(func(projection *projectionConfig) {
+			delete(projection.GroupFolders, groupID)
+			delete(projection.ActiveChatByGroup, groupID)
 		})
 		return err
 	}
@@ -180,10 +215,18 @@ func (p *projectionService) remove(ctx context.Context, key string) error {
 		_, err = p.eb.request(ctx, ebRequest{Method: "DELETE", Path: fmt.Sprintf("/api/roles/%s/sessions/%s", roleID, match[2])})
 		return err
 	}
+	if match := groupChatKeyPattern.FindStringSubmatch(key); match != nil {
+		groupID, err := p.groupIDByFolder(ctx, match[1])
+		if err != nil {
+			return err
+		}
+		_, err = p.eb.request(ctx, ebRequest{Method: "DELETE", Path: fmt.Sprintf("/api/groups/%s/sessions/%s", groupID, match[2])})
+		return err
+	}
 	if key == sessionFavoritesKey {
 		return p.saveFavorites(ctx, map[string]any{"folders": []any{}, "chatRefsByFolderId": map[string]any{}})
 	}
-	if key == "meta/index" || key == "chats/index" || key == "providers/index" || key == "model-groups/index" || key == "groups/index" || strings.HasPrefix(key, "groups/") || strings.HasPrefix(key, "runtime/") {
+	if key == "meta/index" || key == "chats/index" || key == "providers/index" || key == "model-groups/index" || key == "groups/index" || strings.HasPrefix(key, "runtime/") {
 		return newError("NOT_IMPLEMENTED", "storage key 未接入 e-b 根动作："+key)
 	}
 	if key == "stickers/index" {
@@ -457,6 +500,31 @@ func (p *projectionService) meta(ctx context.Context) (any, error) {
 		modelGroupFolders[id] = folderFor(projection.ModelGroupFolders, id, stringField(group, "name"), "模型组")
 		updatedAt = stableUpdatedAt(updatedAt, millisFromAnyOrZero(group["updatedAt"]), millisFromAnyOrZero(group["createdAt"]))
 	}
+	groups, err := p.listGroups(ctx)
+	if err != nil {
+		return nil, err
+	}
+	groupOrder := []string{}
+	groupFolders := map[string]string{}
+	chatIndexByGroup := map[string]any{}
+	groupByID := map[string]map[string]any{}
+	for _, group := range groups {
+		id := stringField(group, "id")
+		if id == "" {
+			continue
+		}
+		groupByID[id] = group
+		updatedAt = stableUpdatedAt(updatedAt, millisFromAnyOrZero(group["updatedAt"]), millisFromAnyOrZero(group["createdAt"]))
+	}
+	for _, id := range orderedIDs(projection.GroupOrder, mapKeys(groupByID)) {
+		group := groupByID[id]
+		folder := folderFor(projection.GroupFolders, id, stringField(group, "name"), "群组")
+		groupOrder = append(groupOrder, id)
+		groupFolders[id] = folder
+		index, _ := p.sessionsIndexForGroup(ctx, id)
+		chatIndexByGroup[id] = index
+		updatedAt = stableUpdatedAt(updatedAt, millisFromAnyOrZero(objectMap(index)["updatedAt"]))
+	}
 	updatedAt = stableUpdatedAt(updatedAt, millisFromAnyOrZero(mermaidFix["updatedAt"]), millisFromAnyOrZero(chatTitleNaming["updatedAt"]), millisFromAnyOrZero(stickerNaming["updatedAt"]), millisFromAnyOrZero(contextCompression["updatedAt"]))
 	return map[string]any{
 		"schemaVersion":     splitSchemaVersion,
@@ -467,9 +535,9 @@ func (p *projectionService) meta(ctx context.Context) (any, error) {
 		"roleOrder":         roleOrder,
 		"roleFolders":       roleFolders,
 		"chatIndexByRole":   chatIndexByRole,
-		"groupOrder":        []any{},
-		"groupFolders":      map[string]any{},
-		"chatIndexByGroup":  map[string]any{},
+		"groupOrder":        groupOrder,
+		"groupFolders":      groupFolders,
+		"chatIndexByGroup":  chatIndexByGroup,
 		"providerOrder":     providerOrder,
 		"providerFolders":   providerFolders,
 		"modelGroupOrder":   modelGroupOrder,
@@ -504,12 +572,29 @@ func (p *projectionService) modelGroupsIndex(ctx context.Context) (any, error) {
 	return map[string]any{"modelGroupOrder": m["modelGroupOrder"], "modelGroupFolders": m["modelGroupFolders"], "updatedAt": stableUpdatedAt(millisFromAnyOrZero(m["updatedAt"]))}, nil
 }
 
+func (p *projectionService) groupsIndex(ctx context.Context) (any, error) {
+	meta, err := p.meta(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m := meta.(map[string]any)
+	return map[string]any{"groupOrder": m["groupOrder"], "groupFolders": m["groupFolders"], "updatedAt": stableUpdatedAt(millisFromAnyOrZero(m["updatedAt"]))}, nil
+}
+
 func (p *projectionService) roleChatIndex(ctx context.Context, folder string) (any, error) {
 	roleID, err := p.roleIDByFolder(ctx, folder)
 	if err != nil {
 		return nil, err
 	}
 	return p.sessionsIndexForRole(ctx, roleID)
+}
+
+func (p *projectionService) groupChatIndex(ctx context.Context, folder string) (any, error) {
+	groupID, err := p.groupIDByFolder(ctx, folder)
+	if err != nil {
+		return nil, err
+	}
+	return p.sessionsIndexForGroup(ctx, groupID)
 }
 
 func (p *projectionService) sessionsIndexForRole(ctx context.Context, roleID string) (any, error) {
@@ -552,6 +637,46 @@ func (p *projectionService) sessionsIndexForRole(ctx context.Context, roleID str
 	return map[string]any{"activeChatId": active, "chatIds": chatIds, "chatUpdatedAt": chatUpdatedAt, "chatMetas": chatMetas, "updatedAt": indexUpdatedAt}, nil
 }
 
+func (p *projectionService) sessionsIndexForGroup(ctx context.Context, groupID string) (any, error) {
+	cfg, _ := p.config.load()
+	indexUpdatedAt := stableUpdatedAt(cfg.Projection.UpdatedAt)
+	sessions, err := p.listGroupSessions(ctx, groupID)
+	if err != nil {
+		return map[string]any{"activeChatId": "", "chatIds": []any{}, "chatUpdatedAt": map[string]any{}, "chatMetas": []any{}, "updatedAt": indexUpdatedAt}, err
+	}
+	chatIds := []string{}
+	chatUpdatedAt := map[string]any{}
+	chatMetas := []any{}
+	for _, session := range sessions {
+		id := stringField(session, "id")
+		if id == "" {
+			continue
+		}
+		updatedAt := stableUpdatedAt(millisFromAnyOrZero(session["lastActive"]), millisFromAnyOrZero(session["updatedAt"]), millisFromAnyOrZero(session["createdAt"]))
+		chatIds = append(chatIds, id)
+		chatUpdatedAt[id] = updatedAt
+		chatMetas = append(chatMetas, map[string]any{"id": id, "title": fallback(stringField(session, "title"), "群聊"), "updatedAt": updatedAt, "createdAt": updatedAt})
+		indexUpdatedAt = stableUpdatedAt(indexUpdatedAt, updatedAt)
+	}
+	active := cfg.Projection.ActiveChatByGroup[groupID]
+	if active != "" {
+		found := false
+		for _, id := range chatIds {
+			if id == active {
+				found = true
+				break
+			}
+		}
+		if !found {
+			active = ""
+		}
+	}
+	if active == "" && len(chatIds) > 0 {
+		active = chatIds[0]
+	}
+	return map[string]any{"activeChatId": active, "chatIds": chatIds, "chatUpdatedAt": chatUpdatedAt, "chatMetas": chatMetas, "updatedAt": indexUpdatedAt}, nil
+}
+
 func (p *projectionService) roleByFolder(ctx context.Context, folder string) (any, error) {
 	roles, err := p.listRoles(ctx)
 	if err != nil {
@@ -571,12 +696,39 @@ func (p *projectionService) roleByFolder(ctx context.Context, folder string) (an
 	return nil, newError("NOT_FOUND", "角色不存在")
 }
 
+func (p *projectionService) groupByFolder(ctx context.Context, folder string) (any, error) {
+	groups, err := p.listGroups(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cfg, _ := p.config.load()
+	for _, group := range groups {
+		id := stringField(group, "id")
+		if folderFor(cfg.Projection.GroupFolders, id, stringField(group, "name"), "群组") == folder {
+			uiGroup := toUIGroup(group)
+			if avatarImage, err := p.loadGroupAvatar(ctx, id); err == nil {
+				uiGroup["avatarImage"] = avatarImage
+			}
+			return uiGroup, nil
+		}
+	}
+	return nil, newError("NOT_FOUND", "群组不存在")
+}
+
 func (p *projectionService) roleIDByAvatarPath(ctx context.Context, path string) (string, error) {
 	match := roleAvatarPathPattern.FindStringSubmatch(strings.TrimSpace(path))
 	if match == nil {
 		return "", newError("NOT_IMPLEMENTED", "仅支持角色头像图片路径")
 	}
 	return p.roleIDByFolder(ctx, match[1])
+}
+
+func (p *projectionService) groupIDByAvatarPath(ctx context.Context, path string) (string, error) {
+	match := groupAvatarPathPattern.FindStringSubmatch(strings.TrimSpace(path))
+	if match == nil {
+		return "", newError("NOT_IMPLEMENTED", "仅支持群组头像图片路径")
+	}
+	return p.groupIDByFolder(ctx, match[1])
 }
 
 func (p *projectionService) providerByFolder(ctx context.Context, folder string) (any, error) {
@@ -621,6 +773,18 @@ func (p *projectionService) chatByFolder(ctx context.Context, folder string, cha
 	return toUIChat(session), nil
 }
 
+func (p *projectionService) groupChatByFolder(ctx context.Context, folder string, chatID string) (any, error) {
+	groupID, err := p.groupIDByFolder(ctx, folder)
+	if err != nil {
+		return nil, err
+	}
+	session, err := p.loadGroupSession(ctx, groupID, chatID)
+	if err != nil {
+		return nil, err
+	}
+	return toUIChat(session), nil
+}
+
 func (p *projectionService) saveRole(ctx context.Context, folder string, value any) error {
 	role := fromUIRole(value)
 	roleID := stringField(role, "id")
@@ -632,6 +796,21 @@ func (p *projectionService) saveRole(ctx context.Context, folder string, value a
 	}
 	_, err := p.config.updateProjection(func(projection *projectionConfig) {
 		projection.RoleFolders[roleID] = folder
+	})
+	return err
+}
+
+func (p *projectionService) saveGroup(ctx context.Context, folder string, value any) error {
+	group := fromUIGroup(value)
+	groupID := stringField(group, "id")
+	if groupID == "" {
+		return newError("BAD_REQUEST", "group id is required")
+	}
+	if _, err := p.eb.request(ctx, ebRequest{Method: "POST", Path: "/api/groups", Body: mustJSON(group)}); err != nil {
+		return err
+	}
+	_, err := p.config.updateProjection(func(projection *projectionConfig) {
+		projection.GroupFolders[groupID] = folder
 	})
 	return err
 }
@@ -693,6 +872,16 @@ func (p *projectionService) saveSession(ctx context.Context, folder string, valu
 	return err
 }
 
+func (p *projectionService) saveGroupSession(ctx context.Context, folder string, value any) error {
+	groupID, err := p.groupIDByFolder(ctx, folder)
+	if err != nil {
+		return err
+	}
+	session := fromUIGroupChat(value, groupID)
+	_, err = p.eb.request(ctx, ebRequest{Method: "POST", Path: fmt.Sprintf("/api/groups/%s/sessions", groupID), Body: mustJSON(session)})
+	return err
+}
+
 func (p *projectionService) saveRoleChatIndex(ctx context.Context, folder string, value any) error {
 	roleID, err := p.roleIDByFolder(ctx, folder)
 	if err != nil {
@@ -706,6 +895,32 @@ func (p *projectionService) saveRoleChatIndex(ctx context.Context, folder string
 			return
 		}
 		projection.ActiveChatByRole[roleID] = activeChatID
+	})
+	return err
+}
+
+func (p *projectionService) saveGroupChatIndex(ctx context.Context, folder string, value any) error {
+	groupID, err := p.groupIDByFolder(ctx, folder)
+	if err != nil {
+		return err
+	}
+	index := objectMap(value)
+	activeChatID := stringField(index, "activeChatId")
+	_, err = p.config.updateProjection(func(projection *projectionConfig) {
+		if activeChatID == "" {
+			delete(projection.ActiveChatByGroup, groupID)
+			return
+		}
+		projection.ActiveChatByGroup[groupID] = activeChatID
+	})
+	return err
+}
+
+func (p *projectionService) saveGroupsIndex(value any) error {
+	index := objectMap(value)
+	groupOrder := stringSlice(index["groupOrder"])
+	_, err := p.config.updateProjection(func(projection *projectionConfig) {
+		projection.GroupOrder = groupOrder
 	})
 	return err
 }
@@ -757,8 +972,34 @@ func (p *projectionService) listModelGroups(ctx context.Context) ([]map[string]a
 	return objectList(data), err
 }
 
+func (p *projectionService) listGroups(ctx context.Context) ([]map[string]any, error) {
+	data, err := p.eb.request(ctx, ebRequest{Method: "GET", Path: "/api/groups"})
+	if err != nil {
+		return nil, err
+	}
+	summaries := objectList(data)
+	groups := make([]map[string]any, 0, len(summaries))
+	for _, summary := range summaries {
+		id := stringField(summary, "id")
+		if id == "" {
+			continue
+		}
+		detail, err := p.eb.request(ctx, ebRequest{Method: "GET", Path: fmt.Sprintf("/api/groups/%s", id)})
+		if err != nil {
+			return nil, err
+		}
+		groups = append(groups, objectMap(detail))
+	}
+	return groups, nil
+}
+
 func (p *projectionService) listSessions(ctx context.Context, roleID string) ([]map[string]any, error) {
 	data, err := p.eb.request(ctx, ebRequest{Method: "GET", Path: fmt.Sprintf("/api/roles/%s/sessions", roleID)})
+	return objectList(data), err
+}
+
+func (p *projectionService) listGroupSessions(ctx context.Context, groupID string) ([]map[string]any, error) {
+	data, err := p.eb.request(ctx, ebRequest{Method: "GET", Path: fmt.Sprintf("/api/groups/%s/sessions", groupID)})
 	return objectList(data), err
 }
 
@@ -770,8 +1011,24 @@ func (p *projectionService) loadSession(ctx context.Context, roleID string, sess
 	return objectMap(data), nil
 }
 
+func (p *projectionService) loadGroupSession(ctx context.Context, groupID string, sessionID string) (map[string]any, error) {
+	data, err := p.eb.request(ctx, ebRequest{Method: "GET", Path: fmt.Sprintf("/api/groups/%s/sessions/%s", groupID, sessionID)})
+	if err != nil {
+		return nil, err
+	}
+	return objectMap(data), nil
+}
+
 func (p *projectionService) loadRoleAvatar(ctx context.Context, roleID string) (string, error) {
 	data, err := p.eb.request(ctx, ebRequest{Method: "GET", Path: fmt.Sprintf("/api/roles/%s/avatar", roleID)})
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(fmt.Sprint(data)), nil
+}
+
+func (p *projectionService) loadGroupAvatar(ctx context.Context, groupID string) (string, error) {
+	data, err := p.eb.request(ctx, ebRequest{Method: "GET", Path: fmt.Sprintf("/api/groups/%s/avatar", groupID)})
 	if err != nil {
 		return "", err
 	}
@@ -791,6 +1048,21 @@ func (p *projectionService) roleIDByFolder(ctx context.Context, folder string) (
 		}
 	}
 	return "", newError("NOT_FOUND", "角色不存在")
+}
+
+func (p *projectionService) groupIDByFolder(ctx context.Context, folder string) (string, error) {
+	groups, err := p.listGroups(ctx)
+	if err != nil {
+		return "", err
+	}
+	cfg, _ := p.config.load()
+	for _, group := range groups {
+		id := stringField(group, "id")
+		if folderFor(cfg.Projection.GroupFolders, id, stringField(group, "name"), "群组") == folder {
+			return id, nil
+		}
+	}
+	return "", newError("NOT_FOUND", "群组不存在")
 }
 
 func (p *projectionService) providerIDByFolder(ctx context.Context, folder string) (string, error) {
@@ -857,6 +1129,54 @@ func fromUIRole(value any) map[string]any {
 		"toolPolicy":  normalizeUIToolPolicy(role["toolPolicy"]),
 		"createdAt":   timeFromMillis(role["createdAt"]),
 		"updatedAt":   time.Now().UTC().Format(time.RFC3339),
+	}
+}
+
+func toUIGroup(group map[string]any) map[string]any {
+	return map[string]any{
+		"id":              stringField(group, "id"),
+		"name":            fallback(stringField(group, "name"), "未命名群组"),
+		"avatar":          fallback(stringField(group, "avatar"), "群"),
+		"prompt":          stringField(group, "prompt"),
+		"mode":            fallback(stringField(group, "mode"), "roundRobin"),
+		"memberRoleIds":   stringSlice(group["memberRoleIds"]),
+		"roundRobinOrder": stringSlice(group["roundRobinOrder"]),
+		"random":          normalizeUIGroupRandom(group["random"]),
+		"createdAt":       millisFromAny(group["createdAt"]),
+		"updatedAt":       millisFromAny(group["updatedAt"]),
+	}
+}
+
+func fromUIGroup(value any) map[string]any {
+	group := objectMap(value)
+	now := time.Now().UTC().Format(time.RFC3339)
+	return map[string]any{
+		"id":              stringField(group, "id"),
+		"name":            fallback(stringField(group, "name"), "未命名群组"),
+		"avatar":          fallback(stringField(group, "avatar"), "群"),
+		"prompt":          stringField(group, "prompt"),
+		"mode":            normalizeGroupMode(stringField(group, "mode")),
+		"memberRoleIds":   stringSlice(group["memberRoleIds"]),
+		"roundRobinOrder": stringSlice(group["roundRobinOrder"]),
+		"random":          normalizeUIGroupRandom(group["random"]),
+		"createdAt":       timeFromMillis(group["createdAt"]),
+		"updatedAt":       now,
+	}
+}
+
+func normalizeGroupMode(value string) string {
+	if strings.TrimSpace(value) == "random" {
+		return "random"
+	}
+	return "roundRobin"
+}
+
+func normalizeUIGroupRandom(value any) map[string]any {
+	random := objectMap(value)
+	return map[string]any{
+		"weightsByRoleId": objectMap(random["weightsByRoleId"]),
+		"minCount":        intField(random, "minCount", 1),
+		"maxCount":        intField(random, "maxCount", 2),
 	}
 }
 
@@ -938,6 +1258,9 @@ func toUIChat(session map[string]any) map[string]any {
 			updatedAt = createdAt
 		}
 		uiMessage := map[string]any{"id": stringField(msg, "id"), "type": messageStorageType(msg), "role": messageRole(msg), "content": stringField(msg, "content"), "parentMid": stringField(msg, "parentMessageId"), "branchId": fallback(stringField(msg, "branchId"), "main"), "createdAt": createdAt, "updatedAt": updatedAt}
+		if speakerRoleID := stringField(msg, "speakerRoleId"); speakerRoleID != "" {
+			uiMessage["speakerRoleId"] = speakerRoleID
+		}
 		if control := objectMap(msg["control"]); stringField(control, "kind") != "" {
 			uiMessage["control"] = control
 		}
@@ -1064,10 +1387,21 @@ func anyList(items []map[string]any) []any {
 }
 
 func fromUIChat(value any, roleID string) map[string]any {
+	return fromUIChatSession(value, "role", roleID)
+}
+
+func fromUIGroupChat(value any, groupID string) map[string]any {
+	return fromUIChatSession(value, "group", groupID)
+}
+
+func fromUIChatSession(value any, targetKind string, targetID string) map[string]any {
 	chat := objectMap(value)
 	messages := []any{}
 	for _, msg := range objectList(chat["messages"]) {
 		message := map[string]any{"id": stringField(msg, "id"), "type": messageStorageType(msg), "content": stringField(msg, "content"), "parentMessageId": stringField(msg, "parentMid"), "branchId": fallback(stringField(msg, "branchId"), "main"), "createdAt": timeFromMillis(msg["createdAt"]), "updatedAt": timeFromMillis(msg["updatedAt"])}
+		if speakerRoleID := stringField(msg, "speakerRoleId"); speakerRoleID != "" {
+			message["speakerRoleId"] = speakerRoleID
+		}
 		if control := objectMap(msg["control"]); stringField(control, "kind") != "" {
 			message["control"] = control
 		}
@@ -1087,7 +1421,16 @@ func fromUIChat(value any, roleID string) map[string]any {
 		messages = append(messages, message)
 	}
 	updatedAt := timeFromMillis(chat["updatedAt"])
-	session := map[string]any{"id": stringField(chat, "id"), "roleId": roleID, "title": fallback(stringField(chat, "title"), "新聊天"), "status": "created", "messages": messages, "createdAt": timeFromMillis(chat["createdAt"]), "updatedAt": updatedAt, "lastActive": updatedAt}
+	titleFallback := "新聊天"
+	if targetKind == "group" {
+		titleFallback = "群聊"
+	}
+	session := map[string]any{"id": stringField(chat, "id"), "title": fallback(stringField(chat, "title"), titleFallback), "status": "created", "messages": messages, "createdAt": timeFromMillis(chat["createdAt"]), "updatedAt": updatedAt, "lastActive": updatedAt}
+	if targetKind == "group" {
+		session["groupId"] = targetID
+	} else {
+		session["roleId"] = targetID
+	}
 	metadata := map[string]any{}
 	if effort := normalizeReasoningEffort(stringField(chat, "reasoningEffort")); effort != "" {
 		metadata["reasoningEffort"] = effort

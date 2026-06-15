@@ -12,7 +12,15 @@ import (
 const defaultRuntimeBranchID = "main"
 
 func (s *system) loadOrCreateSession(ctx context.Context, request types.RunRequest) (types.Session, error) {
+	groupID := strings.TrimSpace(request.GroupID)
 	if strings.TrimSpace(request.SessionID) != "" {
+		if groupID != "" {
+			session, err := s.storage.LoadGroupSession(ctx, groupID, request.SessionID)
+			if err != nil {
+				return types.Session{}, runtimeStorageFailed("failed to load group session", err)
+			}
+			return session, nil
+		}
 		session, err := s.storage.LoadSession(ctx, request.RoleID, request.SessionID)
 		if err != nil {
 			return types.Session{}, runtimeStorageFailed("failed to load session", err)
@@ -20,6 +28,9 @@ func (s *system) loadOrCreateSession(ctx context.Context, request types.RunReque
 		return session, nil
 	}
 	now := time.Now().UTC()
+	if groupID != "" {
+		return types.Session{ID: utils.NewID("session"), GroupID: groupID, Title: types.DefaultSessionTitle, Status: string(types.RunStatusCreated), Messages: []types.Message{}, CreatedAt: now, UpdatedAt: now, LastActive: now}, nil
+	}
 	return types.Session{ID: utils.NewID("session"), RoleID: request.RoleID, Title: types.DefaultSessionTitle, Status: string(types.RunStatusCreated), Messages: []types.Message{}, CreatedAt: now, UpdatedAt: now, LastActive: now}, nil
 }
 
@@ -114,7 +125,7 @@ func markRunDependencyMessages(record *runRecord, messages []types.Message) {
 }
 
 func (s *system) appendUserMessageForRun(ctx context.Context, session types.Session, request types.RunRequest) (types.Session, error) {
-	attachments, err := s.saveRunAttachments(ctx, session.RoleID, session.ID, request.Attachments)
+	attachments, err := s.saveRunAttachments(ctx, session, request.Attachments)
 	if err != nil {
 		return session, err
 	}
@@ -133,13 +144,19 @@ func (s *system) appendUserMessageForRun(ctx context.Context, session types.Sess
 	return appendChildMessage(session, message, parent), nil
 }
 
-func (s *system) saveRunAttachments(ctx context.Context, roleID string, sessionID string, attachments []types.RunAttachment) ([]types.MessageAttachment, error) {
+func (s *system) saveRunAttachments(ctx context.Context, session types.Session, attachments []types.RunAttachment) ([]types.MessageAttachment, error) {
 	if len(attachments) == 0 {
 		return nil, nil
 	}
 	stored := make([]types.MessageAttachment, 0, len(attachments))
 	for _, attachment := range attachments {
-		saved, err := s.storage.SaveSessionMessageAttachment(ctx, roleID, sessionID, attachment)
+		var saved types.MessageAttachment
+		var err error
+		if strings.TrimSpace(session.GroupID) != "" {
+			saved, err = s.storage.SaveGroupSessionMessageAttachment(ctx, session.GroupID, session.ID, attachment)
+		} else {
+			saved, err = s.storage.SaveSessionMessageAttachment(ctx, session.RoleID, session.ID, attachment)
+		}
 		if err != nil {
 			return nil, runtimeStorageFailed("failed to save message attachment", err)
 		}
@@ -156,6 +173,9 @@ func appendAssistantReply(session types.Session, content string, parent types.Me
 
 func appendAssistantReplyForRun(record *runRecord, content string) types.Session {
 	message := assistantMessage(content)
+	if strings.TrimSpace(record.groupID) != "" {
+		message.SpeakerRoleID = record.roleID
+	}
 	if record.forceBranchReply {
 		message.BranchID = branchIDFromMessageID(message.ID)
 	} else {
@@ -272,6 +292,9 @@ func dropEmptyAssistantOutput(record *runRecord) {
 }
 
 func appendRunMessage(record *runRecord, message types.Message) {
+	if strings.TrimSpace(record.groupID) != "" && message.Type == "assistant" {
+		message.SpeakerRoleID = record.roleID
+	}
 	record.session = appendChildMessage(record.session, message, record.messageParent)
 	record.messageParent = lastSessionMessage(record.session)
 	record.lastMessageID = record.messageParent.ID

@@ -38,7 +38,6 @@ import { splitRoleKey, splitChatKey, splitGroupKey, splitGroupChatKey } from '..
 import { normalizeBranchId } from '../domain/branching'
 import { normalizeMessageAttachments, normalizeMessageGroup } from '../domain/message'
 import { validateFavoriteFolderName } from '../domain/favoriteValidator'
-import { normalizeChatModelOverride } from '../domain/modelRefUtils'
 import { normalizeReasoningEffort } from '../domain/reasoning'
 import { moveListItemById, type ListMovePosition } from '../domain/listOrdering'
 import { detectDraftFileKind, addDraftFilePlaceholder, removeDraftFile, removeDraftImage as removeDraftImageFromList, fileExtLower } from '../domain/draftFileUtils'
@@ -58,6 +57,7 @@ import {
   setActiveComposerImages,
   setActiveComposerInput,
 } from '../domain/sessionComposerDrafts'
+import { pendingChatForTarget } from '../domain/pendingChat'
 
 // ---- storage ----
 import { createChatWriteLock } from '../storage/chatWriteLock'
@@ -86,13 +86,13 @@ import { createFavoritesOperations } from './favoritesOperations'
 import { createEntityEditors } from './entityEditors'
 import { createChatOperations } from './chatOperations'
 import { createPersistence } from './persistence'
-import { updateRoleSessionTitle } from './ebRoleSession'
+import { updateGroupSessionTitle, updateRoleSessionTitle } from './ebRoleSession'
 import { getRunState, isTerminalRunStatus, listActiveRoleRuns, pollRunUntilTerminal, type EbRunState } from './ebRoleRun'
 import { createEbRunEventConsumer } from './ebRunEvents'
 import { createToolCatalog } from './toolCatalog'
 import { createModelRequestConfigController, defaultModelRequestConfigState } from './modelRequestConfig'
 import { addNativeToolsToPolicy, addToolsToPolicy, emptyRoleToolPolicy, removeNativeToolFromPolicy, removeToolFromPolicy, setToolRunMode } from '../domain/toolPolicy'
-import { removeEbRoleRunCard, upsertEbRoleRunCard } from '../domain/activeRunCards'
+import { readActiveEbRunCardsForTarget, removeEbRoleRunCard, upsertEbRoleRunCard } from '../domain/activeRunCards'
 
 export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilities }): {
   controller: AiChatController
@@ -434,10 +434,14 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     removeRoleChatEntry,
     saveRoleOrder,
     saveGroupChat,
+    setActiveGroupChatSelection,
+    removeGroupChatEntry,
     saveMetaOnly,
     saveFavoritesOnly,
     saveRoleEntity,
     removeRoleEntity,
+    saveGroupEntity,
+    removeGroupEntity,
     saveProviderEntity,
     removeProviderEntity,
   } = splitStore
@@ -479,6 +483,17 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     return loaded
   }
 
+  async function reloadGroupSession(groupIdRaw: any, sessionIdRaw: any) {
+    const groupId = String(groupIdRaw || '').trim()
+    const sessionId = String(sessionIdRaw || '').trim()
+    if (!groupId || !sessionId) return null
+    const chat = await loadChat('group', groupId, sessionId)
+    if (!chat) return null
+    const loaded = upsertLoadedChat('group', groupId, chat)
+    ebRunEvents.flushSession('group', groupId, sessionId)
+    return loaded
+  }
+
   // ============================================================
   // 6.1. UI RUNTIME CACHES
   // ============================================================
@@ -516,10 +531,10 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   const groupChatSync = createGroupChatSync({
     storage,
     getState: () => state,
-    setState: (data: any) => { state.data = data },
     loadSplitMeta: loadSplitMetaCached,
     getSplitMetaCache,
     withSplitMetaWrite,
+    hasActiveGroupRunInSession: (groupId: string, chatId: string) => readActiveEbRunCardsForTarget(state, 'group', groupId, chatId).length > 0,
   })
   const { syncActiveGroupChatsFromStorage } = groupChatSync
 
@@ -563,11 +578,13 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     const syncRunCard = (run: EbRunState) => {
       const runId = String(run?.id || '').trim()
       const roleId = String(run?.roleId || '').trim()
+      const groupId = String((run as any)?.groupId || '').trim()
       const sessionId = String(run?.sessionId || '').trim()
       if (!runId || !roleId || !sessionId) return false
       upsertEbRoleRunCard(state, {
         runId,
         roleId,
+        groupId,
         sessionId,
         inputMessageId: String(run?.inputMessageId || '').trim(),
         lastMessageId: String(run?.lastMessageId || run?.inputMessageId || '').trim(),
@@ -599,8 +616,11 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
             )
           }
           const roleId = String(latest?.roleId || '').trim()
+          const groupId = String((latest as any)?.groupId || '').trim()
           const sessionId = String(latest?.sessionId || '').trim()
-          if (roleId && sessionId && typeof reloadRoleSession === 'function') {
+          if (groupId && sessionId && typeof reloadGroupSession === 'function') {
+            await reloadGroupSession(groupId, sessionId).catch(() => null)
+          } else if (roleId && sessionId && typeof reloadRoleSession === 'function') {
             await reloadRoleSession(roleId, sessionId).catch(() => null)
           }
           removeEbRoleRunCard(state, runId)
@@ -640,6 +660,25 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   async function waitForChatSettingsSave() {
     const run = chatSettingsSave
     if (run) await run
+  }
+
+  async function activeChatSettingsTarget() {
+    if (!state.data) return null
+    const kind: 'role' | 'group' = activeTargetKind() === 'group' ? 'group' : 'role'
+    const target = kind === 'group' ? activeGroup() : activeRole()
+    const targetId = String((target as any)?.id || '').trim()
+    if (!targetId) return null
+    const pendingChat = pendingChatForTarget(state, kind, targetId)
+    if (!pendingChat) await ensureActiveChatLoaded()
+    const chat = pendingChat || activeChatFromData()
+    if (!chat) return null
+    return { kind, targetId, pendingChat, chat }
+  }
+
+  async function saveChatSettingsTarget(target: { kind: 'role' | 'group'; targetId: string; pendingChat: any; chat: any }) {
+    if (target.pendingChat) return
+    if (target.kind === 'group') await saveGroupChat(target.targetId, target.chat)
+    else await saveRoleChat(target.targetId, target.chat)
   }
 
   // ============================================================
@@ -770,6 +809,8 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     getState: () => state,
     saveRoleEntity,
     removeRoleEntity,
+    saveGroupEntity,
+    removeGroupEntity,
     saveProviderEntity,
     removeProviderEntity,
     save: saveMeta,
@@ -784,8 +825,13 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       await updateRoleSessionTitle(capabilities.net?.request || ((() => Promise.resolve({})) as any), { roleId: rid, sessionId: cid, title })
       await reloadRoleSession(rid, cid)
     },
-    removeChatInStore: (kind: 'role' | 'group', targetId: string, chatId: string) => kind === 'role' ? removeRoleChatEntry(targetId, chatId) : Promise.resolve(),
+    renameGroupChatInStore: async (gid: string, cid: string, title: string) => {
+      await updateGroupSessionTitle(capabilities.net?.request || ((() => Promise.resolve({})) as any), { groupId: gid, sessionId: cid, title })
+      await reloadGroupSession(gid, cid)
+    },
+    removeChatInStore: (kind: 'role' | 'group', targetId: string, chatId: string) => kind === 'role' ? removeRoleChatEntry(targetId, chatId) : removeGroupChatEntry(targetId, chatId),
     setRoleActiveChatSelection: (roleId: string, chatId: string) => setActiveRoleChatSelection(roleId, chatId),
+    setGroupActiveChatSelection: (groupId: string, chatId: string) => setActiveGroupChatSelection(groupId, chatId),
     removeLoadedChat,
     cleanupFavoriteRefsForTarget: favOps.cleanupFavoriteRefsForTarget,
     cleanupFavoriteRefsForChat: favOps.cleanupFavoriteRefsForChat,
@@ -838,6 +884,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     ensureActiveChatLoaded,
     ensureChatLoaded: (kind: 'role' | 'group', targetId: string, chatId: string) => ensureChatLoaded(kind, targetId, chatId),
     reloadRoleSession,
+    reloadGroupSession,
     waitForChatSettingsSave,
     emit,
     render,
@@ -1653,7 +1700,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       const nextRenderSafetyPolicy = String((state.draft as any).renderSafetyPolicyTarget || '').trim() === 'unsafe' ? 'unsafe' : ''
       let ok = true
       if (rid) ok = await deleteRole(rid)
-      if (gid) ok = deleteGroup(gid)
+      if (gid) ok = await deleteGroup(gid)
       if (pid) ok = await deleteProvider(pid)
       if (nextRenderSafetyPolicy && state.data) {
         ;(state.data.settings as any).renderSafetyPolicy = nextRenderSafetyPolicy
@@ -1968,15 +2015,9 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       const pid = String(providerId || '').trim()
       const mid = String(modelId || '').trim()
       if (!pid || !mid) return api.ui?.showToast?.('供应商/模型 不能为空', { kind: 'error' })
-      const kind = activeTargetKind()
-      if (kind !== 'role') return api.ui?.showToast?.('群组会话临时模型尚未接入 e-b 真实根动作', { kind: 'error' })
-      const target = activeRole()
-      const targetId = String((target as any)?.id || '').trim()
-      if (!targetId) return
-      const pending = state.pendingChat && String(state.pendingChat.roleId || '') === targetId ? state.pendingChat.chat : null
-      if (!pending) await ensureActiveChatLoaded()
-      const chat = pending || activeChatFromData()
-      if (!chat) return api.ui?.showToast?.('请先创建或选择会话', { kind: 'error' })
+      const target = await activeChatSettingsTarget()
+      if (!target) return api.ui?.showToast?.('请先创建或选择会话', { kind: 'error' })
+      const chat = target.chat
       const previousOverride = (chat as any).modelOverride
       const nextOverride = { kind: 'provider', providerId: pid, groupId: '', modelId: mid }
       ;(chat as any).modelOverride = nextOverride
@@ -1984,7 +2025,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       emit()
       try {
         await trackChatSettingsSave(async () => {
-          if (!pending) await save()
+          await saveChatSettingsTarget(target)
         })
       } catch (e) {
         if ((chat as any).modelOverride === nextOverride) {
@@ -1998,15 +2039,9 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     },
     clearChatModelOverride: async () => {
       if (!state.data) return
-      const kind = activeTargetKind()
-      if (kind !== 'role') return
-      const target = activeRole()
-      const targetId = String((target as any)?.id || '').trim()
-      if (!targetId) return
-      const pending = state.pendingChat && String(state.pendingChat.roleId || '') === targetId ? state.pendingChat.chat : null
-      if (!pending) await ensureActiveChatLoaded()
-      const chat = pending || activeChatFromData()
-      if (!chat) return
+      const target = await activeChatSettingsTarget()
+      if (!target) return
+      const chat = target.chat
       if (!(chat as any).modelOverride) return
       const previousOverride = (chat as any).modelOverride
       try { delete (chat as any).modelOverride } catch (_e) { ;(chat as any).modelOverride = null }
@@ -2014,7 +2049,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       emit()
       try {
         await trackChatSettingsSave(async () => {
-          if (!pending) await save()
+          await saveChatSettingsTarget(target)
         })
       } catch (e) {
         if (!(chat as any).modelOverride) {
@@ -2028,14 +2063,9 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     setChatReasoningEffort: async (effort: any) => {
       if (!state.data) return
       const next = normalizeReasoningEffort(effort)
-      const kind = activeTargetKind()
-      if (kind !== 'role') return
-      const target = activeRole()
-      const targetId = String((target as any)?.id || '').trim()
-      if (!targetId) return
-      const pending = state.pendingChat && String(state.pendingChat.roleId || '') === targetId ? state.pendingChat.chat : null
-      const chat = pending || activeChatFromData()
-      if (!chat) return
+      const target = await activeChatSettingsTarget()
+      if (!target) return
+      const chat = target.chat
       const previousEffort = (chat as any).reasoningEffort
       const nextEffort = next
       if (next) (chat as any).reasoningEffort = next
@@ -2044,7 +2074,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       emit()
       try {
         await trackChatSettingsSave(async () => {
-          if (!pending) await save()
+          await saveChatSettingsTarget(target)
         })
       } catch (e) {
         const currentEffort = String((chat as any).reasoningEffort || '').trim()

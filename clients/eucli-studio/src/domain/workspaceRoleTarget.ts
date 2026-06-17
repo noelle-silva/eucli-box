@@ -21,3 +21,12 @@ export function parseWorkspaceRoleTargetId(targetIdRaw: unknown) {
   if (!workspaceId || !roleId) return { workspaceId: '', roleId: '' }
   return { workspaceId, roleId }
 }
+
+export function resolveWorkspaceRoleTarget(targetIdRaw: unknown, fallbackRoleIdRaw?: unknown) {
+  const parsed = parseWorkspaceRoleTargetId(targetIdRaw)
+  if (parsed.workspaceId && parsed.roleId) return parsed
+  return {
+    workspaceId: text(targetIdRaw),
+    roleId: text(fallbackRoleIdRaw),
+  }
+}

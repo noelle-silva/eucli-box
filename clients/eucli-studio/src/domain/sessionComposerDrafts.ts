@@ -1,3 +1,5 @@
+import { workspaceRoleTargetId } from './workspaceRoleTarget'
+
 export type ComposerDraftTargetKind = 'role' | 'group' | 'workspace'
 
 export type ComposerDraftAddress = {
@@ -12,8 +14,6 @@ export type SessionComposerDraft = {
   images: any[]
   files: any[]
 }
-
-import { workspaceRoleTargetId } from './workspaceRoleTarget'
 
 const NEW_CHAT_ID = '__new__'
 

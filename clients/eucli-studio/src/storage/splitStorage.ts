@@ -717,7 +717,9 @@ export function createSplitStorage(deps: {
 
     state.data.ui.activeRoleId = String(state.draft?.activeRoleId || '')
     ;(state.data.ui as any).activeGroupId = String(state.draft?.activeGroupId || '')
-    ;(state.data.ui as any).activeTargetKind = String(state.draft?.activeTargetKind || '') === 'group' ? 'group' : 'role'
+    ;(state.data.ui as any).activeWorkspaceId = String((state.draft as any)?.activeWorkspaceId || '')
+    const targetKind = String(state.draft?.activeTargetKind || '').trim()
+    ;(state.data.ui as any).activeTargetKind = targetKind === 'group' ? 'group' : targetKind === 'workspace' ? 'workspace' : 'role'
 
     const old = splitMetaCache || (await loadSplitMeta())
     if (!old) throw new Error('存储未初始化')
@@ -763,13 +765,16 @@ export function createSplitStorage(deps: {
       if (state) {
         state.draft.activeRoleId = String(split?.ui?.activeRoleId || '')
         state.draft.activeGroupId = String((split?.ui as any)?.activeGroupId || '')
-        state.draft.activeTargetKind = String((split?.ui as any)?.activeTargetKind || 'role') === 'group' ? 'group' : 'role'
+        ;(state.draft as any).activeWorkspaceId = String((split?.ui as any)?.activeWorkspaceId || '')
+        const targetKind = String((split?.ui as any)?.activeTargetKind || 'role').trim()
+        state.draft.activeTargetKind = targetKind === 'group' ? 'group' : targetKind === 'workspace' ? 'workspace' : 'role'
       }
     } catch (e: any) {
       setState?.(null)
       if (state) {
         state.draft.activeRoleId = ''
         state.draft.activeGroupId = ''
+        ;(state.draft as any).activeWorkspaceId = ''
         state.draft.activeTargetKind = 'role'
       }
       onError?.(String(e?.message || e || '加载失败'))
@@ -783,7 +788,9 @@ export function createSplitStorage(deps: {
     if (!state?.data) return
     state.data.ui.activeRoleId = String(state.draft?.activeRoleId || '')
     ;(state.data.ui as any).activeGroupId = String(state.draft?.activeGroupId || '')
-    ;(state.data.ui as any).activeTargetKind = String(state.draft?.activeTargetKind || '') === 'group' ? 'group' : 'role'
+    ;(state.data.ui as any).activeWorkspaceId = String((state.draft as any)?.activeWorkspaceId || '')
+    const targetKind = String(state.draft?.activeTargetKind || '').trim()
+    ;(state.data.ui as any).activeTargetKind = targetKind === 'group' ? 'group' : targetKind === 'workspace' ? 'workspace' : 'role'
     await saveMetaOnly()
   }
 

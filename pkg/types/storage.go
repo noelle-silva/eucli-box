@@ -8,6 +8,7 @@ const (
 	StorageItemSession         StorageItemKind = "session"
 	StorageItemRole            StorageItemKind = "role"
 	StorageItemGroup           StorageItemKind = "group"
+	StorageItemWorkspace       StorageItemKind = "workspace"
 	StorageItemProvider        StorageItemKind = "provider"
 	StorageItemTool            StorageItemKind = "tool"
 	StorageItemStickerCategory StorageItemKind = "sticker_category"

@@ -45,6 +45,9 @@ func validateRunRequest(request types.RunRequest) error {
 	if strings.TrimSpace(request.RoleID) == "" {
 		return gatewayInvalid("roleId is required", nil)
 	}
+	if strings.TrimSpace(request.GroupID) != "" && strings.TrimSpace(request.WorkspaceID) != "" {
+		return gatewayInvalid("groupId cannot be combined with workspaceId", nil)
+	}
 	hasAttachments := len(request.Attachments) > 0
 	hasMessage := strings.TrimSpace(request.Message) != "" || hasAttachments
 	hasUserMessageID := strings.TrimSpace(request.UserMessageID) != ""
@@ -177,6 +180,16 @@ func validateConfirmation(confirmation types.ToolConfirmation) error {
 	return nil
 }
 
+func validateWorkspace(workspace types.Workspace) error {
+	if strings.TrimSpace(workspace.ID) == "" {
+		return gatewayInvalid("workspace id is required", nil)
+	}
+	if strings.TrimSpace(workspace.Name) == "" {
+		return gatewayInvalid("workspace name is required", nil)
+	}
+	return nil
+}
+
 func validateSession(routeRoleID string, session types.Session) error {
 	if strings.TrimSpace(routeRoleID) == "" {
 		return gatewayInvalid("roleID is required", nil)
@@ -205,6 +218,28 @@ func validateGroupSession(routeGroupID string, session types.Session) error {
 	}
 	if strings.TrimSpace(session.RoleID) != "" {
 		return gatewayInvalid("group session roleId must be empty", nil)
+	}
+	if strings.TrimSpace(session.ID) == "" {
+		return gatewayInvalid("session id is required", nil)
+	}
+	return nil
+}
+
+func validateWorkspaceSession(routeWorkspaceID string, session types.Session) error {
+	if strings.TrimSpace(routeWorkspaceID) == "" {
+		return gatewayInvalid("workspaceID is required", nil)
+	}
+	if strings.TrimSpace(session.WorkspaceID) == "" {
+		return gatewayInvalid("session workspaceId is required", nil)
+	}
+	if strings.TrimSpace(session.WorkspaceID) != strings.TrimSpace(routeWorkspaceID) {
+		return gatewayInvalid("session workspaceId does not match route workspaceID", nil)
+	}
+	if strings.TrimSpace(session.RoleID) == "" {
+		return gatewayInvalid("workspace session roleId is required", nil)
+	}
+	if strings.TrimSpace(session.GroupID) != "" {
+		return gatewayInvalid("workspace session groupId must be empty", nil)
 	}
 	if strings.TrimSpace(session.ID) == "" {
 		return gatewayInvalid("session id is required", nil)

@@ -89,7 +89,7 @@ func run() error {
 	if readBoxKey(dataDir) != "" {
 		busyKey = " (key: active)"
 	}
-	gatewaySystem, err := gateway.NewSystem(gateway.Config{Addr: envOrDefault("EUCLI_BOX_ADDR", "127.0.0.1:8765"), Key: readBoxKey(dataDir)}, runtimeSystem, roleSystem, storageSystem, providerSystem, toolSystem, storageSystem, storageSystem, assistSystem)
+	gatewaySystem, err := gateway.NewSystem(gateway.Config{Addr: envOrDefault("EUCLI_BOX_ADDR", "127.0.0.1:8765"), Key: readBoxKey(dataDir)}, runtimeSystem, roleSystem, storageSystem, storageSystem, providerSystem, toolSystem, storageSystem, storageSystem, assistSystem)
 	if err != nil {
 		return fmt.Errorf("start gateway system: %w", err)
 	}

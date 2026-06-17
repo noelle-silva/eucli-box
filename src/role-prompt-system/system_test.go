@@ -118,13 +118,14 @@ func newTestRoleSystem(t *testing.T, storage StorageSystem, providers ProviderSy
 }
 
 type fakeRoleStorage struct {
-	roles   map[string]types.Role
-	groups  map[string]types.ChatGroup
-	avatars map[string]string
+	roles      map[string]types.Role
+	groups     map[string]types.ChatGroup
+	workspaces map[string]types.Workspace
+	avatars    map[string]string
 }
 
 func newFakeRoleStorage() *fakeRoleStorage {
-	return &fakeRoleStorage{roles: map[string]types.Role{}, groups: map[string]types.ChatGroup{}, avatars: map[string]string{}}
+	return &fakeRoleStorage{roles: map[string]types.Role{}, groups: map[string]types.ChatGroup{}, workspaces: map[string]types.Workspace{}, avatars: map[string]string{}}
 }
 
 func (f *fakeRoleStorage) SaveRole(ctx context.Context, role types.Role) error {
@@ -178,6 +179,14 @@ func (f *fakeRoleStorage) LoadChatGroup(ctx context.Context, groupID string) (ty
 		return types.ChatGroup{}, errors.New("group missing")
 	}
 	return group, nil
+}
+
+func (f *fakeRoleStorage) LoadWorkspace(ctx context.Context, workspaceID string) (types.Workspace, error) {
+	workspace, ok := f.workspaces[workspaceID]
+	if !ok {
+		return types.Workspace{}, errors.New("workspace missing")
+	}
+	return workspace, nil
 }
 
 type fakeProviderResolver struct {

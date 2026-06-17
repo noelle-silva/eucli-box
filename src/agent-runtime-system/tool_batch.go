@@ -35,7 +35,7 @@ func (s *system) handleToolIntents(ctx context.Context, record *runRecord, inten
 		if entries[index].HasResult {
 			continue
 		}
-		plan, err := s.tools.Prepare(ctx, record.roleID, entries[index].Action)
+		plan, err := s.tools.Prepare(ctx, record.roleID, record.workspaceID, entries[index].Action)
 		if err != nil {
 			if isToolContextCancelled(err) {
 				return nil, err
@@ -58,41 +58,8 @@ func (s *system) handleToolIntents(ctx context.Context, record *runRecord, inten
 	}
 	s.publishAssistantMessageUpdate(record)
 
-	pending := pendingConfirmationPlans(entries)
-	if len(pending) > 0 {
-		if err := s.saveRunSession(ctx, record, types.RunStatusWaitingConfirmation); err != nil {
-			return nil, err
-		}
-		confirmed, err := s.waitForConfirmations(ctx, record, pending)
-		if err != nil {
-			for _, entry := range entries {
-				if entry.Plan.PlanStatus != types.ToolPlanStatusNeedsConfirmation {
-					continue
-				}
-				result := types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: entry.Action.ID, ToolName: entry.Action.ToolName, Status: types.ToolStatusCancelled, Error: err.Error(), CreatedAt: time.Now().UTC()}
-				upsertRunToolPart(record, entry.Action, "cancelled", &entry.Plan.Decision, &result)
-			}
-			if stateErr := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); stateErr != nil {
-				return nil, stateErr
-			}
-			return nil, err
-		}
-		applyConfirmedPlans(entries, confirmed)
-		for index := range entries {
-			if entries[index].Plan.PlanStatus == types.ToolPlanStatusDenied {
-				result := deniedToolResult(entries[index].Action, entries[index].Plan.Decision)
-				entries[index].Result = result
-				entries[index].HasResult = true
-				upsertRunToolPart(record, entries[index].Action, "denied", &entries[index].Plan.Decision, &result)
-			}
-		}
-		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
-			return nil, err
-		}
-		if err := s.saveRunSession(ctx, record, types.RunStatusRunning); err != nil {
-			return nil, err
-		}
-		s.publishAssistantMessageUpdate(record)
+	if err := s.resolvePendingToolConfirmations(ctx, record, entries); err != nil {
+		return nil, err
 	}
 
 	ready := readyToolEntries(entries)
@@ -122,6 +89,61 @@ func (s *system) handleToolIntents(ctx context.Context, record *runRecord, inten
 	}
 
 	return orderedToolResults(entries, executed)
+}
+
+func (s *system) resolvePendingToolConfirmations(ctx context.Context, record *runRecord, entries []toolRunEntry) error {
+	for {
+		pending := pendingConfirmationPlans(entries)
+		if len(pending) == 0 {
+			return nil
+		}
+		pendingIDs := pendingDecisionIDs(pending)
+		if err := s.saveRunSession(ctx, record, types.RunStatusWaitingConfirmation); err != nil {
+			return err
+		}
+		confirmed, err := s.waitForConfirmations(ctx, record, pending)
+		if err != nil {
+			s.markPendingToolsCancelled(record, entries, err)
+			if stateErr := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); stateErr != nil {
+				return stateErr
+			}
+			return err
+		}
+		applyConfirmedPlans(entries, confirmed)
+		if !toolConfirmationProgressed(pendingIDs, confirmed) {
+			return runtimeStateInvalid("tool confirmation did not progress", nil)
+		}
+		s.applyDeniedToolPlans(record, entries)
+		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
+			return err
+		}
+		if err := s.saveRunSession(ctx, record, types.RunStatusRunning); err != nil {
+			return err
+		}
+		s.publishAssistantMessageUpdate(record)
+	}
+}
+
+func (s *system) markPendingToolsCancelled(record *runRecord, entries []toolRunEntry, err error) {
+	for _, entry := range entries {
+		if entry.Plan.PlanStatus != types.ToolPlanStatusNeedsConfirmation {
+			continue
+		}
+		result := types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: entry.Action.ID, ToolName: entry.Action.ToolName, Status: types.ToolStatusCancelled, Error: err.Error(), CreatedAt: time.Now().UTC()}
+		upsertRunToolPart(record, entry.Action, "cancelled", &entry.Plan.Decision, &result)
+	}
+}
+
+func (s *system) applyDeniedToolPlans(record *runRecord, entries []toolRunEntry) {
+	for index := range entries {
+		if entries[index].Plan.PlanStatus != types.ToolPlanStatusDenied || entries[index].HasResult {
+			continue
+		}
+		result := deniedToolResult(entries[index].Action, entries[index].Plan.Decision)
+		entries[index].Result = result
+		entries[index].HasResult = true
+		upsertRunToolPart(record, entries[index].Action, "denied", &entries[index].Plan.Decision, &result)
+	}
 }
 
 func (s *system) applyPreparedToolPlan(record *runRecord, entry *toolRunEntry) {
@@ -207,6 +229,30 @@ func pendingConfirmationPlans(entries []toolRunEntry) []types.ToolRunPlan {
 		}
 	}
 	return plans
+}
+
+func pendingDecisionIDs(plans []types.ToolRunPlan) map[string]string {
+	ids := make(map[string]string, len(plans))
+	for _, plan := range plans {
+		ids[plan.Action.ID] = plan.Decision.ID
+	}
+	return ids
+}
+
+func toolConfirmationProgressed(previous map[string]string, confirmed []types.ToolRunPlan) bool {
+	if len(previous) != len(confirmed) {
+		return false
+	}
+	for _, plan := range confirmed {
+		previousID, ok := previous[plan.Action.ID]
+		if !ok {
+			return false
+		}
+		if plan.PlanStatus == types.ToolPlanStatusNeedsConfirmation && plan.Decision.ID == previousID {
+			return false
+		}
+	}
+	return true
 }
 
 func applyConfirmedPlans(entries []toolRunEntry, plans []types.ToolRunPlan) {

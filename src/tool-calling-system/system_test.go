@@ -146,7 +146,7 @@ func main() { fmt.Print(`+"`"+`{"status":"success","content":"ok","metadata":{}}
 	storage := newFakeToolStorage()
 	storage.tools[tool.ID] = tool
 	system := newTestToolSystem(t, &fakePermission{decision: types.PermissionDecision{ID: "d1", ActionID: "a1", ToolName: tool.Name, Status: types.PermissionStatusDenied, Reason: "blocked"}}, storage, Config{})
-	plan, err := system.Prepare(context.Background(), "developer", types.ToolAction{ID: "a1", ToolName: tool.Name})
+	plan, err := system.Prepare(context.Background(), "developer", "", types.ToolAction{ID: "a1", ToolName: tool.Name})
 	if err != nil {
 		t.Fatalf("Prepare() error = %v", err)
 	}
@@ -279,8 +279,93 @@ func main() {}
 	storage := newFakeToolStorage()
 	storage.tools[tool.ID] = tool
 	system := newTestToolSystem(t, &fakePermission{decision: types.PermissionDecision{Status: types.PermissionStatusAllowed}}, storage, Config{})
-	_, err := system.Prepare(context.Background(), "developer", types.ToolAction{ID: "a1", ToolName: tool.Name})
+	_, err := system.Prepare(context.Background(), "developer", "", types.ToolAction{ID: "a1", ToolName: tool.Name})
 	assertAppErrorCode(t, err, "tool.not_found")
+}
+
+func TestWorkspaceFenceAllowsRegisteredPath(t *testing.T) {
+	hostDir := t.TempDir()
+	t.Chdir(hostDir)
+	tool := testTool(t, buildTool(t, `package main
+import "fmt"
+func main() { fmt.Print(`+"`"+`{"status":"success","content":"ok","metadata":{}}`+"`"+`) }
+`))
+	tool.ID = "file_operator"
+	tool.Name = "file_operator"
+	storage := newFakeToolStorage()
+	storage.tools[tool.ID] = tool
+	storage.workspaces["workspace-1"] = types.Workspace{ID: "workspace-1", Name: "Workspace", Directories: []types.WorkspaceDirectory{{Path: hostDir, Alias: "host"}}}
+	system := newTestToolSystem(t, &fakePermission{decision: types.PermissionDecision{ID: "d1", ActionID: "a1", ToolName: tool.Name, Status: types.PermissionStatusAllowed}}, storage, Config{})
+
+	plan, err := system.Prepare(context.Background(), "developer", "workspace-1", types.ToolAction{ID: "a1", ToolName: tool.Name, Arguments: map[string]any{"action": "read", "path": "inside.txt"}})
+	if err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	if plan.PlanStatus != types.ToolPlanStatusReady || plan.WorkspaceFence == nil || plan.WorkspaceFence.RequiresConfirmation {
+		t.Fatalf("plan = %#v", plan)
+	}
+	if len(plan.WorkspaceFence.Paths) != 1 || !plan.WorkspaceFence.Paths[0].WithinWorkspace {
+		t.Fatalf("fence paths = %#v", plan.WorkspaceFence.Paths)
+	}
+}
+
+func TestWorkspaceFenceRequiresConfirmationForOutsidePath(t *testing.T) {
+	hostDir := t.TempDir()
+	outsideDir := t.TempDir()
+	t.Chdir(hostDir)
+	tool := testTool(t, buildTool(t, `package main
+import "fmt"
+func main() { fmt.Print(`+"`"+`{"status":"success","content":"ok","metadata":{}}`+"`"+`) }
+`))
+	tool.ID = "file_operator"
+	tool.Name = "file_operator"
+	storage := newFakeToolStorage()
+	storage.tools[tool.ID] = tool
+	storage.workspaces["workspace-1"] = types.Workspace{ID: "workspace-1", Name: "Workspace", Directories: []types.WorkspaceDirectory{{Path: hostDir, Alias: "host"}}}
+	system := newTestToolSystem(t, &fakePermission{decision: types.PermissionDecision{ID: "d1", ActionID: "a1", ToolName: tool.Name, Status: types.PermissionStatusAllowed}}, storage, Config{})
+
+	plan, err := system.Prepare(context.Background(), "developer", "workspace-1", types.ToolAction{ID: "a1", ToolName: tool.Name, Arguments: map[string]any{"action": "read", "path": filepath.Join(outsideDir, "outside.txt")}})
+	if err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	if plan.PlanStatus != types.ToolPlanStatusNeedsConfirmation || plan.WorkspaceFence == nil || !plan.WorkspaceFence.RequiresConfirmation {
+		t.Fatalf("plan = %#v", plan)
+	}
+	if plan.Decision.Status != types.PermissionStatusNeedsConfirmation || plan.Decision.Details["workspaceFence"] == nil {
+		t.Fatalf("decision = %#v", plan.Decision)
+	}
+}
+
+func TestWorkspaceFenceApprovalContinuesToRoleConfirmation(t *testing.T) {
+	hostDir := t.TempDir()
+	outsideDir := t.TempDir()
+	t.Chdir(hostDir)
+	tool := testTool(t, buildTool(t, `package main
+import "fmt"
+func main() { fmt.Print(`+"`"+`{"status":"success","content":"ok","metadata":{}}`+"`"+`) }
+`))
+	tool.ID = "file_operator"
+	tool.Name = "file_operator"
+	storage := newFakeToolStorage()
+	storage.tools[tool.ID] = tool
+	storage.workspaces["workspace-1"] = types.Workspace{ID: "workspace-1", Name: "Workspace", Directories: []types.WorkspaceDirectory{{Path: hostDir, Alias: "host"}}}
+	permissions := &fakePermission{decision: types.PermissionDecision{ID: "role-decision", ActionID: "a1", ToolName: tool.Name, Status: types.PermissionStatusNeedsConfirmation}}
+	system := newTestToolSystem(t, permissions, storage, Config{})
+
+	plan, err := system.Prepare(context.Background(), "developer", "workspace-1", types.ToolAction{ID: "a1", ToolName: tool.Name, Arguments: map[string]any{"action": "read", "path": filepath.Join(outsideDir, "outside.txt")}})
+	if err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	updated, err := system.ApplyConfirmation(context.Background(), plan, types.ToolConfirmation{DecisionID: plan.Decision.ID, Approved: true})
+	if err != nil {
+		t.Fatalf("ApplyConfirmation() error = %v", err)
+	}
+	if updated.PlanStatus != types.ToolPlanStatusNeedsConfirmation || updated.Decision.ID != "role-decision" {
+		t.Fatalf("updated = %#v", updated)
+	}
+	if updated.WorkspaceFence == nil || updated.WorkspaceFence.RequiresConfirmation {
+		t.Fatalf("workspace fence = %#v", updated.WorkspaceFence)
+	}
 }
 
 func TestExecuteReturnsDeniedResult(t *testing.T) {
@@ -390,11 +475,12 @@ func (f *fakePermission) ApplyConfirmation(ctx context.Context, decision types.P
 }
 
 type fakeToolStorage struct {
-	tools map[string]types.ToolDefinition
+	tools      map[string]types.ToolDefinition
+	workspaces map[string]types.Workspace
 }
 
 func newFakeToolStorage() *fakeToolStorage {
-	return &fakeToolStorage{tools: map[string]types.ToolDefinition{}}
+	return &fakeToolStorage{tools: map[string]types.ToolDefinition{}, workspaces: map[string]types.Workspace{}}
 }
 
 func (f *fakeToolStorage) SaveTool(ctx context.Context, tool types.ToolDefinition) error {
@@ -427,6 +513,14 @@ func (f *fakeToolStorage) SaveToolUserSettings(ctx context.Context, toolID strin
 	tool.PromptDescriptionOverride = settings.PromptDescriptionOverride
 	f.tools[toolID] = tool
 	return tool, nil
+}
+
+func (f *fakeToolStorage) LoadWorkspace(ctx context.Context, workspaceID string) (types.Workspace, error) {
+	workspace, ok := f.workspaces[workspaceID]
+	if !ok {
+		return types.Workspace{}, errors.New("workspace missing")
+	}
+	return workspace, nil
 }
 
 func assertAppErrorCode(t *testing.T, err error, code string) {

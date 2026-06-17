@@ -6,6 +6,7 @@ export type EbRunState = {
   id: string
   roleId: string
   groupId: string
+  workspaceId: string
   sessionId: string
   inputMessageId: string
   lastMessageId: string
@@ -44,10 +45,11 @@ export function isTerminalRunStatus(status: unknown) {
   return value === 'completed' || value === 'failed' || value === 'cancelled' || value === 'canceled'
 }
 
-export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: string; groupId?: string; sessionId?: string; message?: string; attachments?: any[]; parentMessageId?: string; userMessageId?: string; contextMessageId?: string; stream?: boolean; reasoningEffort?: string; modelOverride?: any }) {
+export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: string; groupId?: string; workspaceId?: string; sessionId?: string; message?: string; attachments?: any[]; parentMessageId?: string; userMessageId?: string; contextMessageId?: string; stream?: boolean; reasoningEffort?: string; modelOverride?: any }) {
   const body = {
     roleId: String(input.roleId || '').trim(),
     groupId: String(input.groupId || '').trim(),
+    workspaceId: String(input.workspaceId || '').trim(),
     sessionId: String(input.sessionId || '').trim(),
     message: String(input.message || '').trim(),
     attachments: Array.isArray(input.attachments) ? input.attachments : [],
@@ -75,6 +77,7 @@ export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: st
   if (!body.message) delete (body as any).message
   if (!body.attachments.length) delete (body as any).attachments
   if (!body.groupId) delete (body as any).groupId
+  if (!body.workspaceId) delete (body as any).workspaceId
   if (!body.sessionId) delete (body as any).sessionId
   if (!body.reasoningEffort) delete (body as any).reasoningEffort
   const response = await netRequest({ method: 'POST', path: '/api/runs', body, timeoutMs: 30000 })
@@ -138,6 +141,7 @@ export function normalizeRunState(value: any): EbRunState {
     id: String(state.id || '').trim(),
     roleId: String(state.roleId || '').trim(),
     groupId: String(state.groupId || '').trim(),
+    workspaceId: String(state.workspaceId || '').trim(),
     sessionId: String(state.sessionId || '').trim(),
     inputMessageId: String(state.inputMessageId || '').trim(),
     lastMessageId: String(state.lastMessageId || '').trim(),

@@ -1563,14 +1563,16 @@ func newRuntimeFakes() *runtimeFakes {
 type fakeRuntimeStorage struct {
 	mu                sync.Mutex
 	sessions          map[string]types.Session
+	workspaces        map[string]types.Workspace
 	images            map[string]string
 	compressionConfig types.ContextCompressionConfig
 }
 
 func newFakeRuntimeStorage() *fakeRuntimeStorage {
 	return &fakeRuntimeStorage{
-		sessions: map[string]types.Session{},
-		images:   map[string]string{},
+		sessions:   map[string]types.Session{},
+		workspaces: map[string]types.Workspace{},
+		images:     map[string]string{},
 		compressionConfig: types.ContextCompressionConfig{
 			Coordinate:           types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"},
 			RetainRecentMessages: types.DefaultContextCompressionRetainRecentMessages,
@@ -1775,9 +1777,22 @@ func (f *fakeRuntimeStorage) LoadGroupSession(ctx context.Context, groupID strin
 	return session, nil
 }
 
+func (f *fakeRuntimeStorage) LoadWorkspaceSession(ctx context.Context, workspaceID string, sessionID string) (types.Session, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	session, ok := f.sessions["workspaces/"+workspaceID+"/"+sessionID]
+	if !ok {
+		return types.Session{}, errors.New("workspace session missing")
+	}
+	return session, nil
+}
+
 func (f *fakeRuntimeStorage) sessionKey(session types.Session) string {
 	if strings.TrimSpace(session.GroupID) != "" {
 		return "groups/" + session.GroupID + "/" + session.ID
+	}
+	if strings.TrimSpace(session.WorkspaceID) != "" {
+		return "workspaces/" + session.WorkspaceID + "/" + session.ID
 	}
 	return session.RoleID + "/" + session.ID
 }
@@ -1836,6 +1851,27 @@ func (f *fakeRuntimeStorage) SaveGroupSessionMessageAttachment(ctx context.Conte
 		return types.MessageAttachment{ID: "att-image", Kind: "image", Name: attachment.Name, Mime: "image/png", Path: path}, nil
 	}
 	return types.MessageAttachment{ID: "att-text", Kind: attachment.Kind, Name: attachment.Name, Lang: attachment.Lang, Text: attachment.Text, FullLen: attachment.FullLen, SendLen: attachment.SendLen, SendPct: attachment.SendPct}, nil
+}
+
+func (f *fakeRuntimeStorage) SaveWorkspaceSessionMessageAttachment(ctx context.Context, workspaceID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if attachment.Kind == "image" {
+		path := "sessions/workspaces/" + workspaceID + "/" + sessionID + "/attachments/att-image/image.png"
+		f.images[path] = attachment.DataURL
+		return types.MessageAttachment{ID: "att-image", Kind: "image", Name: attachment.Name, Mime: "image/png", Path: path}, nil
+	}
+	return types.MessageAttachment{ID: "att-text", Kind: attachment.Kind, Name: attachment.Name, Lang: attachment.Lang, Text: attachment.Text, FullLen: attachment.FullLen, SendLen: attachment.SendLen, SendPct: attachment.SendPct}, nil
+}
+
+func (f *fakeRuntimeStorage) LoadWorkspace(ctx context.Context, workspaceID string) (types.Workspace, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	workspace, ok := f.workspaces[workspaceID]
+	if !ok {
+		return types.Workspace{}, errors.New("workspace missing")
+	}
+	return workspace, nil
 }
 
 func (f *fakeRuntimeStorage) LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error) {
@@ -2051,7 +2087,7 @@ func (f *fakeRuntimeTools) NormalizeIntent(ctx context.Context, intent types.Too
 	return types.ToolAction{ID: intent.ID, ToolName: intent.ToolName, Arguments: intent.Arguments, Source: intent.Source, Raw: intent.Raw}, nil
 }
 
-func (f *fakeRuntimeTools) Prepare(ctx context.Context, roleID string, action types.ToolAction) (types.ToolRunPlan, error) {
+func (f *fakeRuntimeTools) Prepare(ctx context.Context, roleID string, workspaceID string, action types.ToolAction) (types.ToolRunPlan, error) {
 	if f.prepareErr != nil {
 		return types.ToolRunPlan{}, f.prepareErr
 	}

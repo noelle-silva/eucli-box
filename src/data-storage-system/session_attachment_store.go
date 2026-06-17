@@ -25,6 +25,10 @@ func (s *system) SaveGroupSessionMessageAttachment(ctx context.Context, groupID 
 	return s.saveSessionMessageAttachment(ctx, groupSessionScope(groupID), sessionID, attachment)
 }
 
+func (s *system) SaveWorkspaceSessionMessageAttachment(ctx context.Context, workspaceID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
+	return s.saveSessionMessageAttachment(ctx, workspaceSessionScope(workspaceID), sessionID, attachment)
+}
+
 func (s *system) saveSessionMessageAttachment(ctx context.Context, scope sessionScope, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
 	if err := ctx.Err(); err != nil {
 		return types.MessageAttachment{}, storageWriteFailed("write cancelled", err)
@@ -125,10 +129,17 @@ func (s *system) sessionAttachmentImagePath(relPath string) (string, string, err
 	var attachmentID string
 	var fileName string
 	if len(parts) == 7 {
-		if parts[1] != "groups" || parts[4] != "attachments" {
+		if parts[4] != "attachments" {
 			return "", "", storageInvalid("session attachment image path is invalid", nil)
 		}
-		scope = groupSessionScope(parts[2])
+		switch parts[1] {
+		case "groups":
+			scope = groupSessionScope(parts[2])
+		case "workspaces":
+			scope = workspaceSessionScope(parts[2])
+		default:
+			return "", "", storageInvalid("session attachment image path is invalid", nil)
+		}
 		sessionID = parts[3]
 		attachmentID = parts[5]
 		fileName = strings.TrimSpace(parts[6])
@@ -178,12 +189,18 @@ func (s *system) sessionAttachmentDir(scope sessionScope, sessionID string, atta
 	if scope.Kind == sessionScopeGroup {
 		return s.paths.groupSessionAttachmentDir(scope.ID, sessionID, attachmentID)
 	}
+	if scope.Kind == sessionScopeWorkspace {
+		return s.paths.workspaceSessionAttachmentDir(scope.ID, sessionID, attachmentID)
+	}
 	return s.paths.sessionAttachmentDir(scope.ID, sessionID, attachmentID)
 }
 
 func sessionAttachmentRelPath(scope sessionScope, sessionID string, attachmentID string, fileName string) string {
 	if scope.Kind == sessionScopeGroup {
 		return filepath.ToSlash(filepath.Join("sessions", "groups", scope.ID, sessionID, "attachments", attachmentID, fileName))
+	}
+	if scope.Kind == sessionScopeWorkspace {
+		return filepath.ToSlash(filepath.Join("sessions", "workspaces", scope.ID, sessionID, "attachments", attachmentID, fileName))
 	}
 	return filepath.ToSlash(filepath.Join("sessions", scope.ID, sessionID, "attachments", attachmentID, fileName))
 }

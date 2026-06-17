@@ -28,6 +28,30 @@ eucli-box 是一个本地 AI 工作台后端与配套工具集合，负责角色
 - 群聊的运行状态刷新、点选会话、改名和删除都按群聊目标独立处理，不会串到其他会话。
 - 群聊与单聊复用同一套会话保存与刷新基础能力，避免出现两套分叉流程。
 
+## 工作区入口
+
+- 工作区现在作为和角色、群组并列的第三入口存在。
+- 进入工作区后，先选择工作区，再选择当前角色；会话归属属于工作区，发言者属于当前角色。
+- 工作区会话支持创建、切换、发送、继续回复、重新生成、改标题、删除和运行状态回流。
+- 工作区管理支持新建、编辑、删除，内容包括工作区名称、目录清单和工作区提示词。
+- 工作区目录没有“默认目录”概念，所有登记目录平等参与上下文构建。
+- 工作区删除只删除工作区定义，不删除历史会话数据。
+- 工作区里的文件读写和命令工作目录会先经过工作区目录范围确认，再进入角色工具权限确认。
+
+### 使用方式
+
+1. 在客户端顶部入口中选择“工作区”。
+2. 进入某个工作区后，选择当前角色，再开始聊天。
+3. 如需维护工作区，到“设置 → 工作区管理”中编辑名称、目录和提示词。
+4. 工作区目录或提示词修改后，下一轮对话即时生效。
+
+### 行为边界
+
+- 工作区当前只支持单角色对话，不支持工作区配合群聊。
+- 工作区不会绑定某个固定角色，任何角色都可进入任何工作区。
+- 工作区路径范围不是安全沙箱，只用于减少误操作；越界时会进入用户确认，而不是直接拒绝。
+- 命令文本里的路径不会被完全解析，围栏只检查命令工作目录参数。
+
 ## 当前重点能力
 
 ### AI 工具提示说明编辑
@@ -86,6 +110,12 @@ eucli-box 是一个本地 AI 工作台后端与配套工具集合，负责角色
 
 - `.dev-management/implementation-docs/ai-tool-prompt-description-edit-readme.md`
 - `.dev-management/implementation-docs/ai-tool-prompt-description-edit-changelog.md`
+
+与工作区机制相关的文档：
+
+- `.dev-management/design-decisions/workspace-mechanism.md`
+- `.dev-management/detailed-implementation/workspace-mechanism-implementation-plan.md`
+- `.dev-management/implementation-docs/workspace-mechanism-review-standards.md`
 
 ## 验证命令
 

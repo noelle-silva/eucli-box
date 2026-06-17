@@ -34,6 +34,9 @@ func (s *system) RebuildIndexes(ctx context.Context) error {
 	if err := s.rebuildChatGroupIndex(ctx); err != nil {
 		return err
 	}
+	if err := s.rebuildWorkspaceIndex(ctx); err != nil {
+		return err
+	}
 	if err := s.rebuildProviderIndex(ctx); err != nil {
 		return err
 	}
@@ -87,7 +90,7 @@ func (s *system) rebuildAllSessionIndexes(ctx context.Context) error {
 			continue
 		}
 		roleID := entry.Name()
-		if roleID == "groups" {
+		if roleID == "groups" || roleID == "workspaces" {
 			continue
 		}
 		folders = append(folders, roleFolder{ID: roleID})
@@ -99,7 +102,10 @@ func (s *system) rebuildAllSessionIndexes(ctx context.Context) error {
 	if err := writeIndex(ctx, filepath.Join(s.paths.sessionsRoot(), "index.json"), sessionRoleIndex{Folders: folders}); err != nil {
 		return err
 	}
-	return s.rebuildAllGroupSessionIndexes(ctx)
+	if err := s.rebuildAllGroupSessionIndexes(ctx); err != nil {
+		return err
+	}
+	return s.rebuildAllWorkspaceSessionIndexes(ctx)
 }
 
 func (s *system) rebuildSessionIndexes(ctx context.Context, roleID string) error {
@@ -121,6 +127,9 @@ func (s *system) rebuildSessionIndexesForScope(ctx context.Context, scope sessio
 	}
 	if scope.Kind == sessionScopeGroup {
 		return s.rebuildGroupSessionIndexes(ctx, scope.ID)
+	}
+	if scope.Kind == sessionScopeWorkspace {
+		return s.rebuildWorkspaceSessionIndexes(ctx, scope.ID)
 	}
 	return s.rebuildSessionIndexes(ctx, scope.ID)
 }
@@ -158,6 +167,41 @@ func (s *system) rebuildGroupSessionIndexes(ctx context.Context, groupID string)
 		return err
 	}
 	return writeIndex(ctx, filepath.Join(groupDir, "index.json"), sessionIndex{Sessions: sessions, Sort: "lastActive"})
+}
+
+func (s *system) rebuildAllWorkspaceSessionIndexes(ctx context.Context) error {
+	entries, err := os.ReadDir(s.paths.sessionWorkspacesRoot())
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return storageIndexFailed("failed to scan workspace sessions root", err)
+	}
+	folders := make([]roleFolder, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		workspaceID := entry.Name()
+		folders = append(folders, roleFolder{ID: workspaceID})
+		if err := s.rebuildWorkspaceSessionIndexes(ctx, workspaceID); err != nil {
+			return err
+		}
+	}
+	sort.Slice(folders, func(i, j int) bool { return folders[i].ID < folders[j].ID })
+	return writeIndex(ctx, filepath.Join(s.paths.sessionWorkspacesRoot(), "index.json"), sessionRoleIndex{Folders: folders})
+}
+
+func (s *system) rebuildWorkspaceSessionIndexes(ctx context.Context, workspaceID string) error {
+	sessions, err := s.ListWorkspaceSessions(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	workspaceDir, err := s.paths.safeJoin(s.paths.sessionWorkspacesRoot(), workspaceID)
+	if err != nil {
+		return err
+	}
+	return writeIndex(ctx, filepath.Join(workspaceDir, "index.json"), sessionIndex{Sessions: sessions, Sort: "lastActive"})
 }
 
 func rebuildRecycleIndex(ctx context.Context, paths paths) error {

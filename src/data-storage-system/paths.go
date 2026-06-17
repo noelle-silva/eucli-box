@@ -21,17 +21,18 @@ func newPaths(root string) (paths, error) {
 }
 
 func (p paths) baseDirs() []string {
-	return []string{p.root, p.sessionsRoot(), p.sessionGroupsRoot(), p.rolesRoot(), p.groupsRoot(), p.providersRoot(), p.toolsRoot(), p.stickersRoot(), p.recycleRoot(), p.metaRoot()}
+	return []string{p.root, p.sessionsRoot(), p.sessionGroupsRoot(), p.sessionWorkspacesRoot(), p.rolesRoot(), p.groupsRoot(), p.workspacesRoot(), p.providersRoot(), p.toolsRoot(), p.stickersRoot(), p.recycleRoot(), p.metaRoot()}
 }
 
-func (p paths) sessionsRoot() string  { return filepath.Join(p.root, "sessions") }
-func (p paths) rolesRoot() string     { return filepath.Join(p.root, "roles") }
-func (p paths) groupsRoot() string    { return filepath.Join(p.root, "groups") }
-func (p paths) providersRoot() string { return filepath.Join(p.root, "providers") }
-func (p paths) toolsRoot() string     { return filepath.Join(p.root, "tools") }
-func (p paths) stickersRoot() string  { return filepath.Join(p.root, "stickers") }
-func (p paths) recycleRoot() string   { return filepath.Join(p.root, "recycle") }
-func (p paths) metaRoot() string      { return filepath.Join(p.root, "meta") }
+func (p paths) sessionsRoot() string   { return filepath.Join(p.root, "sessions") }
+func (p paths) rolesRoot() string      { return filepath.Join(p.root, "roles") }
+func (p paths) groupsRoot() string     { return filepath.Join(p.root, "groups") }
+func (p paths) workspacesRoot() string { return filepath.Join(p.root, "workspaces") }
+func (p paths) providersRoot() string  { return filepath.Join(p.root, "providers") }
+func (p paths) toolsRoot() string      { return filepath.Join(p.root, "tools") }
+func (p paths) stickersRoot() string   { return filepath.Join(p.root, "stickers") }
+func (p paths) recycleRoot() string    { return filepath.Join(p.root, "recycle") }
+func (p paths) metaRoot() string       { return filepath.Join(p.root, "meta") }
 
 func (p paths) metaVersionFile() string { return filepath.Join(p.metaRoot(), "version.json") }
 
@@ -85,12 +86,28 @@ func (p paths) groupDataFile(groupID string) (string, error) {
 	return filepath.Join(dir, "data.json"), nil
 }
 
+func (p paths) workspaceDir(workspaceID string) (string, error) {
+	return p.safeJoin(p.workspacesRoot(), workspaceID)
+}
+
+func (p paths) workspaceDataFile(workspaceID string) (string, error) {
+	dir, err := p.workspaceDir(workspaceID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "data.json"), nil
+}
+
 func (p paths) sessionRoleDir(roleID string) (string, error) {
 	return p.safeJoin(p.sessionsRoot(), roleID)
 }
 
 func (p paths) sessionGroupsRoot() string {
 	return filepath.Join(p.sessionsRoot(), "groups")
+}
+
+func (p paths) sessionWorkspacesRoot() string {
+	return filepath.Join(p.sessionsRoot(), "workspaces")
 }
 
 func (p paths) sessionGroupDir(groupID string) (string, error) {
@@ -155,6 +172,38 @@ func (p paths) groupSessionAttachmentsDir(groupID string, sessionID string) (str
 
 func (p paths) groupSessionAttachmentDir(groupID string, sessionID string, attachmentID string) (string, error) {
 	dir, err := p.groupSessionAttachmentsDir(groupID, sessionID)
+	if err != nil {
+		return "", err
+	}
+	return p.safeJoin(dir, attachmentID)
+}
+
+func (p paths) workspaceSessionDir(workspaceID string, sessionID string) (string, error) {
+	workspaceDir, err := p.safeJoin(p.sessionWorkspacesRoot(), workspaceID)
+	if err != nil {
+		return "", err
+	}
+	return p.safeJoin(workspaceDir, sessionID)
+}
+
+func (p paths) workspaceSessionDataFile(workspaceID string, sessionID string) (string, error) {
+	dir, err := p.workspaceSessionDir(workspaceID, sessionID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "data.json"), nil
+}
+
+func (p paths) workspaceSessionAttachmentsDir(workspaceID string, sessionID string) (string, error) {
+	dir, err := p.workspaceSessionDir(workspaceID, sessionID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "attachments"), nil
+}
+
+func (p paths) workspaceSessionAttachmentDir(workspaceID string, sessionID string, attachmentID string) (string, error) {
+	dir, err := p.workspaceSessionAttachmentsDir(workspaceID, sessionID)
 	if err != nil {
 		return "", err
 	}

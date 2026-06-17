@@ -59,6 +59,7 @@
       },
       "path": {
         "type": "string",
+        "format": "filepath",
         "description": "目标文件或目录路径。相对路径从 e-b 宿主运行位置解析；绝对路径允许使用。"
       },
       "pattern": {

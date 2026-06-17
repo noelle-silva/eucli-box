@@ -22,10 +22,13 @@ type StorageSystem interface {
 	SaveSessionMessages(ctx context.Context, save types.SessionMessageSave) error
 	LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error)
 	LoadGroupSession(ctx context.Context, groupID string, sessionID string) (types.Session, error)
+	LoadWorkspaceSession(ctx context.Context, workspaceID string, sessionID string) (types.Session, error)
 	SaveSessionMessageAttachment(ctx context.Context, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
 	SaveGroupSessionMessageAttachment(ctx context.Context, groupID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
+	SaveWorkspaceSessionMessageAttachment(ctx context.Context, workspaceID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
 	LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error)
 	LoadContextCompressionConfig(ctx context.Context) (types.ContextCompressionConfig, error)
+	LoadWorkspace(ctx context.Context, workspaceID string) (types.Workspace, error)
 }
 
 type RoleSystem interface {
@@ -41,7 +44,7 @@ type ProviderSystem interface {
 type ToolSystem interface {
 	ParseTextToolRequests(ctx context.Context, content string) ([]types.ToolIntent, error)
 	NormalizeIntent(ctx context.Context, intent types.ToolIntent) (types.ToolAction, error)
-	Prepare(ctx context.Context, roleID string, action types.ToolAction) (types.ToolRunPlan, error)
+	Prepare(ctx context.Context, roleID string, workspaceID string, action types.ToolAction) (types.ToolRunPlan, error)
 	ApplyConfirmation(ctx context.Context, plan types.ToolRunPlan, confirmation types.ToolConfirmation) (types.ToolRunPlan, error)
 	Execute(ctx context.Context, plan types.ToolRunPlan) (types.ToolResult, error)
 	LoadTool(ctx context.Context, toolID string) (types.ToolDefinition, error)
@@ -69,6 +72,7 @@ type runRecord struct {
 	runID                       string
 	roleID                      string
 	groupID                     string
+	workspaceID                 string
 	state                       types.RunState
 	session                     types.Session
 	messageParent               types.Message

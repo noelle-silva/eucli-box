@@ -45,7 +45,7 @@ export function createUiPolling(deps: {
   let unsubscribeDirectEvents: (() => void) | null = null
   let chatUpdatedNoticeChain = Promise.resolve()
 
-  function hasActiveRunInSession(targetKind: 'role' | 'group', targetId: string, chatId: string) {
+  function hasActiveRunInSession(targetKind: 'role' | 'group' | 'workspace', targetId: string, chatId: string) {
     return readActiveEbRunCardsForTarget(deps.getState(), targetKind, targetId, chatId).length > 0
   }
 
@@ -163,6 +163,7 @@ export function createUiPolling(deps: {
   }
 
   async function syncActiveTargetChatsFromStorage(metaOverride?: any) {
+    if (deps.activeTargetKind() === 'workspace') return false
     if (deps.activeTargetKind() === 'group') return deps.syncActiveGroupChatsFromStorage(metaOverride)
     return syncActiveRoleChatsFromStorage(metaOverride)
   }
@@ -255,13 +256,14 @@ export function createUiPolling(deps: {
 
     const hasNoticeChatInActiveTarget = () => {
       const latestState = deps.getState()
-      const latestBox = kind === 'group' ? (latestState.data as any)?.chatsByGroup?.[tid] : latestState.data?.chatsByRole?.[tid]
+      const latestBox = kind === 'group' ? (latestState.data as any)?.chatsByGroup?.[tid] : kind === 'workspace' ? (latestState.data as any)?.chatsByWorkspace?.[tid] : latestState.data?.chatsByRole?.[tid]
       const latestMetas = Array.isArray(latestBox?.chatMetas) ? latestBox.chatMetas : []
       const latestChats = Array.isArray(latestBox?.chats) ? latestBox.chats : []
       return latestMetas.some((c: any) => String(c?.id || '') === cid) || latestChats.some((c: any) => String(c?.id || '') === cid)
     }
 
-    const kind = String((raw as any).targetKind || '').trim() === 'group' ? 'group' : 'role'
+    const kindText = String((raw as any).targetKind || '').trim()
+    const kind = kindText === 'group' ? 'group' : kindText === 'workspace' ? 'workspace' : 'role'
     const tid = String((raw as any).targetId || (raw as any).roleId || '').trim()
     const cid = String((raw as any).chatId || '').trim()
     const updatedAt = Number((raw as any).updatedAt || 0)
@@ -271,11 +273,13 @@ export function createUiPolling(deps: {
     const activeTid =
       activeKind === 'group'
         ? String((state.draft as any).activeGroupId || (state.data?.ui as any)?.activeGroupId || '').trim()
+        : activeKind === 'workspace'
+          ? String((state.draft as any).activeWorkspaceId || (state.data?.ui as any)?.activeWorkspaceId || '').trim()
         : String(state.draft.activeRoleId || state.data?.ui?.activeRoleId || '').trim()
     if (!activeTid || kind !== activeKind || tid !== activeTid) return false
     if (pendingChatForTarget(state, kind, tid)) return false
 
-    const activeBox = kind === 'group' ? (state.data as any)?.chatsByGroup?.[tid] : state.data?.chatsByRole?.[tid]
+    const activeBox = kind === 'group' ? (state.data as any)?.chatsByGroup?.[tid] : kind === 'workspace' ? (state.data as any)?.chatsByWorkspace?.[tid] : state.data?.chatsByRole?.[tid]
     const activeChatId = String(deps.activeChatFromData()?.id || activeBox?.activeChatId || '').trim()
     if (!activeChatId) {
       // A notice for the current target can be the first chat created by another
@@ -293,7 +297,7 @@ export function createUiPolling(deps: {
         markNoticeApplied()
         return false
       }
-      const ok = kind === 'group' ? await syncGroupChatByIdFromStorage(tid, cid) : await syncChatByIdFromStorage(tid, cid)
+      const ok = kind === 'group' ? await syncGroupChatByIdFromStorage(tid, cid) : kind === 'workspace' ? false : await syncChatByIdFromStorage(tid, cid)
       if (ok) markNoticeApplied()
       return !!ok
     }
@@ -362,11 +366,14 @@ export function createUiPolling(deps: {
     const t2 = now()
     if (t2 - uiLastMetaCheckMs > UI_META_RECONCILE_MS) {
       uiLastMetaCheckMs = t2
-      const activeKind = deps.activeTargetKind() === 'group' ? 'group' : 'role'
+      const activeKind = deps.activeTargetKind() === 'group' ? 'group' : deps.activeTargetKind() === 'workspace' ? 'workspace' : 'role'
       const activeTid =
         activeKind === 'group'
           ? String((state.draft as any).activeGroupId || (state.data?.ui as any)?.activeGroupId || '').trim()
+          : activeKind === 'workspace'
+            ? String((state.draft as any).activeWorkspaceId || (state.data?.ui as any)?.activeWorkspaceId || '').trim()
           : String(state.draft.activeRoleId || state.data?.ui?.activeRoleId || '').trim()
+      if (activeKind === 'workspace') return
       if (!pendingChatForTarget(state, activeKind, activeTid)) {
         try {
           const activeMeta = await loadActiveTargetIndexMeta(activeKind, activeTid)

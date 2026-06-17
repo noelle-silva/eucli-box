@@ -7,7 +7,7 @@ import { CHAT_DEFAULT_BRANCH_ID } from '../domain/constants'
 import { activeEbRunCardsForTarget, isTerminalEbRunStatus, removeEbRoleRunCard, upsertEbRoleRunCard } from '../domain/activeRunCards'
 
 type DirectEventSubscription = (listener: (event: any) => void) => () => void
-type RunEventTargetKind = 'role' | 'group'
+type RunEventTargetKind = 'role' | 'group' | 'workspace'
 
 export function createEbRunEventConsumer(deps: {
   getState: () => any
@@ -51,6 +51,14 @@ export function createEbRunEventConsumer(deps: {
       if (!state.data.chatsByGroup || typeof state.data.chatsByGroup !== 'object') state.data.chatsByGroup = {}
       if (!state.data.chatsByGroup[targetId] || typeof state.data.chatsByGroup[targetId] !== 'object') state.data.chatsByGroup[targetId] = { activeChatId: '', chatMetas: [], chats: [] }
       const box = state.data.chatsByGroup[targetId]
+      if (!Array.isArray(box.chats)) box.chats = []
+      if (!Array.isArray(box.chatMetas)) box.chatMetas = []
+      return box
+    }
+    if (targetKind === 'workspace') {
+      if (!state.data.chatsByWorkspace || typeof state.data.chatsByWorkspace !== 'object') state.data.chatsByWorkspace = {}
+      if (!state.data.chatsByWorkspace[targetId] || typeof state.data.chatsByWorkspace[targetId] !== 'object') state.data.chatsByWorkspace[targetId] = { activeChatId: '', chatMetas: [], chats: [] }
+      const box = state.data.chatsByWorkspace[targetId]
       if (!Array.isArray(box.chats)) box.chats = []
       if (!Array.isArray(box.chatMetas)) box.chatMetas = []
       return box
@@ -126,10 +134,12 @@ export function createEbRunEventConsumer(deps: {
     const sessionId = String(payload?.sessionId || '').trim()
     if (!roleId || !sessionId) return false
     const groupId = String(payload?.groupId || '').trim()
+    const workspaceId = String(payload?.workspaceId || '').trim()
     const patch: any = {
       runId,
       roleId,
       groupId,
+      workspaceId,
       sessionId,
       inputMessageId: String(payload?.inputMessageId || '').trim(),
       lastMessageId: String(payload?.lastMessageId || payload?.inputMessageId || '').trim(),
@@ -152,13 +162,14 @@ export function createEbRunEventConsumer(deps: {
     const runId = String(payload.runId || '').trim()
     const roleId = String(payload.roleId || '').trim()
     const groupId = String(payload.groupId || '').trim()
+    const workspaceId = String(payload.workspaceId || '').trim()
     const sessionId = String(payload.sessionId || '').trim()
     const eventTime = normalizeTimeMs(payload.createdAt)
     const incomingMessage = normalizeRuntimeAssistantMessage(payload.message, { eventTime })
     const messageId = String(incomingMessage?.id || '').trim()
     if (!runId || !roleId || !sessionId || !messageId) return false
-    const targetKind: RunEventTargetKind = groupId ? 'group' : 'role'
-    const targetId = groupId || roleId
+    const targetKind: RunEventTargetKind = workspaceId ? 'workspace' : groupId ? 'group' : 'role'
+    const targetId = workspaceId || groupId || roleId
 
     const box = ensureTargetChatBox(state, targetKind, targetId)
     const chat = ensureRuntimeTargetChat(state, targetKind, targetId, sessionId, eventTime)
@@ -203,6 +214,7 @@ export function createEbRunEventConsumer(deps: {
         runId,
         roleId,
         groupId,
+        workspaceId,
         sessionId,
         inputMessageId: parentMid,
         lastMessageId: messageId,
@@ -227,7 +239,7 @@ export function createEbRunEventConsumer(deps: {
     const chatStatus = activeCards.length ? String(activeCards[activeCards.length - 1]?.status || 'running').trim() || 'running' : runStatus
     if (chatStatus) chat.status = chatStatus
 
-    const fallbackTitle = targetKind === 'group' ? '群聊' : '新聊天'
+    const fallbackTitle = targetKind === 'group' ? '群聊' : targetKind === 'workspace' ? '工作区会话' : '新聊天'
     if (box) box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chat, fallbackTitle), fallbackTitle)
 
     scheduleRender()
@@ -236,7 +248,8 @@ export function createEbRunEventConsumer(deps: {
 
   function flushSession(targetKindOrRoleIdRaw: unknown, targetIdOrSessionIdRaw: unknown, sessionIdRaw?: unknown) {
     const hasKind = typeof sessionIdRaw !== 'undefined'
-    const targetKind: RunEventTargetKind = hasKind && String(targetKindOrRoleIdRaw || '').trim() === 'group' ? 'group' : 'role'
+    const kindText = String(targetKindOrRoleIdRaw || '').trim()
+    const targetKind: RunEventTargetKind = !hasKind ? 'role' : kindText === 'group' ? 'group' : kindText === 'workspace' ? 'workspace' : 'role'
     const targetId = String(hasKind ? targetIdOrSessionIdRaw : targetKindOrRoleIdRaw || '').trim()
     const sessionId = String(hasKind ? sessionIdRaw : targetIdOrSessionIdRaw || '').trim()
     if (!targetId || !sessionId) return false

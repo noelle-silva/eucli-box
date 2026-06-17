@@ -52,6 +52,10 @@ export function normalizeSplitMeta(raw: any) {
   const groupFolders = (raw as any).groupFolders && typeof (raw as any).groupFolders === 'object' ? (raw as any).groupFolders : {}
   const chatIndexByGroup =
     (raw as any).chatIndexByGroup && typeof (raw as any).chatIndexByGroup === 'object' ? (raw as any).chatIndexByGroup : {}
+  const workspaceOrder = Array.isArray((raw as any).workspaceOrder) ? (raw as any).workspaceOrder.map((x: any) => String(x || '')).filter((x: any) => !!x) : []
+  const workspaceFolders = (raw as any).workspaceFolders && typeof (raw as any).workspaceFolders === 'object' ? (raw as any).workspaceFolders : {}
+  const chatIndexByWorkspace =
+    (raw as any).chatIndexByWorkspace && typeof (raw as any).chatIndexByWorkspace === 'object' ? (raw as any).chatIndexByWorkspace : {}
 
   return {
     schemaVersion: SPLIT_SCHEMA_VERSION,
@@ -65,6 +69,9 @@ export function normalizeSplitMeta(raw: any) {
     groupOrder,
     groupFolders,
     chatIndexByGroup,
+    workspaceOrder,
+    workspaceFolders,
+    chatIndexByWorkspace,
   }
 }
 
@@ -464,8 +471,107 @@ export function normalizeData(raw: any) {
     }
   }
 
+  if (!Array.isArray((d as any).workspaces)) (d as any).workspaces = []
+  ;(d as any).workspaces = (Array.isArray((d as any).workspaces) ? (d as any).workspaces : [])
+    .filter((workspace: any) => workspace && typeof workspace === 'object')
+    .map((workspace: any) => {
+      const id = String(workspace.id || uid('w'))
+      const name = typeof workspace.name === 'string' && workspace.name.trim() ? String(workspace.name || '').trim() : '未命名工作区'
+      const prompt = typeof workspace.prompt === 'string' ? String(workspace.prompt || '') : ''
+      const directories0 = Array.isArray(workspace.directories) ? workspace.directories : []
+      const directories = directories0
+        .filter((directory: any) => directory && typeof directory === 'object')
+        .map((directory: any) => ({
+          path: String(directory.path || '').trim(),
+          alias: String(directory.alias || '').trim(),
+          description: String(directory.description || '').trim(),
+        }))
+        .filter((directory: any) => !!directory.path)
+      return {
+        id,
+        name,
+        prompt,
+        directories,
+        createdAt: Number(workspace.createdAt || now()),
+        updatedAt: Number(workspace.updatedAt || now()),
+      }
+    })
+
+  if (!(d as any).chatsByWorkspace || typeof (d as any).chatsByWorkspace !== 'object') (d as any).chatsByWorkspace = {}
+  for (const workspace of (d as any).workspaces) {
+    const workspaceId = String(workspace.id || '')
+    if (!workspaceId) continue
+    if (!(d as any).chatsByWorkspace[workspaceId] || typeof (d as any).chatsByWorkspace[workspaceId] !== 'object') (d as any).chatsByWorkspace[workspaceId] = { activeChatId: '', chats: [] }
+    const box = (d as any).chatsByWorkspace[workspaceId]
+    if (!Array.isArray(box.chats)) box.chats = []
+    box.chatMetas = chatMetasFromBox(box, '工作区会话')
+    box.activeChatId = String(box.activeChatId || '')
+
+    box.chats = box.chats
+      .filter((chat: any) => chat && typeof chat === 'object')
+      .map((chat: any) => {
+        const cc = chat
+        const cid = String(cc.id || uid('wc'))
+        const title = typeof cc.title === 'string' && cc.title.trim() ? cc.title : '工作区会话'
+        const createdAt = normalizeTimeMs(cc.createdAt, now())
+        const updatedAt = normalizeTimeMs(cc.updatedAt, createdAt)
+        const messages = Array.isArray(cc.messages) ? cc.messages : []
+        const hasMessageTree = hasExplicitMessageParentLinks(messages)
+        const fallbackHeadMid = messages.length ? String((messages[messages.length - 1] as any)?.id || '') : ''
+        const branching = normalizeChatBranching((cc as any).branching, fallbackHeadMid, createdAt, updatedAt)
+        const activeBranchId = normalizeBranchId((branching as any).activeBranchId)
+        const modelOverride = normalizeChatModelOverride(cc)
+
+        const out: any = {
+          id: cid,
+          roleId: String((cc as any).roleId || '').trim(),
+          workspaceId,
+          title,
+          status: String((cc as any).status || '').trim(),
+          createdAt,
+          updatedAt,
+          branching,
+          messages: messages.filter((message: any) => message && typeof message === 'object').map((message: any) => normalizeChatMessage(message, { activeBranchId, toolMessagesAsAssistant: true })),
+        }
+
+        if (modelOverride) out.modelOverride = modelOverride
+        const reasoningEffort = normalizeReasoningEffort((cc as any).reasoningEffort)
+        if (reasoningEffort) out.reasoningEffort = reasoningEffort
+
+        const branches0 = Array.isArray(out.branching?.branches) ? out.branching.branches : []
+        const idSet = new Set<string>()
+        for (const branch of branches0) {
+          const id = normalizeBranchId((branch as any)?.id)
+          if (id) idSet.add(id)
+          if (idSet.size >= 2) break
+        }
+        let headMid = ''
+        if (idSet.size >= 2 || hasMessageTree) {
+          fillMissingBranchIdsOnly(out.messages, activeBranchId)
+          headMid = out.messages.length ? String((out.messages[out.messages.length - 1] as any)?.id || '') : ''
+        } else {
+          headMid = rebuildLinearBranchingMessages(out.messages, activeBranchId)
+        }
+        try {
+          const branches = Array.isArray(out.branching?.branches) ? out.branching.branches : []
+          const branch = branches.find((item: any) => String(item?.id || '') === String(out.branching?.activeBranchId || '')) || null
+          if (branch) {
+            branch.headMid = headMid
+            branch.updatedAt = updatedAt
+          }
+        } catch (_) {}
+
+        return out
+      })
+
+    const workspaceMetaIds = box.chatMetas.map((meta: any) => String(meta?.id || '')).filter(Boolean)
+    if (!box.activeChatId || (!box.chats.some((chat: any) => String(chat.id) === box.activeChatId) && !workspaceMetaIds.includes(box.activeChatId))) {
+      box.activeChatId = String(box.chats[0]?.id || workspaceMetaIds[0] || '')
+    }
+  }
+
   const targetKind0 = String((d.ui as any).activeTargetKind || '').trim()
-  const targetKind = targetKind0 === 'group' ? 'group' : 'role'
+  const targetKind = targetKind0 === 'group' ? 'group' : targetKind0 === 'workspace' ? 'workspace' : 'role'
   ;(d.ui as any).activeTargetKind = targetKind
 
   const activeRoleId = String(d.ui.activeRoleId || '')
@@ -474,8 +580,13 @@ export function normalizeData(raw: any) {
   const activeGroupId = String((d.ui as any).activeGroupId || '').trim()
   if (activeGroupId && !(d as any).groups.some((g: any) => String(g?.id || '') === activeGroupId)) (d.ui as any).activeGroupId = ''
 
+  const activeWorkspaceId = String((d.ui as any).activeWorkspaceId || '').trim()
+  if (activeWorkspaceId && !(d as any).workspaces.some((workspace: any) => String(workspace?.id || '') === activeWorkspaceId)) (d.ui as any).activeWorkspaceId = ''
+
   const hasGroups = !!((d as any).groups && (d as any).groups.length)
+  const hasWorkspaces = !!((d as any).workspaces && (d as any).workspaces.length)
   if (targetKind === 'group' && !hasGroups) (d.ui as any).activeTargetKind = 'role'
+  if (targetKind === 'workspace' && !hasWorkspaces) (d.ui as any).activeTargetKind = hasGroups ? 'group' : 'role'
 
   return d
 }

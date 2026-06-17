@@ -18,9 +18,9 @@ func (s *system) StartRun(ctx context.Context, request types.RunRequest) (types.
 	stream := request.Stream && !compactRun
 	runCtx, cancel := context.WithCancel(context.Background())
 	now := nowUTC()
-	state := types.RunState{ID: utils.NewID("run"), RoleID: request.RoleID, GroupID: strings.TrimSpace(request.GroupID), SessionID: request.SessionID, Stream: stream, Status: types.RunStatusCreated, CreatedAt: now, UpdatedAt: now}
+	state := types.RunState{ID: utils.NewID("run"), RoleID: request.RoleID, GroupID: strings.TrimSpace(request.GroupID), WorkspaceID: strings.TrimSpace(request.WorkspaceID), SessionID: request.SessionID, Stream: stream, Status: types.RunStatusCreated, CreatedAt: now, UpdatedAt: now}
 	modelOverride, _ := types.NormalizeModelOverrideCoordinate(modelOverrideFromRunRequest(request))
-	record := &runRecord{runID: state.ID, roleID: request.RoleID, groupID: state.GroupID, state: state, stream: stream, modelOverride: modelOverride, reasoningEffort: types.TrimReasoningEffort(request.ReasoningEffort), cancel: cancel}
+	record := &runRecord{runID: state.ID, roleID: request.RoleID, groupID: state.GroupID, workspaceID: state.WorkspaceID, state: state, stream: stream, modelOverride: modelOverride, reasoningEffort: types.TrimReasoningEffort(request.ReasoningEffort), cancel: cancel}
 	if compactRun {
 		record.commandName = compactCommandName
 	}
@@ -277,6 +277,14 @@ func validateRunRequest(ctx context.Context, request types.RunRequest) error {
 		if _, err := cleanRuntimeID(request.GroupID); err != nil {
 			return err
 		}
+	}
+	if strings.TrimSpace(request.WorkspaceID) != "" {
+		if _, err := cleanRuntimeID(request.WorkspaceID); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(request.GroupID) != "" && strings.TrimSpace(request.WorkspaceID) != "" {
+		return runtimeInvalid("groupId cannot be combined with workspaceId", nil)
 	}
 	hasAttachments := len(request.Attachments) > 0
 	hasMessage := strings.TrimSpace(request.Message) != "" || hasAttachments

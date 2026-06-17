@@ -180,26 +180,28 @@ type RunAttachment struct {
 }
 
 type Session struct {
-	ID         string            `json:"id"`
-	RoleID     string            `json:"roleId"`
-	GroupID    string            `json:"groupId,omitempty"`
-	Title      string            `json:"title"`
-	Status     string            `json:"status"`
-	Messages   []Message         `json:"messages"`
-	Metadata   map[string]string `json:"metadata,omitempty"`
-	CreatedAt  time.Time         `json:"createdAt"`
-	UpdatedAt  time.Time         `json:"updatedAt"`
-	LastActive time.Time         `json:"lastActive"`
+	ID          string            `json:"id"`
+	RoleID      string            `json:"roleId"`
+	GroupID     string            `json:"groupId,omitempty"`
+	WorkspaceID string            `json:"workspaceId,omitempty"`
+	Title       string            `json:"title"`
+	Status      string            `json:"status"`
+	Messages    []Message         `json:"messages"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+	CreatedAt   time.Time         `json:"createdAt"`
+	UpdatedAt   time.Time         `json:"updatedAt"`
+	LastActive  time.Time         `json:"lastActive"`
 }
 
 type SessionSummary struct {
-	ID         string    `json:"id"`
-	RoleID     string    `json:"roleId"`
-	GroupID    string    `json:"groupId,omitempty"`
-	Title      string    `json:"title"`
-	Status     string    `json:"status"`
-	UpdatedAt  time.Time `json:"updatedAt"`
-	LastActive time.Time `json:"lastActive"`
+	ID          string    `json:"id"`
+	RoleID      string    `json:"roleId"`
+	GroupID     string    `json:"groupId,omitempty"`
+	WorkspaceID string    `json:"workspaceId,omitempty"`
+	Title       string    `json:"title"`
+	Status      string    `json:"status"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+	LastActive  time.Time `json:"lastActive"`
 }
 
 type RunStatus string
@@ -216,6 +218,7 @@ const (
 type RunRequest struct {
 	RoleID           string           `json:"roleId"`
 	GroupID          string           `json:"groupId,omitempty"`
+	WorkspaceID      string           `json:"workspaceId,omitempty"`
 	SessionID        string           `json:"sessionId"`
 	Message          string           `json:"message"`
 	Attachments      []RunAttachment  `json:"attachments,omitempty"`
@@ -231,6 +234,7 @@ type RunState struct {
 	ID                   string        `json:"id"`
 	RoleID               string        `json:"roleId"`
 	GroupID              string        `json:"groupId,omitempty"`
+	WorkspaceID          string        `json:"workspaceId,omitempty"`
 	SessionID            string        `json:"sessionId"`
 	InputMessageID       string        `json:"inputMessageId,omitempty"`
 	LastMessageID        string        `json:"lastMessageId,omitempty"`
@@ -248,6 +252,7 @@ type RunStreamDelta struct {
 	RunID           string    `json:"runId"`
 	RoleID          string    `json:"roleId"`
 	GroupID         string    `json:"groupId,omitempty"`
+	WorkspaceID     string    `json:"workspaceId,omitempty"`
 	SessionID       string    `json:"sessionId"`
 	MessageID       string    `json:"messageId"`
 	ParentMessageID string    `json:"parentMessageId,omitempty"`
@@ -258,24 +263,26 @@ type RunStreamDelta struct {
 }
 
 type RunAssistantMessageUpdate struct {
-	RunID     string        `json:"runId"`
-	RoleID    string        `json:"roleId"`
-	GroupID   string        `json:"groupId,omitempty"`
-	SessionID string        `json:"sessionId"`
-	Stream    bool          `json:"stream,omitempty"`
-	Status    RunStatus     `json:"status,omitempty"`
-	Reason    string        `json:"reason,omitempty"`
-	Retry     *RunRetryInfo `json:"retry"`
-	Error     *ErrorPayload `json:"error,omitempty"`
-	Message   Message       `json:"message"`
-	CreatedAt time.Time     `json:"createdAt"`
+	RunID       string        `json:"runId"`
+	RoleID      string        `json:"roleId"`
+	GroupID     string        `json:"groupId,omitempty"`
+	WorkspaceID string        `json:"workspaceId,omitempty"`
+	SessionID   string        `json:"sessionId"`
+	Stream      bool          `json:"stream,omitempty"`
+	Status      RunStatus     `json:"status,omitempty"`
+	Reason      string        `json:"reason,omitempty"`
+	Retry       *RunRetryInfo `json:"retry"`
+	Error       *ErrorPayload `json:"error,omitempty"`
+	Message     Message       `json:"message"`
+	CreatedAt   time.Time     `json:"createdAt"`
 }
 
 type RunEvent struct {
-	ID        string    `json:"id"`
-	RunID     string    `json:"runId"`
-	GroupID   string    `json:"groupId,omitempty"`
-	Type      string    `json:"type"`
-	Payload   any       `json:"payload,omitempty"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID          string    `json:"id"`
+	RunID       string    `json:"runId"`
+	GroupID     string    `json:"groupId,omitempty"`
+	WorkspaceID string    `json:"workspaceId,omitempty"`
+	Type        string    `json:"type"`
+	Payload     any       `json:"payload,omitempty"`
+	CreatedAt   time.Time `json:"createdAt"`
 }

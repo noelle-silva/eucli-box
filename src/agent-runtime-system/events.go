@@ -33,6 +33,7 @@ func (s *system) publish(runID string, eventType string, payload any) {
 	defer s.mu.Unlock()
 	if record, ok := s.runs[runID]; ok && record != nil {
 		event.GroupID = record.groupID
+		event.WorkspaceID = record.workspaceID
 	}
 	for ch := range s.subscribers {
 		select {
@@ -51,7 +52,7 @@ func (s *system) publishAssistantMessageUpdate(record *runRecord) {
 	}
 	state, _ := s.getRunState(record.runID)
 	now := time.Now().UTC()
-	s.publish(record.runID, "assistant_message_update", types.RunAssistantMessageUpdate{RunID: record.runID, RoleID: record.roleID, GroupID: record.groupID, SessionID: record.session.ID, Stream: record.stream, Status: state.Status, Reason: state.Reason, Retry: cloneRunRetryInfo(state.Retry), Error: cloneErrorPayload(state.Error), Message: cloneRunMessageSnapshot(message), CreatedAt: now})
+	s.publish(record.runID, "assistant_message_update", types.RunAssistantMessageUpdate{RunID: record.runID, RoleID: record.roleID, GroupID: record.groupID, WorkspaceID: record.workspaceID, SessionID: record.session.ID, Stream: record.stream, Status: state.Status, Reason: state.Reason, Retry: cloneRunRetryInfo(state.Retry), Error: cloneErrorPayload(state.Error), Message: cloneRunMessageSnapshot(message), CreatedAt: now})
 }
 
 func currentRunAssistantMessage(record *runRecord) (types.Message, bool) {

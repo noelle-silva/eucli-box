@@ -29,6 +29,7 @@ type StorageSystem interface {
 	LoadRoleAvatar(ctx context.Context, roleID string) (string, error)
 	DeleteRoleAvatar(ctx context.Context, roleID string) error
 	LoadChatGroup(ctx context.Context, groupID string) (types.ChatGroup, error)
+	LoadWorkspace(ctx context.Context, workspaceID string) (types.Workspace, error)
 }
 
 type ProviderSystem interface {

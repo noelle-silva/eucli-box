@@ -281,6 +281,11 @@ func sameRunTarget(left *runRecord, right *runRecord) bool {
 	if leftGroupID != "" || rightGroupID != "" {
 		return leftGroupID != "" && leftGroupID == rightGroupID
 	}
+	leftWorkspaceID := strings.TrimSpace(left.workspaceID)
+	rightWorkspaceID := strings.TrimSpace(right.workspaceID)
+	if leftWorkspaceID != "" || rightWorkspaceID != "" {
+		return leftWorkspaceID != "" && leftWorkspaceID == rightWorkspaceID && strings.TrimSpace(left.roleID) == strings.TrimSpace(right.roleID)
+	}
 	return strings.TrimSpace(left.roleID) == strings.TrimSpace(right.roleID)
 }
 

@@ -25,7 +25,6 @@ import { createStateAccessors } from '../state/stateAccessors'
 import {
   activeEbRoleRunCards,
   activeEbRunCardsForTarget,
-  activeEbRoleRunCardsForSession,
   ebRoleRunCardIsOnMessagePath,
   findEbRoleRunCard,
   latestEbRunCardForTarget,
@@ -48,10 +47,10 @@ import type { ChatSaveIntent } from '../domain/chatSaveIntent'
 import { deleteAssistantMessageBlock, editAssistantMessageBlock, replaceMessageText } from '../domain/assistantMessageBlockMutations'
 import type { AiChatShowToast } from '../gateway/capabilities'
 import { cancelRoleRun, pollRunUntilTerminal, runStateFailureError, startRoleRun, submitToolConfirmation as submitToolConfirmationRequest, type EbRunState } from './ebRoleRun'
-import { deleteGroupSessionMessage, deleteGroupSessionMessageSubtree, deleteRoleSessionMessage, deleteRoleSessionMessageSubtree, updateGroupSessionMessage, updateRoleSessionMessage } from './ebRoleSession'
+import { deleteGroupSessionMessage, deleteGroupSessionMessageSubtree, deleteRoleSessionMessage, deleteRoleSessionMessageSubtree, deleteWorkspaceSessionMessage, deleteWorkspaceSessionMessageSubtree, updateGroupSessionMessage, updateRoleSessionMessage, updateWorkspaceSessionMessage } from './ebRoleSession'
 import { buildGroupSpeakerPlan } from '../domain/groupSpeakerPlan'
 
-type ChatTargetKind = 'role' | 'group'
+type ChatTargetKind = 'role' | 'group' | 'workspace'
 
 type SendChatOptions = {
   forkFromMid?: string
@@ -65,6 +64,7 @@ type ExistingMessageRunOptions = {
 type RoleRunInput = {
   roleId: string
   groupId?: string
+  workspaceId?: string
   sessionId: string
   message?: string
   attachments?: any[]
@@ -83,9 +83,10 @@ export function createChatOperations(deps: {
   showToast?: AiChatShowToast
   save: (intent?: ChatSaveIntent) => Promise<void>
   ensureActiveChatLoaded?: () => Promise<any>
-  ensureChatLoaded?: (kind: 'role' | 'group', targetId: string, chatId: string) => Promise<any>
+  ensureChatLoaded?: (kind: 'role' | 'group' | 'workspace', targetId: string, chatId: string) => Promise<any>
   reloadRoleSession?: (roleId: string, sessionId: string) => Promise<any>
   reloadGroupSession?: (groupId: string, sessionId: string) => Promise<any>
+  reloadWorkspaceSession?: (workspaceId: string, sessionId: string) => Promise<any>
   waitForChatSettingsSave?: () => Promise<void>
   emit: () => void
   render: () => void
@@ -94,7 +95,7 @@ export function createChatOperations(deps: {
   readImageFileAsDataUrl: (file: File) => Promise<string>
   extractTextFromFile: (file: File, kind: string) => Promise<string>
 }) {
-  const { getState, pickImageFiles, netRequest, showToast, save, ensureActiveChatLoaded, ensureChatLoaded, reloadRoleSession, reloadGroupSession, waitForChatSettingsSave, emit, render, renderComposer, scrollToBottomSoon, readImageFileAsDataUrl, extractTextFromFile } = deps
+  const { getState, pickImageFiles, netRequest, showToast, save, ensureActiveChatLoaded, ensureChatLoaded, reloadRoleSession, reloadGroupSession, reloadWorkspaceSession, waitForChatSettingsSave, emit, render, renderComposer, scrollToBottomSoon, readImageFileAsDataUrl, extractTextFromFile } = deps
 
   const sa = createStateAccessors({ getState })
   const cancelledRunIds = new Set<string>()
@@ -113,13 +114,14 @@ export function createChatOperations(deps: {
   function roleRunStartKey(input: RoleRunInput) {
     const roleId = String(input.roleId || '').trim()
     const groupId = String(input.groupId || '').trim()
+    const workspaceId = String(input.workspaceId || '').trim()
     const sessionId = String(input.sessionId || '').trim()
     const parentMessageId = String(input.parentMessageId || '').trim()
     const userMessageId = String(input.userMessageId || '').trim()
     const contextMessageId = String(input.contextMessageId || '').trim()
     const message = String(input.message || '').trim()
     const reasoningEffort = String(input.reasoningEffort || '').trim()
-    return [groupId ? `group:${groupId}` : 'role', roleId, sessionId, contextMessageId ? `context:${contextMessageId}` : userMessageId ? `user:${userMessageId}` : `parent:${parentMessageId}`, message, reasoningEffort, roleRunModelOverrideKey(input.modelOverride)].join('\n')
+    return [workspaceId ? `workspace:${workspaceId}` : groupId ? `group:${groupId}` : 'role', roleId, sessionId, contextMessageId ? `context:${contextMessageId}` : userMessageId ? `user:${userMessageId}` : `parent:${parentMessageId}`, message, reasoningEffort, roleRunModelOverrideKey(input.modelOverride)].join('\n')
   }
 
   function roleRunModelOverrideKey(value: unknown) {
@@ -216,7 +218,7 @@ export function createChatOperations(deps: {
     return ids
   }
 
-  function syncEbRoleRunCard(run: EbRunState, fallback: { roleId: string; groupId?: string; sessionId?: string; lastMessageId?: string; anchorMessageId?: string; dependencyMessageIds?: string[]; startedFromPending?: boolean; pendingChatId?: string }) {
+  function syncEbRoleRunCard(run: EbRunState, fallback: { roleId: string; groupId?: string; workspaceId?: string; sessionId?: string; lastMessageId?: string; anchorMessageId?: string; dependencyMessageIds?: string[]; startedFromPending?: boolean; pendingChatId?: string }) {
     const runId = String(run?.id || '').trim()
     const state = getState()
     if (!runId) return null
@@ -224,9 +226,10 @@ export function createChatOperations(deps: {
     const current = findEbRoleRunCard(state, runId)
     const roleId = String(run?.roleId || fallback.roleId || current?.roleId || '').trim()
     const groupId = String((run as any)?.groupId || fallback.groupId || current?.groupId || '').trim()
+    const workspaceId = String((run as any)?.workspaceId || fallback.workspaceId || current?.workspaceId || '').trim()
     const sessionId = String(run?.sessionId || fallback.sessionId || current?.sessionId || '').trim()
-    const targetKind: ChatTargetKind = groupId ? 'group' : 'role'
-    const targetId = groupId || roleId
+    const targetKind: ChatTargetKind = workspaceId ? 'workspace' : groupId ? 'group' : 'role'
+    const targetId = workspaceId || groupId || roleId
     if (fallback.startedFromPending && targetId && sessionId) activateResolvedPendingChat(state, targetKind, targetId, sessionId, fallback.pendingChatId)
     const inputMessageId = String(run?.inputMessageId || current?.inputMessageId || '').trim()
     const lastMessageId = String(run?.lastMessageId || fallback.lastMessageId || current?.lastMessageId || inputMessageId || '').trim()
@@ -234,6 +237,7 @@ export function createChatOperations(deps: {
       runId: runId || String(current?.runId || '').trim(),
       roleId,
       groupId,
+      workspaceId,
       sessionId,
       inputMessageId,
       lastMessageId,
@@ -258,12 +262,18 @@ export function createChatOperations(deps: {
     if (sa.activeTargetKind() !== targetKind) return false
     const currentTargetId = targetKind === 'group'
       ? String(sa.activeGroup()?.id || state.draft?.activeGroupId || state.data?.ui?.activeGroupId || '').trim()
-      : String(state.draft?.activeRoleId || state.data?.ui?.activeRoleId || '').trim()
+      : targetKind === 'workspace'
+        ? String(sa.activeWorkspace?.()?.id || state.draft?.activeWorkspaceId || state.data?.ui?.activeWorkspaceId || '').trim()
+        : String(state.draft?.activeRoleId || state.data?.ui?.activeRoleId || '').trim()
     if (currentTargetId !== tid) return false
     const box = targetKind === 'group'
       ? state.data.chatsByGroup && typeof state.data.chatsByGroup === 'object'
         ? state.data.chatsByGroup[tid]
         : null
+      : targetKind === 'workspace'
+        ? state.data.chatsByWorkspace && typeof state.data.chatsByWorkspace === 'object'
+          ? state.data.chatsByWorkspace[tid]
+          : null
       : state.data.chatsByRole && typeof state.data.chatsByRole === 'object'
         ? state.data.chatsByRole[tid]
         : null
@@ -282,6 +292,9 @@ export function createChatOperations(deps: {
     if (targetKind === 'group') {
       if (!state.data.chatsByGroup || typeof state.data.chatsByGroup !== 'object') state.data.chatsByGroup = {}
       if (!state.data.chatsByGroup[tid] || typeof state.data.chatsByGroup[tid] !== 'object') state.data.chatsByGroup[tid] = { activeChatId: '', chatMetas: [], chats: [] }
+    } else if (targetKind === 'workspace') {
+      if (!state.data.chatsByWorkspace || typeof state.data.chatsByWorkspace !== 'object') state.data.chatsByWorkspace = {}
+      if (!state.data.chatsByWorkspace[tid] || typeof state.data.chatsByWorkspace[tid] !== 'object') state.data.chatsByWorkspace[tid] = { activeChatId: '', chatMetas: [], chats: [] }
     } else {
       if (!state.data.chatsByRole || typeof state.data.chatsByRole !== 'object') state.data.chatsByRole = {}
       if (!state.data.chatsByRole[tid] || typeof state.data.chatsByRole[tid] !== 'object') state.data.chatsByRole[tid] = { activeChatId: '', chatMetas: [], chats: [] }
@@ -290,12 +303,17 @@ export function createChatOperations(deps: {
       ? typeof reloadGroupSession === 'function'
         ? await reloadGroupSession(tid, sid)
         : await ensureChatLoaded('group', tid, sid)
+      : targetKind === 'workspace'
+        ? typeof reloadWorkspaceSession === 'function'
+          ? await reloadWorkspaceSession(tid, sid)
+          : await ensureChatLoaded('workspace', tid, sid)
       : typeof reloadRoleSession === 'function'
         ? await reloadRoleSession(tid, sid)
         : await ensureChatLoaded('role', tid, sid)
     if (chat) {
       if (options?.activate !== false) {
         if (targetKind === 'group') state.data.chatsByGroup[tid].activeChatId = sid
+        else if (targetKind === 'workspace') state.data.chatsByWorkspace[tid].activeChatId = sid
         else state.data.chatsByRole[tid].activeChatId = sid
       }
       onLoaded?.(chat)
@@ -345,6 +363,10 @@ export function createChatOperations(deps: {
       ? state?.data?.chatsByGroup && typeof state.data.chatsByGroup === 'object'
         ? state.data.chatsByGroup[targetId]
         : null
+      : targetKind === 'workspace'
+        ? state?.data?.chatsByWorkspace && typeof state.data.chatsByWorkspace === 'object'
+          ? state.data.chatsByWorkspace[targetId]
+          : null
       : state?.data?.chatsByRole && typeof state.data.chatsByRole === 'object'
         ? state.data.chatsByRole[targetId]
         : null
@@ -385,9 +407,10 @@ export function createChatOperations(deps: {
     const startKey = roleRunStartKey(input)
     if (startingRoleRunKeys.has(startKey)) throw new Error('该位置已有启动中的请求，请稍候')
     const stateBeforeRun = getState()
-    const groupId = String(input.groupId || '').trim()
-    const targetKind: ChatTargetKind = groupId ? 'group' : 'role'
-    const targetId = groupId || String(input.roleId || '').trim()
+      const groupId = String(input.groupId || '').trim()
+      const workspaceId = String(input.workspaceId || '').trim()
+      const targetKind: ChatTargetKind = workspaceId ? 'workspace' : groupId ? 'group' : 'role'
+      const targetId = workspaceId || groupId || String(input.roleId || '').trim()
     const pendingAtStart = !String(input.sessionId || '').trim() ? pendingChatForTarget(stateBeforeRun, targetKind, targetId) : null
     const startedFromPending = !!pendingAtStart
     const startedFromPendingChatId = String(pendingAtStart?.id || '').trim()
@@ -406,7 +429,7 @@ export function createChatOperations(deps: {
     let followMessageId = String(state.lastMessageId || '').trim()
     const runAnchorMessageId = String(follow?.ancestorMessageId || input.contextMessageId || input.userMessageId || input.parentMessageId || '').trim()
     const dependencyMessageIds = dependencyMessageIdsForRunStart(sa.activeChatFromData(), runAnchorMessageId)
-    syncEbRoleRunCard(state, { roleId: input.roleId, groupId, sessionId, lastMessageId: followMessageId, anchorMessageId: runAnchorMessageId, dependencyMessageIds, startedFromPending, pendingChatId: startedFromPendingChatId })
+    syncEbRoleRunCard(state, { roleId: input.roleId, groupId, workspaceId, sessionId, lastMessageId: followMessageId, anchorMessageId: runAnchorMessageId, dependencyMessageIds, startedFromPending, pendingChatId: startedFromPendingChatId })
     onState?.(state)
     let runSessionLoadedOnce = false
 
@@ -438,7 +461,7 @@ export function createChatOperations(deps: {
     state = await pollRunUntilTerminal(netRequest, state, async (nextState) => {
       state = nextState
       followMessageId = String(state.lastMessageId || followMessageId || '').trim()
-      syncEbRoleRunCard(state, { roleId: input.roleId, groupId, sessionId, lastMessageId: followMessageId, anchorMessageId: runAnchorMessageId, dependencyMessageIds, startedFromPending, pendingChatId: startedFromPendingChatId })
+      syncEbRoleRunCard(state, { roleId: input.roleId, groupId, workspaceId, sessionId, lastMessageId: followMessageId, anchorMessageId: runAnchorMessageId, dependencyMessageIds, startedFromPending, pendingChatId: startedFromPendingChatId })
       onState?.(state)
       const nextSessionId = String(state.sessionId || sessionId || '').trim()
       if (nextSessionId) {
@@ -463,14 +486,10 @@ export function createChatOperations(deps: {
     return removed
   }
 
-  async function activeRoleRunTarget(operationText: string) {
-    if (sa.activeTargetKind() === 'group') return null
-    const role = sa.activeRole()
-    const chat = await ensureActiveChatLoaded?.().catch(() => null) || sa.activeChatFromData()
-    const roleId = String(role?.id || '').trim()
-    const sessionId = String(chat?.id || '').trim()
-    if (!roleId || !sessionId || !chat) return null
-    return { roleId, sessionId, chat }
+  async function activeSingleRoleTarget() {
+    const target = await activeTargetSessionMutationTarget()
+    if (!target || target.targetKind === 'group' || !target.roleId) return null
+    return target
   }
 
   function latestTargetRunCard(targetKind: ChatTargetKind, targetId: string, sessionId: string) {
@@ -478,28 +497,31 @@ export function createChatOperations(deps: {
     const sid = String(sessionId || '').trim()
     if (!tid) return null
     if (sid) return latestEbRunCardForTarget(getState(), targetKind, tid, sid)
-    const cards = activeEbRoleRunCards(getState()).filter((card) => card.sessionId && card.sessionId.trim() && ((targetKind === 'group' && card.groupId === tid) || (targetKind !== 'group' && !card.groupId && card.roleId === tid)))
+    const cards = activeEbRoleRunCards(getState()).filter((card) => card.sessionId && card.sessionId.trim() && ((targetKind === 'group' && card.groupId === tid) || (targetKind === 'workspace' && card.workspaceId === tid) || (targetKind === 'role' && !card.groupId && !card.workspaceId && card.roleId === tid)))
     return cards.length ? cards[cards.length - 1] : null
   }
 
   async function activeTargetSessionMutationTarget() {
-    const targetKind: ChatTargetKind = sa.activeTargetKind() === 'group' ? 'group' : 'role'
-    const target = targetKind === 'group' ? sa.activeGroup() : sa.activeRole()
+    const activeKind = sa.activeTargetKind()
+    const targetKind: ChatTargetKind = activeKind === 'group' ? 'group' : activeKind === 'workspace' ? 'workspace' : 'role'
+    const target = targetKind === 'group' ? sa.activeGroup() : targetKind === 'workspace' ? sa.activeWorkspace?.() : sa.activeRole()
     const chat = await ensureActiveChatLoaded?.().catch(() => null) || sa.activeChatFromData()
     const targetId = String(target?.id || '').trim()
     const sessionId = String(chat?.id || '').trim()
+    const roleId = String(sa.activeRole()?.id || '').trim()
     if (!targetId || !sessionId || !chat) return null
     return {
       targetKind,
       targetId,
-      roleId: targetKind === 'group' ? '' : targetId,
+      roleId: targetKind === 'group' ? '' : targetKind === 'workspace' ? roleId : targetId,
       groupId: targetKind === 'group' ? targetId : '',
+      workspaceId: targetKind === 'workspace' ? targetId : '',
       sessionId,
       chat,
     }
   }
 
-  async function runRoleFromUserMessage(input: { roleId: string; sessionId: string; userMessageId: string }, operationText: string, opts?: ExistingMessageRunOptions) {
+  async function runRoleFromUserMessage(input: { roleId: string; workspaceId?: string; sessionId: string; userMessageId: string }, operationText: string, opts?: ExistingMessageRunOptions) {
     const state = getState()
     const userMessageId = String(input.userMessageId || '').trim()
     if (!userMessageId) return false
@@ -511,9 +533,9 @@ export function createChatOperations(deps: {
       renderComposer()
       const reasoningEffort = chatReasoningEffort(sa.activeChatFromData())
       const modelOverride = currentRoleChatModelOverride()
-      await runRoleMessageViaEb({ roleId: input.roleId, sessionId: input.sessionId, userMessageId, reasoningEffort, modelOverride, stream: !!state.data?.settings?.streamEnabled }, (run) => {
+      await runRoleMessageViaEb({ roleId: input.roleId, workspaceId: input.workspaceId, sessionId: input.sessionId, userMessageId, reasoningEffort, modelOverride, stream: !!state.data?.settings?.streamEnabled }, (run) => {
         acceptedRunId = String(run?.id || '').trim()
-        syncEbRoleRunCard(run, { roleId: input.roleId, sessionId: input.sessionId, anchorMessageId: userMessageId })
+        syncEbRoleRunCard(run, { roleId: input.roleId, workspaceId: input.workspaceId, sessionId: input.sessionId, anchorMessageId: userMessageId })
         renderComposer()
       }, { previousMessageIds, ancestorMessageId: userMessageId }, (run) => opts?.onRunState?.(run))
       return true
@@ -529,7 +551,7 @@ export function createChatOperations(deps: {
     }
   }
 
-  async function runRoleFromContextMessage(input: { roleId: string; sessionId: string; contextMessageId: string }, operationText: string, opts?: ExistingMessageRunOptions) {
+  async function runRoleFromContextMessage(input: { roleId: string; workspaceId?: string; sessionId: string; contextMessageId: string }, operationText: string, opts?: ExistingMessageRunOptions) {
     const state = getState()
     const contextMessageId = String(input.contextMessageId || '').trim()
     if (!contextMessageId) return false
@@ -541,9 +563,9 @@ export function createChatOperations(deps: {
       renderComposer()
       const reasoningEffort = chatReasoningEffort(sa.activeChatFromData())
       const modelOverride = currentRoleChatModelOverride()
-      await runRoleMessageViaEb({ roleId: input.roleId, sessionId: input.sessionId, contextMessageId, reasoningEffort, modelOverride, stream: !!state.data?.settings?.streamEnabled }, (run) => {
+      await runRoleMessageViaEb({ roleId: input.roleId, workspaceId: input.workspaceId, sessionId: input.sessionId, contextMessageId, reasoningEffort, modelOverride, stream: !!state.data?.settings?.streamEnabled }, (run) => {
         acceptedRunId = String(run?.id || '').trim()
-        syncEbRoleRunCard(run, { roleId: input.roleId, sessionId: input.sessionId, anchorMessageId: contextMessageId })
+        syncEbRoleRunCard(run, { roleId: input.roleId, workspaceId: input.workspaceId, sessionId: input.sessionId, anchorMessageId: contextMessageId })
         renderComposer()
       }, { previousMessageIds, ancestorMessageId: contextMessageId }, (run) => opts?.onRunState?.(run))
       return true
@@ -632,13 +654,6 @@ export function createChatOperations(deps: {
     return runGroupSpeakerSequence({ groupId: input.groupId, sessionId: input.sessionId, roleIds: [input.roleId], contextMessageId: input.contextMessageId, operationText: input.operationText }, opts)
   }
 
-  function ensureRoleSessionMessageMutationAllowed(target: { roleId: string; sessionId: string; chat: any }, messageId: string, operation: MessageMutationOperation) {
-    const conflict = messageMutationConflict(target.chat, messageId, { operation, activeRunCards: activeEbRoleRunCardsForSession(getState(), target.roleId, target.sessionId) })
-    if (!conflict.blocked) return true
-    showToast?.(conflict.reason || '这条消息正在被运行中的回复使用，稍后再操作', { kind: 'error' })
-    return false
-  }
-
   function ensureTargetSessionMessageMutationAllowed(target: { targetKind: ChatTargetKind; targetId: string; sessionId: string; chat: any }, messageId: string, operation: MessageMutationOperation) {
     const conflict = messageMutationConflict(target.chat, messageId, { operation, activeRunCards: activeEbRunCardsForTarget(getState(), target.targetKind, target.targetId, target.sessionId) })
     if (!conflict.blocked) return true
@@ -687,7 +702,7 @@ export function createChatOperations(deps: {
     }
   }
 
-  async function applyRoleSessionMessageMutation(messageId: any, operationText: string, operation: MessageMutationOperation, mutate: (message: any) => { ok: true } | { ok: false; error: string }) {
+  async function applyTargetSessionMessageMutation(messageId: any, operationText: string, operation: MessageMutationOperation, mutate: (message: any) => { ok: true } | { ok: false; error: string }) {
     const state = getState()
     if (state.loading || !state.data) return false
     const target = await activeTargetSessionMutationTarget()
@@ -719,6 +734,7 @@ export function createChatOperations(deps: {
     }
     try {
       if (target.targetKind === 'group') await updateGroupSessionMessage(netRequest, { groupId: target.groupId, sessionId: target.sessionId, messageId: mid, content: String(message.content ?? ''), parts: Array.isArray(message.parts) ? message.parts : [] })
+      else if (target.targetKind === 'workspace') await updateWorkspaceSessionMessage(netRequest, { workspaceId: target.workspaceId, sessionId: target.sessionId, messageId: mid, content: String(message.content ?? ''), parts: Array.isArray(message.parts) ? message.parts : [] })
       else await updateRoleSessionMessage(netRequest, { roleId: target.roleId, sessionId: target.sessionId, messageId: mid, content: String(message.content ?? ''), parts: Array.isArray(message.parts) ? message.parts : [] })
     } catch (e: any) {
       if (messageIndex >= 0) messages[messageIndex] = beforeMessage
@@ -931,7 +947,10 @@ export function createChatOperations(deps: {
     }
 
     const rid = String(role.id || '')
-    const pendingChat = pendingChatForTarget(state, 'role', rid)
+    const workspaceId = sa.activeTargetKind() === 'workspace' ? String(sa.activeWorkspace?.()?.id || '').trim() : ''
+    const pendingKind: ChatTargetKind = workspaceId ? 'workspace' : 'role'
+    const pendingTargetId = workspaceId || rid
+    const pendingChat = pendingChatForTarget(state, pendingKind, pendingTargetId)
     const loadedChat = pendingChat ? null : await ensureActiveChatLoaded?.().catch(() => null)
     const currentChat = pendingChat ? null : loadedChat || sa.activeChatFromData()
     const modelOverride = normalizeChatModelOverride(pendingChat || currentChat)
@@ -954,9 +973,9 @@ export function createChatOperations(deps: {
     try {
       renderComposer()
       const reasoningEffort = chatReasoningEffort(pendingChat || currentChat)
-      await runRoleMessageViaEb({ roleId: rid, sessionId, message: input, attachments, parentMessageId, reasoningEffort, modelOverride, stream: !!state.data?.settings?.streamEnabled }, (run) => {
+      await runRoleMessageViaEb({ roleId: rid, workspaceId, sessionId, message: input, attachments, parentMessageId, reasoningEffort, modelOverride, stream: !!state.data?.settings?.streamEnabled }, (run) => {
         acceptedRunId = String(run?.id || '').trim()
-        syncEbRoleRunCard(run, { roleId: rid, sessionId, anchorMessageId: parentMessageId })
+        syncEbRoleRunCard(run, { roleId: rid, workspaceId, sessionId, anchorMessageId: parentMessageId })
         clearComposerDraftByKey(state, draftKey)
         state.branchDraft = null
         renderComposer()
@@ -1028,7 +1047,7 @@ export function createChatOperations(deps: {
 
     const explicitRunId = String(runIdRaw || '').trim()
     const targetKind = sa.activeTargetKind()
-    const targetId = targetKind === 'group' ? String(sa.activeGroup()?.id || '').trim() : String(sa.activeRole()?.id || '').trim()
+    const targetId = targetKind === 'group' ? String(sa.activeGroup()?.id || '').trim() : targetKind === 'workspace' ? String(sa.activeWorkspace?.()?.id || '').trim() : String(sa.activeRole()?.id || '').trim()
     const sessionId = String(sa.activeChatFromData()?.id || '').trim()
     const activeRun = explicitRunId
       ? findEbRoleRunCard(state, explicitRunId)
@@ -1044,8 +1063,10 @@ export function createChatOperations(deps: {
         showToast?.('已请求停止', { kind: 'success' })
         const roleId = String(activeRun?.roleId || sa.activeRole()?.id || '').trim()
         const groupId = String((activeRun as any)?.groupId || sa.activeGroup()?.id || '').trim()
+        const workspaceId = String((activeRun as any)?.workspaceId || sa.activeWorkspace?.()?.id || '').trim()
         const nextSessionId = String(activeRun?.sessionId || sa.activeChatFromData()?.id || '').trim()
         if (groupId && nextSessionId) refreshTargetSession('group', groupId, nextSessionId, undefined, { activate: false }).catch(() => {})
+        else if (workspaceId && nextSessionId) refreshTargetSession('workspace', workspaceId, nextSessionId, undefined, { activate: false }).catch(() => {})
         else if (roleId && nextSessionId) refreshRoleSession(roleId, nextSessionId, undefined, { activate: false }).catch(() => {})
         renderComposer()
       } catch (e) {
@@ -1066,16 +1087,16 @@ export function createChatOperations(deps: {
       await regenerateGroupAssistantMessage(String(assistantMid || ''), opts)
       return
     }
-    const target = await activeRoleRunTarget('重新回复')
+    const target = await activeSingleRoleTarget()
     const mid = String(assistantMid || '').trim()
     if (!target || !mid) return false
     const assistant = findChatMessageById(target.chat, mid)
     if (!assistant || String((assistant as any).role || '') !== 'assistant') return showToast?.('只能重新生成 AI 消息', { kind: 'error' })
-    if (!ensureRoleSessionMessageMutationAllowed(target, mid, 'edit')) return false
+    if (!ensureTargetSessionMessageMutationAllowed(target, mid, 'edit')) return false
     const contextMessageId = String((assistant as any).parentMid || '').trim()
     if (!contextMessageId) return showToast?.('未找到可用于重新回复的上文', { kind: 'error' })
     if (!findChatMessageById(target.chat, contextMessageId)) return showToast?.('未找到可用于重新回复的上文', { kind: 'error' })
-    return runRoleFromContextMessage({ roleId: target.roleId, sessionId: target.sessionId, contextMessageId }, '重新回复', opts)
+    return runRoleFromContextMessage({ roleId: target.roleId, workspaceId: (target as any).workspaceId, sessionId: target.sessionId, contextMessageId }, '重新回复', opts)
   }
 
   // ============ regenerate group assistant message ============
@@ -1113,12 +1134,12 @@ export function createChatOperations(deps: {
       await replyFromUserMessageInGroup(String(userMid || ''), opts)
       return
     }
-    const target = await activeRoleRunTarget('继续回复')
+    const target = await activeSingleRoleTarget()
     const userMessageId = String(userMid || '').trim()
     if (!target || !userMessageId) return false
     const userMessage = findChatMessageById(target.chat, userMessageId)
     if (!userMessage || String((userMessage as any).role || '') !== 'user') return showToast?.('只能从用户消息继续回复', { kind: 'error' })
-    return runRoleFromUserMessage({ roleId: target.roleId, sessionId: target.sessionId, userMessageId }, '继续回复', opts)
+    return runRoleFromUserMessage({ roleId: target.roleId, workspaceId: (target as any).workspaceId, sessionId: target.sessionId, userMessageId }, '继续回复', opts)
   }
 
   // ============ reply from user message in group ============
@@ -1151,9 +1172,10 @@ export function createChatOperations(deps: {
 
     await ensureActiveChatLoaded?.()
 
+    const targetMeta = await activeSingleRoleTarget()
     const role = sa.activeRole()
     const chat = sa.activeChatFromData()
-    if (!role || !chat) return
+    if (!targetMeta || !role || !chat) return
     sa.ensureRoleDefaults(role)
 
     const mid = String(assistantMid || '').trim()
@@ -1162,7 +1184,7 @@ export function createChatOperations(deps: {
     const msgs = Array.isArray(chat.messages) ? chat.messages : []
     const target = msgs.find((m: any) => String(m?.id || '') === mid) || null
     if (!target || target.role !== 'assistant') return showToast?.('只能从 AI 消息新建分支', { kind: 'error' })
-    if (!ensureRoleSessionMessageMutationAllowed({ roleId: String(role.id || '').trim(), sessionId: String(chat.id || '').trim(), chat }, mid, 'edit')) return false
+    if (!ensureTargetSessionMessageMutationAllowed(targetMeta, mid, 'edit')) return false
 
     const userMid0 = String((target as any)?.parentMid || '').trim()
     const userMsg = userMid0 ? msgs.find((m: any) => String(m?.id || '') === userMid0) || null : null
@@ -1331,6 +1353,7 @@ export function createChatOperations(deps: {
     if (typeof netRequest !== 'function') { showToast?.('e-b 请求通道不可用', { kind: 'error' }); return false }
     try {
       if (target.targetKind === 'group') await deleteGroupSessionMessage(netRequest, { groupId: target.groupId, sessionId: target.sessionId, messageId: mid })
+      else if (target.targetKind === 'workspace') await deleteWorkspaceSessionMessage(netRequest, { workspaceId: target.workspaceId, sessionId: target.sessionId, messageId: mid })
       else await deleteRoleSessionMessage(netRequest, { roleId: target.roleId, sessionId: target.sessionId, messageId: mid })
       await refreshTargetSession(target.targetKind, target.targetId, target.sessionId)
       render()
@@ -1354,6 +1377,7 @@ export function createChatOperations(deps: {
     if (typeof netRequest !== 'function') { showToast?.('e-b 请求通道不可用', { kind: 'error' }); return false }
     try {
       if (target.targetKind === 'group') await deleteGroupSessionMessageSubtree(netRequest, { groupId: target.groupId, sessionId: target.sessionId, messageId: mid })
+      else if (target.targetKind === 'workspace') await deleteWorkspaceSessionMessageSubtree(netRequest, { workspaceId: target.workspaceId, sessionId: target.sessionId, messageId: mid })
       else await deleteRoleSessionMessageSubtree(netRequest, { roleId: target.roleId, sessionId: target.sessionId, messageId: mid })
       await refreshTargetSession(target.targetKind, target.targetId, target.sessionId)
       render()
@@ -1368,15 +1392,15 @@ export function createChatOperations(deps: {
   // ============ edit message ============
 
   async function editMessage(messageId: any, content: any) {
-    return applyRoleSessionMessageMutation(messageId, '编辑', 'edit', (message) => replaceMessageText(message, content))
+    return applyTargetSessionMessageMutation(messageId, '编辑', 'edit', (message) => replaceMessageText(message, content))
   }
 
   async function editMessageBlock(messageId: any, blockRef: any, text: any) {
-    return applyRoleSessionMessageMutation(messageId, '编辑', 'edit', (message) => editAssistantMessageBlock(message, blockRef, text))
+    return applyTargetSessionMessageMutation(messageId, '编辑', 'edit', (message) => editAssistantMessageBlock(message, blockRef, text))
   }
 
   async function deleteMessageBlock(messageId: any, blockRef: any) {
-    return applyRoleSessionMessageMutation(messageId, '删除', 'delete', (message) => deleteAssistantMessageBlock(message, blockRef))
+    return applyTargetSessionMessageMutation(messageId, '删除', 'delete', (message) => deleteAssistantMessageBlock(message, blockRef))
   }
 
   return {

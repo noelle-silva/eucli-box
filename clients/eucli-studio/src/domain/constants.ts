@@ -16,6 +16,7 @@ export const CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MAX = 100
 export const REF_IMG_PLACEHOLDER = 'data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA='
 export const NEW_ROLE_ID = '__new__'
 export const NEW_GROUP_ID = '__new_group__'
+export const NEW_WORKSPACE_ID = '__new_workspace__'
 export const GROUP_SPEAKER_USER_PREFIX = '用户'
 
 export const DEFAULT_MERMAID_FIX_SYSTEM_PROMPT = `你是 Mermaid 语法修复器。

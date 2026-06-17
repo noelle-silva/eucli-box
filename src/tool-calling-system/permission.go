@@ -9,7 +9,7 @@ import (
 	"eucli-box/pkg/utils"
 )
 
-func (s *system) Prepare(ctx context.Context, roleID string, action types.ToolAction) (types.ToolRunPlan, error) {
+func (s *system) Prepare(ctx context.Context, roleID string, workspaceID string, action types.ToolAction) (types.ToolRunPlan, error) {
 	if strings.TrimSpace(roleID) == "" {
 		return types.ToolRunPlan{}, toolInvalid("role id is required", nil)
 	}
@@ -23,16 +23,28 @@ func (s *system) Prepare(ctx context.Context, roleID string, action types.ToolAc
 	if err := validateToolDefinition(tool); err != nil {
 		return types.ToolRunPlan{}, err
 	}
+	fence, err := s.evaluateWorkspaceFence(ctx, workspaceID, tool, action)
+	if err != nil {
+		return types.ToolRunPlan{}, err
+	}
+	if fence != nil && fence.RequiresConfirmation {
+		decision := workspaceFenceDecision(action, fence)
+		return types.ToolRunPlan{ID: utils.NewID("tool-plan"), RoleID: roleID, Action: action, Tool: tool, Decision: decision, WorkspaceFence: fence, PlanStatus: types.ToolPlanStatusNeedsConfirmation, CreatedAt: time.Now().UTC()}, nil
+	}
 	decision, err := s.permission.Decide(ctx, roleID, action)
 	if err != nil {
 		return types.ToolRunPlan{}, toolPermissionFailed("failed to decide tool permission", err)
 	}
+	return s.planFromDecision(roleID, action, tool, decision, fence)
+}
+
+func (s *system) planFromDecision(roleID string, action types.ToolAction, tool types.ToolDefinition, decision types.PermissionDecision, fence *types.ToolWorkspaceFence) (types.ToolRunPlan, error) {
 	switch decision.Status {
 	case types.PermissionStatusDenied:
-		return types.ToolRunPlan{ID: utils.NewID("tool-plan"), Action: action, Tool: tool, Decision: decision, PlanStatus: types.ToolPlanStatusDenied, CreatedAt: time.Now().UTC()}, nil
-	case types.PermissionStatusAllowed:
+		return types.ToolRunPlan{ID: utils.NewID("tool-plan"), RoleID: roleID, Action: action, Tool: tool, Decision: decision, WorkspaceFence: fence, PlanStatus: types.ToolPlanStatusDenied, CreatedAt: time.Now().UTC()}, nil
 	case types.PermissionStatusNeedsConfirmation:
-		return types.ToolRunPlan{ID: utils.NewID("tool-plan"), Action: action, Tool: tool, Decision: decision, PlanStatus: types.ToolPlanStatusNeedsConfirmation, CreatedAt: time.Now().UTC()}, nil
+		return types.ToolRunPlan{ID: utils.NewID("tool-plan"), RoleID: roleID, Action: action, Tool: tool, Decision: decision, WorkspaceFence: fence, PlanStatus: types.ToolPlanStatusNeedsConfirmation, CreatedAt: time.Now().UTC()}, nil
+	case types.PermissionStatusAllowed:
 	default:
 		return types.ToolRunPlan{}, toolPermissionFailed("unexpected permission status", nil)
 	}
@@ -43,7 +55,7 @@ func (s *system) Prepare(ctx context.Context, roleID string, action types.ToolAc
 	if err != nil {
 		return types.ToolRunPlan{}, err
 	}
-	return types.ToolRunPlan{ID: utils.NewID("tool-plan"), Action: action, Tool: tool, Decision: decision, PlanStatus: types.ToolPlanStatusReady, Executable: executable, CreatedAt: time.Now().UTC()}, nil
+	return types.ToolRunPlan{ID: utils.NewID("tool-plan"), RoleID: roleID, Action: action, Tool: tool, Decision: decision, WorkspaceFence: fence, PlanStatus: types.ToolPlanStatusReady, Executable: executable, CreatedAt: time.Now().UTC()}, nil
 }
 
 func (s *system) ApplyConfirmation(ctx context.Context, plan types.ToolRunPlan, confirmation types.ToolConfirmation) (types.ToolRunPlan, error) {
@@ -54,7 +66,20 @@ func (s *system) ApplyConfirmation(ctx context.Context, plan types.ToolRunPlan, 
 		return types.ToolRunPlan{}, toolInvalid("confirmation decision id does not match plan", nil)
 	}
 	if !confirmation.Approved {
-		return types.ToolRunPlan{ID: plan.ID, Action: plan.Action, Tool: plan.Tool, Decision: types.PermissionDecision{ID: plan.Decision.ID, ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Status: types.PermissionStatusDenied, Reason: confirmationReason(confirmation), CreatedAt: time.Now().UTC()}, PlanStatus: types.ToolPlanStatusDenied, CreatedAt: time.Now().UTC()}, nil
+		return types.ToolRunPlan{ID: plan.ID, RoleID: plan.RoleID, Action: plan.Action, Tool: plan.Tool, Decision: types.PermissionDecision{ID: plan.Decision.ID, ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Status: types.PermissionStatusDenied, Reason: confirmationReason(confirmation), Details: plan.Decision.Details, CreatedAt: time.Now().UTC()}, WorkspaceFence: plan.WorkspaceFence, PlanStatus: types.ToolPlanStatusDenied, CreatedAt: time.Now().UTC()}, nil
+	}
+	if isWorkspaceFenceDecision(plan.Decision) {
+		if strings.TrimSpace(plan.RoleID) == "" {
+			return types.ToolRunPlan{}, toolInvalid("role id is required", nil)
+		}
+		if plan.WorkspaceFence != nil {
+			plan.WorkspaceFence.RequiresConfirmation = false
+		}
+		decision, err := s.permission.Decide(ctx, plan.RoleID, plan.Action)
+		if err != nil {
+			return types.ToolRunPlan{}, toolPermissionFailed("failed to decide tool permission", err)
+		}
+		return s.planFromDecision(plan.RoleID, plan.Action, plan.Tool, decision, plan.WorkspaceFence)
 	}
 	decision, err := s.permission.ApplyConfirmation(ctx, plan.Decision, confirmation)
 	if err != nil {
@@ -66,17 +91,12 @@ func (s *system) ApplyConfirmation(ctx context.Context, plan types.ToolRunPlan, 
 		return plan, nil
 	}
 	plan.Decision = decision
-	if err := ensureToolDirectory(plan.Tool); err != nil {
-		return types.ToolRunPlan{}, err
+	if decision.Status == types.PermissionStatusNeedsConfirmation {
+		plan.PlanStatus = types.ToolPlanStatusNeedsConfirmation
+		plan.CreatedAt = time.Now().UTC()
+		return plan, nil
 	}
-	executable, err := selectExecutable(plan.Tool)
-	if err != nil {
-		return types.ToolRunPlan{}, err
-	}
-	plan.PlanStatus = types.ToolPlanStatusReady
-	plan.Executable = executable
-	plan.CreatedAt = time.Now().UTC()
-	return plan, nil
+	return s.planFromDecision(plan.RoleID, plan.Action, plan.Tool, decision, plan.WorkspaceFence)
 }
 
 func confirmationReason(confirmation types.ToolConfirmation) string {
@@ -94,4 +114,12 @@ func validateAction(action types.ToolAction) error {
 		return toolInvalid("tool action requires tool name", nil)
 	}
 	return nil
+}
+
+func isWorkspaceFenceDecision(decision types.PermissionDecision) bool {
+	if len(decision.Details) == 0 {
+		return false
+	}
+	_, ok := decision.Details["workspaceFence"]
+	return ok
 }

@@ -74,6 +74,7 @@ import { findAtMentionTrigger } from './utils/mention'
 import { ProvidersDialog } from './dialogs/ProvidersDialog'
 import { RoleDialog } from './dialogs/RoleDialog'
 import { GroupDialog } from './dialogs/GroupDialog'
+import { WorkspaceDialog } from './dialogs/WorkspaceDialog'
 
 const isRenderableNode = (node: React.ReactNode): node is Exclude<React.ReactNode, null> => node !== null
 import { ConfirmDialog } from './dialogs/ConfirmDialog'
@@ -86,6 +87,7 @@ import { AiToolsSettingsPanel } from './settings/AiToolsSettingsPanel'
 import { EbSettingsPanel } from './settings/EbSettingsPanel'
 import { ModelGroupsSettingsPanel } from './settings/ModelGroupsSettingsPanel'
 import { SettingsPageLayout, type SettingsTabValue } from './settings/SettingsNavigationBar'
+import { WorkspacesSettingsPanel } from './settings/WorkspacesSettingsPanel'
 import { AI_STUDIO_CHAT_ROOT_ID } from '../runtime/aiStudioGlobals'
 import { ASSISTANT_RUNNING_CONTENT, assistantRunGenerationId, isAssistantGenerating } from '../domain/assistantRunState'
 import { activeRunCardForAssistantMessage, isStaleAssistantPlaceholder, messageVisibleText } from '../domain/chatMessageDisplay'
@@ -244,7 +246,7 @@ function numericTimeValue(value: unknown) {
   return isFinite(parsed) && parsed > 0 ? parsed : 0
 }
 
-function chatSessionRunNoticeKey(targetKind: 'role' | 'group', targetId: unknown, chatId: unknown) {
+function chatSessionRunNoticeKey(targetKind: 'role' | 'group' | 'workspace', targetId: unknown, chatId: unknown) {
   const tid = String(targetId || '').trim()
   const cid = String(chatId || '').trim()
   if (!tid || !cid) return ''
@@ -264,7 +266,7 @@ function chatSessionRunSummaryFromListItem(item: any) {
 
 function collectChatSessionRunObservations(data: any): ChatSessionRunObservation[] {
   const byKey = new Map<string, ChatSessionRunObservation>()
-  const collectBox = (targetKind: 'role' | 'group', targetId: string, box: any) => {
+  const collectBox = (targetKind: 'role' | 'group' | 'workspace', targetId: string, box: any) => {
     if (!targetId || !box || typeof box !== 'object') return
     const add = (item: any) => {
       const chatId = String(item?.id || '').trim()
@@ -282,6 +284,8 @@ function collectChatSessionRunObservations(data: any): ChatSessionRunObservation
   for (const [targetId, box] of Object.entries(roleBoxes)) collectBox('role', String(targetId || ''), box)
   const groupBoxes = data?.chatsByGroup && typeof data.chatsByGroup === 'object' ? data.chatsByGroup : {}
   for (const [targetId, box] of Object.entries(groupBoxes)) collectBox('group', String(targetId || ''), box)
+  const workspaceBoxes = (data as any)?.chatsByWorkspace && typeof (data as any).chatsByWorkspace === 'object' ? (data as any).chatsByWorkspace : {}
+  for (const [targetId, box] of Object.entries(workspaceBoxes)) collectBox('workspace', String(targetId || ''), box)
   return Array.from(byKey.values())
 }
 
@@ -551,7 +555,7 @@ function ComposerInputControls(props: {
   draftFilesPending: boolean
   draftFilesWarn: boolean
   hasDraftNonText: boolean
-  activeTargetKind: 'role' | 'group'
+  activeTargetKind: 'role' | 'group' | 'workspace'
   activeGroup: any
   roles: any[]
   activeStopRunId: string
@@ -979,6 +983,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const data = s.data
   const roles = Array.isArray(data?.roles) ? data.roles : []
   const groups = Array.isArray((data as any)?.groups) ? ((data as any).groups as any[]) : []
+  const workspaces = Array.isArray((data as any)?.workspaces) ? ((data as any).workspaces as any[]) : []
   const providers = Array.isArray(data?.settings?.providers) ? data.settings.providers : []
   const modelGroups = Array.isArray((s as any)?.modelGroups?.items) ? (s as any).modelGroups.items : []
   const favorites = (data as any)?.favorites && typeof (data as any).favorites === 'object' ? (data as any).favorites : { folders: [], chatRefsByFolderId: {} }
@@ -1011,12 +1016,21 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const stickerCategories = Array.isArray(data?.settings?.stickers?.categories) ? data.settings.stickers.categories : []
   const bgAlpha = transparentChatBg ? Math.max(chatBgOpacity / 100, chatBgBlur > 0 ? 0.01 : 0) : 1
 
-  const activeTargetKind = String((s.draft as any)?.activeTargetKind || (data?.ui as any)?.activeTargetKind || 'role') === 'group' ? 'group' : 'role'
+  const activeTargetKind0 = String((s.draft as any)?.activeTargetKind || (data?.ui as any)?.activeTargetKind || 'role').trim()
+  const activeTargetKind = activeTargetKind0 === 'group' ? 'group' : activeTargetKind0 === 'workspace' ? 'workspace' : 'role'
   const activeGroupId = String((s.draft as any)?.activeGroupId || (data?.ui as any)?.activeGroupId || '')
+  const activeWorkspaceId = String((s.draft as any)?.activeWorkspaceId || (data?.ui as any)?.activeWorkspaceId || '')
   const activeRole = controller.activeRole()
   const activeGroup = activeTargetKind === 'group' ? (groups.find((g: any) => String(g?.id || '') === activeGroupId) || null) : null
-  const activeChatTargetId = activeTargetKind === 'group' ? activeGroupId : String(activeRole?.id || '')
-  const activeChatSelectionBox = activeChatTargetId ? (activeTargetKind === 'group' ? (data as any)?.chatsByGroup?.[activeChatTargetId] : data?.chatsByRole?.[activeChatTargetId]) : null
+  const activeWorkspace = activeTargetKind === 'workspace' ? (workspaces.find((workspace: any) => String(workspace?.id || '') === activeWorkspaceId) || null) : null
+  const activeChatTargetId = activeTargetKind === 'group' ? activeGroupId : activeTargetKind === 'workspace' ? activeWorkspaceId : String(activeRole?.id || '')
+  const activeChatSelectionBox = activeChatTargetId
+    ? activeTargetKind === 'group'
+      ? (data as any)?.chatsByGroup?.[activeChatTargetId]
+      : activeTargetKind === 'workspace'
+        ? (data as any)?.chatsByWorkspace?.[activeChatTargetId]
+        : data?.chatsByRole?.[activeChatTargetId]
+    : null
   const activeChat = controller.activeChat()
   const selectedActiveChatId = String(activeChat?.id || activeChatSelectionBox?.activeChatId || '').trim()
   const selectedActiveChatKey = selectedActiveChatId ? `${activeTargetKind}:${activeChatTargetId}:${selectedActiveChatId}` : ''
@@ -1147,7 +1161,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     })
   })
 
-  const clearChatSessionRunNotice = useEvent((targetKind: 'role' | 'group', targetId: string, chatId: string) => {
+  const clearChatSessionRunNotice = useEvent((targetKind: 'role' | 'group' | 'workspace', targetId: string, chatId: string) => {
     const key = chatSessionRunNoticeKey(targetKind, targetId, chatId)
     if (!key) return
     setChatSessionRunNotices((prev) => {
@@ -1159,7 +1173,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   })
 
   const chatSessionRunIndicatorKind = React.useCallback(
-    (targetKind: 'role' | 'group', targetId: string, chat: any, selected: boolean): ChatSessionRunIndicatorKind | '' => {
+    (targetKind: 'role' | 'group' | 'workspace', targetId: string, chat: any, selected: boolean): ChatSessionRunIndicatorKind | '' => {
       const chatId = String(chat?.id || '').trim()
       const key = chatSessionRunNoticeKey(targetKind, targetId, chatId)
       if (!key) return ''
@@ -1173,11 +1187,11 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   )
 
   const isSendingThisChat = React.useCallback(
-    (targetKind: 'role' | 'group', targetId: string, chatId: string) => {
+    (targetKind: 'role' | 'group' | 'workspace', targetId: string, chatId: string) => {
       const tid = String(targetId || '')
       const cid = String(chatId || '')
       if (!tid || !cid) return false
-      const box = targetKind === 'group' ? data?.chatsByGroup?.[tid] : data?.chatsByRole?.[tid]
+      const box = targetKind === 'group' ? data?.chatsByGroup?.[tid] : targetKind === 'workspace' ? (data as any)?.chatsByWorkspace?.[tid] : data?.chatsByRole?.[tid]
       const meta = Array.isArray(box?.chatMetas) ? box.chatMetas.find((m: any) => String(m?.id || '') === cid) : null
       return readActiveEbRunCardsForTarget(s, targetKind, tid, cid).length > 0 || normalizeChatSessionRunStatus(meta?.runStatus || meta?.status) === 'running'
     },
@@ -1219,12 +1233,19 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   )
 
   const getChatByFavoriteRef = React.useCallback(
-    (targetKind: 'role' | 'group', targetId: string, chatId: string) => {
+    (targetKind: 'role' | 'group' | 'workspace', targetId: string, chatId: string) => {
       const tid = String(targetId || '')
       const cid = String(chatId || '')
       if (!tid || !cid) return null
       if (targetKind === 'group') {
         const box = (data as any)?.chatsByGroup?.[tid]
+        const chats = Array.isArray(box?.chats) ? box.chats : []
+        const chat = chats.find((c: any) => String(c?.id || '') === cid) || null
+        const meta = Array.isArray(box?.chatMetas) ? box.chatMetas.find((c: any) => String(c?.id || '') === cid) : null
+        return chat && meta ? { ...chat, ...meta } : chat || meta || null
+      }
+      if (targetKind === 'workspace') {
+        const box = (data as any)?.chatsByWorkspace?.[tid]
         const chats = Array.isArray(box?.chats) ? box.chats : []
         const chat = chats.find((c: any) => String(c?.id || '') === cid) || null
         const meta = Array.isArray(box?.chatMetas) ? box.chatMetas.find((c: any) => String(c?.id || '') === cid) : null
@@ -1240,7 +1261,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   )
 
   const getFavoriteTargetMeta = React.useCallback(
-    (targetKind: 'role' | 'group', targetId: string) => {
+    (targetKind: 'role' | 'group' | 'workspace', targetId: string) => {
       const tid = String(targetId || '')
       if (!tid) return null
       if (targetKind === 'group') {
@@ -1252,6 +1273,15 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
           avatarImage: String(g?.avatarImage || ''),
         }
       }
+      if (targetKind === 'workspace') {
+        const workspace = workspaces.find((it: any) => String(it?.id || '') === tid) || null
+        if (!workspace) return null
+        return {
+          name: String(workspace?.name || '工作区'),
+          avatar: '📁',
+          avatarImage: '',
+        }
+      }
       const r = roles.find((it: any) => String(it?.id || '') === tid) || null
       if (!r) return null
       return {
@@ -1260,7 +1290,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
         avatarImage: String(r?.avatarImage || ''),
       }
     },
-    [groups, roles],
+    [groups, roles, workspaces],
   )
 
   const formatModelRefText = React.useCallback(
@@ -1364,7 +1394,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     if (!fid) return
     setFavoriteCheckedFolderIds((p) => (p.includes(fid) ? p.filter((x) => x !== fid) : p.concat(fid)))
   })
-  const openFavoriteDialog = useEvent((targetKind: 'role' | 'group', targetId: string, chatId: string, title: string) => {
+  const openFavoriteDialog = useEvent((targetKind: 'role' | 'group' | 'workspace', targetId: string, chatId: string, title: string) => {
     const tid = String(targetId || '')
     const cid = String(chatId || '')
     if (!tid || !cid) return
@@ -1398,12 +1428,13 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
       closeCreateFavoriteFolder()
     }
   })
-  const openFavoritedChat = useEvent((targetKind: 'role' | 'group', targetId: string, chatId: string) => {
+  const openFavoritedChat = useEvent((targetKind: 'role' | 'group' | 'workspace', targetId: string, chatId: string) => {
     const tid = String(targetId || '')
     const cid = String(chatId || '')
     if (!tid || !cid) return
     clearChatSessionRunNotice(targetKind, tid, cid)
     if (targetKind === 'group') controller.actions.setActiveGroup?.(tid)
+    else if (targetKind === 'workspace') controller.actions.setActiveWorkspace?.(tid)
     else controller.actions.setActiveRole?.(tid)
     chatSwitch.requestSwitch(cid, { force: true })
     closeChatPicker()
@@ -1606,7 +1637,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   })
 
   const [rolePickerEl, setRolePickerEl] = React.useState<HTMLElement | null>(null)
-  const [rolePickerTab, setRolePickerTab] = React.useState<'roles' | 'groups'>('roles')
+  const [rolePickerTab, setRolePickerTab] = React.useState<'roles' | 'groups' | 'workspaces'>('roles')
   const [chatPickerEl, setChatPickerEl] = React.useState<HTMLElement | null>(null)
   const [chatPickerView, setChatPickerView] = React.useState<'history' | 'favorites'>('history')
   const [chatPickerSearchOpen, setChatPickerSearchOpen] = React.useState(false)
@@ -1616,7 +1647,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const [favoriteSearchText, setFavoriteSearchText] = React.useState('')
   const favoriteSearchInputRef = React.useRef<HTMLInputElement | null>(null)
   const [favoriteFolderExpanded, setFavoriteFolderExpanded] = React.useState<Record<string, boolean>>({})
-  const [favoriteDialog, setFavoriteDialog] = React.useState<{ open: boolean; targetKind: 'role' | 'group'; targetId: string; chatId: string; title: string }>({
+  const [favoriteDialog, setFavoriteDialog] = React.useState<{ open: boolean; targetKind: 'role' | 'group' | 'workspace'; targetId: string; chatId: string; title: string }>({
     open: false,
     targetKind: 'role',
     targetId: '',
@@ -1655,7 +1686,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const [tempModelPick, setTempModelPick] = React.useState('')
   const composerInputRef = React.useRef<HTMLTextAreaElement | HTMLInputElement | null>(null)
   const draftFilePickerInputRef = React.useRef<HTMLInputElement | null>(null)
-  const roleSessionControlsEnabled = activeTargetKind === 'role'
+  const roleSessionControlsEnabled = activeTargetKind !== 'group' && !!activeRole
 
   React.useEffect(() => {
     if (roleSessionControlsEnabled) return
@@ -2208,7 +2239,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const effectiveModelRef = hasChatOverride
     ? { kind: 'provider', providerId: overrideProviderId, modelId: overrideModelId }
     : roleModelRef
-  const reasoningProfile = activeTargetKind === 'role'
+  const reasoningProfile = activeTargetKind !== 'group'
     ? modelReasoningProfileFromModelRef(effectiveModelRef, providers, modelGroups)
     : { supportsReasoning: false, defaultReasoningEffort: '' as const }
   const activeChatReasoningEffort = chatReasoningEffort(activeChat)
@@ -2734,13 +2765,16 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     if (activeTargetKind === 'group') {
       targetId = String((activeGroup as any)?.id || activeGroupId || '').trim()
       if (!targetId) return { olderId: '', newerId: '', lockedReason: '请先选择群组' }
+    } else if (activeTargetKind === 'workspace') {
+      targetId = String((activeWorkspace as any)?.id || activeWorkspaceId || '').trim()
+      if (!targetId) return { olderId: '', newerId: '', lockedReason: '请先选择工作区' }
     } else {
       targetId = String(activeRoleId || '').trim()
       if (!targetId) return { olderId: '', newerId: '', lockedReason: '请先选择角色' }
     }
     if (!data) return { olderId: '', newerId: '', lockedReason: '数据未就绪' }
 
-    const box = activeTargetKind === 'group' ? (data as any)?.chatsByGroup?.[targetId] : data?.chatsByRole?.[targetId]
+    const box = activeTargetKind === 'group' ? (data as any)?.chatsByGroup?.[targetId] : activeTargetKind === 'workspace' ? (data as any)?.chatsByWorkspace?.[targetId] : data?.chatsByRole?.[targetId]
     const chats = sortChatListItemsForDisplay(Array.isArray(box?.chatMetas) && box.chatMetas.length ? box.chatMetas : Array.isArray(box?.chats) ? box.chats : [])
     const pendingChat = pendingChatForTarget(s, activeTargetKind, targetId)
     const currentChatId = String(activeChat?.id || box?.activeChatId || String(chats[0]?.id || '') || '')
@@ -3026,7 +3060,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   })
   const [editingMsg, setEditingMsg] = React.useState<{ mid: string; text: string }>({ mid: '', text: '' })
   const [chatMenu, setChatMenu] = React.useState<{
-    targetKind: 'role' | 'group'
+    targetKind: 'role' | 'group' | 'workspace'
     targetId: string
     chatId: string
     title: string
@@ -3042,7 +3076,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   })
   const [favoriteChatMenu, setFavoriteChatMenu] = React.useState<{
     folderId: string
-    targetKind: 'role' | 'group'
+    targetKind: 'role' | 'group' | 'workspace'
     targetId: string
     chatId: string
     title: string
@@ -3057,12 +3091,12 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     x: 0,
     y: 0,
   })
-  const [confirmDelChat, setConfirmDelChat] = React.useState<{ targetKind: 'role' | 'group'; targetId: string; chatId: string }>({
+  const [confirmDelChat, setConfirmDelChat] = React.useState<{ targetKind: 'role' | 'group' | 'workspace'; targetId: string; chatId: string }>({
     targetKind: 'role',
     targetId: '',
     chatId: '',
   })
-  const [editingChatTitle, setEditingChatTitle] = React.useState<{ targetKind: 'role' | 'group'; targetId: string; chatId: string; text: string }>({
+  const [editingChatTitle, setEditingChatTitle] = React.useState<{ targetKind: 'role' | 'group' | 'workspace'; targetId: string; chatId: string; text: string }>({
     targetKind: 'role',
     targetId: '',
     chatId: '',
@@ -3073,7 +3107,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const saveEditingChatTitle = useEvent(async () => {
     const { targetKind, targetId, chatId, text } = editingChatTitle
     if (!targetId || !chatId || s.loading) return
-    const action = targetKind === 'group' ? controller.actions.renameGroupChat : controller.actions.renameChat
+    const action = targetKind === 'group' ? controller.actions.renameGroupChat : targetKind === 'workspace' ? controller.actions.renameWorkspaceChat : controller.actions.renameChat
     const ok = await Promise.resolve(action?.(targetId, chatId, String(text ?? '')))
     if (ok === true) closeEditingChatTitle()
   })
@@ -3217,7 +3251,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
         const folderName = String(folder?.name || '').toLowerCase()
         if (folderName.includes(q)) return true
         for (const ref of refs) {
-          const targetKind = String(ref?.targetKind || '').trim() === 'group' ? 'group' : 'role'
+          const targetKindText = String(ref?.targetKind || '').trim()
+          const targetKind = targetKindText === 'group' ? 'group' : targetKindText === 'workspace' ? 'workspace' : 'role'
           const targetId = String(ref?.targetId || '')
           const chatId = String(ref?.chatId || '')
             const chat = getChatByFavoriteRef(targetKind as any, targetId, chatId)
@@ -3242,13 +3277,14 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
           .filter(isRenderableNode)
         const visibleRefs = refs
           .map((ref: any) => {
-            const targetKind = String(ref?.targetKind || '').trim() === 'group' ? 'group' : 'role'
+            const targetKindText = String(ref?.targetKind || '').trim()
+            const targetKind = targetKindText === 'group' ? 'group' : targetKindText === 'workspace' ? 'workspace' : 'role'
             const targetId = String(ref?.targetId || '')
             const chatId = String(ref?.chatId || '')
             const chat = getChatByFavoriteRef(targetKind as any, targetId, chatId)
             if (!chat) return null
             const targetMeta = getFavoriteTargetMeta(targetKind as any, targetId)
-            const targetName = String(targetMeta?.name || (targetKind === 'group' ? '群聊' : '角色'))
+            const targetName = String(targetMeta?.name || (targetKind === 'group' ? '群聊' : targetKind === 'workspace' ? '工作区' : '角色'))
             const snippet = snippetText((chat as any)?.lastMessagePreview || (Array.isArray((chat as any)?.messages) ? (chat as any).messages : []).slice(-1)[0]?.content || '')
             const selected = targetKind === activeTargetKind && String(targetId || '') === activeChatTargetId && String(chatId || '') === activeChatId
             const indicatorKind = chatSessionRunIndicatorKind(targetKind as any, targetId, chat, selected)
@@ -3265,13 +3301,13 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
               >
                 <Stack spacing={0.5} alignItems="center" sx={{ width: 48, flex: '0 0 48px', pt: 0.25 }}>
                   <Avatar src={String(targetMeta?.avatarImage || '') || undefined} sx={{ width: 28, height: 28, fontSize: 14 }}>
-                    {String(targetMeta?.avatar || (targetKind === 'group' ? '👥' : '🙂'))}
+                    {String(targetMeta?.avatar || (targetKind === 'group' ? '👥' : targetKind === 'workspace' ? '📁' : '🙂'))}
                   </Avatar>
                   <Typography variant="caption" color="text.secondary" noWrap sx={{ maxWidth: '100%' }}>
                     {targetName}
                   </Typography>
                 </Stack>
-                <ListItemText sx={{ minWidth: 0, mt: 0.25 }} primary={String((chat as any)?.title || (targetKind === 'group' ? '群聊' : '新聊天'))} secondary={snippet} />
+                <ListItemText sx={{ minWidth: 0, mt: 0.25 }} primary={String((chat as any)?.title || (targetKind === 'group' ? '群聊' : targetKind === 'workspace' ? '工作区会话' : '新聊天'))} secondary={snippet} />
                 {indicatorKind ? <ChatSessionRunIndicator kind={indicatorKind} /> : null}
               </ListItemButton>
             )
@@ -3346,8 +3382,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
 
   const closeChatMenu = useEvent(() => setChatMenu({ targetKind: 'role', targetId: '', chatId: '', title: '', x: 0, y: 0 }))
   const closeFavoriteChatMenu = useEvent(() => setFavoriteChatMenu({ folderId: '', targetKind: 'role', targetId: '', chatId: '', title: '', x: 0, y: 0 }))
-  const onChatContextMenu = useEvent((e: React.MouseEvent, targetKind: 'role' | 'group', targetId: string, chatId: string, title: string) => {
-    const kind = targetKind === 'group' ? 'group' : 'role'
+  const onChatContextMenu = useEvent((e: React.MouseEvent, targetKind: 'role' | 'group' | 'workspace', targetId: string, chatId: string, title: string) => {
+    const kind = targetKind === 'group' ? 'group' : targetKind === 'workspace' ? 'workspace' : 'role'
     const tid = String(targetId || '')
     const cid = String(chatId || '')
     if (!tid || !cid) return
@@ -3356,9 +3392,9 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     setChatMenu({ targetKind: kind, targetId: tid, chatId: cid, title: String(title ?? ''), x: e.clientX, y: e.clientY })
   })
   const onFavoriteChatContextMenu = useEvent(
-    (e: React.MouseEvent, folderId: string, targetKind: 'role' | 'group', targetId: string, chatId: string, title: string) => {
+    (e: React.MouseEvent, folderId: string, targetKind: 'role' | 'group' | 'workspace', targetId: string, chatId: string, title: string) => {
       const fid = String(folderId || '')
-      const kind = targetKind === 'group' ? 'group' : 'role'
+      const kind = targetKind === 'group' ? 'group' : targetKind === 'workspace' ? 'workspace' : 'role'
       const tid = String(targetId || '')
       const cid = String(chatId || '')
       if (!fid || !tid || !cid) return
@@ -3436,7 +3472,11 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   })
 
   const openRolePicker = useEvent((e: React.MouseEvent<HTMLElement>) => {
-    setRolePickerTab(activeTargetKind === 'group' ? 'groups' : 'roles')
+    setRolePickerTab(activeTargetKind === 'group' ? 'groups' : activeTargetKind === 'workspace' ? 'workspaces' : 'roles')
+    setRolePickerEl(e.currentTarget)
+  })
+  const openWorkspaceRolePicker = useEvent((e: React.MouseEvent<HTMLElement>) => {
+    setRolePickerTab('roles')
     setRolePickerEl(e.currentTarget)
   })
   const closeRolePicker = useEvent(() => setRolePickerEl(null))
@@ -3992,29 +4032,52 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                   variant="outlined"
                   size="small"
                   onClick={openRolePicker}
-                  disabled={s.loading || (!roles.length && !groups.length)}
+                  disabled={s.loading || (!roles.length && !groups.length && !workspaces.length)}
                   sx={{ borderRadius: 999, px: 1, py: 0.25, minWidth: 0, gap: 0.75, borderColor: 'divider' }}
                 >
                   <Avatar
                     src={
                       activeTargetKind === 'group'
                         ? String((activeGroup as any)?.avatarImage || '') || undefined
+                        : activeTargetKind === 'workspace'
+                          ? undefined
                         : String(activeRole?.avatarImage || '') || undefined
                     }
                     sx={{ width: 22, height: 22, fontSize: 12 }}
                   >
-                    {activeTargetKind === 'group' ? String((activeGroup as any)?.avatar || '👥') : String(activeRole?.avatar || '🙂')}
+                    {activeTargetKind === 'group' ? String((activeGroup as any)?.avatar || '👥') : activeTargetKind === 'workspace' ? '📁' : String(activeRole?.avatar || '🙂')}
                   </Avatar>
                   <Typography variant="body2" sx={{ fontWeight: 900, maxWidth: 180 }} noWrap>
                     {activeTargetKind === 'group'
                       ? activeGroup
                         ? String((activeGroup as any)?.name || '')
                         : '请选择群组'
+                      : activeTargetKind === 'workspace'
+                        ? activeWorkspace
+                          ? String((activeWorkspace as any)?.name || '')
+                          : '请选择工作区'
                       : activeRole
                         ? String(activeRole?.name || '')
                         : '请选择角色'}
                   </Typography>
                 </Button>
+
+                {activeTargetKind === 'workspace' ? (
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={openWorkspaceRolePicker}
+                    disabled={s.loading || !roles.length}
+                    sx={{ borderRadius: 999, px: 1, py: 0.25, minWidth: 0, gap: 0.75, borderColor: 'divider' }}
+                  >
+                    <Avatar src={String(activeRole?.avatarImage || '') || undefined} sx={{ width: 22, height: 22, fontSize: 12 }}>
+                      {String(activeRole?.avatar || '🙂')}
+                    </Avatar>
+                    <Typography variant="body2" sx={{ fontWeight: 900, maxWidth: 160 }} noWrap>
+                      {activeRole ? String(activeRole?.name || '') : '请选择角色'}
+                    </Typography>
+                  </Button>
+                ) : null}
 
                 <Tooltip title="流式输出">
                   <Stack direction="row" alignItems="center" spacing={1} sx={{ mr: 1 }}>
@@ -4066,7 +4129,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                     <IconButton
                       onClick={() => controller.actions.createChat()}
                       size="small"
-                      disabled={activeTargetKind === 'group' ? !activeGroup : !activeRole}
+                      disabled={activeTargetKind === 'group' ? !activeGroup : activeTargetKind === 'workspace' ? !activeWorkspace || !activeRole : !activeRole}
                       aria-label="新建聊天"
                     >
                       <AddIcon fontSize="small" />
@@ -4079,7 +4142,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                   </IconButton>
                 </Tooltip>
                 <Tooltip title="设置">
-                  <IconButton onClick={() => openPluginSettings('roles')} size="small">
+                  <IconButton onClick={() => openPluginSettings(activeTargetKind === 'workspace' ? 'workspaces' : activeTargetKind === 'group' ? 'groups' : 'roles')} size="small">
                     <SettingsIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
@@ -4126,6 +4189,14 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                 ) : activeTargetKind === 'group' && !activeGroup ? (
                   <Typography variant="body2" color="text.secondary">
                     请选择群组
+                  </Typography>
+                ) : activeTargetKind === 'workspace' && !activeWorkspace ? (
+                  <Typography variant="body2" color="text.secondary">
+                    请选择工作区
+                  </Typography>
+                ) : activeTargetKind === 'workspace' && !activeRole ? (
+                  <Typography variant="body2" color="text.secondary">
+                    请选择角色
                   </Typography>
                 ) : activeTargetKind !== 'group' && !activeRole ? (
                   <Typography variant="body2" color="text.secondary">
@@ -5487,11 +5558,12 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
             <Box sx={{ px: 1.5, pt: 1.25, pb: 0.5 }}>
               <Tabs
                 value={rolePickerTab}
-                onChange={(_e, v) => setRolePickerTab(v === 'groups' ? 'groups' : 'roles')}
+                onChange={(_e, v) => setRolePickerTab(v === 'groups' ? 'groups' : v === 'workspaces' ? 'workspaces' : 'roles')}
                 variant="fullWidth"
               >
                 <Tab value="roles" label="选择角色" />
                 <Tab value="groups" label="群组" />
+                <Tab value="workspaces" label="工作区" />
               </Tabs>
             </Box>
             <Divider />
@@ -5501,14 +5573,15 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                   const on = String(r?.id || '') === String(s.draft?.activeRoleId || '')
                   const modelRefText = formatModelRefText(r?.modelRef)
                   return (
-                    <ListItemButton
-                      key={String(r?.id || '')}
-                      selected={on && activeTargetKind === 'role'}
-                      onClick={() => {
-                        controller.actions.setActiveRole(String(r?.id || ''))
-                        closeRolePicker()
-                      }}
-                      sx={{ borderBottom: '1px solid', borderColor: 'divider' }}
+                      <ListItemButton
+                        key={String(r?.id || '')}
+                        selected={on && (activeTargetKind === 'role' || activeTargetKind === 'workspace')}
+                        onClick={() => {
+                          if (activeTargetKind === 'workspace') controller.actions.setWorkspaceRole?.(String(r?.id || ''))
+                          else controller.actions.setActiveRole(String(r?.id || ''))
+                          closeRolePicker()
+                        }}
+                        sx={{ borderBottom: '1px solid', borderColor: 'divider' }}
                     >
                       <ListItemAvatar>
                         <Avatar src={String(r?.avatarImage || '') || undefined} sx={{ width: 28, height: 28, fontSize: 14 }}>
@@ -5545,7 +5618,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                   )
                 })}
               </List>
-            ) : groups.length ? (
+            ) : rolePickerTab === 'groups' ? groups.length ? (
               <List dense sx={{ py: 0 }}>
                 {groups.map((g: any) => {
                   const on = String(g?.id || '') === String(activeGroupId || '')
@@ -5609,6 +5682,74 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                   }}
                 >
                   去创建群组
+                </Button>
+              </Box>
+            ) : workspaces.length ? (
+              <List dense sx={{ py: 0 }}>
+                {workspaces.map((workspace: any) => {
+                  const workspaceId = String(workspace?.id || '')
+                  const on = workspaceId === String(activeWorkspaceId || '')
+                  const directoryCount = Array.isArray(workspace?.directories) ? workspace.directories.length : 0
+                  return (
+                    <ListItemButton
+                      key={workspaceId}
+                      selected={on && activeTargetKind === 'workspace'}
+                      onClick={() => {
+                        controller.actions.setActiveWorkspace?.(workspaceId)
+                        closeRolePicker()
+                      }}
+                      sx={{ borderBottom: '1px solid', borderColor: 'divider' }}
+                    >
+                      <ListItemAvatar>
+                        <Avatar sx={{ width: 28, height: 28, fontSize: 14, bgcolor: 'rgba(59,130,246,.12)', color: 'primary.main' }}>
+                          📁
+                        </Avatar>
+                      </ListItemAvatar>
+                      <ListItemText
+                        sx={{ minWidth: 0 }}
+                        primary={
+                          <Typography sx={{ fontWeight: 900, fontSize: 13 }} noWrap>
+                            {String(workspace?.name || '')}
+                          </Typography>
+                        }
+                        secondary={
+                          <Typography variant="caption" color="text.secondary" noWrap>
+                            {directoryCount ? `${directoryCount} 个目录` : '暂未登记目录'}
+                          </Typography>
+                        }
+                      />
+                      <Tooltip title="设置">
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            closeRolePicker()
+                            controller.actions.openWorkspaceEditor?.(workspaceId)
+                          }}
+                        >
+                          <SettingsIcon fontSize="inherit" />
+                        </IconButton>
+                      </Tooltip>
+                    </ListItemButton>
+                  )
+                })}
+              </List>
+            ) : (
+              <Box sx={{ p: 2 }}>
+                <Typography variant="body2" color="text.secondary">
+                  还没有工作区。
+                </Typography>
+                <Button
+                  size="small"
+                  variant="contained"
+                  sx={{ mt: 1 }}
+                  onClick={() => {
+                    closeRolePicker()
+                    openPluginSettings('workspaces')
+                  }}
+                >
+                  去创建工作区
                 </Button>
               </Box>
             )}
@@ -5773,6 +5914,105 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                                      {indicatorKind ? <ChatSessionRunIndicator kind={indicatorKind} /> : null}
                                    </Stack>
                                  }
+                                secondary={
+                                  <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block', minWidth: 0 }}>
+                                    {snippet || '（空）'}
+                                  </Typography>
+                                }
+                              />
+                            </ListItemButton>
+                          )
+                        })}
+                      </List>
+                    )
+                  }
+
+                  if (activeTargetKind === 'workspace') {
+                    if (!activeWorkspace) {
+                      return (
+                        <Box sx={{ p: 2 }}>
+                          <Typography variant="body2" color="text.secondary">
+                            先选择工作区
+                          </Typography>
+                        </Box>
+                      )
+                    }
+                    const box = (data as any)?.chatsByWorkspace?.[String((activeWorkspace as any)?.id || '')]
+                    const chats = sortChatListItemsForDisplay(Array.isArray(box?.chatMetas) && box.chatMetas.length ? box.chatMetas : Array.isArray(box?.chats) ? box.chats : [])
+                    const activeChatId = String(box?.activeChatId || '')
+                    const pendingChat =
+                      (s as any)?.pendingWorkspaceChat && String((s as any).pendingWorkspaceChat?.workspaceId || '') === String((activeWorkspace as any)?.id || '')
+                        ? (s as any).pendingWorkspaceChat.chat
+                        : null
+                    const hasPending = !!pendingChat
+                    const showPending = hasPending && match(pendingChat, '工作区会话')
+                    const shownChats = chats.filter((c: any) => match(c, '工作区会话'))
+                    if (!showPending && !shownChats.length) {
+                      return (
+                        <Box sx={{ p: 2 }}>
+                          <Typography variant="body2" color="text.secondary">
+                            没有匹配的会话
+                          </Typography>
+                        </Box>
+                      )
+                    }
+                    return (
+                      <List dense sx={{ py: 0 }}>
+                        {showPending ? (
+                          <ListItemButton selected sx={{ borderBottom: '1px solid', borderColor: 'divider', alignItems: 'flex-start' }}>
+                            <ListItemText
+                              sx={{ minWidth: 0 }}
+                              primary={
+                                <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0 }}>
+                                  <Typography sx={{ fontWeight: 900, fontSize: 13, flex: 1, minWidth: 0 }} noWrap>
+                                    {String(pendingChat?.title || '工作区会话')}（未发送）
+                                  </Typography>
+                                  <Typography variant="caption" color="text.secondary">
+                                    {controller.fmtTime(Number(pendingChat?.updatedAt || pendingChat?.createdAt || 0))}
+                                  </Typography>
+                                </Stack>
+                              }
+                              secondary={
+                                <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block', minWidth: 0 }}>
+                                  （草稿）
+                                </Typography>
+                              }
+                            />
+                          </ListItemButton>
+                        ) : null}
+                        {shownChats.map((c: any) => {
+                          const on = !showPending && String(c?.id || '') === activeChatId
+                          const raw = String(c?.lastMessagePreview || '').replace(/\s+/g, ' ').trim()
+                          const snippet = raw.length > 40 ? raw.slice(0, 40) + '…' : raw
+                          const time = controller.fmtTime(Number(c?.updatedAt || c?.createdAt || 0))
+                          const indicatorKind = chatSessionRunIndicatorKind('workspace', String((activeWorkspace as any)?.id || ''), c, on)
+                          return (
+                            <ListItemButton
+                              key={String(c?.id || '')}
+                              selected={on}
+                              onClick={() => {
+                                clearChatSessionRunNotice('workspace', String((activeWorkspace as any)?.id || ''), String(c?.id || ''))
+                                chatSwitch.requestSwitch(String(c?.id || ''))
+                                closeChatPicker()
+                              }}
+                              onContextMenu={(e) =>
+                                onChatContextMenu(e, 'workspace', String((activeWorkspace as any)?.id || ''), String(c?.id || ''), String(c?.title || '工作区会话'))
+                              }
+                              sx={{ borderBottom: '1px solid', borderColor: 'divider', alignItems: 'flex-start' }}
+                            >
+                              <ListItemText
+                                sx={{ minWidth: 0 }}
+                                primary={
+                                  <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0 }}>
+                                    <Typography sx={{ fontWeight: 900, fontSize: 13, flex: 1, minWidth: 0 }} noWrap>
+                                      {String(c?.title || '工作区会话')}
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                      {time}
+                                    </Typography>
+                                    {indicatorKind ? <ChatSessionRunIndicator kind={indicatorKind} /> : null}
+                                  </Stack>
+                                }
                                 secondary={
                                   <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block', minWidth: 0 }}>
                                     {snippet || '（空）'}
@@ -6088,6 +6328,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                 Promise.resolve()
                   .then(() => {
                     if (targetKind === 'group') return controller.actions.aiGenerateGroupChatTitle?.(targetId, chatId)
+                    if (targetKind === 'workspace') return controller.actions.aiGenerateWorkspaceChatTitle?.(targetId, chatId)
                     return controller.actions.aiGenerateChatTitle?.(targetId, chatId)
                   })
                   .catch(() => {})
@@ -6128,6 +6369,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                 Promise.resolve()
                   .then(() => {
                     if (targetKind === 'group') return controller.actions.aiGenerateGroupChatTitle?.(targetId, chatId)
+                    if (targetKind === 'workspace') return controller.actions.aiGenerateWorkspaceChatTitle?.(targetId, chatId)
                     return controller.actions.aiGenerateChatTitle?.(targetId, chatId)
                   })
                   .catch(() => {})
@@ -6415,6 +6657,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                 setConfirmDelChat({ targetKind: 'role', targetId: '', chatId: '' })
                 if (!targetId || !chatId) return
                 if (targetKind === 'group') controller.actions.deleteGroupChat?.(targetId, chatId)
+                else if (targetKind === 'workspace') controller.actions.deleteWorkspaceChat?.(targetId, chatId)
                 else controller.actions.deleteChat?.(targetId, chatId)
               }}
               disabled={
@@ -6436,6 +6679,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
             data={data}
             roles={roles}
             groups={groups}
+            workspaces={workspaces}
             providers={providers}
             modelGroups={(s as any).modelGroups}
             models={s.models}
@@ -6443,6 +6687,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
             modelRequestConfig={(s as any).modelRequestConfig}
             draft={s.draft}
             activeRoleId={String(s.draft?.activeRoleId || '')}
+            activeWorkspaceId={String((s.draft as any)?.activeWorkspaceId || '')}
+            activeTargetKind={activeTargetKind}
             tab={settingsTab}
             onTabChange={setSettingsTab}
             dataDirectory={dataDirectory}
@@ -6453,7 +6699,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
         <ProvidersDialog open={s.modal === 'providers'} controller={controller} providers={providers} draft={s.draft} models={s.models} />
         <RoleDialog open={s.modal === 'role'} controller={controller} providers={providers} modelGroups={modelGroups} draft={s.draft} models={s.models} tools={(s as any).tools} />
         <GroupDialog open={s.modal === 'group'} controller={controller} roles={roles} draft={s.draft} />
-        <ConfirmDialog open={s.modal === 'confirm'} controller={controller} draft={s.draft} roles={roles} groups={groups} providers={providers} />
+        <WorkspaceDialog open={s.modal === 'workspace'} controller={controller} draft={s.draft} />
+        <ConfirmDialog open={s.modal === 'confirm'} controller={controller} draft={s.draft} roles={roles} groups={groups} providers={providers} workspaces={workspaces} />
         <MermaidDialog open={s.modal === 'mermaid'} controller={controller} mermaid={s.mermaid} />
         <ImageDialog open={s.modal === 'image'} controller={controller} viewer={s.imageViewer} />
       </Box>
@@ -6829,6 +7076,7 @@ function PluginSettingsPage(props: {
   data: any
   roles: any[]
   groups: any[]
+  workspaces: any[]
   providers: any[]
   modelGroups: any
   models: any
@@ -6836,11 +7084,13 @@ function PluginSettingsPage(props: {
   modelRequestConfig: any
   draft: any
   activeRoleId: string
+  activeWorkspaceId: string
+  activeTargetKind: string
   tab: SettingsTab
   onTabChange: (tab: SettingsTab) => void
   dataDirectory?: AiChatDataDirectory
 }) {
-  const { controller, loading, data, roles, groups, providers, modelGroups, models, tools, modelRequestConfig, draft, activeRoleId, tab, onTabChange, dataDirectory } = props
+  const { controller, loading, data, roles, groups, workspaces, providers, modelGroups, models, tools, modelRequestConfig, draft, activeRoleId, activeWorkspaceId, activeTargetKind, tab, onTabChange, dataDirectory } = props
   const [treeHotkeyRecording, setTreeHotkeyRecording] = React.useState(false)
 
   React.useEffect(() => {
@@ -7410,6 +7660,18 @@ function PluginSettingsPage(props: {
             )}
           </Stack>
         </Paper>,
+    )
+  }
+
+  if (tab === 'workspaces') {
+    return wrapSettingsPanel(
+      <WorkspacesSettingsPanel
+        controller={controller}
+        loading={loading}
+        workspaces={workspaces}
+        activeWorkspaceId={activeWorkspaceId}
+        activeTargetKind={activeTargetKind}
+      />,
     )
   }
 

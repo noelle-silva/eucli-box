@@ -7,16 +7,17 @@ import (
 )
 
 type sessionStorageDocument struct {
-	ID         string                 `json:"id"`
-	RoleID     string                 `json:"roleId"`
-	GroupID    string                 `json:"groupId,omitempty"`
-	Title      string                 `json:"title"`
-	Status     string                 `json:"status"`
-	Messages   []messageStorageRecord `json:"messages"`
-	Metadata   map[string]string      `json:"metadata,omitempty"`
-	CreatedAt  time.Time              `json:"createdAt"`
-	UpdatedAt  time.Time              `json:"updatedAt"`
-	LastActive time.Time              `json:"lastActive"`
+	ID          string                 `json:"id"`
+	RoleID      string                 `json:"roleId"`
+	GroupID     string                 `json:"groupId,omitempty"`
+	WorkspaceID string                 `json:"workspaceId,omitempty"`
+	Title       string                 `json:"title"`
+	Status      string                 `json:"status"`
+	Messages    []messageStorageRecord `json:"messages"`
+	Metadata    map[string]string      `json:"metadata,omitempty"`
+	CreatedAt   time.Time              `json:"createdAt"`
+	UpdatedAt   time.Time              `json:"updatedAt"`
+	LastActive  time.Time              `json:"lastActive"`
 }
 
 type messageStorageRecord struct {
@@ -44,16 +45,17 @@ func toSessionStorageDocument(session types.Session) sessionStorageDocument {
 		messages = append(messages, toMessageStorageRecord(message))
 	}
 	return sessionStorageDocument{
-		ID:         session.ID,
-		RoleID:     session.RoleID,
-		GroupID:    session.GroupID,
-		Title:      session.Title,
-		Status:     session.Status,
-		Messages:   messages,
-		Metadata:   session.Metadata,
-		CreatedAt:  session.CreatedAt,
-		UpdatedAt:  session.UpdatedAt,
-		LastActive: session.LastActive,
+		ID:          session.ID,
+		RoleID:      session.RoleID,
+		GroupID:     session.GroupID,
+		WorkspaceID: session.WorkspaceID,
+		Title:       session.Title,
+		Status:      session.Status,
+		Messages:    messages,
+		Metadata:    session.Metadata,
+		CreatedAt:   session.CreatedAt,
+		UpdatedAt:   session.UpdatedAt,
+		LastActive:  session.LastActive,
 	}
 }
 

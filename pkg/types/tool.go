@@ -92,13 +92,31 @@ type ToolAction struct {
 }
 
 type ToolRunPlan struct {
-	ID         string             `json:"id"`
-	Action     ToolAction         `json:"action"`
-	Tool       ToolDefinition     `json:"tool"`
-	Decision   PermissionDecision `json:"decision"`
-	PlanStatus ToolPlanStatus     `json:"planStatus"`
-	Executable string             `json:"executable,omitempty"`
-	CreatedAt  time.Time          `json:"createdAt"`
+	ID             string              `json:"id"`
+	RoleID         string              `json:"roleId,omitempty"`
+	Action         ToolAction          `json:"action"`
+	Tool           ToolDefinition      `json:"tool"`
+	Decision       PermissionDecision  `json:"decision"`
+	WorkspaceFence *ToolWorkspaceFence `json:"workspaceFence,omitempty"`
+	PlanStatus     ToolPlanStatus      `json:"planStatus"`
+	Executable     string              `json:"executable,omitempty"`
+	CreatedAt      time.Time           `json:"createdAt"`
+}
+
+type ToolWorkspaceFence struct {
+	WorkspaceID           string                   `json:"workspaceId"`
+	RegisteredDirectories []WorkspaceDirectory     `json:"registeredDirectories,omitempty"`
+	Paths                 []ToolWorkspaceFencePath `json:"paths,omitempty"`
+	RequiresConfirmation  bool                     `json:"requiresConfirmation"`
+}
+
+type ToolWorkspaceFencePath struct {
+	Argument              string `json:"argument"`
+	RawPath               string `json:"rawPath"`
+	AbsolutePath          string `json:"absolutePath"`
+	WithinWorkspace       bool   `json:"withinWorkspace"`
+	MatchedDirectoryAlias string `json:"matchedDirectoryAlias,omitempty"`
+	Reason                string `json:"reason,omitempty"`
 }
 
 type ToolPlanStatus string
@@ -138,12 +156,13 @@ type ToolConfirmation struct {
 }
 
 type PermissionDecision struct {
-	ID        string    `json:"id"`
-	ActionID  string    `json:"actionId"`
-	ToolName  string    `json:"toolName"`
-	Status    string    `json:"status"`
-	Reason    string    `json:"reason"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID        string         `json:"id"`
+	ActionID  string         `json:"actionId"`
+	ToolName  string         `json:"toolName"`
+	Status    string         `json:"status"`
+	Reason    string         `json:"reason"`
+	Details   map[string]any `json:"details,omitempty"`
+	CreatedAt time.Time      `json:"createdAt"`
 }
 
 const (

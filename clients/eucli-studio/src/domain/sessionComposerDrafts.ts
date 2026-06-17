@@ -1,4 +1,4 @@
-export type ComposerDraftTargetKind = 'role' | 'group'
+export type ComposerDraftTargetKind = 'role' | 'group' | 'workspace'
 
 export type ComposerDraftAddress = {
   kind: ComposerDraftTargetKind
@@ -20,12 +20,17 @@ function text(value: unknown) {
 }
 
 function activeTargetKind(state: any): ComposerDraftTargetKind {
-  return text(state?.draft?.activeTargetKind || state?.data?.ui?.activeTargetKind) === 'group' ? 'group' : 'role'
+  const kind = text(state?.draft?.activeTargetKind || state?.data?.ui?.activeTargetKind)
+  if (kind === 'group') return 'group'
+  if (kind === 'workspace') return 'workspace'
+  return 'role'
 }
 
 function activeTargetId(state: any, kind: ComposerDraftTargetKind) {
   return kind === 'group'
     ? text(state?.draft?.activeGroupId || state?.data?.ui?.activeGroupId)
+    : kind === 'workspace'
+      ? text(state?.draft?.activeWorkspaceId || state?.data?.ui?.activeWorkspaceId)
     : text(state?.draft?.activeRoleId || state?.data?.ui?.activeRoleId)
 }
 
@@ -42,12 +47,12 @@ export function activeComposerDraftAddress(state: any): ComposerDraftAddress | n
   const targetId = activeTargetId(state, kind)
   if (!targetId) return null
 
-  const pending = kind === 'group' ? state.pendingGroupChat : state.pendingChat
-  const pendingTargetId = kind === 'group' ? text(pending?.groupId) : text(pending?.roleId)
+  const pending = kind === 'group' ? state.pendingGroupChat : kind === 'workspace' ? state.pendingWorkspaceChat : state.pendingChat
+  const pendingTargetId = kind === 'group' ? text(pending?.groupId) : kind === 'workspace' ? text(pending?.workspaceId) : text(pending?.roleId)
   const pendingChatId = text(pending?.chat?.id)
   if (pending && pendingTargetId === targetId && pendingChatId) return composerDraftAddressFor(kind, targetId, 'pending', pendingChatId)
 
-  const box = kind === 'group' ? state.data?.chatsByGroup?.[targetId] : state.data?.chatsByRole?.[targetId]
+  const box = kind === 'group' ? state.data?.chatsByGroup?.[targetId] : kind === 'workspace' ? state.data?.chatsByWorkspace?.[targetId] : state.data?.chatsByRole?.[targetId]
   const chatId = text(box?.activeChatId)
   return composerDraftAddressFor(kind, targetId, chatId ? 'session' : 'new', chatId || NEW_CHAT_ID)
 }

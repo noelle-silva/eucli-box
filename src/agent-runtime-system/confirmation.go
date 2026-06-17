@@ -139,7 +139,9 @@ func (s *system) waitForConfirmations(ctx context.Context, record *runRecord, pl
 				return nil, err
 			}
 			finishToolConfirmationRequest(request, nil)
-			if confirmed.Decision.Status == types.PermissionStatusAllowed {
+			if confirmed.PlanStatus == types.ToolPlanStatusNeedsConfirmation {
+				// The next waiting prompt is published after it is registered as pending.
+			} else if confirmed.Decision.Status == types.PermissionStatusAllowed {
 				s.publish(record.runID, "tool_confirmation_applied", confirmed.Decision)
 			} else {
 				s.publish(record.runID, "tool_confirmation_rejected", confirmed.Decision)
@@ -151,16 +153,27 @@ func (s *system) waitForConfirmations(ctx context.Context, record *runRecord, pl
 		}
 	}
 	cleanup(nil)
-	_, err = s.updateRun(record.runID, types.RunStatusRunning, "")
-	if err != nil {
-		return nil, err
+	if !confirmedPlansNeedMoreConfirmation(confirmedByDecisionID) {
+		_, err = s.updateRun(record.runID, types.RunStatusRunning, "")
+		if err != nil {
+			return nil, err
+		}
+		s.publishAssistantMessageUpdate(record)
 	}
-	s.publishAssistantMessageUpdate(record)
 	confirmed := make([]types.ToolRunPlan, 0, len(plans))
 	for _, plan := range plans {
 		confirmed = append(confirmed, confirmedByDecisionID[plan.Decision.ID])
 	}
 	return confirmed, nil
+}
+
+func confirmedPlansNeedMoreConfirmation(plans map[string]types.ToolRunPlan) bool {
+	for _, plan := range plans {
+		if plan.PlanStatus == types.ToolPlanStatusNeedsConfirmation {
+			return true
+		}
+	}
+	return false
 }
 
 func finishToolConfirmationRequest(request toolConfirmationRequest, err error) {
@@ -183,7 +196,9 @@ func drainToolConfirmationRequests(ch <-chan toolConfirmationRequest, err error)
 
 func (s *system) recordAppliedToolConfirmation(ctx context.Context, record *runRecord, plan types.ToolRunPlan) error {
 	state := "rejected"
-	if plan.Decision.Status == types.PermissionStatusAllowed {
+	if plan.PlanStatus == types.ToolPlanStatusNeedsConfirmation {
+		state = "needs_confirmation"
+	} else if plan.Decision.Status == types.PermissionStatusAllowed {
 		state = "approved"
 	}
 	upsertRunToolPart(record, plan.Action, state, &plan.Decision, nil)

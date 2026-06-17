@@ -26,7 +26,7 @@ type ChatMessageListProps = {
   messages: any[]
   roles: any[]
   activeRole: any
-  activeTargetKind: 'role' | 'group'
+  activeTargetKind: 'role' | 'group' | 'workspace'
   activeVisibleRunCards: any[]
   groupedAttMsgsByRootMid: Map<string, any[]>
   prevAiMidByAssistantId: Map<string, string>

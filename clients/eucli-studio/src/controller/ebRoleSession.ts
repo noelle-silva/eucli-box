@@ -10,58 +10,41 @@ type GroupSessionInput = {
   sessionId: string
 }
 
+type WorkspaceSessionInput = {
+  workspaceId: string
+  sessionId: string
+}
+
+type SessionTargetKind = 'role' | 'group' | 'workspace'
+
+type SessionTarget = {
+  kind: SessionTargetKind
+  targetId: string
+  sessionId: string
+}
+
 export async function updateRoleSessionTitle(netRequest: EbNetRequest, input: RoleSessionInput & { title: string }) {
-  const { roleId, sessionId } = normalizeRoleSessionInput(input)
-  const response = await netRequest({
-    method: 'PATCH',
-    path: `/api/roles/${encodeURIComponent(roleId)}/sessions/${encodeURIComponent(sessionId)}/title`,
-    body: { title: String(input.title || '').trim() || '新聊天' },
-    timeoutMs: 15000,
-  })
-  return response?.body
+  return updateSessionTitle(netRequest, normalizeSessionTarget('role', input), input.title)
 }
 
 export async function updateGroupSessionTitle(netRequest: EbNetRequest, input: GroupSessionInput & { title: string }) {
-  const { groupId, sessionId } = normalizeGroupSessionInput(input)
-  const response = await netRequest({
-    method: 'PATCH',
-    path: `/api/groups/${encodeURIComponent(groupId)}/sessions/${encodeURIComponent(sessionId)}/title`,
-    body: { title: String(input.title || '').trim() || '群聊' },
-    timeoutMs: 15000,
-  })
-  return response?.body
+  return updateSessionTitle(netRequest, normalizeSessionTarget('group', input), input.title)
+}
+
+export async function updateWorkspaceSessionTitle(netRequest: EbNetRequest, input: WorkspaceSessionInput & { title: string }) {
+  return updateSessionTitle(netRequest, normalizeSessionTarget('workspace', input), input.title)
 }
 
 export async function updateRoleSessionMessage(netRequest: EbNetRequest, input: RoleSessionInput & { messageId: string; content?: string; parts?: any[] }) {
-  const { roleId, sessionId } = normalizeRoleSessionInput(input)
-  const messageId = String(input.messageId || '').trim()
-  if (!messageId) throw new Error('消息无效')
-  const body: any = {}
-  if (Object.prototype.hasOwnProperty.call(input, 'content')) body.content = String(input.content ?? '')
-  if (Object.prototype.hasOwnProperty.call(input, 'parts')) body.parts = serializeSessionMessagePartsForPatch(input.parts)
-  const response = await netRequest({
-    method: 'PATCH',
-    path: `/api/roles/${encodeURIComponent(roleId)}/sessions/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(messageId)}`,
-    body,
-    timeoutMs: 15000,
-  })
-  return response?.body
+  return updateSessionMessage(netRequest, normalizeSessionTarget('role', input), input)
 }
 
 export async function updateGroupSessionMessage(netRequest: EbNetRequest, input: GroupSessionInput & { messageId: string; content?: string; parts?: any[] }) {
-  const { groupId, sessionId } = normalizeGroupSessionInput(input)
-  const messageId = String(input.messageId || '').trim()
-  if (!messageId) throw new Error('消息无效')
-  const body: any = {}
-  if (Object.prototype.hasOwnProperty.call(input, 'content')) body.content = String(input.content ?? '')
-  if (Object.prototype.hasOwnProperty.call(input, 'parts')) body.parts = serializeSessionMessagePartsForPatch(input.parts)
-  const response = await netRequest({
-    method: 'PATCH',
-    path: `/api/groups/${encodeURIComponent(groupId)}/sessions/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(messageId)}`,
-    body,
-    timeoutMs: 15000,
-  })
-  return response?.body
+  return updateSessionMessage(netRequest, normalizeSessionTarget('group', input), input)
+}
+
+export async function updateWorkspaceSessionMessage(netRequest: EbNetRequest, input: WorkspaceSessionInput & { messageId: string; content?: string; parts?: any[] }) {
+  return updateSessionMessage(netRequest, normalizeSessionTarget('workspace', input), input)
 }
 
 function serializeSessionMessagePartsForPatch(partsRaw: unknown) {
@@ -160,65 +143,98 @@ function plainObjectCopy(value: unknown) {
 }
 
 export async function deleteRoleSessionMessage(netRequest: EbNetRequest, input: RoleSessionInput & { messageId: string }) {
-  const { roleId, sessionId } = normalizeRoleSessionInput(input)
-  const messageId = String(input.messageId || '').trim()
-  if (!messageId) throw new Error('消息无效')
-  const response = await netRequest({
-    method: 'DELETE',
-    path: `/api/roles/${encodeURIComponent(roleId)}/sessions/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(messageId)}`,
-    timeoutMs: 15000,
-  })
-  return response?.body
+  return deleteSessionMessage(netRequest, normalizeSessionTarget('role', input), input.messageId)
 }
 
 export async function deleteGroupSessionMessage(netRequest: EbNetRequest, input: GroupSessionInput & { messageId: string }) {
-  const { groupId, sessionId } = normalizeGroupSessionInput(input)
-  const messageId = String(input.messageId || '').trim()
-  if (!messageId) throw new Error('消息无效')
-  const response = await netRequest({
-    method: 'DELETE',
-    path: `/api/groups/${encodeURIComponent(groupId)}/sessions/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(messageId)}`,
-    timeoutMs: 15000,
-  })
-  return response?.body
+  return deleteSessionMessage(netRequest, normalizeSessionTarget('group', input), input.messageId)
+}
+
+export async function deleteWorkspaceSessionMessage(netRequest: EbNetRequest, input: WorkspaceSessionInput & { messageId: string }) {
+  return deleteSessionMessage(netRequest, normalizeSessionTarget('workspace', input), input.messageId)
 }
 
 export async function deleteRoleSessionMessageSubtree(netRequest: EbNetRequest, input: RoleSessionInput & { messageId: string }) {
-  const { roleId, sessionId } = normalizeRoleSessionInput(input)
-  const messageId = String(input.messageId || '').trim()
-  if (!messageId) throw new Error('消息无效')
-  const response = await netRequest({
-    method: 'DELETE',
-    path: `/api/roles/${encodeURIComponent(roleId)}/sessions/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(messageId)}/subtree`,
-    timeoutMs: 15000,
-  })
-  return response?.body
+  return deleteSessionMessageSubtree(netRequest, normalizeSessionTarget('role', input), input.messageId)
 }
 
 export async function deleteGroupSessionMessageSubtree(netRequest: EbNetRequest, input: GroupSessionInput & { messageId: string }) {
-  const { groupId, sessionId } = normalizeGroupSessionInput(input)
-  const messageId = String(input.messageId || '').trim()
-  if (!messageId) throw new Error('消息无效')
+  return deleteSessionMessageSubtree(netRequest, normalizeSessionTarget('group', input), input.messageId)
+}
+
+export async function deleteWorkspaceSessionMessageSubtree(netRequest: EbNetRequest, input: WorkspaceSessionInput & { messageId: string }) {
+  return deleteSessionMessageSubtree(netRequest, normalizeSessionTarget('workspace', input), input.messageId)
+}
+
+function normalizeSessionTarget(kind: SessionTargetKind, input: Partial<RoleSessionInput & GroupSessionInput & WorkspaceSessionInput>) {
+  const sessionId = String(input.sessionId || '').trim()
+  if (!sessionId) throw new Error('会话无效')
+  const targetId = kind === 'group'
+    ? String(input.groupId || '').trim()
+    : kind === 'workspace'
+      ? String(input.workspaceId || '').trim()
+      : String(input.roleId || '').trim()
+  if (!targetId) throw new Error(kind === 'group' ? '群组无效' : kind === 'workspace' ? '工作区无效' : '角色无效')
+  return { kind, targetId, sessionId }
+}
+
+function sessionRouteBasePath(target: SessionTarget) {
+  const targetId = encodeURIComponent(target.targetId)
+  const sessionId = encodeURIComponent(target.sessionId)
+  if (target.kind === 'group') return `/api/groups/${targetId}/sessions/${sessionId}`
+  if (target.kind === 'workspace') return `/api/workspaces/${targetId}/sessions/${sessionId}`
+  return `/api/roles/${targetId}/sessions/${sessionId}`
+}
+
+function defaultSessionTitle(target: SessionTarget) {
+  if (target.kind === 'group') return '群聊'
+  if (target.kind === 'workspace') return '工作区会话'
+  return '新聊天'
+}
+
+async function updateSessionTitle(netRequest: EbNetRequest, target: SessionTarget, title: string) {
   const response = await netRequest({
-    method: 'DELETE',
-    path: `/api/groups/${encodeURIComponent(groupId)}/sessions/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(messageId)}/subtree`,
+    method: 'PATCH',
+    path: `${sessionRouteBasePath(target)}/title`,
+    body: { title: String(title || '').trim() || defaultSessionTitle(target) },
     timeoutMs: 15000,
   })
   return response?.body
 }
 
-function normalizeRoleSessionInput(input: RoleSessionInput) {
-  const roleId = String(input.roleId || '').trim()
-  const sessionId = String(input.sessionId || '').trim()
-  if (!roleId) throw new Error('角色无效')
-  if (!sessionId) throw new Error('会话无效')
-  return { roleId, sessionId }
+async function updateSessionMessage(netRequest: EbNetRequest, target: SessionTarget, input: { messageId: string; content?: string; parts?: any[] }) {
+  const messageId = String(input.messageId || '').trim()
+  if (!messageId) throw new Error('消息无效')
+  const body: any = {}
+  if (Object.prototype.hasOwnProperty.call(input, 'content')) body.content = String(input.content ?? '')
+  if (Object.prototype.hasOwnProperty.call(input, 'parts')) body.parts = serializeSessionMessagePartsForPatch(input.parts)
+  const response = await netRequest({
+    method: 'PATCH',
+    path: `${sessionRouteBasePath(target)}/messages/${encodeURIComponent(messageId)}`,
+    body,
+    timeoutMs: 15000,
+  })
+  return response?.body
 }
 
-function normalizeGroupSessionInput(input: GroupSessionInput) {
-  const groupId = String(input.groupId || '').trim()
-  const sessionId = String(input.sessionId || '').trim()
-  if (!groupId) throw new Error('群组无效')
-  if (!sessionId) throw new Error('会话无效')
-  return { groupId, sessionId }
+async function deleteSessionMessage(netRequest: EbNetRequest, target: SessionTarget, messageIdRaw: string) {
+  const messageId = String(messageIdRaw || '').trim()
+  if (!messageId) throw new Error('消息无效')
+  const response = await netRequest({
+    method: 'DELETE',
+    path: `${sessionRouteBasePath(target)}/messages/${encodeURIComponent(messageId)}`,
+    timeoutMs: 15000,
+  })
+  return response?.body
+}
+
+async function deleteSessionMessageSubtree(netRequest: EbNetRequest, target: SessionTarget, messageIdRaw: string) {
+  const messageId = String(messageIdRaw || '').trim()
+  if (!messageId) throw new Error('消息无效')
+  const response = await netRequest({
+    method: 'DELETE',
+    path: `${sessionRouteBasePath(target)}/messages/${encodeURIComponent(messageId)}/subtree`,
+    timeoutMs: 15000,
+  })
+  return response?.body
 }

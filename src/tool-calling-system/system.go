@@ -11,7 +11,7 @@ type System interface {
 	TextToolInstructions(ctx context.Context, tools []types.ToolDefinition) (types.PromptMessage, error)
 	ParseTextToolRequests(ctx context.Context, content string) ([]types.ToolIntent, error)
 	NormalizeIntent(ctx context.Context, intent types.ToolIntent) (types.ToolAction, error)
-	Prepare(ctx context.Context, roleID string, action types.ToolAction) (types.ToolRunPlan, error)
+	Prepare(ctx context.Context, roleID string, workspaceID string, action types.ToolAction) (types.ToolRunPlan, error)
 	ApplyConfirmation(ctx context.Context, plan types.ToolRunPlan, confirmation types.ToolConfirmation) (types.ToolRunPlan, error)
 	Execute(ctx context.Context, plan types.ToolRunPlan) (types.ToolResult, error)
 	SaveTool(ctx context.Context, tool types.ToolDefinition) error
@@ -30,6 +30,7 @@ type StorageSystem interface {
 	LoadTool(ctx context.Context, toolID string) (types.ToolDefinition, error)
 	ListTools(ctx context.Context) ([]types.ToolSummary, error)
 	SaveToolUserSettings(ctx context.Context, toolID string, settings types.ToolUserSettings) (types.ToolDefinition, error)
+	LoadWorkspace(ctx context.Context, workspaceID string) (types.Workspace, error)
 }
 
 type Config struct {

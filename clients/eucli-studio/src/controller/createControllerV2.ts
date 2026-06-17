@@ -33,6 +33,7 @@ import {
   DEFAULT_CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES,
   CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MIN,
   CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MAX,
+  NEW_WORKSPACE_ID,
 } from '../domain/constants'
 import { splitRoleKey, splitChatKey, splitGroupKey, splitGroupChatKey } from '../domain/storageKeys'
 import { normalizeBranchId } from '../domain/branching'
@@ -86,6 +87,7 @@ import { createFavoritesOperations } from './favoritesOperations'
 import { createEntityEditors } from './entityEditors'
 import { createChatOperations } from './chatOperations'
 import { createPersistence } from './persistence'
+import { createWorkspaceManager } from './workspaceManager'
 import { updateGroupSessionTitle, updateRoleSessionTitle } from './ebRoleSession'
 import { getRunState, isTerminalRunStatus, listActiveRoleRuns, pollRunUntilTerminal, type EbRunState } from './ebRoleRun'
 import { createEbRunEventConsumer } from './ebRunEvents'
@@ -93,6 +95,7 @@ import { createToolCatalog } from './toolCatalog'
 import { createModelRequestConfigController, defaultModelRequestConfigState } from './modelRequestConfig'
 import { addNativeToolsToPolicy, addToolsToPolicy, emptyRoleToolPolicy, removeNativeToolFromPolicy, removeToolFromPolicy, setToolRunMode } from '../domain/toolPolicy'
 import { readActiveEbRunCardsForTarget, removeEbRoleRunCard, upsertEbRoleRunCard } from '../domain/activeRunCards'
+import { loadWorkspaceSession, saveWorkspaceSession } from './workspaceBridge'
 
 export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilities }): {
   controller: AiChatController
@@ -121,6 +124,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     modelRequestConfig: defaultModelRequestConfigState(),
     pendingChat: null as any,
     pendingGroupChat: null as any,
+    pendingWorkspaceChat: null as any,
     branchDraft: null as any,
     draft: {
       input: '',
@@ -129,6 +133,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       activeTargetKind: 'role' as string,
       activeRoleId: '',
       activeGroupId: '',
+      activeWorkspaceId: '',
 
       editRoleId: '',
       roleName: '',
@@ -164,6 +169,11 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       groupRandomMinCount: 1,
       groupRandomMaxCount: 2,
 
+      editWorkspaceId: '',
+      workspaceName: '',
+      workspacePrompt: '',
+      workspaceDirectories: [] as Array<{ path: string; alias: string; description: string }>,
+
       editProviderId: '',
       providerName: '',
       providerBaseUrl: '',
@@ -175,6 +185,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
 
       deleteRoleId: '',
       deleteGroupId: '',
+      deleteWorkspaceId: '',
       deleteProviderId: '',
       renderSafetyPolicyTarget: '',
     } as any,
@@ -246,6 +257,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     state.modal = ''
     state.draft.deleteRoleId = ''
     ;(state.draft as any).deleteGroupId = ''
+    ;(state.draft as any).deleteWorkspaceId = ''
     state.draft.deleteProviderId = ''
     state.draft.roleToolWhitelistOpen = false
     state.draft.roleToolAddOpen = false
@@ -283,6 +295,12 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       ;(state.draft as any).groupRandomWeights = {}
       ;(state.draft as any).groupRandomMinCount = 1
       ;(state.draft as any).groupRandomMaxCount = 2
+    }
+    if (String((state.draft as any).editWorkspaceId || '') === NEW_WORKSPACE_ID) {
+      ;(state.draft as any).editWorkspaceId = ''
+      ;(state.draft as any).workspaceName = ''
+      ;(state.draft as any).workspacePrompt = ''
+      ;(state.draft as any).workspaceDirectories = []
     }
     render()
   }
@@ -470,13 +488,21 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     loadSplitMeta: loadSplitMetaCached,
     getSplitMetaCache,
   })
-  const { loadShell, loadChat, ensureChatLoaded, ensureActiveChatLoaded, removeChat, upsertLoadedChat, removeLoadedChat } = lazyChatStore
+  const {
+    loadShell,
+    loadChat: loadStoredChat,
+    ensureChatLoaded: ensureStoredChatLoaded,
+    ensureActiveChatLoaded: ensureStoredActiveChatLoaded,
+    removeChat,
+    upsertLoadedChat,
+    removeLoadedChat,
+  } = lazyChatStore
 
   async function reloadRoleSession(roleIdRaw: any, sessionIdRaw: any) {
     const roleId = String(roleIdRaw || '').trim()
     const sessionId = String(sessionIdRaw || '').trim()
     if (!roleId || !sessionId) return null
-    const chat = await loadChat('role', roleId, sessionId)
+    const chat = await loadStoredChat('role', roleId, sessionId)
     if (!chat) return null
     const loaded = upsertLoadedChat('role', roleId, chat)
     ebRunEvents.flushSession(roleId, sessionId)
@@ -487,10 +513,23 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     const groupId = String(groupIdRaw || '').trim()
     const sessionId = String(sessionIdRaw || '').trim()
     if (!groupId || !sessionId) return null
-    const chat = await loadChat('group', groupId, sessionId)
+    const chat = await loadStoredChat('group', groupId, sessionId)
     if (!chat) return null
     const loaded = upsertLoadedChat('group', groupId, chat)
     ebRunEvents.flushSession('group', groupId, sessionId)
+    return loaded
+  }
+
+  async function reloadWorkspaceSession(workspaceIdRaw: any, sessionIdRaw: any) {
+    const workspaceId = String(workspaceIdRaw || '').trim()
+    const sessionId = String(sessionIdRaw || '').trim()
+    if (!workspaceId || !sessionId) return null
+    const request = capabilities.net?.request
+    if (typeof request !== 'function') return null
+    const chat = await loadWorkspaceSession(request, workspaceId, sessionId)
+    if (!chat) return null
+    const loaded = upsertWorkspaceChat(workspaceId, chat)
+    ebRunEvents.flushSession('workspace', workspaceId, sessionId)
     return loaded
   }
 
@@ -508,20 +547,25 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     getProvider,
     getRoleById,
     getGroupById,
+    getWorkspaceById,
     activeTargetKind,
     activeRole,
     activeGroup,
+    activeWorkspace,
     activeChatFromData,
     activeChat,
     clearPendingChat,
     clearPendingGroupChat,
+    clearPendingWorkspaceChat,
     ensureRoleDefaults,
     ensureGroupsList,
     ensureGroupChatsBoxBare,
+    ensureWorkspaceChatsBoxBare,
     ensureChatsBox,
     ensureChatsBoxBare,
     findChatByIds,
     findGroupChatByIds,
+    findWorkspaceChatByIds,
     pickChatModelRef,
   } = stateAccessors
 
@@ -544,8 +588,69 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     saveMetaOnly,
     saveRoleChat,
     saveGroupChat,
+    saveWorkspaceChat: async (workspaceId: string, chat: any, intent?: ChatSaveIntent) => {
+      const request = capabilities.net?.request
+      const roleId = String(chat?.roleId || state.draft?.activeRoleId || '').trim()
+      if (typeof request !== 'function') throw new Error('工作区保存通道不可用')
+      await saveWorkspaceSession(request, { workspaceId, roleId, chat })
+    },
   })
   const { saveMeta, saveCurrentChat } = persistence
+
+  const workspaceManager = createWorkspaceManager({
+    getState: () => state,
+    netRequest: capabilities.net?.request || ((() => Promise.resolve({})) as any),
+    emit,
+    render,
+    closeModal,
+    saveMeta,
+    scrollToBottomSoon,
+    showToast: api.ui?.showToast,
+    activeTargetKind,
+    activeRole,
+    activeWorkspace,
+    activeChatFromData,
+    clearPendingWorkspaceChat,
+    removeLoadedChat: (kind: 'role' | 'group' | 'workspace', targetId: string, chatId: string) => {
+      if (kind === 'workspace') {
+        const box = (state.data as any)?.chatsByWorkspace?.[String(targetId || '')]
+        if (!box || !Array.isArray(box.chats)) return
+        box.chats = box.chats.filter((chat: any) => String(chat?.id || '') !== String(chatId || ''))
+        return
+      }
+      removeLoadedChat(kind as any, targetId, chatId)
+    },
+  })
+  const {
+    refreshWorkspaces,
+    refreshActiveWorkspaceChats,
+    ensureWorkspaceChatLoaded,
+    ensureActiveWorkspaceChatLoaded,
+    upsertWorkspaceChat,
+    setActiveWorkspace,
+    setWorkspaceRole,
+    openNewWorkspaceEditor,
+    openWorkspaceEditor,
+    addWorkspaceDirectory,
+    removeWorkspaceDirectory,
+    setWorkspaceDirectoryField,
+    saveWorkspaceEditor,
+    deleteWorkspaceEditor,
+    createChatForActiveWorkspace,
+    pickChatForActiveWorkspace,
+    renameWorkspaceChatTitle,
+    deleteChatForWorkspace,
+  } = workspaceManager
+
+  async function ensureChatLoaded(kind: 'role' | 'group' | 'workspace', targetId: string, chatId: string) {
+    if (kind === 'workspace') return ensureWorkspaceChatLoaded(targetId, chatId)
+    return ensureStoredChatLoaded(kind, targetId, chatId)
+  }
+
+  async function ensureActiveChatLoaded() {
+    if (activeTargetKind() === 'workspace') return ensureActiveWorkspaceChatLoaded()
+    return ensureStoredActiveChatLoaded()
+  }
 
   // ============================================================
   // 8.1. SAVE & LOAD (bridge to splitStorage)
@@ -558,12 +663,17 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       state.data = split
       state.draft.activeRoleId = String(split?.ui?.activeRoleId || '')
       state.draft.activeGroupId = String((split?.ui as any)?.activeGroupId || '')
-      state.draft.activeTargetKind = String((split?.ui as any)?.activeTargetKind || 'role') === 'group' ? 'group' : 'role'
-      await ensureActiveChatLoaded()
+      ;(state.draft as any).activeWorkspaceId = String((split?.ui as any)?.activeWorkspaceId || '')
+      const targetKind = String((split?.ui as any)?.activeTargetKind || 'role').trim()
+      state.draft.activeTargetKind = targetKind === 'group' ? 'group' : targetKind === 'workspace' ? 'workspace' : 'role'
+      await refreshWorkspaces((state.draft as any).activeWorkspaceId || undefined).catch(() => null)
+      if (state.draft.activeTargetKind === 'workspace') await ensureActiveWorkspaceChatLoaded().catch(() => null)
+      else await ensureStoredActiveChatLoaded()
     } catch (e: any) {
       state.data = null
       state.draft.activeRoleId = ''
       state.draft.activeGroupId = ''
+      ;(state.draft as any).activeWorkspaceId = ''
       state.draft.activeTargetKind = 'role'
       api.ui?.showToast?.(String(e?.message || e || '加载失败'), { kind: 'error' })
     } finally {
@@ -579,12 +689,14 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       const runId = String(run?.id || '').trim()
       const roleId = String(run?.roleId || '').trim()
       const groupId = String((run as any)?.groupId || '').trim()
+      const workspaceId = String((run as any)?.workspaceId || '').trim()
       const sessionId = String(run?.sessionId || '').trim()
       if (!runId || !roleId || !sessionId) return false
       upsertEbRoleRunCard(state, {
         runId,
         roleId,
         groupId,
+        workspaceId,
         sessionId,
         inputMessageId: String(run?.inputMessageId || '').trim(),
         lastMessageId: String(run?.lastMessageId || run?.inputMessageId || '').trim(),
@@ -617,8 +729,11 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
           }
           const roleId = String(latest?.roleId || '').trim()
           const groupId = String((latest as any)?.groupId || '').trim()
+          const workspaceId = String((latest as any)?.workspaceId || '').trim()
           const sessionId = String(latest?.sessionId || '').trim()
-          if (groupId && sessionId && typeof reloadGroupSession === 'function') {
+          if (workspaceId && sessionId && typeof reloadWorkspaceSession === 'function') {
+            await reloadWorkspaceSession(workspaceId, sessionId).catch(() => null)
+          } else if (groupId && sessionId && typeof reloadGroupSession === 'function') {
             await reloadGroupSession(groupId, sessionId).catch(() => null)
           } else if (roleId && sessionId && typeof reloadRoleSession === 'function') {
             await reloadRoleSession(roleId, sessionId).catch(() => null)
@@ -664,19 +779,28 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
 
   async function activeRoleChatSettingsTarget() {
     if (!state.data) return null
-    if (activeTargetKind() !== 'role') return null
-    const target = activeRole()
+    const kind = activeTargetKind()
+    if (kind !== 'role' && kind !== 'workspace') return null
+    const target = kind === 'workspace' ? activeWorkspace() : activeRole()
     const targetId = String((target as any)?.id || '').trim()
     if (!targetId) return null
-    const pendingChat = pendingChatForTarget(state, 'role', targetId)
+    const pendingKind = kind === 'workspace' ? 'workspace' : 'role'
+    const pendingChat = pendingChatForTarget(state, pendingKind, targetId)
     if (!pendingChat) await ensureActiveChatLoaded()
     const chat = pendingChat || activeChatFromData()
     if (!chat) return null
-    return { targetId, pendingChat, chat }
+    return { targetId, pendingChat, chat, kind: kind === 'workspace' ? 'workspace' : 'role' as 'workspace' | 'role' }
   }
 
-  async function saveRoleChatSettingsTarget(target: { targetId: string; pendingChat: any; chat: any }) {
+  async function saveRoleChatSettingsTarget(target: { targetId: string; pendingChat: any; chat: any; kind: 'role' | 'workspace' }) {
     if (target.pendingChat) return
+    if (target.kind === 'workspace') {
+      const request = capabilities.net?.request
+      const roleId = String(target.chat?.roleId || state.draft?.activeRoleId || '').trim()
+      if (typeof request !== 'function') throw new Error('工作区保存通道不可用')
+      await saveWorkspaceSession(request, { workspaceId: target.targetId, roleId, chat: target.chat })
+      return
+    }
     await saveRoleChat(target.targetId, target.chat)
   }
 
@@ -759,7 +883,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     const mid = String(messageId || '').trim()
     if (!mid) return null
     const kind = activeTargetKind()
-    const targetEntity = kind === 'group' ? activeGroup() : activeRole()
+    const targetEntity = kind === 'group' ? activeGroup() : kind === 'workspace' ? activeWorkspace() : activeRole()
     const targetId = String((targetEntity as any)?.id || '').trim()
     if (!targetId) return null
     const pendingChat =
@@ -767,6 +891,10 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
         ? state.pendingGroupChat && String(state.pendingGroupChat.groupId || '') === targetId
           ? state.pendingGroupChat.chat
           : null
+        : kind === 'workspace'
+          ? (state as any).pendingWorkspaceChat && String((state as any).pendingWorkspaceChat.workspaceId || '') === targetId
+            ? (state as any).pendingWorkspaceChat.chat
+            : null
         : state.pendingChat && String(state.pendingChat.roleId || '') === targetId
           ? state.pendingChat.chat
           : null
@@ -857,10 +985,10 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     deleteProvider,
     createChatForActiveRole,
     createChatForActiveGroup,
-    createChatForActiveTarget,
+    createChatForActiveTarget: createEntityChatForActiveTarget,
     pickChatForActiveRole,
     pickChatForActiveGroup,
-    pickChatForActiveTarget,
+    pickChatForActiveTarget: pickEntityChatForActiveTarget,
     renameChatTitle,
     renameGroupChatTitle,
     collectChatImagePathSet,
@@ -870,6 +998,16 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     deleteChatForRole,
     deleteChatForGroup,
   } = entityEditors
+
+  function createChatForActiveTarget() {
+    if (activeTargetKind() === 'workspace') return createChatForActiveWorkspace()
+    return createEntityChatForActiveTarget()
+  }
+
+  function pickChatForActiveTarget(chatId: any) {
+    if (activeTargetKind() === 'workspace') return pickChatForActiveWorkspace(chatId)
+    return pickEntityChatForActiveTarget(chatId)
+  }
 
   // ============================================================
   // 16. CHAT OPERATIONS
@@ -881,9 +1019,10 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     showToast: api.ui?.showToast,
     save,
     ensureActiveChatLoaded,
-    ensureChatLoaded: (kind: 'role' | 'group', targetId: string, chatId: string) => ensureChatLoaded(kind, targetId, chatId),
+    ensureChatLoaded: (kind: 'role' | 'group' | 'workspace', targetId: string, chatId: string) => ensureChatLoaded(kind as any, targetId, chatId),
     reloadRoleSession,
     reloadGroupSession,
+    reloadWorkspaceSession,
     waitForChatSettingsSave,
     emit,
     render,
@@ -1004,6 +1143,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     setSideTab: (tab: string) => {},
     setActiveRole: (rid: string) => {},
     setActiveGroup: (gid: string) => {},
+    setActiveWorkspace: (wid: string) => {},
     setActiveChat: (cid: string) => {},
     hydrateRefImages,
   }
@@ -1103,6 +1243,12 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       ensureActiveChatLoaded().catch(() => {}).finally(() => emit())
       saveMeta().catch(() => {})
       emit()
+    },
+    setActiveWorkspace: (workspaceId: any) => {
+      setActiveWorkspace(workspaceId)
+    },
+    setWorkspaceRole: (roleId: any) => {
+      setWorkspaceRole(roleId)
     },
     setActiveChat: (chatId: any) => {
       saveActiveComposerDraftMirror(state)
@@ -1674,6 +1820,12 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     openGroupEditor: (groupId: any) => openGroupEditor(String(groupId || '')),
     createGroup: () => createGroup(),
     saveGroup: () => saveGroupEditor(),
+    openWorkspaceEditor: (workspaceId: any) => openWorkspaceEditor(String(workspaceId || '')),
+    openNewWorkspaceEditor: () => openNewWorkspaceEditor(),
+    saveWorkspace: () => saveWorkspaceEditor(),
+    addWorkspaceDirectory: () => addWorkspaceDirectory(),
+    removeWorkspaceDirectory: (index: any) => removeWorkspaceDirectory(index),
+    setWorkspaceDirectoryField: (index: any, field: any, value: any) => setWorkspaceDirectoryField(index, field, value),
     askDeleteRole: (roleId: any) => {
       const rid = String(roleId || '')
       if (!rid || rid === NEW_ROLE_ID) return
@@ -1692,14 +1844,26 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       state.modal = 'confirm'
       emit()
     },
+    askDeleteWorkspace: (workspaceId: any) => {
+      const wid = String(workspaceId || '')
+      if (!wid || wid === NEW_WORKSPACE_ID) return
+      ;(state.draft as any).deleteWorkspaceId = wid
+      state.draft.deleteRoleId = ''
+      ;(state.draft as any).deleteGroupId = ''
+      state.draft.deleteProviderId = ''
+      state.modal = 'confirm'
+      emit()
+    },
     confirmDelete: async () => {
       const rid = String(state.draft.deleteRoleId || '')
       const gid = String((state.draft as any).deleteGroupId || '')
+      const wid = String((state.draft as any).deleteWorkspaceId || '')
       const pid = String(state.draft.deleteProviderId || '')
       const nextRenderSafetyPolicy = String((state.draft as any).renderSafetyPolicyTarget || '').trim() === 'unsafe' ? 'unsafe' : ''
       let ok = true
       if (rid) ok = await deleteRole(rid)
       if (gid) ok = await deleteGroup(gid)
+      if (wid) ok = await deleteWorkspaceEditor(wid)
       if (pid) ok = await deleteProvider(pid)
       if (nextRenderSafetyPolicy && state.data) {
         ;(state.data.settings as any).renderSafetyPolicy = nextRenderSafetyPolicy
@@ -1717,14 +1881,17 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       let t0 = 0
       const cost = () => ((now() - t0) / 1000).toFixed(1)
       let roleId = ''
+      let workspaceId = ''
       let sessionId = ''
       let mid = ''
       return Promise.resolve()
         .then(() => {
           const located = locateMessageInActiveChat(String(messageId || ''))
-          if (!located || String(located.kind || '') !== 'role') throw new Error('仅角色会话已接入 Mermaid AI 修复根动作')
+          const kind = String(located?.kind || '')
+          if (!located || (kind !== 'role' && kind !== 'workspace')) throw new Error('当前会话暂未接入 Mermaid AI 修复')
           sessionId = String(located.chat?.id || '').trim()
-          roleId = String(located.targetId || '').trim()
+          workspaceId = kind === 'workspace' ? String(located.targetId || '').trim() : ''
+          roleId = kind === 'workspace' ? String((located.chat as any)?.roleId || state.draft?.activeRoleId || '').trim() : String(located.targetId || '').trim()
           mid = String(messageId || '').trim()
           if (!roleId || !sessionId || !mid) throw new Error('Mermaid 修复上下文不完整')
           t0 = now()
@@ -1733,7 +1900,8 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
         })
         .then((fixed: any) => {
           const nextMermaid = String((fixed as any)?.mermaidSource || '').trim()
-          return reloadRoleSession(roleId, sessionId).then(() => {
+          const reload = workspaceId ? reloadWorkspaceSession(workspaceId, sessionId) : reloadRoleSession(roleId, sessionId)
+          return reload.then(() => {
             if (!activeChatFromData()) throw new Error('Mermaid 修复已完成，但刷新最新会话失败')
             emit()
             api.ui?.showToast?.(`Mermaid 已修复（${cost()}s）`, { kind: 'success' })
@@ -1899,6 +2067,31 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
           throw e
         })
     },
+    aiGenerateWorkspaceChatTitle: (workspaceId: any, chatId: any) => {
+      let t0 = 0
+      const cost = () => ((now() - t0) / 1000).toFixed(1)
+      return Promise.resolve()
+        .then(async () => {
+          const workspaceChat = await ensureWorkspaceChatLoaded(String(workspaceId || ''), String(chatId || ''))
+          const roleId = String((workspaceChat as any)?.roleId || '').trim()
+          if (!roleId) throw new Error('工作区会话缺少角色，暂时无法生成标题')
+          t0 = now()
+          api.ui?.showToast?.('AI 生成标题中…')
+          return { roleId, title: await aiGenerateChatTitle(roleId, String(chatId || '')) }
+        })
+        .then(async ({ title }: any) => {
+          await reloadWorkspaceSession(String(workspaceId || ''), String(chatId || ''))
+          const nextTitle = String((title as any)?.title || title || '').trim()
+          emit()
+          api.ui?.showToast?.(`已更新标题（${cost()}s）：${nextTitle || '（空）'}`, { kind: 'success' })
+          return title
+        })
+        .catch((e: any) => {
+          const msg = String(e?.message || e || 'AI 生成标题失败')
+          api.ui?.showToast?.(`AI 生成标题失败（${cost()}s）：${msg}`, { kind: 'error' })
+          throw e
+        })
+    },
     aiGenerateStickerName: (categoryName: any, stickerName: any) => {
       let t0 = 0
       const cost = () => ((now() - t0) / 1000).toFixed(1)
@@ -1926,8 +2119,10 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     },
     renameChat: (roleId: any, chatId: any, title: any) => renameChatTitle(String(roleId || ''), String(chatId || ''), String(title ?? '')),
     renameGroupChat: (groupId: any, chatId: any, title: any) => renameGroupChatTitle(String(groupId || ''), String(chatId || ''), String(title ?? '')),
+    renameWorkspaceChat: (workspaceId: any, chatId: any, title: any) => renameWorkspaceChatTitle(String(workspaceId || ''), String(chatId || ''), String(title ?? '')),
     deleteChat: (roleId: any, chatId: any) => deleteChatForRole(String(roleId || ''), String(chatId || '')),
     deleteGroupChat: (groupId: any, chatId: any) => deleteChatForGroup(String(groupId || ''), String(chatId || '')),
+    deleteWorkspaceChat: (workspaceId: any, chatId: any) => deleteChatForWorkspace(String(workspaceId || ''), String(chatId || '')),
     setDraft: (key: any, value: any) => {
       const k = String(key || '')
       if (!k) return
@@ -2109,18 +2304,24 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     activeRole,
     activeChat,
     activeGroup,
+    activeWorkspace,
     getProvider,
     getRoleById,
     getGroupById,
+    getWorkspaceById,
     ensureChatsBox,
     ensureGroupChatsBox: ensureGroupChatsBoxBare,
+    ensureWorkspaceChatsBox: ensureWorkspaceChatsBoxBare,
     clearPendingChat,
     clearPendingGroupChat,
+    clearPendingWorkspaceChat,
     openProvidersEditor,
     openNewRoleEditor,
     openNewGroupEditor,
+    openNewWorkspaceEditorRaw: () => openNewWorkspaceEditor(),
     openRoleEditorRaw: (rid: string) => openRoleEditor(rid),
     openGroupEditorRaw: (gid: string) => openGroupEditor(gid),
+    openWorkspaceEditorRaw: (wid: string) => openWorkspaceEditor(wid),
     createChatForActiveTargetRaw: () => createChatForActiveTarget(),
     pickChatForActiveTargetRaw: (cid: string) => pickChatForActiveTarget(cid),
   }

@@ -59,7 +59,8 @@ export function createFavoritesOperations(deps: {
   function cleanupFavoriteRefsForTarget(targetKind: any, targetId: any) {
     const fav = ensureFavoritesBare()
     if (!fav) return
-    const kind = String(targetKind || '').trim() === 'group' ? 'group' : 'role'
+    const kindText = String(targetKind || '').trim()
+    const kind = kindText === 'group' ? 'group' : kindText === 'workspace' ? 'workspace' : 'role'
     const tid = String(targetId || '').trim()
     if (!tid) return
     for (const f of Array.isArray(fav.folders) ? fav.folders : []) {
@@ -211,7 +212,8 @@ export function createFavoritesOperations(deps: {
   function setChatFavoriteFolders(targetKind: any, targetId: any, chatId: any, folderIds: any) {
     const fav = ensureFavoritesBare()
     if (!fav) return
-    const kind = String(targetKind || '').trim() === 'group' ? 'group' : 'role'
+    const kindText = String(targetKind || '').trim()
+    const kind = kindText === 'group' ? 'group' : kindText === 'workspace' ? 'workspace' : 'role'
     const tid = String(targetId || '').trim()
     const cid = String(chatId || '').trim()
     const key = favoriteChatRefKey(kind, tid, cid)

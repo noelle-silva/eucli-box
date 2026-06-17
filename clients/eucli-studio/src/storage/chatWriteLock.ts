@@ -12,14 +12,15 @@ export function createChatWriteLock(deps: {
 
   function chatWriteLockKey(kind: any, targetId: any, chatId: any) {
     const kindText = String(kind || '').trim()
-    const k = kindText === 'group' || kindText === 'g' ? 'g' : 'r'
+    const k = kindText === 'group' || kindText === 'g' ? 'g' : kindText === 'workspace' || kindText === 'w' ? 'w' : 'r'
     const tid = String(targetId || '').trim()
     const cid = String(chatId || '').trim()
     return `lock.chat.${k}.${tid}.${cid}`
   }
 
   async function withChatWriteLock(kind: any, targetId: any, chatId: any, fn: any) {
-    const k = String(kind || '').trim() === 'group' ? 'group' : 'role'
+    const kindText = String(kind || '').trim()
+    const k = kindText === 'group' ? 'group' : kindText === 'workspace' ? 'workspace' : 'role'
     const tid = String(targetId || '').trim()
     const cid = String(chatId || '').trim()
     if (!tid || !cid) return fn()
@@ -87,7 +88,8 @@ export function createChatWriteLock(deps: {
   }
 
   async function writeChatUpdatedNotice(targetKind: any, targetId: any, chatId: any, updatedAt: any) {
-    const kind = String(targetKind || '').trim() === 'group' ? 'group' : 'role'
+    const kindText = String(targetKind || '').trim()
+    const kind = kindText === 'group' ? 'group' : kindText === 'workspace' ? 'workspace' : 'role'
     const tid = String(targetId || '').trim()
     const cid = String(chatId || '').trim()
     if (!tid || !cid) return

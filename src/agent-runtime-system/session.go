@@ -13,11 +13,19 @@ const defaultRuntimeBranchID = "main"
 
 func (s *system) loadOrCreateSession(ctx context.Context, request types.RunRequest) (types.Session, error) {
 	groupID := strings.TrimSpace(request.GroupID)
+	workspaceID := strings.TrimSpace(request.WorkspaceID)
 	if strings.TrimSpace(request.SessionID) != "" {
 		if groupID != "" {
 			session, err := s.storage.LoadGroupSession(ctx, groupID, request.SessionID)
 			if err != nil {
 				return types.Session{}, runtimeStorageFailed("failed to load group session", err)
+			}
+			return session, nil
+		}
+		if workspaceID != "" {
+			session, err := s.storage.LoadWorkspaceSession(ctx, workspaceID, request.SessionID)
+			if err != nil {
+				return types.Session{}, runtimeStorageFailed("failed to load workspace session", err)
 			}
 			return session, nil
 		}
@@ -30,6 +38,9 @@ func (s *system) loadOrCreateSession(ctx context.Context, request types.RunReque
 	now := time.Now().UTC()
 	if groupID != "" {
 		return types.Session{ID: utils.NewID("session"), GroupID: groupID, Title: types.DefaultSessionTitle, Status: string(types.RunStatusCreated), Messages: []types.Message{}, CreatedAt: now, UpdatedAt: now, LastActive: now}, nil
+	}
+	if workspaceID != "" {
+		return types.Session{ID: utils.NewID("session"), WorkspaceID: workspaceID, RoleID: request.RoleID, Title: types.DefaultSessionTitle, Status: string(types.RunStatusCreated), Messages: []types.Message{}, CreatedAt: now, UpdatedAt: now, LastActive: now}, nil
 	}
 	return types.Session{ID: utils.NewID("session"), RoleID: request.RoleID, Title: types.DefaultSessionTitle, Status: string(types.RunStatusCreated), Messages: []types.Message{}, CreatedAt: now, UpdatedAt: now, LastActive: now}, nil
 }
@@ -154,6 +165,8 @@ func (s *system) saveRunAttachments(ctx context.Context, session types.Session, 
 		var err error
 		if strings.TrimSpace(session.GroupID) != "" {
 			saved, err = s.storage.SaveGroupSessionMessageAttachment(ctx, session.GroupID, session.ID, attachment)
+		} else if strings.TrimSpace(session.WorkspaceID) != "" {
+			saved, err = s.storage.SaveWorkspaceSessionMessageAttachment(ctx, session.WorkspaceID, session.ID, attachment)
 		} else {
 			saved, err = s.storage.SaveSessionMessageAttachment(ctx, session.RoleID, session.ID, attachment)
 		}

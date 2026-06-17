@@ -53,6 +53,7 @@
       },
       "workdir": {
         "type": "string",
+        "format": "filepath",
         "description": "Working directory. Relative paths resolve from the e-b host working directory."
       },
       "timeoutMs": {

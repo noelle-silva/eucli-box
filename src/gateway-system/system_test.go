@@ -404,7 +404,7 @@ func TestWebSocketForwardsRuntimeEvents(t *testing.T) {
 
 func newTestGateway(t *testing.T, fakes *gatewayFakes) System {
 	t.Helper()
-	system, err := NewSystem(Config{}, fakes.runtime, fakes.roles, fakes.groups, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.assist)
+	system, err := NewSystem(Config{}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.assist)
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -412,19 +412,54 @@ func newTestGateway(t *testing.T, fakes *gatewayFakes) System {
 }
 
 type gatewayFakes struct {
-	runtime   *fakeGatewayRuntime
-	roles     *fakeGatewayRoles
-	groups    *fakeGatewayGroups
-	providers *fakeGatewayProviders
-	tools     *fakeGatewayTools
-	sessions  *fakeGatewaySessions
-	stickers  *fakeGatewayStickers
-	assist    *fakeGatewayAssist
+	runtime    *fakeGatewayRuntime
+	roles      *fakeGatewayRoles
+	groups     *fakeGatewayGroups
+	workspaces *fakeGatewayWorkspaces
+	providers  *fakeGatewayProviders
+	tools      *fakeGatewayTools
+	sessions   *fakeGatewaySessions
+	stickers   *fakeGatewayStickers
+	assist     *fakeGatewayAssist
 }
 
 func newGatewayFakes() *gatewayFakes {
 	stickers := newFakeGatewayStickers()
-	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), groups: newFakeGatewayGroups(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, assist: &fakeGatewayAssist{stickers: stickers}}
+	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), groups: newFakeGatewayGroups(), workspaces: newFakeGatewayWorkspaces(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, assist: &fakeGatewayAssist{stickers: stickers}}
+}
+
+type fakeGatewayWorkspaces struct {
+	workspaces map[string]types.Workspace
+}
+
+func newFakeGatewayWorkspaces() *fakeGatewayWorkspaces {
+	return &fakeGatewayWorkspaces{workspaces: map[string]types.Workspace{}}
+}
+
+func (f *fakeGatewayWorkspaces) SaveWorkspace(ctx context.Context, workspace types.Workspace) error {
+	f.workspaces[workspace.ID] = workspace
+	return nil
+}
+
+func (f *fakeGatewayWorkspaces) LoadWorkspace(ctx context.Context, workspaceID string) (types.Workspace, error) {
+	workspace, ok := f.workspaces[workspaceID]
+	if !ok {
+		return types.Workspace{}, errors.New("workspace missing")
+	}
+	return workspace, nil
+}
+
+func (f *fakeGatewayWorkspaces) ListWorkspaces(ctx context.Context) ([]types.WorkspaceSummary, error) {
+	out := make([]types.WorkspaceSummary, 0, len(f.workspaces))
+	for _, workspace := range f.workspaces {
+		out = append(out, types.WorkspaceSummary{ID: workspace.ID, Name: workspace.Name, UpdatedAt: workspace.UpdatedAt})
+	}
+	return out, nil
+}
+
+func (f *fakeGatewayWorkspaces) DeleteWorkspace(ctx context.Context, workspaceID string) error {
+	delete(f.workspaces, workspaceID)
+	return nil
 }
 
 type fakeGatewaySessions struct {
@@ -450,6 +485,13 @@ func (f *fakeGatewaySessions) CreateGroupSession(ctx context.Context, groupID st
 	return session, nil
 }
 
+func (f *fakeGatewaySessions) CreateWorkspaceSession(ctx context.Context, workspaceID string, roleID string, title string) (types.Session, error) {
+	now := time.Now().UTC()
+	session := types.Session{ID: "session-created", RoleID: roleID, WorkspaceID: workspaceID, Title: title, Status: string(types.RunStatusCreated), Messages: []types.Message{}, CreatedAt: now, LastActive: now}
+	f.sessions[f.sessionKey(session)] = session
+	return session, nil
+}
+
 func (f *fakeGatewaySessions) SaveSession(ctx context.Context, session types.Session) error {
 	f.sessions[f.sessionKey(session)] = session
 	return nil
@@ -461,6 +503,10 @@ func (f *fakeGatewaySessions) LoadSession(ctx context.Context, roleID string, se
 
 func (f *fakeGatewaySessions) LoadGroupSession(ctx context.Context, groupID string, sessionID string) (types.Session, error) {
 	return f.sessions["groups/"+groupID+"/"+sessionID], nil
+}
+
+func (f *fakeGatewaySessions) LoadWorkspaceSession(ctx context.Context, workspaceID string, sessionID string) (types.Session, error) {
+	return f.sessions["workspaces/"+workspaceID+"/"+sessionID], nil
 }
 
 func (f *fakeGatewaySessions) ListSessions(ctx context.Context, roleID string) ([]types.SessionSummary, error) {
@@ -485,6 +531,17 @@ func (f *fakeGatewaySessions) ListGroupSessions(ctx context.Context, groupID str
 	return out, nil
 }
 
+func (f *fakeGatewaySessions) ListWorkspaceSessions(ctx context.Context, workspaceID string) ([]types.SessionSummary, error) {
+	out := []types.SessionSummary{}
+	for _, s := range f.sessions {
+		if s.WorkspaceID != workspaceID {
+			continue
+		}
+		out = append(out, types.SessionSummary{ID: s.ID, RoleID: s.RoleID, WorkspaceID: s.WorkspaceID, Title: s.Title, Status: s.Status, LastActive: s.LastActive})
+	}
+	return out, nil
+}
+
 func (f *fakeGatewaySessions) DeleteSession(ctx context.Context, roleID string, sessionID string) error {
 	delete(f.sessions, roleID+"/"+sessionID)
 	return nil
@@ -492,6 +549,11 @@ func (f *fakeGatewaySessions) DeleteSession(ctx context.Context, roleID string, 
 
 func (f *fakeGatewaySessions) DeleteGroupSession(ctx context.Context, groupID string, sessionID string) error {
 	delete(f.sessions, "groups/"+groupID+"/"+sessionID)
+	return nil
+}
+
+func (f *fakeGatewaySessions) DeleteWorkspaceSession(ctx context.Context, workspaceID string, sessionID string) error {
+	delete(f.sessions, "workspaces/"+workspaceID+"/"+sessionID)
 	return nil
 }
 
@@ -508,6 +570,14 @@ func (f *fakeGatewaySessions) UpdateGroupSessionTitle(ctx context.Context, group
 	session.Title = title
 	session.UpdatedAt = time.Now().UTC()
 	f.sessions["groups/"+groupID+"/"+sessionID] = session
+	return session, nil
+}
+
+func (f *fakeGatewaySessions) UpdateWorkspaceSessionTitle(ctx context.Context, workspaceID string, sessionID string, title string) (types.Session, error) {
+	session := f.sessions["workspaces/"+workspaceID+"/"+sessionID]
+	session.Title = title
+	session.UpdatedAt = time.Now().UTC()
+	f.sessions["workspaces/"+workspaceID+"/"+sessionID] = session
 	return session, nil
 }
 
@@ -534,6 +604,10 @@ func (f *fakeGatewaySessions) UpdateGroupSessionMessage(ctx context.Context, gro
 	return f.updateSessionMessageByKey("groups/"+groupID+"/"+sessionID, messageID, patch)
 }
 
+func (f *fakeGatewaySessions) UpdateWorkspaceSessionMessage(ctx context.Context, workspaceID string, sessionID string, messageID string, patch types.SessionMessagePatch) (types.Message, error) {
+	return f.updateSessionMessageByKey("workspaces/"+workspaceID+"/"+sessionID, messageID, patch)
+}
+
 func (f *fakeGatewaySessions) DeleteSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error) {
 	session := f.sessions[roleID+"/"+sessionID]
 	next := make([]types.Message, 0, len(session.Messages))
@@ -551,6 +625,10 @@ func (f *fakeGatewaySessions) DeleteGroupSessionMessage(ctx context.Context, gro
 	return f.deleteSessionMessageByKey("groups/"+groupID+"/"+sessionID, messageID)
 }
 
+func (f *fakeGatewaySessions) DeleteWorkspaceSessionMessage(ctx context.Context, workspaceID string, sessionID string, messageID string) (types.Session, error) {
+	return f.deleteSessionMessageByKey("workspaces/"+workspaceID+"/"+sessionID, messageID)
+}
+
 func (f *fakeGatewaySessions) DeleteSessionMessageSubtree(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error) {
 	return f.DeleteSessionMessage(ctx, roleID, sessionID, messageID)
 }
@@ -559,9 +637,16 @@ func (f *fakeGatewaySessions) DeleteGroupSessionMessageSubtree(ctx context.Conte
 	return f.DeleteGroupSessionMessage(ctx, groupID, sessionID, messageID)
 }
 
+func (f *fakeGatewaySessions) DeleteWorkspaceSessionMessageSubtree(ctx context.Context, workspaceID string, sessionID string, messageID string) (types.Session, error) {
+	return f.DeleteWorkspaceSessionMessage(ctx, workspaceID, sessionID, messageID)
+}
+
 func (f *fakeGatewaySessions) sessionKey(session types.Session) string {
 	if strings.TrimSpace(session.GroupID) != "" {
 		return "groups/" + session.GroupID + "/" + session.ID
+	}
+	if strings.TrimSpace(session.WorkspaceID) != "" {
+		return "workspaces/" + session.WorkspaceID + "/" + session.ID
 	}
 	return session.RoleID + "/" + session.ID
 }

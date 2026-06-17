@@ -14,24 +14,33 @@ type System interface {
 
 	CreateSession(ctx context.Context, roleID string, title string) (types.Session, error)
 	CreateGroupSession(ctx context.Context, groupID string, title string) (types.Session, error)
+	CreateWorkspaceSession(ctx context.Context, workspaceID string, roleID string, title string) (types.Session, error)
 	SaveSession(ctx context.Context, session types.Session) error
 	SaveSessionMessages(ctx context.Context, save types.SessionMessageSave) error
 	LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error)
 	LoadGroupSession(ctx context.Context, groupID string, sessionID string) (types.Session, error)
+	LoadWorkspaceSession(ctx context.Context, workspaceID string, sessionID string) (types.Session, error)
 	ListSessions(ctx context.Context, roleID string) ([]types.SessionSummary, error)
 	ListGroupSessions(ctx context.Context, groupID string) ([]types.SessionSummary, error)
+	ListWorkspaceSessions(ctx context.Context, workspaceID string) ([]types.SessionSummary, error)
 	DeleteSession(ctx context.Context, roleID string, sessionID string) error
 	DeleteGroupSession(ctx context.Context, groupID string, sessionID string) error
+	DeleteWorkspaceSession(ctx context.Context, workspaceID string, sessionID string) error
 	UpdateSessionTitle(ctx context.Context, roleID string, sessionID string, title string) (types.Session, error)
 	UpdateGroupSessionTitle(ctx context.Context, groupID string, sessionID string, title string) (types.Session, error)
+	UpdateWorkspaceSessionTitle(ctx context.Context, workspaceID string, sessionID string, title string) (types.Session, error)
 	UpdateSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string, patch types.SessionMessagePatch) (types.Message, error)
 	UpdateGroupSessionMessage(ctx context.Context, groupID string, sessionID string, messageID string, patch types.SessionMessagePatch) (types.Message, error)
+	UpdateWorkspaceSessionMessage(ctx context.Context, workspaceID string, sessionID string, messageID string, patch types.SessionMessagePatch) (types.Message, error)
 	DeleteSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error)
 	DeleteGroupSessionMessage(ctx context.Context, groupID string, sessionID string, messageID string) (types.Session, error)
+	DeleteWorkspaceSessionMessage(ctx context.Context, workspaceID string, sessionID string, messageID string) (types.Session, error)
 	DeleteSessionMessageSubtree(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error)
 	DeleteGroupSessionMessageSubtree(ctx context.Context, groupID string, sessionID string, messageID string) (types.Session, error)
+	DeleteWorkspaceSessionMessageSubtree(ctx context.Context, workspaceID string, sessionID string, messageID string) (types.Session, error)
 	SaveSessionMessageAttachment(ctx context.Context, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
 	SaveGroupSessionMessageAttachment(ctx context.Context, groupID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
+	SaveWorkspaceSessionMessageAttachment(ctx context.Context, workspaceID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
 	LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error)
 	LoadSessionFavorites(ctx context.Context) (types.SessionFavorites, error)
 	SaveSessionFavorites(ctx context.Context, favorites types.SessionFavorites) (types.SessionFavorites, error)
@@ -51,6 +60,11 @@ type System interface {
 	SaveChatGroupAvatar(ctx context.Context, groupID string, dataURL string) error
 	LoadChatGroupAvatar(ctx context.Context, groupID string) (string, error)
 	DeleteChatGroupAvatar(ctx context.Context, groupID string) error
+
+	SaveWorkspace(ctx context.Context, workspace types.Workspace) error
+	LoadWorkspace(ctx context.Context, workspaceID string) (types.Workspace, error)
+	ListWorkspaces(ctx context.Context) ([]types.WorkspaceSummary, error)
+	DeleteWorkspace(ctx context.Context, workspaceID string) error
 
 	SaveProvider(ctx context.Context, provider types.Provider) error
 	LoadProvider(ctx context.Context, providerID string) (types.Provider, error)

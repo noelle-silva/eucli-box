@@ -1,11 +1,12 @@
 import { now, uid } from '../core/utils'
 
-export type PendingChatTargetKind = 'role' | 'group'
+export type PendingChatTargetKind = 'role' | 'group' | 'workspace'
 
 export type PendingChatEntry = {
   chat: any
   roleId?: string
   groupId?: string
+  workspaceId?: string
 }
 
 function normalizeId(value: unknown): string {
@@ -24,15 +25,17 @@ export function createPendingChatEntry(kind: PendingChatTargetKind, targetIdRaw:
     updatedAt: ts,
     clientDraft: true,
   }
-  return kind === 'group' ? { groupId: targetId, chat } : { roleId: targetId, chat }
+  if (kind === 'group') return { groupId: targetId, chat }
+  if (kind === 'workspace') return { workspaceId: targetId, chat }
+  return { roleId: targetId, chat }
 }
 
 export function pendingChatForTarget(state: any, kind: PendingChatTargetKind, targetIdRaw: unknown) {
   const targetId = normalizeId(targetIdRaw)
   if (!state || !targetId) return null
-  const pending = kind === 'group' ? state.pendingGroupChat : state.pendingChat
+  const pending = kind === 'group' ? state.pendingGroupChat : kind === 'workspace' ? state.pendingWorkspaceChat : state.pendingChat
   if (!pending || typeof pending !== 'object') return null
-  const pendingTargetId = kind === 'group' ? normalizeId(pending.groupId) : normalizeId(pending.roleId)
+  const pendingTargetId = kind === 'group' ? normalizeId(pending.groupId) : kind === 'workspace' ? normalizeId(pending.workspaceId) : normalizeId(pending.roleId)
   if (pendingTargetId !== targetId) return null
   return pending.chat && typeof pending.chat === 'object' ? pending.chat : null
 }
@@ -42,6 +45,10 @@ export function clearPendingChatForTarget(state: any, kind: PendingChatTargetKin
   if (!state || !targetId) return
   if (kind === 'group') {
     if (state.pendingGroupChat && normalizeId(state.pendingGroupChat.groupId) === targetId) state.pendingGroupChat = null
+    return
+  }
+  if (kind === 'workspace') {
+    if (state.pendingWorkspaceChat && normalizeId(state.pendingWorkspaceChat.workspaceId) === targetId) state.pendingWorkspaceChat = null
     return
   }
   if (state.pendingChat && normalizeId(state.pendingChat.roleId) === targetId) state.pendingChat = null
@@ -61,6 +68,13 @@ export function activateResolvedPendingChat(state: any, kind: PendingChatTargetK
     if (!state.data.chatsByGroup || typeof state.data.chatsByGroup !== 'object') state.data.chatsByGroup = {}
     if (!state.data.chatsByGroup[targetId] || typeof state.data.chatsByGroup[targetId] !== 'object') state.data.chatsByGroup[targetId] = { activeChatId: '', chatMetas: [], chats: [] }
     state.data.chatsByGroup[targetId].activeChatId = chatId
+    return true
+  }
+
+  if (kind === 'workspace') {
+    if (!state.data.chatsByWorkspace || typeof state.data.chatsByWorkspace !== 'object') state.data.chatsByWorkspace = {}
+    if (!state.data.chatsByWorkspace[targetId] || typeof state.data.chatsByWorkspace[targetId] !== 'object') state.data.chatsByWorkspace[targetId] = { activeChatId: '', chatMetas: [], chats: [] }
+    state.data.chatsByWorkspace[targetId].activeChatId = chatId
     return true
   }
 

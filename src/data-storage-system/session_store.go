@@ -15,8 +15,9 @@ import (
 type sessionScopeKind string
 
 const (
-	sessionScopeRole  sessionScopeKind = "role"
-	sessionScopeGroup sessionScopeKind = "group"
+	sessionScopeRole      sessionScopeKind = "role"
+	sessionScopeGroup     sessionScopeKind = "group"
+	sessionScopeWorkspace sessionScopeKind = "workspace"
 )
 
 type sessionScope struct {
@@ -32,21 +33,38 @@ func groupSessionScope(groupID string) sessionScope {
 	return sessionScope{Kind: sessionScopeGroup, ID: strings.TrimSpace(groupID)}
 }
 
+func workspaceSessionScope(workspaceID string) sessionScope {
+	return sessionScope{Kind: sessionScopeWorkspace, ID: strings.TrimSpace(workspaceID)}
+}
+
 func sessionScopeFromSession(session types.Session) (sessionScope, error) {
 	groupID := strings.TrimSpace(session.GroupID)
+	workspaceID := strings.TrimSpace(session.WorkspaceID)
 	roleID := strings.TrimSpace(session.RoleID)
 	if groupID != "" {
 		if roleID != "" {
 			return sessionScope{}, storageInvalid("session cannot belong to both role and group", nil)
 		}
+		if workspaceID != "" {
+			return sessionScope{}, storageInvalid("session cannot belong to both group and workspace", nil)
+		}
 		return cleanSessionScope(groupSessionScope(groupID))
+	}
+	if workspaceID != "" {
+		if roleID == "" {
+			return sessionScope{}, storageInvalid("workspace session roleId is required", nil)
+		}
+		if _, err := cleanID(roleID); err != nil {
+			return sessionScope{}, err
+		}
+		return cleanSessionScope(workspaceSessionScope(workspaceID))
 	}
 	return cleanSessionScope(roleSessionScope(roleID))
 }
 
 func cleanSessionScope(scope sessionScope) (sessionScope, error) {
 	scope.ID = strings.TrimSpace(scope.ID)
-	if scope.Kind != sessionScopeRole && scope.Kind != sessionScopeGroup {
+	if scope.Kind != sessionScopeRole && scope.Kind != sessionScopeGroup && scope.Kind != sessionScopeWorkspace {
 		return sessionScope{}, storageInvalid("session scope is invalid", nil)
 	}
 	if _, err := cleanID(scope.ID); err != nil {
@@ -63,6 +81,9 @@ func (s *system) sessionDataFile(scope sessionScope, sessionID string) (string, 
 	if scope.Kind == sessionScopeGroup {
 		return s.paths.groupSessionDataFile(scope.ID, sessionID)
 	}
+	if scope.Kind == sessionScopeWorkspace {
+		return s.paths.workspaceSessionDataFile(scope.ID, sessionID)
+	}
 	return s.paths.sessionDataFile(scope.ID, sessionID)
 }
 
@@ -73,6 +94,9 @@ func (s *system) sessionDir(scope sessionScope, sessionID string) (string, error
 	}
 	if scope.Kind == sessionScopeGroup {
 		return s.paths.groupSessionDir(scope.ID, sessionID)
+	}
+	if scope.Kind == sessionScopeWorkspace {
+		return s.paths.workspaceSessionDir(scope.ID, sessionID)
 	}
 	return s.paths.sessionDir(scope.ID, sessionID)
 }
@@ -85,6 +109,9 @@ func (s *system) sessionAttachmentsDir(scope sessionScope, sessionID string) (st
 	if scope.Kind == sessionScopeGroup {
 		return s.paths.groupSessionAttachmentsDir(scope.ID, sessionID)
 	}
+	if scope.Kind == sessionScopeWorkspace {
+		return s.paths.workspaceSessionAttachmentsDir(scope.ID, sessionID)
+	}
 	return s.paths.sessionAttachmentsDir(scope.ID, sessionID)
 }
 
@@ -95,6 +122,9 @@ func (s *system) sessionScopeDir(scope sessionScope) (string, error) {
 	}
 	if scope.Kind == sessionScopeGroup {
 		return s.paths.sessionGroupDir(scope.ID)
+	}
+	if scope.Kind == sessionScopeWorkspace {
+		return s.paths.safeJoin(s.paths.sessionWorkspacesRoot(), scope.ID)
 	}
 	return s.paths.sessionRoleDir(scope.ID)
 }
@@ -115,6 +145,26 @@ func (s *system) CreateGroupSession(ctx context.Context, groupID string, title s
 	return s.createSession(ctx, scope, title)
 }
 
+func (s *system) CreateWorkspaceSession(ctx context.Context, workspaceID string, roleID string, title string) (types.Session, error) {
+	scope, err := cleanSessionScope(workspaceSessionScope(workspaceID))
+	if err != nil {
+		return types.Session{}, err
+	}
+	if _, err := cleanID(roleID); err != nil {
+		return types.Session{}, err
+	}
+	sessionTitle := strings.TrimSpace(title)
+	if sessionTitle == "" {
+		sessionTitle = types.DefaultSessionTitle
+	}
+	now := time.Now().UTC()
+	session := types.Session{ID: utils.NewID("session"), WorkspaceID: scope.ID, RoleID: strings.TrimSpace(roleID), Title: normalizeSessionTitle(sessionTitle), Status: string(types.RunStatusCreated), Messages: []types.Message{}, CreatedAt: now, UpdatedAt: now, LastActive: now}
+	if err := s.SaveSession(ctx, session); err != nil {
+		return types.Session{}, err
+	}
+	return session, nil
+}
+
 func (s *system) createSession(ctx context.Context, scope sessionScope, title string) (types.Session, error) {
 	sessionTitle := strings.TrimSpace(title)
 	if sessionTitle == "" {
@@ -132,6 +182,8 @@ func (s *system) createSession(ctx context.Context, scope sessionScope, title st
 	}
 	if scope.Kind == sessionScopeGroup {
 		session.GroupID = scope.ID
+	} else if scope.Kind == sessionScopeWorkspace {
+		session.WorkspaceID = scope.ID
 	} else {
 		session.RoleID = scope.ID
 	}
@@ -196,6 +248,10 @@ func (s *system) LoadSession(ctx context.Context, roleID string, sessionID strin
 
 func (s *system) LoadGroupSession(ctx context.Context, groupID string, sessionID string) (types.Session, error) {
 	return s.loadSession(ctx, groupSessionScope(groupID), sessionID)
+}
+
+func (s *system) LoadWorkspaceSession(ctx context.Context, workspaceID string, sessionID string) (types.Session, error) {
+	return s.loadSession(ctx, workspaceSessionScope(workspaceID), sessionID)
 }
 
 func (s *system) loadSession(ctx context.Context, scope sessionScope, sessionID string) (types.Session, error) {
@@ -516,6 +572,10 @@ func (s *system) ListGroupSessions(ctx context.Context, groupID string) ([]types
 	return s.listSessions(ctx, groupSessionScope(groupID))
 }
 
+func (s *system) ListWorkspaceSessions(ctx context.Context, workspaceID string) ([]types.SessionSummary, error) {
+	return s.listSessions(ctx, workspaceSessionScope(workspaceID))
+}
+
 func (s *system) listSessions(ctx context.Context, scope sessionScope) ([]types.SessionSummary, error) {
 	scopeDir, err := s.sessionScopeDir(scope)
 	if err != nil {
@@ -528,7 +588,7 @@ func (s *system) listSessions(ctx context.Context, scope sessionScope) ([]types.
 	summaries := make([]types.SessionSummary, 0, len(sessions))
 	for _, session := range sessions {
 		session = normalizeSessionForStorage(session, time.Now().UTC())
-		summaries = append(summaries, types.SessionSummary{ID: session.ID, RoleID: session.RoleID, GroupID: session.GroupID, Title: session.Title, Status: session.Status, UpdatedAt: session.UpdatedAt, LastActive: session.LastActive})
+		summaries = append(summaries, types.SessionSummary{ID: session.ID, RoleID: session.RoleID, GroupID: session.GroupID, WorkspaceID: session.WorkspaceID, Title: session.Title, Status: session.Status, UpdatedAt: session.UpdatedAt, LastActive: session.LastActive})
 	}
 	sort.Slice(summaries, func(i, j int) bool {
 		return summaries[i].LastActive.After(summaries[j].LastActive)
@@ -544,6 +604,10 @@ func (s *system) DeleteGroupSession(ctx context.Context, groupID string, session
 	return s.deleteSession(ctx, groupSessionScope(groupID), sessionID)
 }
 
+func (s *system) DeleteWorkspaceSession(ctx context.Context, workspaceID string, sessionID string) error {
+	return s.deleteSession(ctx, workspaceSessionScope(workspaceID), sessionID)
+}
+
 func (s *system) deleteSession(ctx context.Context, scope sessionScope, sessionID string) error {
 	dir, err := s.sessionDir(scope, sessionID)
 	if err != nil {
@@ -552,6 +616,8 @@ func (s *system) deleteSession(ctx context.Context, scope sessionScope, sessionI
 	recycleID := sessionID
 	if scope.Kind == sessionScopeGroup {
 		recycleID = "groups-" + scope.ID + "-" + sessionID
+	} else if scope.Kind == sessionScopeWorkspace {
+		recycleID = "workspaces-" + scope.ID + "-" + sessionID
 	}
 	if err := moveToRecycle(ctx, s.paths, types.StorageItemSession, recycleID, dir); err != nil {
 		return err

@@ -1638,6 +1638,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
 
   const [rolePickerEl, setRolePickerEl] = React.useState<HTMLElement | null>(null)
   const [rolePickerTab, setRolePickerTab] = React.useState<'roles' | 'groups' | 'workspaces'>('roles')
+  const [rolePickerMode, setRolePickerMode] = React.useState<'global' | 'workspaceRole'>('global')
   const [chatPickerEl, setChatPickerEl] = React.useState<HTMLElement | null>(null)
   const [chatPickerView, setChatPickerView] = React.useState<'history' | 'favorites'>('history')
   const [chatPickerSearchOpen, setChatPickerSearchOpen] = React.useState(false)
@@ -3472,14 +3473,19 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   })
 
   const openRolePicker = useEvent((e: React.MouseEvent<HTMLElement>) => {
+    setRolePickerMode('global')
     setRolePickerTab(activeTargetKind === 'group' ? 'groups' : activeTargetKind === 'workspace' ? 'workspaces' : 'roles')
     setRolePickerEl(e.currentTarget)
   })
   const openWorkspaceRolePicker = useEvent((e: React.MouseEvent<HTMLElement>) => {
+    setRolePickerMode('workspaceRole')
     setRolePickerTab('roles')
     setRolePickerEl(e.currentTarget)
   })
-  const closeRolePicker = useEvent(() => setRolePickerEl(null))
+  const closeRolePicker = useEvent(() => {
+    setRolePickerEl(null)
+    setRolePickerMode('global')
+  })
   const openChatPicker = useEvent((e: React.MouseEvent<HTMLElement>) => {
     setChatPickerView('history')
     setChatPickerEl(e.currentTarget)
@@ -5555,29 +5561,34 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
           transformOrigin={{ vertical: 'top', horizontal: 'left' }}
         >
           <Box sx={{ width: 380, maxHeight: '70vh', overflowY: 'auto' }}>
-            <Box sx={{ px: 1.5, pt: 1.25, pb: 0.5 }}>
-              <Tabs
-                value={rolePickerTab}
-                onChange={(_e, v) => setRolePickerTab(v === 'groups' ? 'groups' : v === 'workspaces' ? 'workspaces' : 'roles')}
-                variant="fullWidth"
-              >
-                <Tab value="roles" label="选择角色" />
-                <Tab value="groups" label="群组" />
-                <Tab value="workspaces" label="工作区" />
-              </Tabs>
-            </Box>
+            {rolePickerMode === 'global' ? (
+              <Box sx={{ px: 1.5, pt: 1.25, pb: 0.5 }}>
+                <Tabs
+                  value={rolePickerTab}
+                  onChange={(_e, v) => setRolePickerTab(v === 'groups' ? 'groups' : v === 'workspaces' ? 'workspaces' : 'roles')}
+                  variant="fullWidth"
+                >
+                  <Tab value="roles" label="选择角色" />
+                  <Tab value="groups" label="群组" />
+                  <Tab value="workspaces" label="工作区" />
+                </Tabs>
+              </Box>
+            ) : null}
             <Divider />
             {rolePickerTab === 'roles' ? (
               <List dense sx={{ py: 0 }}>
                 {roles.map((r: any) => {
                   const on = String(r?.id || '') === String(s.draft?.activeRoleId || '')
                   const modelRefText = formatModelRefText(r?.modelRef)
+                  const selected = rolePickerMode === 'workspaceRole'
+                    ? on && activeTargetKind === 'workspace'
+                    : on && activeTargetKind === 'role'
                   return (
                       <ListItemButton
                         key={String(r?.id || '')}
-                        selected={on && (activeTargetKind === 'role' || activeTargetKind === 'workspace')}
+                        selected={selected}
                         onClick={() => {
-                          if (activeTargetKind === 'workspace') controller.actions.setWorkspaceRole?.(String(r?.id || ''))
+                          if (rolePickerMode === 'workspaceRole' && activeTargetKind === 'workspace') controller.actions.setWorkspaceRole?.(String(r?.id || ''))
                           else controller.actions.setActiveRole(String(r?.id || ''))
                           closeRolePicker()
                         }}

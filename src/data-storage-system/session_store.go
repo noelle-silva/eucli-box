@@ -21,8 +21,10 @@ const (
 )
 
 type sessionScope struct {
-	Kind sessionScopeKind
-	ID   string
+	Kind        sessionScopeKind
+	ID          string
+	WorkspaceID string
+	RoleID      string
 }
 
 func roleSessionScope(roleID string) sessionScope {
@@ -33,8 +35,10 @@ func groupSessionScope(groupID string) sessionScope {
 	return sessionScope{Kind: sessionScopeGroup, ID: strings.TrimSpace(groupID)}
 }
 
-func workspaceSessionScope(workspaceID string) sessionScope {
-	return sessionScope{Kind: sessionScopeWorkspace, ID: strings.TrimSpace(workspaceID)}
+func workspaceSessionScope(workspaceID string, roleID string) sessionScope {
+	workspaceID = strings.TrimSpace(workspaceID)
+	roleID = strings.TrimSpace(roleID)
+	return sessionScope{Kind: sessionScopeWorkspace, ID: workspaceID + "/" + roleID, WorkspaceID: workspaceID, RoleID: roleID}
 }
 
 func sessionScopeFromSession(session types.Session) (sessionScope, error) {
@@ -57,15 +61,27 @@ func sessionScopeFromSession(session types.Session) (sessionScope, error) {
 		if _, err := cleanID(roleID); err != nil {
 			return sessionScope{}, err
 		}
-		return cleanSessionScope(workspaceSessionScope(workspaceID))
+		return cleanSessionScope(workspaceSessionScope(workspaceID, roleID))
 	}
 	return cleanSessionScope(roleSessionScope(roleID))
 }
 
 func cleanSessionScope(scope sessionScope) (sessionScope, error) {
 	scope.ID = strings.TrimSpace(scope.ID)
+	scope.WorkspaceID = strings.TrimSpace(scope.WorkspaceID)
+	scope.RoleID = strings.TrimSpace(scope.RoleID)
 	if scope.Kind != sessionScopeRole && scope.Kind != sessionScopeGroup && scope.Kind != sessionScopeWorkspace {
 		return sessionScope{}, storageInvalid("session scope is invalid", nil)
+	}
+	if scope.Kind == sessionScopeWorkspace {
+		if _, err := cleanID(scope.WorkspaceID); err != nil {
+			return sessionScope{}, err
+		}
+		if _, err := cleanID(scope.RoleID); err != nil {
+			return sessionScope{}, err
+		}
+		scope.ID = scope.WorkspaceID + "/" + scope.RoleID
+		return scope, nil
 	}
 	if _, err := cleanID(scope.ID); err != nil {
 		return sessionScope{}, err
@@ -82,7 +98,7 @@ func (s *system) sessionDataFile(scope sessionScope, sessionID string) (string, 
 		return s.paths.groupSessionDataFile(scope.ID, sessionID)
 	}
 	if scope.Kind == sessionScopeWorkspace {
-		return s.paths.workspaceSessionDataFile(scope.ID, sessionID)
+		return s.paths.workspaceSessionDataFile(scope.WorkspaceID, scope.RoleID, sessionID)
 	}
 	return s.paths.sessionDataFile(scope.ID, sessionID)
 }
@@ -96,7 +112,7 @@ func (s *system) sessionDir(scope sessionScope, sessionID string) (string, error
 		return s.paths.groupSessionDir(scope.ID, sessionID)
 	}
 	if scope.Kind == sessionScopeWorkspace {
-		return s.paths.workspaceSessionDir(scope.ID, sessionID)
+		return s.paths.workspaceSessionDir(scope.WorkspaceID, scope.RoleID, sessionID)
 	}
 	return s.paths.sessionDir(scope.ID, sessionID)
 }
@@ -110,7 +126,7 @@ func (s *system) sessionAttachmentsDir(scope sessionScope, sessionID string) (st
 		return s.paths.groupSessionAttachmentsDir(scope.ID, sessionID)
 	}
 	if scope.Kind == sessionScopeWorkspace {
-		return s.paths.workspaceSessionAttachmentsDir(scope.ID, sessionID)
+		return s.paths.workspaceSessionAttachmentsDir(scope.WorkspaceID, scope.RoleID, sessionID)
 	}
 	return s.paths.sessionAttachmentsDir(scope.ID, sessionID)
 }
@@ -124,7 +140,7 @@ func (s *system) sessionScopeDir(scope sessionScope) (string, error) {
 		return s.paths.sessionGroupDir(scope.ID)
 	}
 	if scope.Kind == sessionScopeWorkspace {
-		return s.paths.safeJoin(s.paths.sessionWorkspacesRoot(), scope.ID)
+		return s.paths.workspaceRoleSessionsDir(scope.WorkspaceID, scope.RoleID)
 	}
 	return s.paths.sessionRoleDir(scope.ID)
 }
@@ -146,7 +162,7 @@ func (s *system) CreateGroupSession(ctx context.Context, groupID string, title s
 }
 
 func (s *system) CreateWorkspaceSession(ctx context.Context, workspaceID string, roleID string, title string) (types.Session, error) {
-	scope, err := cleanSessionScope(workspaceSessionScope(workspaceID))
+	scope, err := cleanSessionScope(workspaceSessionScope(workspaceID, roleID))
 	if err != nil {
 		return types.Session{}, err
 	}
@@ -250,8 +266,8 @@ func (s *system) LoadGroupSession(ctx context.Context, groupID string, sessionID
 	return s.loadSession(ctx, groupSessionScope(groupID), sessionID)
 }
 
-func (s *system) LoadWorkspaceSession(ctx context.Context, workspaceID string, sessionID string) (types.Session, error) {
-	return s.loadSession(ctx, workspaceSessionScope(workspaceID), sessionID)
+func (s *system) LoadWorkspaceSession(ctx context.Context, workspaceID string, roleID string, sessionID string) (types.Session, error) {
+	return s.loadSession(ctx, workspaceSessionScope(workspaceID, roleID), sessionID)
 }
 
 func (s *system) loadSession(ctx context.Context, scope sessionScope, sessionID string) (types.Session, error) {
@@ -572,8 +588,8 @@ func (s *system) ListGroupSessions(ctx context.Context, groupID string) ([]types
 	return s.listSessions(ctx, groupSessionScope(groupID))
 }
 
-func (s *system) ListWorkspaceSessions(ctx context.Context, workspaceID string) ([]types.SessionSummary, error) {
-	return s.listSessions(ctx, workspaceSessionScope(workspaceID))
+func (s *system) ListWorkspaceSessions(ctx context.Context, workspaceID string, roleID string) ([]types.SessionSummary, error) {
+	return s.listSessions(ctx, workspaceSessionScope(workspaceID, roleID))
 }
 
 func (s *system) listSessions(ctx context.Context, scope sessionScope) ([]types.SessionSummary, error) {
@@ -604,8 +620,8 @@ func (s *system) DeleteGroupSession(ctx context.Context, groupID string, session
 	return s.deleteSession(ctx, groupSessionScope(groupID), sessionID)
 }
 
-func (s *system) DeleteWorkspaceSession(ctx context.Context, workspaceID string, sessionID string) error {
-	return s.deleteSession(ctx, workspaceSessionScope(workspaceID), sessionID)
+func (s *system) DeleteWorkspaceSession(ctx context.Context, workspaceID string, roleID string, sessionID string) error {
+	return s.deleteSession(ctx, workspaceSessionScope(workspaceID, roleID), sessionID)
 }
 
 func (s *system) deleteSession(ctx context.Context, scope sessionScope, sessionID string) error {
@@ -617,7 +633,7 @@ func (s *system) deleteSession(ctx context.Context, scope sessionScope, sessionI
 	if scope.Kind == sessionScopeGroup {
 		recycleID = "groups-" + scope.ID + "-" + sessionID
 	} else if scope.Kind == sessionScopeWorkspace {
-		recycleID = "workspaces-" + scope.ID + "-" + sessionID
+		recycleID = "workspaces-" + scope.WorkspaceID + "-" + scope.RoleID + "-" + sessionID
 	}
 	if err := moveToRecycle(ctx, s.paths, types.StorageItemSession, recycleID, dir); err != nil {
 		return err

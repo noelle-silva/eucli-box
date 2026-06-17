@@ -12,6 +12,7 @@ type GroupSessionInput = {
 
 type WorkspaceSessionInput = {
   workspaceId: string
+  roleId: string
   sessionId: string
 }
 
@@ -172,7 +173,7 @@ function normalizeSessionTarget(kind: SessionTargetKind, input: Partial<RoleSess
   const targetId = kind === 'group'
     ? String(input.groupId || '').trim()
     : kind === 'workspace'
-      ? String(input.workspaceId || '').trim()
+      ? [String(input.workspaceId || '').trim(), String(input.roleId || '').trim()].filter(Boolean).join('::')
       : String(input.roleId || '').trim()
   if (!targetId) throw new Error(kind === 'group' ? '群组无效' : kind === 'workspace' ? '工作区无效' : '角色无效')
   return { kind, targetId, sessionId }
@@ -182,7 +183,11 @@ function sessionRouteBasePath(target: SessionTarget) {
   const targetId = encodeURIComponent(target.targetId)
   const sessionId = encodeURIComponent(target.sessionId)
   if (target.kind === 'group') return `/api/groups/${targetId}/sessions/${sessionId}`
-  if (target.kind === 'workspace') return `/api/workspaces/${targetId}/sessions/${sessionId}`
+  if (target.kind === 'workspace') {
+    const [workspaceId, roleId] = String(target.targetId || '').split('::')
+    if (!workspaceId || !roleId) throw new Error('工作区会话无效')
+    return `/api/workspaces/${encodeURIComponent(workspaceId)}/roles/${encodeURIComponent(roleId)}/sessions/${sessionId}`
+  }
   return `/api/roles/${targetId}/sessions/${sessionId}`
 }
 

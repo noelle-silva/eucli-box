@@ -1,4 +1,5 @@
 import { normalizeErrorPayload, type ErrorPayload } from './errorPayload'
+import { parseWorkspaceRoleTargetId } from './workspaceRoleTarget'
 
 export type EbRoleRunCard = {
   kind: 'eb-role-run'
@@ -135,7 +136,11 @@ export function readActiveEbRunCardsForTarget(state: any, targetKindRaw: unknown
   return readActiveEbRoleRunCards(state).filter((card) => {
     if (card.sessionId !== sessionId) return false
     if (targetKind === 'group') return card.groupId === targetId
-    if (targetKind === 'workspace') return card.workspaceId === targetId
+    if (targetKind === 'workspace') {
+      const parsed = parseWorkspaceRoleTargetId(targetId)
+      if (!parsed.workspaceId || !parsed.roleId) return card.workspaceId === targetId
+      return card.workspaceId === parsed.workspaceId && card.roleId === parsed.roleId
+    }
     return !card.groupId && card.roleId === targetId
   })
 }
@@ -160,7 +165,11 @@ export function activeEbRunCardsForTarget(state: any, targetKindRaw: unknown, ta
   return activeEbRoleRunCards(state).filter((card) => {
     if (card.sessionId !== sessionId) return false
     if (targetKind === 'group') return card.groupId === targetId
-    if (targetKind === 'workspace') return card.workspaceId === targetId
+    if (targetKind === 'workspace') {
+      const parsed = parseWorkspaceRoleTargetId(targetId)
+      if (!parsed.workspaceId || !parsed.roleId) return card.workspaceId === targetId
+      return card.workspaceId === parsed.workspaceId && card.roleId === parsed.roleId
+    }
     return !card.groupId && card.roleId === targetId
   })
 }

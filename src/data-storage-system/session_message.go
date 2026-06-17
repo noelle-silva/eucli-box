@@ -399,8 +399,8 @@ func (s *system) UpdateGroupSessionTitle(ctx context.Context, groupID string, se
 	return s.updateSessionTitle(ctx, groupSessionScope(groupID), sessionID, title)
 }
 
-func (s *system) UpdateWorkspaceSessionTitle(ctx context.Context, workspaceID string, sessionID string, title string) (types.Session, error) {
-	return s.updateSessionTitle(ctx, workspaceSessionScope(workspaceID), sessionID, title)
+func (s *system) UpdateWorkspaceSessionTitle(ctx context.Context, workspaceID string, roleID string, sessionID string, title string) (types.Session, error) {
+	return s.updateSessionTitle(ctx, workspaceSessionScope(workspaceID, roleID), sessionID, title)
 }
 
 func (s *system) updateSessionTitle(ctx context.Context, scope sessionScope, sessionID string, title string) (types.Session, error) {
@@ -466,8 +466,8 @@ func (s *system) UpdateGroupSessionMessage(ctx context.Context, groupID string, 
 	return s.updateSessionMessage(ctx, groupSessionScope(groupID), sessionID, messageID, patch)
 }
 
-func (s *system) UpdateWorkspaceSessionMessage(ctx context.Context, workspaceID string, sessionID string, messageID string, patch types.SessionMessagePatch) (types.Message, error) {
-	return s.updateSessionMessage(ctx, workspaceSessionScope(workspaceID), sessionID, messageID, patch)
+func (s *system) UpdateWorkspaceSessionMessage(ctx context.Context, workspaceID string, roleID string, sessionID string, messageID string, patch types.SessionMessagePatch) (types.Message, error) {
+	return s.updateSessionMessage(ctx, workspaceSessionScope(workspaceID, roleID), sessionID, messageID, patch)
 }
 
 func (s *system) updateSessionMessage(ctx context.Context, scope sessionScope, sessionID string, messageID string, patch types.SessionMessagePatch) (types.Message, error) {
@@ -543,8 +543,8 @@ func (s *system) DeleteGroupSessionMessage(ctx context.Context, groupID string, 
 	return s.deleteSessionMessage(ctx, groupSessionScope(groupID), sessionID, messageID)
 }
 
-func (s *system) DeleteWorkspaceSessionMessage(ctx context.Context, workspaceID string, sessionID string, messageID string) (types.Session, error) {
-	return s.deleteSessionMessage(ctx, workspaceSessionScope(workspaceID), sessionID, messageID)
+func (s *system) DeleteWorkspaceSessionMessage(ctx context.Context, workspaceID string, roleID string, sessionID string, messageID string) (types.Session, error) {
+	return s.deleteSessionMessage(ctx, workspaceSessionScope(workspaceID, roleID), sessionID, messageID)
 }
 
 func (s *system) deleteSessionMessage(ctx context.Context, scope sessionScope, sessionID string, messageID string) (types.Session, error) {
@@ -613,8 +613,8 @@ func (s *system) DeleteGroupSessionMessageSubtree(ctx context.Context, groupID s
 	return s.deleteSessionMessageSubtree(ctx, groupSessionScope(groupID), sessionID, messageID)
 }
 
-func (s *system) DeleteWorkspaceSessionMessageSubtree(ctx context.Context, workspaceID string, sessionID string, messageID string) (types.Session, error) {
-	return s.deleteSessionMessageSubtree(ctx, workspaceSessionScope(workspaceID), sessionID, messageID)
+func (s *system) DeleteWorkspaceSessionMessageSubtree(ctx context.Context, workspaceID string, roleID string, sessionID string, messageID string) (types.Session, error) {
+	return s.deleteSessionMessageSubtree(ctx, workspaceSessionScope(workspaceID, roleID), sessionID, messageID)
 }
 
 func (s *system) deleteSessionMessageSubtree(ctx context.Context, scope sessionScope, sessionID string, messageID string) (types.Session, error) {

@@ -93,6 +93,7 @@ import { getRunState, isTerminalRunStatus, listActiveRoleRuns, pollRunUntilTermi
 import { createEbRunEventConsumer } from './ebRunEvents'
 import { createToolCatalog } from './toolCatalog'
 import { createModelRequestConfigController, defaultModelRequestConfigState } from './modelRequestConfig'
+import { workspaceRoleTargetId } from '../domain/workspaceRoleTarget'
 import { addNativeToolsToPolicy, addToolsToPolicy, emptyRoleToolPolicy, removeNativeToolFromPolicy, removeToolFromPolicy, setToolRunMode } from '../domain/toolPolicy'
 import { readActiveEbRunCardsForTarget, removeEbRoleRunCard, upsertEbRoleRunCard } from '../domain/activeRunCards'
 import { loadWorkspaceSession, saveWorkspaceSession } from './workspaceBridge'
@@ -520,13 +521,14 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     return loaded
   }
 
-  async function reloadWorkspaceSession(workspaceIdRaw: any, sessionIdRaw: any) {
+  async function reloadWorkspaceSession(workspaceIdRaw: any, sessionIdRaw: any, roleIdRaw?: any) {
     const workspaceId = String(workspaceIdRaw || '').trim()
     const sessionId = String(sessionIdRaw || '').trim()
+    const roleId = String(roleIdRaw || state.draft?.activeRoleId || state.data?.ui?.activeRoleId || '').trim()
     if (!workspaceId || !sessionId) return null
     const request = capabilities.net?.request
     if (typeof request !== 'function') return null
-    const chat = await loadWorkspaceSession(request, workspaceId, sessionId)
+    const chat = await loadWorkspaceSession(request, workspaceId, roleId, sessionId)
     if (!chat) return null
     const loaded = upsertWorkspaceChat(workspaceId, chat)
     ebRunEvents.flushSession('workspace', workspaceId, sessionId)
@@ -732,7 +734,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
           const workspaceId = String((latest as any)?.workspaceId || '').trim()
           const sessionId = String(latest?.sessionId || '').trim()
           if (workspaceId && sessionId && typeof reloadWorkspaceSession === 'function') {
-            await reloadWorkspaceSession(workspaceId, sessionId).catch(() => null)
+            await reloadWorkspaceSession(workspaceId, sessionId, latest.roleId).catch(() => null)
           } else if (groupId && sessionId && typeof reloadGroupSession === 'function') {
             await reloadGroupSession(groupId, sessionId).catch(() => null)
           } else if (roleId && sessionId && typeof reloadRoleSession === 'function') {
@@ -783,20 +785,21 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     if (kind !== 'role' && kind !== 'workspace') return null
     const target = kind === 'workspace' ? activeWorkspace() : activeRole()
     const targetId = String((target as any)?.id || '').trim()
+    const roleId = String(activeRole()?.id || state.draft?.activeRoleId || state.data?.ui?.activeRoleId || '').trim()
     if (!targetId) return null
     const pendingKind = kind === 'workspace' ? 'workspace' : 'role'
-    const pendingChat = pendingChatForTarget(state, pendingKind, targetId)
+    const pendingChat = pendingChatForTarget(state, pendingKind, kind === 'workspace' ? workspaceRoleTargetId(targetId, roleId) : targetId)
     if (!pendingChat) await ensureActiveChatLoaded()
     const chat = pendingChat || activeChatFromData()
     if (!chat) return null
-    return { targetId, pendingChat, chat, kind: kind === 'workspace' ? 'workspace' : 'role' as 'workspace' | 'role' }
+    return { targetId, roleId, pendingChat, chat, kind: kind === 'workspace' ? 'workspace' : 'role' as 'workspace' | 'role' }
   }
 
-  async function saveRoleChatSettingsTarget(target: { targetId: string; pendingChat: any; chat: any; kind: 'role' | 'workspace' }) {
+  async function saveRoleChatSettingsTarget(target: { targetId: string; roleId?: string; pendingChat: any; chat: any; kind: 'role' | 'workspace' }) {
     if (target.pendingChat) return
     if (target.kind === 'workspace') {
       const request = capabilities.net?.request
-      const roleId = String(target.chat?.roleId || state.draft?.activeRoleId || '').trim()
+      const roleId = String(target.chat?.roleId || target.roleId || state.draft?.activeRoleId || '').trim()
       if (typeof request !== 'function') throw new Error('工作区保存通道不可用')
       await saveWorkspaceSession(request, { workspaceId: target.targetId, roleId, chat: target.chat })
       return
@@ -1900,7 +1903,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
         })
         .then((fixed: any) => {
           const nextMermaid = String((fixed as any)?.mermaidSource || '').trim()
-          const reload = workspaceId ? reloadWorkspaceSession(workspaceId, sessionId) : reloadRoleSession(roleId, sessionId)
+          const reload = workspaceId ? reloadWorkspaceSession(workspaceId, sessionId, roleId) : reloadRoleSession(roleId, sessionId)
           return reload.then(() => {
             if (!activeChatFromData()) throw new Error('Mermaid 修复已完成，但刷新最新会话失败')
             emit()
@@ -2070,17 +2073,18 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     aiGenerateWorkspaceChatTitle: (workspaceId: any, chatId: any) => {
       let t0 = 0
       const cost = () => ((now() - t0) / 1000).toFixed(1)
+      let roleId = ''
       return Promise.resolve()
         .then(async () => {
           const workspaceChat = await ensureWorkspaceChatLoaded(String(workspaceId || ''), String(chatId || ''))
-          const roleId = String((workspaceChat as any)?.roleId || '').trim()
+          roleId = String((workspaceChat as any)?.roleId || '').trim()
           if (!roleId) throw new Error('工作区会话缺少角色，暂时无法生成标题')
           t0 = now()
           api.ui?.showToast?.('AI 生成标题中…')
           return { roleId, title: await aiGenerateChatTitle(roleId, String(chatId || '')) }
         })
         .then(async ({ title }: any) => {
-          await reloadWorkspaceSession(String(workspaceId || ''), String(chatId || ''))
+          await reloadWorkspaceSession(String(workspaceId || ''), String(chatId || ''), roleId)
           const nextTitle = String((title as any)?.title || title || '').trim()
           emit()
           api.ui?.showToast?.(`已更新标题（${cost()}s）：${nextTitle || '（空）'}`, { kind: 'success' })

@@ -22,10 +22,10 @@ type StorageSystem interface {
 	SaveSessionMessages(ctx context.Context, save types.SessionMessageSave) error
 	LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error)
 	LoadGroupSession(ctx context.Context, groupID string, sessionID string) (types.Session, error)
-	LoadWorkspaceSession(ctx context.Context, workspaceID string, sessionID string) (types.Session, error)
+	LoadWorkspaceSession(ctx context.Context, workspaceID string, roleID string, sessionID string) (types.Session, error)
 	SaveSessionMessageAttachment(ctx context.Context, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
 	SaveGroupSessionMessageAttachment(ctx context.Context, groupID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
-	SaveWorkspaceSessionMessageAttachment(ctx context.Context, workspaceID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
+	SaveWorkspaceSessionMessageAttachment(ctx context.Context, workspaceID string, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
 	LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error)
 	LoadContextCompressionConfig(ctx context.Context) (types.ContextCompressionConfig, error)
 	LoadWorkspace(ctx context.Context, workspaceID string) (types.Workspace, error)

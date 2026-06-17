@@ -102,6 +102,7 @@ import { formatTokenEstimate, formatTokenEstimateShort, sumMessageTokenEstimate 
 import { ChatSessionRunIndicator, type ChatSessionRunIndicatorKind } from './components/ChatSessionRunIndicator'
 import { ChatMessageList } from './components/ChatMessageList'
 import { StickerInlineImage } from './components/MessageMedia'
+import { workspaceRoleTargetId } from '../domain/workspaceRoleTarget'
 import type { AiChatToastOptions } from '../gateway/capabilities'
 import { REASONING_EFFORT_OPTIONS, chatReasoningEffort, effectiveReasoningEffort, modelReasoningProfileFromModelRef, reasoningEffortLabel } from '../domain/reasoning'
 import {
@@ -1023,7 +1024,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const activeRole = controller.activeRole()
   const activeGroup = activeTargetKind === 'group' ? (groups.find((g: any) => String(g?.id || '') === activeGroupId) || null) : null
   const activeWorkspace = activeTargetKind === 'workspace' ? (workspaces.find((workspace: any) => String(workspace?.id || '') === activeWorkspaceId) || null) : null
-  const activeChatTargetId = activeTargetKind === 'group' ? activeGroupId : activeTargetKind === 'workspace' ? activeWorkspaceId : String(activeRole?.id || '')
+  const activeWorkspaceChatTargetId = workspaceRoleTargetId(activeWorkspaceId, (activeRole as any)?.id)
+  const activeChatTargetId = activeTargetKind === 'group' ? activeGroupId : activeTargetKind === 'workspace' ? activeWorkspaceChatTargetId : String(activeRole?.id || '')
   const activeChatSelectionBox = activeChatTargetId
     ? activeTargetKind === 'group'
       ? (data as any)?.chatsByGroup?.[activeChatTargetId]
@@ -5948,11 +5950,11 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                         </Box>
                       )
                     }
-                    const box = (data as any)?.chatsByWorkspace?.[String((activeWorkspace as any)?.id || '')]
+                    const box = (data as any)?.chatsByWorkspace?.[String(activeChatTargetId || '')]
                     const chats = sortChatListItemsForDisplay(Array.isArray(box?.chatMetas) && box.chatMetas.length ? box.chatMetas : Array.isArray(box?.chats) ? box.chats : [])
                     const activeChatId = String(box?.activeChatId || '')
                     const pendingChat =
-                      (s as any)?.pendingWorkspaceChat && String((s as any).pendingWorkspaceChat?.workspaceId || '') === String((activeWorkspace as any)?.id || '')
+                      (s as any)?.pendingWorkspaceChat && workspaceRoleTargetId((s as any).pendingWorkspaceChat?.workspaceId, (s as any).pendingWorkspaceChat?.roleId) === String(activeChatTargetId || '')
                         ? (s as any).pendingWorkspaceChat.chat
                         : null
                     const hasPending = !!pendingChat
@@ -5996,18 +5998,18 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                           const raw = String(c?.lastMessagePreview || '').replace(/\s+/g, ' ').trim()
                           const snippet = raw.length > 40 ? raw.slice(0, 40) + '…' : raw
                           const time = controller.fmtTime(Number(c?.updatedAt || c?.createdAt || 0))
-                          const indicatorKind = chatSessionRunIndicatorKind('workspace', String((activeWorkspace as any)?.id || ''), c, on)
+                    const indicatorKind = chatSessionRunIndicatorKind('workspace', String(activeChatTargetId || ''), c, on)
                           return (
                             <ListItemButton
                               key={String(c?.id || '')}
                               selected={on}
                               onClick={() => {
-                                clearChatSessionRunNotice('workspace', String((activeWorkspace as any)?.id || ''), String(c?.id || ''))
+                                clearChatSessionRunNotice('workspace', String(activeChatTargetId || ''), String(c?.id || ''))
                                 chatSwitch.requestSwitch(String(c?.id || ''))
                                 closeChatPicker()
                               }}
                               onContextMenu={(e) =>
-                                onChatContextMenu(e, 'workspace', String((activeWorkspace as any)?.id || ''), String(c?.id || ''), String(c?.title || '工作区会话'))
+                                onChatContextMenu(e, 'workspace', String(activeChatTargetId || ''), String(c?.id || ''), String(c?.title || '工作区会话'))
                               }
                               sx={{ borderBottom: '1px solid', borderColor: 'divider', alignItems: 'flex-start' }}
                             >

@@ -178,32 +178,40 @@ func (p paths) groupSessionAttachmentDir(groupID string, sessionID string, attac
 	return p.safeJoin(dir, attachmentID)
 }
 
-func (p paths) workspaceSessionDir(workspaceID string, sessionID string) (string, error) {
+func (p paths) workspaceRoleSessionsDir(workspaceID string, roleID string) (string, error) {
 	workspaceDir, err := p.safeJoin(p.sessionWorkspacesRoot(), workspaceID)
 	if err != nil {
 		return "", err
 	}
-	return p.safeJoin(workspaceDir, sessionID)
+	return p.safeJoin(workspaceDir, roleID)
 }
 
-func (p paths) workspaceSessionDataFile(workspaceID string, sessionID string) (string, error) {
-	dir, err := p.workspaceSessionDir(workspaceID, sessionID)
+func (p paths) workspaceSessionDir(workspaceID string, roleID string, sessionID string) (string, error) {
+	roleDir, err := p.workspaceRoleSessionsDir(workspaceID, roleID)
+	if err != nil {
+		return "", err
+	}
+	return p.safeJoin(roleDir, sessionID)
+}
+
+func (p paths) workspaceSessionDataFile(workspaceID string, roleID string, sessionID string) (string, error) {
+	dir, err := p.workspaceSessionDir(workspaceID, roleID, sessionID)
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(dir, "data.json"), nil
 }
 
-func (p paths) workspaceSessionAttachmentsDir(workspaceID string, sessionID string) (string, error) {
-	dir, err := p.workspaceSessionDir(workspaceID, sessionID)
+func (p paths) workspaceSessionAttachmentsDir(workspaceID string, roleID string, sessionID string) (string, error) {
+	dir, err := p.workspaceSessionDir(workspaceID, roleID, sessionID)
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(dir, "attachments"), nil
 }
 
-func (p paths) workspaceSessionAttachmentDir(workspaceID string, sessionID string, attachmentID string) (string, error) {
-	dir, err := p.workspaceSessionAttachmentsDir(workspaceID, sessionID)
+func (p paths) workspaceSessionAttachmentDir(workspaceID string, roleID string, sessionID string, attachmentID string) (string, error) {
+	dir, err := p.workspaceSessionAttachmentsDir(workspaceID, roleID, sessionID)
 	if err != nil {
 		return "", err
 	}

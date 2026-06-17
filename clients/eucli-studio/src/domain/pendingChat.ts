@@ -1,4 +1,5 @@
 import { now, uid } from '../core/utils'
+import { parseWorkspaceRoleTargetId, workspaceRoleTargetId } from './workspaceRoleTarget'
 
 export type PendingChatTargetKind = 'role' | 'group' | 'workspace'
 
@@ -13,8 +14,9 @@ function normalizeId(value: unknown): string {
   return String(value || '').trim()
 }
 
-export function createPendingChatEntry(kind: PendingChatTargetKind, targetIdRaw: unknown, fallbackTitle: string): PendingChatEntry | null {
+export function createPendingChatEntry(kind: PendingChatTargetKind, targetIdRaw: unknown, fallbackTitle: string, roleIdRaw?: unknown): PendingChatEntry | null {
   const targetId = normalizeId(targetIdRaw)
+  const roleId = normalizeId(roleIdRaw)
   if (!targetId) return null
   const ts = now()
   const chat = {
@@ -26,7 +28,10 @@ export function createPendingChatEntry(kind: PendingChatTargetKind, targetIdRaw:
     clientDraft: true,
   }
   if (kind === 'group') return { groupId: targetId, chat }
-  if (kind === 'workspace') return { workspaceId: targetId, chat }
+  if (kind === 'workspace') {
+    if (!roleId) return null
+    return { workspaceId: targetId, roleId, chat }
+  }
   return { roleId: targetId, chat }
 }
 
@@ -35,8 +40,17 @@ export function pendingChatForTarget(state: any, kind: PendingChatTargetKind, ta
   if (!state || !targetId) return null
   const pending = kind === 'group' ? state.pendingGroupChat : kind === 'workspace' ? state.pendingWorkspaceChat : state.pendingChat
   if (!pending || typeof pending !== 'object') return null
-  const pendingTargetId = kind === 'group' ? normalizeId(pending.groupId) : kind === 'workspace' ? normalizeId(pending.workspaceId) : normalizeId(pending.roleId)
-  if (pendingTargetId !== targetId) return null
+  if (kind === 'workspace') {
+    const parsed = parseWorkspaceRoleTargetId(targetId)
+    if (parsed.workspaceId && parsed.roleId) {
+      if (workspaceRoleTargetId(pending.workspaceId, pending.roleId) !== targetId) return null
+    } else if (normalizeId(pending.workspaceId) !== targetId) {
+      return null
+    }
+  } else {
+    const pendingTargetId = kind === 'group' ? normalizeId(pending.groupId) : normalizeId(pending.roleId)
+    if (pendingTargetId !== targetId) return null
+  }
   return pending.chat && typeof pending.chat === 'object' ? pending.chat : null
 }
 
@@ -48,7 +62,12 @@ export function clearPendingChatForTarget(state: any, kind: PendingChatTargetKin
     return
   }
   if (kind === 'workspace') {
-    if (state.pendingWorkspaceChat && normalizeId(state.pendingWorkspaceChat.workspaceId) === targetId) state.pendingWorkspaceChat = null
+    const parsed = parseWorkspaceRoleTargetId(targetId)
+    if (parsed.workspaceId && parsed.roleId) {
+      if (state.pendingWorkspaceChat && workspaceRoleTargetId(state.pendingWorkspaceChat.workspaceId, state.pendingWorkspaceChat.roleId) === targetId) state.pendingWorkspaceChat = null
+    } else if (state.pendingWorkspaceChat && normalizeId(state.pendingWorkspaceChat.workspaceId) === targetId) {
+      state.pendingWorkspaceChat = null
+    }
     return
   }
   if (state.pendingChat && normalizeId(state.pendingChat.roleId) === targetId) state.pendingChat = null

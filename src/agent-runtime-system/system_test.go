@@ -1777,10 +1777,10 @@ func (f *fakeRuntimeStorage) LoadGroupSession(ctx context.Context, groupID strin
 	return session, nil
 }
 
-func (f *fakeRuntimeStorage) LoadWorkspaceSession(ctx context.Context, workspaceID string, sessionID string) (types.Session, error) {
+func (f *fakeRuntimeStorage) LoadWorkspaceSession(ctx context.Context, workspaceID string, roleID string, sessionID string) (types.Session, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	session, ok := f.sessions["workspaces/"+workspaceID+"/"+sessionID]
+	session, ok := f.sessions["workspaces/"+workspaceID+"/"+roleID+"/"+sessionID]
 	if !ok {
 		return types.Session{}, errors.New("workspace session missing")
 	}
@@ -1792,7 +1792,7 @@ func (f *fakeRuntimeStorage) sessionKey(session types.Session) string {
 		return "groups/" + session.GroupID + "/" + session.ID
 	}
 	if strings.TrimSpace(session.WorkspaceID) != "" {
-		return "workspaces/" + session.WorkspaceID + "/" + session.ID
+		return "workspaces/" + session.WorkspaceID + "/" + session.RoleID + "/" + session.ID
 	}
 	return session.RoleID + "/" + session.ID
 }
@@ -1853,11 +1853,11 @@ func (f *fakeRuntimeStorage) SaveGroupSessionMessageAttachment(ctx context.Conte
 	return types.MessageAttachment{ID: "att-text", Kind: attachment.Kind, Name: attachment.Name, Lang: attachment.Lang, Text: attachment.Text, FullLen: attachment.FullLen, SendLen: attachment.SendLen, SendPct: attachment.SendPct}, nil
 }
 
-func (f *fakeRuntimeStorage) SaveWorkspaceSessionMessageAttachment(ctx context.Context, workspaceID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
+func (f *fakeRuntimeStorage) SaveWorkspaceSessionMessageAttachment(ctx context.Context, workspaceID string, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if attachment.Kind == "image" {
-		path := "sessions/workspaces/" + workspaceID + "/" + sessionID + "/attachments/att-image/image.png"
+		path := "sessions/workspaces/" + workspaceID + "/" + roleID + "/" + sessionID + "/attachments/att-image/image.png"
 		f.images[path] = attachment.DataURL
 		return types.MessageAttachment{ID: "att-image", Kind: "image", Name: attachment.Name, Mime: "image/png", Path: path}, nil
 	}

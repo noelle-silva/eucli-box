@@ -49,6 +49,7 @@ import type { AiChatShowToast } from '../gateway/capabilities'
 import { cancelRoleRun, pollRunUntilTerminal, runStateFailureError, startRoleRun, submitToolConfirmation as submitToolConfirmationRequest, type EbRunState } from './ebRoleRun'
 import { deleteGroupSessionMessage, deleteGroupSessionMessageSubtree, deleteRoleSessionMessage, deleteRoleSessionMessageSubtree, deleteWorkspaceSessionMessage, deleteWorkspaceSessionMessageSubtree, updateGroupSessionMessage, updateRoleSessionMessage, updateWorkspaceSessionMessage } from './ebRoleSession'
 import { buildGroupSpeakerPlan } from '../domain/groupSpeakerPlan'
+import { parseWorkspaceRoleTargetId, workspaceRoleTargetId } from '../domain/workspaceRoleTarget'
 
 type ChatTargetKind = 'role' | 'group' | 'workspace'
 
@@ -100,6 +101,17 @@ export function createChatOperations(deps: {
   const sa = createStateAccessors({ getState })
   const cancelledRunIds = new Set<string>()
   const startingRoleRunKeys = new Set<string>()
+
+  function workspaceTargetId(workspaceIdRaw: unknown, roleIdRaw?: unknown) {
+    const roleId = String(roleIdRaw || sa.activeRole()?.id || '').trim()
+    return workspaceRoleTargetId(workspaceIdRaw, roleId)
+  }
+
+  function splitWorkspaceTargetId(targetIdRaw: unknown) {
+    const parsed = parseWorkspaceRoleTargetId(targetIdRaw)
+    if (parsed.workspaceId && parsed.roleId) return parsed
+    return { workspaceId: String(targetIdRaw || '').trim(), roleId: String(sa.activeRole()?.id || '').trim() }
+  }
 
   async function waitForCurrentChatSettingsSave() {
     try {
@@ -229,7 +241,7 @@ export function createChatOperations(deps: {
     const workspaceId = String((run as any)?.workspaceId || fallback.workspaceId || current?.workspaceId || '').trim()
     const sessionId = String(run?.sessionId || fallback.sessionId || current?.sessionId || '').trim()
     const targetKind: ChatTargetKind = workspaceId ? 'workspace' : groupId ? 'group' : 'role'
-    const targetId = workspaceId || groupId || roleId
+    const targetId = workspaceId ? workspaceTargetId(workspaceId, roleId) : groupId || roleId
     if (fallback.startedFromPending && targetId && sessionId) activateResolvedPendingChat(state, targetKind, targetId, sessionId, fallback.pendingChatId)
     const inputMessageId = String(run?.inputMessageId || current?.inputMessageId || '').trim()
     const lastMessageId = String(run?.lastMessageId || fallback.lastMessageId || current?.lastMessageId || inputMessageId || '').trim()
@@ -263,7 +275,7 @@ export function createChatOperations(deps: {
     const currentTargetId = targetKind === 'group'
       ? String(sa.activeGroup()?.id || state.draft?.activeGroupId || state.data?.ui?.activeGroupId || '').trim()
       : targetKind === 'workspace'
-        ? String(sa.activeWorkspace?.()?.id || state.draft?.activeWorkspaceId || state.data?.ui?.activeWorkspaceId || '').trim()
+        ? workspaceTargetId(sa.activeWorkspace?.()?.id || state.draft?.activeWorkspaceId || state.data?.ui?.activeWorkspaceId)
         : String(state.draft?.activeRoleId || state.data?.ui?.activeRoleId || '').trim()
     if (currentTargetId !== tid) return false
     const box = targetKind === 'group'
@@ -289,6 +301,7 @@ export function createChatOperations(deps: {
     const tid = String(targetId || '').trim()
     const sid = String(sessionId || '').trim()
     if (!state.data || !tid || !sid || typeof ensureChatLoaded !== 'function') return null
+    const workspaceTarget = targetKind === 'workspace' ? splitWorkspaceTargetId(tid) : { workspaceId: '', roleId: '' }
     if (targetKind === 'group') {
       if (!state.data.chatsByGroup || typeof state.data.chatsByGroup !== 'object') state.data.chatsByGroup = {}
       if (!state.data.chatsByGroup[tid] || typeof state.data.chatsByGroup[tid] !== 'object') state.data.chatsByGroup[tid] = { activeChatId: '', chatMetas: [], chats: [] }
@@ -305,8 +318,8 @@ export function createChatOperations(deps: {
         : await ensureChatLoaded('group', tid, sid)
       : targetKind === 'workspace'
         ? typeof reloadWorkspaceSession === 'function'
-          ? await reloadWorkspaceSession(tid, sid)
-          : await ensureChatLoaded('workspace', tid, sid)
+          ? await reloadWorkspaceSession(workspaceTarget.workspaceId, sid)
+          : await ensureChatLoaded('workspace', workspaceTarget.workspaceId, sid)
       : typeof reloadRoleSession === 'function'
         ? await reloadRoleSession(tid, sid)
         : await ensureChatLoaded('role', tid, sid)
@@ -410,7 +423,7 @@ export function createChatOperations(deps: {
       const groupId = String(input.groupId || '').trim()
       const workspaceId = String(input.workspaceId || '').trim()
       const targetKind: ChatTargetKind = workspaceId ? 'workspace' : groupId ? 'group' : 'role'
-      const targetId = workspaceId || groupId || String(input.roleId || '').trim()
+      const targetId = workspaceId ? workspaceTargetId(workspaceId, input.roleId) : groupId || String(input.roleId || '').trim()
     const pendingAtStart = !String(input.sessionId || '').trim() ? pendingChatForTarget(stateBeforeRun, targetKind, targetId) : null
     const startedFromPending = !!pendingAtStart
     const startedFromPendingChatId = String(pendingAtStart?.id || '').trim()
@@ -506,16 +519,17 @@ export function createChatOperations(deps: {
     const targetKind: ChatTargetKind = activeKind === 'group' ? 'group' : activeKind === 'workspace' ? 'workspace' : 'role'
     const target = targetKind === 'group' ? sa.activeGroup() : targetKind === 'workspace' ? sa.activeWorkspace?.() : sa.activeRole()
     const chat = await ensureActiveChatLoaded?.().catch(() => null) || sa.activeChatFromData()
-    const targetId = String(target?.id || '').trim()
+    const workspaceId = targetKind === 'workspace' ? String(target?.id || '').trim() : ''
     const sessionId = String(chat?.id || '').trim()
     const roleId = String(sa.activeRole()?.id || '').trim()
+    const targetId = targetKind === 'workspace' ? workspaceRoleTargetId(workspaceId, roleId) : String(target?.id || '').trim()
     if (!targetId || !sessionId || !chat) return null
     return {
       targetKind,
       targetId,
       roleId: targetKind === 'group' ? '' : targetKind === 'workspace' ? roleId : targetId,
       groupId: targetKind === 'group' ? targetId : '',
-      workspaceId: targetKind === 'workspace' ? targetId : '',
+      workspaceId,
       sessionId,
       chat,
     }
@@ -734,7 +748,7 @@ export function createChatOperations(deps: {
     }
     try {
       if (target.targetKind === 'group') await updateGroupSessionMessage(netRequest, { groupId: target.groupId, sessionId: target.sessionId, messageId: mid, content: String(message.content ?? ''), parts: Array.isArray(message.parts) ? message.parts : [] })
-      else if (target.targetKind === 'workspace') await updateWorkspaceSessionMessage(netRequest, { workspaceId: target.workspaceId, sessionId: target.sessionId, messageId: mid, content: String(message.content ?? ''), parts: Array.isArray(message.parts) ? message.parts : [] })
+      else if (target.targetKind === 'workspace') await updateWorkspaceSessionMessage(netRequest, { workspaceId: target.workspaceId, roleId: target.roleId, sessionId: target.sessionId, messageId: mid, content: String(message.content ?? ''), parts: Array.isArray(message.parts) ? message.parts : [] })
       else await updateRoleSessionMessage(netRequest, { roleId: target.roleId, sessionId: target.sessionId, messageId: mid, content: String(message.content ?? ''), parts: Array.isArray(message.parts) ? message.parts : [] })
     } catch (e: any) {
       if (messageIndex >= 0) messages[messageIndex] = beforeMessage
@@ -949,7 +963,7 @@ export function createChatOperations(deps: {
     const rid = String(role.id || '')
     const workspaceId = sa.activeTargetKind() === 'workspace' ? String(sa.activeWorkspace?.()?.id || '').trim() : ''
     const pendingKind: ChatTargetKind = workspaceId ? 'workspace' : 'role'
-    const pendingTargetId = workspaceId || rid
+    const pendingTargetId = workspaceId ? workspaceTargetId(workspaceId, rid) : rid
     const pendingChat = pendingChatForTarget(state, pendingKind, pendingTargetId)
     const loadedChat = pendingChat ? null : await ensureActiveChatLoaded?.().catch(() => null)
     const currentChat = pendingChat ? null : loadedChat || sa.activeChatFromData()
@@ -1047,7 +1061,7 @@ export function createChatOperations(deps: {
 
     const explicitRunId = String(runIdRaw || '').trim()
     const targetKind = sa.activeTargetKind()
-    const targetId = targetKind === 'group' ? String(sa.activeGroup()?.id || '').trim() : targetKind === 'workspace' ? String(sa.activeWorkspace?.()?.id || '').trim() : String(sa.activeRole()?.id || '').trim()
+    const targetId = targetKind === 'group' ? String(sa.activeGroup()?.id || '').trim() : targetKind === 'workspace' ? workspaceTargetId(sa.activeWorkspace?.()?.id) : String(sa.activeRole()?.id || '').trim()
     const sessionId = String(sa.activeChatFromData()?.id || '').trim()
     const activeRun = explicitRunId
       ? findEbRoleRunCard(state, explicitRunId)
@@ -1066,7 +1080,7 @@ export function createChatOperations(deps: {
         const workspaceId = String((activeRun as any)?.workspaceId || sa.activeWorkspace?.()?.id || '').trim()
         const nextSessionId = String(activeRun?.sessionId || sa.activeChatFromData()?.id || '').trim()
         if (groupId && nextSessionId) refreshTargetSession('group', groupId, nextSessionId, undefined, { activate: false }).catch(() => {})
-        else if (workspaceId && nextSessionId) refreshTargetSession('workspace', workspaceId, nextSessionId, undefined, { activate: false }).catch(() => {})
+        else if (workspaceId && nextSessionId) refreshTargetSession('workspace', workspaceTargetId(workspaceId, roleId), nextSessionId, undefined, { activate: false }).catch(() => {})
         else if (roleId && nextSessionId) refreshRoleSession(roleId, nextSessionId, undefined, { activate: false }).catch(() => {})
         renderComposer()
       } catch (e) {
@@ -1353,7 +1367,7 @@ export function createChatOperations(deps: {
     if (typeof netRequest !== 'function') { showToast?.('e-b 请求通道不可用', { kind: 'error' }); return false }
     try {
       if (target.targetKind === 'group') await deleteGroupSessionMessage(netRequest, { groupId: target.groupId, sessionId: target.sessionId, messageId: mid })
-      else if (target.targetKind === 'workspace') await deleteWorkspaceSessionMessage(netRequest, { workspaceId: target.workspaceId, sessionId: target.sessionId, messageId: mid })
+      else if (target.targetKind === 'workspace') await deleteWorkspaceSessionMessage(netRequest, { workspaceId: target.workspaceId, roleId: target.roleId, sessionId: target.sessionId, messageId: mid })
       else await deleteRoleSessionMessage(netRequest, { roleId: target.roleId, sessionId: target.sessionId, messageId: mid })
       await refreshTargetSession(target.targetKind, target.targetId, target.sessionId)
       render()
@@ -1377,7 +1391,7 @@ export function createChatOperations(deps: {
     if (typeof netRequest !== 'function') { showToast?.('e-b 请求通道不可用', { kind: 'error' }); return false }
     try {
       if (target.targetKind === 'group') await deleteGroupSessionMessageSubtree(netRequest, { groupId: target.groupId, sessionId: target.sessionId, messageId: mid })
-      else if (target.targetKind === 'workspace') await deleteWorkspaceSessionMessageSubtree(netRequest, { workspaceId: target.workspaceId, sessionId: target.sessionId, messageId: mid })
+      else if (target.targetKind === 'workspace') await deleteWorkspaceSessionMessageSubtree(netRequest, { workspaceId: target.workspaceId, roleId: target.roleId, sessionId: target.sessionId, messageId: mid })
       else await deleteRoleSessionMessageSubtree(netRequest, { roleId: target.roleId, sessionId: target.sessionId, messageId: mid })
       await refreshTargetSession(target.targetKind, target.targetId, target.sessionId)
       render()

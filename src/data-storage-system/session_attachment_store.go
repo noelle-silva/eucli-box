@@ -25,8 +25,8 @@ func (s *system) SaveGroupSessionMessageAttachment(ctx context.Context, groupID 
 	return s.saveSessionMessageAttachment(ctx, groupSessionScope(groupID), sessionID, attachment)
 }
 
-func (s *system) SaveWorkspaceSessionMessageAttachment(ctx context.Context, workspaceID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
-	return s.saveSessionMessageAttachment(ctx, workspaceSessionScope(workspaceID), sessionID, attachment)
+func (s *system) SaveWorkspaceSessionMessageAttachment(ctx context.Context, workspaceID string, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
+	return s.saveSessionMessageAttachment(ctx, workspaceSessionScope(workspaceID, roleID), sessionID, attachment)
 }
 
 func (s *system) saveSessionMessageAttachment(ctx context.Context, scope sessionScope, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
@@ -118,7 +118,7 @@ func (s *system) LoadSessionAttachmentImage(ctx context.Context, relPath string)
 func (s *system) sessionAttachmentImagePath(relPath string) (string, string, error) {
 	relPath = filepath.ToSlash(strings.TrimSpace(relPath))
 	parts := strings.Split(relPath, "/")
-	if len(parts) != 6 && len(parts) != 7 {
+	if len(parts) != 6 && len(parts) != 7 && len(parts) != 8 {
 		return "", "", storageInvalid("session attachment image path is invalid", nil)
 	}
 	if parts[0] != "sessions" {
@@ -128,15 +128,21 @@ func (s *system) sessionAttachmentImagePath(relPath string) (string, string, err
 	var sessionID string
 	var attachmentID string
 	var fileName string
-	if len(parts) == 7 {
+	if len(parts) == 8 {
+		if parts[1] != "workspaces" || parts[5] != "attachments" {
+			return "", "", storageInvalid("session attachment image path is invalid", nil)
+		}
+		scope = workspaceSessionScope(parts[2], parts[3])
+		sessionID = parts[4]
+		attachmentID = parts[6]
+		fileName = strings.TrimSpace(parts[7])
+	} else if len(parts) == 7 {
 		if parts[4] != "attachments" {
 			return "", "", storageInvalid("session attachment image path is invalid", nil)
 		}
 		switch parts[1] {
 		case "groups":
 			scope = groupSessionScope(parts[2])
-		case "workspaces":
-			scope = workspaceSessionScope(parts[2])
 		default:
 			return "", "", storageInvalid("session attachment image path is invalid", nil)
 		}
@@ -190,7 +196,7 @@ func (s *system) sessionAttachmentDir(scope sessionScope, sessionID string, atta
 		return s.paths.groupSessionAttachmentDir(scope.ID, sessionID, attachmentID)
 	}
 	if scope.Kind == sessionScopeWorkspace {
-		return s.paths.workspaceSessionAttachmentDir(scope.ID, sessionID, attachmentID)
+		return s.paths.workspaceSessionAttachmentDir(scope.WorkspaceID, scope.RoleID, sessionID, attachmentID)
 	}
 	return s.paths.sessionAttachmentDir(scope.ID, sessionID, attachmentID)
 }
@@ -200,7 +206,7 @@ func sessionAttachmentRelPath(scope sessionScope, sessionID string, attachmentID
 		return filepath.ToSlash(filepath.Join("sessions", "groups", scope.ID, sessionID, "attachments", attachmentID, fileName))
 	}
 	if scope.Kind == sessionScopeWorkspace {
-		return filepath.ToSlash(filepath.Join("sessions", "workspaces", scope.ID, sessionID, "attachments", attachmentID, fileName))
+		return filepath.ToSlash(filepath.Join("sessions", "workspaces", scope.WorkspaceID, scope.RoleID, sessionID, "attachments", attachmentID, fileName))
 	}
 	return filepath.ToSlash(filepath.Join("sessions", scope.ID, sessionID, "attachments", attachmentID, fileName))
 }

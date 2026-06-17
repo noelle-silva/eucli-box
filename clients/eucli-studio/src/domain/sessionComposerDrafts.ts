@@ -13,6 +13,8 @@ export type SessionComposerDraft = {
   files: any[]
 }
 
+import { workspaceRoleTargetId } from './workspaceRoleTarget'
+
 const NEW_CHAT_ID = '__new__'
 
 function text(value: unknown) {
@@ -30,8 +32,8 @@ function activeTargetId(state: any, kind: ComposerDraftTargetKind) {
   return kind === 'group'
     ? text(state?.draft?.activeGroupId || state?.data?.ui?.activeGroupId)
     : kind === 'workspace'
-      ? text(state?.draft?.activeWorkspaceId || state?.data?.ui?.activeWorkspaceId)
-    : text(state?.draft?.activeRoleId || state?.data?.ui?.activeRoleId)
+      ? workspaceRoleTargetId(state?.draft?.activeWorkspaceId || state?.data?.ui?.activeWorkspaceId, state?.draft?.activeRoleId || state?.data?.ui?.activeRoleId)
+      : text(state?.draft?.activeRoleId || state?.data?.ui?.activeRoleId)
 }
 
 export function composerDraftAddressFor(kind: ComposerDraftTargetKind, targetIdRaw: unknown, mode: ComposerDraftAddress['mode'], chatIdRaw?: unknown): ComposerDraftAddress | null {
@@ -48,7 +50,7 @@ export function activeComposerDraftAddress(state: any): ComposerDraftAddress | n
   if (!targetId) return null
 
   const pending = kind === 'group' ? state.pendingGroupChat : kind === 'workspace' ? state.pendingWorkspaceChat : state.pendingChat
-  const pendingTargetId = kind === 'group' ? text(pending?.groupId) : kind === 'workspace' ? text(pending?.workspaceId) : text(pending?.roleId)
+  const pendingTargetId = kind === 'group' ? text(pending?.groupId) : kind === 'workspace' ? workspaceRoleTargetId(pending?.workspaceId, pending?.roleId) : text(pending?.roleId)
   const pendingChatId = text(pending?.chat?.id)
   if (pending && pendingTargetId === targetId && pendingChatId) return composerDraftAddressFor(kind, targetId, 'pending', pendingChatId)
 

@@ -1,5 +1,6 @@
 import { normalizeStoredChat } from '../storage/normalizeStoredChat'
 import { normalizeReasoningEffort } from '../domain/reasoning'
+import { workspaceRoleTargetId } from '../domain/workspaceRoleTarget'
 
 type EbNetRequest = (req: any) => Promise<any>
 
@@ -223,6 +224,10 @@ export function workspaceSessionSummaryToMeta(raw: unknown) {
   }
 }
 
+export function workspaceSessionTargetId(workspaceIdRaw: unknown, roleIdRaw: unknown) {
+  return workspaceRoleTargetId(workspaceIdRaw, roleIdRaw)
+}
+
 function workspaceToWire(workspace: UiWorkspace) {
   const createdAt = workspaceFallbackTime(workspace.createdAt)
   const updatedAt = timeMs(workspace.updatedAt, createdAt)
@@ -325,18 +330,20 @@ export async function deleteWorkspace(netRequest: EbNetRequest, workspaceId: str
   await netRequest({ method: 'DELETE', path: `/api/workspaces/${encodeURIComponent(id)}`, timeoutMs: 15000 })
 }
 
-export async function listWorkspaceSessionSummaries(netRequest: EbNetRequest, workspaceId: string) {
+export async function listWorkspaceSessionSummaries(netRequest: EbNetRequest, workspaceId: string, roleId: string) {
   const id = text(workspaceId)
-  if (!id) return []
-  const response = await netRequest({ method: 'GET', path: `/api/workspaces/${encodeURIComponent(id)}/sessions`, timeoutMs: 15000 })
+  const rid = text(roleId)
+  if (!id || !rid) return []
+  const response = await netRequest({ method: 'GET', path: `/api/workspaces/${encodeURIComponent(id)}/roles/${encodeURIComponent(rid)}/sessions`, timeoutMs: 15000 })
   return list(response?.body)
 }
 
-export async function loadWorkspaceSession(netRequest: EbNetRequest, workspaceId: string, sessionId: string) {
+export async function loadWorkspaceSession(netRequest: EbNetRequest, workspaceId: string, roleId: string, sessionId: string) {
   const wid = text(workspaceId)
+  const rid = text(roleId)
   const sid = text(sessionId)
-  if (!wid || !sid) throw new Error('工作区会话无效')
-  const response = await netRequest({ method: 'GET', path: `/api/workspaces/${encodeURIComponent(wid)}/sessions/${encodeURIComponent(sid)}`, timeoutMs: 15000 })
+  if (!wid || !rid || !sid) throw new Error('工作区会话无效')
+  const response = await netRequest({ method: 'GET', path: `/api/workspaces/${encodeURIComponent(wid)}/roles/${encodeURIComponent(rid)}/sessions/${encodeURIComponent(sid)}`, timeoutMs: 15000 })
   return workspaceSessionToChat(response?.body)
 }
 
@@ -347,8 +354,8 @@ export async function createWorkspaceSession(netRequest: EbNetRequest, input: { 
   if (!roleId) throw new Error('角色无效')
   const response = await netRequest({
     method: 'POST',
-    path: `/api/workspaces/${encodeURIComponent(workspaceId)}/sessions/create`,
-    body: { roleId, title: text(input.title) || '工作区会话' },
+    path: `/api/workspaces/${encodeURIComponent(workspaceId)}/roles/${encodeURIComponent(roleId)}/sessions/create`,
+    body: { title: text(input.title) || '工作区会话' },
     timeoutMs: 15000,
   })
   return workspaceSessionToChat(response?.body)
@@ -356,30 +363,33 @@ export async function createWorkspaceSession(netRequest: EbNetRequest, input: { 
 
 export async function saveWorkspaceSession(netRequest: EbNetRequest, input: { workspaceId: string; roleId: string; chat: any }) {
   const workspaceId = text(input.workspaceId)
-  if (!workspaceId) throw new Error('工作区无效')
+  const roleId = text(input.roleId)
+  if (!workspaceId || !roleId) throw new Error('工作区无效')
   const body = workspaceChatToWire(input.chat, workspaceId, input.roleId)
   await netRequest({
     method: 'POST',
-    path: `/api/workspaces/${encodeURIComponent(workspaceId)}/sessions`,
+    path: `/api/workspaces/${encodeURIComponent(workspaceId)}/roles/${encodeURIComponent(roleId)}/sessions`,
     body,
     timeoutMs: 15000,
   })
 }
 
-export async function deleteWorkspaceSession(netRequest: EbNetRequest, workspaceId: string, sessionId: string) {
+export async function deleteWorkspaceSession(netRequest: EbNetRequest, workspaceId: string, roleId: string, sessionId: string) {
   const wid = text(workspaceId)
+  const rid = text(roleId)
   const sid = text(sessionId)
-  if (!wid || !sid) throw new Error('工作区会话无效')
-  await netRequest({ method: 'DELETE', path: `/api/workspaces/${encodeURIComponent(wid)}/sessions/${encodeURIComponent(sid)}`, timeoutMs: 15000 })
+  if (!wid || !rid || !sid) throw new Error('工作区会话无效')
+  await netRequest({ method: 'DELETE', path: `/api/workspaces/${encodeURIComponent(wid)}/roles/${encodeURIComponent(rid)}/sessions/${encodeURIComponent(sid)}`, timeoutMs: 15000 })
 }
 
-export async function updateWorkspaceSessionTitle(netRequest: EbNetRequest, input: { workspaceId: string; sessionId: string; title: string }) {
+export async function updateWorkspaceSessionTitle(netRequest: EbNetRequest, input: { workspaceId: string; roleId: string; sessionId: string; title: string }) {
   const workspaceId = text(input.workspaceId)
+  const roleId = text(input.roleId)
   const sessionId = text(input.sessionId)
-  if (!workspaceId || !sessionId) throw new Error('工作区会话无效')
+  if (!workspaceId || !roleId || !sessionId) throw new Error('工作区会话无效')
   const response = await netRequest({
     method: 'PATCH',
-    path: `/api/workspaces/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}/title`,
+    path: `/api/workspaces/${encodeURIComponent(workspaceId)}/roles/${encodeURIComponent(roleId)}/sessions/${encodeURIComponent(sessionId)}/title`,
     body: { title: text(input.title) || '工作区会话' },
     timeoutMs: 15000,
   })

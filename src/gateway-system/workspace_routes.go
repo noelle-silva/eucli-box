@@ -8,8 +8,7 @@ import (
 )
 
 type createWorkspaceSessionRequest struct {
-	RoleID string `json:"roleId"`
-	Title  string `json:"title"`
+	Title string `json:"title"`
 }
 
 func (s *system) handleListWorkspaces(w http.ResponseWriter, r *http.Request) {
@@ -66,12 +65,12 @@ func (s *system) handleDeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *system) handleListWorkspaceSessions(w http.ResponseWriter, r *http.Request) {
-	workspaceID, err := pathValue(r, "workspaceID")
+	workspaceID, roleID, err := workspaceRolePathValues(r)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	sessions, err := s.sessions.ListWorkspaceSessions(r.Context(), workspaceID)
+	sessions, err := s.sessions.ListWorkspaceSessions(r.Context(), workspaceID, roleID)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -80,11 +79,11 @@ func (s *system) handleListWorkspaceSessions(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *system) handleLoadWorkspaceSession(w http.ResponseWriter, r *http.Request) {
-	workspaceID, sessionID, ok := workspaceSessionPathValues(w, r)
+	workspaceID, roleID, sessionID, ok := workspaceRoleSessionPathValues(w, r)
 	if !ok {
 		return
 	}
-	session, err := s.sessions.LoadWorkspaceSession(r.Context(), workspaceID, sessionID)
+	session, err := s.sessions.LoadWorkspaceSession(r.Context(), workspaceID, roleID, sessionID)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -93,7 +92,7 @@ func (s *system) handleLoadWorkspaceSession(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *system) handleCreateWorkspaceSession(w http.ResponseWriter, r *http.Request) {
-	workspaceID, err := pathValue(r, "workspaceID")
+	workspaceID, roleID, err := workspaceRolePathValues(r)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -101,11 +100,6 @@ func (s *system) handleCreateWorkspaceSession(w http.ResponseWriter, r *http.Req
 	request, err := decodeJSON[createWorkspaceSessionRequest](r)
 	if err != nil {
 		writeError(w, err)
-		return
-	}
-	roleID := strings.TrimSpace(request.RoleID)
-	if roleID == "" {
-		writeError(w, gatewayInvalid("roleId is required", nil))
 		return
 	}
 	if _, err := s.workspaces.LoadWorkspace(r.Context(), workspaceID); err != nil {
@@ -125,7 +119,7 @@ func (s *system) handleCreateWorkspaceSession(w http.ResponseWriter, r *http.Req
 }
 
 func (s *system) handleSaveWorkspaceSession(w http.ResponseWriter, r *http.Request) {
-	workspaceID, err := pathValue(r, "workspaceID")
+	workspaceID, roleID, err := workspaceRolePathValues(r)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -137,6 +131,10 @@ func (s *system) handleSaveWorkspaceSession(w http.ResponseWriter, r *http.Reque
 	}
 	if err := validateWorkspaceSession(workspaceID, session); err != nil {
 		writeError(w, err)
+		return
+	}
+	if strings.TrimSpace(session.RoleID) != roleID {
+		writeError(w, gatewayInvalid("session roleId does not match route roleID", nil))
 		return
 	}
 	if _, err := s.workspaces.LoadWorkspace(r.Context(), workspaceID); err != nil {
@@ -155,11 +153,11 @@ func (s *system) handleSaveWorkspaceSession(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *system) handleDeleteWorkspaceSession(w http.ResponseWriter, r *http.Request) {
-	workspaceID, sessionID, ok := workspaceSessionPathValues(w, r)
+	workspaceID, roleID, sessionID, ok := workspaceRoleSessionPathValues(w, r)
 	if !ok {
 		return
 	}
-	if err := s.sessions.DeleteWorkspaceSession(r.Context(), workspaceID, sessionID); err != nil {
+	if err := s.sessions.DeleteWorkspaceSession(r.Context(), workspaceID, roleID, sessionID); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -167,7 +165,7 @@ func (s *system) handleDeleteWorkspaceSession(w http.ResponseWriter, r *http.Req
 }
 
 func (s *system) handleUpdateWorkspaceSessionTitle(w http.ResponseWriter, r *http.Request) {
-	workspaceID, sessionID, ok := workspaceSessionPathValues(w, r)
+	workspaceID, roleID, sessionID, ok := workspaceRoleSessionPathValues(w, r)
 	if !ok {
 		return
 	}
@@ -176,7 +174,7 @@ func (s *system) handleUpdateWorkspaceSessionTitle(w http.ResponseWriter, r *htt
 		writeError(w, err)
 		return
 	}
-	session, err := s.sessions.UpdateWorkspaceSessionTitle(r.Context(), workspaceID, sessionID, request.Title)
+	session, err := s.sessions.UpdateWorkspaceSessionTitle(r.Context(), workspaceID, roleID, sessionID, request.Title)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -185,7 +183,7 @@ func (s *system) handleUpdateWorkspaceSessionTitle(w http.ResponseWriter, r *htt
 }
 
 func (s *system) handleUpdateWorkspaceSessionMessage(w http.ResponseWriter, r *http.Request) {
-	workspaceID, sessionID, messageID, ok := workspaceSessionMessagePathValues(w, r)
+	workspaceID, roleID, sessionID, messageID, ok := workspaceRoleSessionMessagePathValues(w, r)
 	if !ok {
 		return
 	}
@@ -194,7 +192,7 @@ func (s *system) handleUpdateWorkspaceSessionMessage(w http.ResponseWriter, r *h
 		writeError(w, err)
 		return
 	}
-	message, err := s.sessions.UpdateWorkspaceSessionMessage(r.Context(), workspaceID, sessionID, messageID, request)
+	message, err := s.sessions.UpdateWorkspaceSessionMessage(r.Context(), workspaceID, roleID, sessionID, messageID, request)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -203,11 +201,11 @@ func (s *system) handleUpdateWorkspaceSessionMessage(w http.ResponseWriter, r *h
 }
 
 func (s *system) handleDeleteWorkspaceSessionMessage(w http.ResponseWriter, r *http.Request) {
-	workspaceID, sessionID, messageID, ok := workspaceSessionMessagePathValues(w, r)
+	workspaceID, roleID, sessionID, messageID, ok := workspaceRoleSessionMessagePathValues(w, r)
 	if !ok {
 		return
 	}
-	session, err := s.sessions.DeleteWorkspaceSessionMessage(r.Context(), workspaceID, sessionID, messageID)
+	session, err := s.sessions.DeleteWorkspaceSessionMessage(r.Context(), workspaceID, roleID, sessionID, messageID)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -216,11 +214,11 @@ func (s *system) handleDeleteWorkspaceSessionMessage(w http.ResponseWriter, r *h
 }
 
 func (s *system) handleDeleteWorkspaceSessionMessageSubtree(w http.ResponseWriter, r *http.Request) {
-	workspaceID, sessionID, messageID, ok := workspaceSessionMessagePathValues(w, r)
+	workspaceID, roleID, sessionID, messageID, ok := workspaceRoleSessionMessagePathValues(w, r)
 	if !ok {
 		return
 	}
-	session, err := s.sessions.DeleteWorkspaceSessionMessageSubtree(r.Context(), workspaceID, sessionID, messageID)
+	session, err := s.sessions.DeleteWorkspaceSessionMessageSubtree(r.Context(), workspaceID, roleID, sessionID, messageID)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -228,29 +226,41 @@ func (s *system) handleDeleteWorkspaceSessionMessageSubtree(w http.ResponseWrite
 	writeData(w, http.StatusOK, session)
 }
 
-func workspaceSessionPathValues(w http.ResponseWriter, r *http.Request) (string, string, bool) {
+func workspaceRolePathValues(r *http.Request) (string, string, error) {
 	workspaceID, err := pathValue(r, "workspaceID")
 	if err != nil {
+		return "", "", err
+	}
+	roleID, err := pathValue(r, "roleID")
+	if err != nil {
+		return "", "", err
+	}
+	return workspaceID, roleID, nil
+}
+
+func workspaceRoleSessionPathValues(w http.ResponseWriter, r *http.Request) (string, string, string, bool) {
+	workspaceID, roleID, err := workspaceRolePathValues(r)
+	if err != nil {
 		writeError(w, err)
-		return "", "", false
+		return "", "", "", false
 	}
 	sessionID, err := pathValue(r, "sessionID")
 	if err != nil {
 		writeError(w, err)
-		return "", "", false
+		return "", "", "", false
 	}
-	return workspaceID, sessionID, true
+	return workspaceID, roleID, sessionID, true
 }
 
-func workspaceSessionMessagePathValues(w http.ResponseWriter, r *http.Request) (string, string, string, bool) {
-	workspaceID, sessionID, ok := workspaceSessionPathValues(w, r)
+func workspaceRoleSessionMessagePathValues(w http.ResponseWriter, r *http.Request) (string, string, string, string, bool) {
+	workspaceID, roleID, sessionID, ok := workspaceRoleSessionPathValues(w, r)
 	if !ok {
-		return "", "", "", false
+		return "", "", "", "", false
 	}
 	messageID, err := pathValue(r, "messageID")
 	if err != nil {
 		writeError(w, err)
-		return "", "", "", false
+		return "", "", "", "", false
 	}
-	return workspaceID, sessionID, messageID, true
+	return workspaceID, roleID, sessionID, messageID, true
 }

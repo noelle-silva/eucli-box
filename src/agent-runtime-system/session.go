@@ -23,7 +23,7 @@ func (s *system) loadOrCreateSession(ctx context.Context, request types.RunReque
 			return session, nil
 		}
 		if workspaceID != "" {
-			session, err := s.storage.LoadWorkspaceSession(ctx, workspaceID, request.SessionID)
+			session, err := s.storage.LoadWorkspaceSession(ctx, workspaceID, request.RoleID, request.SessionID)
 			if err != nil {
 				return types.Session{}, runtimeStorageFailed("failed to load workspace session", err)
 			}
@@ -166,7 +166,7 @@ func (s *system) saveRunAttachments(ctx context.Context, session types.Session, 
 		if strings.TrimSpace(session.GroupID) != "" {
 			saved, err = s.storage.SaveGroupSessionMessageAttachment(ctx, session.GroupID, session.ID, attachment)
 		} else if strings.TrimSpace(session.WorkspaceID) != "" {
-			saved, err = s.storage.SaveWorkspaceSessionMessageAttachment(ctx, session.WorkspaceID, session.ID, attachment)
+			saved, err = s.storage.SaveWorkspaceSessionMessageAttachment(ctx, session.WorkspaceID, session.RoleID, session.ID, attachment)
 		} else {
 			saved, err = s.storage.SaveSessionMessageAttachment(ctx, session.RoleID, session.ID, attachment)
 		}

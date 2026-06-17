@@ -27,6 +27,10 @@ type sessionIndex struct {
 	Sort     string                 `json:"sort"`
 }
 
+type workspaceRoleSessionIndex struct {
+	Roles []roleFolder `json:"roles"`
+}
+
 func (s *system) RebuildIndexes(ctx context.Context) error {
 	if err := s.rebuildRoleIndex(ctx); err != nil {
 		return err
@@ -193,15 +197,42 @@ func (s *system) rebuildAllWorkspaceSessionIndexes(ctx context.Context) error {
 }
 
 func (s *system) rebuildWorkspaceSessionIndexes(ctx context.Context, workspaceID string) error {
-	sessions, err := s.ListWorkspaceSessions(ctx, workspaceID)
-	if err != nil {
-		return err
-	}
 	workspaceDir, err := s.paths.safeJoin(s.paths.sessionWorkspacesRoot(), workspaceID)
 	if err != nil {
 		return err
 	}
-	return writeIndex(ctx, filepath.Join(workspaceDir, "index.json"), sessionIndex{Sessions: sessions, Sort: "lastActive"})
+	entries, err := os.ReadDir(workspaceDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return storageIndexFailed("failed to scan workspace role sessions root", err)
+	}
+	roleFolders := make([]roleFolder, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		roleID := entry.Name()
+		roleFolders = append(roleFolders, roleFolder{ID: roleID})
+		if err := s.rebuildWorkspaceRoleSessionIndex(ctx, workspaceID, roleID); err != nil {
+			return err
+		}
+	}
+	sort.Slice(roleFolders, func(i, j int) bool { return roleFolders[i].ID < roleFolders[j].ID })
+	return writeIndex(ctx, filepath.Join(workspaceDir, "index.json"), workspaceRoleSessionIndex{Roles: roleFolders})
+}
+
+func (s *system) rebuildWorkspaceRoleSessionIndex(ctx context.Context, workspaceID string, roleID string) error {
+	sessions, err := s.ListWorkspaceSessions(ctx, workspaceID, roleID)
+	if err != nil {
+		return err
+	}
+	roleDir, err := s.paths.workspaceRoleSessionsDir(workspaceID, roleID)
+	if err != nil {
+		return err
+	}
+	return writeIndex(ctx, filepath.Join(roleDir, "index.json"), sessionIndex{Sessions: sessions, Sort: "lastActive"})
 }
 
 func rebuildRecycleIndex(ctx context.Context, paths paths) error {

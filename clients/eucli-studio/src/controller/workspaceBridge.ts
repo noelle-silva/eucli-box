@@ -1,6 +1,7 @@
 import { normalizeStoredChat } from '../storage/normalizeStoredChat'
 import { normalizeReasoningEffort } from '../domain/reasoning'
 import { workspaceRoleTargetId } from '../domain/workspaceRoleTarget'
+import { HOOK_PROMPT_SESSION_METADATA_KEY, hookPromptPresetIdFromMetadata } from '../domain/hookPrompt'
 
 type EbNetRequest = (req: any) => Promise<any>
 
@@ -200,6 +201,8 @@ export function workspaceSessionToChat(raw: unknown) {
   if (reasoningEffort) chat.reasoningEffort = reasoningEffort
   const modelOverride = modelOverrideFromMetadata(metadata)
   if (modelOverride) chat.modelOverride = modelOverride
+  const hookPromptPresetId = hookPromptPresetIdFromMetadata(metadata)
+  if (hookPromptPresetId) chat.hookPromptPresetId = hookPromptPresetId
   return normalizeStoredChat(chat, 'workspace')
 }
 
@@ -256,6 +259,8 @@ function workspaceChatToWire(chatRaw: unknown, workspaceIdRaw: unknown, roleIdRa
   const metadata: Record<string, any> = {}
   const reasoningEffort = normalizeReasoningEffort(chat.reasoningEffort)
   if (reasoningEffort) metadata.reasoningEffort = reasoningEffort
+  const hookPromptPresetId = text(chat.hookPromptPresetId)
+  if (hookPromptPresetId) metadata[HOOK_PROMPT_SESSION_METADATA_KEY] = hookPromptPresetId
   const modelOverride = object(chat.modelOverride)
   const modelId = text(modelOverride.modelId)
   if (modelId) {

@@ -182,6 +182,16 @@ func (s *system) handleUpdateWorkspaceSessionTitle(w http.ResponseWriter, r *htt
 	writeData(w, http.StatusOK, session)
 }
 
+func (s *system) handleUpdateWorkspaceSessionHookPrompt(w http.ResponseWriter, r *http.Request) {
+	workspaceID, roleID, sessionID, ok := workspaceRoleSessionPathValues(w, r)
+	if !ok {
+		return
+	}
+	s.updateSessionHookPrompt(w, r, func() (types.Session, error) {
+		return s.sessions.LoadWorkspaceSession(r.Context(), workspaceID, roleID, sessionID)
+	})
+}
+
 func (s *system) handleUpdateWorkspaceSessionMessage(w http.ResponseWriter, r *http.Request) {
 	workspaceID, roleID, sessionID, messageID, ok := workspaceRoleSessionMessagePathValues(w, r)
 	if !ok {

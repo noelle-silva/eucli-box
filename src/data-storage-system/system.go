@@ -44,6 +44,8 @@ type System interface {
 	LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error)
 	LoadSessionFavorites(ctx context.Context) (types.SessionFavorites, error)
 	SaveSessionFavorites(ctx context.Context, favorites types.SessionFavorites) (types.SessionFavorites, error)
+	LoadHookPromptLibrary(ctx context.Context) (types.HookPromptLibrary, error)
+	SaveHookPromptLibrary(ctx context.Context, library types.HookPromptLibrary) (types.HookPromptLibrary, error)
 
 	SaveRole(ctx context.Context, role types.Role) error
 	LoadRole(ctx context.Context, roleID string) (types.Role, error)

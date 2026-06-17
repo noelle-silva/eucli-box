@@ -227,6 +227,55 @@ func TestSessionFavoritesRoutes(t *testing.T) {
 	}
 }
 
+func TestHookPromptLibraryRoutes(t *testing.T) {
+	fakes := newGatewayFakes()
+	system := newTestGateway(t, fakes)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/hook-prompts", strings.NewReader(`{"presets":[{"id":"preset-1","name":"审查助手","messages":[{"id":"msg-1","role":"system","position":"session_top","content":"请严格审查","order":0}]}]}`))
+	rec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("save hook prompts status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(fakes.hooks.library.Presets) != 1 || fakes.hooks.library.Presets[0].ID != "preset-1" {
+		t.Fatalf("hook library = %#v", fakes.hooks.library)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/hook-prompts", nil)
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "审查助手") {
+		t.Fatalf("load hook prompts status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSessionHookPromptRoute(t *testing.T) {
+	fakes := newGatewayFakes()
+	now := time.Now().UTC()
+	fakes.sessions.sessions["developer/session-1"] = types.Session{ID: "session-1", RoleID: "developer", Title: "Chat", Status: string(types.RunStatusCreated), CreatedAt: now, UpdatedAt: now, LastActive: now}
+	system := newTestGateway(t, fakes)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/roles/developer/sessions/session-1/hook-prompt", strings.NewReader(`{"presetId":"preset-1"}`))
+	rec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("set hook prompt status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := fakes.sessions.sessions["developer/session-1"].Metadata[types.SessionMetadataHookPromptPresetID]; got != "preset-1" {
+		t.Fatalf("metadata preset = %q", got)
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "/api/roles/developer/sessions/session-1/hook-prompt", strings.NewReader(`{"presetId":""}`))
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("clear hook prompt status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if _, ok := fakes.sessions.sessions["developer/session-1"].Metadata[types.SessionMetadataHookPromptPresetID]; ok {
+		t.Fatalf("metadata was not cleared: %#v", fakes.sessions.sessions["developer/session-1"].Metadata)
+	}
+}
+
 func TestRoleRoutes(t *testing.T) {
 	fakes := newGatewayFakes()
 	system := newTestGateway(t, fakes)
@@ -404,7 +453,7 @@ func TestWebSocketForwardsRuntimeEvents(t *testing.T) {
 
 func newTestGateway(t *testing.T, fakes *gatewayFakes) System {
 	t.Helper()
-	system, err := NewSystem(Config{}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.assist)
+	system, err := NewSystem(Config{}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.assist)
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -420,12 +469,26 @@ type gatewayFakes struct {
 	tools      *fakeGatewayTools
 	sessions   *fakeGatewaySessions
 	stickers   *fakeGatewayStickers
+	hooks      *fakeGatewayHooks
 	assist     *fakeGatewayAssist
 }
 
 func newGatewayFakes() *gatewayFakes {
 	stickers := newFakeGatewayStickers()
-	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), groups: newFakeGatewayGroups(), workspaces: newFakeGatewayWorkspaces(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, assist: &fakeGatewayAssist{stickers: stickers}}
+	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), groups: newFakeGatewayGroups(), workspaces: newFakeGatewayWorkspaces(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, hooks: &fakeGatewayHooks{}, assist: &fakeGatewayAssist{stickers: stickers}}
+}
+
+type fakeGatewayHooks struct {
+	library types.HookPromptLibrary
+}
+
+func (f *fakeGatewayHooks) LoadHookPromptLibrary(ctx context.Context) (types.HookPromptLibrary, error) {
+	return f.library, nil
+}
+
+func (f *fakeGatewayHooks) SaveHookPromptLibrary(ctx context.Context, library types.HookPromptLibrary) (types.HookPromptLibrary, error) {
+	f.library = library
+	return f.library, nil
 }
 
 type fakeGatewayWorkspaces struct {

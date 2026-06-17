@@ -28,6 +28,7 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("GET /api/groups/{groupID}/sessions/{sessionID}", s.authWrap(s.handleLoadGroupSession))
 	s.mux.HandleFunc("DELETE /api/groups/{groupID}/sessions/{sessionID}", s.authWrap(s.handleDeleteGroupSession))
 	s.mux.HandleFunc("PATCH /api/groups/{groupID}/sessions/{sessionID}/title", s.authWrap(s.handleUpdateGroupSessionTitle))
+	s.mux.HandleFunc("PATCH /api/groups/{groupID}/sessions/{sessionID}/hook-prompt", s.authWrap(s.handleUpdateGroupSessionHookPrompt))
 	s.mux.HandleFunc("PATCH /api/groups/{groupID}/sessions/{sessionID}/messages/{messageID}", s.authWrap(s.handleUpdateGroupSessionMessage))
 	s.mux.HandleFunc("DELETE /api/groups/{groupID}/sessions/{sessionID}/messages/{messageID}", s.authWrap(s.handleDeleteGroupSessionMessage))
 	s.mux.HandleFunc("DELETE /api/groups/{groupID}/sessions/{sessionID}/messages/{messageID}/subtree", s.authWrap(s.handleDeleteGroupSessionMessageSubtree))
@@ -42,6 +43,7 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("GET /api/workspaces/{workspaceID}/roles/{roleID}/sessions/{sessionID}", s.authWrap(s.handleLoadWorkspaceSession))
 	s.mux.HandleFunc("DELETE /api/workspaces/{workspaceID}/roles/{roleID}/sessions/{sessionID}", s.authWrap(s.handleDeleteWorkspaceSession))
 	s.mux.HandleFunc("PATCH /api/workspaces/{workspaceID}/roles/{roleID}/sessions/{sessionID}/title", s.authWrap(s.handleUpdateWorkspaceSessionTitle))
+	s.mux.HandleFunc("PATCH /api/workspaces/{workspaceID}/roles/{roleID}/sessions/{sessionID}/hook-prompt", s.authWrap(s.handleUpdateWorkspaceSessionHookPrompt))
 	s.mux.HandleFunc("PATCH /api/workspaces/{workspaceID}/roles/{roleID}/sessions/{sessionID}/messages/{messageID}", s.authWrap(s.handleUpdateWorkspaceSessionMessage))
 	s.mux.HandleFunc("DELETE /api/workspaces/{workspaceID}/roles/{roleID}/sessions/{sessionID}/messages/{messageID}", s.authWrap(s.handleDeleteWorkspaceSessionMessage))
 	s.mux.HandleFunc("DELETE /api/workspaces/{workspaceID}/roles/{roleID}/sessions/{sessionID}/messages/{messageID}/subtree", s.authWrap(s.handleDeleteWorkspaceSessionMessageSubtree))
@@ -52,6 +54,7 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("GET /api/roles/{roleID}/sessions/{sessionID}", s.authWrap(s.handleLoadSession))
 	s.mux.HandleFunc("DELETE /api/roles/{roleID}/sessions/{sessionID}", s.authWrap(s.handleDeleteSession))
 	s.mux.HandleFunc("PATCH /api/roles/{roleID}/sessions/{sessionID}/title", s.authWrap(s.handleUpdateSessionTitle))
+	s.mux.HandleFunc("PATCH /api/roles/{roleID}/sessions/{sessionID}/hook-prompt", s.authWrap(s.handleUpdateSessionHookPrompt))
 	s.mux.HandleFunc("PATCH /api/roles/{roleID}/sessions/{sessionID}/messages/{messageID}", s.authWrap(s.handleUpdateSessionMessage))
 	s.mux.HandleFunc("DELETE /api/roles/{roleID}/sessions/{sessionID}/messages/{messageID}", s.authWrap(s.handleDeleteSessionMessage))
 	s.mux.HandleFunc("DELETE /api/roles/{roleID}/sessions/{sessionID}/messages/{messageID}/subtree", s.authWrap(s.handleDeleteSessionMessageSubtree))
@@ -94,6 +97,8 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("POST /api/assist/chat-title", s.authWrap(s.handleGenerateChatTitle))
 	s.mux.HandleFunc("GET /api/assist/context-compression/config", s.authWrap(s.handleLoadContextCompressionConfig))
 	s.mux.HandleFunc("PUT /api/assist/context-compression/config", s.authWrap(s.handleSaveContextCompressionConfig))
+	s.mux.HandleFunc("GET /api/hook-prompts", s.authWrap(s.handleLoadHookPromptLibrary))
+	s.mux.HandleFunc("PUT /api/hook-prompts", s.authWrap(s.handleSaveHookPromptLibrary))
 
 	s.mux.HandleFunc("GET /ws/events", s.handleEventsWebSocket)
 }

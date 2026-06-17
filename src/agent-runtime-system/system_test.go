@@ -78,6 +78,54 @@ func TestStartRunSavesAttachmentsAndPassesThemToModel(t *testing.T) {
 	}
 }
 
+func TestStartRunAppliesHookPromptPresetOnlyToModelRequest(t *testing.T) {
+	fakes := newRuntimeFakes()
+	now := time.Now().UTC()
+	fakes.storage.sessions["developer/session-1"] = types.Session{ID: "session-1", RoleID: "developer", Title: "Existing", Metadata: map[string]string{types.SessionMetadataHookPromptPresetID: "preset-1"}, Messages: []types.Message{}, CreatedAt: now, UpdatedAt: now, LastActive: now}
+	fakes.storage.hookLibrary = types.HookPromptLibrary{Presets: []types.HookPromptPreset{{ID: "preset-1", Name: "Preset", Messages: []types.HookPromptMessage{
+		{ID: "h-session", Role: types.HookPromptRoleSystem, Position: types.HookPromptPositionSessionTop, Content: "session top", Order: 0},
+		{ID: "h-before-user", Role: types.HookPromptRoleUser, Position: types.HookPromptPositionBeforeUser, Content: "before user", Order: 0},
+		{ID: "h-after-user", Role: types.HookPromptRoleAssistant, Position: types.HookPromptPositionAfterUser, Content: "after user", Order: 0},
+		{ID: "h-before-latest", Role: types.HookPromptRoleSystem, Position: types.HookPromptPositionBeforeLatest, Content: "before latest", Order: 0},
+		{ID: "h-after-latest", Role: types.HookPromptRoleUser, Position: types.HookPromptPositionAfterLatest, Content: "after latest", Order: 0},
+		{ID: "h-inside-top", Role: types.HookPromptRoleUser, Position: types.HookPromptPositionInsideUserTop, Content: "inside top", Order: 0},
+		{ID: "h-inside-bottom", Role: types.HookPromptRoleUser, Position: types.HookPromptPositionInsideUserBottom, Content: "inside bottom", Order: 0},
+	}}}}
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", Message: "hello"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	request := fakes.provider.lastRequest()
+	contents := promptMessageContents(request.Messages)
+	want := []string{"session top", "before user", "before latest", "inside top\n\nhello\n\ninside bottom", "after user", "after latest"}
+	if strings.Join(contents, "|") != strings.Join(want, "|") {
+		t.Fatalf("model message contents = %#v, want %#v", contents, want)
+	}
+	session := fakes.storage.sessions["developer/session-1"]
+	if len(session.Messages) != 2 || session.Messages[0].Content != "hello" || session.Messages[1].Content != "done" {
+		t.Fatalf("stored messages = %#v", session.Messages)
+	}
+	for _, message := range session.Messages {
+		if strings.Contains(message.Content, "inside top") || strings.Contains(message.Content, "session top") {
+			t.Fatalf("hook prompt leaked into session messages: %#v", session.Messages)
+		}
+	}
+}
+
+func promptMessageContents(messages []types.PromptMessage) []string {
+	contents := make([]string, 0, len(messages))
+	for _, message := range messages {
+		contents = append(contents, message.Content)
+	}
+	return contents
+}
+
 func TestStartRunDoesNotAutoInjectToolInstructionsOrNativeTools(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
@@ -1565,6 +1613,7 @@ type fakeRuntimeStorage struct {
 	sessions          map[string]types.Session
 	workspaces        map[string]types.Workspace
 	images            map[string]string
+	hookLibrary       types.HookPromptLibrary
 	compressionConfig types.ContextCompressionConfig
 }
 
@@ -1586,6 +1635,12 @@ func (f *fakeRuntimeStorage) LoadContextCompressionConfig(ctx context.Context) (
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.compressionConfig, nil
+}
+
+func (f *fakeRuntimeStorage) LoadHookPromptLibrary(ctx context.Context) (types.HookPromptLibrary, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.hookLibrary, nil
 }
 
 func (f *fakeRuntimeStorage) SaveSession(ctx context.Context, session types.Session) error {

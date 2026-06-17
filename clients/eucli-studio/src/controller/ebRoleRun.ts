@@ -45,7 +45,7 @@ export function isTerminalRunStatus(status: unknown) {
   return value === 'completed' || value === 'failed' || value === 'cancelled' || value === 'canceled'
 }
 
-export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: string; groupId?: string; workspaceId?: string; sessionId?: string; message?: string; attachments?: any[]; parentMessageId?: string; userMessageId?: string; contextMessageId?: string; stream?: boolean; reasoningEffort?: string; modelOverride?: any }) {
+export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: string; groupId?: string; workspaceId?: string; sessionId?: string; message?: string; attachments?: any[]; parentMessageId?: string; userMessageId?: string; contextMessageId?: string; stream?: boolean; reasoningEffort?: string; modelOverride?: any; hookPromptPresetId?: string }) {
   const body = {
     roleId: String(input.roleId || '').trim(),
     groupId: String(input.groupId || '').trim(),
@@ -58,6 +58,7 @@ export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: st
     contextMessageId: String(input.contextMessageId || '').trim(),
     modelOverride: input.modelOverride && typeof input.modelOverride === 'object' ? input.modelOverride : null,
     reasoningEffort: String(input.reasoningEffort || '').trim(),
+    hookPromptPresetId: String(input.hookPromptPresetId || '').trim(),
     stream: !!input.stream,
   }
   if (!body.roleId) throw new Error('角色无效')
@@ -80,6 +81,7 @@ export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: st
   if (!body.workspaceId) delete (body as any).workspaceId
   if (!body.sessionId) delete (body as any).sessionId
   if (!body.reasoningEffort) delete (body as any).reasoningEffort
+  if (!body.hookPromptPresetId) delete (body as any).hookPromptPresetId
   const response = await netRequest({ method: 'POST', path: '/api/runs', body, timeoutMs: 30000 })
   return normalizeRunState(response?.body)
 }

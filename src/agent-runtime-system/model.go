@@ -10,7 +10,7 @@ import (
 )
 
 func (s *system) callModel(ctx context.Context, record *runRecord, roleContext types.RoleContext) (types.ModelResponse, error) {
-	messages, err := s.modelMessages(ctx, roleContext)
+	messages, err := s.modelMessages(ctx, record, roleContext)
 	if err != nil {
 		return types.ModelResponse{}, err
 	}
@@ -160,17 +160,21 @@ func streamContentDelta(previous string, current string) string {
 	return current
 }
 
-func (s *system) modelMessages(ctx context.Context, roleContext types.RoleContext) ([]types.PromptMessage, error) {
+func (s *system) modelMessages(ctx context.Context, record *runRecord, roleContext types.RoleContext) ([]types.PromptMessage, error) {
 	messages := make([]types.PromptMessage, 0, len(roleContext.Prompts)+len(roleContext.Messages))
 	messages = append(messages, roleContext.Prompts...)
+	latestUserIndex := -1
 	for index, message := range roleContext.Messages {
 		prompt, err := s.runtimeMessageToPrompt(ctx, message, index)
 		if err != nil {
 			return nil, err
 		}
+		if prompt.Role == "user" {
+			latestUserIndex = len(messages)
+		}
 		messages = append(messages, prompt)
 	}
-	return messages, nil
+	return s.applyHookPromptPreset(ctx, record, messages, latestUserIndex)
 }
 
 func (s *system) runtimeMessageToPrompt(ctx context.Context, message types.Message, index int) (types.PromptMessage, error) {

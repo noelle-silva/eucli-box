@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { Box, Button, Paper, Stack, Typography } from '@mui/material'
 
-export type SettingsTabValue = 'appearance' | 'attachments' | 'data' | 'groups' | 'roles' | 'workspaces' | 'providers' | 'modelGroups' | 'services' | 'tools' | 'stickers' | 'eb'
+export type SettingsTabValue = 'appearance' | 'attachments' | 'data' | 'groups' | 'roles' | 'workspaces' | 'providers' | 'modelGroups' | 'services' | 'tools' | 'stickers' | 'hookPrompts' | 'eb'
 
 type SettingsNavigationItem = {
   value: SettingsTabValue
@@ -21,6 +21,7 @@ const SETTINGS_NAVIGATION_ITEMS: SettingsNavigationItem[] = [
   { value: 'eb', label: 'e-b' },
   { value: 'tools', label: 'AI 工具' },
   { value: 'stickers', label: '表情包' },
+  { value: 'hookPrompts', label: 'hook 提示词' },
 ]
 
 const TAB_BUTTON_SX = { borderRadius: 999, minWidth: 0, px: 1.25, py: 0.25, flexShrink: 0 }

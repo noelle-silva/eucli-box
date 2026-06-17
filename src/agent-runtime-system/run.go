@@ -20,7 +20,7 @@ func (s *system) StartRun(ctx context.Context, request types.RunRequest) (types.
 	now := nowUTC()
 	state := types.RunState{ID: utils.NewID("run"), RoleID: request.RoleID, GroupID: strings.TrimSpace(request.GroupID), WorkspaceID: strings.TrimSpace(request.WorkspaceID), SessionID: request.SessionID, Stream: stream, Status: types.RunStatusCreated, CreatedAt: now, UpdatedAt: now}
 	modelOverride, _ := types.NormalizeModelOverrideCoordinate(modelOverrideFromRunRequest(request))
-	record := &runRecord{runID: state.ID, roleID: request.RoleID, groupID: state.GroupID, workspaceID: state.WorkspaceID, state: state, stream: stream, modelOverride: modelOverride, reasoningEffort: types.TrimReasoningEffort(request.ReasoningEffort), cancel: cancel}
+	record := &runRecord{runID: state.ID, roleID: request.RoleID, groupID: state.GroupID, workspaceID: state.WorkspaceID, state: state, stream: stream, modelOverride: modelOverride, reasoningEffort: types.TrimReasoningEffort(request.ReasoningEffort), hookPromptPresetID: strings.TrimSpace(request.HookPromptPresetID), cancel: cancel}
 	if compactRun {
 		record.commandName = compactCommandName
 	}
@@ -120,6 +120,7 @@ func (s *system) startRun(ctx context.Context, record *runRecord, request types.
 	}
 	applyRunReasoningEffort(record, &session)
 	applyRunModelOverride(record, &session)
+	applyRunHookPromptPreset(record, &session)
 	if record.state.SessionID == "" {
 		if err := s.setRunSessionID(record.runID, session.ID); err != nil {
 			return state, types.Session{}, err
@@ -163,6 +164,24 @@ func (s *system) startRun(ctx context.Context, record *runRecord, request types.
 	}
 	state, _ = s.getRunState(record.runID)
 	return state, contextSession, nil
+}
+
+func applyRunHookPromptPreset(record *runRecord, session *types.Session) {
+	if record == nil || session == nil {
+		return
+	}
+	presetID := strings.TrimSpace(record.hookPromptPresetID)
+	if presetID == "" && session.Metadata != nil {
+		presetID = types.HookPromptPresetIDFromSessionMetadata(session.Metadata)
+	}
+	if presetID == "" {
+		return
+	}
+	record.hookPromptPresetID = presetID
+	if types.HookPromptPresetIDFromSessionMetadata(session.Metadata) != presetID {
+		record.hookPromptPersistPending = true
+	}
+	session.Metadata = types.PutHookPromptPresetSessionMetadata(session.Metadata, presetID)
 }
 
 func (s *system) continueRun(ctx context.Context, record *runRecord, contextSession types.Session) {

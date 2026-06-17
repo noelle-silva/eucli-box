@@ -216,18 +216,19 @@ const (
 )
 
 type RunRequest struct {
-	RoleID           string           `json:"roleId"`
-	GroupID          string           `json:"groupId,omitempty"`
-	WorkspaceID      string           `json:"workspaceId,omitempty"`
-	SessionID        string           `json:"sessionId"`
-	Message          string           `json:"message"`
-	Attachments      []RunAttachment  `json:"attachments,omitempty"`
-	ParentMessageID  string           `json:"parentMessageId,omitempty"`
-	UserMessageID    string           `json:"userMessageId,omitempty"`
-	ContextMessageID string           `json:"contextMessageId,omitempty"`
-	ModelOverride    *ModelCoordinate `json:"modelOverride,omitempty"`
-	ReasoningEffort  ReasoningEffort  `json:"reasoningEffort,omitempty"`
-	Stream           bool             `json:"stream,omitempty"`
+	RoleID             string           `json:"roleId"`
+	GroupID            string           `json:"groupId,omitempty"`
+	WorkspaceID        string           `json:"workspaceId,omitempty"`
+	SessionID          string           `json:"sessionId"`
+	Message            string           `json:"message"`
+	Attachments        []RunAttachment  `json:"attachments,omitempty"`
+	ParentMessageID    string           `json:"parentMessageId,omitempty"`
+	UserMessageID      string           `json:"userMessageId,omitempty"`
+	ContextMessageID   string           `json:"contextMessageId,omitempty"`
+	ModelOverride      *ModelCoordinate `json:"modelOverride,omitempty"`
+	ReasoningEffort    ReasoningEffort  `json:"reasoningEffort,omitempty"`
+	HookPromptPresetID string           `json:"hookPromptPresetId,omitempty"`
+	Stream             bool             `json:"stream,omitempty"`
 }
 
 type RunState struct {

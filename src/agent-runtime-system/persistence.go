@@ -60,6 +60,11 @@ func runMetadataPatch(record *runRecord) map[string]string {
 			patch[key] = value
 		}
 	}
+	if record.hookPromptPersistPending {
+		for key, value := range types.HookPromptPresetSessionMetadataPatch(record.hookPromptPresetID) {
+			patch[key] = value
+		}
+	}
 	if len(patch) == 0 {
 		return nil
 	}
@@ -138,6 +143,9 @@ func markRunSessionSaveAccepted(record *runRecord, save types.SessionMessageSave
 				record.modelOverridePersistPending = false
 				break
 			}
+		}
+		if _, ok := save.MetadataPatch[types.SessionMetadataHookPromptPresetID]; ok {
+			record.hookPromptPersistPending = false
 		}
 	}
 	for _, write := range save.Writes {

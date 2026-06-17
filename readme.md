@@ -153,6 +153,12 @@ eucli-box 是整个系统的业务核心（以下简称"业务端"或"e-b"）。
 - `.dev-management/detailed-implementation/workspace-mechanism-implementation-plan.md`
 - `.dev-management/implementation-docs/workspace-mechanism-review-standards.md`
 
+与 hook 提示词相关的文档：
+
+- `.dev-management/design-decisions/hook-prompt-design.md`
+- `.dev-management/implementation-docs/hook-prompt-readme.md`
+- `.dev-management/implementation-docs/hook-prompt-changelog.md`
+
 ## 验证命令
 
 常用验证命令：

@@ -88,6 +88,8 @@ import { EbSettingsPanel } from './settings/EbSettingsPanel'
 import { ModelGroupsSettingsPanel } from './settings/ModelGroupsSettingsPanel'
 import { SettingsPageLayout, type SettingsTabValue } from './settings/SettingsNavigationBar'
 import { WorkspacesSettingsPanel } from './settings/WorkspacesSettingsPanel'
+import { HookPromptsSettingsPanel } from './settings/HookPromptsSettingsPanel'
+import { HookPromptSelector } from './components/HookPromptSelector'
 import { AI_STUDIO_CHAT_ROOT_ID } from '../runtime/aiStudioGlobals'
 import { ASSISTANT_RUNNING_CONTENT, assistantRunGenerationId, isAssistantGenerating } from '../domain/assistantRunState'
 import { activeRunCardForAssistantMessage, isStaleAssistantPlaceholder, messageVisibleText } from '../domain/chatMessageDisplay'
@@ -111,6 +113,7 @@ import {
   CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MAX,
 } from '../domain/constants'
 import { isSystemControlMessage } from '../domain/message'
+import type { HookPromptLibrary } from '../domain/hookPrompt'
 
 type SettingsTab = SettingsTabValue
 
@@ -987,6 +990,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const workspaces = Array.isArray((data as any)?.workspaces) ? ((data as any).workspaces as any[]) : []
   const providers = Array.isArray(data?.settings?.providers) ? data.settings.providers : []
   const modelGroups = Array.isArray((s as any)?.modelGroups?.items) ? (s as any).modelGroups.items : []
+  const hookPrompts = (s as any)?.hookPrompts && typeof (s as any).hookPrompts === 'object' ? (s as any).hookPrompts : { loading: false, error: '', library: { presets: [] } as HookPromptLibrary }
   const favorites = (data as any)?.favorites && typeof (data as any).favorites === 'object' ? (data as any).favorites : { folders: [], chatRefsByFolderId: {} }
   const favoriteFolders = Array.isArray((favorites as any)?.folders) ? ((favorites as any).folders as any[]) : []
   const favoriteChatRefsByFolderId =
@@ -2249,6 +2253,9 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const activeEffectiveReasoningEffort = effectiveReasoningEffort(activeChat, reasoningProfile)
   const activeReasoningLabel = reasoningEffortLabel(activeEffectiveReasoningEffort)
   const hasChatReasoningOverride = !!activeChatReasoningEffort
+  const activeHookPromptPresetId = String((activeChat as any)?.hookPromptPresetId || '').trim()
+  const hookPromptSelectorDisabled = s.loading || !activeChat
+  const hookPromptSelectorDisabledReason = !activeChat ? '请先创建或选择会话' : ''
 
   const uiBusy = !!s.loading
   const messageMutationGuard = React.useMemo(
@@ -5263,6 +5270,14 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                         </span>
                       </Tooltip>
 
+                      <HookPromptSelector
+                        library={hookPrompts.library || { presets: [] }}
+                        selectedPresetId={activeHookPromptPresetId}
+                        disabled={hookPromptSelectorDisabled}
+                        disabledReason={hookPromptSelectorDisabledReason}
+                        onSelect={(presetId) => controller.actions.selectHookPromptForActiveChat?.(presetId)}
+                      />
+
                       {roleSessionControlsEnabled ? (
                         <Tooltip title={hasChatOverride ? `临时模型：${formatModelRefText(chatOverride)}` : `角色模型：${effectiveModelId || '未配置模型'}`}>
                           <span>
@@ -6698,6 +6713,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
             models={s.models}
             tools={(s as any).tools}
             modelRequestConfig={(s as any).modelRequestConfig}
+            hookPrompts={hookPrompts}
             draft={s.draft}
             activeRoleId={String(s.draft?.activeRoleId || '')}
             activeWorkspaceId={String((s.draft as any)?.activeWorkspaceId || '')}
@@ -7095,6 +7111,7 @@ function PluginSettingsPage(props: {
   models: any
   tools: any
   modelRequestConfig: any
+  hookPrompts: any
   draft: any
   activeRoleId: string
   activeWorkspaceId: string
@@ -7103,7 +7120,7 @@ function PluginSettingsPage(props: {
   onTabChange: (tab: SettingsTab) => void
   dataDirectory?: AiChatDataDirectory
 }) {
-  const { controller, loading, data, roles, groups, workspaces, providers, modelGroups, models, tools, modelRequestConfig, draft, activeRoleId, activeWorkspaceId, activeTargetKind, tab, onTabChange, dataDirectory } = props
+  const { controller, loading, data, roles, groups, workspaces, providers, modelGroups, models, tools, modelRequestConfig, hookPrompts, draft, activeRoleId, activeWorkspaceId, activeTargetKind, tab, onTabChange, dataDirectory } = props
   const [treeHotkeyRecording, setTreeHotkeyRecording] = React.useState(false)
 
   React.useEffect(() => {
@@ -7698,6 +7715,10 @@ function PluginSettingsPage(props: {
 
   if (tab === 'tools') {
     return wrapSettingsPanel(<AiToolsSettingsPanel controller={controller} loading={loading} tools={tools} />)
+  }
+
+  if (tab === 'hookPrompts') {
+    return wrapSettingsPanel(<HookPromptsSettingsPanel controller={controller} loading={loading} hookPrompts={hookPrompts} />)
   }
 
   if (tab === 'eb') {

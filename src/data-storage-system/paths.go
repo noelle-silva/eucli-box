@@ -62,6 +62,10 @@ func (p paths) modelGroupsFile() string {
 	return filepath.Join(p.metaRoot(), "model-groups.json")
 }
 
+func (p paths) hookPromptLibraryFile() string {
+	return filepath.Join(p.metaRoot(), "hook-prompts.json")
+}
+
 func (p paths) roleDir(roleID string) (string, error) {
 	return p.safeJoin(p.rolesRoot(), roleID)
 }

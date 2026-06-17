@@ -14,6 +14,12 @@ type updateSessionTitleRequest struct {
 	Title string `json:"title"`
 }
 
+type updateSessionHookPromptRequest struct {
+	PresetID string `json:"presetId"`
+}
+
+type sessionLoader func() (types.Session, error)
+
 func (s *system) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	roleID, err := pathValue(r, "roleID")
 	if err != nil {
@@ -218,6 +224,22 @@ func (s *system) handleUpdateSessionTitle(w http.ResponseWriter, r *http.Request
 	writeData(w, http.StatusOK, session)
 }
 
+func (s *system) handleUpdateSessionHookPrompt(w http.ResponseWriter, r *http.Request) {
+	roleID, err := pathValue(r, "roleID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	sessionID, err := pathValue(r, "sessionID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	s.updateSessionHookPrompt(w, r, func() (types.Session, error) {
+		return s.sessions.LoadSession(r.Context(), roleID, sessionID)
+	})
+}
+
 func (s *system) handleUpdateGroupSessionTitle(w http.ResponseWriter, r *http.Request) {
 	groupID, sessionID, ok := groupSessionPathValues(w, r)
 	if !ok {
@@ -230,6 +252,35 @@ func (s *system) handleUpdateGroupSessionTitle(w http.ResponseWriter, r *http.Re
 	}
 	session, err := s.sessions.UpdateGroupSessionTitle(r.Context(), groupID, sessionID, request.Title)
 	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, session)
+}
+
+func (s *system) handleUpdateGroupSessionHookPrompt(w http.ResponseWriter, r *http.Request) {
+	groupID, sessionID, ok := groupSessionPathValues(w, r)
+	if !ok {
+		return
+	}
+	s.updateSessionHookPrompt(w, r, func() (types.Session, error) {
+		return s.sessions.LoadGroupSession(r.Context(), groupID, sessionID)
+	})
+}
+
+func (s *system) updateSessionHookPrompt(w http.ResponseWriter, r *http.Request, load sessionLoader) {
+	request, err := decodeJSON[updateSessionHookPromptRequest](r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	session, err := load()
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	session.Metadata = types.PutHookPromptPresetSessionMetadata(session.Metadata, request.PresetID)
+	if err := s.sessions.SaveSession(r.Context(), session); err != nil {
 		writeError(w, err)
 		return
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"eucli-box/pkg/types"
+	"eucli-box/pkg/workspaceprompt"
 )
 
 func TestStartRunRoute(t *testing.T) {
@@ -117,6 +118,40 @@ func TestStartRunRouteRejectsInvalidModelOverride(t *testing.T) {
 	system.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestLoadWorkspaceReturnsActualPrompt(t *testing.T) {
+	fakes := newGatewayFakes()
+	fakes.workspaces.workspaces["workspace-1"] = types.Workspace{ID: "workspace-1", Name: "项目工作区", Directories: []types.WorkspaceDirectory{{Path: `E:\project`, Alias: "主目录", Description: "项目代码"}}, Prompt: "遵守项目约定"}
+	system := newTestGateway(t, fakes)
+	req := httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-1", nil)
+	rec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	body := decodeResponseData[struct {
+		ActualPrompt string `json:"actualPrompt"`
+	}](t, rec.Body.String())
+	if !strings.Contains(body.ActualPrompt, "当前工作区：项目工作区") || !strings.Contains(body.ActualPrompt, "工作区自定义提示词：\n遵守项目约定") {
+		t.Fatalf("actual prompt = %q", body.ActualPrompt)
+	}
+}
+
+func TestPreviewWorkspacePromptReturnsActualPrompt(t *testing.T) {
+	system := newTestGateway(t, newGatewayFakes())
+	req := httptest.NewRequest(http.MethodPost, "/api/workspaces/prompt-preview", strings.NewReader(`{"id":"workspace-1","name":"项目工作区","directories":[{"path":"E:\\project","alias":"主目录","description":"项目代码"}],"prompt":"遵守项目约定"}`))
+	rec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	body := decodeResponseData[struct {
+		ActualPrompt string `json:"actualPrompt"`
+	}](t, rec.Body.String())
+	if !strings.Contains(body.ActualPrompt, "当前工作区：项目工作区") || !strings.Contains(body.ActualPrompt, "工作区注册目录：") {
+		t.Fatalf("actual prompt = %q", body.ActualPrompt)
 	}
 }
 
@@ -534,6 +569,10 @@ func (f *fakeGatewayWorkspaces) ListWorkspaces(ctx context.Context) ([]types.Wor
 		out = append(out, types.WorkspaceSummary{ID: workspace.ID, Name: workspace.Name, UpdatedAt: workspace.UpdatedAt})
 	}
 	return out, nil
+}
+
+func (f *fakeGatewayWorkspaces) PreviewWorkspacePrompt(ctx context.Context, workspace types.Workspace) (string, error) {
+	return workspaceprompt.Content(workspace), nil
 }
 
 func (f *fakeGatewayWorkspaces) DeleteWorkspace(ctx context.Context, workspaceID string) error {

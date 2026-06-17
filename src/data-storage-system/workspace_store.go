@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"eucli-box/pkg/types"
+	"eucli-box/pkg/workspaceprompt"
 )
 
 func (s *system) SaveWorkspace(ctx context.Context, workspace types.Workspace) error {
@@ -53,6 +54,17 @@ func (s *system) ListWorkspaces(ctx context.Context) ([]types.WorkspaceSummary, 
 	}
 	sort.Slice(summaries, func(i, j int) bool { return summaries[i].ID < summaries[j].ID })
 	return summaries, nil
+}
+
+func (s *system) PreviewWorkspacePrompt(ctx context.Context, workspace types.Workspace) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	workspace, err := normalizeWorkspaceForStorage(workspace, time.Now().UTC())
+	if err != nil {
+		return "", err
+	}
+	return workspaceprompt.Content(workspace), nil
 }
 
 func (s *system) DeleteWorkspace(ctx context.Context, workspaceID string) error {

@@ -1,5 +1,6 @@
 import * as React from 'react'
 import {
+  Alert,
   Box,
   Button,
   Dialog,
@@ -24,6 +25,10 @@ export function WorkspaceDialog(props: { open: boolean; controller: any; draft: 
   const editWorkspaceId = String((draft as any)?.editWorkspaceId || '')
   const isNew = editWorkspaceId === NEW_WORKSPACE_ID
   const directories = Array.isArray((draft as any)?.workspaceDirectories) ? (draft as any).workspaceDirectories : []
+  const actualPrompt = String((draft as any)?.workspaceActualPrompt || '')
+  const actualPromptLoading = Boolean((draft as any)?.workspaceActualPromptLoading)
+  const actualPromptStale = Boolean((draft as any)?.workspaceActualPromptStale)
+  const actualPromptError = String((draft as any)?.workspaceActualPromptError || '')
 
   return (
     <Dialog open={open} onClose={() => controller.actions.closeModal?.()} fullWidth maxWidth="md">
@@ -53,6 +58,37 @@ export function WorkspaceDialog(props: { open: boolean; controller: any; draft: 
             minRows={6}
             placeholder="这里写入项目约定、工作规范、额外上下文说明。"
           />
+
+          <Box sx={{ border: '1px solid', borderColor: actualPromptStale ? 'warning.light' : 'divider', borderRadius: 2, p: 1.5, bgcolor: actualPromptStale ? 'rgba(245,158,11,.06)' : 'background.paper' }}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mb: 1 }}>
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Typography sx={{ fontWeight: 900 }}>实际提示词</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  后台按当前工作区资料生成，设置页只展示结果，不在界面里拼装。
+                </Typography>
+              </Box>
+              <Button size="small" variant={actualPromptStale ? 'contained' : 'outlined'} onClick={() => controller.actions.refreshWorkspacePromptPreview?.()} disabled={actualPromptLoading}>
+                {actualPromptLoading ? '生成中…' : '刷新实际提示词'}
+              </Button>
+            </Stack>
+            {actualPromptStale ? (
+              <Alert severity="warning" sx={{ mb: 1 }}>
+                当前填写内容已变化，请刷新后查看最新实际提示词。
+              </Alert>
+            ) : null}
+            {actualPromptError ? (
+              <Alert severity="error" sx={{ mb: 1 }}>
+                {actualPromptError}
+              </Alert>
+            ) : null}
+            <TextField
+              value={actualPrompt || '（当前没有额外工作区提示词会进入对话）'}
+              fullWidth
+              multiline
+              minRows={5}
+              InputProps={{ readOnly: true }}
+            />
+          </Box>
 
           <Stack direction="row" spacing={1} alignItems="center">
             <Typography sx={{ fontWeight: 900 }}>目录清单</Typography>

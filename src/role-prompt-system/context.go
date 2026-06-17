@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"eucli-box/pkg/types"
+	"eucli-box/pkg/workspaceprompt"
 )
 
 func (s *system) BuildContext(ctx context.Context, roleID string, session types.Session, tools []types.ToolDefinition) (types.RoleContext, error) {
@@ -27,16 +28,16 @@ func (s *system) BuildContext(ctx context.Context, roleID string, session types.
 		return types.RoleContext{}, roleInvalid("session role does not match requested role", nil)
 	}
 	return types.RoleContext{
-		RoleID:      role.ID,
-		RoleName:    role.Name,
-		Avatar:      role.Avatar,
-		Prompts:     sortedPrompts(role.Prompts),
-		ModelConfig: role.ModelConfig,
-		Messages:    cloneMessages(session.Messages),
-		ToolPolicy:  cloneToolPolicy(role.ToolPolicy),
+		RoleID:             role.ID,
+		RoleName:           role.Name,
+		Avatar:             role.Avatar,
+		Prompts:            sortedPrompts(role.Prompts),
+		ModelConfig:        role.ModelConfig,
+		Messages:           cloneMessages(session.Messages),
+		ToolPolicy:         cloneToolPolicy(role.ToolPolicy),
 		HookPromptPresetID: strings.TrimSpace(role.HookPromptPresetID),
-		Tools:       cloneTools(tools),
-		NativeTools: filterToolsByNames(tools, role.ToolPolicy.NativeTools),
+		Tools:              cloneTools(tools),
+		NativeTools:        filterToolsByNames(tools, role.ToolPolicy.NativeTools),
 	}, nil
 }
 
@@ -49,22 +50,22 @@ func (s *system) buildWorkspaceContext(ctx context.Context, role types.Role, ses
 		return types.RoleContext{}, roleStorageFailed("failed to load workspace", err)
 	}
 	return types.RoleContext{
-		RoleID:      role.ID,
-		RoleName:    role.Name,
-		Avatar:      role.Avatar,
-		Prompts:     workspaceContextPrompts(workspace, role),
-		ModelConfig: role.ModelConfig,
-		Messages:    cloneMessages(session.Messages),
-		ToolPolicy:  cloneToolPolicy(role.ToolPolicy),
+		RoleID:             role.ID,
+		RoleName:           role.Name,
+		Avatar:             role.Avatar,
+		Prompts:            workspaceContextPrompts(workspace, role),
+		ModelConfig:        role.ModelConfig,
+		Messages:           cloneMessages(session.Messages),
+		ToolPolicy:         cloneToolPolicy(role.ToolPolicy),
 		HookPromptPresetID: strings.TrimSpace(role.HookPromptPresetID),
-		Tools:       cloneTools(tools),
-		NativeTools: filterToolsByNames(tools, role.ToolPolicy.NativeTools),
+		Tools:              cloneTools(tools),
+		NativeTools:        filterToolsByNames(tools, role.ToolPolicy.NativeTools),
 	}, nil
 }
 
 func workspaceContextPrompts(workspace types.Workspace, role types.Role) []types.PromptMessage {
 	rolePrompts := sortedPrompts(role.Prompts)
-	workspacePrompt := workspacePromptContent(workspace)
+	workspacePrompt := workspaceprompt.Content(workspace)
 	if workspacePrompt == "" {
 		return rolePrompts
 	}
@@ -77,34 +78,6 @@ func workspaceContextPrompts(workspace types.Workspace, role types.Role) []types
 	}
 	prompts = append(prompts, types.PromptMessage{ID: "workspace-" + workspace.ID + "-prompt", Role: "system", Content: workspacePrompt, Order: order, CreatedAt: now, UpdatedAt: now})
 	return prompts
-}
-
-func workspacePromptContent(workspace types.Workspace) string {
-	blocks := []string{}
-	name := strings.TrimSpace(workspace.Name)
-	if name != "" {
-		blocks = append(blocks, "当前工作区："+name)
-	}
-	if len(workspace.Directories) > 0 {
-		lines := []string{"工作区注册目录："}
-		for _, directory := range workspace.Directories {
-			alias := strings.TrimSpace(directory.Alias)
-			if alias == "" {
-				alias = "未命名目录"
-			}
-			line := "- " + alias + "：" + strings.TrimSpace(directory.Path)
-			if description := strings.TrimSpace(directory.Description); description != "" {
-				line += "（" + description + "）"
-			}
-			lines = append(lines, line)
-		}
-		lines = append(lines, "路径围栏说明：文件读写和命令工作目录应优先保持在上述注册目录内；如需超出范围，系统会先询问用户。")
-		blocks = append(blocks, strings.Join(lines, "\n"))
-	}
-	if prompt := strings.TrimSpace(workspace.Prompt); prompt != "" {
-		blocks = append(blocks, "工作区自定义提示词：\n"+prompt)
-	}
-	return strings.TrimSpace(strings.Join(blocks, "\n\n"))
 }
 
 func (s *system) buildGroupContext(ctx context.Context, role types.Role, session types.Session, tools []types.ToolDefinition) (types.RoleContext, error) {
@@ -124,16 +97,16 @@ func (s *system) buildGroupContext(ctx context.Context, role types.Role, session
 		return types.RoleContext{}, err
 	}
 	return types.RoleContext{
-		RoleID:      role.ID,
-		RoleName:    role.Name,
-		Avatar:      role.Avatar,
-		Prompts:     groupContextPrompts(group, role),
-		ModelConfig: role.ModelConfig,
-		Messages:    messages,
-		ToolPolicy:  cloneToolPolicy(role.ToolPolicy),
+		RoleID:             role.ID,
+		RoleName:           role.Name,
+		Avatar:             role.Avatar,
+		Prompts:            groupContextPrompts(group, role),
+		ModelConfig:        role.ModelConfig,
+		Messages:           messages,
+		ToolPolicy:         cloneToolPolicy(role.ToolPolicy),
 		HookPromptPresetID: strings.TrimSpace(role.HookPromptPresetID),
-		Tools:       cloneTools(tools),
-		NativeTools: filterToolsByNames(tools, role.ToolPolicy.NativeTools),
+		Tools:              cloneTools(tools),
+		NativeTools:        filterToolsByNames(tools, role.ToolPolicy.NativeTools),
 	}, nil
 }
 

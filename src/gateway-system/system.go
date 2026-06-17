@@ -50,6 +50,7 @@ type WorkspaceSystem interface {
 	SaveWorkspace(ctx context.Context, workspace types.Workspace) error
 	LoadWorkspace(ctx context.Context, workspaceID string) (types.Workspace, error)
 	ListWorkspaces(ctx context.Context) ([]types.WorkspaceSummary, error)
+	PreviewWorkspacePrompt(ctx context.Context, workspace types.Workspace) (string, error)
 	DeleteWorkspace(ctx context.Context, workspaceID string) error
 }
 

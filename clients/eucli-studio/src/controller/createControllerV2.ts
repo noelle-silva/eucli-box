@@ -358,7 +358,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     const maxBytes = maxMb <= 0 ? 0 : maxMb * 1024 * 1024
     if (maxBytes > 0 && size > maxBytes) {
       const curMb = Math.round((size / 1024 / 1024) * 10) / 10
-      api.ui?.showToast?.(`提示：${String(file?.name || '文件')} 大小 ${curMb}MB 超过设置阈值 ${maxMb}MB，仍会尝试解析`)
+      api.ui?.showToast?.(`提示：${globalThis.String(file?.name || '文件')} 大小 ${curMb}MB 超过设置阈值 ${maxMb}MB，仍会尝试解析`)
     }
     if (kind === 'txt' || kind === 'md') {
       const t = await file.text()
@@ -642,6 +642,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     addWorkspaceDirectory,
     removeWorkspaceDirectory,
     setWorkspaceDirectoryField,
+    refreshWorkspacePromptPreview,
     saveWorkspaceEditor,
     deleteWorkspaceEditor,
     createChatForActiveWorkspace,
@@ -701,7 +702,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       emit()
       return saved
     } catch (e) {
-      state.hookPrompts = { ...state.hookPrompts, loading: false, library: previous, error: String((e as any)?.message || e || '保存 hook 提示词失败') }
+      state.hookPrompts = { ...state.hookPrompts, loading: false, library: previous, error: globalThis.String((e as any)?.message || e || '保存 hook 提示词失败') }
       emit()
       throw e
     }
@@ -710,7 +711,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   function writeHookPromptSelectionToChat(chat: any, modeRaw: any, presetIdRaw?: any) {
     if (!chat || typeof chat !== 'object') return
     const selection = normalizeHookPromptSelection({ hookPromptMode: modeRaw, hookPromptPresetId: presetIdRaw })
-    const presetId = String(presetIdRaw || '').trim()
+    const presetId = globalThis.String(presetIdRaw || '').trim()
     if (selection.mode === 'inherit') {
       delete (chat as any).hookPromptMode
       delete (chat as any).hookPromptPresetId
@@ -718,7 +719,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       (chat as any).hookPromptMode = 'none'
       delete (chat as any).hookPromptPresetId
     } else {
-      (chat as any).hookPromptMode = 'preset'
+      ;(chat as any).hookPromptMode = 'preset';
       (chat as any).hookPromptPresetId = selection.presetId || presetId
     }
     if (!(chat as any).metadata || typeof (chat as any).metadata !== 'object') (chat as any).metadata = {}
@@ -729,7 +730,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       (chat as any).metadata[HOOK_PROMPT_SESSION_METADATA_MODE_KEY] = 'none'
       delete (chat as any).metadata[HOOK_PROMPT_SESSION_METADATA_KEY]
     } else {
-      (chat as any).metadata[HOOK_PROMPT_SESSION_METADATA_MODE_KEY] = 'preset'
+      ;(chat as any).metadata[HOOK_PROMPT_SESSION_METADATA_MODE_KEY] = 'preset';
       (chat as any).metadata[HOOK_PROMPT_SESSION_METADATA_KEY] = selection.presetId || presetId
     }
     chat.updatedAt = now()
@@ -1255,7 +1256,11 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
         setActiveComposerInput(state, value)
         return
       }
-      else if (k) (state.draft as any)[k] = value
+      if ((k === 'workspaceName' || k === 'workspacePrompt') && state.modal === 'workspace') {
+        ;(state.draft as any).workspaceActualPromptStale = true
+        ;(state.draft as any).workspaceActualPromptError = ''
+      }
+      if (k) (state.draft as any)[k] = value
       emit()
     },
     // These will be filled by the full actions object
@@ -1971,6 +1976,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     addWorkspaceDirectory: () => addWorkspaceDirectory(),
     removeWorkspaceDirectory: (index: any) => removeWorkspaceDirectory(index),
     setWorkspaceDirectoryField: (index: any, field: any, value: any) => setWorkspaceDirectoryField(index, field, value),
+    refreshWorkspacePromptPreview: () => refreshWorkspacePromptPreview(),
     askDeleteRole: (roleId: any) => {
       const rid = String(roleId || '')
       if (!rid || rid === NEW_ROLE_ID) return
@@ -2093,7 +2099,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
         const src = String(img.getAttribute('src') || '').trim()
         if (!src) continue
         const idx = items.length
-        items.push({ src, alt: String(img.getAttribute('alt') || '图片') })
+        items.push({ src, alt: globalThis.String(img.getAttribute('alt') || '图片') })
         elToIdx.set(img, idx)
       }
       if (!items.length) return
@@ -2203,7 +2209,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
           return aiGenerateGroupChatTitle(String(groupId || ''), String(chatId || ''))
         })
         .then((title: any) => {
-          api.ui?.showToast?.(`已更新标题（${cost()}s）：${String(title || '').trim() || '（空）'}`, { kind: 'success' })
+          api.ui?.showToast?.(`已更新标题（${cost()}s）：${globalThis.String(title || '').trim() || '（空）'}`, { kind: 'success' })
           return title
         })
         .catch((e: any) => {
@@ -2223,7 +2229,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
           if (!roleId) throw new Error('工作区会话缺少角色，暂时无法生成标题')
           t0 = now()
           api.ui?.showToast?.('AI 生成标题中…')
-          return { roleId, title: await aiGenerateChatTitle(roleId, String(chatId || '')) }
+          return { roleId, title: await aiGenerateChatTitle(roleId, globalThis.String(chatId || '')) }
         })
         .then(async ({ title }: any) => {
           await reloadWorkspaceSession(String(workspaceId || ''), String(chatId || ''), roleId)
@@ -2275,6 +2281,10 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       if (k === 'input') {
         setActiveComposerInput(state, value)
         return
+      }
+      if ((k === 'workspaceName' || k === 'workspacePrompt') && state.modal === 'workspace') {
+        ;(state.draft as any).workspaceActualPromptStale = true
+        ;(state.draft as any).workspaceActualPromptError = ''
       }
       ;(state.draft as any)[k] = value
       emit()

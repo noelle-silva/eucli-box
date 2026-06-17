@@ -5,7 +5,17 @@ import (
 	"strings"
 
 	"eucli-box/pkg/types"
+	"eucli-box/pkg/workspaceprompt"
 )
+
+type workspaceResponse struct {
+	types.Workspace
+	ActualPrompt string `json:"actualPrompt"`
+}
+
+type workspacePromptPreviewResponse struct {
+	ActualPrompt string `json:"actualPrompt"`
+}
 
 type createWorkspaceSessionRequest struct {
 	Title string `json:"title"`
@@ -48,7 +58,21 @@ func (s *system) handleLoadWorkspace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, http.StatusOK, workspace)
+	writeData(w, http.StatusOK, workspaceView(workspace))
+}
+
+func (s *system) handlePreviewWorkspacePrompt(w http.ResponseWriter, r *http.Request) {
+	workspace, err := decodeJSON[types.Workspace](r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	actualPrompt, err := s.workspaces.PreviewWorkspacePrompt(r.Context(), workspace)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, workspacePromptPreviewResponse{ActualPrompt: actualPrompt})
 }
 
 func (s *system) handleDeleteWorkspace(w http.ResponseWriter, r *http.Request) {
@@ -246,6 +270,10 @@ func workspaceRolePathValues(r *http.Request) (string, string, error) {
 		return "", "", err
 	}
 	return workspaceID, roleID, nil
+}
+
+func workspaceView(workspace types.Workspace) workspaceResponse {
+	return workspaceResponse{Workspace: workspace, ActualPrompt: workspaceprompt.Content(workspace)}
 }
 
 func workspaceRoleSessionPathValues(w http.ResponseWriter, r *http.Request) (string, string, string, bool) {

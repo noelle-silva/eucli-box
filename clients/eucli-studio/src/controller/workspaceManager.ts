@@ -13,6 +13,7 @@ import {
   listWorkspaceSessionSummaries,
   listWorkspacesDetailed,
   loadWorkspaceSession,
+  previewWorkspacePrompt,
   saveWorkspace,
   updateWorkspaceSessionTitle,
   workspaceSessionSummaryToMeta,
@@ -89,6 +90,20 @@ function normalizeWorkspaceList(workspacesRaw: UiWorkspace[]) {
     .sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0))
 }
 
+function workspaceDraft(state: any): UiWorkspace {
+  const editWorkspaceId = text((state.draft as any)?.editWorkspaceId)
+  const existing = (Array.isArray((state.data as any)?.workspaces) ? (state.data as any).workspaces : []).find((workspace: any) => text(workspace?.id) === editWorkspaceId) || null
+  return {
+    id: editWorkspaceId,
+    name: text((state.draft as any)?.workspaceName) || '未命名工作区',
+    directories: workspaceDraftDirectories((state.draft as any)?.workspaceDirectories).filter((directory) => directory.path || directory.alias || directory.description),
+    prompt: String((state.draft as any)?.workspacePrompt ?? ''),
+    actualPrompt: '',
+    createdAt: Number(existing?.createdAt || now()),
+    updatedAt: now(),
+  }
+}
+
 export function createWorkspaceManager(deps: {
   getState: () => any
   netRequest?: (req: any) => Promise<any>
@@ -110,6 +125,35 @@ export function createWorkspaceManager(deps: {
   function requireNetRequest() {
     if (typeof netRequest !== 'function') throw new Error('工作区请求通道不可用')
     return netRequest
+  }
+
+  function markWorkspacePromptPreviewStale() {
+    const state = getState()
+    if (!state?.draft) return
+    ;(state.draft as any).workspaceActualPromptStale = true
+    ;(state.draft as any).workspaceActualPromptError = ''
+  }
+
+  async function refreshWorkspacePromptPreview() {
+    const state = getState()
+    if (!state?.data) return ''
+    ;(state.draft as any).workspaceActualPromptLoading = true
+    ;(state.draft as any).workspaceActualPromptError = ''
+    render()
+    try {
+      const actualPrompt = await previewWorkspacePrompt(requireNetRequest(), workspaceDraft(state))
+      ;(state.draft as any).workspaceActualPrompt = actualPrompt
+      ;(state.draft as any).workspaceActualPromptStale = false
+      return actualPrompt
+    } catch (e: any) {
+      const message = String(e?.message || e || '实际提示词生成失败')
+      ;(state.draft as any).workspaceActualPromptError = message
+      showToast?.(message, { kind: 'error' })
+      return ''
+    } finally {
+      ;(state.draft as any).workspaceActualPromptLoading = false
+      render()
+    }
   }
 
   function syncWorkspaceListToState(workspacesRaw: UiWorkspace[], preferredWorkspaceId?: string) {
@@ -285,8 +329,13 @@ export function createWorkspaceManager(deps: {
     ;(state.draft as any).workspaceName = '新工作区'
     ;(state.draft as any).workspacePrompt = ''
     ;(state.draft as any).workspaceDirectories = [{ path: '', alias: '', description: '' }]
+    ;(state.draft as any).workspaceActualPrompt = ''
+    ;(state.draft as any).workspaceActualPromptLoading = false
+    ;(state.draft as any).workspaceActualPromptStale = true
+    ;(state.draft as any).workspaceActualPromptError = ''
     state.modal = 'workspace'
     render()
+    refreshWorkspacePromptPreview().catch(() => null)
   }
 
   function openWorkspaceEditor(workspaceIdRaw: unknown) {
@@ -301,6 +350,10 @@ export function createWorkspaceManager(deps: {
     ;(state.draft as any).workspaceDirectories = workspace.directories?.length
       ? workspace.directories.map((directory: any) => ({ path: text(directory?.path), alias: text(directory?.alias), description: text(directory?.description) }))
       : [{ path: '', alias: '', description: '' }]
+    ;(state.draft as any).workspaceActualPrompt = String(workspace.actualPrompt ?? '')
+    ;(state.draft as any).workspaceActualPromptLoading = false
+    ;(state.draft as any).workspaceActualPromptStale = false
+    ;(state.draft as any).workspaceActualPromptError = ''
     state.modal = 'workspace'
     render()
   }
@@ -309,6 +362,7 @@ export function createWorkspaceManager(deps: {
     const state = getState()
     const current = workspaceDraftDirectories((state.draft as any)?.workspaceDirectories)
     ;(state.draft as any).workspaceDirectories = current.concat({ path: '', alias: '', description: '' })
+    markWorkspacePromptPreviewStale()
     emit()
   }
 
@@ -318,6 +372,7 @@ export function createWorkspaceManager(deps: {
     const current = workspaceDraftDirectories((state.draft as any)?.workspaceDirectories)
     const next = current.filter((_, currentIndex) => currentIndex !== index)
     ;(state.draft as any).workspaceDirectories = next.length ? next : [{ path: '', alias: '', description: '' }]
+    markWorkspacePromptPreviewStale()
     emit()
   }
 
@@ -330,6 +385,7 @@ export function createWorkspaceManager(deps: {
     while (current.length <= index) current.push({ path: '', alias: '', description: '' })
     current[index] = { ...current[index], [field]: String(value ?? '') }
     ;(state.draft as any).workspaceDirectories = current
+    markWorkspacePromptPreviewStale()
     emit()
   }
 
@@ -351,6 +407,7 @@ export function createWorkspaceManager(deps: {
       id: workspaceId,
       name,
       prompt,
+      actualPrompt: '',
       directories,
       createdAt: Number(existing?.createdAt || now()),
       updatedAt: now(),
@@ -513,6 +570,7 @@ export function createWorkspaceManager(deps: {
     addWorkspaceDirectory,
     removeWorkspaceDirectory,
     setWorkspaceDirectoryField,
+    refreshWorkspacePromptPreview,
     saveWorkspaceEditor,
     deleteWorkspaceEditor,
     createChatForActiveWorkspace,

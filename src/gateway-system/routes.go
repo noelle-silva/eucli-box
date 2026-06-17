@@ -35,6 +35,7 @@ func (s *system) registerRoutes() {
 
 	s.mux.HandleFunc("GET /api/workspaces", s.authWrap(s.handleListWorkspaces))
 	s.mux.HandleFunc("POST /api/workspaces", s.authWrap(s.handleSaveWorkspace))
+	s.mux.HandleFunc("POST /api/workspaces/prompt-preview", s.authWrap(s.handlePreviewWorkspacePrompt))
 	s.mux.HandleFunc("GET /api/workspaces/{workspaceID}", s.authWrap(s.handleLoadWorkspace))
 	s.mux.HandleFunc("DELETE /api/workspaces/{workspaceID}", s.authWrap(s.handleDeleteWorkspace))
 	s.mux.HandleFunc("GET /api/workspaces/{workspaceID}/roles/{roleID}/sessions", s.authWrap(s.handleListWorkspaceSessions))

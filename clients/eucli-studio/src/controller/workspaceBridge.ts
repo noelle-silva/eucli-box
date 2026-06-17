@@ -16,6 +16,7 @@ export type UiWorkspace = {
   name: string
   directories: UiWorkspaceDirectory[]
   prompt: string
+  actualPrompt: string
   createdAt: number
   updatedAt: number
 }
@@ -74,6 +75,7 @@ export function normalizeWorkspace(raw: unknown): UiWorkspace | null {
       .map(normalizeWorkspaceDirectory)
       .filter(Boolean) as UiWorkspaceDirectory[],
     prompt: text(box.prompt),
+    actualPrompt: String(box.actualPrompt ?? ''),
     createdAt,
     updatedAt,
   }
@@ -333,6 +335,11 @@ export async function saveWorkspace(netRequest: EbNetRequest, workspace: UiWorks
   const body = workspaceToWire(workspace)
   if (!body.id) throw new Error('工作区无效')
   await netRequest({ method: 'POST', path: '/api/workspaces', body, timeoutMs: 15000 })
+}
+
+export async function previewWorkspacePrompt(netRequest: EbNetRequest, workspace: UiWorkspace) {
+  const response = await netRequest({ method: 'POST', path: '/api/workspaces/prompt-preview', body: workspaceToWire(workspace), timeoutMs: 15000 })
+  return String(object(response?.body).actualPrompt ?? '')
 }
 
 export async function deleteWorkspace(netRequest: EbNetRequest, workspaceId: string) {

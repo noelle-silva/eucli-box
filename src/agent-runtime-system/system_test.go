@@ -1835,7 +1835,7 @@ func (f *fakeRuntimeStorage) SaveSessionMessageAttachment(ctx context.Context, r
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if attachment.Kind == "image" {
-		path := "sessions/" + roleID + "/" + sessionID + "/attachments/att-image/image.png"
+		path := "sessions/roles/" + roleID + "/" + sessionID + "/attachments/att-image/image.png"
 		f.images[path] = attachment.DataURL
 		return types.MessageAttachment{ID: "att-image", Kind: "image", Name: attachment.Name, Mime: "image/png", Path: path}, nil
 	}

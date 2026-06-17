@@ -18,6 +18,9 @@ func TestInitializeCreatesStorageLayout(t *testing.T) {
 	for _, dir := range []string{"sessions", "roles", "providers", "tools", "stickers", "recycle", "meta"} {
 		assertDir(t, filepath.Join(system.paths.root, dir))
 	}
+	for _, dir := range []string{"roles", "groups", "workspaces"} {
+		assertDir(t, filepath.Join(system.paths.root, "sessions", dir))
+	}
 	assertFile(t, filepath.Join(system.paths.root, "meta", "version.json"))
 	assertFile(t, filepath.Join(system.paths.root, "sessions", "favorites.json"))
 }
@@ -128,7 +131,7 @@ func TestSessionsAreListedByLastActive(t *testing.T) {
 	if len(sessions) != 2 || sessions[0].ID != "new" || sessions[1].ID != "old" {
 		t.Fatalf("sessions = %#v", sessions)
 	}
-	index, err := readJSON[sessionRoleIndex](context.Background(), filepath.Join(system.paths.root, "sessions", "index.json"))
+	index, err := readJSON[sessionRoleIndex](context.Background(), filepath.Join(system.paths.root, "sessions", "roles", "index.json"))
 	if err != nil {
 		t.Fatalf("read session root index error = %v", err)
 	}
@@ -152,7 +155,7 @@ func TestCreateSessionCreatesCanonicalSession(t *testing.T) {
 	if len(session.Messages) != 0 || session.CreatedAt.IsZero() || session.LastActive.IsZero() {
 		t.Fatalf("session timestamps/messages = %#v", session)
 	}
-	assertFile(t, filepath.Join(system.paths.root, "sessions", "developer", session.ID, "data.json"))
+	assertFile(t, filepath.Join(system.paths.root, "sessions", "roles", "developer", session.ID, "data.json"))
 }
 
 func TestSaveSessionStoresMessageTextOnlyInParts(t *testing.T) {
@@ -176,7 +179,7 @@ func TestSaveSessionStoresMessageTextOnlyInParts(t *testing.T) {
 		t.Fatalf("SaveSession() error = %v", err)
 	}
 
-	dataFile := filepath.Join(system.paths.root, "sessions", "developer", "session-text-storage", "data.json")
+	dataFile := filepath.Join(system.paths.root, "sessions", "roles", "developer", "session-text-storage", "data.json")
 	stored, err := readJSON[map[string]any](context.Background(), dataFile)
 	if err != nil {
 		t.Fatalf("read stored session error = %v", err)

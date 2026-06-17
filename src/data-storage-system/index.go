@@ -81,12 +81,12 @@ func (s *system) rebuildToolIndex(ctx context.Context) error {
 }
 
 func (s *system) rebuildAllSessionIndexes(ctx context.Context) error {
-	entries, err := os.ReadDir(s.paths.sessionsRoot())
+	entries, err := os.ReadDir(s.paths.sessionRolesRoot())
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
-		return storageIndexFailed("failed to scan sessions root", err)
+		return storageIndexFailed("failed to scan role sessions root", err)
 	}
 	folders := make([]roleFolder, 0, len(entries))
 	for _, entry := range entries {
@@ -94,16 +94,13 @@ func (s *system) rebuildAllSessionIndexes(ctx context.Context) error {
 			continue
 		}
 		roleID := entry.Name()
-		if roleID == "groups" || roleID == "workspaces" {
-			continue
-		}
 		folders = append(folders, roleFolder{ID: roleID})
 		if err := s.rebuildSessionIndexes(ctx, roleID); err != nil {
 			return err
 		}
 	}
 	sort.Slice(folders, func(i, j int) bool { return folders[i].ID < folders[j].ID })
-	if err := writeIndex(ctx, filepath.Join(s.paths.sessionsRoot(), "index.json"), sessionRoleIndex{Folders: folders}); err != nil {
+	if err := writeIndex(ctx, filepath.Join(s.paths.sessionRolesRoot(), "index.json"), sessionRoleIndex{Folders: folders}); err != nil {
 		return err
 	}
 	if err := s.rebuildAllGroupSessionIndexes(ctx); err != nil {

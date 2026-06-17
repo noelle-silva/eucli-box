@@ -118,7 +118,7 @@ func (s *system) LoadSessionAttachmentImage(ctx context.Context, relPath string)
 func (s *system) sessionAttachmentImagePath(relPath string) (string, string, error) {
 	relPath = filepath.ToSlash(strings.TrimSpace(relPath))
 	parts := strings.Split(relPath, "/")
-	if len(parts) != 6 && len(parts) != 7 && len(parts) != 8 {
+	if len(parts) != 7 && len(parts) != 8 {
 		return "", "", storageInvalid("session attachment image path is invalid", nil)
 	}
 	if parts[0] != "sessions" {
@@ -136,11 +136,13 @@ func (s *system) sessionAttachmentImagePath(relPath string) (string, string, err
 		sessionID = parts[4]
 		attachmentID = parts[6]
 		fileName = strings.TrimSpace(parts[7])
-	} else if len(parts) == 7 {
+	} else {
 		if parts[4] != "attachments" {
 			return "", "", storageInvalid("session attachment image path is invalid", nil)
 		}
 		switch parts[1] {
+		case "roles":
+			scope = roleSessionScope(parts[2])
 		case "groups":
 			scope = groupSessionScope(parts[2])
 		default:
@@ -149,14 +151,6 @@ func (s *system) sessionAttachmentImagePath(relPath string) (string, string, err
 		sessionID = parts[3]
 		attachmentID = parts[5]
 		fileName = strings.TrimSpace(parts[6])
-	} else {
-		if parts[3] != "attachments" {
-			return "", "", storageInvalid("session attachment image path is invalid", nil)
-		}
-		scope = roleSessionScope(parts[1])
-		sessionID = parts[2]
-		attachmentID = parts[4]
-		fileName = strings.TrimSpace(parts[5])
 	}
 	scope, err := cleanSessionScope(scope)
 	if err != nil {
@@ -208,7 +202,7 @@ func sessionAttachmentRelPath(scope sessionScope, sessionID string, attachmentID
 	if scope.Kind == sessionScopeWorkspace {
 		return filepath.ToSlash(filepath.Join("sessions", "workspaces", scope.WorkspaceID, scope.RoleID, sessionID, "attachments", attachmentID, fileName))
 	}
-	return filepath.ToSlash(filepath.Join("sessions", scope.ID, sessionID, "attachments", attachmentID, fileName))
+	return filepath.ToSlash(filepath.Join("sessions", "roles", scope.ID, sessionID, "attachments", attachmentID, fileName))
 }
 
 func normalizeMessageAttachmentKind(kind string) string {

@@ -21,7 +21,7 @@ func newPaths(root string) (paths, error) {
 }
 
 func (p paths) baseDirs() []string {
-	return []string{p.root, p.sessionsRoot(), p.sessionGroupsRoot(), p.sessionWorkspacesRoot(), p.rolesRoot(), p.groupsRoot(), p.workspacesRoot(), p.providersRoot(), p.toolsRoot(), p.stickersRoot(), p.recycleRoot(), p.metaRoot()}
+	return []string{p.root, p.sessionsRoot(), p.sessionRolesRoot(), p.sessionGroupsRoot(), p.sessionWorkspacesRoot(), p.rolesRoot(), p.groupsRoot(), p.workspacesRoot(), p.providersRoot(), p.toolsRoot(), p.stickersRoot(), p.recycleRoot(), p.metaRoot()}
 }
 
 func (p paths) sessionsRoot() string   { return filepath.Join(p.root, "sessions") }
@@ -99,7 +99,11 @@ func (p paths) workspaceDataFile(workspaceID string) (string, error) {
 }
 
 func (p paths) sessionRoleDir(roleID string) (string, error) {
-	return p.safeJoin(p.sessionsRoot(), roleID)
+	return p.safeJoin(p.sessionRolesRoot(), roleID)
+}
+
+func (p paths) sessionRolesRoot() string {
+	return filepath.Join(p.sessionsRoot(), "roles")
 }
 
 func (p paths) sessionGroupsRoot() string {

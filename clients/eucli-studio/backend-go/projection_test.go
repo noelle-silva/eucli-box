@@ -216,6 +216,32 @@ func TestSessionFavoritesStorageKeyUsesRootAction(t *testing.T) {
 	}
 }
 
+func TestRoleProjectionPreservesHookPromptPresetID(t *testing.T) {
+	role := map[string]any{
+		"id":                 "developer",
+		"name":               "Developer",
+		"avatar":             "🙂",
+		"hookPromptPresetId": "preset-review",
+		"prompts": []any{map[string]any{
+			"role":    "system",
+			"content": "You are a developer.",
+		}},
+		"modelConfig": map[string]any{
+			"coordinate":  map[string]any{"kind": "provider", "providerId": "openai-main", "modelId": "gpt-4.1"},
+			"temperature": float64(0.7),
+		},
+	}
+
+	ui := toUIRole(role)
+	if ui["hookPromptPresetId"] != "preset-review" {
+		t.Fatalf("ui hook prompt preset id = %#v", ui["hookPromptPresetId"])
+	}
+	back := fromUIRole(ui)
+	if back["hookPromptPresetId"] != "preset-review" {
+		t.Fatalf("saved hook prompt preset id = %#v", back["hookPromptPresetId"])
+	}
+}
+
 func TestMetaSavePreservesStickerProjectionSettings(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/stickers" || r.Method != http.MethodGet {

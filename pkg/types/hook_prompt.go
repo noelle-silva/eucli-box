@@ -15,6 +15,11 @@ const (
 	HookPromptPositionInsideUserTop    = "inside_user_top"
 	HookPromptPositionInsideUserBottom = "inside_user_bottom"
 
+	HookPromptSelectionModePreset  = "preset"
+	HookPromptSelectionModeNone    = "none"
+	HookPromptSelectionModeInherit = "inherit"
+
+	SessionMetadataHookPromptMode     = "hookPrompt.mode"
 	SessionMetadataHookPromptPresetID = "hookPrompt.presetId"
 )
 
@@ -50,6 +55,11 @@ type HookPromptMessage struct {
 	UpdatedAt string `json:"updatedAt,omitempty"`
 }
 
+type HookPromptSelection struct {
+	Mode     string `json:"mode,omitempty"`
+	PresetID string `json:"presetId,omitempty"`
+}
+
 func NormalizeHookPromptRole(value string) string {
 	switch strings.TrimSpace(value) {
 	case HookPromptRoleAssistant:
@@ -80,22 +90,69 @@ func IsHookPromptPosition(value string) bool {
 }
 
 func HookPromptPresetIDFromSessionMetadata(metadata map[string]string) string {
-	if len(metadata) == 0 {
+	selection := HookPromptSelectionFromSessionMetadata(metadata)
+	if selection.Mode != HookPromptSelectionModePreset {
 		return ""
 	}
-	return strings.TrimSpace(metadata[SessionMetadataHookPromptPresetID])
+	return selection.PresetID
+}
+
+func HookPromptSelectionFromSessionMetadata(metadata map[string]string) HookPromptSelection {
+	if len(metadata) == 0 {
+		return HookPromptSelection{Mode: HookPromptSelectionModeInherit}
+	}
+	return NormalizeHookPromptSelection(metadata[SessionMetadataHookPromptMode], metadata[SessionMetadataHookPromptPresetID])
+}
+
+func NormalizeHookPromptSelection(mode string, presetID string) HookPromptSelection {
+	mode = strings.TrimSpace(mode)
+	presetID = strings.TrimSpace(presetID)
+	switch mode {
+	case HookPromptSelectionModeNone:
+		return HookPromptSelection{Mode: HookPromptSelectionModeNone}
+	case HookPromptSelectionModePreset:
+		if presetID != "" {
+			return HookPromptSelection{Mode: HookPromptSelectionModePreset, PresetID: presetID}
+		}
+		return HookPromptSelection{Mode: HookPromptSelectionModeInherit}
+	case HookPromptSelectionModeInherit:
+		return HookPromptSelection{Mode: HookPromptSelectionModeInherit}
+	default:
+		if presetID != "" {
+			return HookPromptSelection{Mode: HookPromptSelectionModePreset, PresetID: presetID}
+		}
+		return HookPromptSelection{Mode: HookPromptSelectionModeInherit}
+	}
+}
+
+func NormalizeHookPromptSessionUpdate(mode string, presetID string) HookPromptSelection {
+	mode = strings.TrimSpace(mode)
+	if mode == "" && strings.TrimSpace(presetID) == "" {
+		return HookPromptSelection{Mode: HookPromptSelectionModeNone}
+	}
+	return NormalizeHookPromptSelection(mode, presetID)
+}
+
+func SameHookPromptSelection(left HookPromptSelection, right HookPromptSelection) bool {
+	left = NormalizeHookPromptSelection(left.Mode, left.PresetID)
+	right = NormalizeHookPromptSelection(right.Mode, right.PresetID)
+	return left.Mode == right.Mode && left.PresetID == right.PresetID
 }
 
 func PutHookPromptPresetSessionMetadata(metadata map[string]string, presetID string) map[string]string {
-	presetID = strings.TrimSpace(presetID)
-	if len(metadata) == 0 && presetID == "" {
-		return nil
-	}
+	return PutHookPromptSessionMetadata(metadata, NormalizeHookPromptSelection(HookPromptSelectionModePreset, presetID))
+}
+
+func PutHookPromptSessionMetadata(metadata map[string]string, selection HookPromptSelection) map[string]string {
+	selection = NormalizeHookPromptSelection(selection.Mode, selection.PresetID)
 	out := copySessionMetadata(metadata)
-	if presetID == "" {
-		delete(out, SessionMetadataHookPromptPresetID)
-	} else {
-		out[SessionMetadataHookPromptPresetID] = presetID
+	delete(out, SessionMetadataHookPromptMode)
+	delete(out, SessionMetadataHookPromptPresetID)
+	if selection.Mode == HookPromptSelectionModeNone {
+		out[SessionMetadataHookPromptMode] = HookPromptSelectionModeNone
+	} else if selection.Mode == HookPromptSelectionModePreset {
+		out[SessionMetadataHookPromptMode] = HookPromptSelectionModePreset
+		out[SessionMetadataHookPromptPresetID] = selection.PresetID
 	}
 	if len(out) == 0 {
 		return nil
@@ -104,5 +161,17 @@ func PutHookPromptPresetSessionMetadata(metadata map[string]string, presetID str
 }
 
 func HookPromptPresetSessionMetadataPatch(presetID string) map[string]string {
-	return map[string]string{SessionMetadataHookPromptPresetID: strings.TrimSpace(presetID)}
+	return HookPromptSessionMetadataPatch(NormalizeHookPromptSelection(HookPromptSelectionModePreset, presetID))
+}
+
+func HookPromptSessionMetadataPatch(selection HookPromptSelection) map[string]string {
+	selection = NormalizeHookPromptSelection(selection.Mode, selection.PresetID)
+	switch selection.Mode {
+	case HookPromptSelectionModeNone:
+		return map[string]string{SessionMetadataHookPromptMode: HookPromptSelectionModeNone, SessionMetadataHookPromptPresetID: ""}
+	case HookPromptSelectionModePreset:
+		return map[string]string{SessionMetadataHookPromptMode: HookPromptSelectionModePreset, SessionMetadataHookPromptPresetID: selection.PresetID}
+	default:
+		return map[string]string{SessionMetadataHookPromptMode: "", SessionMetadataHookPromptPresetID: ""}
+	}
 }

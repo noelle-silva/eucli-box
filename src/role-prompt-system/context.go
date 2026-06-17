@@ -34,6 +34,7 @@ func (s *system) BuildContext(ctx context.Context, roleID string, session types.
 		ModelConfig: role.ModelConfig,
 		Messages:    cloneMessages(session.Messages),
 		ToolPolicy:  cloneToolPolicy(role.ToolPolicy),
+		HookPromptPresetID: strings.TrimSpace(role.HookPromptPresetID),
 		Tools:       cloneTools(tools),
 		NativeTools: filterToolsByNames(tools, role.ToolPolicy.NativeTools),
 	}, nil
@@ -55,6 +56,7 @@ func (s *system) buildWorkspaceContext(ctx context.Context, role types.Role, ses
 		ModelConfig: role.ModelConfig,
 		Messages:    cloneMessages(session.Messages),
 		ToolPolicy:  cloneToolPolicy(role.ToolPolicy),
+		HookPromptPresetID: strings.TrimSpace(role.HookPromptPresetID),
 		Tools:       cloneTools(tools),
 		NativeTools: filterToolsByNames(tools, role.ToolPolicy.NativeTools),
 	}, nil
@@ -129,6 +131,7 @@ func (s *system) buildGroupContext(ctx context.Context, role types.Role, session
 		ModelConfig: role.ModelConfig,
 		Messages:    messages,
 		ToolPolicy:  cloneToolPolicy(role.ToolPolicy),
+		HookPromptPresetID: strings.TrimSpace(role.HookPromptPresetID),
 		Tools:       cloneTools(tools),
 		NativeTools: filterToolsByNames(tools, role.ToolPolicy.NativeTools),
 	}, nil

@@ -20,7 +20,7 @@ func (s *system) StartRun(ctx context.Context, request types.RunRequest) (types.
 	now := nowUTC()
 	state := types.RunState{ID: utils.NewID("run"), RoleID: request.RoleID, GroupID: strings.TrimSpace(request.GroupID), WorkspaceID: strings.TrimSpace(request.WorkspaceID), SessionID: request.SessionID, Stream: stream, Status: types.RunStatusCreated, CreatedAt: now, UpdatedAt: now}
 	modelOverride, _ := types.NormalizeModelOverrideCoordinate(modelOverrideFromRunRequest(request))
-	record := &runRecord{runID: state.ID, roleID: request.RoleID, groupID: state.GroupID, workspaceID: state.WorkspaceID, state: state, stream: stream, modelOverride: modelOverride, reasoningEffort: types.TrimReasoningEffort(request.ReasoningEffort), hookPromptPresetID: strings.TrimSpace(request.HookPromptPresetID), cancel: cancel}
+	record := &runRecord{runID: state.ID, roleID: request.RoleID, groupID: state.GroupID, workspaceID: state.WorkspaceID, state: state, stream: stream, modelOverride: modelOverride, reasoningEffort: types.TrimReasoningEffort(request.ReasoningEffort), hookPromptSelection: types.NormalizeHookPromptSelection(request.HookPromptMode, request.HookPromptPresetID), hookPromptSelectionInput: hasHookPromptSelectionInput(request), cancel: cancel}
 	if compactRun {
 		record.commandName = compactCommandName
 	}
@@ -170,18 +170,21 @@ func applyRunHookPromptPreset(record *runRecord, session *types.Session) {
 	if record == nil || session == nil {
 		return
 	}
-	presetID := strings.TrimSpace(record.hookPromptPresetID)
-	if presetID == "" && session.Metadata != nil {
-		presetID = types.HookPromptPresetIDFromSessionMetadata(session.Metadata)
-	}
-	if presetID == "" {
+	current := types.HookPromptSelectionFromSessionMetadata(session.Metadata)
+	if !record.hookPromptSelectionInput {
+		record.hookPromptSelection = current
 		return
 	}
-	record.hookPromptPresetID = presetID
-	if types.HookPromptPresetIDFromSessionMetadata(session.Metadata) != presetID {
+	next := types.NormalizeHookPromptSelection(record.hookPromptSelection.Mode, record.hookPromptSelection.PresetID)
+	record.hookPromptSelection = next
+	if !types.SameHookPromptSelection(current, next) {
 		record.hookPromptPersistPending = true
 	}
-	session.Metadata = types.PutHookPromptPresetSessionMetadata(session.Metadata, presetID)
+	session.Metadata = types.PutHookPromptSessionMetadata(session.Metadata, next)
+}
+
+func hasHookPromptSelectionInput(request types.RunRequest) bool {
+	return strings.TrimSpace(request.HookPromptMode) != "" || strings.TrimSpace(request.HookPromptPresetID) != ""
 }
 
 func (s *system) continueRun(ctx context.Context, record *runRecord, contextSession types.Session) {

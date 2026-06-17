@@ -452,6 +452,7 @@ func normalizeSessionMetadata(metadata map[string]string) map[string]string {
 	if _, ok := types.ModelOverrideFromSessionMetadata(out); !ok {
 		out = types.ClearModelOverrideSessionMetadata(out)
 	}
+	out = types.PutHookPromptSessionMetadata(out, types.HookPromptSelectionFromSessionMetadata(out))
 	if len(out) == 0 {
 		return nil
 	}

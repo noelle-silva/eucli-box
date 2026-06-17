@@ -43,6 +43,7 @@ type Role struct {
 	Prompts     []PromptMessage `json:"prompts"`
 	ModelConfig ModelConfig     `json:"modelConfig"`
 	ToolPolicy  ToolPolicy      `json:"toolPolicy"`
+	HookPromptPresetID string   `json:"hookPromptPresetId,omitempty"`
 	CreatedAt   time.Time       `json:"createdAt"`
 	UpdatedAt   time.Time       `json:"updatedAt"`
 }
@@ -62,6 +63,7 @@ type RoleContext struct {
 	ModelConfig ModelConfig      `json:"modelConfig"`
 	Messages    []Message        `json:"messages"`
 	ToolPolicy  ToolPolicy       `json:"toolPolicy"`
+	HookPromptPresetID string    `json:"hookPromptPresetId,omitempty"`
 	Tools       []ToolDefinition `json:"tools,omitempty"`
 	NativeTools []ToolDefinition `json:"nativeTools,omitempty"`
 }

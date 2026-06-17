@@ -227,6 +227,7 @@ type RunRequest struct {
 	ContextMessageID   string           `json:"contextMessageId,omitempty"`
 	ModelOverride      *ModelCoordinate `json:"modelOverride,omitempty"`
 	ReasoningEffort    ReasoningEffort  `json:"reasoningEffort,omitempty"`
+	HookPromptMode     string           `json:"hookPromptMode,omitempty"`
 	HookPromptPresetID string           `json:"hookPromptPresetId,omitempty"`
 	Stream             bool             `json:"stream,omitempty"`
 }

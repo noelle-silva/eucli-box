@@ -264,6 +264,9 @@ func TestSessionHookPromptRoute(t *testing.T) {
 	if got := fakes.sessions.sessions["developer/session-1"].Metadata[types.SessionMetadataHookPromptPresetID]; got != "preset-1" {
 		t.Fatalf("metadata preset = %q", got)
 	}
+	if got := fakes.sessions.sessions["developer/session-1"].Metadata[types.SessionMetadataHookPromptMode]; got != types.HookPromptSelectionModePreset {
+		t.Fatalf("metadata mode = %q", got)
+	}
 
 	req = httptest.NewRequest(http.MethodPatch, "/api/roles/developer/sessions/session-1/hook-prompt", strings.NewReader(`{"presetId":""}`))
 	rec = httptest.NewRecorder()
@@ -273,6 +276,19 @@ func TestSessionHookPromptRoute(t *testing.T) {
 	}
 	if _, ok := fakes.sessions.sessions["developer/session-1"].Metadata[types.SessionMetadataHookPromptPresetID]; ok {
 		t.Fatalf("metadata was not cleared: %#v", fakes.sessions.sessions["developer/session-1"].Metadata)
+	}
+	if got := fakes.sessions.sessions["developer/session-1"].Metadata[types.SessionMetadataHookPromptMode]; got != types.HookPromptSelectionModeNone {
+		t.Fatalf("metadata mode = %q", got)
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "/api/roles/developer/sessions/session-1/hook-prompt", strings.NewReader(`{"mode":"inherit"}`))
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("inherit hook prompt status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if metadata := fakes.sessions.sessions["developer/session-1"].Metadata; len(metadata) != 0 {
+		t.Fatalf("metadata was not reset to inherit: %#v", metadata)
 	}
 }
 

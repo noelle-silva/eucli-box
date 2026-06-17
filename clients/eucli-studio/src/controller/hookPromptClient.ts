@@ -32,33 +32,33 @@ export async function saveHookPromptLibrary(netRequest: EbNetRequest, library: H
   return normalizeHookPromptLibrary(response?.body)
 }
 
-export async function updateRoleSessionHookPrompt(netRequest: EbNetRequest, input: RoleSessionInput & { presetId: string }) {
+export async function updateRoleSessionHookPrompt(netRequest: EbNetRequest, input: RoleSessionInput & { mode: string; presetId: string }) {
   const roleId = text(input.roleId)
   const sessionId = text(input.sessionId)
   if (!roleId || !sessionId) throw new Error('当前会话无效')
   const response = await netRequest({
     method: 'PATCH',
     path: `/api/roles/${encodeURIComponent(roleId)}/sessions/${encodeURIComponent(sessionId)}/hook-prompt`,
-    body: { presetId: text(input.presetId) },
+    body: { mode: text(input.mode), presetId: text(input.presetId) },
     timeoutMs: 15000,
   })
   return response?.body
 }
 
-export async function updateGroupSessionHookPrompt(netRequest: EbNetRequest, input: GroupSessionInput & { presetId: string }) {
+export async function updateGroupSessionHookPrompt(netRequest: EbNetRequest, input: GroupSessionInput & { mode: string; presetId: string }) {
   const groupId = text(input.groupId)
   const sessionId = text(input.sessionId)
   if (!groupId || !sessionId) throw new Error('当前会话无效')
   const response = await netRequest({
     method: 'PATCH',
     path: `/api/groups/${encodeURIComponent(groupId)}/sessions/${encodeURIComponent(sessionId)}/hook-prompt`,
-    body: { presetId: text(input.presetId) },
+    body: { mode: text(input.mode), presetId: text(input.presetId) },
     timeoutMs: 15000,
   })
   return response?.body
 }
 
-export async function updateWorkspaceSessionHookPrompt(netRequest: EbNetRequest, input: WorkspaceSessionInput & { presetId: string }) {
+export async function updateWorkspaceSessionHookPrompt(netRequest: EbNetRequest, input: WorkspaceSessionInput & { mode: string; presetId: string }) {
   const workspaceId = text(input.workspaceId)
   const roleId = text(input.roleId)
   const sessionId = text(input.sessionId)
@@ -66,7 +66,7 @@ export async function updateWorkspaceSessionHookPrompt(netRequest: EbNetRequest,
   const response = await netRequest({
     method: 'PATCH',
     path: `/api/workspaces/${encodeURIComponent(workspaceId)}/roles/${encodeURIComponent(roleId)}/sessions/${encodeURIComponent(sessionId)}/hook-prompt`,
-    body: { presetId: text(input.presetId) },
+    body: { mode: text(input.mode), presetId: text(input.presetId) },
     timeoutMs: 15000,
   })
   return response?.body

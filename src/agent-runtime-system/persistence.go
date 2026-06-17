@@ -61,7 +61,7 @@ func runMetadataPatch(record *runRecord) map[string]string {
 		}
 	}
 	if record.hookPromptPersistPending {
-		for key, value := range types.HookPromptPresetSessionMetadataPatch(record.hookPromptPresetID) {
+		for key, value := range types.HookPromptSessionMetadataPatch(record.hookPromptSelection) {
 			patch[key] = value
 		}
 	}
@@ -143,6 +143,9 @@ func markRunSessionSaveAccepted(record *runRecord, save types.SessionMessageSave
 				record.modelOverridePersistPending = false
 				break
 			}
+		}
+		if _, ok := save.MetadataPatch[types.SessionMetadataHookPromptMode]; ok {
+			record.hookPromptPersistPending = false
 		}
 		if _, ok := save.MetadataPatch[types.SessionMetadataHookPromptPresetID]; ok {
 			record.hookPromptPersistPending = false

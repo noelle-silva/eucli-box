@@ -174,7 +174,7 @@ func (s *system) modelMessages(ctx context.Context, record *runRecord, roleConte
 		}
 		messages = append(messages, prompt)
 	}
-	return s.applyHookPromptPreset(ctx, record, messages, latestUserIndex)
+	return s.applyHookPromptPreset(ctx, record, roleContext, messages, latestUserIndex)
 }
 
 func (s *system) runtimeMessageToPrompt(ctx context.Context, message types.Message, index int) (types.PromptMessage, error) {

@@ -23,8 +23,8 @@ import { RoleAvatarCropper } from '../components/avatar/RoleAvatarCropper'
 import { RoleNativeToolsSection } from './RoleNativeToolsSection'
 import { RoleToolWhitelistSection } from './RoleToolWhitelistSection'
 
-export function RoleDialog(props: { open: boolean; controller: any; providers: any[]; modelGroups: any[]; draft: any; models: any; tools: any }) {
-  const { open, controller, providers, modelGroups, draft, models, tools } = props
+export function RoleDialog(props: { open: boolean; controller: any; providers: any[]; modelGroups: any[]; draft: any; models: any; tools: any; hookPrompts?: any }) {
+  const { open, controller, providers, modelGroups, draft, models, tools, hookPrompts } = props
 
   const editRoleId = String(draft?.editRoleId || '')
   const isNew = editRoleId === '__new__'
@@ -38,6 +38,8 @@ export function RoleDialog(props: { open: boolean; controller: any; providers: a
   const modelGroupId = String(draft?.roleModelGroupId || '')
   const modelPick = String(draft?.roleModelId || '')
   const temp = Number(draft?.roleTemperature || 0.7)
+  const roleHookPromptPresetId = String(draft?.roleHookPromptPresetId || '')
+  const hookPromptPresets = Array.isArray(hookPrompts?.library?.presets) ? hookPrompts.library.presets : []
   const provider = providers.find((p: any) => String(p?.id || '') === providerId) || null
   const providerModels = Array.isArray(provider?.registeredModels) ? provider.registeredModels : []
   const modelGroup = modelGroups.find((group: any) => String(group?.id || '') === modelGroupId) || null
@@ -157,6 +159,18 @@ export function RoleDialog(props: { open: boolean; controller: any; providers: a
               </Typography>
             ) : null}
           </Stack>
+
+          <FormControl fullWidth>
+            <InputLabel>默认 hook 提示词</InputLabel>
+            <Select label="默认 hook 提示词" value={roleHookPromptPresetId} onChange={(e) => controller.actions.setDraft('roleHookPromptPresetId', e.target.value)}>
+              <MenuItem value="">无默认预设</MenuItem>
+              {hookPromptPresets.map((preset: any) => {
+                const id = String(preset?.id || '')
+                if (!id) return null
+                return <MenuItem key={id} value={id}>{String(preset?.name || '未命名预设')}</MenuItem>
+              })}
+            </Select>
+          </FormControl>
 
           <Box>
             <Typography variant="body2" sx={{ fontWeight: 900, mb: 1 }}>

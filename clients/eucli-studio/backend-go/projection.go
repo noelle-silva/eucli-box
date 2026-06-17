@@ -1106,15 +1106,16 @@ func toUIRole(role map[string]any) map[string]any {
 		modelRef["kind"] = "provider"
 	}
 	return map[string]any{
-		"id":           stringField(role, "id"),
-		"name":         fallback(stringField(role, "name"), "未命名角色"),
-		"avatar":       stringField(role, "avatar"),
-		"systemPrompt": promptText(objectList(role["prompts"])),
-		"temperature":  numberField(modelConfig, "temperature", 0.7),
-		"modelRef":     modelRef,
-		"toolPolicy":   normalizeUIToolPolicy(role["toolPolicy"]),
-		"createdAt":    millisFromAny(role["createdAt"]),
-		"updatedAt":    millisFromAny(role["updatedAt"]),
+		"id":                 stringField(role, "id"),
+		"name":               fallback(stringField(role, "name"), "未命名角色"),
+		"avatar":             stringField(role, "avatar"),
+		"hookPromptPresetId": stringField(role, "hookPromptPresetId"),
+		"systemPrompt":       promptText(objectList(role["prompts"])),
+		"temperature":        numberField(modelConfig, "temperature", 0.7),
+		"modelRef":           modelRef,
+		"toolPolicy":         normalizeUIToolPolicy(role["toolPolicy"]),
+		"createdAt":          millisFromAny(role["createdAt"]),
+		"updatedAt":          millisFromAny(role["updatedAt"]),
 	}
 }
 
@@ -1123,15 +1124,16 @@ func fromUIRole(value any) map[string]any {
 	modelRef := objectMap(role["modelRef"])
 	now := time.Now().UTC().Format(time.RFC3339)
 	return map[string]any{
-		"id":          stringField(role, "id"),
-		"name":        fallback(stringField(role, "name"), "未命名角色"),
-		"avatar":      stringField(role, "avatar"),
-		"description": stringField(role, "description"),
-		"prompts":     []any{map[string]any{"id": "system", "role": "system", "content": stringField(role, "systemPrompt"), "order": 0, "createdAt": now, "updatedAt": now}},
-		"modelConfig": map[string]any{"coordinate": map[string]any{"kind": fallback(stringField(modelRef, "kind"), "provider"), "groupId": stringField(modelRef, "groupId"), "providerId": stringField(modelRef, "providerId"), "modelId": stringField(modelRef, "modelId")}, "temperature": numberField(role, "temperature", 0.7)},
-		"toolPolicy":  normalizeUIToolPolicy(role["toolPolicy"]),
-		"createdAt":   timeFromMillis(role["createdAt"]),
-		"updatedAt":   time.Now().UTC().Format(time.RFC3339),
+		"id":                 stringField(role, "id"),
+		"name":               fallback(stringField(role, "name"), "未命名角色"),
+		"avatar":             stringField(role, "avatar"),
+		"description":        stringField(role, "description"),
+		"hookPromptPresetId": stringField(role, "hookPromptPresetId"),
+		"prompts":            []any{map[string]any{"id": "system", "role": "system", "content": stringField(role, "systemPrompt"), "order": 0, "createdAt": now, "updatedAt": now}},
+		"modelConfig":        map[string]any{"coordinate": map[string]any{"kind": fallback(stringField(modelRef, "kind"), "provider"), "groupId": stringField(modelRef, "groupId"), "providerId": stringField(modelRef, "providerId"), "modelId": stringField(modelRef, "modelId")}, "temperature": numberField(role, "temperature", 0.7)},
+		"toolPolicy":         normalizeUIToolPolicy(role["toolPolicy"]),
+		"createdAt":          timeFromMillis(role["createdAt"]),
+		"updatedAt":          time.Now().UTC().Format(time.RFC3339),
 	}
 }
 

@@ -2253,7 +2253,9 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const activeEffectiveReasoningEffort = effectiveReasoningEffort(activeChat, reasoningProfile)
   const activeReasoningLabel = reasoningEffortLabel(activeEffectiveReasoningEffort)
   const hasChatReasoningOverride = !!activeChatReasoningEffort
+  const activeHookPromptMode = String((activeChat as any)?.hookPromptMode || '').trim() === 'none' ? 'none' : String((activeChat as any)?.hookPromptMode || '').trim() === 'preset' ? 'preset' : 'inherit'
   const activeHookPromptPresetId = String((activeChat as any)?.hookPromptPresetId || '').trim()
+  const roleDefaultHookPromptPresetId = String((activeRole as any)?.hookPromptPresetId || '').trim()
   const hookPromptSelectorDisabled = s.loading || !activeChat
   const hookPromptSelectorDisabledReason = !activeChat ? '请先创建或选择会话' : ''
 
@@ -5272,10 +5274,12 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
 
                       <HookPromptSelector
                         library={hookPrompts.library || { presets: [] }}
+                        selectedMode={activeHookPromptMode as any}
                         selectedPresetId={activeHookPromptPresetId}
+                        roleDefaultPresetId={roleDefaultHookPromptPresetId}
                         disabled={hookPromptSelectorDisabled}
                         disabledReason={hookPromptSelectorDisabledReason}
-                        onSelect={(presetId) => controller.actions.selectHookPromptForActiveChat?.(presetId)}
+                        onSelect={(mode, presetId) => controller.actions.selectHookPromptForActiveChat?.(mode, presetId)}
                       />
 
                       {roleSessionControlsEnabled ? (
@@ -6726,7 +6730,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
         </Box>
 
         <ProvidersDialog open={s.modal === 'providers'} controller={controller} providers={providers} draft={s.draft} models={s.models} />
-        <RoleDialog open={s.modal === 'role'} controller={controller} providers={providers} modelGroups={modelGroups} draft={s.draft} models={s.models} tools={(s as any).tools} />
+        <RoleDialog open={s.modal === 'role'} controller={controller} providers={providers} modelGroups={modelGroups} draft={s.draft} models={s.models} tools={(s as any).tools} hookPrompts={hookPrompts} />
         <GroupDialog open={s.modal === 'group'} controller={controller} roles={roles} draft={s.draft} />
         <WorkspaceDialog open={s.modal === 'workspace'} controller={controller} draft={s.draft} />
         <ConfirmDialog open={s.modal === 'confirm'} controller={controller} draft={s.draft} roles={roles} groups={groups} providers={providers} workspaces={workspaces} />

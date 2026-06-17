@@ -26,7 +26,7 @@ import { looksLikeImageDataUrl } from './textProcessing'
 import { normalizeChatModelOverride } from './modelRefUtils'
 import { normalizeRoleToolPolicy } from './toolPolicy'
 import { normalizeReasoningEffort, normalizeReasoningFields } from './reasoning'
-import { hookPromptPresetIdFromMetadata } from './hookPrompt'
+import { hookPromptSelectionFromMetadata, normalizeHookPromptSelection } from './hookPrompt'
 
 export function normalizeRenderSafetyPolicy(v0: unknown) {
   const v = String(v0 || '').trim()
@@ -41,10 +41,10 @@ export function normalizeMaxFileSizeMb(v: unknown) {
 	return clamp(Math.round(n), 0, MAX_ATTACH_MAX_FILE_MB)
 }
 
-function normalizeChatHookPromptPresetId(chat: any) {
-	const direct = String(chat?.hookPromptPresetId || '').trim()
-	if (direct) return direct
-	return hookPromptPresetIdFromMetadata(chat?.metadata)
+function normalizeChatHookPromptSelection(chat: any) {
+  const direct = normalizeHookPromptSelection(chat)
+  if (direct.mode !== 'inherit') return direct
+  return hookPromptSelectionFromMetadata(chat?.metadata)
 }
 
 export function normalizeSplitMeta(raw: any) {
@@ -325,8 +325,9 @@ export function normalizeData(raw: any) {
 		if (modelOverride) out.modelOverride = modelOverride
 		const reasoningEffort = normalizeReasoningEffort((cc as any).reasoningEffort)
 		if (reasoningEffort) out.reasoningEffort = reasoningEffort
-		const hookPromptPresetId = normalizeChatHookPromptPresetId(cc)
-		if (hookPromptPresetId) out.hookPromptPresetId = hookPromptPresetId
+		const hookPromptSelection = normalizeChatHookPromptSelection(cc)
+		if (hookPromptSelection.mode !== 'inherit') out.hookPromptMode = hookPromptSelection.mode
+		if (hookPromptSelection.mode === 'preset') out.hookPromptPresetId = hookPromptSelection.presetId
 
 		const branches0 = Array.isArray(out.branching?.branches) ? out.branching.branches : []
         const idSet = new Set<string>()
@@ -447,8 +448,9 @@ export function normalizeData(raw: any) {
           branching,
 			messages: messages.filter((m: any) => m && typeof m === 'object').map((m: any) => normalizeChatMessage(m, { activeBranchId, toolMessagesAsAssistant: false })),
 		}
-		const hookPromptPresetId = normalizeChatHookPromptPresetId(cc)
-		if (hookPromptPresetId) out.hookPromptPresetId = hookPromptPresetId
+		const hookPromptSelection = normalizeChatHookPromptSelection(cc)
+		if (hookPromptSelection.mode !== 'inherit') out.hookPromptMode = hookPromptSelection.mode
+		if (hookPromptSelection.mode === 'preset') out.hookPromptPresetId = hookPromptSelection.presetId
 
 		const branches0 = Array.isArray(out.branching?.branches) ? out.branching.branches : []
         const idSet = new Set<string>()
@@ -548,8 +550,9 @@ export function normalizeData(raw: any) {
 		if (modelOverride) out.modelOverride = modelOverride
 		const reasoningEffort = normalizeReasoningEffort((cc as any).reasoningEffort)
 		if (reasoningEffort) out.reasoningEffort = reasoningEffort
-		const hookPromptPresetId = normalizeChatHookPromptPresetId(cc)
-		if (hookPromptPresetId) out.hookPromptPresetId = hookPromptPresetId
+		const hookPromptSelection = normalizeChatHookPromptSelection(cc)
+		if (hookPromptSelection.mode !== 'inherit') out.hookPromptMode = hookPromptSelection.mode
+		if (hookPromptSelection.mode === 'preset') out.hookPromptPresetId = hookPromptSelection.presetId
 
 		const branches0 = Array.isArray(out.branching?.branches) ? out.branching.branches : []
         const idSet = new Set<string>()

@@ -212,6 +212,7 @@ export function createEntityEditors(deps: {
     state.draft.roleAvatarImageCropSrc = ''
     state.draft.roleSystemPrompt = ''
     state.draft.roleTemperature = '0.7'
+    ;(state.draft as any).roleHookPromptPresetId = ''
     state.draft.roleModelSource = 'provider'
     state.draft.roleProviderId = fallbackPid
     state.draft.roleModelGroupId = ''
@@ -253,6 +254,7 @@ export function createEntityEditors(deps: {
     state.draft.roleAvatarImageCropSrc = ''
     state.draft.roleSystemPrompt = String(role.systemPrompt || '')
     state.draft.roleTemperature = String(role.temperature ?? 0.7)
+    ;(state.draft as any).roleHookPromptPresetId = String(role.hookPromptPresetId || '')
     const modelKind = String(role.modelRef?.kind || '').trim() === 'model_group' || String(role.modelRef?.groupId || '').trim() ? 'model_group' : 'provider'
     state.draft.roleModelSource = modelKind
     state.draft.roleProviderId = modelKind === 'provider' ? String(role.modelRef?.providerId || '') : ''
@@ -288,6 +290,7 @@ export function createEntityEditors(deps: {
     const avatarImage = looksLikeImageDataUrl(state.draft.roleAvatarImage) ? String(state.draft.roleAvatarImage || '') : ''
     const sys = String(state.draft.roleSystemPrompt || '').trim()
     const temperature = clampTemp(state.draft.roleTemperature)
+    const hookPromptPresetId = String((state.draft as any).roleHookPromptPresetId || '').trim()
     const modelSource = String(state.draft.roleModelSource || '').trim() === 'model_group' ? 'model_group' : 'provider'
     const providerId = modelSource === 'provider' ? String(state.draft.roleProviderId || '').trim() : ''
     const groupId = modelSource === 'model_group' ? String(state.draft.roleModelGroupId || '').trim() : ''
@@ -311,6 +314,7 @@ export function createEntityEditors(deps: {
         avatarImage,
         systemPrompt: sys,
         temperature,
+        hookPromptPresetId,
         modelRef,
         toolPolicy,
         createdAt: now(),
@@ -341,6 +345,7 @@ export function createEntityEditors(deps: {
     role.avatarImage = avatarImage
     role.systemPrompt = sys
     role.temperature = temperature
+    role.hookPromptPresetId = hookPromptPresetId
     role.modelRef = modelRef
     role.toolPolicy = toolPolicy
     role.updatedAt = now()

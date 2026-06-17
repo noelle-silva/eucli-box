@@ -20,6 +20,7 @@ import { looksLikeImageDataUrl } from '../domain/textProcessing'
 import { detectDraftFileKind, addDraftFilePlaceholder } from '../domain/draftFileUtils'
 import type { DraftFileItem } from '../domain/draftFileUtils'
 import { normalizeChatModelOverride, normalizeModelRef, type ModelRef } from '../domain/modelRefUtils'
+import { normalizeHookPromptSelection } from '../domain/hookPrompt'
 import { chatReasoningEffort } from '../domain/reasoning'
 import { createStateAccessors } from '../state/stateAccessors'
 import {
@@ -75,6 +76,7 @@ type RoleRunInput = {
   stream?: boolean
   reasoningEffort?: string
   modelOverride?: ModelRef | null
+  hookPromptMode?: string
   hookPromptPresetId?: string
 }
 
@@ -134,7 +136,9 @@ export function createChatOperations(deps: {
     const contextMessageId = String(input.contextMessageId || '').trim()
     const message = String(input.message || '').trim()
     const reasoningEffort = String(input.reasoningEffort || '').trim()
-    return [workspaceId ? `workspace:${workspaceId}` : groupId ? `group:${groupId}` : 'role', roleId, sessionId, contextMessageId ? `context:${contextMessageId}` : userMessageId ? `user:${userMessageId}` : `parent:${parentMessageId}`, message, reasoningEffort, roleRunModelOverrideKey(input.modelOverride)].join('\n')
+    const hookPromptMode = String(input.hookPromptMode || '').trim()
+    const hookPromptPresetId = String(input.hookPromptPresetId || '').trim()
+    return [workspaceId ? `workspace:${workspaceId}` : groupId ? `group:${groupId}` : 'role', roleId, sessionId, contextMessageId ? `context:${contextMessageId}` : userMessageId ? `user:${userMessageId}` : `parent:${parentMessageId}`, message, reasoningEffort, roleRunModelOverrideKey(input.modelOverride), hookPromptMode, hookPromptPresetId].join('\n')
   }
 
   function roleRunModelOverrideKey(value: unknown) {
@@ -144,6 +148,10 @@ export function createChatOperations(deps: {
 
   function currentRoleChatModelOverride() {
     return normalizeChatModelOverride(sa.activeChatFromData())
+  }
+
+  function chatHookPromptSelection(chat: any) {
+    return normalizeHookPromptSelection(chat)
   }
 
   function findActiveRunAtMessage(roleId: string, sessionId: string, messageId: string) {
@@ -548,8 +556,8 @@ export function createChatOperations(deps: {
       renderComposer()
       const reasoningEffort = chatReasoningEffort(sa.activeChatFromData())
       const modelOverride = currentRoleChatModelOverride()
-      const hookPromptPresetId = String((sa.activeChatFromData() as any)?.hookPromptPresetId || '').trim()
-      await runRoleMessageViaEb({ roleId: input.roleId, workspaceId: input.workspaceId, sessionId: input.sessionId, userMessageId, reasoningEffort, modelOverride, hookPromptPresetId, stream: !!state.data?.settings?.streamEnabled }, (run) => {
+      const hookSelection = chatHookPromptSelection(sa.activeChatFromData())
+      await runRoleMessageViaEb({ roleId: input.roleId, workspaceId: input.workspaceId, sessionId: input.sessionId, userMessageId, reasoningEffort, modelOverride, hookPromptMode: hookSelection.mode, hookPromptPresetId: hookSelection.presetId, stream: !!state.data?.settings?.streamEnabled }, (run) => {
         acceptedRunId = String(run?.id || '').trim()
         syncEbRoleRunCard(run, { roleId: input.roleId, workspaceId: input.workspaceId, sessionId: input.sessionId, anchorMessageId: userMessageId })
         renderComposer()
@@ -579,8 +587,8 @@ export function createChatOperations(deps: {
       renderComposer()
       const reasoningEffort = chatReasoningEffort(sa.activeChatFromData())
       const modelOverride = currentRoleChatModelOverride()
-      const hookPromptPresetId = String((sa.activeChatFromData() as any)?.hookPromptPresetId || '').trim()
-      await runRoleMessageViaEb({ roleId: input.roleId, workspaceId: input.workspaceId, sessionId: input.sessionId, contextMessageId, reasoningEffort, modelOverride, hookPromptPresetId, stream: !!state.data?.settings?.streamEnabled }, (run) => {
+      const hookSelection = chatHookPromptSelection(sa.activeChatFromData())
+      await runRoleMessageViaEb({ roleId: input.roleId, workspaceId: input.workspaceId, sessionId: input.sessionId, contextMessageId, reasoningEffort, modelOverride, hookPromptMode: hookSelection.mode, hookPromptPresetId: hookSelection.presetId, stream: !!state.data?.settings?.streamEnabled }, (run) => {
         acceptedRunId = String(run?.id || '').trim()
         syncEbRoleRunCard(run, { roleId: input.roleId, workspaceId: input.workspaceId, sessionId: input.sessionId, anchorMessageId: contextMessageId })
         renderComposer()
@@ -598,7 +606,7 @@ export function createChatOperations(deps: {
     }
   }
 
-  async function runGroupSpeakerSequence(input: { groupId: string; sessionId: string; roleIds: string[]; operationText: string; contextMessageId?: string; message?: string; attachments?: any[]; parentMessageId?: string; clearComposerDraftKey?: string; hookPromptPresetId?: string }, opts?: ExistingMessageRunOptions) {
+  async function runGroupSpeakerSequence(input: { groupId: string; sessionId: string; roleIds: string[]; operationText: string; contextMessageId?: string; message?: string; attachments?: any[]; parentMessageId?: string; clearComposerDraftKey?: string; hookPromptMode?: string; hookPromptPresetId?: string }, opts?: ExistingMessageRunOptions) {
     const state = getState()
     const groupId = String(input.groupId || '').trim()
     let sessionId = String(input.sessionId || '').trim()
@@ -626,6 +634,7 @@ export function createChatOperations(deps: {
           roleId,
           groupId,
           sessionId,
+          hookPromptMode: String(input.hookPromptMode || '').trim(),
           hookPromptPresetId: String(input.hookPromptPresetId || '').trim(),
           stream: !!state.data?.settings?.streamEnabled,
         }
@@ -972,7 +981,7 @@ export function createChatOperations(deps: {
     const loadedChat = pendingChat ? null : await ensureActiveChatLoaded?.().catch(() => null)
     const currentChat = pendingChat ? null : loadedChat || sa.activeChatFromData()
     const modelOverride = normalizeChatModelOverride(pendingChat || currentChat)
-    const hookPromptPresetId = String(((pendingChat || currentChat) as any)?.hookPromptPresetId || '').trim()
+    const hookSelection = chatHookPromptSelection(pendingChat || currentChat)
 
     let chat = pendingChat ? null : currentChat
     let sessionId = String(chat?.id || '').trim()
@@ -992,7 +1001,7 @@ export function createChatOperations(deps: {
     try {
       renderComposer()
       const reasoningEffort = chatReasoningEffort(pendingChat || currentChat)
-      await runRoleMessageViaEb({ roleId: rid, workspaceId, sessionId, message: input, attachments, parentMessageId, reasoningEffort, modelOverride, hookPromptPresetId, stream: !!state.data?.settings?.streamEnabled }, (run) => {
+      await runRoleMessageViaEb({ roleId: rid, workspaceId, sessionId, message: input, attachments, parentMessageId, reasoningEffort, modelOverride, hookPromptMode: hookSelection.mode, hookPromptPresetId: hookSelection.presetId, stream: !!state.data?.settings?.streamEnabled }, (run) => {
         acceptedRunId = String(run?.id || '').trim()
         syncEbRoleRunCard(run, { roleId: rid, workspaceId, sessionId, anchorMessageId: parentMessageId })
         clearComposerDraftByKey(state, draftKey)
@@ -1039,7 +1048,7 @@ export function createChatOperations(deps: {
     const currentChat = (await ensureActiveChatLoaded?.().catch(() => null)) || sa.activeChatFromData()
     const pendingChat = pendingChatForTarget(state, 'group', groupId)
     const sessionChat = pendingChat ? null : currentChat
-    const hookPromptPresetId = String(((pendingChat || sessionChat) as any)?.hookPromptPresetId || '').trim()
+    const hookSelection = chatHookPromptSelection(pendingChat || sessionChat)
     const speakerPlan = buildGroupSpeakerPlan(group, (roleId) => !!sa.getRoleById(roleId))
     if (speakerPlan.error) return showToast?.(speakerPlan.error, { kind: 'error' })
 
@@ -1055,7 +1064,8 @@ export function createChatOperations(deps: {
       attachments,
       parentMessageId,
       clearComposerDraftKey: draftKey,
-      hookPromptPresetId,
+      hookPromptMode: hookSelection.mode,
+      hookPromptPresetId: hookSelection.presetId,
       operationText: '群组发送',
     }, opts)
   }

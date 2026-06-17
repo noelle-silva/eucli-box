@@ -118,6 +118,71 @@ func TestStartRunAppliesHookPromptPresetOnlyToModelRequest(t *testing.T) {
 	}
 }
 
+func TestStartRunUsesRoleDefaultHookPromptPreset(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.roles.hookPromptPresetID = "preset-role"
+	fakes.storage.hookLibrary = types.HookPromptLibrary{Presets: []types.HookPromptPreset{{ID: "preset-role", Name: "Role", Messages: []types.HookPromptMessage{{ID: "h-role", Role: types.HookPromptRoleSystem, Position: types.HookPromptPositionSessionTop, Content: "role default", Order: 0}}}}}
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	waitRun(t, system, state.ID)
+	contents := promptMessageContents(fakes.provider.lastRequest().Messages)
+	want := []string{"role default", "hello"}
+	if strings.Join(contents, "|") != strings.Join(want, "|") {
+		t.Fatalf("model message contents = %#v, want %#v", contents, want)
+	}
+}
+
+func TestStartRunHookPromptPresetOverridesRoleDefault(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.roles.hookPromptPresetID = "preset-role"
+	fakes.storage.hookLibrary = types.HookPromptLibrary{Presets: []types.HookPromptPreset{
+		{ID: "preset-role", Name: "Role", Messages: []types.HookPromptMessage{{ID: "h-role", Role: types.HookPromptRoleSystem, Position: types.HookPromptPositionSessionTop, Content: "role default", Order: 0}}},
+		{ID: "preset-session", Name: "Session", Messages: []types.HookPromptMessage{{ID: "h-session", Role: types.HookPromptRoleSystem, Position: types.HookPromptPositionSessionTop, Content: "session override", Order: 0}}},
+	}}
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello", HookPromptMode: types.HookPromptSelectionModePreset, HookPromptPresetID: "preset-session"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	waitRun(t, system, state.ID)
+	contents := promptMessageContents(fakes.provider.lastRequest().Messages)
+	want := []string{"session override", "hello"}
+	if strings.Join(contents, "|") != strings.Join(want, "|") {
+		t.Fatalf("model message contents = %#v, want %#v", contents, want)
+	}
+	session := fakes.storage.lastSession()
+	if session.Metadata[types.SessionMetadataHookPromptMode] != types.HookPromptSelectionModePreset || session.Metadata[types.SessionMetadataHookPromptPresetID] != "preset-session" {
+		t.Fatalf("session hook prompt metadata = %#v", session.Metadata)
+	}
+}
+
+func TestStartRunHookPromptNoneDisablesRoleDefault(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.roles.hookPromptPresetID = "preset-role"
+	fakes.storage.hookLibrary = types.HookPromptLibrary{Presets: []types.HookPromptPreset{{ID: "preset-role", Name: "Role", Messages: []types.HookPromptMessage{{ID: "h-role", Role: types.HookPromptRoleSystem, Position: types.HookPromptPositionSessionTop, Content: "role default", Order: 0}}}}}
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello", HookPromptMode: types.HookPromptSelectionModeNone})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	waitRun(t, system, state.ID)
+	contents := promptMessageContents(fakes.provider.lastRequest().Messages)
+	want := []string{"hello"}
+	if strings.Join(contents, "|") != strings.Join(want, "|") {
+		t.Fatalf("model message contents = %#v, want %#v", contents, want)
+	}
+	session := fakes.storage.lastSession()
+	if session.Metadata[types.SessionMetadataHookPromptMode] != types.HookPromptSelectionModeNone || session.Metadata[types.SessionMetadataHookPromptPresetID] != "" {
+		t.Fatalf("session hook prompt metadata = %#v", session.Metadata)
+	}
+}
+
 func promptMessageContents(messages []types.PromptMessage) []string {
 	contents := make([]string, 0, len(messages))
 	for _, message := range messages {
@@ -1940,12 +2005,13 @@ func (f *fakeRuntimeStorage) LoadSessionAttachmentImage(ctx context.Context, rel
 }
 
 type fakeRuntimeRoles struct {
-	policy types.ToolPolicy
+	policy             types.ToolPolicy
+	hookPromptPresetID string
 }
 
 func (f *fakeRuntimeRoles) BuildContext(ctx context.Context, roleID string, session types.Session, tools []types.ToolDefinition) (types.RoleContext, error) {
 	policy := f.currentPolicy()
-	return types.RoleContext{RoleID: roleID, RoleName: "Developer", ModelConfig: types.ModelConfig{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Temperature: 0.7}, Messages: session.Messages, Tools: tools, NativeTools: fakeRuntimeNativeTools(tools, policy.NativeTools), ToolPolicy: policy}, nil
+	return types.RoleContext{RoleID: roleID, RoleName: "Developer", ModelConfig: types.ModelConfig{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Temperature: 0.7}, Messages: session.Messages, Tools: tools, NativeTools: fakeRuntimeNativeTools(tools, policy.NativeTools), ToolPolicy: policy, HookPromptPresetID: f.hookPromptPresetID}, nil
 }
 
 func (f *fakeRuntimeRoles) GetToolPolicy(ctx context.Context, roleID string) (types.ToolPolicy, error) {

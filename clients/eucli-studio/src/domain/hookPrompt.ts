@@ -1,6 +1,7 @@
 import { uid } from '../core/utils'
 
 export const HOOK_PROMPT_SESSION_METADATA_KEY = 'hookPrompt.presetId'
+export const HOOK_PROMPT_SESSION_METADATA_MODE_KEY = 'hookPrompt.mode'
 
 export const HOOK_PROMPT_POSITIONS = [
   'session_top',
@@ -14,6 +15,7 @@ export const HOOK_PROMPT_POSITIONS = [
 
 export type HookPromptPosition = (typeof HOOK_PROMPT_POSITIONS)[number]
 export type HookPromptRole = 'system' | 'user' | 'assistant'
+export type HookPromptSelectionMode = 'inherit' | 'none' | 'preset'
 
 export type HookPromptMessage = {
   id: string
@@ -61,6 +63,12 @@ function normalizeHookPromptRole(value: unknown): HookPromptRole {
   const role = text(value)
   if (role === 'system' || role === 'assistant') return role
   return 'user'
+}
+
+export function normalizeHookPromptSelectionMode(value: unknown): HookPromptSelectionMode {
+  const mode = text(value)
+  if (mode === 'none' || mode === 'preset') return mode
+  return 'inherit'
 }
 
 export function hookPromptRoleForPosition(position: HookPromptPosition, roleRaw: unknown): HookPromptRole {
@@ -140,7 +148,32 @@ export function hookPromptPresetName(library: HookPromptLibrary, presetIdRaw: un
   return library.presets.find((preset) => preset.id === presetId)?.name || '预设已缺失'
 }
 
+export function normalizeHookPromptSelection(raw: unknown): { mode: HookPromptSelectionMode; presetId: string } {
+  const box = raw && typeof raw === 'object' ? raw as any : {}
+  const mode = normalizeHookPromptSelectionMode(box.hookPromptMode ?? box.mode)
+  const presetId = text(box.hookPromptPresetId ?? box.presetId)
+  if (mode === 'preset' && !presetId) return { mode: 'inherit', presetId: '' }
+  if (mode === 'inherit') return { mode: 'inherit', presetId: '' }
+  if (mode === 'none') return { mode: 'none', presetId: '' }
+  return presetId ? { mode: 'preset', presetId } : { mode: 'inherit', presetId: '' }
+}
+
+export function hookPromptSelectionLabel(library: HookPromptLibrary, modeRaw: unknown, presetIdRaw: unknown, roleDefaultPresetIdRaw?: unknown) {
+  const mode = normalizeHookPromptSelectionMode(modeRaw)
+  const presetId = text(presetIdRaw)
+  const roleDefaultPresetId = text(roleDefaultPresetIdRaw)
+  if (mode === 'none') return '无预设'
+  if (mode === 'preset') return hookPromptPresetName(library, presetId)
+  if (roleDefaultPresetId) return `跟随角色：${hookPromptPresetName(library, roleDefaultPresetId)}`
+  return '跟随角色'
+}
+
 export function hookPromptPresetIdFromMetadata(metadataRaw: unknown) {
   const metadata = metadataRaw && typeof metadataRaw === 'object' ? metadataRaw as Record<string, unknown> : {}
   return text(metadata[HOOK_PROMPT_SESSION_METADATA_KEY])
+}
+
+export function hookPromptSelectionFromMetadata(metadataRaw: unknown) {
+  const metadata = metadataRaw && typeof metadataRaw === 'object' ? metadataRaw as Record<string, unknown> : {}
+  return normalizeHookPromptSelection({ mode: metadata[HOOK_PROMPT_SESSION_METADATA_MODE_KEY], presetId: metadata[HOOK_PROMPT_SESSION_METADATA_KEY] })
 }

@@ -15,6 +15,7 @@ type updateSessionTitleRequest struct {
 }
 
 type updateSessionHookPromptRequest struct {
+	Mode     string `json:"mode"`
 	PresetID string `json:"presetId"`
 }
 
@@ -279,7 +280,8 @@ func (s *system) updateSessionHookPrompt(w http.ResponseWriter, r *http.Request,
 		writeError(w, err)
 		return
 	}
-	session.Metadata = types.PutHookPromptPresetSessionMetadata(session.Metadata, request.PresetID)
+	selection := types.NormalizeHookPromptSessionUpdate(request.Mode, request.PresetID)
+	session.Metadata = types.PutHookPromptSessionMetadata(session.Metadata, selection)
 	if err := s.sessions.SaveSession(r.Context(), session); err != nil {
 		writeError(w, err)
 		return

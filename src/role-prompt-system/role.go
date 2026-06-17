@@ -12,6 +12,7 @@ func (s *system) SaveRole(ctx context.Context, role types.Role) error {
 	if err := validateRole(ctx, s.providers, role); err != nil {
 		return err
 	}
+	role.HookPromptPresetID = strings.TrimSpace(role.HookPromptPresetID)
 	now := time.Now().UTC()
 	if role.CreatedAt.IsZero() {
 		role.CreatedAt = now

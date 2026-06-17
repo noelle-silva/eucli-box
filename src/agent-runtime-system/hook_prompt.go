@@ -8,8 +8,8 @@ import (
 	"eucli-box/pkg/types"
 )
 
-func (s *system) applyHookPromptPreset(ctx context.Context, record *runRecord, messages []types.PromptMessage, latestUserIndex int) ([]types.PromptMessage, error) {
-	presetID := types.HookPromptPresetIDFromSessionMetadata(record.session.Metadata)
+func (s *system) applyHookPromptPreset(ctx context.Context, record *runRecord, roleContext types.RoleContext, messages []types.PromptMessage, latestUserIndex int) ([]types.PromptMessage, error) {
+	presetID := selectedHookPromptPresetID(record, roleContext)
 	if presetID == "" {
 		return messages, nil
 	}
@@ -24,6 +24,18 @@ func (s *system) applyHookPromptPreset(ctx context.Context, record *runRecord, m
 	groups := groupHookPromptMessages(preset.Messages)
 	prepared := buildHookPromptMessages(messages, latestUserIndex, groups)
 	return reindexPromptMessages(prepared), nil
+}
+
+func selectedHookPromptPresetID(record *runRecord, roleContext types.RoleContext) string {
+	selection := types.HookPromptSelectionFromSessionMetadata(record.session.Metadata)
+	switch selection.Mode {
+	case types.HookPromptSelectionModeNone:
+		return ""
+	case types.HookPromptSelectionModePreset:
+		return selection.PresetID
+	default:
+		return strings.TrimSpace(roleContext.HookPromptPresetID)
+	}
 }
 
 func buildHookPromptMessages(messages []types.PromptMessage, latestUserIndex int, groups map[string][]types.HookPromptMessage) []types.PromptMessage {

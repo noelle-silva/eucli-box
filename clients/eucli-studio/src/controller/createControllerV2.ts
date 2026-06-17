@@ -94,7 +94,7 @@ import { createEbRunEventConsumer } from './ebRunEvents'
 import { createToolCatalog } from './toolCatalog'
 import { createModelRequestConfigController, defaultModelRequestConfigState } from './modelRequestConfig'
 import { workspaceRoleTargetId } from '../domain/workspaceRoleTarget'
-import { HOOK_PROMPT_SESSION_METADATA_KEY, normalizeHookPromptLibrary, type HookPromptLibrary } from '../domain/hookPrompt'
+import { HOOK_PROMPT_SESSION_METADATA_KEY, HOOK_PROMPT_SESSION_METADATA_MODE_KEY, normalizeHookPromptLibrary, normalizeHookPromptSelection, normalizeHookPromptSelectionMode, type HookPromptLibrary, type HookPromptSelectionMode } from '../domain/hookPrompt'
 import { loadHookPromptLibrary, saveHookPromptLibrary, updateGroupSessionHookPrompt, updateRoleSessionHookPrompt, updateWorkspaceSessionHookPrompt } from './hookPromptClient'
 import { addNativeToolsToPolicy, addToolsToPolicy, emptyRoleToolPolicy, removeNativeToolFromPolicy, removeToolFromPolicy, setToolRunMode } from '../domain/toolPolicy'
 import { readActiveEbRunCardsForTarget, removeEbRoleRunCard, upsertEbRoleRunCard } from '../domain/activeRunCards'
@@ -152,6 +152,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       roleModelSource: 'provider',
       roleModelGroupId: '',
       roleTemperature: '0.7',
+      roleHookPromptPresetId: '',
       roleToolPolicy: emptyRoleToolPolicy(),
       roleToolWhitelistOpen: false,
       roleToolAddOpen: false,
@@ -285,6 +286,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       state.draft.roleModelId = ''
       state.draft.roleCustomModelId = ''
       state.draft.roleTemperature = '0.7'
+      state.draft.roleHookPromptPresetId = ''
       state.draft.roleToolPolicy = emptyRoleToolPolicy()
     }
     if (String((state.draft as any).editGroupId || '') === NEW_GROUP_ID) {
@@ -705,14 +707,31 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     }
   }
 
-  function writeHookPromptPresetToChat(chat: any, presetIdRaw: any) {
+  function writeHookPromptSelectionToChat(chat: any, modeRaw: any, presetIdRaw?: any) {
     if (!chat || typeof chat !== 'object') return
+    const selection = normalizeHookPromptSelection({ hookPromptMode: modeRaw, hookPromptPresetId: presetIdRaw })
     const presetId = String(presetIdRaw || '').trim()
-    if (presetId) (chat as any).hookPromptPresetId = presetId
-    else delete (chat as any).hookPromptPresetId
+    if (selection.mode === 'inherit') {
+      delete (chat as any).hookPromptMode
+      delete (chat as any).hookPromptPresetId
+    } else if (selection.mode === 'none') {
+      (chat as any).hookPromptMode = 'none'
+      delete (chat as any).hookPromptPresetId
+    } else {
+      (chat as any).hookPromptMode = 'preset'
+      (chat as any).hookPromptPresetId = selection.presetId || presetId
+    }
     if (!(chat as any).metadata || typeof (chat as any).metadata !== 'object') (chat as any).metadata = {}
-    if (presetId) (chat as any).metadata[HOOK_PROMPT_SESSION_METADATA_KEY] = presetId
-    else delete (chat as any).metadata[HOOK_PROMPT_SESSION_METADATA_KEY]
+    if (selection.mode === 'inherit') {
+      delete (chat as any).metadata[HOOK_PROMPT_SESSION_METADATA_MODE_KEY]
+      delete (chat as any).metadata[HOOK_PROMPT_SESSION_METADATA_KEY]
+    } else if (selection.mode === 'none') {
+      (chat as any).metadata[HOOK_PROMPT_SESSION_METADATA_MODE_KEY] = 'none'
+      delete (chat as any).metadata[HOOK_PROMPT_SESSION_METADATA_KEY]
+    } else {
+      (chat as any).metadata[HOOK_PROMPT_SESSION_METADATA_MODE_KEY] = 'preset'
+      (chat as any).metadata[HOOK_PROMPT_SESSION_METADATA_KEY] = selection.presetId || presetId
+    }
     chat.updatedAt = now()
   }
 
@@ -728,14 +747,14 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     return upsertLoadedChat(kind, targetId, chat)
   }
 
-  async function selectHookPromptForActiveChat(presetIdRaw: any) {
+  async function selectHookPromptForActiveChat(modeRaw: any, presetIdRaw?: any) {
     if (!state.data) return
-    const presetId = String(presetIdRaw || '').trim()
+    const selection = normalizeHookPromptSelection({ hookPromptMode: modeRaw, hookPromptPresetId: presetIdRaw })
     const kind = activeTargetKind()
     const chat = activeChat()
     if (!chat) return api.ui?.showToast?.('请先创建或选择会话', { kind: 'error' })
     if ((chat as any).clientDraft) {
-      writeHookPromptPresetToChat(chat, presetId)
+      writeHookPromptSelectionToChat(chat, selection.mode, selection.presetId)
       emit()
       return
     }
@@ -743,8 +762,8 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     if (typeof netRequest !== 'function') return api.ui?.showToast?.('业务端请求通道不可用', { kind: 'error' })
     const sessionId = String(chat?.id || '').trim()
     if (!sessionId) return api.ui?.showToast?.('当前会话无效', { kind: 'error' })
-    const previousPresetId = String((chat as any).hookPromptPresetId || '')
-    writeHookPromptPresetToChat(chat, presetId)
+    const previousSelection = normalizeHookPromptSelection({ hookPromptMode: (chat as any).hookPromptMode, hookPromptPresetId: (chat as any).hookPromptPresetId })
+    writeHookPromptSelectionToChat(chat, selection.mode, selection.presetId)
     emit()
     try {
       await trackChatSettingsSave(async () => {
@@ -752,25 +771,25 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
         if (kind === 'group') {
           const groupId = String(activeGroup()?.id || state.draft?.activeGroupId || '').trim()
           if (!groupId) throw new Error('群组无效')
-          session = await updateGroupSessionHookPrompt(netRequest, { groupId, sessionId, presetId })
+          session = await updateGroupSessionHookPrompt(netRequest, { groupId, sessionId, mode: selection.mode, presetId: selection.presetId })
           applyHookPromptSessionResponse('group', groupId, session)
         } else if (kind === 'workspace') {
           const workspaceId = String(activeWorkspace()?.id || (state.draft as any)?.activeWorkspaceId || '').trim()
           const roleId = String((chat as any)?.roleId || activeRole()?.id || state.draft?.activeRoleId || '').trim()
           if (!workspaceId || !roleId) throw new Error('工作区会话无效')
-          session = await updateWorkspaceSessionHookPrompt(netRequest, { workspaceId, roleId, sessionId, presetId })
+          session = await updateWorkspaceSessionHookPrompt(netRequest, { workspaceId, roleId, sessionId, mode: selection.mode, presetId: selection.presetId })
           applyHookPromptSessionResponse('workspace', workspaceId, session)
         } else {
           const roleId = String(activeRole()?.id || state.draft?.activeRoleId || '').trim()
           if (!roleId) throw new Error('角色无效')
-          session = await updateRoleSessionHookPrompt(netRequest, { roleId, sessionId, presetId })
+          session = await updateRoleSessionHookPrompt(netRequest, { roleId, sessionId, mode: selection.mode, presetId: selection.presetId })
           applyHookPromptSessionResponse('role', roleId, session)
         }
       })
       emit()
-      api.ui?.showToast?.(presetId ? '当前会话 hook 提示词已保存' : '已清除当前会话 hook 提示词', { kind: 'success' })
+      api.ui?.showToast?.(selection.mode === 'preset' ? '当前会话 hook 提示词已保存' : selection.mode === 'none' ? '已关闭当前会话 hook 提示词' : '已恢复跟随角色默认预设', { kind: 'success' })
     } catch (e) {
-      writeHookPromptPresetToChat(chat, previousPresetId)
+      writeHookPromptSelectionToChat(chat, previousSelection.mode, previousSelection.presetId)
       emit()
       api.ui?.showToast?.(String((e as any)?.message || e || '当前会话 hook 提示词保存失败'), { kind: 'error' })
     }
@@ -1853,7 +1872,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     setModelGroupMemberField: (groupId: any, modelIndex: any, memberIndex: any, field: any, value: any) => setModelGroupMemberField(groupId, modelIndex, memberIndex, field, value),
     refreshHookPromptLibrary: (force: any) => refreshHookPromptLibrary(!!force),
     saveHookPromptLibrary: (library: any) => persistHookPromptLibrary(library),
-    selectHookPromptForActiveChat: (presetId: any) => selectHookPromptForActiveChat(presetId),
+    selectHookPromptForActiveChat: (mode: any, presetId: any) => selectHookPromptForActiveChat(mode, presetId),
     openRoleToolWhitelist: () => {
       state.draft.roleToolWhitelistOpen = true
       refreshTools(false).catch(() => {})

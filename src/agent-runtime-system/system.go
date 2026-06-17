@@ -97,7 +97,8 @@ type runRecord struct {
 	modelOverridePersistPending bool
 	reasoningEffort             types.ReasoningEffort
 	reasoningPersistPending     bool
-	hookPromptPresetID          string
+	hookPromptSelection         types.HookPromptSelection
+	hookPromptSelectionInput    bool
 	hookPromptPersistPending    bool
 	cancel                      context.CancelFunc
 

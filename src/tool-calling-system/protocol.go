@@ -106,10 +106,19 @@ func parseToolRequestBlock(blockLines []string, startLine int) (types.ToolIntent
 		return types.ToolIntent{}, protocolError("TOOL_REQUEST_EMPTY_NAME", entries[0].lineNumber, "tool name is required but was empty")
 	}
 	arguments := make(map[string]any, len(entries)-1)
+	invocationMode := types.ToolInvocationMode("")
 	for _, entry := range entries[1:] {
+		if entry.key == "invocationMode" || entry.key == "invocation_mode" {
+			mode := types.ToolInvocationMode(strings.TrimSpace(entry.value))
+			if !types.ValidToolInvocationMode(mode) || strings.TrimSpace(string(mode)) == "" {
+				return types.ToolIntent{}, protocolError("TOOL_REQUEST_INVALID_INVOCATION_MODE", entry.lineNumber, "invocation mode must be sync or async")
+			}
+			invocationMode = types.NormalizeToolInvocationMode(mode)
+			continue
+		}
 		arguments[entry.key] = strings.TrimSpace(entry.value)
 	}
-	return types.ToolIntent{ID: utils.NewID("tool-intent"), ToolName: toolName, Arguments: arguments, Source: types.ToolCallSourceTextProtocol, Raw: strings.Join(blockLines, "\n"), CreatedAt: time.Now().UTC()}, nil
+	return types.ToolIntent{ID: utils.NewID("tool-intent"), ToolName: toolName, Arguments: arguments, InvocationMode: invocationMode, Source: types.ToolCallSourceTextProtocol, Raw: strings.Join(blockLines, "\n"), CreatedAt: time.Now().UTC()}, nil
 }
 
 func parseToolRequestLine(line string, lineNumber int) (toolRequestEntry, error) {

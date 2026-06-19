@@ -20,7 +20,7 @@ func (s *system) StartRun(ctx context.Context, request types.RunRequest) (types.
 	now := nowUTC()
 	state := types.RunState{ID: utils.NewID("run"), RoleID: request.RoleID, GroupID: strings.TrimSpace(request.GroupID), WorkspaceID: strings.TrimSpace(request.WorkspaceID), SessionID: request.SessionID, Stream: stream, Status: types.RunStatusCreated, CreatedAt: now, UpdatedAt: now}
 	modelOverride, _ := types.NormalizeModelOverrideCoordinate(modelOverrideFromRunRequest(request))
-	record := &runRecord{runID: state.ID, roleID: request.RoleID, groupID: state.GroupID, workspaceID: state.WorkspaceID, state: state, stream: stream, modelOverride: modelOverride, reasoningEffort: types.TrimReasoningEffort(request.ReasoningEffort), hookPromptSelection: types.NormalizeHookPromptSelection(request.HookPromptMode, request.HookPromptPresetID), hookPromptSelectionInput: hasHookPromptSelectionInput(request), cancel: cancel}
+	record := &runRecord{runID: state.ID, roleID: request.RoleID, groupID: state.GroupID, workspaceID: state.WorkspaceID, state: state, stream: stream, modelOverride: modelOverride, reasoningEffort: types.TrimReasoningEffort(request.ReasoningEffort), hookPromptSelection: types.NormalizeHookPromptSelection(request.HookPromptMode, request.HookPromptPresetID), hookPromptSelectionInput: hasHookPromptSelectionInput(request), cancel: cancel, asyncToolCh: make(chan string, 1)}
 	if compactRun {
 		record.commandName = compactCommandName
 	}
@@ -194,6 +194,14 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 			s.cancelRunRecord(context.Background(), record, record.session)
 			return
 		}
+		flushedAsyncToolResults, err := s.flushAsyncToolResults(ctx, record, &contextSession)
+		if err != nil {
+			s.failRun(context.Background(), record, record.session, err)
+			return
+		}
+		if flushedAsyncToolResults {
+			continue
+		}
 		roleContext, err := s.buildRoleContext(ctx, record.roleID, contextSession)
 		if err != nil {
 			s.failRun(context.Background(), record, record.session, err)
@@ -247,6 +255,14 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 			s.publishAssistantMessageUpdate(record)
 		}
 		if len(modelResponse.ToolIntents) == 0 {
+			flushedAsyncToolResults, err := s.flushAsyncToolResults(ctx, record, &contextSession)
+			if err != nil {
+				s.failRun(context.Background(), record, record.session, err)
+				return
+			}
+			if flushedAsyncToolResults {
+				continue
+			}
 			s.completeRun(context.Background(), record, record.session)
 			return
 		}
@@ -255,6 +271,14 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 			if ctx.Err() != nil {
 				s.cancelRunRecord(context.Background(), record, record.session)
 				return
+			}
+			if isAsyncToolInterruption(err) {
+				if saveErr := s.saveRunSession(ctx, record, types.RunStatusRunning); saveErr != nil {
+					s.failRun(context.Background(), record, record.session, saveErr)
+					return
+				}
+				s.publishAssistantMessageUpdate(record)
+				continue
 			}
 			s.failRun(context.Background(), record, record.session, err)
 			return

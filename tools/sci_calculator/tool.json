@@ -3,6 +3,7 @@
   "name": "SciCalculator",
   "description": "Evaluate mathematical and scientific expressions, including arithmetic, common functions, statistics, integrals, confidence intervals, and error propagation.",
   "promptDescription": "Evaluate mathematical and scientific expressions. Required [expression] is the complete expression to calculate. Supported features include arithmetic + - * / // % ** and ^, constants pi and e, functions such as sin/cos/tan/sqrt/root/log/exp/abs/ceil/floor, statistics such as mean/median/mode/variance/stdev, probability helpers norm_pdf/norm_cdf/t_test, calculus with integral('expr', lower, upper) or integral('expr'), confidence_interval([data], level), and error_propagation('expr', {'x': (value, error)}). Optional [maxOutputChars] controls returned output length. Optional [description] records why the calculation is being run. Overall tool execution timing is controlled by the shared e-b tool runner. When the tool package includes a bundled Python runtime, SciCalculator uses that internal runtime first. Otherwise configure pythonExecutable in tool user config or SCICALCULATOR_PYTHON.",
+  "defaultInvocationMode": "sync",
   "type": "local",
   "directory": ".",
   "userConfigSchema": {

@@ -1764,7 +1764,7 @@ func messageRole(message map[string]any) string {
 	switch messageStorageType(message) {
 	case "system_control":
 		return "system"
-	case "assistant", "tool", "tool_request", "tool_confirmation":
+	case "assistant", "tool", "tool_request", "tool_confirmation", "async_tool_result":
 		return "assistant"
 	}
 	return "user"
@@ -1776,7 +1776,7 @@ func messageStorageType(message map[string]any) string {
 		messageType = stringField(message, "role")
 	}
 	switch messageType {
-	case "assistant", "tool", "tool_request", "tool_confirmation", "failure", "system_control":
+	case "assistant", "tool", "tool_request", "tool_confirmation", "failure", "system_control", "async_tool_result":
 		return messageType
 	default:
 		return "user"

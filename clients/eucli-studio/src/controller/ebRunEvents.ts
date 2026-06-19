@@ -2,9 +2,10 @@ import { normalizeTimeMs } from '../core/utils'
 import { ensureChatBranch, normalizeBranchId } from '../domain/branching'
 import { beginAssistantRun, checkpointAssistantRun, finishAssistantRun, hasSettledAssistantToolParts, type AssistantRunStatus } from '../domain/assistantRunState'
 import { chatMetaFromChat, upsertChatMeta } from '../domain/chatMeta'
-import { normalizeChatMessage, normalizeMessageParentMid } from '../domain/message'
+import { CHAT_MESSAGE_TYPE_ASYNC_TOOL_RESULT, normalizeChatMessage, normalizeMessageParentMid } from '../domain/message'
 import { CHAT_DEFAULT_BRANCH_ID } from '../domain/constants'
 import { activeEbRunCardsForTarget, isTerminalEbRunStatus, removeEbRoleRunCard, upsertEbRoleRunCard } from '../domain/activeRunCards'
+import { workspaceRoleTargetId } from '../domain/workspaceRoleTarget'
 
 type DirectEventSubscription = (listener: (event: any) => void) => () => void
 type RunEventTargetKind = 'role' | 'group' | 'workspace'
@@ -13,10 +14,12 @@ export function createEbRunEventConsumer(deps: {
   getState: () => any
   emit: () => void
   subscribeDirectEvents?: DirectEventSubscription
+  onRuntimeChatChanged?: (targetKind: RunEventTargetKind, targetId: string, chat: any, options?: { urgent?: boolean }) => Promise<void> | void
 }) {
   let unsubscribe: (() => void) | null = null
   let renderRaf = 0
   const pendingBySession = new Map<string, Map<string, any>>()
+  const changedTimers = new Map<string, number>()
 
   function scheduleRender() {
     if (renderRaf) return
@@ -28,6 +31,33 @@ export function createEbRunEventConsumer(deps: {
 
   function sessionKey(targetKind: RunEventTargetKind, targetId: string, sessionId: string) {
     return `${targetKind}\n${targetId}\n${sessionId}`
+  }
+
+  function scheduleRuntimeChatChanged(targetKind: RunEventTargetKind, targetId: string, chat: any, urgent = false) {
+    if (typeof deps.onRuntimeChatChanged !== 'function') return
+    const chatId = String(chat?.id || '').trim()
+    if (!targetId || !chatId || !chat || typeof chat !== 'object') return
+    if ((chat as any).runtimePartial) return
+    const key = sessionKey(targetKind, targetId, chatId)
+    const previous = changedTimers.get(key)
+    if (previous) window.clearTimeout(previous)
+    changedTimers.delete(key)
+    const run = () => {
+      changedTimers.delete(key)
+      Promise.resolve(deps.onRuntimeChatChanged?.(targetKind, targetId, chat, { urgent })).catch(() => {})
+    }
+    if (urgent) {
+      run()
+      return
+    }
+    const timer = window.setTimeout(run, 650)
+    changedTimers.set(key, timer)
+  }
+
+  function runEventTarget(roleId: string, groupId: string, workspaceId: string) {
+    if (workspaceId) return { targetKind: 'workspace' as const, targetId: workspaceRoleTargetId(workspaceId, roleId) || workspaceId }
+    if (groupId) return { targetKind: 'group' as const, targetId: groupId }
+    return { targetKind: 'role' as const, targetId: roleId }
   }
 
   function bufferAssistantMessageUpdate(payload: any, targetKind: RunEventTargetKind, targetId: string, sessionId: string, messageId: string) {
@@ -91,16 +121,16 @@ export function createEbRunEventConsumer(deps: {
     return runtimeChat
   }
 
-  function normalizeRuntimeAssistantMessage(raw: any, fallback: { parentMessageId?: string; branchId?: string; eventTime: number }) {
+  function normalizeRuntimeVisibleMessage(raw: any, fallback: { parentMessageId?: string; branchId?: string; eventTime: number }) {
     const message = raw && typeof raw === 'object' ? raw : null
     if (!message) return null
     const id = String(message.id || '').trim()
     const type = String(message.type || message.role || '').trim()
-    if (!id || type !== 'assistant') return null
+    if (!id || (type !== 'assistant' && type !== CHAT_MESSAGE_TYPE_ASYNC_TOOL_RESULT)) return null
 
     const out = normalizeChatMessage(message, { activeBranchId: fallback.branchId || CHAT_DEFAULT_BRANCH_ID, toolMessagesAsAssistant: true })
     out.id = id
-    out.type = 'assistant'
+    out.type = type
     out.role = 'assistant'
     out.parentMid = normalizeMessageParentMid(message) || String(fallback.parentMessageId || '').trim()
     out.branchId = String(message.branchId || '').trim() ? normalizeBranchId(message.branchId) : ''
@@ -165,11 +195,10 @@ export function createEbRunEventConsumer(deps: {
     const workspaceId = String(payload.workspaceId || '').trim()
     const sessionId = String(payload.sessionId || '').trim()
     const eventTime = normalizeTimeMs(payload.createdAt)
-    const incomingMessage = normalizeRuntimeAssistantMessage(payload.message, { eventTime })
+    const incomingMessage = normalizeRuntimeVisibleMessage(payload.message, { eventTime })
     const messageId = String(incomingMessage?.id || '').trim()
     if (!runId || !roleId || !sessionId || !messageId) return false
-    const targetKind: RunEventTargetKind = workspaceId ? 'workspace' : groupId ? 'group' : 'role'
-    const targetId = workspaceId || groupId || roleId
+    const { targetKind, targetId } = runEventTarget(roleId, groupId, workspaceId)
 
     const box = ensureTargetChatBox(state, targetKind, targetId)
     const chat = ensureRuntimeTargetChat(state, targetKind, targetId, sessionId, eventTime)
@@ -192,19 +221,22 @@ export function createEbRunEventConsumer(deps: {
       Object.assign(message, incomingMessage)
     }
 
+    const messageType = String(incomingMessage.type || '').trim() === CHAT_MESSAGE_TYPE_ASYNC_TOOL_RESULT ? CHAT_MESSAGE_TYPE_ASYNC_TOOL_RESULT : 'assistant'
     message.role = 'assistant'
-    message.type = 'assistant'
+    message.type = messageType
     if (parentMid) message.parentMid = parentMid
     message.branchId = branchId
     message.updatedAt = Math.max(Number(message.updatedAt || 0), eventTime)
-    const terminalStatus = assistantStatusFromRunStatus(payload.status)
-    if (terminalStatus) {
-      finishAssistantRun(message, message.content, terminalStatus, message.updatedAt)
-    } else if (hasSettledAssistantToolParts(message)) {
-      finishAssistantRun(message, message.content, 'succeeded', message.updatedAt)
-    } else {
-      beginAssistantRun(message, { generationId: runId, stream: !!payload.stream, resetContent: false, startedAt: Number(message.createdAt || eventTime) || eventTime })
-      checkpointAssistantRun(message, message.content, message.updatedAt)
+    if (messageType === 'assistant') {
+      const terminalStatus = assistantStatusFromRunStatus(payload.status)
+      if (terminalStatus) {
+        finishAssistantRun(message, message.content, terminalStatus, message.updatedAt)
+      } else if (hasSettledAssistantToolParts(message)) {
+        finishAssistantRun(message, message.content, 'succeeded', message.updatedAt)
+      } else {
+        beginAssistantRun(message, { generationId: runId, stream: !!payload.stream, resetContent: false, startedAt: Number(message.createdAt || eventTime) || eventTime })
+        checkpointAssistantRun(message, message.content, message.updatedAt)
+      }
     }
 
     if (isTerminalEbRunStatus(payload.status)) {
@@ -242,6 +274,31 @@ export function createEbRunEventConsumer(deps: {
     const fallbackTitle = targetKind === 'group' ? '群聊' : targetKind === 'workspace' ? '工作区会话' : '新聊天'
     if (box) box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chat, fallbackTitle), fallbackTitle)
 
+    scheduleRuntimeChatChanged(targetKind, targetId, chat, messageType === CHAT_MESSAGE_TYPE_ASYNC_TOOL_RESULT)
+    scheduleRender()
+    return true
+  }
+
+  function applyAsyncToolTaskUpdate(raw: unknown) {
+    const task = raw && typeof raw === 'object' ? (raw as any) : null
+    if (!task) return false
+    const state = deps.getState()
+    if (!state?.data) return false
+    const roleId = String(task.roleId || '').trim()
+    const groupId = String(task.groupId || '').trim()
+    const workspaceId = String(task.workspaceId || '').trim()
+    const sessionId = String(task.sessionId || '').trim()
+    const taskId = String(task.id || '').trim()
+    if (!sessionId || !taskId) return false
+    const { targetKind, targetId } = runEventTarget(roleId, groupId, workspaceId)
+    const chat = ensureRuntimeTargetChat(state, targetKind, targetId, sessionId, normalizeTimeMs(task.finishedAt || task.startedAt || task.submittedAt))
+    if (!chat) return false
+    const tasks = Array.isArray((chat as any).asyncToolTasks) ? (chat as any).asyncToolTasks : []
+    const index = tasks.findIndex((item: any) => String(item?.id || '').trim() === taskId)
+    if (index >= 0) tasks[index] = task
+    else tasks.push(task)
+    ;(chat as any).asyncToolTasks = tasks
+    scheduleRuntimeChatChanged(targetKind, targetId, chat, true)
     scheduleRender()
     return true
   }
@@ -269,7 +326,8 @@ export function createEbRunEventConsumer(deps: {
     const event = raw && typeof raw === 'object' ? (raw as any) : null
     if (!event) return false
     const type = String(event.type || '').trim()
-    if (type === 'assistant_message_update') return applyAssistantMessageUpdate(event.payload)
+    if (type === 'assistant_message_update' || type === 'run_message_update') return applyAssistantMessageUpdate(event.payload)
+    if (type === 'async_tool_task_update') return applyAsyncToolTaskUpdate(event.payload)
     if (type === 'run_started' || type === 'run_retrying' || type === 'run_completed' || type === 'run_cancelled' || type === 'run_failed') return applyRunStateEvent(event.payload, event.runId)
     return false
   }
@@ -293,6 +351,8 @@ export function createEbRunEventConsumer(deps: {
       window.cancelAnimationFrame(renderRaf)
       renderRaf = 0
     }
+    for (const timer of changedTimers.values()) window.clearTimeout(timer)
+    changedTimers.clear()
   }
 
   return { start, stop, applyRunEvent, flushSession }

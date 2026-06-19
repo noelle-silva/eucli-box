@@ -224,6 +224,39 @@ func TestSaveSessionStoresMessageTextOnlyInParts(t *testing.T) {
 	}
 }
 
+func TestSaveSessionPreservesAsyncToolResultMessageType(t *testing.T) {
+	system := newTestSystem(t)
+	now := time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC)
+	session := types.Session{
+		ID:        "session-async-tool-result",
+		RoleID:    "developer",
+		Title:     "Async Tool Result",
+		Status:    string(types.RunStatusCompleted),
+		CreatedAt: now,
+		UpdatedAt: now,
+		Messages: []types.Message{{
+			ID:        "m1",
+			Type:      types.MessageTypeAsyncToolResult,
+			Content:   "以下是异步任务 async-1 的执行结果",
+			BranchID:  "main",
+			CreatedAt: now,
+			UpdatedAt: now,
+		}},
+		LastActive: now,
+	}
+	if err := system.SaveSession(context.Background(), session); err != nil {
+		t.Fatalf("SaveSession() error = %v", err)
+	}
+
+	loaded, err := system.LoadSession(context.Background(), "developer", "session-async-tool-result")
+	if err != nil {
+		t.Fatalf("LoadSession() error = %v", err)
+	}
+	if len(loaded.Messages) != 1 || loaded.Messages[0].Type != types.MessageTypeAsyncToolResult || !strings.Contains(loaded.Messages[0].Content, "异步任务 async-1") {
+		t.Fatalf("loaded messages = %#v", loaded.Messages)
+	}
+}
+
 func TestSaveSessionMessageAttachmentStoresImagesAndText(t *testing.T) {
 	system := newTestSystem(t)
 	session := types.Session{ID: "session-1", RoleID: "developer", Title: "Attachments"}
@@ -649,7 +682,7 @@ func TestProviderAndToolStores(t *testing.T) {
 
 func TestLoadToolResolvesRelativeDirectoryAgainstToolFolder(t *testing.T) {
 	system := newTestSystem(t)
-	tool := types.ToolDefinition{ID: "shell_command", Name: "shell_command", Description: "Run shell command", Type: "local", Directory: ".", Binaries: []types.ToolBinary{{GOOS: "windows", GOARCH: "amd64", Path: "binary/windows-amd64/shell_command.exe"}}}
+	tool := types.ToolDefinition{ID: "shell_command", Name: "shell_command", Description: "Run shell command", DefaultInvocationMode: types.ToolInvocationModeSync, Type: "local", Directory: ".", Binaries: []types.ToolBinary{{GOOS: "windows", GOARCH: "amd64", Path: "binary/windows-amd64/shell_command.exe"}}}
 	if err := system.SaveTool(context.Background(), tool); err != nil {
 		t.Fatalf("SaveTool() error = %v", err)
 	}
@@ -666,11 +699,12 @@ func TestLoadToolResolvesRelativeDirectoryAgainstToolFolder(t *testing.T) {
 func TestSaveToolUserSettingsPreservesToolDefinition(t *testing.T) {
 	system := newTestSystem(t)
 	tool := types.ToolDefinition{
-		ID:          "shell_command",
-		Name:        "shell_command",
-		Description: "Run shell command",
-		Type:        "local",
-		Directory:   ".",
+		ID:                    "shell_command",
+		Name:                  "shell_command",
+		Description:           "Run shell command",
+		DefaultInvocationMode: types.ToolInvocationModeSync,
+		Type:                  "local",
+		Directory:             ".",
 		UserConfigSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -695,7 +729,7 @@ func TestSaveToolUserSettingsPreservesToolDefinition(t *testing.T) {
 	if updated.PromptDescriptionOverride != "Use shell carefully" {
 		t.Fatalf("promptDescriptionOverride = %q", updated.PromptDescriptionOverride)
 	}
-	if updated.Name != tool.Name || updated.Description != tool.Description || updated.Type != tool.Type || updated.DefaultConfig["provider"] != "git-bash" || len(updated.Binaries) != 1 || updated.UserConfigSchema["type"] != "object" {
+	if updated.Name != tool.Name || updated.Description != tool.Description || updated.DefaultInvocationMode != tool.DefaultInvocationMode || updated.Type != tool.Type || updated.DefaultConfig["provider"] != "git-bash" || len(updated.Binaries) != 1 || updated.UserConfigSchema["type"] != "object" {
 		t.Fatalf("tool definition was not preserved: %#v", updated)
 	}
 	if updated.Directory != filepath.Join(system.paths.root, "tools", tool.ID) {

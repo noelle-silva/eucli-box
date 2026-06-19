@@ -192,7 +192,10 @@ func (s *system) runtimeMessageToPrompt(ctx context.Context, message types.Messa
 		}
 	case "tool":
 		role = "user"
-		content = fmt.Sprintf("Tool %s returned: %s", message.ToolName, message.Content)
+		content = toolResultPromptContent(message, content)
+	case types.MessageTypeAsyncToolResult:
+		role = "user"
+		content = toolResultPromptContent(message, content)
 	case "failure":
 		role = "user"
 		content = "Runtime failure: " + message.Reason
@@ -204,6 +207,10 @@ func (s *system) runtimeMessageToPrompt(ctx context.Context, message types.Messa
 		return types.PromptMessage{}, err
 	}
 	return types.PromptMessage{ID: message.ID, Role: role, Content: content, Parts: cloneMessageParts(message.Parts), Images: images, Order: index, CreatedAt: message.CreatedAt, UpdatedAt: message.UpdatedAt}, nil
+}
+
+func toolResultPromptContent(message types.Message, content string) string {
+	return fmt.Sprintf("Tool %s returned: %s", message.ToolName, content)
 }
 
 func cloneMessageParts(parts []types.MessagePart) []types.MessagePart {

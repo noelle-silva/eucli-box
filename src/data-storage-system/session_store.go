@@ -301,6 +301,7 @@ func (s *system) mergeSessionMessageSave(ctx context.Context, save types.Session
 		merged.Metadata = mergeSessionMetadata(session.Metadata, merged.Metadata)
 	}
 	merged.Metadata = applySessionMetadataPatch(merged.Metadata, save.MetadataPatch)
+	merged.AsyncToolTasks = mergeAsyncToolTasks(merged.AsyncToolTasks, session.AsyncToolTasks)
 	if merged.Title == "" || merged.Title == types.DefaultSessionTitle {
 		merged.Title = session.Title
 	}
@@ -336,6 +337,35 @@ func (s *system) mergeSessionMessageSave(ctx context.Context, save types.Session
 		merged.UpdatedAt = now
 	}
 	return merged, nil
+}
+
+func mergeAsyncToolTasks(current []types.AsyncToolTask, incoming []types.AsyncToolTask) []types.AsyncToolTask {
+	if len(current) == 0 && len(incoming) == 0 {
+		return nil
+	}
+	byID := map[string]types.AsyncToolTask{}
+	order := []string{}
+	add := func(task types.AsyncToolTask) {
+		id := strings.TrimSpace(task.ID)
+		if id == "" {
+			return
+		}
+		if _, exists := byID[id]; !exists {
+			order = append(order, id)
+		}
+		byID[id] = task
+	}
+	for _, task := range current {
+		add(task)
+	}
+	for _, task := range incoming {
+		add(task)
+	}
+	result := make([]types.AsyncToolTask, 0, len(order))
+	for _, id := range order {
+		result = append(result, byID[id])
+	}
+	return result
 }
 
 func (s *system) readSessionForMessageSave(ctx context.Context, fallback types.Session, now time.Time) (types.Session, bool, error) {

@@ -14,6 +14,7 @@ type System interface {
 	CancelRun(ctx context.Context, runID string) error
 	GetRun(ctx context.Context, runID string) (types.RunState, error)
 	ListActiveRuns(ctx context.Context) ([]types.RunState, error)
+	ListAsyncToolTasks(ctx context.Context, query types.AsyncToolTaskQuery) ([]types.AsyncToolTask, error)
 	Subscribe(ctx context.Context) (<-chan types.RunEvent, func(), error)
 }
 
@@ -23,6 +24,12 @@ type StorageSystem interface {
 	LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error)
 	LoadGroupSession(ctx context.Context, groupID string, sessionID string) (types.Session, error)
 	LoadWorkspaceSession(ctx context.Context, workspaceID string, roleID string, sessionID string) (types.Session, error)
+	ListRoles(ctx context.Context) ([]types.RoleSummary, error)
+	ListChatGroups(ctx context.Context) ([]types.ChatGroupSummary, error)
+	ListWorkspaces(ctx context.Context) ([]types.WorkspaceSummary, error)
+	ListSessions(ctx context.Context, roleID string) ([]types.SessionSummary, error)
+	ListGroupSessions(ctx context.Context, groupID string) ([]types.SessionSummary, error)
+	ListWorkspaceSessions(ctx context.Context, workspaceID string, roleID string) ([]types.SessionSummary, error)
 	SaveSessionMessageAttachment(ctx context.Context, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
 	SaveGroupSessionMessageAttachment(ctx context.Context, groupID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
 	SaveWorkspaceSessionMessageAttachment(ctx context.Context, workspaceID string, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
@@ -64,9 +71,11 @@ type system struct {
 	providers ProviderSystem
 	tools     ToolSystem
 
-	mu          sync.Mutex
-	runs        map[string]*runRecord
-	subscribers map[chan types.RunEvent]struct{}
+	mu                 sync.Mutex
+	runs               map[string]*runRecord
+	subscribers        map[chan types.RunEvent]struct{}
+	asyncTasks         map[string]types.AsyncToolTask
+	asyncContinuations map[asyncContinuationKey]struct{}
 }
 
 type runRecord struct {
@@ -104,6 +113,7 @@ type runRecord struct {
 
 	pendingPlans   map[string]types.ToolRunPlan
 	confirmationCh chan toolConfirmationRequest
+	asyncToolCh    chan string
 }
 
 func NewSystem(config Config, storage StorageSystem, roles RoleSystem, providers ProviderSystem, tools ToolSystem) (System, error) {
@@ -131,7 +141,11 @@ func NewSystem(config Config, storage StorageSystem, roles RoleSystem, providers
 	if config.MaxParallelTools == 0 {
 		config.MaxParallelTools = 4
 	}
-	return &system{config: config, storage: storage, roles: roles, providers: providers, tools: tools, runs: map[string]*runRecord{}, subscribers: map[chan types.RunEvent]struct{}{}}, nil
+	runtime := &system{config: config, storage: storage, roles: roles, providers: providers, tools: tools, runs: map[string]*runRecord{}, subscribers: map[chan types.RunEvent]struct{}{}, asyncTasks: map[string]types.AsyncToolTask{}, asyncContinuations: map[asyncContinuationKey]struct{}{}}
+	if err := runtime.recoverPersistedAsyncToolTasks(context.Background()); err != nil {
+		return nil, err
+	}
+	return runtime, nil
 }
 
 func (s *system) getRunState(runID string) (types.RunState, bool) {

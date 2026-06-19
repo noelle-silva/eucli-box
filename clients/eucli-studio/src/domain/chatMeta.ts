@@ -1,5 +1,6 @@
 import { now } from '../core/utils'
 import { chatSessionRunSummaryFromChat, normalizeChatSessionRunStatus, type ChatSessionRunStatus } from './chatSessionRunStatus'
+import { CHAT_MESSAGE_TYPE_ASYNC_TOOL_RESULT } from './message'
 
 export type ChatMeta = {
   id: string
@@ -83,6 +84,7 @@ function legacyToolResponsePreview(content: string): string {
 
 function contentPreview(message: any, parts: any[]): string {
   const content = String(message?.content ?? '')
+  if (String(message?.type || '').trim() === CHAT_MESSAGE_TYPE_ASYNC_TOOL_RESULT) return clampPreview(`异步工具返回：${content}`)
   const legacyToolPreview = legacyToolResponsePreview(content)
   if (legacyToolPreview) return clampPreview(legacyToolPreview)
 

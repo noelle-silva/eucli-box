@@ -168,6 +168,40 @@ func TestLegacyToolMessageProjectsAsAssistantSide(t *testing.T) {
 	}
 }
 
+func TestAsyncToolResultProjectsAsAssistantSide(t *testing.T) {
+	session := map[string]any{
+		"id":        "session-async",
+		"roleId":    "developer",
+		"title":     "Async Tool Result",
+		"createdAt": "2026-06-19T19:08:23Z",
+		"updatedAt": "2026-06-19T19:08:42Z",
+		"messages": []any{map[string]any{
+			"id":              "m-async-result",
+			"type":            "async_tool_result",
+			"content":         "以下是异步任务 async-1 的执行结果",
+			"parentMessageId": "m-assistant",
+			"branchId":        "main",
+			"createdAt":       "2026-06-19T19:08:37Z",
+			"updatedAt":       "2026-06-19T19:08:37Z",
+		}},
+	}
+
+	ui := toUIChat(session)
+	messages := objectList(ui["messages"])
+	if len(messages) != 1 {
+		t.Fatalf("messages = %#v", ui["messages"])
+	}
+	if messages[0]["type"] != "async_tool_result" || messages[0]["role"] != "assistant" {
+		t.Fatalf("ui async tool message = %#v", messages[0])
+	}
+
+	back := fromUIChat(ui, "developer")
+	backMessages := objectList(back["messages"])
+	if len(backMessages) != 1 || backMessages[0]["type"] != "async_tool_result" {
+		t.Fatalf("back async tool messages = %#v", back["messages"])
+	}
+}
+
 func TestSessionFavoritesStorageKeyUsesRootAction(t *testing.T) {
 	stored := map[string]any{"folders": []any{}, "chatRefsByFolderId": map[string]any{}}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

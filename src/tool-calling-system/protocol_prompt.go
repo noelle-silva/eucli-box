@@ -34,6 +34,7 @@ func buildTextToolInstructions(tools []types.ToolDefinition) string {
 	builder.WriteString("[argument_name]: single-line value\n")
 	builder.WriteString(toolRequestEndMarker + "\n")
 	builder.WriteString("- The first key inside every block must be [tool]. Use one block per tool call.\n")
+	builder.WriteString("- Optional [invocationMode] may be sync or async. Omit it to use the tool default.\n")
 	builder.WriteString("- You may emit multiple independent tool request blocks in the same response; the runtime can execute independent tools in parallel and will return one result per block.\n")
 	builder.WriteString("- If one tool result is needed to decide another tool call's arguments, request the dependent tool only after receiving the first result.\n")
 	builder.WriteString("- Do not invent tool results. After requesting a tool, wait for the tool result before continuing.\n")

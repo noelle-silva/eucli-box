@@ -864,6 +864,10 @@ func (f *fakeGatewayRuntime) ListActiveRuns(ctx context.Context) ([]types.RunSta
 	return runs, nil
 }
 
+func (f *fakeGatewayRuntime) ListAsyncToolTasks(ctx context.Context, query types.AsyncToolTaskQuery) ([]types.AsyncToolTask, error) {
+	return []types.AsyncToolTask{}, nil
+}
+
 func (f *fakeGatewayRuntime) Subscribe(ctx context.Context) (<-chan types.RunEvent, func(), error) {
 	ch := make(chan types.RunEvent, 16)
 	f.mu.Lock()

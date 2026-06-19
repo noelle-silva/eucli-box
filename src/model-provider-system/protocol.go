@@ -238,7 +238,32 @@ func parsePromptImageDataURL(dataURL string) (promptImageData, error) {
 
 func toolSchema(schema map[string]any) map[string]any {
 	if schema == nil {
-		return map[string]any{"type": "object", "properties": map[string]any{}}
+		return toolSchemaWithInvocationMode(map[string]any{"type": "object", "properties": map[string]any{}})
 	}
-	return schema
+	return toolSchemaWithInvocationMode(schema)
+}
+
+func toolSchemaWithInvocationMode(schema map[string]any) map[string]any {
+	out := make(map[string]any, len(schema)+1)
+	for key, value := range schema {
+		out[key] = value
+	}
+	properties, _ := out["properties"].(map[string]any)
+	if properties == nil {
+		properties = map[string]any{}
+	} else {
+		cloned := make(map[string]any, len(properties)+1)
+		for key, value := range properties {
+			cloned[key] = value
+		}
+		properties = cloned
+	}
+	if _, exists := properties["eucliInvocationMode"]; !exists {
+		properties["eucliInvocationMode"] = map[string]any{"type": "string", "enum": []string{"sync", "async"}, "description": "Optional. Use async to let this tool run in the background and return the real result later."}
+	}
+	out["properties"] = properties
+	if strings.TrimSpace(fmt.Sprint(out["type"])) == "" {
+		out["type"] = "object"
+	}
+	return out
 }

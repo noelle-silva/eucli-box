@@ -20,20 +20,20 @@ func (s *system) loadOrCreateSession(ctx context.Context, request types.RunReque
 			if err != nil {
 				return types.Session{}, runtimeStorageFailed("failed to load group session", err)
 			}
-			return session, nil
+			return s.recoverAsyncToolTasks(session), nil
 		}
 		if workspaceID != "" {
 			session, err := s.storage.LoadWorkspaceSession(ctx, workspaceID, request.RoleID, request.SessionID)
 			if err != nil {
 				return types.Session{}, runtimeStorageFailed("failed to load workspace session", err)
 			}
-			return session, nil
+			return s.recoverAsyncToolTasks(session), nil
 		}
 		session, err := s.storage.LoadSession(ctx, request.RoleID, request.SessionID)
 		if err != nil {
 			return types.Session{}, runtimeStorageFailed("failed to load session", err)
 		}
-		return session, nil
+		return s.recoverAsyncToolTasks(session), nil
 	}
 	now := time.Now().UTC()
 	if groupID != "" {
@@ -43,6 +43,43 @@ func (s *system) loadOrCreateSession(ctx context.Context, request types.RunReque
 		return types.Session{ID: utils.NewID("session"), WorkspaceID: workspaceID, RoleID: request.RoleID, Title: types.DefaultSessionTitle, Status: string(types.RunStatusCreated), Messages: []types.Message{}, CreatedAt: now, UpdatedAt: now, LastActive: now}, nil
 	}
 	return types.Session{ID: utils.NewID("session"), RoleID: request.RoleID, Title: types.DefaultSessionTitle, Status: string(types.RunStatusCreated), Messages: []types.Message{}, CreatedAt: now, UpdatedAt: now, LastActive: now}, nil
+}
+
+func (s *system) recoverAsyncToolTasks(session types.Session) types.Session {
+	if len(session.AsyncToolTasks) == 0 {
+		return session
+	}
+	now := time.Now().UTC()
+	for index := range session.AsyncToolTasks {
+		if runtimeTask, ok := s.asyncToolTaskSnapshot(session.AsyncToolTasks[index]); ok {
+			session.AsyncToolTasks[index] = runtimeTask
+			continue
+		}
+		status := session.AsyncToolTasks[index].Status
+		if status != types.AsyncToolTaskStatusPending && status != types.AsyncToolTaskStatusRunning {
+			continue
+		}
+		session.AsyncToolTasks[index].Status = types.AsyncToolTaskStatusFailed
+		session.AsyncToolTasks[index].FinishedAt = now
+		session.AsyncToolTasks[index].Error = "异步任务所在进程已结束，任务未完成。"
+		result := failedToolResult(session.AsyncToolTasks[index].Action, session.AsyncToolTasks[index].Error)
+		session.AsyncToolTasks[index].Result = &result
+	}
+	return session
+}
+
+func (s *system) asyncToolTaskSnapshot(task types.AsyncToolTask) (types.AsyncToolTask, bool) {
+	id := strings.TrimSpace(task.ID)
+	if id == "" {
+		return types.AsyncToolTask{}, false
+	}
+	s.mu.Lock()
+	runtimeTask, ok := s.asyncTasks[id]
+	s.mu.Unlock()
+	if !ok || strings.TrimSpace(runtimeTask.SessionID) != strings.TrimSpace(task.SessionID) {
+		return types.AsyncToolTask{}, false
+	}
+	return runtimeTask, true
 }
 
 func appendMessage(session types.Session, message types.Message) types.Session {
@@ -540,6 +577,15 @@ func lastMessageIDInBranch(messages []types.Message, branchID string) string {
 func userMessage(content string) types.Message {
 	now := time.Now().UTC()
 	return types.Message{ID: utils.NewID("message"), Type: "user", Content: content, BranchID: defaultRuntimeBranchID, CreatedAt: now, UpdatedAt: now}
+}
+
+func asyncToolResultMessage(task types.AsyncToolTask) types.Message {
+	now := time.Now().UTC()
+	toolID := ""
+	if task.Result != nil {
+		toolID = strings.TrimSpace(task.Result.ID)
+	}
+	return types.Message{ID: utils.NewID("message"), Type: types.MessageTypeAsyncToolResult, Content: asyncToolResultContent(task), BranchID: defaultRuntimeBranchID, ToolID: toolID, ToolName: asyncToolResultToolName(task), CreatedAt: now, UpdatedAt: now}
 }
 
 func assistantMessage(content string) types.Message {

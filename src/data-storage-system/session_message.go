@@ -32,6 +32,7 @@ func normalizeSessionForStorage(session types.Session, now time.Time) types.Sess
 	}
 	session.Metadata = normalizeSessionMetadata(session.Metadata)
 	session.Messages = normalizeSessionMessages(session.Messages, now)
+	session.AsyncToolTasks = normalizeAsyncToolTasks(session.AsyncToolTasks, session, now)
 	for _, message := range session.Messages {
 		if message.CreatedAt.After(session.LastActive) {
 			session.LastActive = message.CreatedAt
@@ -44,6 +45,65 @@ func normalizeSessionForStorage(session types.Session, now time.Time) types.Sess
 		session.UpdatedAt = session.LastActive
 	}
 	return session
+}
+
+func normalizeAsyncToolTasks(tasks []types.AsyncToolTask, session types.Session, now time.Time) []types.AsyncToolTask {
+	if len(tasks) == 0 {
+		return nil
+	}
+	result := make([]types.AsyncToolTask, 0, len(tasks))
+	seen := map[string]struct{}{}
+	for _, task := range tasks {
+		task.ID = strings.TrimSpace(task.ID)
+		if task.ID == "" {
+			task.ID = utils.NewID("async-tool-task")
+		}
+		if _, exists := seen[task.ID]; exists {
+			task.ID = utils.NewID("async-tool-task")
+		}
+		seen[task.ID] = struct{}{}
+		task.RunID = strings.TrimSpace(task.RunID)
+		task.RoleID = firstNonEmpty(strings.TrimSpace(task.RoleID), strings.TrimSpace(session.RoleID))
+		task.GroupID = firstNonEmpty(strings.TrimSpace(task.GroupID), strings.TrimSpace(session.GroupID))
+		task.WorkspaceID = firstNonEmpty(strings.TrimSpace(task.WorkspaceID), strings.TrimSpace(session.WorkspaceID))
+		task.SessionID = firstNonEmpty(strings.TrimSpace(task.SessionID), strings.TrimSpace(session.ID))
+		task.AssistantMessageID = strings.TrimSpace(task.AssistantMessageID)
+		task.TaskName = strings.TrimSpace(task.TaskName)
+		if task.TaskName == "" {
+			task.TaskName = strings.TrimSpace(task.ToolName)
+		}
+		task.ToolName = strings.TrimSpace(task.ToolName)
+		task.Status = normalizeAsyncToolTaskStatus(task.Status)
+		if task.SubmittedAt.IsZero() {
+			task.SubmittedAt = now
+		}
+		result = append(result, task)
+	}
+	return result
+}
+
+func normalizeAsyncToolTaskStatus(status types.AsyncToolTaskStatus) types.AsyncToolTaskStatus {
+	switch types.AsyncToolTaskStatus(strings.TrimSpace(string(status))) {
+	case types.AsyncToolTaskStatusRunning:
+		return types.AsyncToolTaskStatusRunning
+	case types.AsyncToolTaskStatusSucceeded:
+		return types.AsyncToolTaskStatusSucceeded
+	case types.AsyncToolTaskStatusFailed:
+		return types.AsyncToolTaskStatusFailed
+	case types.AsyncToolTaskStatusCompleted:
+		return types.AsyncToolTaskStatusCompleted
+	default:
+		return types.AsyncToolTaskStatusPending
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func firstNonZeroTime(values ...time.Time) time.Time {
@@ -283,6 +343,8 @@ func normalizeMessageType(messageType string) string {
 	switch strings.TrimSpace(messageType) {
 	case types.MessageTypeSystemControl:
 		return types.MessageTypeSystemControl
+	case types.MessageTypeAsyncToolResult:
+		return types.MessageTypeAsyncToolResult
 	case "assistant":
 		return "assistant"
 	case "tool":

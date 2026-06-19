@@ -62,6 +62,10 @@ func (s *system) handleToolIntents(ctx context.Context, record *runRecord, inten
 		return nil, err
 	}
 
+	if err := s.acceptAsyncToolEntries(ctx, record, entries); err != nil {
+		return nil, err
+	}
+
 	ready := readyToolEntries(entries)
 	for _, entry := range ready {
 		upsertRunToolPart(record, entry.Action, "running", &entry.Plan.Decision, nil)
@@ -129,7 +133,11 @@ func (s *system) markPendingToolsCancelled(record *runRecord, entries []toolRunE
 		if entry.Plan.PlanStatus != types.ToolPlanStatusNeedsConfirmation {
 			continue
 		}
-		result := types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: entry.Action.ID, ToolName: entry.Action.ToolName, Status: types.ToolStatusCancelled, Error: err.Error(), CreatedAt: time.Now().UTC()}
+		metadata := map[string]any{"cancelReason": "user_interrupted"}
+		if isAsyncToolInterruption(err) {
+			metadata["cancelReason"] = "system_event"
+		}
+		result := types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: entry.Action.ID, ToolName: entry.Action.ToolName, Status: types.ToolStatusCancelled, Metadata: metadata, Error: err.Error(), CreatedAt: time.Now().UTC()}
 		upsertRunToolPart(record, entry.Action, "cancelled", &entry.Plan.Decision, &result)
 	}
 }
@@ -270,6 +278,9 @@ func applyConfirmedPlans(entries []toolRunEntry, plans []types.ToolRunPlan) {
 func readyToolEntries(entries []toolRunEntry) []toolRunEntry {
 	ready := []toolRunEntry{}
 	for _, entry := range entries {
+		if entry.HasResult {
+			continue
+		}
 		if entry.Plan.PlanStatus == types.ToolPlanStatusReady {
 			ready = append(ready, entry)
 		}

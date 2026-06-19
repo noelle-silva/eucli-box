@@ -6,20 +6,21 @@ import (
 )
 
 type ToolDefinition struct {
-	ID                        string         `json:"id"`
-	Name                      string         `json:"name"`
-	Description               string         `json:"description"`
-	PromptDescription         string         `json:"promptDescription,omitempty"`
-	PromptDescriptionOverride string         `json:"promptDescriptionOverride,omitempty"`
-	Type                      string         `json:"type"`
-	InputSchema               map[string]any `json:"inputSchema,omitempty"`
-	UserConfigSchema          map[string]any `json:"userConfigSchema,omitempty"`
-	UserConfig                map[string]any `json:"userConfig,omitempty"`
-	DefaultConfig             map[string]any `json:"defaultConfig,omitempty"`
-	Directory                 string         `json:"directory,omitempty"`
-	Binaries                  []ToolBinary   `json:"binaries,omitempty"`
-	CreatedAt                 time.Time      `json:"createdAt"`
-	UpdatedAt                 time.Time      `json:"updatedAt"`
+	ID                        string             `json:"id"`
+	Name                      string             `json:"name"`
+	Description               string             `json:"description"`
+	PromptDescription         string             `json:"promptDescription,omitempty"`
+	PromptDescriptionOverride string             `json:"promptDescriptionOverride,omitempty"`
+	DefaultInvocationMode     ToolInvocationMode `json:"defaultInvocationMode,omitempty"`
+	Type                      string             `json:"type"`
+	InputSchema               map[string]any     `json:"inputSchema,omitempty"`
+	UserConfigSchema          map[string]any     `json:"userConfigSchema,omitempty"`
+	UserConfig                map[string]any     `json:"userConfig,omitempty"`
+	DefaultConfig             map[string]any     `json:"defaultConfig,omitempty"`
+	Directory                 string             `json:"directory,omitempty"`
+	Binaries                  []ToolBinary       `json:"binaries,omitempty"`
+	CreatedAt                 time.Time          `json:"createdAt"`
+	UpdatedAt                 time.Time          `json:"updatedAt"`
 }
 
 type ToolUserSettings struct {
@@ -69,12 +70,51 @@ type ToolSummary struct {
 }
 
 type ToolIntent struct {
-	ID        string         `json:"id"`
-	ToolName  string         `json:"toolName"`
-	Arguments map[string]any `json:"arguments,omitempty"`
-	Source    string         `json:"source,omitempty"`
-	Raw       string         `json:"raw,omitempty"`
-	CreatedAt time.Time      `json:"createdAt"`
+	ID             string             `json:"id"`
+	ToolName       string             `json:"toolName"`
+	Arguments      map[string]any     `json:"arguments,omitempty"`
+	InvocationMode ToolInvocationMode `json:"invocationMode,omitempty"`
+	Source         string             `json:"source,omitempty"`
+	Raw            string             `json:"raw,omitempty"`
+	CreatedAt      time.Time          `json:"createdAt"`
+}
+
+type ToolInvocationMode string
+
+const (
+	ToolInvocationModeSync  ToolInvocationMode = "sync"
+	ToolInvocationModeAsync ToolInvocationMode = "async"
+)
+
+func NormalizeToolInvocationMode(mode ToolInvocationMode) ToolInvocationMode {
+	switch CleanToolInvocationMode(mode) {
+	case ToolInvocationModeAsync:
+		return ToolInvocationModeAsync
+	default:
+		return ToolInvocationModeSync
+	}
+}
+
+func CleanToolInvocationMode(mode ToolInvocationMode) ToolInvocationMode {
+	return ToolInvocationMode(strings.TrimSpace(string(mode)))
+}
+
+func ValidToolInvocationMode(mode ToolInvocationMode) bool {
+	switch CleanToolInvocationMode(mode) {
+	case "", ToolInvocationModeSync, ToolInvocationModeAsync:
+		return true
+	default:
+		return false
+	}
+}
+
+func ValidExplicitToolInvocationMode(mode ToolInvocationMode) bool {
+	switch CleanToolInvocationMode(mode) {
+	case ToolInvocationModeSync, ToolInvocationModeAsync:
+		return true
+	default:
+		return false
+	}
 }
 
 const (
@@ -83,12 +123,13 @@ const (
 )
 
 type ToolAction struct {
-	ID        string         `json:"id"`
-	ToolName  string         `json:"toolName"`
-	Arguments map[string]any `json:"arguments,omitempty"`
-	Source    string         `json:"source,omitempty"`
-	Raw       string         `json:"raw,omitempty"`
-	CreatedAt time.Time      `json:"createdAt"`
+	ID             string             `json:"id"`
+	ToolName       string             `json:"toolName"`
+	Arguments      map[string]any     `json:"arguments,omitempty"`
+	InvocationMode ToolInvocationMode `json:"invocationMode,omitempty"`
+	Source         string             `json:"source,omitempty"`
+	Raw            string             `json:"raw,omitempty"`
+	CreatedAt      time.Time          `json:"createdAt"`
 }
 
 type ToolRunPlan struct {
@@ -96,6 +137,7 @@ type ToolRunPlan struct {
 	RoleID         string              `json:"roleId,omitempty"`
 	Action         ToolAction          `json:"action"`
 	Tool           ToolDefinition      `json:"tool"`
+	InvocationMode ToolInvocationMode  `json:"invocationMode,omitempty"`
 	Decision       PermissionDecision  `json:"decision"`
 	WorkspaceFence *ToolWorkspaceFence `json:"workspaceFence,omitempty"`
 	PlanStatus     ToolPlanStatus      `json:"planStatus"`

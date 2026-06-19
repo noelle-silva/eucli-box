@@ -5,6 +5,7 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("GET /api/runs", s.authWrap(s.handleListActiveRuns))
 	s.mux.HandleFunc("GET /api/runs/{runID}", s.authWrap(s.handleGetRun))
 	s.mux.HandleFunc("POST /api/runs/{runID}/cancel", s.authWrap(s.handleCancelRun))
+	s.mux.HandleFunc("GET /api/async-tool-tasks", s.authWrap(s.handleListAsyncToolTasks))
 	s.mux.HandleFunc("POST /api/tool-confirmations", s.authWrap(s.handleToolConfirmation))
 
 	s.mux.HandleFunc("GET /api/roles", s.authWrap(s.handleListRoles))

@@ -83,7 +83,7 @@ export function normalizeWorkspace(raw: unknown): UiWorkspace | null {
 
 function normalizeMessageType(raw: unknown) {
   const value = text(raw)
-  if (value === 'assistant' || value === 'tool' || value === 'tool_request' || value === 'tool_confirmation' || value === 'failure' || value === 'system_control') return value
+  if (value === 'assistant' || value === 'tool' || value === 'tool_request' || value === 'tool_confirmation' || value === 'failure' || value === 'system_control' || value === 'async_tool_result') return value
   return 'user'
 }
 

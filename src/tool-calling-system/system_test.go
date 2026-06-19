@@ -74,7 +74,7 @@ func TestTextToolInstructionsPreferPromptDescription(t *testing.T) {
 func TestSaveToolUserSettingsUpdatesConfigAndPromptOverride(t *testing.T) {
 	storage := newFakeToolStorage()
 	system := newTestToolSystem(t, &fakePermission{}, storage, Config{})
-	tool := types.ToolDefinition{ID: "shell_command", Name: "shell_command", Description: "Run shell command", Type: "local", DefaultConfig: map[string]any{"provider": "git-bash"}}
+	tool := types.ToolDefinition{ID: "shell_command", Name: "shell_command", Description: "Run shell command", DefaultInvocationMode: types.ToolInvocationModeSync, Type: "local", DefaultConfig: map[string]any{"provider": "git-bash"}}
 	if err := storage.SaveTool(context.Background(), tool); err != nil {
 		t.Fatalf("SaveTool() error = %v", err)
 	}
@@ -153,6 +153,27 @@ func main() { fmt.Print(`+"`"+`{"status":"success","content":"ok","metadata":{}}
 	if plan.PlanStatus != types.ToolPlanStatusDenied || plan.Decision.Reason != "blocked" {
 		t.Fatalf("plan = %#v", plan)
 	}
+}
+
+func TestPrepareRejectsMissingToolDefaultInvocationMode(t *testing.T) {
+	tool := testTool(t, buildTool(t, `package main
+func main() {}
+`))
+	tool.DefaultInvocationMode = ""
+	storage := newFakeToolStorage()
+	storage.tools[tool.ID] = tool
+	system := newTestToolSystem(t, &fakePermission{decision: types.PermissionDecision{Status: types.PermissionStatusAllowed}}, storage, Config{})
+
+	_, err := system.Prepare(context.Background(), "developer", "", types.ToolAction{ID: "a1", ToolName: tool.Name})
+	assertAppErrorCode(t, err, "tool.invalid_request")
+}
+
+func TestPrepareRejectsInvalidActionInvocationMode(t *testing.T) {
+	storage := newFakeToolStorage()
+	system := newTestToolSystem(t, &fakePermission{}, storage, Config{})
+
+	_, err := system.Prepare(context.Background(), "developer", "", types.ToolAction{ID: "a1", ToolName: "file-reader", InvocationMode: "later"})
+	assertAppErrorCode(t, err, "tool.invalid_request")
 }
 
 func TestApplyConfirmationUpdatesPlan(t *testing.T) {
@@ -409,13 +430,14 @@ func testTool(t *testing.T, executable string) types.ToolDefinition {
 	t.Helper()
 	dir := filepath.Dir(executable)
 	return types.ToolDefinition{
-		ID:          "file-reader",
-		Name:        "file-reader",
-		Description: "Read files",
-		Type:        "local",
-		Directory:   dir,
-		Binaries:    []types.ToolBinary{{GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Path: filepath.Base(executable)}},
-		UserConfig:  map[string]any{"limit": 10},
+		ID:                    "file-reader",
+		Name:                  "file-reader",
+		Description:           "Read files",
+		DefaultInvocationMode: types.ToolInvocationModeSync,
+		Type:                  "local",
+		Directory:             dir,
+		Binaries:              []types.ToolBinary{{GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Path: filepath.Base(executable)}},
+		UserConfig:            map[string]any{"limit": 10},
 	}
 }
 

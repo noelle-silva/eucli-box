@@ -8,6 +8,39 @@ export function normalizeMessageError(input: any) {
   return normalizeErrorPayload(input)
 }
 
+export const CHAT_MESSAGE_TYPE_ASYNC_TOOL_RESULT = 'async_tool_result'
+
+const CHAT_MESSAGE_TYPES = new Set([
+  'assistant',
+  'tool',
+  'tool_request',
+  'tool_confirmation',
+  'failure',
+  'system_control',
+  CHAT_MESSAGE_TYPE_ASYNC_TOOL_RESULT,
+])
+
+export type ChatMessageMaterialKind = 'user' | 'assistant' | 'async_tool_result' | 'system'
+
+export function normalizeChatMessageType(input: unknown) {
+  const value = String(input || '').trim()
+  return CHAT_MESSAGE_TYPES.has(value) ? value : 'user'
+}
+
+export function chatMessageMaterialKind(message: any): ChatMessageMaterialKind {
+  const type = normalizeChatMessageType(message?.type)
+  const role = String(message?.role || '').trim()
+  if (type === CHAT_MESSAGE_TYPE_ASYNC_TOOL_RESULT) return 'async_tool_result'
+  if (type === 'system_control' || role === 'system') return 'system'
+  if (role === 'assistant' || type === 'assistant') return 'assistant'
+  return 'user'
+}
+
+export function isAssistantTextChatMessage(message: any) {
+  const kind = chatMessageMaterialKind(message)
+  return kind === 'assistant' && normalizeChatMessageType(message?.type || message?.role) === 'assistant'
+}
+
 export function normalizeMessageAttachments(input: any) {
   const list = Array.isArray(input) ? input : []
   const out = []
@@ -51,8 +84,7 @@ export function hasExplicitMessageParentLinks(messages: any[]) {
 
 export function normalizeChatMessage(input: any, options?: { activeBranchId?: unknown; toolMessagesAsAssistant?: boolean }) {
   const m = input && typeof input === 'object' ? input : {}
-  const messageType0 = String((m as any).type || (m as any).role || '').trim()
-  const messageType = ['assistant', 'tool', 'tool_request', 'tool_confirmation', 'failure', 'system_control'].includes(messageType0) ? messageType0 : 'user'
+  const messageType = normalizeChatMessageType((m as any).type || (m as any).role)
   const role0 = String((m as any).role || '').trim()
   const toolMessagesAsAssistant = options?.toolMessagesAsAssistant !== false
   const role =
@@ -60,6 +92,8 @@ export function normalizeChatMessage(input: any, options?: { activeBranchId?: un
       ? 'system'
       : role0 === 'assistant'
       ? 'assistant'
+      : messageType === CHAT_MESSAGE_TYPE_ASYNC_TOOL_RESULT
+        ? 'assistant'
       : messageType === 'assistant'
         ? 'assistant'
         : toolMessagesAsAssistant && (messageType === 'tool' || messageType === 'tool_request' || messageType === 'tool_confirmation')
@@ -113,6 +147,10 @@ export function normalizeMessageControl(input: any) {
 
 export function isSystemControlMessage(message: any) {
   return String(message?.type || '').trim() === 'system_control' || (String(message?.role || '').trim() === 'system' && !!message?.control)
+}
+
+export function isAsyncToolResultMessage(message: any) {
+  return String(message?.type || '').trim() === CHAT_MESSAGE_TYPE_ASYNC_TOOL_RESULT
 }
 
 export function isCompressionSummaryMessage(message: any) {

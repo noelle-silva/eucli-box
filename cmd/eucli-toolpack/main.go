@@ -602,6 +602,10 @@ func readToolDefinition(source toolSource) (types.ToolDefinition, error) {
 	if strings.TrimSpace(definition.ID) == "" || strings.TrimSpace(definition.Name) == "" || strings.TrimSpace(definition.Description) == "" {
 		return types.ToolDefinition{}, fmt.Errorf("tool %s must declare id, name, and description", source.ID)
 	}
+	if !types.ValidExplicitToolInvocationMode(definition.DefaultInvocationMode) {
+		return types.ToolDefinition{}, fmt.Errorf("tool %s defaultInvocationMode must be sync or async", source.ID)
+	}
+	definition.DefaultInvocationMode = types.CleanToolInvocationMode(definition.DefaultInvocationMode)
 	if definition.Type != "local" {
 		return types.ToolDefinition{}, fmt.Errorf("tool %s type must be local", source.ID)
 	}

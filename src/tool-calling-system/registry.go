@@ -14,6 +14,7 @@ func (s *system) SaveTool(ctx context.Context, tool types.ToolDefinition) error 
 	if err := validateToolDefinition(tool); err != nil {
 		return err
 	}
+	tool.DefaultInvocationMode = types.CleanToolInvocationMode(tool.DefaultInvocationMode)
 	now := time.Now().UTC()
 	if tool.CreatedAt.IsZero() {
 		tool.CreatedAt = now
@@ -77,6 +78,9 @@ func validateToolDefinition(tool types.ToolDefinition) error {
 	}
 	if strings.TrimSpace(tool.Description) == "" {
 		return toolInvalid("tool description is required", nil)
+	}
+	if !types.ValidExplicitToolInvocationMode(tool.DefaultInvocationMode) {
+		return toolInvalid("tool default invocation mode must be sync or async", nil)
 	}
 	if tool.Type != "local" && tool.Type != "network" {
 		return toolInvalid("tool type must be local or network", nil)

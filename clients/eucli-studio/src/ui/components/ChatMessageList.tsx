@@ -12,7 +12,7 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt'
 import StorageIcon from '@mui/icons-material/Storage'
 import { isAssistantAwaitingFirstOutput, isAssistantGenerating } from '../../domain/assistantRunState'
 import { activeRunCardForAssistantMessage, messageVisibleText } from '../../domain/chatMessageDisplay'
-import { isCompressionSummaryMessage, isSystemControlMessage } from '../../domain/message'
+import { chatMessageMaterialKind, isAsyncToolResultMessage, isCompressionSummaryMessage, isSystemControlMessage } from '../../domain/message'
 import type { MessageMutationOperation } from '../../domain/messageMutationConflicts'
 import { AssistantErrorNotice } from './AssistantErrorNotice'
 import { AssistantMessageBlocks } from './AssistantMessageBlocks'
@@ -133,7 +133,8 @@ export const ChatMessageList = React.memo(function ChatMessageList(props: ChatMe
     <Stack spacing={1.25}>
       {messages.map((m: any) => {
         const content = messageVisibleText(m)
-        const isToolResponse = content.startsWith('<<<[TOOL_RESPONSE]>>>')
+        const isAsyncToolResult = isAsyncToolResultMessage(m)
+        const isToolResponse = isAsyncToolResult || content.startsWith('<<<[TOOL_RESPONSE]>>>')
         const mid = String(m?.id || '')
         const isDisplayOnlyPendingRunTail = !!(m as any)?.displayOnlyPendingRunTail
         const isToolExpanded = !!mid && expandedToolMsgIds.has(mid)
@@ -219,15 +220,18 @@ export const ChatMessageList = React.memo(function ChatMessageList(props: ChatMe
             const st = statuses[i] || ''
             return st ? `${n}（${st}）` : n
           })
-          const summary = count ? `${count}项：${pairs.join('，')}${count > 3 ? '…' : ''}` : pairs.length ? pairs.join('，') : '工具结果'
+          const asyncSummary = content.split(/\r?\n/).map((line) => line.trim()).find(Boolean) || '异步工具返回'
+          const summary = isAsyncToolResult ? asyncSummary : count ? `${count}项：${pairs.join('，')}${count > 3 ? '…' : ''}` : pairs.length ? pairs.join('，') : '工具结果'
           const time = controller.fmtTime(Number(m?.createdAt || 0))
+          const label = isAsyncToolResult ? '异步工具返回' : '工具返回'
+          const contextRole: MessageRole = isAsyncToolResult ? 'assistant' : 'user'
 
           return (
             <Stack key={mid} direction="row" justifyContent="flex-start">
               <Paper
                 variant="outlined"
                 data-mid={mid}
-                onContextMenu={isEditing ? undefined : (e) => onMessageContextMenu(e, mid, 'user')}
+                onContextMenu={isEditing ? undefined : (e) => onMessageContextMenu(e, mid, contextRole)}
                 sx={{
                   width: '100%',
                   maxWidth: '100%',
@@ -243,7 +247,7 @@ export const ChatMessageList = React.memo(function ChatMessageList(props: ChatMe
                   spacing={1}
                   role={isEditing ? undefined : 'button'}
                   tabIndex={isEditing ? -1 : 0}
-                  aria-label={isEditing ? '工具返回（编辑中）' : isToolExpanded ? '收起工具返回' : '展开工具返回'}
+                  aria-label={isEditing ? `${label}（编辑中）` : isToolExpanded ? `收起${label}` : `展开${label}`}
                   aria-expanded={isEditing ? undefined : isToolExpanded}
                   onClick={isEditing ? undefined : () => onToggleToolMessage(mid)}
                   onKeyDown={
@@ -261,7 +265,7 @@ export const ChatMessageList = React.memo(function ChatMessageList(props: ChatMe
                 >
                   <StorageIcon sx={{ fontSize: 18, color: 'rgba(2, 132, 199, .85)' }} />
                   <Typography variant="body2" sx={{ fontWeight: 900 }}>
-                    工具返回
+                    {label}
                   </Typography>
                   {summary ? (
                     <Typography variant="caption" color="text.secondary" sx={{ minWidth: 0 }} noWrap>
@@ -285,7 +289,7 @@ export const ChatMessageList = React.memo(function ChatMessageList(props: ChatMe
                       multiline
                       minRows={3}
                       size="small"
-                      placeholder="编辑工具返回…"
+                      placeholder={`编辑${label}…`}
                       value={editingMsg.text}
                       onChange={(e) => onEditTextChange(e.target.value)}
                       onKeyDown={(e) => {
@@ -329,7 +333,7 @@ export const ChatMessageList = React.memo(function ChatMessageList(props: ChatMe
           )
         }
 
-        const displayRole: MessageRole = m?.role === 'user' ? 'user' : 'assistant'
+        const displayRole: MessageRole = chatMessageMaterialKind(m) === 'user' ? 'user' : 'assistant'
         const isUser = displayRole === 'user'
         const speakerRoleId = !isUser ? String((m as any)?.speakerRoleId || '') : ''
         const speakerRole =

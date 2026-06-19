@@ -3,6 +3,7 @@
   "name": "file_operator",
   "description": "使用相对路径或绝对路径读取、搜索、写入、编辑和补丁修改受限文本文件。",
   "promptDescription": "使用 file_operator 处理常规文件工作，而不是用 shell_command 做普通文件操作。它是一个受限文本文件工具，必须提供一个 action：read、list、glob、grep、write、edit 或 apply_patch。相对路径从 e-b 宿主运行位置解析；绝对路径允许指向当前项目外的位置，前提是运行进程具有操作系统权限。本工具只处理文本文件，会拒绝二进制内容、危险空字节、超过 maxFileBytes 的文件，以及超过配置限制的输出。推荐流程：先用 glob/grep 定位文件，再用 read 查看准确文件或范围，最后用 edit/write/apply_patch 修改。读取文件后，请保留 read 返回的 hash；修改现有文件时，把它作为 expectedHash 传给 write 或 edit，避免覆盖已经变化的文件。read：使用 path 读取文件或目录，可选 offset 和 limit；文件输出带行号，并返回 hash、totalLines、nextOffset 和截断信息。list：使用 path 列出目录条目。glob：使用 path 和 pattern 查找路径，支持 *、? 和 **。grep：使用 path 和正则 query 搜索文本；include 可用通配模式过滤文件，ignoreCase 开启忽略大小写，showHidden 包含隐藏路径。write：使用 path 和 content 创建或替换文本文件；修改已读取过的现有文件时使用 expectedHash。edit：使用 path、oldString、newString 做精确替换，可选 replaceAll 和 expectedHash；oldString 默认必须唯一，除非 replaceAll 为 true；空 oldString 只允许创建缺失文件，目标已存在时会失败。apply_patch：使用结构化 patchText，格式为 *** Begin Patch / *** End Patch，中间包含 *** Add File、*** Delete File、*** Update File，可选 *** Move to；补丁更新行中，空格表示上下文，- 表示删除行，+ 表示新增行，@@ 表示分隔；旧补丁文本必须唯一匹配。apply_patch 会先规划所有操作再写入，因此后续规划失败不会留下前置半截修改。删除和移动操作仍然保持文本文件边界，会拒绝非文本目标。",
+  "defaultInvocationMode": "sync",
   "type": "local",
   "directory": ".",
   "userConfigSchema": {

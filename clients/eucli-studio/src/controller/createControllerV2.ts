@@ -93,7 +93,7 @@ import { getRunState, isTerminalRunStatus, listActiveRoleRuns, pollRunUntilTermi
 import { createEbRunEventConsumer } from './ebRunEvents'
 import { createToolCatalog } from './toolCatalog'
 import { createModelRequestConfigController, defaultModelRequestConfigState } from './modelRequestConfig'
-import { workspaceRoleTargetId } from '../domain/workspaceRoleTarget'
+import { parseWorkspaceRoleTargetId, workspaceRoleTargetId } from '../domain/workspaceRoleTarget'
 import { HOOK_PROMPT_SESSION_METADATA_KEY, HOOK_PROMPT_SESSION_METADATA_MODE_KEY, normalizeHookPromptLibrary, normalizeHookPromptSelection, normalizeHookPromptSelectionMode, type HookPromptLibrary, type HookPromptSelectionMode } from '../domain/hookPrompt'
 import { loadHookPromptLibrary, saveHookPromptLibrary, updateGroupSessionHookPrompt, updateRoleSessionHookPrompt, updateWorkspaceSessionHookPrompt } from './hookPromptClient'
 import { addNativeToolsToPolicy, addToolsToPolicy, emptyRoleToolPolicy, removeNativeToolFromPolicy, removeToolFromPolicy, setToolRunMode } from '../domain/toolPolicy'
@@ -1203,6 +1203,24 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     getState: () => state,
     emit,
     subscribeDirectEvents: (capabilities.host as any)?.directEvents?.subscribe,
+    onRuntimeChatChanged: async (targetKind, targetId, chat) => {
+      const sessionId = String(chat?.id || '').trim()
+      if (!sessionId || (chat as any)?.runtimePartial) return
+      if (targetKind === 'group') {
+        await saveGroupChat(targetId, chat)
+        return
+      }
+      if (targetKind === 'workspace') {
+        const parsed = parseWorkspaceRoleTargetId(targetId)
+        const workspaceId = parsed.workspaceId || String((chat as any)?.workspaceId || '').trim()
+        const roleId = parsed.roleId || String((chat as any)?.roleId || state.draft?.activeRoleId || '').trim()
+        const request = capabilities.net?.request
+        if (!workspaceId || !roleId || typeof request !== 'function') return
+        await saveWorkspaceSession(request, { workspaceId, roleId, chat })
+        return
+      }
+      await saveRoleChat(targetId, chat)
+    },
   })
 
   const uiPolling = createUiPolling({

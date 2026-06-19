@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"net/http"
+	"strings"
 
 	"eucli-box/pkg/types"
 )
@@ -58,6 +59,22 @@ func (s *system) handleCancelRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeNoContent(w)
+}
+
+func (s *system) handleListAsyncToolTasks(w http.ResponseWriter, r *http.Request) {
+	values := r.URL.Query()
+	query := types.AsyncToolTaskQuery{
+		RoleID:      strings.TrimSpace(values.Get("roleId")),
+		GroupID:     strings.TrimSpace(values.Get("groupId")),
+		WorkspaceID: strings.TrimSpace(values.Get("workspaceId")),
+		SessionID:   strings.TrimSpace(values.Get("sessionId")),
+	}
+	tasks, err := s.runtime.ListAsyncToolTasks(r.Context(), query)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, tasks)
 }
 
 func (s *system) handleToolConfirmation(w http.ResponseWriter, r *http.Request) {

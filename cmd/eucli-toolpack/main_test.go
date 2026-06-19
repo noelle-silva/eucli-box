@@ -33,7 +33,7 @@ func TestRunBuildsShellCommandIntoAbsoluteDataDir(t *testing.T) {
 	binaryRelPath := filepath.Join("binary", runtime.GOOS+"-"+runtime.GOARCH, executableName("shell_command"))
 	assertFile(t, filepath.Join(targetDir, binaryRelPath))
 	tool := readToolDefinitionFile(t, filepath.Join(targetDir, "data.json"))
-	if tool.ID != "shell_command" || tool.Directory != "." {
+	if tool.ID != "shell_command" || tool.Directory != "." || tool.DefaultInvocationMode != types.ToolInvocationModeSync {
 		t.Fatalf("tool definition = %#v", tool)
 	}
 	providerSchema := tool.InputSchema["properties"].(map[string]any)["provider"].(map[string]any)
@@ -64,7 +64,7 @@ func TestRunBuildsSciCalculatorWithBundledPythonRuntime(t *testing.T) {
 	binaryRelPath := filepath.Join("binary", runtime.GOOS+"-"+runtime.GOARCH, executableName("sci_calculator"))
 	assertFile(t, filepath.Join(targetDir, binaryRelPath))
 	tool := readToolDefinitionFile(t, filepath.Join(targetDir, "data.json"))
-	if tool.ID != "sci_calculator" || tool.Name != "SciCalculator" || tool.Directory != "." {
+	if tool.ID != "sci_calculator" || tool.Name != "SciCalculator" || tool.Directory != "." || tool.DefaultInvocationMode != types.ToolInvocationModeSync {
 		t.Fatalf("tool definition = %#v", tool)
 	}
 	if len(tool.Binaries) != 1 || tool.Binaries[0].Path != filepath.ToSlash(binaryRelPath) || filepath.IsAbs(tool.Binaries[0].Path) {
@@ -244,6 +244,23 @@ func TestValidatePreservePathsRejectsNestedPaths(t *testing.T) {
 	_, err := validatePreservePaths([]string{"runtime/cache"})
 	if err == nil || !strings.Contains(err.Error(), "relative top-level") {
 		t.Fatalf("validatePreservePaths() error = %v, want top-level error", err)
+	}
+}
+
+func TestReadToolDefinitionRequiresDefaultInvocationMode(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "tool.json"), []byte(`{
+  "id": "demo_tool",
+  "name": "demo_tool",
+  "description": "Demo tool",
+  "type": "local"
+}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(tool.json) error = %v", err)
+	}
+
+	_, err := readToolDefinition(toolSource{ID: "demo_tool", Dir: dir})
+	if err == nil || !strings.Contains(err.Error(), "defaultInvocationMode") {
+		t.Fatalf("readToolDefinition() error = %v, want defaultInvocationMode error", err)
 	}
 }
 

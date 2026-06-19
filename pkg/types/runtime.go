@@ -29,7 +29,8 @@ type Message struct {
 }
 
 const (
-	MessageTypeSystemControl = "system_control"
+	MessageTypeSystemControl   = "system_control"
+	MessageTypeAsyncToolResult = "async_tool_result"
 
 	MessageControlKindCompressionBoundary = "compression_boundary"
 	MessageControlKindCompressionSummary  = "compression_summary"
@@ -180,17 +181,65 @@ type RunAttachment struct {
 }
 
 type Session struct {
-	ID          string            `json:"id"`
-	RoleID      string            `json:"roleId"`
-	GroupID     string            `json:"groupId,omitempty"`
-	WorkspaceID string            `json:"workspaceId,omitempty"`
-	Title       string            `json:"title"`
-	Status      string            `json:"status"`
-	Messages    []Message         `json:"messages"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
-	CreatedAt   time.Time         `json:"createdAt"`
-	UpdatedAt   time.Time         `json:"updatedAt"`
-	LastActive  time.Time         `json:"lastActive"`
+	ID             string            `json:"id"`
+	RoleID         string            `json:"roleId"`
+	GroupID        string            `json:"groupId,omitempty"`
+	WorkspaceID    string            `json:"workspaceId,omitempty"`
+	Title          string            `json:"title"`
+	Status         string            `json:"status"`
+	Messages       []Message         `json:"messages"`
+	AsyncToolTasks []AsyncToolTask   `json:"asyncToolTasks,omitempty"`
+	Metadata       map[string]string `json:"metadata,omitempty"`
+	CreatedAt      time.Time         `json:"createdAt"`
+	UpdatedAt      time.Time         `json:"updatedAt"`
+	LastActive     time.Time         `json:"lastActive"`
+}
+
+type AsyncToolTaskStatus string
+
+const (
+	AsyncToolTaskStatusPending   AsyncToolTaskStatus = "pending"
+	AsyncToolTaskStatusRunning   AsyncToolTaskStatus = "running"
+	AsyncToolTaskStatusSucceeded AsyncToolTaskStatus = "succeeded"
+	AsyncToolTaskStatusFailed    AsyncToolTaskStatus = "failed"
+	AsyncToolTaskStatusCompleted AsyncToolTaskStatus = "completed"
+)
+
+type RunContinuation struct {
+	Stream             bool             `json:"stream,omitempty"`
+	ReasoningEffort    ReasoningEffort  `json:"reasoningEffort,omitempty"`
+	ModelOverride      *ModelCoordinate `json:"modelOverride,omitempty"`
+	HookPromptMode     string           `json:"hookPromptMode,omitempty"`
+	HookPromptPresetID string           `json:"hookPromptPresetId,omitempty"`
+}
+
+type AsyncToolTask struct {
+	ID                 string              `json:"id"`
+	RunID              string              `json:"runId,omitempty"`
+	RoleID             string              `json:"roleId,omitempty"`
+	GroupID            string              `json:"groupId,omitempty"`
+	WorkspaceID        string              `json:"workspaceId,omitempty"`
+	SessionID          string              `json:"sessionId"`
+	AssistantMessageID string              `json:"assistantMessageId,omitempty"`
+	TaskName           string              `json:"taskName"`
+	ToolName           string              `json:"toolName"`
+	Status             AsyncToolTaskStatus `json:"status"`
+	Continuation       RunContinuation     `json:"continuation,omitempty"`
+	Action             ToolAction          `json:"action"`
+	Plan               ToolRunPlan         `json:"plan,omitempty"`
+	Result             *ToolResult         `json:"result,omitempty"`
+	Error              string              `json:"error,omitempty"`
+	SubmittedAt        time.Time           `json:"submittedAt"`
+	StartedAt          time.Time           `json:"startedAt,omitempty"`
+	FinishedAt         time.Time           `json:"finishedAt,omitempty"`
+	CompletedAt        time.Time           `json:"completedAt,omitempty"`
+}
+
+type AsyncToolTaskQuery struct {
+	RoleID      string `json:"roleId,omitempty"`
+	GroupID     string `json:"groupId,omitempty"`
+	WorkspaceID string `json:"workspaceId,omitempty"`
+	SessionID   string `json:"sessionId,omitempty"`
 }
 
 type SessionSummary struct {

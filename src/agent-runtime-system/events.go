@@ -50,9 +50,13 @@ func (s *system) publishAssistantMessageUpdate(record *runRecord) {
 	if !ok {
 		return
 	}
+	s.publishRunMessageUpdate(record, "assistant_message_update", message)
+}
+
+func (s *system) publishRunMessageUpdate(record *runRecord, eventType string, message types.Message) {
 	state, _ := s.getRunState(record.runID)
 	now := time.Now().UTC()
-	s.publish(record.runID, "assistant_message_update", types.RunAssistantMessageUpdate{RunID: record.runID, RoleID: record.roleID, GroupID: record.groupID, WorkspaceID: record.workspaceID, SessionID: record.session.ID, Stream: record.stream, Status: state.Status, Reason: state.Reason, Retry: cloneRunRetryInfo(state.Retry), Error: cloneErrorPayload(state.Error), Message: cloneRunMessageSnapshot(message), CreatedAt: now})
+	s.publish(record.runID, eventType, types.RunAssistantMessageUpdate{RunID: record.runID, RoleID: record.roleID, GroupID: record.groupID, WorkspaceID: record.workspaceID, SessionID: record.session.ID, Stream: record.stream, Status: state.Status, Reason: state.Reason, Retry: cloneRunRetryInfo(state.Retry), Error: cloneErrorPayload(state.Error), Message: cloneRunMessageSnapshot(message), CreatedAt: now})
 }
 
 func currentRunAssistantMessage(record *runRecord) (types.Message, bool) {

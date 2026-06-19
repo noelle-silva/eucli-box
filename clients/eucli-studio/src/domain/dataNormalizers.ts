@@ -11,6 +11,7 @@ import {
   DEFAULT_CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES,
   CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MIN,
   CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MAX,
+  CHAT_BRANCHING_SCHEMA_VERSION,
 } from './constants'
 import {
   normalizeBranchId,
@@ -27,6 +28,7 @@ import { normalizeChatModelOverride } from './modelRefUtils'
 import { normalizeRoleToolPolicy } from './toolPolicy'
 import { normalizeReasoningEffort, normalizeReasoningFields } from './reasoning'
 import { hookPromptSelectionFromMetadata, normalizeHookPromptSelection } from './hookPrompt'
+import { parseWorkspaceRoleTargetId } from './workspaceRoleTarget'
 
 export function normalizeRenderSafetyPolicy(v0: unknown) {
   const v = String(v0 || '').trim()
@@ -45,6 +47,49 @@ function normalizeChatHookPromptSelection(chat: any) {
   const direct = normalizeHookPromptSelection(chat)
   if (direct.mode !== 'inherit') return direct
   return hookPromptSelectionFromMetadata(chat?.metadata)
+}
+
+function normalizeAsyncToolTasks(raw: unknown) {
+  const list = Array.isArray(raw) ? raw : []
+  return list
+    .filter((task: any) => task && typeof task === 'object')
+    .map((task: any) => ({
+      ...task,
+      id: String(task?.id || '').trim(),
+      runId: String(task?.runId || '').trim(),
+      roleId: String(task?.roleId || '').trim(),
+      groupId: String(task?.groupId || '').trim(),
+      workspaceId: String(task?.workspaceId || '').trim(),
+      sessionId: String(task?.sessionId || '').trim(),
+      taskName: String(task?.taskName || task?.toolName || '').trim(),
+      toolName: String(task?.toolName || '').trim(),
+      status: String(task?.status || '').trim(),
+    }))
+    .filter((task: any) => !!task.id)
+}
+
+function hasStoredBranching(raw: unknown) {
+  return !!raw && typeof raw === 'object' && Number((raw as any).schemaVersion || 0) === CHAT_BRANCHING_SCHEMA_VERSION
+}
+
+function normalizedBranchHeadMid(branchesRaw: unknown, activeBranchId: string, messages: any[], fallbackHeadMid: string, preserveCurrentHead: boolean) {
+  const branches = Array.isArray(branchesRaw) ? branchesRaw : []
+  const messageIds = new Set<string>()
+  const parentIds = new Set<string>()
+  for (const message of messages) {
+    const id = String(message?.id || '').trim()
+    if (id) messageIds.add(id)
+    const parentMid = String(message?.parentMid || message?.parentMessageId || '').trim()
+    if (parentMid) parentIds.add(parentMid)
+  }
+  const activeBranch = branches.find((branch: any) => String(branch?.id || '') === activeBranchId) || null
+  const currentHeadMid = String(activeBranch?.headMid || '').trim()
+  if (preserveCurrentHead && currentHeadMid && messageIds.has(currentHeadMid)) return currentHeadMid
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const id = String(messages[index]?.id || '').trim()
+    if (id && !parentIds.has(id)) return id
+  }
+  return String(fallbackHeadMid || '').trim()
 }
 
 export function normalizeSplitMeta(raw: any) {
@@ -308,6 +353,7 @@ export function normalizeData(raw: any) {
         const messages = Array.isArray(cc.messages) ? cc.messages : []
         const hasMessageTree = hasExplicitMessageParentLinks(messages)
         const fallbackHeadMid = messages.length ? String((messages[messages.length - 1] as any)?.id || '') : ''
+        const hasBranching = hasStoredBranching((cc as any).branching)
         const branching = normalizeChatBranching((cc as any).branching, fallbackHeadMid, createdAt, updatedAt)
         const activeBranchId = normalizeBranchId((branching as any).activeBranchId)
         const modelOverride = normalizeChatModelOverride(cc)
@@ -321,6 +367,7 @@ export function normalizeData(raw: any) {
           branching,
           messages: messages.filter((m: any) => m && typeof m === 'object').map((m: any) => normalizeChatMessage(m, { activeBranchId, toolMessagesAsAssistant: true })),
         }
+		out.asyncToolTasks = normalizeAsyncToolTasks((cc as any).asyncToolTasks)
 
 		if (modelOverride) out.modelOverride = modelOverride
 		const reasoningEffort = normalizeReasoningEffort((cc as any).reasoningEffort)
@@ -339,7 +386,7 @@ export function normalizeData(raw: any) {
         let headMid = ''
         if (idSet.size >= 2 || hasMessageTree) {
           fillMissingBranchIdsOnly(out.messages, activeBranchId)
-          headMid = out.messages.length ? String((out.messages[out.messages.length - 1] as any)?.id || '') : ''
+          headMid = normalizedBranchHeadMid(out.branching?.branches, activeBranchId, out.messages, fallbackHeadMid, hasBranching)
         } else {
           headMid = rebuildLinearBranchingMessages(out.messages, activeBranchId)
         }
@@ -436,6 +483,7 @@ export function normalizeData(raw: any) {
         const messages = Array.isArray(cc.messages) ? cc.messages : []
         const hasMessageTree = hasExplicitMessageParentLinks(messages)
         const fallbackHeadMid = messages.length ? String((messages[messages.length - 1] as any)?.id || '') : ''
+        const hasBranching = hasStoredBranching((cc as any).branching)
         const branching = normalizeChatBranching((cc as any).branching, fallbackHeadMid, createdAt, updatedAt)
         const activeBranchId = normalizeBranchId((branching as any).activeBranchId)
 
@@ -448,6 +496,7 @@ export function normalizeData(raw: any) {
           branching,
 			messages: messages.filter((m: any) => m && typeof m === 'object').map((m: any) => normalizeChatMessage(m, { activeBranchId, toolMessagesAsAssistant: false })),
 		}
+		out.asyncToolTasks = normalizeAsyncToolTasks((cc as any).asyncToolTasks)
 		const hookPromptSelection = normalizeChatHookPromptSelection(cc)
 		if (hookPromptSelection.mode !== 'inherit') out.hookPromptMode = hookPromptSelection.mode
 		if (hookPromptSelection.mode === 'preset') out.hookPromptPresetId = hookPromptSelection.presetId
@@ -462,7 +511,7 @@ export function normalizeData(raw: any) {
         let headMid = ''
         if (idSet.size >= 2 || hasMessageTree) {
           fillMissingBranchIdsOnly(out.messages, activeBranchId)
-          headMid = out.messages.length ? String((out.messages[out.messages.length - 1] as any)?.id || '') : ''
+          headMid = normalizedBranchHeadMid(out.branching?.branches, activeBranchId, out.messages, fallbackHeadMid, hasBranching)
         } else {
           headMid = rebuildLinearBranchingMessages(out.messages, activeBranchId)
         }
@@ -511,11 +560,14 @@ export function normalizeData(raw: any) {
     })
 
   if (!(d as any).chatsByWorkspace || typeof (d as any).chatsByWorkspace !== 'object') (d as any).chatsByWorkspace = {}
-  for (const workspace of (d as any).workspaces) {
-    const workspaceId = String(workspace.id || '')
-    if (!workspaceId) continue
-    if (!(d as any).chatsByWorkspace[workspaceId] || typeof (d as any).chatsByWorkspace[workspaceId] !== 'object') (d as any).chatsByWorkspace[workspaceId] = { activeChatId: '', chats: [] }
-    const box = (d as any).chatsByWorkspace[workspaceId]
+  const workspaceIds = new Set<string>((d as any).workspaces.map((workspace: any) => String(workspace?.id || '').trim()).filter(Boolean))
+  const workspaceChatKeys = new Set<string>([...Object.keys((d as any).chatsByWorkspace), ...Array.from(workspaceIds)])
+  for (const targetId of workspaceChatKeys) {
+    const parsedTarget = parseWorkspaceRoleTargetId(targetId)
+    const workspaceId = parsedTarget.workspaceId || String(targetId || '').trim()
+    if (!workspaceId || !workspaceIds.has(workspaceId)) continue
+    if (!(d as any).chatsByWorkspace[targetId] || typeof (d as any).chatsByWorkspace[targetId] !== 'object') (d as any).chatsByWorkspace[targetId] = { activeChatId: '', chats: [] }
+    const box = (d as any).chatsByWorkspace[targetId]
     if (!Array.isArray(box.chats)) box.chats = []
     box.chatMetas = chatMetasFromBox(box, '工作区会话')
     box.activeChatId = String(box.activeChatId || '')
@@ -531,6 +583,7 @@ export function normalizeData(raw: any) {
         const messages = Array.isArray(cc.messages) ? cc.messages : []
         const hasMessageTree = hasExplicitMessageParentLinks(messages)
         const fallbackHeadMid = messages.length ? String((messages[messages.length - 1] as any)?.id || '') : ''
+        const hasBranching = hasStoredBranching((cc as any).branching)
         const branching = normalizeChatBranching((cc as any).branching, fallbackHeadMid, createdAt, updatedAt)
         const activeBranchId = normalizeBranchId((branching as any).activeBranchId)
         const modelOverride = normalizeChatModelOverride(cc)
@@ -546,6 +599,7 @@ export function normalizeData(raw: any) {
           branching,
           messages: messages.filter((message: any) => message && typeof message === 'object').map((message: any) => normalizeChatMessage(message, { activeBranchId, toolMessagesAsAssistant: true })),
         }
+		out.asyncToolTasks = normalizeAsyncToolTasks((cc as any).asyncToolTasks)
 
 		if (modelOverride) out.modelOverride = modelOverride
 		const reasoningEffort = normalizeReasoningEffort((cc as any).reasoningEffort)
@@ -564,7 +618,7 @@ export function normalizeData(raw: any) {
         let headMid = ''
         if (idSet.size >= 2 || hasMessageTree) {
           fillMissingBranchIdsOnly(out.messages, activeBranchId)
-          headMid = out.messages.length ? String((out.messages[out.messages.length - 1] as any)?.id || '') : ''
+          headMid = normalizedBranchHeadMid(out.branching?.branches, activeBranchId, out.messages, fallbackHeadMid, hasBranching)
         } else {
           headMid = rebuildLinearBranchingMessages(out.messages, activeBranchId)
         }

@@ -1312,6 +1312,272 @@ func TestRunContinuesWhenToolExecutionReturnsError(t *testing.T) {
 	}
 }
 
+func TestAsyncToolAcceptanceDoesNotWaitForExecutionResult(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{
+		{ID: "m1", Content: "need async tool", ToolIntents: []types.ToolIntent{{ID: "intent-async", ToolName: "file-reader", InvocationMode: types.ToolInvocationModeAsync, Arguments: map[string]any{"path": "README.md"}}}},
+		{ID: "m2", Content: "continued before async result"},
+	}
+	executeBlock := make(chan struct{})
+	fakes.tool.executeBlock = executeBlock
+	system := newTestRuntime(t, fakes, Config{})
+
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use async tool"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	fakes.tool.waitExecuteCount(t, 1)
+	waitProviderCallCount(t, fakes.provider, 2, 500*time.Millisecond)
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	if got := fakes.provider.callCount(); got != 2 {
+		t.Fatalf("model call count = %d, want 2", got)
+	}
+	session := fakes.storage.lastSession()
+	foundAsyncResult := false
+	for _, message := range session.Messages {
+		if message.Type == types.MessageTypeAsyncToolResult {
+			foundAsyncResult = true
+		}
+	}
+	if foundAsyncResult {
+		t.Fatalf("async result was flushed before it was ready: %#v", session.Messages)
+	}
+	if got := session.Messages[len(session.Messages)-1].Content; got != "continued before async result" {
+		t.Fatalf("final assistant content = %q", got)
+	}
+
+	close(executeBlock)
+	fakes.tool.waitExecuteIdle(t)
+}
+
+func TestReadyAsyncToolResultStartsNextModelRound(t *testing.T) {
+	fakes := newRuntimeFakes()
+	now := time.Now().UTC()
+	fakes.storage.hookLibrary = types.HookPromptLibrary{Presets: []types.HookPromptPreset{{ID: "preset-session", Name: "Preset", Messages: []types.HookPromptMessage{{ID: "h-session", Role: types.HookPromptRoleSystem, Position: types.HookPromptPositionSessionTop, Content: "session preset", Order: 0}}}}}
+	fakes.storage.sessions["developer/session-1"] = types.Session{ID: "session-1", RoleID: "developer", Title: "Existing", CreatedAt: now, UpdatedAt: now, LastActive: now, Messages: []types.Message{}}
+	fakes.provider.streamEventsBatches = [][]types.ModelStreamEvent{
+		{},
+		{},
+		{{Type: types.ModelStreamEventContentDelta, Content: "second final", CreatedAt: now}},
+	}
+	fakes.provider.streamResponses = []types.ModelResponse{
+		{ID: "m1", Content: "need async tool", ToolIntents: []types.ToolIntent{{ID: "intent-async", ToolName: "file-reader", InvocationMode: types.ToolInvocationModeAsync, Arguments: map[string]any{"path": "README.md"}}}},
+		{ID: "m2", Content: "first final"},
+		{ID: "m3", Content: "second final"},
+	}
+	executeBlock := make(chan struct{})
+	fakes.tool.executeBlock = executeBlock
+	system := newTestRuntime(t, fakes, Config{})
+	events, unsubscribe, err := system.Subscribe(context.Background())
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	defer unsubscribe()
+	override := types.ModelCoordinate{Kind: types.ModelCoordinateKindProvider, ProviderID: "anthropic-main", ModelID: "claude-sonnet-4"}
+
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", Message: "use async tool", Stream: true, ReasoningEffort: types.ReasoningEffortHigh, ModelOverride: &override, HookPromptMode: types.HookPromptSelectionModePreset, HookPromptPresetID: "preset-session"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	close(executeBlock)
+	waitAsyncToolTaskStatus(t, system, types.AsyncToolTaskQuery{RoleID: "developer", SessionID: state.SessionID}, types.AsyncToolTaskStatusCompleted)
+	waitProviderCallCount(t, fakes.provider, 3, 2*time.Second)
+	session := waitStoredSessionLastContent(t, fakes.storage, "second final")
+	if !fakes.provider.lastRequest().Stream {
+		t.Fatalf("async continuation did not keep stream request")
+	}
+	lastRequest := fakes.provider.lastRequest()
+	if lastRequest.ReasoningEffort != types.ReasoningEffortHigh || lastRequest.Coordinate.ProviderID != "anthropic-main" || lastRequest.Coordinate.ModelID != "claude-sonnet-4" {
+		t.Fatalf("async continuation request = %#v", lastRequest)
+	}
+	if !strings.Contains(strings.Join(promptMessageContents(lastRequest.Messages), "|"), "session preset") {
+		t.Fatalf("async continuation prompt messages = %#v", promptMessageContents(lastRequest.Messages))
+	}
+	waitStreamDeltaContent(t, events, "second final")
+	foundAsyncResult := false
+	for _, message := range session.Messages {
+		if message.Type == types.MessageTypeAsyncToolResult && message.ToolName == "file-reader" && strings.Contains(message.Content, "tool ok") {
+			foundAsyncResult = true
+		}
+	}
+	if !foundAsyncResult {
+		t.Fatalf("ready async result was not flushed into session messages: %#v", session.Messages)
+	}
+}
+
+func TestAsyncToolResultFlushesAfterActiveModelOutput(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{
+		{ID: "m1", Content: "need async tool", ToolIntents: []types.ToolIntent{{ID: "intent-async", ToolName: "file-reader", InvocationMode: types.ToolInvocationModeAsync, Arguments: map[string]any{"path": "README.md"}}}},
+		{ID: "m2", Content: "first final"},
+		{ID: "m3", Content: "after async result"},
+	}
+	executeBlock := make(chan struct{})
+	modelBlock := make(chan struct{})
+	fakes.tool.executeBlock = executeBlock
+	fakes.provider.callBlocks = []chan struct{}{nil, modelBlock}
+	system := newTestRuntime(t, fakes, Config{})
+
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use async tool"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	fakes.tool.waitExecuteCount(t, 1)
+	waitProviderCallCount(t, fakes.provider, 2, 2*time.Second)
+	close(executeBlock)
+	waitAsyncToolTaskStatus(t, system, types.AsyncToolTaskQuery{RoleID: "developer", SessionID: state.SessionID}, types.AsyncToolTaskStatusSucceeded)
+	close(modelBlock)
+	waitProviderCallCount(t, fakes.provider, 3, 2*time.Second)
+	session := waitStoredSessionLastContent(t, fakes.storage, "after async result")
+
+	foundAsyncResult := false
+	var firstFinal types.Message
+	var asyncResult types.Message
+	var finalReply types.Message
+	for _, message := range session.Messages {
+		if message.Type == types.MessageTypeAsyncToolResult && strings.Contains(message.Content, "tool ok") {
+			foundAsyncResult = true
+			asyncResult = message
+		}
+		if message.Type == "assistant" && message.Content == "first final" {
+			firstFinal = message
+		}
+		if message.Type == "assistant" && message.Content == "after async result" {
+			finalReply = message
+		}
+	}
+	if !foundAsyncResult {
+		t.Fatalf("async result was not flushed after active model output: %#v", session.Messages)
+	}
+	if strings.TrimSpace(firstFinal.ID) == "" {
+		t.Fatalf("assistant output before async result was overwritten: %#v", session.Messages)
+	}
+	if finalReply.ParentMessageID != asyncResult.ID {
+		t.Fatalf("final reply parent = %q, want async result %q; messages = %#v", finalReply.ParentMessageID, asyncResult.ID, session.Messages)
+	}
+}
+
+func TestRuntimeMessageToPromptTranslatesAsyncToolResultAsToolResult(t *testing.T) {
+	system, ok := newTestRuntime(t, newRuntimeFakes(), Config{}).(*system)
+	if !ok {
+		t.Fatalf("runtime system has unexpected type")
+	}
+	now := time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC)
+	prompt, err := system.runtimeMessageToPrompt(context.Background(), types.Message{ID: "m1", Type: types.MessageTypeAsyncToolResult, ToolName: "file-reader", Content: "以下是异步任务 async-1 的执行结果", CreatedAt: now, UpdatedAt: now}, 0)
+	if err != nil {
+		t.Fatalf("runtimeMessageToPrompt() error = %v", err)
+	}
+	if prompt.Role != "user" || !strings.Contains(prompt.Content, "Tool file-reader returned:") || !strings.Contains(prompt.Content, "异步任务 async-1") {
+		t.Fatalf("prompt = %#v", prompt)
+	}
+}
+
+func TestListAsyncToolTasksDoesNotRecoverLiveTaskAsFailed(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{
+		{ID: "m1", Content: "need async tool", ToolIntents: []types.ToolIntent{{ID: "intent-async", ToolName: "file-reader", InvocationMode: types.ToolInvocationModeAsync, Arguments: map[string]any{"path": "README.md"}}}},
+		{ID: "m2", Content: "final after async tool"},
+	}
+	fakes.tool.executeDelay = 200 * time.Millisecond
+	system := newTestRuntime(t, fakes, Config{})
+
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use async tool"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	fakes.tool.waitExecuteCount(t, 1)
+	tasks, err := system.ListAsyncToolTasks(context.Background(), types.AsyncToolTaskQuery{RoleID: "developer", SessionID: state.SessionID})
+	if err != nil {
+		t.Fatalf("ListAsyncToolTasks() error = %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("tasks = %#v", tasks)
+	}
+	if tasks[0].Status == types.AsyncToolTaskStatusFailed || !tasks[0].FinishedAt.IsZero() {
+		t.Fatalf("live task was recovered as failed: %#v", tasks[0])
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+}
+
+func TestNewSystemRecoversReadyAsyncToolTaskIntoSession(t *testing.T) {
+	fakes := newRuntimeFakes()
+	now := time.Now().UTC()
+	fakes.storage.sessions["developer/session-1"] = types.Session{
+		ID:         "session-1",
+		RoleID:     "developer",
+		Title:      "Existing",
+		Status:     string(types.RunStatusCompleted),
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		LastActive: now,
+		Messages:   []types.Message{{ID: "u1", Type: "user", Content: "before", BranchID: defaultRuntimeBranchID, CreatedAt: now, UpdatedAt: now}},
+		AsyncToolTasks: []types.AsyncToolTask{{
+			ID:          "async-1",
+			RoleID:      "developer",
+			SessionID:   "session-1",
+			TaskName:    "file-reader",
+			ToolName:    "file-reader",
+			Status:      types.AsyncToolTaskStatusSucceeded,
+			SubmittedAt: now,
+			FinishedAt:  now,
+			Result:      &types.ToolResult{ID: "result-1", ToolName: "file-reader", Status: types.ToolStatusSuccess, Content: "recovered result", CreatedAt: now},
+		}},
+	}
+
+	_ = newTestRuntime(t, fakes, Config{})
+	session := fakes.storage.sessions["developer/session-1"]
+	if len(session.Messages) != 2 || session.Messages[1].Type != types.MessageTypeAsyncToolResult || !strings.Contains(session.Messages[1].Content, "以下是异步任务 async-1 的执行结果") || !strings.Contains(session.Messages[1].Content, "recovered result") {
+		t.Fatalf("recovered messages = %#v", session.Messages)
+	}
+	if len(session.AsyncToolTasks) != 1 || session.AsyncToolTasks[0].Status != types.AsyncToolTaskStatusCompleted || session.AsyncToolTasks[0].CompletedAt.IsZero() {
+		t.Fatalf("recovered task = %#v", session.AsyncToolTasks)
+	}
+}
+
+func TestNewSystemMarksLostRunningAsyncToolTaskFailedAndBackfills(t *testing.T) {
+	fakes := newRuntimeFakes()
+	now := time.Now().UTC()
+	fakes.storage.sessions["developer/session-1"] = types.Session{
+		ID:         "session-1",
+		RoleID:     "developer",
+		Title:      "Existing",
+		Status:     string(types.RunStatusRunning),
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		LastActive: now,
+		Messages:   []types.Message{{ID: "u1", Type: "user", Content: "before", BranchID: defaultRuntimeBranchID, CreatedAt: now, UpdatedAt: now}},
+		AsyncToolTasks: []types.AsyncToolTask{{
+			ID:          "async-1",
+			RoleID:      "developer",
+			SessionID:   "session-1",
+			TaskName:    "file-reader",
+			ToolName:    "file-reader",
+			Status:      types.AsyncToolTaskStatusRunning,
+			SubmittedAt: now,
+			StartedAt:   now,
+		}},
+	}
+
+	_ = newTestRuntime(t, fakes, Config{})
+	session := fakes.storage.sessions["developer/session-1"]
+	if len(session.Messages) != 2 || session.Messages[1].Type != types.MessageTypeAsyncToolResult || !strings.Contains(session.Messages[1].Content, "状态：失败") || !strings.Contains(session.Messages[1].Content, "进程已结束") {
+		t.Fatalf("recovered messages = %#v", session.Messages)
+	}
+	if len(session.AsyncToolTasks) != 1 || session.AsyncToolTasks[0].Status != types.AsyncToolTaskStatusCompleted || session.AsyncToolTasks[0].Result == nil || session.AsyncToolTasks[0].Result.Status != types.ToolStatusFailed {
+		t.Fatalf("recovered task = %#v", session.AsyncToolTasks)
+	}
+}
+
 func TestRunCancellationDuringToolExecutionDoesNotRecordToolFailure(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.responses = []types.ModelResponse{
@@ -1611,6 +1877,25 @@ func waitStatus(t *testing.T, system System, runID string, status types.RunStatu
 	return types.RunState{}
 }
 
+func waitAsyncToolTaskStatus(t *testing.T, system System, query types.AsyncToolTaskQuery, status types.AsyncToolTaskStatus) types.AsyncToolTask {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		tasks, err := system.ListAsyncToolTasks(context.Background(), query)
+		if err != nil {
+			t.Fatalf("ListAsyncToolTasks() error = %v", err)
+		}
+		for _, task := range tasks {
+			if task.Status == status {
+				return task
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("async tool task did not reach status %s", status)
+	return types.AsyncToolTask{}
+}
+
 func waitRunRetrying(t *testing.T, events <-chan types.RunEvent, runID string) types.RunState {
 	t.Helper()
 	deadline := time.After(2 * time.Second)
@@ -1648,6 +1933,40 @@ func waitStoredSessionStatus(t *testing.T, storage *fakeRuntimeStorage, status t
 	session := storage.lastSession()
 	t.Fatalf("stored session did not reach status %s, last session = %#v", status, session)
 	return types.Session{}
+}
+
+func waitStoredSessionLastContent(t *testing.T, storage *fakeRuntimeStorage, content string) types.Session {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		session := storage.lastSession()
+		if len(session.Messages) > 0 && session.Messages[len(session.Messages)-1].Content == content {
+			return session
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	session := storage.lastSession()
+	t.Fatalf("stored session last content did not reach %q, last session = %#v", content, session)
+	return types.Session{}
+}
+
+func waitStreamDeltaContent(t *testing.T, events <-chan types.RunEvent, content string) {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case event := <-events:
+			if event.Type != "model_stream_delta" {
+				continue
+			}
+			payload, ok := event.Payload.(types.RunStreamDelta)
+			if ok && payload.Content == content {
+				return
+			}
+		case <-deadline:
+			t.Fatalf("stream delta content did not reach %q", content)
+		}
+	}
 }
 
 func assertPromptMessageIDs(t *testing.T, got []string, want []string) {
@@ -1727,6 +2046,7 @@ func (f *fakeRuntimeStorage) SaveSessionMessages(ctx context.Context, save types
 	}
 	merged.Status = string(save.Status)
 	merged.Metadata = fakeApplySessionMetadataPatch(merged.Metadata, save.MetadataPatch)
+	merged.AsyncToolTasks = mergeRuntimeAsyncToolTasks(merged.AsyncToolTasks, session.AsyncToolTasks)
 	for _, condition := range save.Conditions {
 		messageID := strings.TrimSpace(condition.MessageID)
 		if messageID == "" && condition.Expected != nil {
@@ -1907,6 +2227,90 @@ func (f *fakeRuntimeStorage) LoadWorkspaceSession(ctx context.Context, workspace
 	return session, nil
 }
 
+func (f *fakeRuntimeStorage) ListRoles(ctx context.Context) ([]types.RoleSummary, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	ids := map[string]struct{}{}
+	for _, session := range f.sessions {
+		if strings.TrimSpace(session.RoleID) != "" && strings.TrimSpace(session.GroupID) == "" {
+			ids[strings.TrimSpace(session.RoleID)] = struct{}{}
+		}
+	}
+	out := make([]types.RoleSummary, 0, len(ids))
+	for id := range ids {
+		out = append(out, types.RoleSummary{ID: id})
+	}
+	return out, nil
+}
+
+func (f *fakeRuntimeStorage) ListChatGroups(ctx context.Context) ([]types.ChatGroupSummary, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	ids := map[string]struct{}{}
+	for _, session := range f.sessions {
+		if strings.TrimSpace(session.GroupID) != "" {
+			ids[strings.TrimSpace(session.GroupID)] = struct{}{}
+		}
+	}
+	out := make([]types.ChatGroupSummary, 0, len(ids))
+	for id := range ids {
+		out = append(out, types.ChatGroupSummary{ID: id})
+	}
+	return out, nil
+}
+
+func (f *fakeRuntimeStorage) ListWorkspaces(ctx context.Context) ([]types.WorkspaceSummary, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	ids := map[string]struct{}{}
+	for id := range f.workspaces {
+		if strings.TrimSpace(id) != "" {
+			ids[strings.TrimSpace(id)] = struct{}{}
+		}
+	}
+	for _, session := range f.sessions {
+		if strings.TrimSpace(session.WorkspaceID) != "" {
+			ids[strings.TrimSpace(session.WorkspaceID)] = struct{}{}
+		}
+	}
+	out := make([]types.WorkspaceSummary, 0, len(ids))
+	for id := range ids {
+		out = append(out, types.WorkspaceSummary{ID: id})
+	}
+	return out, nil
+}
+
+func (f *fakeRuntimeStorage) ListSessions(ctx context.Context, roleID string) ([]types.SessionSummary, error) {
+	return f.listSessionSummaries(func(session types.Session) bool {
+		return strings.TrimSpace(session.GroupID) == "" && strings.TrimSpace(session.WorkspaceID) == "" && strings.TrimSpace(session.RoleID) == strings.TrimSpace(roleID)
+	}), nil
+}
+
+func (f *fakeRuntimeStorage) ListGroupSessions(ctx context.Context, groupID string) ([]types.SessionSummary, error) {
+	return f.listSessionSummaries(func(session types.Session) bool {
+		return strings.TrimSpace(session.GroupID) == strings.TrimSpace(groupID)
+	}), nil
+}
+
+func (f *fakeRuntimeStorage) ListWorkspaceSessions(ctx context.Context, workspaceID string, roleID string) ([]types.SessionSummary, error) {
+	return f.listSessionSummaries(func(session types.Session) bool {
+		return strings.TrimSpace(session.WorkspaceID) == strings.TrimSpace(workspaceID) && strings.TrimSpace(session.RoleID) == strings.TrimSpace(roleID)
+	}), nil
+}
+
+func (f *fakeRuntimeStorage) listSessionSummaries(match func(types.Session) bool) []types.SessionSummary {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := []types.SessionSummary{}
+	for _, session := range f.sessions {
+		if !match(session) {
+			continue
+		}
+		out = append(out, types.SessionSummary{ID: session.ID, RoleID: session.RoleID, GroupID: session.GroupID, WorkspaceID: session.WorkspaceID, Title: session.Title, Status: session.Status, UpdatedAt: session.UpdatedAt, LastActive: session.LastActive})
+	}
+	return out
+}
+
 func (f *fakeRuntimeStorage) sessionKey(session types.Session) string {
 	if strings.TrimSpace(session.GroupID) != "" {
 		return "groups/" + session.GroupID + "/" + session.ID
@@ -2048,18 +2452,20 @@ func fakeRuntimeNativeTools(tools []types.ToolDefinition, names []string) []type
 }
 
 type fakeRuntimeProvider struct {
-	mu              sync.Mutex
-	responses       []types.ModelResponse
-	errors          []error
-	streamEvents    []types.ModelStreamEvent
-	streamResponse  types.ModelResponse
-	streamResponses []types.ModelResponse
-	streamErrors    []error
-	alwaysTool      bool
-	calls           int
-	requests        []types.ModelRequest
-	block           chan struct{}
-	err             error
+	mu                  sync.Mutex
+	responses           []types.ModelResponse
+	errors              []error
+	streamEvents        []types.ModelStreamEvent
+	streamEventsBatches [][]types.ModelStreamEvent
+	streamResponse      types.ModelResponse
+	streamResponses     []types.ModelResponse
+	streamErrors        []error
+	callBlocks          []chan struct{}
+	alwaysTool          bool
+	calls               int
+	requests            []types.ModelRequest
+	block               chan struct{}
+	err                 error
 }
 
 func (f *fakeRuntimeProvider) Complete(ctx context.Context, request types.ModelRequest) (types.ModelResponse, error) {
@@ -2071,9 +2477,19 @@ func (f *fakeRuntimeProvider) Complete(ctx context.Context, request types.ModelR
 		}
 	}
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.calls++
 	f.requests = append(f.requests, request)
+	callBlock := f.nextCallBlockLocked()
+	f.mu.Unlock()
+	if callBlock != nil {
+		select {
+		case <-callBlock:
+		case <-ctx.Done():
+			return types.ModelResponse{}, ctx.Err()
+		}
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.err != nil {
 		return types.ModelResponse{}, f.err
 	}
@@ -2106,6 +2522,16 @@ func (f *fakeRuntimeProvider) CompleteStream(ctx context.Context, request types.
 	f.mu.Lock()
 	f.calls++
 	f.requests = append(f.requests, request)
+	callBlock := f.nextCallBlockLocked()
+	f.mu.Unlock()
+	if callBlock != nil {
+		select {
+		case <-callBlock:
+		case <-ctx.Done():
+			return types.ModelResponse{}, ctx.Err()
+		}
+	}
+	f.mu.Lock()
 	if f.err != nil {
 		f.mu.Unlock()
 		return types.ModelResponse{}, f.err
@@ -2119,6 +2545,10 @@ func (f *fakeRuntimeProvider) CompleteStream(ctx context.Context, request types.
 		}
 	}
 	events := append([]types.ModelStreamEvent(nil), f.streamEvents...)
+	if len(f.streamEventsBatches) > 0 {
+		events = append([]types.ModelStreamEvent(nil), f.streamEventsBatches[0]...)
+		f.streamEventsBatches = f.streamEventsBatches[1:]
+	}
 	response := f.streamResponse
 	if len(f.streamResponses) > 0 {
 		response = f.streamResponses[0]
@@ -2136,6 +2566,15 @@ func (f *fakeRuntimeProvider) CompleteStream(ctx context.Context, request types.
 		}
 	}
 	return response, nil
+}
+
+func (f *fakeRuntimeProvider) nextCallBlockLocked() chan struct{} {
+	if len(f.callBlocks) == 0 {
+		return nil
+	}
+	block := f.callBlocks[0]
+	f.callBlocks = f.callBlocks[1:]
+	return block
 }
 
 func (f *fakeRuntimeProvider) lastPromptMessageIDs() []string {
@@ -2167,6 +2606,18 @@ func (f *fakeRuntimeProvider) callCount() int {
 	return f.calls
 }
 
+func waitProviderCallCount(t *testing.T, provider *fakeRuntimeProvider, want int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if provider.callCount() >= want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("provider call count did not reach %d, got %d", want, provider.callCount())
+}
+
 type fakeRuntimeTools struct {
 	mu                  sync.Mutex
 	prepareDecision     types.PermissionDecision
@@ -2178,6 +2629,7 @@ type fakeRuntimeTools struct {
 	maxActiveExecutions int
 	executeDelay        time.Duration
 	executeDelays       map[string]time.Duration
+	executeBlock        <-chan struct{}
 	executeResult       types.ToolResult
 	executeCancelResult types.ToolResult
 	executeErr          error
@@ -2205,7 +2657,7 @@ func (f *fakeRuntimeTools) ParseTextToolRequests(ctx context.Context, content st
 
 func (f *fakeRuntimeTools) NormalizeIntent(ctx context.Context, intent types.ToolIntent) (types.ToolAction, error) {
 	f.normalizedIntents = append(f.normalizedIntents, intent)
-	return types.ToolAction{ID: intent.ID, ToolName: intent.ToolName, Arguments: intent.Arguments, Source: intent.Source, Raw: intent.Raw}, nil
+	return types.ToolAction{ID: intent.ID, ToolName: intent.ToolName, Arguments: intent.Arguments, InvocationMode: intent.InvocationMode, Source: intent.Source, Raw: intent.Raw}, nil
 }
 
 func (f *fakeRuntimeTools) Prepare(ctx context.Context, roleID string, workspaceID string, action types.ToolAction) (types.ToolRunPlan, error) {
@@ -2229,7 +2681,7 @@ func (f *fakeRuntimeTools) Prepare(ctx context.Context, roleID string, workspace
 	} else if decision.Status == types.PermissionStatusNeedsConfirmation {
 		planStatus = types.ToolPlanStatusNeedsConfirmation
 	}
-	return types.ToolRunPlan{ID: "plan-1", Action: action, Tool: types.ToolDefinition{ID: action.ToolName, Name: action.ToolName, Description: "tool", Type: "local"}, Decision: decision, PlanStatus: planStatus}, nil
+	return types.ToolRunPlan{ID: "plan-1", Action: action, Tool: types.ToolDefinition{ID: action.ToolName, Name: action.ToolName, Description: "tool", Type: "local"}, InvocationMode: action.InvocationMode, Decision: decision, PlanStatus: planStatus}, nil
 }
 
 func (f *fakeRuntimeTools) ApplyConfirmation(ctx context.Context, plan types.ToolRunPlan, confirmation types.ToolConfirmation) (types.ToolRunPlan, error) {
@@ -2260,6 +2712,22 @@ func (f *fakeRuntimeTools) Execute(ctx context.Context, plan types.ToolRunPlan) 
 		}
 	}
 	f.mu.Unlock()
+	if f.executeBlock != nil {
+		select {
+		case <-f.executeBlock:
+		case <-ctx.Done():
+			f.mu.Lock()
+			f.activeExecutions--
+			result := f.executeCancelResult
+			f.mu.Unlock()
+			if result.ID != "" {
+				result.ActionID = plan.Action.ID
+				result.ToolName = plan.Action.ToolName
+				return result, nil
+			}
+			return types.ToolResult{}, ctx.Err()
+		}
+	}
 	if delay > 0 {
 		select {
 		case <-time.After(delay):
@@ -2289,6 +2757,24 @@ func (f *fakeRuntimeTools) Execute(ctx context.Context, plan types.ToolRunPlan) 
 		return types.ToolResult{}, f.executeErr
 	}
 	return types.ToolResult{ID: "result-1", ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Status: types.ToolStatusSuccess, Content: "tool ok", CreatedAt: time.Now().UTC()}, nil
+}
+
+func (f *fakeRuntimeTools) waitExecuteIdle(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		f.mu.Lock()
+		active := f.activeExecutions
+		f.mu.Unlock()
+		if active == 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	f.mu.Lock()
+	active := f.activeExecutions
+	f.mu.Unlock()
+	t.Fatalf("tool executions did not become idle, active=%d", active)
 }
 
 func (f *fakeRuntimeTools) waitExecuteCount(t *testing.T, want int) {

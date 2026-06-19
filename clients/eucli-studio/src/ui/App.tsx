@@ -112,7 +112,7 @@ import {
   CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MIN,
   CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MAX,
 } from '../domain/constants'
-import { isSystemControlMessage } from '../domain/message'
+import { chatMessageMaterialKind, isSystemControlMessage } from '../domain/message'
 import type { HookPromptLibrary } from '../domain/hookPrompt'
 
 type SettingsTab = SettingsTabValue
@@ -352,7 +352,9 @@ function buildChatTreeLayout(messagesRaw: any[], opts?: { maxNodes?: number }) {
     .map((m: any) => {
       const id = String(m?.id || '').trim()
       if (!id) return null
-      const role: ChatTreeNodeRole = isSystemControlMessage(m) ? 'system' : m?.role === 'assistant' ? 'assistant' : 'user'
+      const materialKind = chatMessageMaterialKind(m)
+      const isAssistantSide = materialKind === 'assistant' || materialKind === 'async_tool_result'
+      const role: ChatTreeNodeRole = isSystemControlMessage(m) || materialKind === 'system' ? 'system' : isAssistantSide ? 'assistant' : 'user'
       const controlKind = String(m?.control?.kind || '').trim()
       const content = role === 'system'
         ? controlKind === 'compression_summary'
@@ -1687,6 +1689,9 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const [confirmClearFavoriteFolder, setConfirmClearFavoriteFolder] = React.useState<{ open: boolean; folderId: string }>({ open: false, folderId: '' })
   const [attachmentPickerEl, setAttachmentPickerEl] = React.useState<HTMLElement | null>(null)
   const [tempModelPickerEl, setTempModelPickerEl] = React.useState<HTMLElement | null>(null)
+  const [asyncToolTasksEl, setAsyncToolTasksEl] = React.useState<HTMLElement | null>(null)
+  const [asyncToolTasks, setAsyncToolTasks] = React.useState<any[]>([])
+  const [asyncToolTasksLoading, setAsyncToolTasksLoading] = React.useState(false)
   const [reasoningPickerEl, setReasoningPickerEl] = React.useState<HTMLElement | null>(null)
   const [fileAdjust, setFileAdjust] = React.useState<{ el: HTMLElement | null; id: string }>({ el: null, id: '' })
   const [tempModelProviderId, setTempModelProviderId] = React.useState('')
@@ -2151,7 +2156,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const groupedAttMsgsByRootMid = React.useMemo(() => {
     const map = new Map<string, any[]>()
     for (const m of allMessages) {
-      if (!m || m.role !== 'user') continue
+      if (!m || chatMessageMaterialKind(m) !== 'user') continue
       if (String(m?.groupRole || '') !== 'attachment') continue
       const parent = String(m?.groupParentMid || '').trim()
       if (!parent) continue
@@ -2167,7 +2172,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
       if (!m) continue
       const hasActiveRun = !!activeRunCardForMessage(m) && isAssistantGenerating(m)
       if (isStaleAssistantPlaceholder(m, hasActiveRun)) continue
-      if (m.role !== 'user') {
+      if (chatMessageMaterialKind(m) !== 'user') {
         out.push(m)
         continue
       }
@@ -2205,6 +2210,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const activeContextTokenUsage = React.useMemo(() => sumMessageTokenEstimate(allMessages), [allMessages])
   const activeContextTokenUsageText = React.useMemo(() => formatTokenEstimate(activeContextTokenUsage), [activeContextTokenUsage])
   const activeContextTokenUsageShortText = React.useMemo(() => formatTokenEstimateShort(activeContextTokenUsage), [activeContextTokenUsage])
+  const activeAsyncToolTasks = React.useMemo(() => (Array.isArray((activeChat as any)?.asyncToolTasks) ? (activeChat as any).asyncToolTasks : []), [activeChat, Number((activeChat as any)?.updatedAt || 0)])
+  const activeAsyncToolTaskRunningCount = activeAsyncToolTasks.filter((task: any) => ['pending', 'running'].includes(String(task?.status || '').trim())).length
 
   const lastMsg = renderMessages.length ? renderMessages[renderMessages.length - 1] : null
   const lastMsgId = String(lastMsg?.id || '')
@@ -2997,6 +3004,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
     controller.actions.addDraftFilesFromFiles?.(files)
   })
   const closeTempModelPicker = useEvent(() => setTempModelPickerEl(null))
+  const closeAsyncToolTasks = useEvent(() => setAsyncToolTasksEl(null))
   const openTempModelPicker = useEvent((e: React.MouseEvent<HTMLElement>) => {
     if (!roleSessionControlsEnabled) return
     if (!activeRole) return
@@ -3016,6 +3024,32 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
 
     setTempModelPick(inList ? mid : '')
     setTempModelPickerEl(e.currentTarget)
+  })
+
+  const refreshAsyncToolTasks = useEvent(async () => {
+    const request = controller?.capabilities?.net?.request
+    if (typeof request !== 'function') return
+    const params = new URLSearchParams()
+    if (activeTargetKind === 'group') params.set('groupId', String(activeGroupId || ''))
+    else if (activeTargetKind === 'workspace') params.set('workspaceId', String(activeWorkspaceId || ''))
+    if (activeRole?.id) params.set('roleId', String(activeRole.id || ''))
+    if (activeChatId) params.set('sessionId', String(activeChatId || ''))
+    setAsyncToolTasksLoading(true)
+    try {
+      const response = await request({ method: 'GET', path: `/api/async-tool-tasks?${params.toString()}`, timeoutMs: 15000 })
+      setAsyncToolTasks(Array.isArray(response?.body) ? response.body : [])
+    } catch (err: any) {
+      controller?.capabilities?.ui?.showToast?.(String(err?.message || err || '异步任务列表加载失败'), { kind: 'error' })
+    } finally {
+      setAsyncToolTasksLoading(false)
+    }
+  })
+
+  const openAsyncToolTasks = useEvent((e: React.MouseEvent<HTMLElement>) => {
+    if (!activeRole || !activeChatId) return
+    setAsyncToolTasksEl(e.currentTarget)
+    setAsyncToolTasks(activeAsyncToolTasks)
+    refreshAsyncToolTasks()
   })
 
   const onTempProviderChanged = useEvent((nextProviderId: string) => {
@@ -5325,6 +5359,22 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                           </Button>
                         </span>
                       </Tooltip>
+
+                      <Tooltip title="异步工具任务">
+                        <span>
+                          <Button
+                            aria-label="异步工具任务"
+                            onClick={openAsyncToolTasks}
+                            disabled={!activeRole || !activeChatId}
+                            size="small"
+                            variant="text"
+                            startIcon={<AutorenewIcon fontSize="small" />}
+                            sx={composerToolTextButtonSx}
+                          >
+                            异步 {activeAsyncToolTaskRunningCount}
+                          </Button>
+                        </span>
+                      </Tooltip>
                     </>
                   )}
                   onSend={onSend}
@@ -5350,6 +5400,54 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
               <Button startIcon={<AttachFileIcon fontSize="small" />} variant="text" onClick={onPickDraftFiles} disabled={s.loading || !activeRole} sx={{ justifyContent: 'flex-start', borderRadius: 2 }}>
                 文件（txt/md/pdf/docx/ppt/pptx）
               </Button>
+            </Stack>
+          </Box>
+        </Popover>
+
+        <Popover
+          open={!!asyncToolTasksEl}
+          anchorEl={asyncToolTasksEl}
+          onClose={closeAsyncToolTasks}
+          anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+          transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        >
+          <Box data-area="async-tool-tasks" sx={{ width: 380, p: 1.5 }}>
+            <Stack spacing={1.25}>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>异步工具任务</Typography>
+                <Box sx={{ flex: 1 }} />
+                <Button size="small" onClick={refreshAsyncToolTasks} disabled={asyncToolTasksLoading}>刷新</Button>
+                <Button size="small" onClick={closeAsyncToolTasks}>关闭</Button>
+              </Stack>
+              <Typography variant="caption" color="text.secondary">只读展示当前会话的后台工具任务。</Typography>
+              {asyncToolTasksLoading ? (
+                <Stack direction="row" spacing={1} alignItems="center"><CircularProgress size={16} /><Typography variant="body2">加载中…</Typography></Stack>
+              ) : asyncToolTasks.length ? (
+                <Stack spacing={1}>
+                  {asyncToolTasks.map((task: any) => {
+                    const status = String(task?.status || '').trim() || 'unknown'
+                    const submittedAt = numericTimeValue(task?.submittedAt)
+                    const startedAt = numericTimeValue(task?.startedAt)
+                    const finishedAt = numericTimeValue(task?.finishedAt)
+                    const elapsed = startedAt && finishedAt ? `${Math.max(0, Math.round((finishedAt - startedAt) / 1000))}s` : startedAt ? '运行中' : '-'
+                    return (
+                      <Paper key={String(task?.id || `${task?.toolName}-${task?.submittedAt}`)} variant="outlined" sx={{ p: 1, borderRadius: 2 }}>
+                        <Stack spacing={0.5}>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Typography variant="body2" sx={{ fontWeight: 800, minWidth: 0, flex: 1 }} noWrap>{String(task?.taskName || task?.toolName || '工具任务')}</Typography>
+                            <Chip size="small" label={status} color={status === 'succeeded' || status === 'completed' ? 'success' : status === 'failed' ? 'error' : 'warning'} />
+                          </Stack>
+                          <Typography variant="caption" color="text.secondary">工具：{String(task?.toolName || '-')}</Typography>
+                          <Typography variant="caption" color="text.secondary">提交：{submittedAt ? new Date(submittedAt).toLocaleString() : '-'}</Typography>
+                          <Typography variant="caption" color="text.secondary">耗时：{elapsed}</Typography>
+                        </Stack>
+                      </Paper>
+                    )
+                  })}
+                </Stack>
+              ) : (
+                <Typography variant="body2" color="text.secondary">当前会话暂无异步工具任务。</Typography>
+              )}
             </Stack>
           </Box>
         </Popover>

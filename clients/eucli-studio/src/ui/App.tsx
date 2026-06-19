@@ -2211,7 +2211,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const activeContextTokenUsageText = React.useMemo(() => formatTokenEstimate(activeContextTokenUsage), [activeContextTokenUsage])
   const activeContextTokenUsageShortText = React.useMemo(() => formatTokenEstimateShort(activeContextTokenUsage), [activeContextTokenUsage])
   const activeAsyncToolTasks = React.useMemo(() => (Array.isArray((activeChat as any)?.asyncToolTasks) ? (activeChat as any).asyncToolTasks : []), [activeChat, Number((activeChat as any)?.updatedAt || 0)])
-  const activeAsyncToolTaskRunningCount = activeAsyncToolTasks.filter((task: any) => ['pending', 'running'].includes(String(task?.status || '').trim())).length
+  const activeAsyncToolTaskRunningCount = activeAsyncToolTasks.filter((task: any) => String(task?.status || '').trim() === 'running').length
 
   const lastMsg = renderMessages.length ? renderMessages[renderMessages.length - 1] : null
   const lastMsgId = String(lastMsg?.id || '')

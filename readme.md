@@ -98,6 +98,12 @@ eucli-box 是整个系统的业务核心（以下简称"业务端"或"e-b"）。
 
 ## 当前重点能力
 
+### 设置页左侧分区栏
+
+客户端设置页面的分区入口现在固定在页面左侧，右侧显示当前分区内容并独立滚动。
+
+这个调整只改变设置页面内部的分类选择位置和滚动边界，不改变各设置分区自己的内容和保存行为。
+
 ### AI 工具提示说明编辑
 
 可以在客户端的“设置 → AI 工具 → 查看/配置”中，为单个工具填写用户版本的提示说明。
@@ -198,6 +204,11 @@ eucli-box 是整个系统的业务核心（以下简称"业务端"或"e-b"）。
 与异步工具调用相关的文档：
 
 - `.dev-management/async-tool-invocation-design.md`
+
+与设置页左侧分区栏相关的文档：
+
+- `.dev-management/implementation-docs/settings-sidebar-navigation-readme.md`
+- `.dev-management/implementation-docs/settings-sidebar-navigation-changelog.md`
 
 ## 验证命令
 

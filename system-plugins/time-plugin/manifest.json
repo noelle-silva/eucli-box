@@ -1,0 +1,31 @@
+{
+  "id": "time-plugin",
+  "name": "时间插件",
+  "description": "提供当前本地时间占位符",
+  "version": "0.1.0",
+  "lifecycleType": "on-demand",
+  "binaries": [
+    {
+      "goos": "windows",
+      "goarch": "amd64",
+      "path": "binary/time-plugin.exe"
+    }
+  ],
+  "configSchema": {
+    "format": {
+      "type": "string",
+      "description": "Go 时间格式模板，例如 2006-01-02 15:04:05"
+    },
+    "timezone": {
+      "type": "string",
+      "description": "IANA 时区名，例如 Local、Asia/Shanghai、UTC"
+    }
+  },
+  "placeholderInterfaces": [
+    {
+      "id": "current-time",
+      "defaultName": "time",
+      "description": "当前时间"
+    }
+  ]
+}

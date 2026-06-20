@@ -65,3 +65,41 @@ func (s *system) handlePlaceholderDependencies(w http.ResponseWriter, r *http.Re
 	}
 	writeData(w, http.StatusOK, tree)
 }
+
+func (s *system) handleListAvailablePluginPlaceholderInterfaces(w http.ResponseWriter, r *http.Request) {
+	library, err := s.placeholders.LoadPlaceholderLibrary(r.Context())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	interfaces, err := s.systemPlugins.AvailablePlaceholderInterfaces(r.Context(), library)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, interfaces)
+}
+
+func (s *system) handleCreatePlaceholderFromPluginInterface(w http.ResponseWriter, r *http.Request) {
+	request, err := decodeJSON[types.SystemPluginCreatePlaceholderRequest](r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	library, err := s.placeholders.LoadPlaceholderLibrary(r.Context())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	library, err = s.systemPlugins.CreatePlaceholderFromInterface(r.Context(), library, request.PluginID, request.InterfaceID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	saved, err := s.placeholders.SavePlaceholderLibrary(r.Context(), library)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, saved)
+}

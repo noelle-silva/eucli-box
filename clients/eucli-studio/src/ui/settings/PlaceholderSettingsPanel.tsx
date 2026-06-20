@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Box, Button, Checkbox, Divider, FormControl, InputLabel, MenuItem, Paper, Select, Stack, TextField, Typography } from '@mui/material'
+import { Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControl, InputLabel, MenuItem, Paper, Select, Stack, TextField, Typography } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import RefreshIcon from '@mui/icons-material/Refresh'
@@ -19,6 +19,7 @@ type PlaceholderSettingsPanelProps = {
   controller: any
   loading: boolean
   placeholders: any
+  systemPlugins?: any
 }
 
 function text(value: unknown) {
@@ -59,7 +60,7 @@ function formatTime(value: unknown) {
 }
 
 export function PlaceholderSettingsPanel(props: PlaceholderSettingsPanelProps) {
-  const { controller, loading, placeholders } = props
+  const { controller, loading, placeholders, systemPlugins } = props
   const sourceLibrary = placeholders?.library || { placeholders: [], folders: [] }
   const busy = loading || !!placeholders?.loading
   const [draft, setDraft] = React.useState<PlaceholderLibrary>(() => cloneLibrary(sourceLibrary))
@@ -68,6 +69,7 @@ export function PlaceholderSettingsPanel(props: PlaceholderSettingsPanelProps) {
   const [previewText, setPreviewText] = React.useState('')
   const [saving, setSaving] = React.useState(false)
   const [saveError, setSaveError] = React.useState('')
+  const [pluginDialogOpen, setPluginDialogOpen] = React.useState(false)
 
   React.useEffect(() => {
     const next = cloneLibrary(sourceLibrary)
@@ -188,6 +190,17 @@ export function PlaceholderSettingsPanel(props: PlaceholderSettingsPanelProps) {
     }
   }
 
+  const openPluginDialog = async () => {
+    setPluginDialogOpen(true)
+    await controller.actions.refreshAvailableSystemPluginPlaceholderInterfaces?.().catch?.(() => null)
+  }
+
+  const createFromPlugin = async (pluginId: string, interfaceId: string) => {
+    const saved = await controller.actions.createPlaceholderFromSystemPlugin?.(pluginId, interfaceId)
+    if (saved) setDraft(cloneLibrary(saved))
+    setPluginDialogOpen(false)
+  }
+
   return (
     <Paper variant="outlined" sx={{ p: 1.5 }}>
       <Stack spacing={1.5}>
@@ -197,6 +210,7 @@ export function PlaceholderSettingsPanel(props: PlaceholderSettingsPanelProps) {
             <Typography variant="caption" color="text.secondary">使用 {`{{名字}}`} 在提示词里引用；替换只发生在发送给 AI 前。</Typography>
           </Box>
           <Button startIcon={<RefreshIcon />} variant="outlined" onClick={() => controller.actions.refreshPlaceholderLibrary?.(true)} disabled={busy || saving}>{placeholders?.loading ? '刷新中…' : '刷新'}</Button>
+          <Button variant="outlined" onClick={openPluginDialog} disabled={busy || saving}>从插件接口创建占位符</Button>
           <Button startIcon={<AddIcon />} variant="outlined" onClick={createItem} disabled={busy || saving}>新建占位符</Button>
           <Button startIcon={<SaveIcon />} variant="contained" onClick={saveDraft} disabled={!canSave}>{saving ? '保存中…' : '保存'}</Button>
         </Stack>
@@ -286,6 +300,27 @@ export function PlaceholderSettingsPanel(props: PlaceholderSettingsPanelProps) {
             </Stack>
           </Paper>
         </Stack>
+        <Dialog open={pluginDialogOpen} onClose={() => setPluginDialogOpen(false)} fullWidth maxWidth="sm">
+          <DialogTitle>从插件接口创建占位符</DialogTitle>
+          <DialogContent dividers>
+            <Stack spacing={1}>
+              {Array.isArray(systemPlugins?.availableInterfaces) && systemPlugins.availableInterfaces.length ? systemPlugins.availableInterfaces.map((item: any) => (
+                <Paper key={`${item.pluginId}:${item.interfaceId}`} variant="outlined" sx={{ p: 1, borderRadius: 2 }}>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 900 }}>{String(item.placeholderName || '')}</Typography>
+                      <Typography variant="caption" color="text.secondary">{String(item.pluginName || item.pluginId || '')} · {String(item.interfaceDescription || item.interfaceId || '')}</Typography>
+                    </Box>
+                    <Button size="small" variant="contained" onClick={() => createFromPlugin(String(item.pluginId || ''), String(item.interfaceId || ''))}>创建</Button>
+                  </Stack>
+                </Paper>
+              )) : <Typography variant="body2" color="text.secondary">当前没有可创建的插件接口。</Typography>}
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setPluginDialogOpen(false)}>关闭</Button>
+          </DialogActions>
+        </Dialog>
       </Stack>
     </Paper>
   )
@@ -309,7 +344,8 @@ function PlaceholderEditor(props: {
           <Button color="error" startIcon={<DeleteOutlineIcon />} onClick={onDelete} disabled={disabled}>删除</Button>
         </Stack>
         <TextField size="small" label="备注" value={item.description || ''} onChange={(e) => onUpdate({ description: e.target.value })} disabled={disabled} fullWidth />
-        <TextField size="small" multiline minRows={5} label="值" value={item.value} onChange={(e) => onUpdate({ value: e.target.value })} disabled={disabled} fullWidth />
+        <TextField size="small" multiline minRows={5} label="值" value={item.value} onChange={(e) => onUpdate({ value: e.target.value })} disabled={disabled || item.source?.kind === 'system_plugin'} fullWidth />
+        {item.source?.kind === 'system_plugin' ? <Typography variant="caption" color="text.secondary">这个占位符的值由系统插件动态提供，保存的手写值不会参与解析。</Typography> : null}
         <Typography variant="caption" color="text.secondary">创建时间：{formatTime(item.createdAt)}</Typography>
         <Divider />
         <Typography variant="body2" sx={{ fontWeight: 900 }}>所属收藏夹</Typography>

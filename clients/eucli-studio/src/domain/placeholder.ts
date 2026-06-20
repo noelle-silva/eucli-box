@@ -4,6 +4,7 @@ export type PlaceholderItem = {
   name: string
   value: string
   description?: string
+  source?: { kind?: string; pluginId?: string; interfaceId?: string }
   createdAt?: string
 }
 
@@ -52,7 +53,8 @@ export function normalizePlaceholderLibrary(raw: unknown): PlaceholderLibrary {
     const name = text(item.name)
     if (!name) continue
     knownNames.add(name)
-    placeholders.push({ name, value: String(item.value ?? ''), description: text(item.description), createdAt: text(item.createdAt) || new Date().toISOString() })
+    const source = item.source && typeof item.source === 'object' ? { kind: text(item.source.kind), pluginId: text(item.source.pluginId), interfaceId: text(item.source.interfaceId) } : undefined
+    placeholders.push({ name, value: String(item.value ?? ''), description: text(item.description), source, createdAt: text(item.createdAt) || new Date().toISOString() })
   }
   placeholders.sort((left, right) => left.name.localeCompare(right.name))
 
@@ -122,5 +124,6 @@ export function createPlaceholderFolder(): PlaceholderFolder {
 export function placeholderProblemLabel(type: string) {
   if (type === 'cycle_reference') return '循环引用'
   if (type === 'duplicate_name') return '重复名称'
+  if (type === 'plugin_failed') return '插件取值失败'
   return type || '未知问题'
 }

@@ -138,6 +138,14 @@ type PlaceholderSystem interface {
 	DependencyTree(ctx context.Context, name string) (types.PlaceholderDependencyNode, error)
 }
 
+type SystemPluginSystem interface {
+	ListPlugins(ctx context.Context) ([]types.SystemPluginSummary, error)
+	LoadPlugin(ctx context.Context, pluginID string) (types.SystemPluginView, error)
+	SavePluginUserConfig(ctx context.Context, pluginID string, config types.SystemPluginUserConfig) (types.SystemPluginView, error)
+	AvailablePlaceholderInterfaces(ctx context.Context, library types.PlaceholderLibrary) ([]types.SystemPluginAvailablePlaceholderInterface, error)
+	CreatePlaceholderFromInterface(ctx context.Context, library types.PlaceholderLibrary, pluginID string, interfaceID string) (types.PlaceholderLibrary, error)
+}
+
 type AIAssistSystem interface {
 	GenerateStickerName(ctx context.Context, request types.StickerNameRequest) (types.StickerNameResult, error)
 	GenerateChatTitle(ctx context.Context, request types.ChatTitleRequest) (types.ChatTitleResult, error)
@@ -152,27 +160,28 @@ type Config struct {
 }
 
 type system struct {
-	config       Config
-	runtime      RuntimeSystem
-	roles        RoleSystem
-	groups       ChatGroupSystem
-	workspaces   WorkspaceSystem
-	providers    ProviderSystem
-	tools        ToolSystem
-	sessions     SessionSystem
-	stickers     StickerSystem
-	hooks        HookPromptSystem
-	placeholders PlaceholderSystem
-	assist       AIAssistSystem
-	mux          *http.ServeMux
-	server       *http.Server
-	upgrader     websocket.Upgrader
+	config        Config
+	runtime       RuntimeSystem
+	roles         RoleSystem
+	groups        ChatGroupSystem
+	workspaces    WorkspaceSystem
+	providers     ProviderSystem
+	tools         ToolSystem
+	sessions      SessionSystem
+	stickers      StickerSystem
+	hooks         HookPromptSystem
+	placeholders  PlaceholderSystem
+	systemPlugins SystemPluginSystem
+	assist        AIAssistSystem
+	mux           *http.ServeMux
+	server        *http.Server
+	upgrader      websocket.Upgrader
 
 	wsMu        sync.Mutex
 	connections map[*websocket.Conn]struct{}
 }
 
-func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups ChatGroupSystem, workspaces WorkspaceSystem, providers ProviderSystem, tools ToolSystem, sessions SessionSystem, stickers StickerSystem, hooks HookPromptSystem, placeholders PlaceholderSystem, assist AIAssistSystem) (System, error) {
+func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups ChatGroupSystem, workspaces WorkspaceSystem, providers ProviderSystem, tools ToolSystem, sessions SessionSystem, stickers StickerSystem, hooks HookPromptSystem, placeholders PlaceholderSystem, systemPlugins SystemPluginSystem, assist AIAssistSystem) (System, error) {
 	if runtime == nil {
 		return nil, gatewayInvalid("runtime system dependency is required", nil)
 	}
@@ -203,6 +212,9 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups Ch
 	if placeholders == nil {
 		return nil, gatewayInvalid("placeholder system dependency is required", nil)
 	}
+	if systemPlugins == nil {
+		return nil, gatewayInvalid("system plugin system dependency is required", nil)
+	}
 	if assist == nil {
 		return nil, gatewayInvalid("ai assist system dependency is required", nil)
 	}
@@ -219,21 +231,22 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups Ch
 		return nil, gatewayInvalid("server timeouts cannot be negative", nil)
 	}
 	s := &system{
-		config:       config,
-		runtime:      runtime,
-		roles:        roles,
-		groups:       groups,
-		workspaces:   workspaces,
-		providers:    providers,
-		tools:        tools,
-		sessions:     sessions,
-		stickers:     stickers,
-		hooks:        hooks,
-		assist:       assist,
-		placeholders: placeholders,
-		mux:          http.NewServeMux(),
-		upgrader:     websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
-		connections:  map[*websocket.Conn]struct{}{},
+		config:        config,
+		runtime:       runtime,
+		roles:         roles,
+		groups:        groups,
+		workspaces:    workspaces,
+		providers:     providers,
+		tools:         tools,
+		sessions:      sessions,
+		stickers:      stickers,
+		hooks:         hooks,
+		assist:        assist,
+		placeholders:  placeholders,
+		systemPlugins: systemPlugins,
+		mux:           http.NewServeMux(),
+		upgrader:      websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
+		connections:   map[*websocket.Conn]struct{}{},
 	}
 	s.registerRoutes()
 	s.server = &http.Server{Addr: config.Addr, Handler: s.mux, ReadTimeout: config.ReadTimeout, WriteTimeout: config.WriteTimeout}

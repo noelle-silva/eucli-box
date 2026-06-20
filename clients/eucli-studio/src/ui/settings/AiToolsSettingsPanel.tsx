@@ -8,15 +8,9 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
-  FormControl,
-  FormControlLabel,
   IconButton,
-  InputLabel,
-  MenuItem,
   Paper,
-  Select,
   Stack,
-  Switch,
   TextField,
   Typography,
 } from '@mui/material'
@@ -25,6 +19,7 @@ import CloseIcon from '@mui/icons-material/Close'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import SettingsIcon from '@mui/icons-material/Settings'
 import { useEvent } from '../hooks/useEvent'
+import { ConfigFieldsForm } from './ConfigFieldsForm'
 import { ToolPromptDescriptionSection } from './ToolPromptDescriptionSection'
 
 type AiToolsSettingsPanelProps = {
@@ -39,19 +34,6 @@ type ToolSummary = {
   description?: unknown
   type?: unknown
   updatedAt?: unknown
-}
-
-type ConfigField = {
-  path: string[]
-  key: string
-  label: string
-  description: string
-  type: 'string' | 'number' | 'boolean' | 'object' | 'array'
-  enumValues: string[]
-  required: boolean
-  currentValue: any
-  defaultValue: any
-  schema: Record<string, any>
 }
 
 export function AiToolsSettingsPanel(props: AiToolsSettingsPanelProps) {
@@ -161,7 +143,6 @@ function ToolConfigDialog(props: { controller: any; tools: any }) {
   const selectedTool = tools?.selectedTool && typeof tools.selectedTool === 'object' ? tools.selectedTool : null
   const open = !!tools?.selectedToolId || !!selectedTool || !!tools?.detailLoading
   const name = toolName(selectedTool || { id: tools?.selectedToolId })
-  const configFields = selectedTool ? buildConfigFields(selectedTool, tools?.configDraft) : []
   const save = useEvent(() => controller.actions.saveSelectedToolConfig?.())
 
   return (
@@ -211,13 +192,15 @@ function ToolConfigDialog(props: { controller: any; tools: any }) {
               <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2 }}>
                 <Stack spacing={1.25}>
                   <Typography sx={{ fontWeight: 900 }}>用户配置</Typography>
-                  {configFields.length ? (
-                    configFields.map((field) => <ConfigFieldControl key={field.path.join('.')} controller={controller} field={field} />)
-                  ) : (
-                    <Typography variant="body2" color="text.secondary">
-                      该工具当前没有可编辑的用户配置字段。
-                    </Typography>
-                  )}
+                  <ConfigFieldsForm
+                    schema={selectedTool?.userConfigSchema}
+                    defaultConfig={selectedTool?.defaultConfig}
+                    userConfig={selectedTool?.userConfig}
+                    draftConfig={tools?.configDraft}
+                    emptyText="该工具当前没有可编辑的用户配置字段。"
+                    onSetValue={(path, value) => controller.actions.setToolConfigValue?.(path, value)}
+                    onRemoveValue={(path) => controller.actions.removeToolConfigValue?.(path)}
+                  />
                 </Stack>
               </Paper>
 
@@ -270,123 +253,6 @@ function ToolInputSchemaSummary(props: { schema: any }) {
   )
 }
 
-function ConfigFieldControl(props: { controller: any; field: ConfigField }) {
-  const { controller, field } = props
-  const hasValue = !isBlankConfigValue(field.currentValue)
-  const displayValue = hasValue ? field.currentValue : field.defaultValue
-  const helper = configFieldHelper(field, hasValue)
-  const setValue = (value: any) => controller.actions.setToolConfigValue?.(field.path, value)
-  const removeValue = () => controller.actions.removeToolConfigValue?.(field.path)
-
-  if (field.type === 'boolean') {
-    return (
-      <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2, bgcolor: hasValue ? 'background.paper' : 'grey.50' }}>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
-          <Box sx={{ minWidth: 0, flex: 1 }}>
-            <Typography sx={{ fontWeight: 900 }}>{field.label}{field.required ? ' *' : ''}</Typography>
-            {helper ? <Typography variant="caption" color="text.secondary">{helper}</Typography> : null}
-          </Box>
-          <Stack direction="row" spacing={1} alignItems="center" justifyContent="flex-end">
-            <FormControlLabel control={<Switch checked={!!displayValue} onChange={(event) => setValue(event.target.checked)} />} label={displayValue ? '开启' : '关闭'} />
-            <Button size="small" onClick={removeValue} disabled={!hasValue}>恢复默认</Button>
-          </Stack>
-        </Stack>
-      </Paper>
-    )
-  }
-
-  if (field.enumValues.length) {
-    const selectValues = orderedUniqueStrings([...(displayValue == null || displayValue === '' ? [] : [String(displayValue)]), ...field.enumValues])
-    return (
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'flex-start' }}>
-        <FormControl size="small" fullWidth>
-          <InputLabel>{field.label}{field.required ? ' *' : ''}</InputLabel>
-          <Select label={`${field.label}${field.required ? ' *' : ''}`} value={String(displayValue ?? '')} onChange={(event) => event.target.value === '' ? removeValue() : setValue(event.target.value)}>
-            <MenuItem value=""><em>使用默认值</em></MenuItem>
-            {selectValues.map((value) => <MenuItem key={value} value={value}>{value}</MenuItem>)}
-          </Select>
-          {helper ? <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>{helper}</Typography> : null}
-        </FormControl>
-        <Button size="small" onClick={removeValue} disabled={!hasValue} sx={{ mt: { sm: 0.5 } }}>恢复默认</Button>
-      </Stack>
-    )
-  }
-
-  if (field.type === 'object' || field.type === 'array') {
-    return field.type === 'array'
-      ? <ConfigArrayField controller={controller} field={field} hasValue={hasValue} value={displayValue} helper={helper} />
-      : <ConfigObjectField controller={controller} field={field} hasValue={hasValue} helper={helper} />
-  }
-
-  return (
-    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'flex-start' }}>
-      <TextField
-        size="small"
-        label={`${field.label}${field.required ? ' *' : ''}`}
-        type={field.type === 'number' ? 'number' : 'text'}
-        value={displayValue ?? ''}
-        onChange={(event) => {
-          if (field.type === 'number' && event.target.value.trim() === '') removeValue()
-          else if (field.type === 'number') {
-            const nextValue = numberFromInput(event.target.value)
-            if (nextValue === '') removeValue()
-            else setValue(nextValue)
-          } else setValue(event.target.value)
-        }}
-        placeholder={field.defaultValue == null ? '' : String(field.defaultValue)}
-        helperText={helper}
-        fullWidth
-      />
-      <Button size="small" onClick={removeValue} disabled={!hasValue} sx={{ mt: { sm: 0.5 } }}>恢复默认</Button>
-    </Stack>
-  )
-}
-
-function ConfigObjectField(props: { controller: any; field: ConfigField; hasValue: boolean; helper: string }) {
-  const { controller, field, hasValue, helper } = props
-  const childFields = buildNestedConfigFields(field)
-  return (
-    <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2, bgcolor: hasValue ? 'background.paper' : 'grey.50' }}>
-      <Stack spacing={1.25}>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
-          <Box sx={{ minWidth: 0, flex: 1 }}>
-            <Typography sx={{ fontWeight: 900 }}>{field.label}{field.required ? ' *' : ''}</Typography>
-            {helper ? <Typography variant="caption" color="text.secondary">{helper}</Typography> : null}
-          </Box>
-          <Button size="small" onClick={() => controller.actions.removeToolConfigValue?.(field.path)} disabled={!hasValue}>恢复默认</Button>
-        </Stack>
-        {childFields.length ? (
-          <Stack spacing={1.25} sx={{ pl: { xs: 0, sm: 1.5 }, borderLeft: { sm: '2px solid' }, borderColor: { sm: 'divider' } }}>
-            {childFields.map((child) => <ConfigFieldControl key={child.path.join('.')} controller={controller} field={child} />)}
-          </Stack>
-        ) : (
-          <Typography variant="body2" color="text.secondary">该对象当前没有可编辑子字段。</Typography>
-        )}
-      </Stack>
-    </Paper>
-  )
-}
-
-function ConfigArrayField(props: { controller: any; field: ConfigField; hasValue: boolean; value: any; helper: string }) {
-  const { controller, field, hasValue, value, helper } = props
-  const lines = Array.isArray(value) ? value.map((item) => String(item ?? '')).join('\n') : ''
-  return (
-    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'flex-start' }}>
-      <TextField
-        size="small"
-        label={`${field.label}${field.required ? ' *' : ''}`}
-        value={lines}
-        onChange={(event) => controller.actions.setToolConfigValue?.(field.path, arrayFromLines(event.target.value))}
-        helperText={helper ? `${helper} 一行一个值。` : '一行一个值。'}
-        fullWidth
-        multiline
-        minRows={3}
-      />
-      <Button size="small" onClick={() => controller.actions.removeToolConfigValue?.(field.path)} disabled={!hasValue} sx={{ mt: { sm: 0.5 } }}>恢复默认</Button>
-    </Stack>
-  )
-}
-
 function toolItems(tools: any): ToolSummary[] {
   return Array.isArray(tools?.items) ? tools.items.filter((tool: any) => tool && typeof tool === 'object') : []
 }
@@ -403,107 +269,6 @@ function toolDescription(tool: any): string {
   return String(tool?.description || '').trim()
 }
 
-function buildConfigFields(tool: any, draft: any): ConfigField[] {
-  const schema = plainObject(tool?.userConfigSchema)
-  const defaultConfig = plainObject(tool?.defaultConfig)
-  const userConfig = plainObject(tool?.userConfig)
-  const draftConfig = plainObject(draft)
-  return buildConfigFieldsFromSources([], schema, defaultConfig, userConfig, draftConfig)
-}
-
-function buildNestedConfigFields(parent: ConfigField): ConfigField[] {
-  const schema = parent.schema
-  const defaultConfig = plainObject(parent.defaultValue)
-  const currentConfig = plainObject(parent.currentValue)
-  return buildConfigFieldsFromSources(parent.path, schema, defaultConfig, currentConfig, currentConfig)
-}
-
-function buildConfigFieldsFromSources(pathPrefix: string[], schema: Record<string, any>, defaultConfig: Record<string, any>, userConfig: Record<string, any>, draftConfig: Record<string, any>): ConfigField[] {
-  const required = new Set(stringArray(schema.required))
-  const properties = plainObject(schema.properties)
-  const keys = orderedUniqueStrings([...Object.keys(properties), ...Object.keys(defaultConfig), ...Object.keys(userConfig), ...Object.keys(draftConfig)])
-
-  return keys.map((key) => {
-    const fieldSchema = plainObject(properties[key])
-    const currentValue = draftConfig[key]
-    const defaultValue = hasOwn(defaultConfig, key) ? defaultConfig[key] : undefined
-    return {
-      path: [...pathPrefix, key],
-      key,
-      label: stringField(fieldSchema.title) || key,
-      description: stringField(fieldSchema.description),
-      type: inferConfigFieldType(fieldSchema, currentValue, defaultValue),
-      enumValues: stringArray(fieldSchema.enum),
-      required: required.has(key),
-      currentValue,
-      defaultValue,
-      schema: fieldSchema,
-    }
-  })
-}
-
-function inferConfigFieldType(schema: Record<string, any>, currentValue: any, defaultValue: any): ConfigField['type'] {
-  const rawType = String(schema.type || '').trim()
-  if (rawType === 'boolean') return 'boolean'
-  if (rawType === 'number' || rawType === 'integer') return 'number'
-  if (rawType === 'object') return 'object'
-  if (rawType === 'array') return 'array'
-  const value = currentValue != null ? currentValue : defaultValue
-  if (typeof value === 'boolean') return 'boolean'
-  if (typeof value === 'number') return 'number'
-  if (Array.isArray(value)) return 'array'
-  if (value && typeof value === 'object') return 'object'
-  return 'string'
-}
-
-function configFieldHelper(field: ConfigField, hasValue: boolean): string {
-  const parts: string[] = []
-  if (field.description) parts.push(field.description)
-  if (!hasValue && field.defaultValue != null && field.type !== 'object' && field.type !== 'array') {
-    parts.push(`当前使用默认值：${String(field.defaultValue) || '（空）'}`)
-  }
-  return parts.join(' ')
-}
-
-function numberFromInput(value: string): number | '' {
-  const trimmed = String(value || '').trim()
-  if (!trimmed) return ''
-  const n = Number(trimmed)
-  return Number.isFinite(n) ? n : ''
-}
-
-function isBlankConfigValue(value: any): boolean {
-  return value === undefined || value === null
-}
-
 function plainObject(value: any): Record<string, any> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
-}
-
-function stringField(value: any): string {
-  return typeof value === 'string' ? value.trim() : ''
-}
-
-function stringArray(value: any): string[] {
-  return Array.isArray(value) ? value.map((item) => String(item || '').trim()).filter(Boolean) : []
-}
-
-function arrayFromLines(value: string): string[] {
-  return String(value || '').split('\n').map((line) => line.trim()).filter(Boolean)
-}
-
-function orderedUniqueStrings(values: string[]): string[] {
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const value of values) {
-    const key = String(value || '').trim()
-    if (!key || seen.has(key)) continue
-    seen.add(key)
-    out.push(key)
-  }
-  return out
-}
-
-function hasOwn(obj: Record<string, any>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(obj, key)
 }

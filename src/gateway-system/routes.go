@@ -106,6 +106,11 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("POST /api/placeholders/preview", s.authWrap(s.handlePreviewPlaceholders))
 	s.mux.HandleFunc("GET /api/placeholders/problems", s.authWrap(s.handlePlaceholderProblems))
 	s.mux.HandleFunc("GET /api/placeholders/dependencies/{name}", s.authWrap(s.handlePlaceholderDependencies))
+	s.mux.HandleFunc("GET /api/placeholders/plugin-interfaces", s.authWrap(s.handleListAvailablePluginPlaceholderInterfaces))
+	s.mux.HandleFunc("POST /api/placeholders/plugin-interfaces", s.authWrap(s.handleCreatePlaceholderFromPluginInterface))
+	s.mux.HandleFunc("GET /api/system-plugins", s.authWrap(s.handleListSystemPlugins))
+	s.mux.HandleFunc("GET /api/system-plugins/{pluginID}", s.authWrap(s.handleLoadSystemPlugin))
+	s.mux.HandleFunc("PUT /api/system-plugins/{pluginID}/user-config", s.authWrap(s.handleSaveSystemPluginUserConfig))
 
 	s.mux.HandleFunc("GET /ws/events", s.handleEventsWebSocket)
 }

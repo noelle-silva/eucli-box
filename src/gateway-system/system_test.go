@@ -504,7 +504,7 @@ func TestWebSocketForwardsRuntimeEvents(t *testing.T) {
 
 func newTestGateway(t *testing.T, fakes *gatewayFakes) System {
 	t.Helper()
-	system, err := NewSystem(Config{}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.assist)
+	system, err := NewSystem(Config{}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist)
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -512,22 +512,23 @@ func newTestGateway(t *testing.T, fakes *gatewayFakes) System {
 }
 
 type gatewayFakes struct {
-	runtime      *fakeGatewayRuntime
-	roles        *fakeGatewayRoles
-	groups       *fakeGatewayGroups
-	workspaces   *fakeGatewayWorkspaces
-	providers    *fakeGatewayProviders
-	tools        *fakeGatewayTools
-	sessions     *fakeGatewaySessions
-	stickers     *fakeGatewayStickers
-	hooks        *fakeGatewayHooks
-	placeholders *fakeGatewayPlaceholders
-	assist       *fakeGatewayAssist
+	runtime       *fakeGatewayRuntime
+	roles         *fakeGatewayRoles
+	groups        *fakeGatewayGroups
+	workspaces    *fakeGatewayWorkspaces
+	providers     *fakeGatewayProviders
+	tools         *fakeGatewayTools
+	sessions      *fakeGatewaySessions
+	stickers      *fakeGatewayStickers
+	hooks         *fakeGatewayHooks
+	placeholders  *fakeGatewayPlaceholders
+	systemPlugins *fakeGatewaySystemPlugins
+	assist        *fakeGatewayAssist
 }
 
 func newGatewayFakes() *gatewayFakes {
 	stickers := newFakeGatewayStickers()
-	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), groups: newFakeGatewayGroups(), workspaces: newFakeGatewayWorkspaces(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, hooks: &fakeGatewayHooks{}, placeholders: &fakeGatewayPlaceholders{}, assist: &fakeGatewayAssist{stickers: stickers}}
+	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), groups: newFakeGatewayGroups(), workspaces: newFakeGatewayWorkspaces(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, hooks: &fakeGatewayHooks{}, placeholders: &fakeGatewayPlaceholders{}, systemPlugins: &fakeGatewaySystemPlugins{}, assist: &fakeGatewayAssist{stickers: stickers}}
 }
 
 type fakeGatewayHooks struct {
@@ -566,6 +567,41 @@ func (f *fakeGatewayPlaceholders) Problems(ctx context.Context) ([]types.Placeho
 
 func (f *fakeGatewayPlaceholders) DependencyTree(ctx context.Context, name string) (types.PlaceholderDependencyNode, error) {
 	return types.PlaceholderDependencyNode{Name: name}, nil
+}
+
+type fakeGatewaySystemPlugins struct {
+	plugins []types.SystemPluginSummary
+	views   map[string]types.SystemPluginView
+}
+
+func (f *fakeGatewaySystemPlugins) ListPlugins(ctx context.Context) ([]types.SystemPluginSummary, error) {
+	return f.plugins, nil
+}
+
+func (f *fakeGatewaySystemPlugins) LoadPlugin(ctx context.Context, pluginID string) (types.SystemPluginView, error) {
+	if f.views == nil {
+		return types.SystemPluginView{}, nil
+	}
+	return f.views[pluginID], nil
+}
+
+func (f *fakeGatewaySystemPlugins) SavePluginUserConfig(ctx context.Context, pluginID string, config types.SystemPluginUserConfig) (types.SystemPluginView, error) {
+	if f.views == nil {
+		f.views = map[string]types.SystemPluginView{}
+	}
+	view := f.views[pluginID]
+	view.ID = pluginID
+	view.UserConfig = config.UserConfig
+	f.views[pluginID] = view
+	return view, nil
+}
+
+func (f *fakeGatewaySystemPlugins) AvailablePlaceholderInterfaces(ctx context.Context, library types.PlaceholderLibrary) ([]types.SystemPluginAvailablePlaceholderInterface, error) {
+	return nil, nil
+}
+
+func (f *fakeGatewaySystemPlugins) CreatePlaceholderFromInterface(ctx context.Context, library types.PlaceholderLibrary, pluginID string, interfaceID string) (types.PlaceholderLibrary, error) {
+	return library, nil
 }
 
 type fakeGatewayWorkspaces struct {

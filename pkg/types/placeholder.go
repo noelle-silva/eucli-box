@@ -5,13 +5,23 @@ import "time"
 const (
 	PlaceholderProblemCycleReference = "cycle_reference"
 	PlaceholderProblemDuplicateName  = "duplicate_name"
+	PlaceholderProblemPluginFailed   = "plugin_failed"
+
+	PlaceholderSourceSystemPlugin = "system_plugin"
 )
 
+type PlaceholderSource struct {
+	Kind        string `json:"kind"`
+	PluginID    string `json:"pluginId,omitempty"`
+	InterfaceID string `json:"interfaceId,omitempty"`
+}
+
 type PlaceholderItem struct {
-	Name        string    `json:"name"`
-	Value       string    `json:"value"`
-	Description string    `json:"description,omitempty"`
-	CreatedAt   time.Time `json:"createdAt"`
+	Name        string             `json:"name"`
+	Value       string             `json:"value"`
+	Description string             `json:"description,omitempty"`
+	Source      *PlaceholderSource `json:"source,omitempty"`
+	CreatedAt   time.Time          `json:"createdAt"`
 }
 
 type PlaceholderFolder struct {

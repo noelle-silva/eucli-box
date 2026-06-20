@@ -90,6 +90,7 @@ import { SettingsPageLayout, type SettingsTabValue } from './settings/SettingsPa
 import { WorkspacesSettingsPanel } from './settings/WorkspacesSettingsPanel'
 import { HookPromptsSettingsPanel } from './settings/HookPromptsSettingsPanel'
 import { PlaceholderSettingsPanel } from './settings/PlaceholderSettingsPanel'
+import { SystemPluginSettingsPanel } from './settings/SystemPluginSettingsPanel'
 import { HookPromptSelector } from './components/HookPromptSelector'
 import { AI_STUDIO_CHAT_ROOT_ID } from '../runtime/aiStudioGlobals'
 import { ASSISTANT_RUNNING_CONTENT, assistantRunGenerationId, isAssistantGenerating } from '../domain/assistantRunState'
@@ -996,6 +997,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const modelGroups = Array.isArray((s as any)?.modelGroups?.items) ? (s as any).modelGroups.items : []
   const hookPrompts = (s as any)?.hookPrompts && typeof (s as any).hookPrompts === 'object' ? (s as any).hookPrompts : { loading: false, error: '', library: { presets: [] } as HookPromptLibrary }
   const placeholders = (s as any)?.placeholders && typeof (s as any).placeholders === 'object' ? (s as any).placeholders : { loading: false, error: '', library: { placeholders: [], folders: [] } as PlaceholderLibrary, preview: { text: '', problems: [] }, problems: [], dependencyTree: { name: '' } }
+  const systemPlugins = (s as any)?.systemPlugins && typeof (s as any).systemPlugins === 'object' ? (s as any).systemPlugins : { loading: false, error: '', items: [], selectedPluginId: '', selectedPlugin: null, availableInterfaces: [] }
   const favorites = (data as any)?.favorites && typeof (data as any).favorites === 'object' ? (data as any).favorites : { folders: [], chatRefsByFolderId: {} }
   const favoriteFolders = Array.isArray((favorites as any)?.folders) ? ((favorites as any).folders as any[]) : []
   const favoriteChatRefsByFolderId =
@@ -6820,6 +6822,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
             modelRequestConfig={(s as any).modelRequestConfig}
             hookPrompts={hookPrompts}
             placeholders={placeholders}
+            systemPlugins={systemPlugins}
             draft={s.draft}
             activeRoleId={String(s.draft?.activeRoleId || '')}
             activeWorkspaceId={String((s.draft as any)?.activeWorkspaceId || '')}
@@ -7219,6 +7222,7 @@ function PluginSettingsPage(props: {
   modelRequestConfig: any
   hookPrompts: any
   placeholders: any
+  systemPlugins: any
   draft: any
   activeRoleId: string
   activeWorkspaceId: string
@@ -7227,7 +7231,7 @@ function PluginSettingsPage(props: {
   onTabChange: (tab: SettingsTab) => void
   dataDirectory?: AiChatDataDirectory
 }) {
-  const { controller, loading, data, roles, groups, workspaces, providers, modelGroups, models, tools, modelRequestConfig, hookPrompts, placeholders, draft, activeRoleId, activeWorkspaceId, activeTargetKind, tab, onTabChange, dataDirectory } = props
+  const { controller, loading, data, roles, groups, workspaces, providers, modelGroups, models, tools, modelRequestConfig, hookPrompts, placeholders, systemPlugins, draft, activeRoleId, activeWorkspaceId, activeTargetKind, tab, onTabChange, dataDirectory } = props
   const [treeHotkeyRecording, setTreeHotkeyRecording] = React.useState(false)
 
   React.useEffect(() => {
@@ -7829,7 +7833,11 @@ function PluginSettingsPage(props: {
   }
 
   if (tab === 'placeholders') {
-    return wrapSettingsPanel(<PlaceholderSettingsPanel controller={controller} loading={loading} placeholders={placeholders} />)
+    return wrapSettingsPanel(<PlaceholderSettingsPanel controller={controller} loading={loading} placeholders={placeholders} systemPlugins={systemPlugins} />)
+  }
+
+  if (tab === 'systemPlugins') {
+    return wrapSettingsPanel(<SystemPluginSettingsPanel controller={controller} loading={loading} systemPlugins={systemPlugins} />)
   }
 
   if (tab === 'eb') {

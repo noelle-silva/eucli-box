@@ -98,6 +98,7 @@ import { HOOK_PROMPT_SESSION_METADATA_KEY, HOOK_PROMPT_SESSION_METADATA_MODE_KEY
 import { loadHookPromptLibrary, saveHookPromptLibrary, updateGroupSessionHookPrompt, updateRoleSessionHookPrompt, updateWorkspaceSessionHookPrompt } from './hookPromptClient'
 import { normalizePlaceholderLibrary, type PlaceholderLibrary } from '../domain/placeholder'
 import { loadPlaceholderDependencies, loadPlaceholderLibrary, loadPlaceholderProblems, previewPlaceholders, savePlaceholderLibrary } from './placeholderClient'
+import { createPlaceholderFromSystemPluginInterface, loadAvailableSystemPluginPlaceholderInterfaces, loadSystemPlugin, loadSystemPlugins, saveSystemPluginUserConfig } from './systemPluginClient'
 import { addNativeToolsToPolicy, addToolsToPolicy, emptyRoleToolPolicy, removeNativeToolFromPolicy, removeToolFromPolicy, setToolRunMode } from '../domain/toolPolicy'
 import { readActiveEbRunCardsForTarget, removeEbRoleRunCard, upsertEbRoleRunCard } from '../domain/activeRunCards'
 import { loadWorkspaceSession, saveWorkspaceSession, workspaceSessionToChat } from './workspaceBridge'
@@ -128,6 +129,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     modelGroups: defaultModelGroupsState(),
     hookPrompts: { loading: false, error: '', library: { presets: [] } as HookPromptLibrary },
     placeholders: { loading: false, error: '', library: { placeholders: [], folders: [] } as PlaceholderLibrary, preview: { text: '', problems: [] as any[] }, problems: [] as any[], dependencyTree: { name: '' } as any },
+    systemPlugins: { loading: false, error: '', items: [] as any[], selectedPluginId: '', selectedPlugin: null as any, detailLoading: false, detailError: '', saving: false, saveError: '', availableInterfaces: [] as any[] },
     tools: { loading: false, error: '', items: [] as any[], fetchedAt: 0, detailLoading: false, detailError: '', selectedToolId: '', selectedTool: null as any, configDraft: {} as Record<string, any>, promptDescriptionDraft: '', saving: false, saveError: '' },
     modelRequestConfig: defaultModelRequestConfigState(),
     pendingChat: null as any,
@@ -773,6 +775,96 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     state.placeholders = { ...state.placeholders, dependencyTree }
     emit()
     return dependencyTree
+  }
+
+  async function refreshSystemPlugins(force?: boolean) {
+    const netRequest = capabilities.net?.request
+    if (typeof netRequest !== 'function') {
+      state.systemPlugins = { ...state.systemPlugins, loading: false, error: '业务端请求通道不可用' }
+      emit()
+      return state.systemPlugins.items
+    }
+    if (state.systemPlugins.loading && !force) return state.systemPlugins.items
+    state.systemPlugins = { ...state.systemPlugins, loading: true, error: '' }
+    emit()
+    try {
+      const items = await loadSystemPlugins(netRequest)
+      const selectedPluginId = state.systemPlugins.selectedPluginId || String(items[0]?.id || '')
+      state.systemPlugins = { ...state.systemPlugins, loading: false, error: '', items, selectedPluginId }
+      emit()
+      if (selectedPluginId) await openSystemPlugin(selectedPluginId).catch(() => null)
+      return items
+    } catch (e: any) {
+      const message = String(e?.message || e || '加载系统插件失败')
+      state.systemPlugins = { ...state.systemPlugins, loading: false, error: message }
+      api.ui?.showToast?.(message, { kind: 'error' })
+      emit()
+      return state.systemPlugins.items
+    }
+  }
+
+  async function openSystemPlugin(pluginIdRaw: any) {
+    const pluginId = String(pluginIdRaw || '').trim()
+    if (!pluginId) return null
+    const netRequest = capabilities.net?.request
+    if (typeof netRequest !== 'function') throw new Error('业务端请求通道不可用')
+    state.systemPlugins = { ...state.systemPlugins, selectedPluginId: pluginId, detailLoading: true, detailError: '' }
+    emit()
+    try {
+      const plugin = await loadSystemPlugin(netRequest, pluginId)
+      state.systemPlugins = { ...state.systemPlugins, detailLoading: false, detailError: '', selectedPlugin: plugin }
+      emit()
+      return plugin
+    } catch (e: any) {
+      const message = String(e?.message || e || '加载系统插件详情失败')
+      state.systemPlugins = { ...state.systemPlugins, detailLoading: false, detailError: message }
+      api.ui?.showToast?.(message, { kind: 'error' })
+      emit()
+      return null
+    }
+  }
+
+  async function saveSystemPluginConfig(pluginIdRaw: any, config: any) {
+    const pluginId = String(pluginIdRaw || '').trim()
+    if (!pluginId) throw new Error('系统插件 ID 不能为空')
+    const netRequest = capabilities.net?.request
+    if (typeof netRequest !== 'function') throw new Error('业务端请求通道不可用')
+    state.systemPlugins = { ...state.systemPlugins, saving: true, saveError: '' }
+    emit()
+    try {
+      const plugin = await saveSystemPluginUserConfig(netRequest, pluginId, config || {})
+      state.systemPlugins = { ...state.systemPlugins, saving: false, saveError: '', selectedPlugin: plugin }
+      api.ui?.showToast?.('系统插件设置已保存', { kind: 'success' })
+      emit()
+      await refreshPlaceholderLibrary(true).catch(() => null)
+      return plugin
+    } catch (e: any) {
+      const message = String(e?.message || e || '保存系统插件设置失败')
+      state.systemPlugins = { ...state.systemPlugins, saving: false, saveError: message }
+      emit()
+      throw e
+    }
+  }
+
+  async function refreshAvailableSystemPluginPlaceholderInterfaces() {
+    const netRequest = capabilities.net?.request
+    if (typeof netRequest !== 'function') throw new Error('业务端请求通道不可用')
+    const interfaces = await loadAvailableSystemPluginPlaceholderInterfaces(netRequest)
+    state.systemPlugins = { ...state.systemPlugins, availableInterfaces: interfaces }
+    emit()
+    return interfaces
+  }
+
+  async function createPlaceholderFromSystemPlugin(pluginId: any, interfaceId: any) {
+    const netRequest = capabilities.net?.request
+    if (typeof netRequest !== 'function') throw new Error('业务端请求通道不可用')
+    const library = await createPlaceholderFromSystemPluginInterface(netRequest, String(pluginId || ''), String(interfaceId || ''))
+    const problems = await loadPlaceholderProblems(netRequest).catch(() => [])
+    state.placeholders = { ...state.placeholders, loading: false, error: '', library, problems }
+    state.systemPlugins = { ...state.systemPlugins, availableInterfaces: [] }
+    api.ui?.showToast?.('已从插件接口创建占位符', { kind: 'success' })
+    emit()
+    return library
   }
 
   function writeHookPromptSelectionToChat(chat: any, modeRaw: any, presetIdRaw?: any) {
@@ -1967,6 +2059,11 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     savePlaceholderLibrary: (library: any) => persistPlaceholderLibrary(library),
     previewPlaceholders: (value: any) => refreshPlaceholderPreview(value),
     loadPlaceholderDependencies: (name: any) => refreshPlaceholderDependencyTree(name),
+    refreshSystemPlugins: (force: any) => refreshSystemPlugins(!!force),
+    openSystemPlugin: (pluginId: any) => openSystemPlugin(pluginId),
+    saveSystemPluginConfig: (pluginId: any, config: any) => saveSystemPluginConfig(pluginId, config),
+    refreshAvailableSystemPluginPlaceholderInterfaces: () => refreshAvailableSystemPluginPlaceholderInterfaces(),
+    createPlaceholderFromSystemPlugin: (pluginId: any, interfaceId: any) => createPlaceholderFromSystemPlugin(pluginId, interfaceId),
     selectHookPromptForActiveChat: (mode: any, presetId: any) => selectHookPromptForActiveChat(mode, presetId),
     openRoleToolWhitelist: () => {
       state.draft.roleToolWhitelistOpen = true

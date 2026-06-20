@@ -10,6 +10,7 @@ import (
 
 	apperrors "eucli-box/pkg/errors"
 	"eucli-box/pkg/types"
+	placeholdersystem "eucli-box/src/placeholder-system"
 )
 
 func TestStartRunCompletesWithoutTool(t *testing.T) {
@@ -120,7 +121,7 @@ func TestStartRunAppliesHookPromptPresetOnlyToModelRequest(t *testing.T) {
 
 func TestStartRunAppliesPlaceholdersOnlyToModelRequest(t *testing.T) {
 	fakes := newRuntimeFakes()
-	fakes.storage.placeholderLibrary = types.PlaceholderLibrary{Placeholders: []types.PlaceholderItem{{Name: "角色", Value: "工程师"}, {Name: "问候", Value: "你好，{{角色}}"}}}
+	fakes.placeholders.library = types.PlaceholderLibrary{Placeholders: []types.PlaceholderItem{{Name: "角色", Value: "工程师"}, {Name: "问候", Value: "你好，{{角色}}"}}}
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
 	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "{{问候}}"})
@@ -1855,7 +1856,7 @@ func assertNoAssistantUpdateBeforeRunFailed(t *testing.T, events <-chan types.Ru
 
 func newTestRuntime(t *testing.T, fakes *runtimeFakes, config Config) System {
 	t.Helper()
-	system, err := NewSystem(config, fakes.storage, fakes.roles, fakes.provider, fakes.tool)
+	system, err := NewSystem(config, fakes.storage, fakes.roles, fakes.provider, fakes.tool, fakes.placeholders)
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -2005,24 +2006,24 @@ func assertPromptMessageIDs(t *testing.T, got []string, want []string) {
 }
 
 type runtimeFakes struct {
-	storage  *fakeRuntimeStorage
-	roles    *fakeRuntimeRoles
-	provider *fakeRuntimeProvider
-	tool     *fakeRuntimeTools
+	storage      *fakeRuntimeStorage
+	roles        *fakeRuntimeRoles
+	provider     *fakeRuntimeProvider
+	tool         *fakeRuntimeTools
+	placeholders *fakeRuntimePlaceholders
 }
 
 func newRuntimeFakes() *runtimeFakes {
-	return &runtimeFakes{storage: newFakeRuntimeStorage(), roles: &fakeRuntimeRoles{}, provider: &fakeRuntimeProvider{}, tool: newFakeRuntimeTools()}
+	return &runtimeFakes{storage: newFakeRuntimeStorage(), roles: &fakeRuntimeRoles{}, provider: &fakeRuntimeProvider{}, tool: newFakeRuntimeTools(), placeholders: &fakeRuntimePlaceholders{}}
 }
 
 type fakeRuntimeStorage struct {
-	mu                 sync.Mutex
-	sessions           map[string]types.Session
-	workspaces         map[string]types.Workspace
-	images             map[string]string
-	hookLibrary        types.HookPromptLibrary
-	placeholderLibrary types.PlaceholderLibrary
-	compressionConfig  types.ContextCompressionConfig
+	mu                sync.Mutex
+	sessions          map[string]types.Session
+	workspaces        map[string]types.Workspace
+	images            map[string]string
+	hookLibrary       types.HookPromptLibrary
+	compressionConfig types.ContextCompressionConfig
 }
 
 func newFakeRuntimeStorage() *fakeRuntimeStorage {
@@ -2051,10 +2052,17 @@ func (f *fakeRuntimeStorage) LoadHookPromptLibrary(ctx context.Context) (types.H
 	return f.hookLibrary, nil
 }
 
-func (f *fakeRuntimeStorage) LoadPlaceholderLibrary(ctx context.Context) (types.PlaceholderLibrary, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.placeholderLibrary, nil
+type fakeRuntimePlaceholders struct {
+	library types.PlaceholderLibrary
+}
+
+func (f *fakeRuntimePlaceholders) ResolvePromptMessages(ctx context.Context, messages []types.PromptMessage) ([]types.PromptMessage, error) {
+	out := make([]types.PromptMessage, len(messages))
+	copy(out, messages)
+	for index := range out {
+		out[index].Content = placeholdersystem.Resolve(out[index].Content, f.library).Text
+	}
+	return out, nil
 }
 
 func (f *fakeRuntimeStorage) SaveSession(ctx context.Context, session types.Session) error {

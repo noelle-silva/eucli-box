@@ -35,9 +35,12 @@ type StorageSystem interface {
 	SaveWorkspaceSessionMessageAttachment(ctx context.Context, workspaceID string, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
 	LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error)
 	LoadHookPromptLibrary(ctx context.Context) (types.HookPromptLibrary, error)
-	LoadPlaceholderLibrary(ctx context.Context) (types.PlaceholderLibrary, error)
 	LoadContextCompressionConfig(ctx context.Context) (types.ContextCompressionConfig, error)
 	LoadWorkspace(ctx context.Context, workspaceID string) (types.Workspace, error)
+}
+
+type PlaceholderSystem interface {
+	ResolvePromptMessages(ctx context.Context, messages []types.PromptMessage) ([]types.PromptMessage, error)
 }
 
 type RoleSystem interface {
@@ -66,11 +69,12 @@ type Config struct {
 }
 
 type system struct {
-	config    Config
-	storage   StorageSystem
-	roles     RoleSystem
-	providers ProviderSystem
-	tools     ToolSystem
+	config       Config
+	storage      StorageSystem
+	roles        RoleSystem
+	providers    ProviderSystem
+	tools        ToolSystem
+	placeholders PlaceholderSystem
 
 	mu                 sync.Mutex
 	runs               map[string]*runRecord
@@ -117,7 +121,7 @@ type runRecord struct {
 	asyncToolCh    chan string
 }
 
-func NewSystem(config Config, storage StorageSystem, roles RoleSystem, providers ProviderSystem, tools ToolSystem) (System, error) {
+func NewSystem(config Config, storage StorageSystem, roles RoleSystem, providers ProviderSystem, tools ToolSystem, placeholders PlaceholderSystem) (System, error) {
 	if storage == nil {
 		return nil, runtimeInvalid("storage system dependency is required", nil)
 	}
@@ -129,6 +133,9 @@ func NewSystem(config Config, storage StorageSystem, roles RoleSystem, providers
 	}
 	if tools == nil {
 		return nil, runtimeInvalid("tool system dependency is required", nil)
+	}
+	if placeholders == nil {
+		return nil, runtimeInvalid("placeholder system dependency is required", nil)
 	}
 	if config.ToolTimeout < 0 {
 		return nil, runtimeInvalid("tool timeout cannot be negative", nil)
@@ -142,7 +149,7 @@ func NewSystem(config Config, storage StorageSystem, roles RoleSystem, providers
 	if config.MaxParallelTools == 0 {
 		config.MaxParallelTools = 4
 	}
-	runtime := &system{config: config, storage: storage, roles: roles, providers: providers, tools: tools, runs: map[string]*runRecord{}, subscribers: map[chan types.RunEvent]struct{}{}, asyncTasks: map[string]types.AsyncToolTask{}, asyncContinuations: map[asyncContinuationKey]struct{}{}}
+	runtime := &system{config: config, storage: storage, roles: roles, providers: providers, tools: tools, placeholders: placeholders, runs: map[string]*runRecord{}, subscribers: map[chan types.RunEvent]struct{}{}, asyncTasks: map[string]types.AsyncToolTask{}, asyncContinuations: map[asyncContinuationKey]struct{}{}}
 	if err := runtime.recoverPersistedAsyncToolTasks(context.Background()); err != nil {
 		return nil, err
 	}

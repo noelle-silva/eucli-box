@@ -1,9 +1,11 @@
-package datastorage
+package placeholder
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -12,29 +14,78 @@ import (
 )
 
 func (s *system) LoadPlaceholderLibrary(ctx context.Context) (types.PlaceholderLibrary, error) {
-	target := s.paths.placeholderLibraryFile()
-	if !dataFileExists(target) {
+	if err := ctx.Err(); err != nil {
+		return types.PlaceholderLibrary{}, placeholderReadFailed("read cancelled", err)
+	}
+	if !dataFileExists(s.libraryFile) {
 		return normalizePlaceholderLibrary(types.PlaceholderLibrary{}), nil
 	}
-	library, err := readJSON[types.PlaceholderLibrary](ctx, target)
+	payload, err := os.ReadFile(s.libraryFile)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return normalizePlaceholderLibrary(types.PlaceholderLibrary{}), nil
 		}
-		return types.PlaceholderLibrary{}, err
+		return types.PlaceholderLibrary{}, placeholderReadFailed("failed to read placeholder library", err)
+	}
+	var library types.PlaceholderLibrary
+	if err := json.Unmarshal(payload, &library); err != nil {
+		return types.PlaceholderLibrary{}, placeholderReadFailed("failed to decode placeholder library", err)
 	}
 	return normalizePlaceholderLibrary(library), nil
 }
 
 func (s *system) SavePlaceholderLibrary(ctx context.Context, library types.PlaceholderLibrary) (types.PlaceholderLibrary, error) {
+	if err := ctx.Err(); err != nil {
+		return types.PlaceholderLibrary{}, placeholderWriteFailed("write cancelled", err)
+	}
 	library = normalizePlaceholderLibrary(library)
 	if err := validatePlaceholderNamesUnique(library.Placeholders); err != nil {
 		return types.PlaceholderLibrary{}, err
 	}
-	if err := writeJSON(ctx, s.paths.placeholderLibraryFile(), library); err != nil {
+	if err := writeJSON(ctx, s.libraryFile, library); err != nil {
 		return types.PlaceholderLibrary{}, err
 	}
 	return library, nil
+}
+
+func writeJSON(ctx context.Context, target string, value any) error {
+	if err := ctx.Err(); err != nil {
+		return placeholderWriteFailed("write cancelled", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return placeholderWriteFailed("failed to create parent directory", err)
+	}
+	payload, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return placeholderWriteFailed("failed to marshal placeholder library", err)
+	}
+	payload = append(payload, '\n')
+	tmp, err := os.CreateTemp(filepath.Dir(target), ".tmp-*.json")
+	if err != nil {
+		return placeholderWriteFailed("failed to create temporary file", err)
+	}
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }()
+	if _, err := tmp.Write(payload); err != nil {
+		_ = tmp.Close()
+		return placeholderWriteFailed("failed to write temporary file", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return placeholderWriteFailed("failed to sync temporary file", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return placeholderWriteFailed("failed to close temporary file", err)
+	}
+	if err := os.Rename(tmpName, target); err != nil {
+		return placeholderWriteFailed("failed to replace placeholder library", err)
+	}
+	return nil
+}
+
+func dataFileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 func normalizePlaceholderLibrary(library types.PlaceholderLibrary) types.PlaceholderLibrary {
@@ -141,7 +192,7 @@ func validatePlaceholderNamesUnique(items []types.PlaceholderItem) error {
 			continue
 		}
 		if _, ok := seen[name]; ok {
-			return storageInvalid("placeholder name already exists", nil)
+			return placeholderInvalid("placeholder name already exists", nil)
 		}
 		seen[name] = struct{}{}
 	}

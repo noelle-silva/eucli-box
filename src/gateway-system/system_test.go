@@ -556,6 +556,18 @@ func (f *fakeGatewayPlaceholders) SavePlaceholderLibrary(ctx context.Context, li
 	return f.library, nil
 }
 
+func (f *fakeGatewayPlaceholders) ResolveText(ctx context.Context, text string) (types.PlaceholderResolveResult, error) {
+	return types.PlaceholderResolveResult{Text: text}, nil
+}
+
+func (f *fakeGatewayPlaceholders) Problems(ctx context.Context) ([]types.PlaceholderProblem, error) {
+	return nil, nil
+}
+
+func (f *fakeGatewayPlaceholders) DependencyTree(ctx context.Context, name string) (types.PlaceholderDependencyNode, error) {
+	return types.PlaceholderDependencyNode{Name: name}, nil
+}
+
 type fakeGatewayWorkspaces struct {
 	workspaces map[string]types.Workspace
 }

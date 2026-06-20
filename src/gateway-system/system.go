@@ -133,6 +133,9 @@ type HookPromptSystem interface {
 type PlaceholderSystem interface {
 	LoadPlaceholderLibrary(ctx context.Context) (types.PlaceholderLibrary, error)
 	SavePlaceholderLibrary(ctx context.Context, library types.PlaceholderLibrary) (types.PlaceholderLibrary, error)
+	ResolveText(ctx context.Context, text string) (types.PlaceholderResolveResult, error)
+	Problems(ctx context.Context) ([]types.PlaceholderProblem, error)
+	DependencyTree(ctx context.Context, name string) (types.PlaceholderDependencyNode, error)
 }
 
 type AIAssistSystem interface {

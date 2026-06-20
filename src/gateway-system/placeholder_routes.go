@@ -3,7 +3,6 @@ package gateway
 import (
 	"net/http"
 
-	"eucli-box/pkg/placeholder"
 	"eucli-box/pkg/types"
 )
 
@@ -36,21 +35,21 @@ func (s *system) handlePreviewPlaceholders(w http.ResponseWriter, r *http.Reques
 		writeError(w, err)
 		return
 	}
-	library, err := s.placeholders.LoadPlaceholderLibrary(r.Context())
+	result, err := s.placeholders.ResolveText(r.Context(), request.Text)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	writeData(w, http.StatusOK, placeholder.Resolve(request.Text, library))
+	writeData(w, http.StatusOK, result)
 }
 
 func (s *system) handlePlaceholderProblems(w http.ResponseWriter, r *http.Request) {
-	library, err := s.placeholders.LoadPlaceholderLibrary(r.Context())
+	problems, err := s.placeholders.Problems(r.Context())
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	writeData(w, http.StatusOK, placeholder.Problems(library))
+	writeData(w, http.StatusOK, problems)
 }
 
 func (s *system) handlePlaceholderDependencies(w http.ResponseWriter, r *http.Request) {
@@ -59,10 +58,10 @@ func (s *system) handlePlaceholderDependencies(w http.ResponseWriter, r *http.Re
 		writeError(w, err)
 		return
 	}
-	library, err := s.placeholders.LoadPlaceholderLibrary(r.Context())
+	tree, err := s.placeholders.DependencyTree(r.Context(), name)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	writeData(w, http.StatusOK, placeholder.DependencyTree(name, library))
+	writeData(w, http.StatusOK, tree)
 }

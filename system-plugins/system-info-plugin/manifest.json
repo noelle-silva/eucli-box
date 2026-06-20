@@ -1,0 +1,41 @@
+{
+  "id": "system-info-plugin",
+  "name": "系统信息插件",
+  "description": "提供当前平台和系统运行信息",
+  "version": "0.1.0",
+  "lifecycleType": "on-demand",
+  "binaries": [
+    {
+      "goos": "windows",
+      "goarch": "amd64",
+      "path": "binary/system-info-plugin.exe"
+    }
+  ],
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "includeHostname": {
+        "type": "boolean",
+        "title": "包含主机名",
+        "description": "开启后会输出当前电脑的主机名。"
+      },
+      "includeUsername": {
+        "type": "boolean",
+        "title": "包含用户名",
+        "description": "开启后会输出当前登录用户。"
+      },
+      "includeEnvironmentSummary": {
+        "type": "boolean",
+        "title": "包含环境摘要",
+        "description": "开启后会输出常见环境信息摘要。"
+      }
+    }
+  },
+  "placeholderInterfaces": [
+    {
+      "id": "current-system-info",
+      "defaultName": "system_info",
+      "description": "当前平台和系统信息"
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "includeHostname": true,
+  "includeUsername": false,
+  "includeEnvironmentSummary": true
+}

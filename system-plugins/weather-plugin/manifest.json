@@ -1,0 +1,72 @@
+{
+  "id": "weather-plugin",
+  "name": "天气信息插件",
+  "description": "通过和风天气提供详细天气报告和当前天气简报",
+  "version": "0.1.0",
+  "lifecycleType": "on-demand",
+  "binaries": [
+    {
+      "goos": "windows",
+      "goarch": "amd64",
+      "path": "binary/weather-plugin.exe"
+    }
+  ],
+  "configSchema": {
+    "type": "object",
+    "required": ["city", "apiKey", "apiHost"],
+    "properties": {
+      "city": {
+        "type": "string",
+        "title": "城市",
+        "description": "要查询天气的城市，例如 北京、上海、广州。"
+      },
+      "apiKey": {
+        "type": "string",
+        "title": "和风天气密钥",
+        "description": "和风天气控制台创建的 API Key。"
+      },
+      "apiHost": {
+        "type": "string",
+        "title": "和风天气请求地址",
+        "description": "和风天气 API 域名，例如 devapi.qweather.com。"
+      },
+      "forecastDays": {
+        "type": "number",
+        "title": "多日预报天数",
+        "description": "支持 3、7、10、15。"
+      },
+      "hourlyForecastInterval": {
+        "type": "number",
+        "title": "小时预报展示间隔",
+        "description": "每隔多少小时展示一条小时预报。"
+      },
+      "hourlyForecastCount": {
+        "type": "number",
+        "title": "小时预报展示条数",
+        "description": "小时预报最多展示多少条。"
+      },
+      "includeWarnings": {
+        "type": "boolean",
+        "title": "包含天气预警",
+        "description": "开启后会查询并展示天气预警。"
+      },
+      "includeAirQuality": {
+        "type": "boolean",
+        "title": "包含空气质量",
+        "description": "开启后会查询并展示空气质量。"
+      }
+    }
+  },
+  "placeholderInterfaces": [
+    {
+      "id": "weather-detail",
+      "defaultName": "weather_detail",
+      "description": "详细天气信息"
+    },
+    {
+      "id": "weather-brief",
+      "defaultName": "weather_Brief",
+      "description": "当前天气简报"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "city": "",
+  "apiKey": "",
+  "apiHost": "devapi.qweather.com",
+  "forecastDays": 3,
+  "hourlyForecastInterval": 2,
+  "hourlyForecastCount": 12,
+  "includeWarnings": true,
+  "includeAirQuality": false
+}

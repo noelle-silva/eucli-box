@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"eucli-box/pkg/placeholder"
 	"eucli-box/pkg/types"
 )
 
@@ -174,7 +175,24 @@ func (s *system) modelMessages(ctx context.Context, record *runRecord, roleConte
 		}
 		messages = append(messages, prompt)
 	}
-	return s.applyHookPromptPreset(ctx, record, roleContext, messages, latestUserIndex)
+	messages, err := s.applyHookPromptPreset(ctx, record, roleContext, messages, latestUserIndex)
+	if err != nil {
+		return nil, err
+	}
+	return s.resolvePromptPlaceholders(ctx, messages)
+}
+
+func (s *system) resolvePromptPlaceholders(ctx context.Context, messages []types.PromptMessage) ([]types.PromptMessage, error) {
+	library, err := s.storage.LoadPlaceholderLibrary(ctx)
+	if err != nil {
+		return nil, runtimeStorageFailed("failed to load placeholder library", err)
+	}
+	out := make([]types.PromptMessage, len(messages))
+	copy(out, messages)
+	for index := range out {
+		out[index].Content = placeholder.Resolve(out[index].Content, library).Text
+	}
+	return out, nil
 }
 
 func (s *system) runtimeMessageToPrompt(ctx context.Context, message types.Message, index int) (types.PromptMessage, error) {

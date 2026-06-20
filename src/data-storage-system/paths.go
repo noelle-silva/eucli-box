@@ -66,6 +66,10 @@ func (p paths) hookPromptLibraryFile() string {
 	return filepath.Join(p.metaRoot(), "hook-prompts.json")
 }
 
+func (p paths) placeholderLibraryFile() string {
+	return filepath.Join(p.metaRoot(), "placeholders.json")
+}
+
 func (p paths) roleDir(roleID string) (string, error) {
 	return p.safeJoin(p.rolesRoot(), roleID)
 }

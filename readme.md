@@ -98,6 +98,29 @@ eucli-box 是整个系统的业务核心（以下简称"业务端"或"e-b"）。
 
 ## 当前重点能力
 
+### 占位符子系统
+
+占位符可以把常用提示材料登记成一个名字，然后在角色提示词、工作区提示词、群组提示词或 hook 提示词中使用 `{{名字}}` 引用。
+
+发送给 AI 前，业务端会在内存里临时替换这些引用，不会改写角色、工作区、群组、hook 或会话中的原始保存内容。
+
+### 使用方式
+
+1. 打开客户端“设置 → 占位符管理”。
+2. 新建占位符，填写名字、值和备注。
+3. 在提示词中写入 `{{名字}}`。
+4. 可在管理页使用解析预览查看替换结果。
+5. 可用收藏夹整理占位符，收藏夹只影响展示和筛选，不影响实际替换。
+
+### 行为边界
+
+- 占位符名字全局唯一，保存时不允许重复。
+- `{{ 名字 }}` 和 `{{名字}}` 等价，名字前后空格会被清理。
+- 未注册的名字会原样保留，不会报错。
+- 占位符的值可以继续引用其他占位符，会递归展开。
+- 循环引用会保留原始写法，并在问题看板里标记为循环引用。
+- 本期不支持动态值、批量操作和转义语法。
+
 ### 设置页左侧分区栏
 
 客户端设置页面的分区入口现在固定在页面左侧，右侧显示当前分区内容并独立滚动。
@@ -200,6 +223,13 @@ eucli-box 是整个系统的业务核心（以下简称"业务端"或"e-b"）。
 - `.dev-management/design-decisions/hook-prompt-design.md`
 - `.dev-management/implementation-docs/hook-prompt-readme.md`
 - `.dev-management/implementation-docs/hook-prompt-changelog.md`
+
+与占位符子系统相关的文档：
+
+- `.dev-management/design-decisions/placeholder-system-design.md`
+- `.dev-management/design-decisions/placeholder-system-feature-list.md`
+- `.dev-management/implementation-docs/placeholder-system-readme.md`
+- `.dev-management/implementation-docs/placeholder-system-changelog.md`
 
 与异步工具调用相关的文档：
 

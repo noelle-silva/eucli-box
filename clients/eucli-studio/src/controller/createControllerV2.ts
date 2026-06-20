@@ -96,6 +96,8 @@ import { createModelRequestConfigController, defaultModelRequestConfigState } fr
 import { parseWorkspaceRoleTargetId, workspaceRoleTargetId } from '../domain/workspaceRoleTarget'
 import { HOOK_PROMPT_SESSION_METADATA_KEY, HOOK_PROMPT_SESSION_METADATA_MODE_KEY, normalizeHookPromptLibrary, normalizeHookPromptSelection, normalizeHookPromptSelectionMode, type HookPromptLibrary, type HookPromptSelectionMode } from '../domain/hookPrompt'
 import { loadHookPromptLibrary, saveHookPromptLibrary, updateGroupSessionHookPrompt, updateRoleSessionHookPrompt, updateWorkspaceSessionHookPrompt } from './hookPromptClient'
+import { normalizePlaceholderLibrary, type PlaceholderLibrary } from '../domain/placeholder'
+import { loadPlaceholderDependencies, loadPlaceholderLibrary, loadPlaceholderProblems, previewPlaceholders, savePlaceholderLibrary } from './placeholderClient'
 import { addNativeToolsToPolicy, addToolsToPolicy, emptyRoleToolPolicy, removeNativeToolFromPolicy, removeToolFromPolicy, setToolRunMode } from '../domain/toolPolicy'
 import { readActiveEbRunCardsForTarget, removeEbRoleRunCard, upsertEbRoleRunCard } from '../domain/activeRunCards'
 import { loadWorkspaceSession, saveWorkspaceSession, workspaceSessionToChat } from './workspaceBridge'
@@ -125,6 +127,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     models: { loading: false, error: '', items: [] as any[] },
     modelGroups: defaultModelGroupsState(),
     hookPrompts: { loading: false, error: '', library: { presets: [] } as HookPromptLibrary },
+    placeholders: { loading: false, error: '', library: { placeholders: [], folders: [] } as PlaceholderLibrary, preview: { text: '', problems: [] as any[] }, problems: [] as any[], dependencyTree: { name: '' } as any },
     tools: { loading: false, error: '', items: [] as any[], fetchedAt: 0, detailLoading: false, detailError: '', selectedToolId: '', selectedTool: null as any, configDraft: {} as Record<string, any>, promptDescriptionDraft: '', saving: false, saveError: '' },
     modelRequestConfig: defaultModelRequestConfigState(),
     pendingChat: null as any,
@@ -708,6 +711,70 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     }
   }
 
+  async function refreshPlaceholderLibrary(force?: boolean) {
+    const netRequest = capabilities.net?.request
+    if (typeof netRequest !== 'function') {
+      state.placeholders = { ...state.placeholders, loading: false, error: '业务端请求通道不可用' }
+      emit()
+      return state.placeholders.library
+    }
+    if (state.placeholders.loading && !force) return state.placeholders.library
+    state.placeholders = { ...state.placeholders, loading: true, error: '' }
+    emit()
+    try {
+      const library = await loadPlaceholderLibrary(netRequest)
+      const problems = await loadPlaceholderProblems(netRequest).catch(() => [])
+      state.placeholders = { ...state.placeholders, loading: false, error: '', library, problems }
+      emit()
+      return library
+    } catch (e: any) {
+      const message = String(e?.message || e || '加载占位符失败')
+      state.placeholders = { ...state.placeholders, loading: false, error: message }
+      api.ui?.showToast?.(message, { kind: 'error' })
+      emit()
+      return state.placeholders.library
+    }
+  }
+
+  async function persistPlaceholderLibrary(libraryRaw: any) {
+    const netRequest = capabilities.net?.request
+    if (typeof netRequest !== 'function') throw new Error('业务端请求通道不可用')
+    const previous = state.placeholders.library
+    const next = normalizePlaceholderLibrary(libraryRaw)
+    state.placeholders = { ...state.placeholders, library: next, loading: true, error: '' }
+    emit()
+    try {
+      const saved = await savePlaceholderLibrary(netRequest, next)
+      const problems = await loadPlaceholderProblems(netRequest).catch(() => [])
+      state.placeholders = { ...state.placeholders, loading: false, error: '', library: saved, problems }
+      api.ui?.showToast?.('占位符已保存', { kind: 'success' })
+      emit()
+      return saved
+    } catch (e) {
+      state.placeholders = { ...state.placeholders, loading: false, library: previous, error: globalThis.String((e as any)?.message || e || '保存占位符失败') }
+      emit()
+      throw e
+    }
+  }
+
+  async function refreshPlaceholderPreview(value: any) {
+    const netRequest = capabilities.net?.request
+    if (typeof netRequest !== 'function') throw new Error('业务端请求通道不可用')
+    const preview = await previewPlaceholders(netRequest, String(value ?? ''))
+    state.placeholders = { ...state.placeholders, preview }
+    emit()
+    return preview
+  }
+
+  async function refreshPlaceholderDependencyTree(name: any) {
+    const netRequest = capabilities.net?.request
+    if (typeof netRequest !== 'function') throw new Error('业务端请求通道不可用')
+    const dependencyTree = await loadPlaceholderDependencies(netRequest, String(name ?? ''))
+    state.placeholders = { ...state.placeholders, dependencyTree }
+    emit()
+    return dependencyTree
+  }
+
   function writeHookPromptSelectionToChat(chat: any, modeRaw: any, presetIdRaw?: any) {
     if (!chat || typeof chat !== 'object') return
     const selection = normalizeHookPromptSelection({ hookPromptMode: modeRaw, hookPromptPresetId: presetIdRaw })
@@ -811,6 +878,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       if (state.draft.activeTargetKind === 'workspace') await ensureActiveWorkspaceChatLoaded().catch(() => null)
       else await ensureStoredActiveChatLoaded()
       await refreshHookPromptLibrary(false).catch(() => null)
+      await refreshPlaceholderLibrary(false).catch(() => null)
     } catch (e: any) {
       state.data = null
       state.draft.activeRoleId = ''
@@ -1895,6 +1963,10 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     setModelGroupMemberField: (groupId: any, modelIndex: any, memberIndex: any, field: any, value: any) => setModelGroupMemberField(groupId, modelIndex, memberIndex, field, value),
     refreshHookPromptLibrary: (force: any) => refreshHookPromptLibrary(!!force),
     saveHookPromptLibrary: (library: any) => persistHookPromptLibrary(library),
+    refreshPlaceholderLibrary: (force: any) => refreshPlaceholderLibrary(!!force),
+    savePlaceholderLibrary: (library: any) => persistPlaceholderLibrary(library),
+    previewPlaceholders: (value: any) => refreshPlaceholderPreview(value),
+    loadPlaceholderDependencies: (name: any) => refreshPlaceholderDependencyTree(name),
     selectHookPromptForActiveChat: (mode: any, presetId: any) => selectHookPromptForActiveChat(mode, presetId),
     openRoleToolWhitelist: () => {
       state.draft.roleToolWhitelistOpen = true

@@ -46,6 +46,8 @@ type System interface {
 	SaveSessionFavorites(ctx context.Context, favorites types.SessionFavorites) (types.SessionFavorites, error)
 	LoadHookPromptLibrary(ctx context.Context) (types.HookPromptLibrary, error)
 	SaveHookPromptLibrary(ctx context.Context, library types.HookPromptLibrary) (types.HookPromptLibrary, error)
+	LoadPlaceholderLibrary(ctx context.Context) (types.PlaceholderLibrary, error)
+	SavePlaceholderLibrary(ctx context.Context, library types.PlaceholderLibrary) (types.PlaceholderLibrary, error)
 
 	SaveRole(ctx context.Context, role types.Role) error
 	LoadRole(ctx context.Context, roleID string) (types.Role, error)
@@ -147,6 +149,9 @@ func (s *system) Initialize(ctx context.Context) error {
 		return storageInitFailed("failed to write storage version", err)
 	}
 	if err := s.ensureSessionFavoritesFile(ctx); err != nil {
+		return err
+	}
+	if _, err := s.LoadPlaceholderLibrary(ctx); err != nil {
 		return err
 	}
 	return s.RebuildIndexes(ctx)

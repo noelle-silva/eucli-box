@@ -35,6 +35,7 @@ type StorageSystem interface {
 	SaveWorkspaceSessionMessageAttachment(ctx context.Context, workspaceID string, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
 	LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error)
 	LoadHookPromptLibrary(ctx context.Context) (types.HookPromptLibrary, error)
+	LoadPlaceholderLibrary(ctx context.Context) (types.PlaceholderLibrary, error)
 	LoadContextCompressionConfig(ctx context.Context) (types.ContextCompressionConfig, error)
 	LoadWorkspace(ctx context.Context, workspaceID string) (types.Workspace, error)
 }

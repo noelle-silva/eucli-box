@@ -118,6 +118,29 @@ func TestStartRunAppliesHookPromptPresetOnlyToModelRequest(t *testing.T) {
 	}
 }
 
+func TestStartRunAppliesPlaceholdersOnlyToModelRequest(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.storage.placeholderLibrary = types.PlaceholderLibrary{Placeholders: []types.PlaceholderItem{{Name: "角色", Value: "工程师"}, {Name: "问候", Value: "你好，{{角色}}"}}}
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "{{问候}}"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	contents := promptMessageContents(fakes.provider.lastRequest().Messages)
+	if strings.Join(contents, "|") != "你好，工程师" {
+		t.Fatalf("model message contents = %#v", contents)
+	}
+	session := fakes.storage.lastSession()
+	if len(session.Messages) != 2 || session.Messages[0].Content != "{{问候}}" {
+		t.Fatalf("stored messages = %#v", session.Messages)
+	}
+}
+
 func TestStartRunUsesRoleDefaultHookPromptPreset(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.roles.hookPromptPresetID = "preset-role"
@@ -1993,12 +2016,13 @@ func newRuntimeFakes() *runtimeFakes {
 }
 
 type fakeRuntimeStorage struct {
-	mu                sync.Mutex
-	sessions          map[string]types.Session
-	workspaces        map[string]types.Workspace
-	images            map[string]string
-	hookLibrary       types.HookPromptLibrary
-	compressionConfig types.ContextCompressionConfig
+	mu                 sync.Mutex
+	sessions           map[string]types.Session
+	workspaces         map[string]types.Workspace
+	images             map[string]string
+	hookLibrary        types.HookPromptLibrary
+	placeholderLibrary types.PlaceholderLibrary
+	compressionConfig  types.ContextCompressionConfig
 }
 
 func newFakeRuntimeStorage() *fakeRuntimeStorage {
@@ -2025,6 +2049,12 @@ func (f *fakeRuntimeStorage) LoadHookPromptLibrary(ctx context.Context) (types.H
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.hookLibrary, nil
+}
+
+func (f *fakeRuntimeStorage) LoadPlaceholderLibrary(ctx context.Context) (types.PlaceholderLibrary, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.placeholderLibrary, nil
 }
 
 func (f *fakeRuntimeStorage) SaveSession(ctx context.Context, session types.Session) error {

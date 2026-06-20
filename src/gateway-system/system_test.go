@@ -504,7 +504,7 @@ func TestWebSocketForwardsRuntimeEvents(t *testing.T) {
 
 func newTestGateway(t *testing.T, fakes *gatewayFakes) System {
 	t.Helper()
-	system, err := NewSystem(Config{}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.assist)
+	system, err := NewSystem(Config{}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.assist)
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -512,21 +512,22 @@ func newTestGateway(t *testing.T, fakes *gatewayFakes) System {
 }
 
 type gatewayFakes struct {
-	runtime    *fakeGatewayRuntime
-	roles      *fakeGatewayRoles
-	groups     *fakeGatewayGroups
-	workspaces *fakeGatewayWorkspaces
-	providers  *fakeGatewayProviders
-	tools      *fakeGatewayTools
-	sessions   *fakeGatewaySessions
-	stickers   *fakeGatewayStickers
-	hooks      *fakeGatewayHooks
-	assist     *fakeGatewayAssist
+	runtime      *fakeGatewayRuntime
+	roles        *fakeGatewayRoles
+	groups       *fakeGatewayGroups
+	workspaces   *fakeGatewayWorkspaces
+	providers    *fakeGatewayProviders
+	tools        *fakeGatewayTools
+	sessions     *fakeGatewaySessions
+	stickers     *fakeGatewayStickers
+	hooks        *fakeGatewayHooks
+	placeholders *fakeGatewayPlaceholders
+	assist       *fakeGatewayAssist
 }
 
 func newGatewayFakes() *gatewayFakes {
 	stickers := newFakeGatewayStickers()
-	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), groups: newFakeGatewayGroups(), workspaces: newFakeGatewayWorkspaces(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, hooks: &fakeGatewayHooks{}, assist: &fakeGatewayAssist{stickers: stickers}}
+	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), groups: newFakeGatewayGroups(), workspaces: newFakeGatewayWorkspaces(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, hooks: &fakeGatewayHooks{}, placeholders: &fakeGatewayPlaceholders{}, assist: &fakeGatewayAssist{stickers: stickers}}
 }
 
 type fakeGatewayHooks struct {
@@ -538,6 +539,19 @@ func (f *fakeGatewayHooks) LoadHookPromptLibrary(ctx context.Context) (types.Hoo
 }
 
 func (f *fakeGatewayHooks) SaveHookPromptLibrary(ctx context.Context, library types.HookPromptLibrary) (types.HookPromptLibrary, error) {
+	f.library = library
+	return f.library, nil
+}
+
+type fakeGatewayPlaceholders struct {
+	library types.PlaceholderLibrary
+}
+
+func (f *fakeGatewayPlaceholders) LoadPlaceholderLibrary(ctx context.Context) (types.PlaceholderLibrary, error) {
+	return f.library, nil
+}
+
+func (f *fakeGatewayPlaceholders) SavePlaceholderLibrary(ctx context.Context, library types.PlaceholderLibrary) (types.PlaceholderLibrary, error) {
 	f.library = library
 	return f.library, nil
 }

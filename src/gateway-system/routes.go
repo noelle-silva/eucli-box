@@ -101,6 +101,11 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("PUT /api/assist/context-compression/config", s.authWrap(s.handleSaveContextCompressionConfig))
 	s.mux.HandleFunc("GET /api/hook-prompts", s.authWrap(s.handleLoadHookPromptLibrary))
 	s.mux.HandleFunc("PUT /api/hook-prompts", s.authWrap(s.handleSaveHookPromptLibrary))
+	s.mux.HandleFunc("GET /api/placeholders", s.authWrap(s.handleLoadPlaceholderLibrary))
+	s.mux.HandleFunc("PUT /api/placeholders", s.authWrap(s.handleSavePlaceholderLibrary))
+	s.mux.HandleFunc("POST /api/placeholders/preview", s.authWrap(s.handlePreviewPlaceholders))
+	s.mux.HandleFunc("GET /api/placeholders/problems", s.authWrap(s.handlePlaceholderProblems))
+	s.mux.HandleFunc("GET /api/placeholders/dependencies/{name}", s.authWrap(s.handlePlaceholderDependencies))
 
 	s.mux.HandleFunc("GET /ws/events", s.handleEventsWebSocket)
 }

@@ -82,6 +82,7 @@ export function normalizeAvailableSystemPluginPlaceholderInterfaces(raw: unknown
 export function lifecycleTypeLabel(value: string) {
   if (value === 'persistent') return '长驻型'
   if (value === 'on-demand') return '按需型'
+  if (value === 'cached-heartbeat') return '缓存心跳型'
   return value || '未知类型'
 }
 

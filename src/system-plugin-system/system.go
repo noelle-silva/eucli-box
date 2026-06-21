@@ -32,9 +32,12 @@ type system struct {
 	dataDir   string
 	timeout   time.Duration
 
-	mu         sync.Mutex
-	persistent map[string]*persistentProcess
-	failures   map[string]string
+	mu              sync.Mutex
+	persistent      map[string]*persistentProcess
+	cachedValues    map[string]cachedPlaceholderValues
+	heartbeatCancel context.CancelFunc
+	heartbeatWait   sync.WaitGroup
+	failures        map[string]string
 }
 
 func NewSystem(config Config) (System, error) {
@@ -60,7 +63,7 @@ func NewSystem(config Config) (System, error) {
 	if config.Timeout < 0 {
 		return nil, pluginInvalid("system plugin timeout cannot be negative", nil)
 	}
-	return &system{sourceDir: filepath.Clean(sourceAbs), dataDir: filepath.Clean(dataAbs), timeout: config.Timeout, persistent: map[string]*persistentProcess{}, failures: map[string]string{}}, nil
+	return &system{sourceDir: filepath.Clean(sourceAbs), dataDir: filepath.Clean(dataAbs), timeout: config.Timeout, persistent: map[string]*persistentProcess{}, cachedValues: map[string]cachedPlaceholderValues{}, failures: map[string]string{}}, nil
 }
 
 func (s *system) Start(ctx context.Context) error {
@@ -68,12 +71,24 @@ func (s *system) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
+	s.mu.Lock()
+	s.heartbeatCancel = heartbeatCancel
+	s.mu.Unlock()
 	for _, record := range records {
-		if record.manifest.LifecycleType != types.SystemPluginLifecyclePersistent || record.status != types.SystemPluginStatusActive {
+		if record.status != types.SystemPluginStatusActive {
 			continue
 		}
-		if _, err := s.ensurePersistentProcess(ctx, record); err != nil {
-			s.setFailure(record.manifest.ID, err.Error())
+		switch record.manifest.LifecycleType {
+		case types.SystemPluginLifecyclePersistent:
+			if _, err := s.ensurePersistentProcess(ctx, record); err != nil {
+				s.setFailure(record.manifest.ID, err.Error())
+			}
+		case types.SystemPluginLifecycleCachedHeartbeat:
+			if err := s.refreshCachedPlugin(ctx, record.manifest.ID); err != nil {
+				s.setFailure(record.manifest.ID, err.Error())
+			}
+			s.startCachedHeartbeat(heartbeatCtx, record.manifest.ID, time.Duration(record.manifest.HeartbeatIntervalMs)*time.Millisecond)
 		}
 	}
 	return nil
@@ -81,9 +96,23 @@ func (s *system) Start(ctx context.Context) error {
 
 func (s *system) Shutdown(ctx context.Context) error {
 	s.mu.Lock()
+	heartbeatCancel := s.heartbeatCancel
+	s.heartbeatCancel = nil
 	processes := s.persistent
 	s.persistent = map[string]*persistentProcess{}
 	s.mu.Unlock()
+	if heartbeatCancel != nil {
+		heartbeatCancel()
+	}
+	done := make(chan struct{})
+	go func() {
+		s.heartbeatWait.Wait()
+		close(done)
+	}()
+	select {
+	case <-ctx.Done():
+	case <-done:
+	}
 	for _, process := range processes {
 		process.close(ctx)
 	}

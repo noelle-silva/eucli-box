@@ -1,8 +1,9 @@
 package types
 
 const (
-	SystemPluginLifecyclePersistent = "persistent"
-	SystemPluginLifecycleOnDemand   = "on-demand"
+	SystemPluginLifecyclePersistent      = "persistent"
+	SystemPluginLifecycleOnDemand        = "on-demand"
+	SystemPluginLifecycleCachedHeartbeat = "cached-heartbeat"
 
 	SystemPluginStatusActive      = "active"
 	SystemPluginStatusUnavailable = "unavailable"
@@ -26,6 +27,7 @@ type SystemPluginManifest struct {
 	Description           string                             `json:"description"`
 	Version               string                             `json:"version,omitempty"`
 	LifecycleType         string                             `json:"lifecycleType"`
+	HeartbeatIntervalMs   int64                              `json:"heartbeatIntervalMs,omitempty"`
 	Binaries              []SystemPluginBinary               `json:"binaries"`
 	ConfigSchema          map[string]any                     `json:"configSchema,omitempty"`
 	PlaceholderInterfaces []SystemPluginPlaceholderInterface `json:"placeholderInterfaces"`

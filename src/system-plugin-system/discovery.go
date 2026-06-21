@@ -154,8 +154,14 @@ func validateManifest(manifest types.SystemPluginManifest) error {
 	if manifest.Description == "" {
 		return pluginInvalid("system plugin manifest description is required", nil)
 	}
-	if manifest.LifecycleType != types.SystemPluginLifecyclePersistent && manifest.LifecycleType != types.SystemPluginLifecycleOnDemand {
-		return pluginInvalid("system plugin lifecycleType must be persistent or on-demand", nil)
+	if manifest.LifecycleType != types.SystemPluginLifecyclePersistent && manifest.LifecycleType != types.SystemPluginLifecycleOnDemand && manifest.LifecycleType != types.SystemPluginLifecycleCachedHeartbeat {
+		return pluginInvalid("system plugin lifecycleType must be persistent, on-demand, or cached-heartbeat", nil)
+	}
+	if manifest.LifecycleType == types.SystemPluginLifecycleCachedHeartbeat && manifest.HeartbeatIntervalMs <= 0 {
+		return pluginInvalid("cached-heartbeat system plugin heartbeatIntervalMs must be positive", nil)
+	}
+	if manifest.LifecycleType != types.SystemPluginLifecycleCachedHeartbeat && manifest.HeartbeatIntervalMs < 0 {
+		return pluginInvalid("system plugin heartbeatIntervalMs cannot be negative", nil)
 	}
 	if len(manifest.Binaries) == 0 {
 		return pluginInvalid("system plugin manifest must declare at least one binary", nil)

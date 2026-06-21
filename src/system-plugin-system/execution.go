@@ -36,6 +36,16 @@ func (s *system) ResolvePlaceholderValues(ctx context.Context) ([]types.SystemPl
 			problems = append(problems, pluginProblems(record)...)
 			continue
 		}
+		if record.manifest.LifecycleType == types.SystemPluginLifecycleCachedHeartbeat {
+			resolved, ok := s.cachedValuesForRecord(record)
+			if !ok {
+				s.setFailure(record.manifest.ID, "cached system plugin value is not ready")
+				problems = append(problems, pluginProblems(record)...)
+				continue
+			}
+			values = append(values, resolved...)
+			continue
+		}
 		resolved, err := s.resolveRecord(ctx, record)
 		if err != nil {
 			s.setFailure(record.manifest.ID, err.Error())

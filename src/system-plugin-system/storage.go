@@ -49,6 +49,12 @@ func (s *system) SavePluginUserConfig(ctx context.Context, pluginID string, conf
 	if err := writeJSONFile(ctx, path, config); err != nil {
 		return types.SystemPluginView{}, err
 	}
+	if record.manifest.LifecycleType == types.SystemPluginLifecycleCachedHeartbeat {
+		s.clearCachedValues(record.manifest.ID)
+		if err := s.refreshCachedPlugin(ctx, record.manifest.ID); err != nil {
+			s.setFailure(record.manifest.ID, err.Error())
+		}
+	}
 	return s.LoadPlugin(ctx, record.manifest.ID)
 }
 

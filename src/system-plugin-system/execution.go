@@ -29,33 +29,55 @@ func (s *system) ResolvePlaceholderValues(ctx context.Context) ([]types.SystemPl
 	if err != nil {
 		return nil, nil
 	}
+	type recordResult struct {
+		index    int
+		values   []types.SystemPluginPlaceholderValue
+		problems []types.PlaceholderProblem
+	}
+	results := make(chan recordResult, len(records))
+	var wait sync.WaitGroup
+	for index, record := range records {
+		wait.Add(1)
+		go func(index int, record pluginRecord) {
+			defer wait.Done()
+			values, problems := s.resolveRecordValues(ctx, record)
+			results <- recordResult{index: index, values: values, problems: problems}
+		}(index, record)
+	}
+	wait.Wait()
+	close(results)
+	ordered := make([]recordResult, len(records))
+	for result := range results {
+		ordered[result.index] = result
+	}
 	values := []types.SystemPluginPlaceholderValue{}
 	problems := []types.PlaceholderProblem{}
-	for _, record := range records {
-		if record.status != types.SystemPluginStatusActive {
-			problems = append(problems, pluginProblems(record)...)
-			continue
-		}
-		if record.manifest.LifecycleType == types.SystemPluginLifecycleCachedHeartbeat {
-			resolved, ok := s.cachedValuesForRecord(record)
-			if !ok {
-				s.setFailure(record.manifest.ID, "cached system plugin value is not ready")
-				problems = append(problems, pluginProblems(record)...)
-				continue
-			}
-			values = append(values, resolved...)
-			continue
-		}
-		resolved, err := s.resolveRecord(ctx, record)
-		if err != nil {
-			s.setFailure(record.manifest.ID, err.Error())
-			problems = append(problems, pluginProblems(record)...)
-			continue
-		}
-		s.setFailure(record.manifest.ID, "")
-		values = append(values, resolved...)
+	for _, result := range ordered {
+		values = append(values, result.values...)
+		problems = append(problems, result.problems...)
 	}
 	return values, problems
+}
+
+func (s *system) resolveRecordValues(ctx context.Context, record pluginRecord) ([]types.SystemPluginPlaceholderValue, []types.PlaceholderProblem) {
+	if record.status != types.SystemPluginStatusActive {
+		return nil, pluginProblems(record)
+	}
+	if record.manifest.LifecycleType == types.SystemPluginLifecycleCachedHeartbeat {
+		resolved, ok := s.cachedValuesForRecord(record)
+		if !ok {
+			s.setFailure(record.manifest.ID, "cached system plugin value is not ready")
+			return nil, pluginProblems(record)
+		}
+		return resolved, nil
+	}
+	resolved, err := s.resolveRecord(ctx, record)
+	if err != nil {
+		s.setFailure(record.manifest.ID, err.Error())
+		return nil, pluginProblems(record)
+	}
+	s.setFailure(record.manifest.ID, "")
+	return resolved, nil
 }
 
 func (s *system) resolveRecord(ctx context.Context, record pluginRecord) ([]types.SystemPluginPlaceholderValue, error) {

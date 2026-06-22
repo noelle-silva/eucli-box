@@ -87,6 +87,7 @@ import { AiToolsSettingsPanel } from './settings/AiToolsSettingsPanel'
 import { EbSettingsPanel } from './settings/EbSettingsPanel'
 import { ModelGroupsSettingsPanel } from './settings/ModelGroupsSettingsPanel'
 import { SettingsPageLayout, type SettingsTabValue } from './settings/SettingsPageLayout'
+import { SettingsListItem, SettingsPill, SettingsSection, SettingsSurface } from './settings/SettingsSurfaces'
 import { WorkspacesSettingsPanel } from './settings/WorkspacesSettingsPanel'
 import { HookPromptsSettingsPanel } from './settings/HookPromptsSettingsPanel'
 import { PlaceholderSettingsPanel } from './settings/PlaceholderSettingsPanel'
@@ -3686,14 +3687,11 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
           },
           '.prose pre': {
             overflow: 'auto',
-            scrollbarWidth: 'none',
-            msOverflowStyle: 'none',
             padding: 12,
             borderRadius: 12,
             background: '#0b1220',
             color: '#e5e7eb',
             border: '1px solid rgba(255,255,255,.06)',
-            '&::-webkit-scrollbar': { display: 'none', width: 0, height: 0 },
           },
           '.prose pre.fw-code-block': {
             position: 'relative',
@@ -3738,36 +3736,17 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
           '.prose img': { maxWidth: '100%', height: 'auto' },
           '.prose img.fw-sticker': { maxWidth: 160, maxHeight: 160, width: 'auto', height: 'auto', display: 'inline-block', verticalAlign: 'middle', borderRadius: 12 },
           '.prose .fw-sticker-miss': { color: 'rgba(0,0,0,.55)' },
-          '.eucli-inline-scroll-host, [data-eucli-inline-scroll-host="1"]': {
-            display: 'block',
-            maxWidth: '100%',
-            overflow: 'auto',
-            scrollbarWidth: 'none',
-            msOverflowStyle: 'none',
-            borderRadius: 12,
-            '&::-webkit-scrollbar': { display: 'none', width: 0, height: 0 },
-          },
-          '[data-eucli-inline-scroll-host="1"] > table': {
-            width: 'max-content',
-            minWidth: '100%',
-            maxWidth: 'none',
-            display: 'table',
-          },
-          '[data-eucli-scroll-decorated="1"]': {
-            scrollbarWidth: 'none',
-            msOverflowStyle: 'none',
-            '&::-webkit-scrollbar': { display: 'none', width: 0, height: 0 },
-            [`&:hover [data-eucli-scroll-thumb="1"]`]: { opacity: '0.82 !important' },
-          },
-          '[data-eucli-scroll-thumb="1"]:hover': { background: 'rgba(51,65,85,.66) !important' },
           '.prose table': {
             borderCollapse: 'collapse',
             width: '100%',
             maxWidth: '100%',
+            overflowX: 'auto',
+            overflowY: 'hidden',
             borderRadius: 12,
+            display: 'block',
           },
           '.prose th, .prose td': { border: '1px solid rgba(0,0,0,.12)', padding: 8, verticalAlign: 'top' },
-          '.math-block': { margin: '10px 0', overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none', '&::-webkit-scrollbar': { display: 'none', width: 0, height: 0 } },
+          '.math-block': { margin: '10px 0', overflowX: 'auto' },
           // KaTeX 的上标/帽子等会超出行盒；inline 公式不要做滚动容器，否则很容易出现裁切或滚动条。
           '.prose .katex, .prose .katex-display': { maxWidth: '100%' },
           '.prose span.katex': { display: 'inline-block', overflow: 'visible', verticalAlign: 'middle' },
@@ -3816,7 +3795,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
             visibility: 'visible',
             pointerEvents: 'auto',
           },
-            '.mermaid-block': { margin: '10px 0', overflowX: 'auto', textAlign: 'center', scrollbarWidth: 'none', msOverflowStyle: 'none', '&::-webkit-scrollbar': { display: 'none', width: 0, height: 0 } },
+            '.mermaid-block': { margin: '10px 0', overflowX: 'auto', textAlign: 'center' },
             '.mermaid-block[data-mermaid="1"]': { cursor: 'zoom-in' },
              '.mermaid-block svg': { maxWidth: '100%', height: 'auto', display: 'block', margin: '0 auto' },
             '.mermaid-block-ready': {
@@ -3865,7 +3844,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
               '&:disabled': { opacity: 0.78, cursor: 'default' },
               '&:focus-visible': { outline: '2px solid rgba(25,118,210,.35)', outlineOffset: 2 },
             },
-           '.mermaid-error': { margin: '10px 0', overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none', '&::-webkit-scrollbar': { display: 'none', width: 0, height: 0 } },
+           '.mermaid-error': { margin: '10px 0', overflowX: 'auto' },
            '.mermaid-error-box': {
              position: 'relative',
              background: '#fff',
@@ -4037,12 +4016,9 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
               overflowWrap: 'anywhere',
                maxHeight: 260,
                overflow: 'auto',
-               scrollbarWidth: 'none',
-               msOverflowStyle: 'none',
                fontSize: 12,
                lineHeight: 1.55,
                fontFamily: 'ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace',
-               '&::-webkit-scrollbar': { display: 'none', width: 0, height: 0 },
              },
             '.prose .fw-tool-pre-raw': {
               background: 'rgba(88,28,135,.08)',
@@ -4115,7 +4091,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
             ) : (
               <>
                 <Button
-                  variant="outlined"
+                  variant="text"
                   size="small"
                   onClick={openRolePicker}
                   disabled={s.loading || (!roles.length && !groups.length && !workspaces.length)}
@@ -4150,7 +4126,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
 
                 {activeTargetKind === 'workspace' ? (
                   <Button
-                    variant="outlined"
+                    variant="text"
                     size="small"
                     onClick={openWorkspaceRolePicker}
                     disabled={s.loading || !roles.length}
@@ -7002,7 +6978,7 @@ function StickersSettingsPanel(props: { controller: any; loading: boolean; data:
 
   return (
     <>
-      <Paper variant="outlined" sx={{ p: 1.5 }}>
+      <SettingsSurface>
         <Stack spacing={1.5}>
           <Stack direction="row" spacing={1} alignItems="center">
             <Typography sx={{ fontWeight: 900 }}>表情包</Typography>
@@ -7014,8 +6990,6 @@ function StickersSettingsPanel(props: { controller: any; loading: boolean; data:
               </Typography>
             </Stack>
           </Stack>
-          <Divider />
-
           <Typography variant="caption" color="text.secondary">
             协议：在消息中写 {tokenFor('分类', '名称')}，客户端会按“分类+名称”查表渲染为本地图片（不需要后缀）。
           </Typography>
@@ -7045,7 +7019,7 @@ function StickersSettingsPanel(props: { controller: any; loading: boolean; data:
             </FormControl>
 
             <Button
-              variant="outlined"
+              variant="text"
               startIcon={<ContentCopyIcon />}
               onClick={copyCategoryPrompt}
               disabled={loading || !cat || typeof api?.clipboard?.writeText !== 'function'}
@@ -7064,7 +7038,7 @@ function StickersSettingsPanel(props: { controller: any; loading: boolean; data:
           </Stack>
 
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
-            <Button startIcon={<ImageIcon />} variant="outlined" onClick={onPickStickerImages} disabled={loading || !cat}>
+            <Button startIcon={<ImageIcon />} variant="text" onClick={onPickStickerImages} disabled={loading || !cat}>
               上传
             </Button>
             <Box sx={{ flex: 1 }} />
@@ -7085,7 +7059,7 @@ function StickersSettingsPanel(props: { controller: any; loading: boolean; data:
                 const relPath = box && typeof box === 'object' ? String((box as any)?.[name]?.relPath || '') : ''
                 const token = tokenFor(cat, name)
                 return (
-                  <Paper key={name} variant="outlined" sx={{ p: 1.25 }}>
+                  <SettingsListItem key={name}>
                     <Stack direction="row" spacing={1.25} alignItems="center">
                       {relPath ? <StickerInlineImage controller={controller} path={relPath} label={token} size={64} /> : null}
                       <Box sx={{ minWidth: 0, flex: 1 }}>
@@ -7098,7 +7072,7 @@ function StickersSettingsPanel(props: { controller: any; loading: boolean; data:
                       </Box>
                       <Button
                         size="small"
-                        variant="outlined"
+                        variant="text"
                         onClick={() => controller.capabilities?.clipboard?.writeText?.(token)}
                         disabled={!controller.capabilities?.clipboard?.writeText}
                       >
@@ -7108,7 +7082,7 @@ function StickersSettingsPanel(props: { controller: any; loading: boolean; data:
                         <span>
                           <Button
                             size="small"
-                            variant="outlined"
+                            variant="text"
                             onClick={() => {
                               Promise.resolve()
                                 .then(() => controller.actions.aiGenerateStickerName?.(cat, name))
@@ -7120,20 +7094,20 @@ function StickersSettingsPanel(props: { controller: any; loading: boolean; data:
                           </Button>
                         </span>
                       </Tooltip>
-                      <Button size="small" variant="outlined" onClick={() => onOpenRename(name)} disabled={loading}>
+                      <Button size="small" variant="text" onClick={() => onOpenRename(name)} disabled={loading}>
                         改名
                       </Button>
-                      <Button size="small" color="error" variant="outlined" onClick={() => controller.actions.deleteSticker?.(cat, name)}>
+                      <Button size="small" color="error" variant="text" onClick={() => controller.actions.deleteSticker?.(cat, name)}>
                         删除
                       </Button>
                     </Stack>
-                  </Paper>
+                  </SettingsListItem>
                 )
               })}
             </Stack>
           )}
         </Stack>
-      </Paper>
+      </SettingsSurface>
 
       <Dialog open={!!confirmDelCat} onClose={() => setConfirmDelCat('')} maxWidth="xs" fullWidth>
         <DialogTitle>确认删除分类？</DialogTitle>
@@ -7358,7 +7332,7 @@ function PluginSettingsPage(props: {
   })()
 
   const appearancePanel = (
-    <Paper variant="outlined" sx={{ p: 1.5 }}>
+    <SettingsSurface>
       <Stack spacing={1.25}>
         <Stack direction="row" spacing={1} alignItems="center">
           <Typography sx={{ fontWeight: 900 }}>外观</Typography>
@@ -7543,8 +7517,6 @@ function PluginSettingsPage(props: {
           </Typography>
         </Box>
 
-        <Divider />
-
         <Box>
           <Stack direction="row" spacing={1} alignItems="center">
             <Typography variant="body2" sx={{ fontWeight: 900 }}>
@@ -7589,7 +7561,7 @@ function PluginSettingsPage(props: {
             />
             <Button
               size="small"
-              variant={treeHotkeyRecording ? 'contained' : 'outlined'}
+              variant={treeHotkeyRecording ? 'contained' : 'text'}
               color={treeHotkeyRecording ? 'success' : 'inherit'}
               onClick={() => setTreeHotkeyRecording((v) => !v)}
               disabled={loading}
@@ -7598,7 +7570,7 @@ function PluginSettingsPage(props: {
             </Button>
             <Button
               size="small"
-              variant="outlined"
+              variant="text"
               color="inherit"
               onClick={() => controller.actions.setBranchTreeModalHotkey?.('')}
               disabled={loading || !branchTreeModalHotkey}
@@ -7648,7 +7620,7 @@ function PluginSettingsPage(props: {
           </Typography>
         </Box>
       </Stack>
-    </Paper>
+    </SettingsSurface>
   )
 
   if (tab === 'appearance') {
@@ -7657,7 +7629,7 @@ function PluginSettingsPage(props: {
 
   if (tab === 'attachments') {
     return wrapSettingsPanel(
-        <Paper variant="outlined" sx={{ p: 1.5 }}>
+        <SettingsSurface>
           <Stack spacing={1.25}>
             <Typography sx={{ fontWeight: 900 }}>附件</Typography>
 
@@ -7759,7 +7731,7 @@ function PluginSettingsPage(props: {
               </Typography>
             </Box>
           </Stack>
-        </Paper>,
+        </SettingsSurface>,
     )
   }
 
@@ -7770,7 +7742,7 @@ function PluginSettingsPage(props: {
   if (tab === 'groups') {
     const activeGroupId = String((draft as any)?.activeGroupId || '')
     return wrapSettingsPanel(
-        <Paper variant="outlined" sx={{ p: 1.5 }}>
+        <SettingsSurface>
           <Stack direction="row" spacing={1} alignItems="center">
             <Typography sx={{ fontWeight: 900 }}>群组管理</Typography>
             <Box sx={{ flex: 1 }} />
@@ -7778,7 +7750,6 @@ function PluginSettingsPage(props: {
               新建群组
             </Button>
           </Stack>
-          <Divider sx={{ my: 1.5 }} />
           <Stack spacing={1.25}>
             {groups.length ? (
               groups.map((g: any) => {
@@ -7786,13 +7757,11 @@ function PluginSettingsPage(props: {
                 const isActive = gid && gid === activeGroupId
                 const memberCount = Array.isArray(g?.memberRoleIds) ? g.memberRoleIds.length : 0
                 return (
-                  <Paper
+                  <SettingsListItem
                     key={gid}
-                    variant="outlined"
+                    tone={isActive ? 'selected' : 'default'}
                     sx={{
-                      p: 1.25,
-                      borderColor: isActive ? 'primary.main' : 'divider',
-                      bgcolor: isActive ? 'rgba(25,118,210,.06)' : 'background.paper',
+                      bgcolor: isActive ? 'rgba(25,118,210,.08)' : undefined,
                     }}
                   >
                     <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'flex-start', sm: 'center' }}>
@@ -7813,7 +7782,7 @@ function PluginSettingsPage(props: {
                       <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                         <Button
                           size="small"
-                          variant={isActive ? 'contained' : 'outlined'}
+                          variant={isActive ? 'contained' : 'text'}
                           onClick={() => controller.actions.setActiveGroup?.(gid)}
                           disabled={!gid}
                         >
@@ -7827,7 +7796,7 @@ function PluginSettingsPage(props: {
                         </Button>
                       </Stack>
                     </Stack>
-                  </Paper>
+                  </SettingsListItem>
                 )
               })
             ) : (
@@ -7836,7 +7805,7 @@ function PluginSettingsPage(props: {
               </Typography>
             )}
           </Stack>
-        </Paper>,
+        </SettingsSurface>,
     )
   }
 
@@ -7937,20 +7906,18 @@ function PluginSettingsPage(props: {
     const snHasPickInList = !!snModelPick && snModelItems.some((x: any) => x.id === snModelPick)
 
     return wrapSettingsPanel(
-        <Paper variant="outlined" sx={{ p: 1.5 }}>
+        <SettingsSurface>
           <Stack spacing={1.5}>
             <Stack direction="row" spacing={1} alignItems="center">
               <Typography sx={{ fontWeight: 900 }}>AI 微服务</Typography>
               <Box sx={{ flex: 1 }} />
             </Stack>
-            <Divider />
-
             <Stack spacing={1.25}>
-              <Stack spacing={1.25}>
+              <SettingsSection>
                 <Stack direction="row" spacing={1} alignItems="center">
                   <Typography sx={{ fontWeight: 900 }}>上下文压缩</Typography>
                   <Box sx={{ flex: 1 }} />
-                  <Chip size="small" variant="outlined" label="/compact" />
+                  <SettingsPill>/compact</SettingsPill>
                 </Stack>
 
                 <Typography variant="caption" color="text.secondary">
@@ -8040,10 +8007,9 @@ function PluginSettingsPage(props: {
                 <Typography variant="caption" color="text.secondary">
                   仅可选择供应商设置中已登记的模型；如列表为空，请先到供应商设置刷新原始列表并登记模型。
                 </Typography>
-              </Stack>
+              </SettingsSection>
 
-              <Divider sx={{ my: 1.25 }} />
-
+              <SettingsSection>
               <Stack direction="row" spacing={1} alignItems="center">
                 <Typography sx={{ fontWeight: 900 }}>Mermaid AI 修复</Typography>
                 <Box sx={{ flex: 1 }} />
@@ -8124,7 +8090,7 @@ function PluginSettingsPage(props: {
                 <Box sx={{ flex: 1 }} />
                 <Button
                   size="small"
-                  variant="outlined"
+                  variant="text"
                   onClick={() => controller.actions.resetMermaidFixSystemPromptDefault?.()}
                   disabled={!mmDefaultPrompt || !mmPromptChanged}
                 >
@@ -8132,8 +8098,9 @@ function PluginSettingsPage(props: {
                 </Button>
               </Stack>
 
-              <Divider sx={{ my: 1.25 }} />
+              </SettingsSection>
 
+              <SettingsSection>
               <Stack spacing={1.25}>
                 <Stack direction="row" spacing={1} alignItems="center">
                   <Typography sx={{ fontWeight: 900 }}>AI 聊天记录取名</Typography>
@@ -8215,7 +8182,7 @@ function PluginSettingsPage(props: {
                   <Box sx={{ flex: 1 }} />
                   <Button
                     size="small"
-                    variant="outlined"
+                    variant="text"
                     onClick={() => controller.actions.resetChatTitleNamingSystemPromptDefault?.()}
                     disabled={!ctnDefaultPrompt || !ctnPromptChanged}
                   >
@@ -8223,9 +8190,9 @@ function PluginSettingsPage(props: {
                   </Button>
                 </Stack>
               </Stack>
+              </SettingsSection>
 
-              <Divider sx={{ my: 1.25 }} />
-
+              <SettingsSection>
               <Stack spacing={1.25}>
                 <Stack direction="row" spacing={1} alignItems="center">
                   <Typography sx={{ fontWeight: 900 }}>表情包取名服务</Typography>
@@ -8307,7 +8274,7 @@ function PluginSettingsPage(props: {
                   <Box sx={{ flex: 1 }} />
                   <Button
                     size="small"
-                    variant="outlined"
+                    variant="text"
                     onClick={() => controller.actions.resetStickerNamingSystemPromptDefault?.()}
                     disabled={!snDefaultPrompt || !snPromptChanged}
                   >
@@ -8315,16 +8282,17 @@ function PluginSettingsPage(props: {
                   </Button>
                 </Stack>
               </Stack>
+              </SettingsSection>
             </Stack>
           </Stack>
-        </Paper>,
+        </SettingsSurface>,
     )
   }
 
   const editingId = String(draft?.editProviderId || '')
 
   return wrapSettingsPanel(
-      <Paper variant="outlined" sx={{ p: 1.5 }}>
+      <SettingsSurface>
         <Stack direction="row" spacing={1} alignItems="center">
           <Typography sx={{ fontWeight: 900 }}>供应商管理</Typography>
           <Box sx={{ flex: 1 }} />
@@ -8332,13 +8300,12 @@ function PluginSettingsPage(props: {
             新建供应商
           </Button>
         </Stack>
-        <Divider sx={{ my: 1.5 }} />
         <Stack spacing={1.5}>
           {providers.map((p: any) => {
             const pid = String(p?.id || '')
             const isEditing = pid && pid === editingId
             return (
-              <Paper key={pid} variant="outlined" sx={{ p: 1.5 }}>
+              <SettingsListItem key={pid} tone={isEditing ? 'selected' : 'default'} sx={{ p: 1.5 }}>
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'flex-start', sm: 'center' }}>
                   <Box sx={{ minWidth: 0, flex: 1 }}>
                     <Typography sx={{ fontWeight: 900 }} noWrap>
@@ -8352,7 +8319,7 @@ function PluginSettingsPage(props: {
                   <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                     <Button
                       size="small"
-                      variant={isEditing ? 'outlined' : 'text'}
+                      variant="text"
                       onClick={() => (isEditing ? controller.actions.closeProviderEditor() : controller.actions.openProviderEditor(pid))}
                       disabled={!pid}
                     >
@@ -8374,11 +8341,11 @@ function PluginSettingsPage(props: {
                     </Stack>
                   </Stack>
                 ) : null}
-              </Paper>
+              </SettingsListItem>
             )
           })}
         </Stack>
-      </Paper>,
+      </SettingsSurface>,
   )
 }
 
@@ -8422,7 +8389,7 @@ function DataSettingsPanel(props: { dataDirectory?: AiChatDataDirectory; loading
   })
 
   return (
-    <Paper variant="outlined" sx={{ p: 1.5 }}>
+    <SettingsSurface>
         <Stack spacing={1.5}>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
             <Box sx={{ minWidth: 0, flex: 1 }}>
@@ -8431,17 +8398,15 @@ function DataSettingsPanel(props: { dataDirectory?: AiChatDataDirectory; loading
                 AI Studio 的聊天、角色、图片和运行状态都会保存在这个目录里。
               </Typography>
             </Box>
-            {status ? <Chip size="small" color={status.writable ? 'success' : 'error'} label={status.writable ? '可写' : '不可写'} /> : <Chip size="small" variant="outlined" label="读取中" />}
+            {status ? <SettingsPill tone={status.writable ? 'selected' : 'danger'}>{status.writable ? '可写' : '不可写'}</SettingsPill> : <SettingsPill>读取中</SettingsPill>}
           </Stack>
 
-          <Divider />
-
           {issue ? (
-            <Paper variant="outlined" sx={{ p: 1.25, borderColor: 'error.light', bgcolor: 'rgba(211,47,47,.04)' }}>
+            <SettingsSection tone="danger">
               <Typography variant="body2" color="error" sx={{ fontWeight: 800 }}>
                 {issue}
               </Typography>
-            </Paper>
+            </SettingsSection>
           ) : null}
 
           <Stack spacing={1.25}>
@@ -8472,7 +8437,7 @@ function DataSettingsPanel(props: { dataDirectory?: AiChatDataDirectory; loading
             <Button variant="contained" onClick={runPick} disabled={busy || typeof dataDirectory?.onPick !== 'function'}>
               {busy ? '处理中…' : '选择数据目录'}
             </Button>
-            <Button variant="outlined" onClick={runRefresh} disabled={busy || typeof dataDirectory?.onRefresh !== 'function'}>
+            <Button variant="text" onClick={runRefresh} disabled={busy || typeof dataDirectory?.onRefresh !== 'function'}>
               刷新状态
             </Button>
           </Stack>
@@ -8481,7 +8446,7 @@ function DataSettingsPanel(props: { dataDirectory?: AiChatDataDirectory; loading
             切换目录会重启 AI Studio 自己的本机后台，然后重新载入新目录中的数据。
           </Typography>
         </Stack>
-    </Paper>
+    </SettingsSurface>
   )
 }
 

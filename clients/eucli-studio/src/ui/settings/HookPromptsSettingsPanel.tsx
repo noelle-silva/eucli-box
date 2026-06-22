@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Box, Button, Divider, FormControl, IconButton, InputLabel, MenuItem, Paper, Select, Stack, TextField, Typography } from '@mui/material'
+import { Box, Button, FormControl, IconButton, InputLabel, MenuItem, Select, Stack, TextField, Typography } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import RefreshIcon from '@mui/icons-material/Refresh'
@@ -21,6 +21,7 @@ import {
   type HookPromptRole,
 } from '../../domain/hookPrompt'
 import { SortableItem, SortableRoot, SortableSection, verticalListSortingStrategy } from '../components/SortableDnd'
+import { SettingsListItem, SettingsSection, SettingsSurface } from './SettingsSurfaces'
 
 type HookPromptsSettingsPanelProps = {
   controller: any
@@ -154,42 +155,41 @@ export function HookPromptsSettingsPanel(props: HookPromptsSettingsPanelProps) {
   const canSave = !busy && !saving && !invalidPresetName
 
   return (
-    <Paper variant="outlined" sx={{ p: 1.5 }}>
+    <SettingsSurface>
       <Stack spacing={1.5}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography sx={{ fontWeight: 900 }}>hook 提示词</Typography>
             <Typography variant="caption" color="text.secondary">预设保存在业务端；聊天里只选择一个当前要用的预设。</Typography>
           </Box>
-          <Button startIcon={<RefreshIcon />} variant="outlined" onClick={() => controller.actions.refreshHookPromptLibrary?.(true)} disabled={busy || saving}>{hookPrompts?.loading ? '刷新中…' : '刷新'}</Button>
-          <Button startIcon={<AddIcon />} variant="outlined" onClick={createPreset} disabled={busy || saving}>新建预设</Button>
+          <Button startIcon={<RefreshIcon />} variant="text" onClick={() => controller.actions.refreshHookPromptLibrary?.(true)} disabled={busy || saving}>{hookPrompts?.loading ? '刷新中…' : '刷新'}</Button>
+          <Button startIcon={<AddIcon />} variant="text" onClick={createPreset} disabled={busy || saving}>新建预设</Button>
           <Button startIcon={<SaveIcon />} variant="contained" onClick={saveDraft} disabled={!canSave}>{saving ? '保存中…' : '保存'}</Button>
         </Stack>
 
-        <Divider />
         {hookPrompts?.error ? <Typography variant="body2" color="error">{String(hookPrompts.error || '')}</Typography> : null}
         {saveError ? <Typography variant="body2" color="error">{saveError}</Typography> : null}
         {invalidPresetName ? <Typography variant="body2" color="error">预设名称不能为空。</Typography> : null}
 
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems="flex-start">
-          <Paper variant="outlined" sx={{ p: 1, width: { xs: '100%', md: 260 }, borderRadius: 2 }}>
+          <SettingsSection tone="muted" sx={{ p: 1, width: { xs: '100%', md: 260 } }}>
             <Stack spacing={1}>
               <Typography variant="body2" sx={{ fontWeight: 900 }}>预设列表</Typography>
               {draft.presets.length ? draft.presets.map((preset) => {
                 const selected = preset.id === selectedPresetId
                 return (
-                  <Button key={preset.id} variant={selected ? 'contained' : 'outlined'} color={selected ? 'primary' : 'inherit'} onClick={() => setSelectedPresetId(preset.id)} sx={{ justifyContent: 'flex-start', textTransform: 'none' }}>
+                  <Button key={preset.id} variant={selected ? 'contained' : 'text'} color={selected ? 'primary' : 'inherit'} onClick={() => setSelectedPresetId(preset.id)} sx={{ justifyContent: 'flex-start', textTransform: 'none' }}>
                     <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{preset.name || '未命名预设'}</Box>
                   </Button>
                 )
               }) : <Typography variant="body2" color="text.secondary">暂无预设。</Typography>}
             </Stack>
-          </Paper>
+          </SettingsSection>
 
           <Box sx={{ flex: 1, minWidth: 0, width: '100%' }}>
             {selectedPreset ? (
               <Stack spacing={1.25}>
-                <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2 }}>
+                <SettingsSection>
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
                     <TextField
                       size="small"
@@ -200,7 +200,7 @@ export function HookPromptsSettingsPanel(props: HookPromptsSettingsPanelProps) {
                     />
                     <Button color="error" startIcon={<DeleteOutlineIcon />} onClick={() => deletePreset(selectedPreset.id)} disabled={busy || saving}>删除预设</Button>
                   </Stack>
-                </Paper>
+                </SettingsSection>
 
                 <SortableRoot onMove={moveMessageWithinPreset}>
                   <Stack spacing={1.25}>
@@ -219,14 +219,14 @@ export function HookPromptsSettingsPanel(props: HookPromptsSettingsPanelProps) {
                 </SortableRoot>
               </Stack>
             ) : (
-              <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+              <SettingsSection sx={{ p: 2 }}>
                 <Typography variant="body2" color="text.secondary">选择一个预设，或新建预设后开始编辑。</Typography>
-              </Paper>
+              </SettingsSection>
             )}
           </Box>
         </Stack>
       </Stack>
-    </Paper>
+    </SettingsSurface>
   )
 }
 
@@ -240,7 +240,7 @@ function HookPromptPositionBlock(props: {
 }) {
   const { position, messages, disabled, onAdd, onUpdate, onDelete } = props
   return (
-    <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2, bgcolor: 'grey.50' }}>
+    <SettingsSection tone="muted">
       <Stack spacing={1}>
         <Stack direction="row" spacing={1} alignItems="center">
           <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -260,7 +260,7 @@ function HookPromptPositionBlock(props: {
           </Stack>
         </SortableSection>
       </Stack>
-    </Paper>
+    </SettingsSection>
   )
 }
 
@@ -276,7 +276,7 @@ function HookPromptMessageEditor(props: {
   return (
     <SortableItem id={message.id} disabled={disabled}>
       {({ setNodeRef, setHandleRef, handleProps, isDragging, style }) => (
-        <Paper ref={setNodeRef} variant="outlined" sx={{ p: 1, opacity: isDragging ? 0.72 : 1, bgcolor: 'background.paper' }} style={style}>
+        <SettingsListItem ref={setNodeRef} sx={{ opacity: isDragging ? 0.72 : 1, bgcolor: 'background.paper' }} style={style as any}>
           <Stack spacing={1}>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
               <IconButton ref={setHandleRef as any} size="small" disabled={disabled} {...handleProps} sx={{ alignSelf: { xs: 'flex-start', sm: 'center' } }}>
@@ -310,7 +310,7 @@ function HookPromptMessageEditor(props: {
               fullWidth
             />
           </Stack>
-        </Paper>
+        </SettingsListItem>
       )}
     </SortableItem>
   )

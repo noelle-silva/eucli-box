@@ -1,5 +1,4 @@
 import * as React from 'react'
-import { decorateContentScrollbars } from '../ui/scroll/customScrollbars'
 
 export function AssistantMessageHost(props: {
   controller: any
@@ -16,8 +15,6 @@ export function AssistantMessageHost(props: {
   React.useLayoutEffect(() => {
     if (!ref.current) return
     controller.renderAssistantMessageInto(ref.current, text, parts)
-    const decorated = decorateContentScrollbars(ref.current)
-    return () => decorated.destroy()
   }, [controller, text, parts, renderSafetyPolicyKey])
 
   const onClick = React.useCallback((e: React.MouseEvent) => {

@@ -2,14 +2,11 @@ import * as React from 'react'
 import {
   Box,
   Button,
-  Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
   IconButton,
-  Paper,
   Stack,
   TextField,
   Typography,
@@ -20,6 +17,7 @@ import RefreshIcon from '@mui/icons-material/Refresh'
 import SettingsIcon from '@mui/icons-material/Settings'
 import { useEvent } from '../hooks/useEvent'
 import { ConfigFieldsForm } from './ConfigFieldsForm'
+import { SettingsListItem, SettingsPill, SettingsSection, SettingsSurface } from './SettingsSurfaces'
 import { ToolPromptDescriptionSection } from './ToolPromptDescriptionSection'
 
 type AiToolsSettingsPanelProps = {
@@ -52,7 +50,7 @@ export function AiToolsSettingsPanel(props: AiToolsSettingsPanelProps) {
 
   return (
     <>
-      <Paper variant="outlined" sx={{ p: 1.5 }}>
+      <SettingsSurface>
         <Stack spacing={1.5}>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
             <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
@@ -66,12 +64,10 @@ export function AiToolsSettingsPanel(props: AiToolsSettingsPanelProps) {
                 </Typography>
               </Box>
             </Stack>
-            <Button startIcon={<RefreshIcon />} variant="outlined" onClick={() => controller.actions.refreshTools?.(true)} disabled={loading || !!tools?.loading}>
+            <Button startIcon={<RefreshIcon />} variant="text" onClick={() => controller.actions.refreshTools?.(true)} disabled={loading || !!tools?.loading}>
               {tools?.loading ? '刷新中…' : '刷新工具'}
             </Button>
           </Stack>
-
-          <Divider />
 
           <TextField
             size="small"
@@ -92,16 +88,16 @@ export function AiToolsSettingsPanel(props: AiToolsSettingsPanelProps) {
             {filtered.length ? (
               filtered.map((tool) => <ToolCard key={toolId(tool)} controller={controller} tool={tool} loading={loading} />)
             ) : (
-              <Paper variant="outlined" sx={{ p: 3, borderRadius: 2.5, textAlign: 'center', bgcolor: 'grey.50' }}>
+              <SettingsSection tone="muted" sx={{ p: 3, textAlign: 'center' }}>
                 <Typography sx={{ fontWeight: 900 }}>{tools?.loading ? '工具列表加载中…' : '暂无可显示工具'}</Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                   {query ? '当前搜索没有匹配结果。' : '请确认 e-b 已加载工具目录。'}
                 </Typography>
-              </Paper>
+              </SettingsSection>
             )}
           </Stack>
         </Stack>
-      </Paper>
+      </SettingsSurface>
 
       <ToolConfigDialog controller={controller} tools={tools} />
     </>
@@ -114,7 +110,7 @@ function ToolCard(props: { controller: any; tool: ToolSummary; loading: boolean 
   const name = toolName(tool)
   const description = toolDescription(tool)
   return (
-    <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2 }}>
+    <SettingsListItem>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25} alignItems={{ xs: 'stretch', sm: 'center' }}>
         <Stack direction="row" spacing={1.25} alignItems="flex-start" sx={{ minWidth: 0, flex: 1 }}>
           <Box sx={{ width: 38, height: 38, borderRadius: 2, bgcolor: 'grey.100', display: 'grid', placeItems: 'center', color: 'text.secondary', flexShrink: 0 }}>
@@ -123,18 +119,18 @@ function ToolCard(props: { controller: any; tool: ToolSummary; loading: boolean 
           <Box sx={{ minWidth: 0 }}>
             <Stack direction="row" spacing={0.75} alignItems="center" sx={{ flexWrap: 'wrap' }}>
               <Typography sx={{ fontWeight: 900 }}>{name}</Typography>
-              {String(tool.type || '').trim() ? <Chip size="small" variant="outlined" label={String(tool.type)} /> : null}
+              {String(tool.type || '').trim() ? <SettingsPill>{String(tool.type)}</SettingsPill> : null}
             </Stack>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
               {description || '暂无描述'}
             </Typography>
           </Box>
         </Stack>
-        <Button variant="outlined" onClick={() => controller.actions.openToolConfig?.(id)} disabled={loading || !id} sx={{ alignSelf: { xs: 'flex-end', sm: 'center' } }}>
+        <Button variant="text" onClick={() => controller.actions.openToolConfig?.(id)} disabled={loading || !id} sx={{ alignSelf: { xs: 'flex-end', sm: 'center' } }}>
           查看/配置
         </Button>
       </Stack>
-    </Paper>
+    </SettingsListItem>
   )
 }
 
@@ -160,7 +156,7 @@ function ToolConfigDialog(props: { controller: any; tools: any }) {
           <CloseIcon fontSize="small" />
         </IconButton>
       </DialogTitle>
-      <DialogContent dividers>
+      <DialogContent sx={{ bgcolor: 'grey.50' }}>
         <Stack spacing={1.5}>
           {tools?.detailLoading ? (
             <Typography variant="body2" color="text.secondary">
@@ -175,21 +171,21 @@ function ToolConfigDialog(props: { controller: any; tools: any }) {
 
           {selectedTool ? (
             <>
-              <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2, bgcolor: 'grey.50' }}>
+              <SettingsSection tone="muted">
                 <Stack spacing={0.75}>
                   <Stack direction="row" spacing={0.75} alignItems="center" sx={{ flexWrap: 'wrap' }}>
                     <Typography sx={{ fontWeight: 900 }}>{toolName(selectedTool)}</Typography>
-                    {String(selectedTool.type || '').trim() ? <Chip size="small" variant="outlined" label={String(selectedTool.type)} /> : null}
+                    {String(selectedTool.type || '').trim() ? <SettingsPill>{String(selectedTool.type)}</SettingsPill> : null}
                   </Stack>
                   <Typography variant="body2" color="text.secondary">
                     {toolDescription(selectedTool) || '暂无描述'}
                   </Typography>
                 </Stack>
-              </Paper>
+              </SettingsSection>
 
               <ToolPromptDescriptionSection controller={controller} tool={selectedTool} tools={tools} />
 
-              <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2 }}>
+              <SettingsSection>
                 <Stack spacing={1.25}>
                   <Typography sx={{ fontWeight: 900 }}>用户配置</Typography>
                   <ConfigFieldsForm
@@ -202,7 +198,7 @@ function ToolConfigDialog(props: { controller: any; tools: any }) {
                     onRemoveValue={(path) => controller.actions.removeToolConfigValue?.(path)}
                   />
                 </Stack>
-              </Paper>
+              </SettingsSection>
 
               {tools?.saveError ? (
                 <Typography variant="body2" color="error">
@@ -230,7 +226,7 @@ function ToolInputSchemaSummary(props: { schema: any }) {
   const fields = Object.keys(properties).map((key) => ({ key, schema: plainObject(properties[key]) }))
   if (!fields.length) return null
   return (
-    <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2, bgcolor: 'grey.50' }}>
+    <SettingsSection tone="muted">
       <Stack spacing={1}>
         <Typography sx={{ fontWeight: 900 }}>工具调用参数</Typography>
         <Stack spacing={0.75}>
@@ -238,18 +234,18 @@ function ToolInputSchemaSummary(props: { schema: any }) {
             const type = String(field.schema.type || 'string')
             const description = stringField(field.schema.description)
             return (
-              <Paper key={field.key} variant="outlined" sx={{ p: 1, borderRadius: 1.5, bgcolor: 'background.paper' }}>
+              <SettingsListItem key={field.key} sx={{ p: 1, bgcolor: 'background.paper' }}>
                 <Stack direction="row" spacing={0.75} alignItems="center" sx={{ flexWrap: 'wrap' }}>
                   <Typography variant="body2" sx={{ fontWeight: 900 }}>{field.key}</Typography>
-                  <Chip size="small" variant="outlined" label={type} />
+                  <SettingsPill>{type}</SettingsPill>
                 </Stack>
                 {description ? <Typography variant="caption" color="text.secondary">{description}</Typography> : null}
-              </Paper>
+              </SettingsListItem>
             )
           })}
         </Stack>
       </Stack>
-    </Paper>
+    </SettingsSection>
   )
 }
 

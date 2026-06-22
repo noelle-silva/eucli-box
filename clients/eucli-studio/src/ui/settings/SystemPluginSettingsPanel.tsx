@@ -1,9 +1,10 @@
 import * as React from 'react'
-import { Box, Button, Divider, Paper, Stack, TextField, Typography } from '@mui/material'
+import { Box, Button, Stack, TextField, Typography } from '@mui/material'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import SaveIcon from '@mui/icons-material/Save'
 import { lifecycleTypeLabel, pluginStatusLabel, type SystemPluginDetail } from '../../domain/systemPlugin'
 import { cloneConfigObject, ConfigFieldsForm, removeConfigValueAtPath, setConfigValueAtPath } from './ConfigFieldsForm'
+import { SettingsSection, SettingsSurface } from './SettingsSurfaces'
 
 type SystemPluginSettingsPanelProps = {
   controller: any
@@ -45,50 +46,49 @@ export function SystemPluginSettingsPanel(props: SystemPluginSettingsPanelProps)
   }
 
   return (
-    <Paper variant="outlined" sx={{ p: 1.5 }}>
+    <SettingsSurface>
       <Stack spacing={1.5}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography sx={{ fontWeight: 900 }}>系统插件管理</Typography>
             <Typography variant="caption" color="text.secondary">管理本地系统插件、占位符接口名字和插件用户配置。</Typography>
           </Box>
-          <Button startIcon={<RefreshIcon />} variant="outlined" onClick={() => controller.actions.refreshSystemPlugins?.(true)} disabled={busy}>{systemPlugins?.loading ? '刷新中…' : '刷新'}</Button>
+          <Button startIcon={<RefreshIcon />} variant="text" onClick={() => controller.actions.refreshSystemPlugins?.(true)} disabled={busy}>{systemPlugins?.loading ? '刷新中…' : '刷新'}</Button>
           <Button startIcon={<SaveIcon />} variant="contained" onClick={save} disabled={busy || !selectedPlugin?.id}>{systemPlugins?.saving ? '保存中…' : '保存设置'}</Button>
         </Stack>
-        <Divider />
         {systemPlugins?.error ? <Typography variant="body2" color="error">{String(systemPlugins.error || '')}</Typography> : null}
         {systemPlugins?.detailError ? <Typography variant="body2" color="error">{String(systemPlugins.detailError || '')}</Typography> : null}
         {systemPlugins?.saveError ? <Typography variant="body2" color="error">{String(systemPlugins.saveError || '')}</Typography> : null}
         {localError ? <Typography variant="body2" color="error">{localError}</Typography> : null}
 
         <Stack direction={{ xs: 'column', lg: 'row' }} spacing={1.5} alignItems="flex-start">
-          <Paper variant="outlined" sx={{ p: 1, width: { xs: '100%', lg: 300 }, borderRadius: 2 }}>
+          <SettingsSection tone="muted" sx={{ p: 1, width: { xs: '100%', lg: 300 } }}>
             <Stack spacing={1}>
               <Typography variant="body2" sx={{ fontWeight: 900 }}>插件列表</Typography>
               {Array.isArray(systemPlugins?.items) && systemPlugins.items.length ? systemPlugins.items.map((plugin: any) => {
                 const selected = text(plugin.id) === text(systemPlugins?.selectedPluginId)
                 return (
-                  <Button key={plugin.id} variant={selected ? 'contained' : 'outlined'} color={selected ? 'primary' : 'inherit'} onClick={() => controller.actions.openSystemPlugin?.(plugin.id)} sx={{ justifyContent: 'flex-start', textTransform: 'none' }}>
+                  <Button key={plugin.id} variant={selected ? 'contained' : 'text'} color={selected ? 'primary' : 'inherit'} onClick={() => controller.actions.openSystemPlugin?.(plugin.id)} sx={{ justifyContent: 'flex-start', textTransform: 'none' }}>
                     <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{String(plugin.name || plugin.id)}</Box>
                   </Button>
                 )
               }) : <Typography variant="body2" color="text.secondary">暂无已加载插件。</Typography>}
             </Stack>
-          </Paper>
+          </SettingsSection>
 
           <Box sx={{ flex: 1, minWidth: 0, width: '100%' }}>
             {selectedPlugin ? (
               <Stack spacing={1.25}>
-                <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2 }}>
+                <SettingsSection>
                   <Stack spacing={0.5}>
                     <Typography sx={{ fontWeight: 900 }}>{selectedPlugin.name || selectedPlugin.id}</Typography>
                     <Typography variant="body2" color="text.secondary">{selectedPlugin.description}</Typography>
                     <Typography variant="caption" color="text.secondary">类型：{lifecycleTypeLabel(selectedPlugin.lifecycleType)}；状态：{pluginStatusLabel(selectedPlugin.status)}</Typography>
                     {selectedPlugin.statusMessage ? <Typography variant="caption" color="error">{selectedPlugin.statusMessage}</Typography> : null}
                   </Stack>
-                </Paper>
+                </SettingsSection>
 
-                <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2 }}>
+                <SettingsSection>
                   <Stack spacing={1}>
                     <Typography variant="body2" sx={{ fontWeight: 900 }}>占位符接口</Typography>
                     {selectedPlugin.placeholderInterfaces.length ? selectedPlugin.placeholderInterfaces.map((item) => (
@@ -98,9 +98,9 @@ export function SystemPluginSettingsPanel(props: SystemPluginSettingsPanelProps)
                       </Stack>
                     )) : <Typography variant="body2" color="text.secondary">这个插件没有声明占位符接口。</Typography>}
                   </Stack>
-                </Paper>
+                </SettingsSection>
 
-                <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2 }}>
+                <SettingsSection>
                   <Stack spacing={1}>
                     <Typography variant="body2" sx={{ fontWeight: 900 }}>用户配置</Typography>
                     <ConfigFieldsForm
@@ -114,14 +114,14 @@ export function SystemPluginSettingsPanel(props: SystemPluginSettingsPanelProps)
                     />
                     <Typography variant="caption" color="text.secondary">配置保存后会在下一次提示词解析时生效。</Typography>
                   </Stack>
-                </Paper>
+                </SettingsSection>
               </Stack>
             ) : (
-              <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}><Typography variant="body2" color="text.secondary">选择一个系统插件查看详情。</Typography></Paper>
+              <SettingsSection sx={{ p: 2 }}><Typography variant="body2" color="text.secondary">选择一个系统插件查看详情。</Typography></SettingsSection>
             )}
           </Box>
         </Stack>
       </Stack>
-    </Paper>
+    </SettingsSurface>
   )
 }

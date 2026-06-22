@@ -1,8 +1,9 @@
 import * as React from 'react'
-import { Box, Button, Paper, Stack, Typography } from '@mui/material'
+import { Box, Button, Stack, Typography } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
+import { SettingsListItem, SettingsSurface } from './SettingsSurfaces'
 
 type WorkspacesSettingsPanelProps = {
   controller: any
@@ -22,7 +23,7 @@ export function WorkspacesSettingsPanel(props: WorkspacesSettingsPanelProps) {
   const { controller, loading, workspaces, activeWorkspaceId, activeTargetKind } = props
 
   return (
-    <Paper variant="outlined" sx={{ p: 1.5 }}>
+    <SettingsSurface>
       <Stack spacing={1.25}>
         <Stack direction="row" spacing={1} alignItems="center">
           <Typography sx={{ fontWeight: 900 }}>工作区管理</Typography>
@@ -39,13 +40,11 @@ export function WorkspacesSettingsPanel(props: WorkspacesSettingsPanelProps) {
               const isActive = workspaceId && activeTargetKind === 'workspace' && workspaceId === activeWorkspaceId
               const directories = Array.isArray(workspace?.directories) ? workspace.directories : []
               return (
-                <Paper
+                <SettingsListItem
                   key={workspaceId}
-                  variant="outlined"
+                  tone={isActive ? 'selected' : 'default'}
                   sx={{
-                    p: 1.25,
-                    borderColor: isActive ? 'primary.main' : 'divider',
-                    bgcolor: isActive ? 'rgba(25,118,210,.06)' : 'background.paper',
+                    bgcolor: isActive ? 'rgba(25,118,210,.08)' : undefined,
                   }}
                 >
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'flex-start', sm: 'center' }}>
@@ -69,7 +68,7 @@ export function WorkspacesSettingsPanel(props: WorkspacesSettingsPanelProps) {
                     <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                       <Button
                         size="small"
-                        variant={isActive ? 'contained' : 'outlined'}
+                        variant={isActive ? 'contained' : 'text'}
                         onClick={() => controller.actions.setActiveWorkspace?.(workspaceId)}
                         disabled={!workspaceId}
                       >
@@ -83,7 +82,7 @@ export function WorkspacesSettingsPanel(props: WorkspacesSettingsPanelProps) {
                       </Button>
                     </Stack>
                   </Stack>
-                </Paper>
+                </SettingsListItem>
               )
             })}
           </Stack>
@@ -93,6 +92,6 @@ export function WorkspacesSettingsPanel(props: WorkspacesSettingsPanelProps) {
           </Typography>
         )}
       </Stack>
-    </Paper>
+    </SettingsSurface>
   )
 }

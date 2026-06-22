@@ -1,11 +1,12 @@
 import * as React from 'react'
-import { Avatar, Box, Button, Divider, Paper, Stack, Typography } from '@mui/material'
+import { Avatar, Box, Button, Stack, Typography } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import type { AiChatController } from '../../controller/types'
 import { formatModelRefDisplayText } from '../../domain/modelRefUtils'
 import { SortHandleButton, SortModeButton } from '../components/SortControls'
 import { SortableItem, SortableRoot, SortableSection, resolveSortMovePosition, type SortMovePosition } from '../components/SortableDnd'
+import { SettingsListItem, SettingsSurface } from './SettingsSurfaces'
 
 type RolesSettingsPanelProps = {
   controller: AiChatController
@@ -32,7 +33,8 @@ export function RolesSettingsPanel(props: RolesSettingsPanelProps) {
   )
 
   return (
-    <Paper variant="outlined" sx={{ p: 1.5 }}>
+    <SettingsSurface>
+      <Stack spacing={1.5}>
         <Stack direction="row" spacing={1} alignItems="center">
           <Typography sx={{ fontWeight: 900 }}>角色管理</Typography>
           <Box sx={{ flex: 1 }} />
@@ -41,7 +43,6 @@ export function RolesSettingsPanel(props: RolesSettingsPanelProps) {
             新建角色
           </Button>
         </Stack>
-        <Divider sx={{ my: 1.5 }} />
 
         <SortableRoot onMove={handleRoleMove}>
           <SortableSection items={roleIds}>
@@ -55,13 +56,11 @@ export function RolesSettingsPanel(props: RolesSettingsPanelProps) {
                   return (
                     <SortableItem key={roleId} id={roleId} disabled={!sortMode}>
                       {({ setNodeRef, setHandleRef, handleProps, isDragging, style }) => (
-                        <Paper
+                        <SettingsListItem
                           ref={setNodeRef}
-                          variant="outlined"
+                          tone={isActive ? 'selected' : 'default'}
                           sx={{
-                            p: 1.25,
-                            borderColor: isActive ? 'primary.main' : 'divider',
-                            bgcolor: isActive ? 'rgba(25,118,210,.06)' : 'background.paper',
+                            bgcolor: isActive ? 'rgba(25,118,210,.08)' : undefined,
                             opacity: isDragging ? 0.5 : 1,
                           }}
                           style={style}
@@ -90,7 +89,7 @@ export function RolesSettingsPanel(props: RolesSettingsPanelProps) {
                             </Stack>
 
                             <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                              <Button size="small" variant={isActive ? 'contained' : 'outlined'} onClick={() => controller.actions.setActiveRole(roleId)} disabled={!roleId}>
+                              <Button size="small" variant={isActive ? 'contained' : 'text'} onClick={() => controller.actions.setActiveRole(roleId)} disabled={!roleId}>
                                 {isActive ? '当前' : '设为当前'}
                               </Button>
                               <Button size="small" onClick={() => controller.actions.openRoleEditor(roleId)} disabled={!roleId}>
@@ -101,7 +100,7 @@ export function RolesSettingsPanel(props: RolesSettingsPanelProps) {
                               </Button>
                             </Stack>
                           </Stack>
-                        </Paper>
+                        </SettingsListItem>
                       )}
                     </SortableItem>
                   )
@@ -114,6 +113,7 @@ export function RolesSettingsPanel(props: RolesSettingsPanelProps) {
             </Stack>
           </SortableSection>
         </SortableRoot>
-    </Paper>
+      </Stack>
+    </SettingsSurface>
   )
 }

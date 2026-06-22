@@ -36,15 +36,17 @@ function SettingsNavigationSidebar(props: { value: SettingsTabValue; onChange: (
     <Paper
       component="nav"
       aria-label="设置分区"
-      variant="outlined"
+      elevation={0}
       sx={{
         width: SETTINGS_SIDEBAR_WIDTH,
         height: '100%',
         flexShrink: 0,
         overflow: 'hidden',
         p: 1,
-        borderRadius: 2,
-        bgcolor: 'background.paper',
+        borderRadius: 3,
+        bgcolor: 'rgba(255,255,255,.84)',
+        backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,.96), rgba(248,250,252,.84))',
+        boxShadow: '0 18px 52px rgba(15,23,42,.08)',
       }}
     >
       <Stack spacing={0.75} sx={{ height: '100%', minHeight: 0 }}>

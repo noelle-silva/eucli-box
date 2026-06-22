@@ -12,7 +12,6 @@ import type { AiChatToastOptions } from '../../gateway/capabilities'
 import { readToolConfirmationInfo } from '../../domain/toolConfirmation'
 import { AssistantReasoningPanel } from './AssistantReasoningPanel'
 import { ToolConfirmationCard } from './ToolConfirmationCard'
-import { decorateContentScrollbars } from '../scroll/customScrollbars'
 
 type AssistantMessageBlocksProps = {
   controller: any
@@ -124,18 +123,6 @@ function writeClipboard(controller: any, text: string) {
     .then(() => writeText(text))
     .then(() => showToast(controller, '已复制', { kind: 'success' }))
     .catch(() => showToast(controller, '复制失败', { kind: 'error' }))
-}
-
-function DecoratedAssistantHtml(props: { html: string }) {
-  const ref = React.useRef<HTMLDivElement | null>(null)
-
-  React.useLayoutEffect(() => {
-    if (!ref.current) return
-    const decorated = decorateContentScrollbars(ref.current)
-    return () => decorated.destroy()
-  }, [props.html])
-
-  return <Box ref={ref} className="prose" dangerouslySetInnerHTML={{ __html: props.html }} />
 }
 
 export function AssistantMessageBlocks(props: AssistantMessageBlocksProps) {
@@ -288,7 +275,7 @@ export function AssistantMessageBlocks(props: AssistantMessageBlocksProps) {
                 sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#fff' } }}
               />
             ) : (
-              <DecoratedAssistantHtml html={renderToolBlockHtml(block)} />
+              <Box className="prose" dangerouslySetInnerHTML={{ __html: renderToolBlockHtml(block) }} />
             )}
           </Paper>
         )

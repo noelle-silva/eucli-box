@@ -1,5 +1,6 @@
 import * as React from 'react'
-import { Box, Button, FormControl, FormControlLabel, InputLabel, MenuItem, Paper, Select, Stack, Switch, TextField, Typography } from '@mui/material'
+import { Box, Button, FormControl, FormControlLabel, InputLabel, MenuItem, Select, Stack, Switch, TextField, Typography } from '@mui/material'
+import { SettingsSection } from './SettingsSurfaces'
 
 export type ConfigField = {
   path: string[]
@@ -81,7 +82,7 @@ function ConfigFieldControl(props: { field: ConfigField; onSetValue: (path: stri
 
   if (field.type === 'boolean') {
     return (
-      <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2, bgcolor: hasValue ? 'background.paper' : 'grey.50' }}>
+      <SettingsSection tone={hasValue ? 'default' : 'muted'}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
           <Box sx={{ minWidth: 0, flex: 1 }}>
             <Typography sx={{ fontWeight: 900 }}>{field.label}{field.required ? ' *' : ''}</Typography>
@@ -92,7 +93,7 @@ function ConfigFieldControl(props: { field: ConfigField; onSetValue: (path: stri
             <Button size="small" onClick={removeValue} disabled={!hasValue}>恢复默认</Button>
           </Stack>
         </Stack>
-      </Paper>
+      </SettingsSection>
     )
   }
 
@@ -147,7 +148,7 @@ function ConfigObjectField(props: { field: ConfigField; hasValue: boolean; helpe
   const { field, hasValue, helper, onSetValue, onRemoveValue } = props
   const childFields = buildNestedConfigFields(field)
   return (
-    <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2, bgcolor: hasValue ? 'background.paper' : 'grey.50' }}>
+    <SettingsSection tone={hasValue ? 'default' : 'muted'}>
       <Stack spacing={1.25}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
           <Box sx={{ minWidth: 0, flex: 1 }}>
@@ -157,14 +158,14 @@ function ConfigObjectField(props: { field: ConfigField; hasValue: boolean; helpe
           <Button size="small" onClick={() => onRemoveValue(field.path)} disabled={!hasValue}>恢复默认</Button>
         </Stack>
         {childFields.length ? (
-          <Stack spacing={1.25} sx={{ pl: { xs: 0, sm: 1.5 }, borderLeft: { sm: '2px solid' }, borderColor: { sm: 'divider' } }}>
+          <Stack spacing={1.25} sx={{ pl: { xs: 0, sm: 1.5 }, bgcolor: { sm: 'rgba(248,250,252,.72)' }, borderRadius: 2, py: { sm: 1 } }}>
             {childFields.map((child) => <ConfigFieldControl key={child.path.join('.')} field={child} onSetValue={onSetValue} onRemoveValue={onRemoveValue} />)}
           </Stack>
         ) : (
           <Typography variant="body2" color="text.secondary">该对象当前没有可编辑子字段。</Typography>
         )}
       </Stack>
-    </Paper>
+    </SettingsSection>
   )
 }
 

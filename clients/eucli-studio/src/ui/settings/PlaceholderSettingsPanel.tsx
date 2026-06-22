@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControl, InputLabel, MenuItem, Paper, Select, Stack, TextField, Typography } from '@mui/material'
+import { Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, InputLabel, MenuItem, Select, Stack, TextField, Typography } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import RefreshIcon from '@mui/icons-material/Refresh'
@@ -14,6 +14,7 @@ import {
   type PlaceholderItem,
   type PlaceholderLibrary,
 } from '../../domain/placeholder'
+import { SettingsListItem, SettingsSection, SettingsSurface } from './SettingsSurfaces'
 
 type PlaceholderSettingsPanelProps = {
   controller: any
@@ -202,40 +203,39 @@ export function PlaceholderSettingsPanel(props: PlaceholderSettingsPanelProps) {
   }
 
   return (
-    <Paper variant="outlined" sx={{ p: 1.5 }}>
+    <SettingsSurface>
       <Stack spacing={1.5}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography sx={{ fontWeight: 900 }}>占位符管理</Typography>
             <Typography variant="caption" color="text.secondary">使用 {`{{名字}}`} 在提示词里引用；替换只发生在发送给 AI 前。</Typography>
           </Box>
-          <Button startIcon={<RefreshIcon />} variant="outlined" onClick={() => controller.actions.refreshPlaceholderLibrary?.(true)} disabled={busy || saving}>{placeholders?.loading ? '刷新中…' : '刷新'}</Button>
-          <Button variant="outlined" onClick={openPluginDialog} disabled={busy || saving}>从插件接口创建占位符</Button>
-          <Button startIcon={<AddIcon />} variant="outlined" onClick={createItem} disabled={busy || saving}>新建占位符</Button>
+          <Button startIcon={<RefreshIcon />} variant="text" onClick={() => controller.actions.refreshPlaceholderLibrary?.(true)} disabled={busy || saving}>{placeholders?.loading ? '刷新中…' : '刷新'}</Button>
+          <Button variant="text" onClick={openPluginDialog} disabled={busy || saving}>从插件接口创建占位符</Button>
+          <Button startIcon={<AddIcon />} variant="text" onClick={createItem} disabled={busy || saving}>新建占位符</Button>
           <Button startIcon={<SaveIcon />} variant="contained" onClick={saveDraft} disabled={!canSave}>{saving ? '保存中…' : '保存'}</Button>
         </Stack>
 
-        <Divider />
         {placeholders?.error ? <Typography variant="body2" color="error">{String(placeholders.error || '')}</Typography> : null}
         {saveError ? <Typography variant="body2" color="error">{saveError}</Typography> : null}
         {hasEmptyName ? <Typography variant="body2" color="error">占位符名字不能为空。</Typography> : null}
         {hasDuplicateName ? <Typography variant="body2" color="error">占位符名字必须全局唯一。</Typography> : null}
 
         <Stack direction={{ xs: 'column', lg: 'row' }} spacing={1.5} alignItems="flex-start">
-          <Paper variant="outlined" sx={{ p: 1, width: { xs: '100%', lg: 270 }, borderRadius: 2 }}>
+          <SettingsSection tone="muted" sx={{ p: 1, width: { xs: '100%', lg: 270 } }}>
             <Stack spacing={1}>
               <Stack direction="row" spacing={1} alignItems="center">
                 <Typography variant="body2" sx={{ fontWeight: 900, flex: 1 }}>收藏夹</Typography>
                 <Button size="small" startIcon={<AddIcon />} onClick={createFolder} disabled={busy || saving}>新建</Button>
               </Stack>
-              <Button size="small" variant={!selectedFolderId ? 'contained' : 'outlined'} onClick={() => setSelectedFolderId('')} sx={{ justifyContent: 'flex-start' }}>全部占位符</Button>
+              <Button size="small" variant={!selectedFolderId ? 'contained' : 'text'} onClick={() => setSelectedFolderId('')} sx={{ justifyContent: 'flex-start' }}>全部占位符</Button>
               {sortedFolders(draft.folders).map((folder) => (
-                <Button key={folder.id} size="small" variant={selectedFolderId === folder.id ? 'contained' : 'outlined'} onClick={() => setSelectedFolderId(folder.id)} sx={{ justifyContent: 'flex-start', pl: 1 + folderDepth(folder, draft.folders) * 2 }}>
+                <Button key={folder.id} size="small" variant={selectedFolderId === folder.id ? 'contained' : 'text'} onClick={() => setSelectedFolderId(folder.id)} sx={{ justifyContent: 'flex-start', pl: 1 + folderDepth(folder, draft.folders) * 2 }}>
                   <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{folder.name}</Box>
                 </Button>
               ))}
               {selectedFolder ? (
-                <Paper variant="outlined" sx={{ p: 1, borderRadius: 2, bgcolor: 'grey.50' }}>
+                <SettingsSection tone="default" sx={{ p: 1 }}>
                   <Stack spacing={1}>
                     <TextField size="small" label="收藏夹名称" value={selectedFolder.name} onChange={(e) => updateFolder(selectedFolder.id, { name: e.target.value })} disabled={busy || saving} />
                     <FormControl size="small">
@@ -247,21 +247,21 @@ export function PlaceholderSettingsPanel(props: PlaceholderSettingsPanelProps) {
                     </FormControl>
                     <Button color="error" size="small" startIcon={<DeleteOutlineIcon />} onClick={() => deleteFolder(selectedFolder.id)} disabled={busy || saving}>删除收藏夹</Button>
                   </Stack>
-                </Paper>
+                </SettingsSection>
               ) : null}
             </Stack>
-          </Paper>
+          </SettingsSection>
 
-          <Paper variant="outlined" sx={{ p: 1, width: { xs: '100%', lg: 300 }, borderRadius: 2 }}>
+          <SettingsSection tone="muted" sx={{ p: 1, width: { xs: '100%', lg: 300 } }}>
             <Stack spacing={1}>
               <Typography variant="body2" sx={{ fontWeight: 900 }}>占位符列表</Typography>
               {filteredPlaceholders.length ? filteredPlaceholders.map(({ item, index }) => {
                 const selected = index === selectedIndex
                 const label = text(item.name) || `未命名占位符 ${index + 1}`
-                return <Button key={`${item.name}:${index}`} variant={selected ? 'contained' : 'outlined'} color={selected ? 'primary' : 'inherit'} onClick={() => setSelectedIndex(index)} sx={{ justifyContent: 'flex-start', textTransform: 'none' }}>{label}</Button>
+                return <Button key={`${item.name}:${index}`} variant={selected ? 'contained' : 'text'} color={selected ? 'primary' : 'inherit'} onClick={() => setSelectedIndex(index)} sx={{ justifyContent: 'flex-start', textTransform: 'none' }}>{label}</Button>
               }) : <Typography variant="body2" color="text.secondary">暂无占位符。</Typography>}
             </Stack>
-          </Paper>
+          </SettingsSection>
 
           <Box sx={{ flex: 1, minWidth: 0, width: '100%' }}>
             {selectedPlaceholder ? (
@@ -278,34 +278,34 @@ export function PlaceholderSettingsPanel(props: PlaceholderSettingsPanelProps) {
                 <PlaceholderDependencyTreePanel tree={placeholders?.dependencyTree} />
               </Stack>
             ) : (
-              <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}><Typography variant="body2" color="text.secondary">选择一个占位符，或新建后开始编辑。</Typography></Paper>
+              <SettingsSection sx={{ p: 2 }}><Typography variant="body2" color="text.secondary">选择一个占位符，或新建后开始编辑。</Typography></SettingsSection>
             )}
           </Box>
         </Stack>
 
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems="stretch">
-          <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2, flex: 1 }}>
+          <SettingsSection sx={{ flex: 1 }}>
             <Stack spacing={1}>
               <Typography variant="body2" sx={{ fontWeight: 900 }}>解析预览</Typography>
               <TextField size="small" multiline minRows={4} label="输入包含占位符的文本" value={previewText} onChange={(e) => setPreviewText(e.target.value)} fullWidth />
-              <Paper variant="outlined" sx={{ p: 1, minHeight: 92, whiteSpace: 'pre-wrap', bgcolor: 'grey.50' }}>{String(placeholders?.preview?.text || '')}</Paper>
+              <SettingsSection tone="muted" sx={{ p: 1, minHeight: 92, whiteSpace: 'pre-wrap' }}>{String(placeholders?.preview?.text || '')}</SettingsSection>
             </Stack>
-          </Paper>
-          <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2, width: { xs: '100%', md: 320 } }}>
+          </SettingsSection>
+          <SettingsSection sx={{ width: { xs: '100%', md: 320 } }}>
             <Stack spacing={1}>
               <Typography variant="body2" sx={{ fontWeight: 900 }}>问题看板</Typography>
               {Array.isArray(placeholders?.problems) && placeholders.problems.length ? placeholders.problems.map((problem: any, index: number) => (
                 <Typography key={`${problem.name}:${problem.type}:${index}`} variant="body2" color="error">{String(problem.name || '')}：{placeholderProblemLabel(String(problem.type || ''))}</Typography>
               )) : <Typography variant="body2" color="text.secondary">当前未发现问题。</Typography>}
             </Stack>
-          </Paper>
+          </SettingsSection>
         </Stack>
         <Dialog open={pluginDialogOpen} onClose={() => setPluginDialogOpen(false)} fullWidth maxWidth="sm">
           <DialogTitle>从插件接口创建占位符</DialogTitle>
-          <DialogContent dividers>
+          <DialogContent sx={{ bgcolor: 'grey.50' }}>
             <Stack spacing={1}>
               {Array.isArray(systemPlugins?.availableInterfaces) && systemPlugins.availableInterfaces.length ? systemPlugins.availableInterfaces.map((item: any) => (
-                <Paper key={`${item.pluginId}:${item.interfaceId}`} variant="outlined" sx={{ p: 1, borderRadius: 2 }}>
+                <SettingsListItem key={`${item.pluginId}:${item.interfaceId}`} sx={{ p: 1 }}>
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
                     <Box sx={{ flex: 1, minWidth: 0 }}>
                       <Typography variant="body2" sx={{ fontWeight: 900 }}>{String(item.placeholderName || '')}</Typography>
@@ -313,7 +313,7 @@ export function PlaceholderSettingsPanel(props: PlaceholderSettingsPanelProps) {
                     </Box>
                     <Button size="small" variant="contained" onClick={() => createFromPlugin(String(item.pluginId || ''), String(item.interfaceId || ''))}>创建</Button>
                   </Stack>
-                </Paper>
+                </SettingsListItem>
               )) : <Typography variant="body2" color="text.secondary">当前没有可创建的插件接口。</Typography>}
             </Stack>
           </DialogContent>
@@ -322,7 +322,7 @@ export function PlaceholderSettingsPanel(props: PlaceholderSettingsPanelProps) {
           </DialogActions>
         </Dialog>
       </Stack>
-    </Paper>
+    </SettingsSurface>
   )
 }
 
@@ -337,7 +337,7 @@ function PlaceholderEditor(props: {
 }) {
   const { item, folders, disabled, onRename, onUpdate, onDelete, onToggleFolder } = props
   return (
-    <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2 }}>
+    <SettingsSection>
       <Stack spacing={1}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
           <TextField size="small" label="名字" value={item.name} onChange={(e) => onRename(e.target.value)} sx={{ flex: 1 }} disabled={disabled} />
@@ -347,7 +347,6 @@ function PlaceholderEditor(props: {
         <TextField size="small" multiline minRows={5} label="值" value={item.value} onChange={(e) => onUpdate({ value: e.target.value })} disabled={disabled || item.source?.kind === 'system_plugin'} fullWidth />
         {item.source?.kind === 'system_plugin' ? <Typography variant="caption" color="text.secondary">这个占位符的值由系统插件动态提供，保存的手写值不会参与解析。</Typography> : null}
         <Typography variant="caption" color="text.secondary">创建时间：{formatTime(item.createdAt)}</Typography>
-        <Divider />
         <Typography variant="body2" sx={{ fontWeight: 900 }}>所属收藏夹</Typography>
         {folders.length ? folders.map((folder) => {
           const checked = !!folder.placeholderNames?.includes(item.name)
@@ -359,18 +358,18 @@ function PlaceholderEditor(props: {
           )
         }) : <Typography variant="caption" color="text.secondary">暂无收藏夹。</Typography>}
       </Stack>
-    </Paper>
+    </SettingsSection>
   )
 }
 
 function PlaceholderDependencyTreePanel(props: { tree: PlaceholderDependencyNode }) {
   return (
-    <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2, bgcolor: 'grey.50' }}>
+    <SettingsSection tone="muted">
       <Stack spacing={1}>
         <Typography variant="body2" sx={{ fontWeight: 900 }}>依赖树</Typography>
         {props.tree?.name ? <DependencyNode node={props.tree} depth={0} /> : <Typography variant="body2" color="text.secondary">选择占位符后查看依赖。</Typography>}
       </Stack>
-    </Paper>
+    </SettingsSection>
   )
 }
 

@@ -1,11 +1,12 @@
 import * as React from 'react'
-import { Box, Button, Chip, Divider, InputAdornment, Paper, Stack, TextField, Typography } from '@mui/material'
+import { Box, Button, InputAdornment, Stack, TextField, Typography } from '@mui/material'
 import CableIcon from '@mui/icons-material/Cable'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import RestartAltIcon from '@mui/icons-material/RestartAlt'
 import SaveIcon from '@mui/icons-material/Save'
 import { MODEL_REQUEST_TIMEOUT_LIMITS } from '../../controller/modelRequestConfig'
 import { useEvent } from '../hooks/useEvent'
+import { SettingsPill, SettingsSection, SettingsSurface } from './SettingsSurfaces'
 
 type EbSettingsPanelProps = {
   controller: any
@@ -30,7 +31,7 @@ export function EbSettingsPanel(props: EbSettingsPanelProps) {
   const setDraft = useEvent((key: string, next: string) => controller.actions.setModelRequestConfigDraft?.(key, next))
 
   return (
-    <Paper variant="outlined" sx={{ p: 1.5 }}>
+    <SettingsSurface>
         <Stack spacing={1.5}>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
             <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
@@ -40,7 +41,7 @@ export function EbSettingsPanel(props: EbSettingsPanelProps) {
               <Box sx={{ minWidth: 0 }}>
                 <Stack direction="row" spacing={0.75} alignItems="center" sx={{ flexWrap: 'wrap' }}>
                   <Typography sx={{ fontWeight: 900 }}>e-b 模型请求</Typography>
-                  <Chip size="small" variant="outlined" label="持久化到 e-b" />
+                  <SettingsPill tone="info">持久化到 e-b</SettingsPill>
                 </Stack>
                 <Typography variant="body2" color="text.secondary">
                   配置模型列表、非流式生成、流式生成三类请求的超时规则。
@@ -49,10 +50,10 @@ export function EbSettingsPanel(props: EbSettingsPanelProps) {
             </Stack>
 
             <Stack direction="row" spacing={1} justifyContent="flex-end">
-              <Button startIcon={<RefreshIcon />} variant="outlined" onClick={refresh} disabled={busy}>
+              <Button startIcon={<RefreshIcon />} variant="text" onClick={refresh} disabled={busy}>
                 {box.loading ? '刷新中…' : '刷新'}
               </Button>
-              <Button startIcon={<RestartAltIcon />} variant="outlined" color="inherit" onClick={reset} disabled={busy}>
+              <Button startIcon={<RestartAltIcon />} variant="text" color="inherit" onClick={reset} disabled={busy}>
                 默认值
               </Button>
               <Button startIcon={<SaveIcon />} variant="contained" onClick={save} disabled={busy}>
@@ -60,9 +61,6 @@ export function EbSettingsPanel(props: EbSettingsPanelProps) {
               </Button>
             </Stack>
           </Stack>
-
-          <Divider />
-
           <Stack spacing={1.25}>
             <TimeoutField
               label="模型列表总超时"
@@ -104,13 +102,13 @@ export function EbSettingsPanel(props: EbSettingsPanelProps) {
           {box.error ? <Typography variant="body2" color="error">{String(box.error || '')}</Typography> : null}
           {box.saveError ? <Typography variant="body2" color="error">{String(box.saveError || '')}</Typography> : null}
 
-          <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2, bgcolor: 'grey.50' }}>
+          <SettingsSection tone="muted">
             <Typography variant="caption" color="text.secondary">
               这些配置由 e-b 后端保存并在模型请求发起时读取；客户端只负责提供入口，不再用自己的总等待时长截断模型运行。
             </Typography>
-          </Paper>
+          </SettingsSection>
         </Stack>
-    </Paper>
+    </SettingsSurface>
   )
 }
 
@@ -127,13 +125,13 @@ function TimeoutField(props: {
 }) {
   const savedText = secondsText(props.savedMs)
   return (
-    <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2 }}>
+    <SettingsSection>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25} alignItems={{ xs: 'stretch', sm: 'flex-start' }}>
         <Box sx={{ minWidth: 0, flex: 1 }}>
           <Stack direction="row" spacing={0.75} alignItems="center" sx={{ flexWrap: 'wrap' }}>
             <Typography sx={{ fontWeight: 900 }}>{props.label}</Typography>
-            <Chip size="small" variant="outlined" label={`默认 ${Math.round(props.defaultMs / 1000)} 秒`} />
-            {savedText ? <Chip size="small" color="info" variant="outlined" label={`已保存 ${savedText}`} /> : null}
+            <SettingsPill>默认 {Math.round(props.defaultMs / 1000)} 秒</SettingsPill>
+            {savedText ? <SettingsPill tone="info">已保存 {savedText}</SettingsPill> : null}
           </Stack>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
             {props.description}
@@ -154,7 +152,7 @@ function TimeoutField(props: {
           sx={{ width: { xs: '100%', sm: 180 } }}
         />
       </Stack>
-    </Paper>
+    </SettingsSection>
   )
 }
 

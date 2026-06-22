@@ -414,11 +414,7 @@ export const ChatMessageList = React.memo(function ChatMessageList(props: ChatMe
               }}
             >
               <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.75 }}>
-                {isUser ? (
-                  <Typography variant="body2" sx={{ fontWeight: 900 }}>
-                    你
-                  </Typography>
-                ) : (
+                {isUser ? null : (
                   <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
                     <Avatar src={roleAvatarImage || undefined} sx={{ width: 66, height: 66, fontSize: 28 }}>
                       {roleAvatarEmoji}

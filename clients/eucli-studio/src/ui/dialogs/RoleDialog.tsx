@@ -4,7 +4,6 @@ import {
   Button,
   Dialog,
   DialogActions,
-  DialogContent,
   DialogTitle,
   FormControl,
   IconButton,
@@ -20,6 +19,7 @@ import CloseIcon from '@mui/icons-material/Close'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import SettingsIcon from '@mui/icons-material/Settings'
 import { RoleAvatarCropper } from '../components/avatar/RoleAvatarCropper'
+import { ScrollableDialogContent } from '../components/ScrollableDialogContent'
 import { RoleNativeToolsSection } from './RoleNativeToolsSection'
 import { RoleToolWhitelistSection } from './RoleToolWhitelistSection'
 
@@ -59,8 +59,7 @@ export function RoleDialog(props: { open: boolean; controller: any; providers: a
           <CloseIcon fontSize="small" />
         </IconButton>
       </DialogTitle>
-      <DialogContent dividers>
-        <Stack spacing={2}>
+      <ScrollableDialogContent>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
             <TextField label="角色名" value={String(draft?.roleName || '')} onChange={(e) => controller.actions.setDraft('roleName', e.target.value)} fullWidth />
             <TextField label="头像（表情，可选）" value={String(draft?.roleAvatar || '')} onChange={(e) => controller.actions.setDraft('roleAvatar', e.target.value)} sx={{ width: { xs: '100%', sm: 200 } }} />
@@ -185,8 +184,7 @@ export function RoleDialog(props: { open: boolean; controller: any; providers: a
           ) : null}
 
           <RoleToolWhitelistSection controller={controller} draft={draft} tools={tools} />
-        </Stack>
-      </DialogContent>
+      </ScrollableDialogContent>
       <DialogActions sx={{ justifyContent: 'space-between' }}>
         {isNew ? (
           <Box />

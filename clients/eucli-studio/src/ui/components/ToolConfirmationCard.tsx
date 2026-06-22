@@ -5,6 +5,7 @@ import BlockOutlinedIcon from '@mui/icons-material/BlockOutlined'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import type { ToolConfirmationInfo } from '../../domain/toolConfirmation'
+import { CustomScrollArea } from './CustomScrollArea'
 
 type ToolConfirmationCardProps = {
   info: ToolConfirmationInfo
@@ -106,18 +107,22 @@ export function ToolConfirmationCard(props: ToolConfirmationCardProps) {
                 <Typography variant="caption" sx={{ fontWeight: 900, color: '#92400e' }}>
                   原始请求
                 </Typography>
-                <Box component="pre" sx={{ m: 0, mt: 0.35, p: 1, borderRadius: 2, bgcolor: 'rgba(255,255,255,.78)', overflowX: 'auto', fontSize: 12 }}>
-                  {info.rawText}
-                </Box>
+                <CustomScrollArea hostSx={{ mt: 0.35, borderRadius: 2, bgcolor: 'rgba(255,255,255,.78)' }}>
+                  <Box component="pre" sx={{ m: 0, p: 1, fontSize: 12 }}>
+                    {info.rawText}
+                  </Box>
+                </CustomScrollArea>
               </Box>
             ) : null}
             <Box>
               <Typography variant="caption" sx={{ fontWeight: 900, color: '#92400e' }}>
                 输入参数
               </Typography>
-              <Box component="pre" sx={{ m: 0, mt: 0.35, p: 1, borderRadius: 2, bgcolor: 'rgba(255,255,255,.78)', overflowX: 'auto', fontSize: 12 }}>
-                {info.inputText}
-              </Box>
+              <CustomScrollArea hostSx={{ mt: 0.35, borderRadius: 2, bgcolor: 'rgba(255,255,255,.78)' }}>
+                <Box component="pre" sx={{ m: 0, p: 1, fontSize: 12 }}>
+                  {info.inputText}
+                </Box>
+              </CustomScrollArea>
             </Box>
           </Stack>
         </Collapse>

@@ -105,6 +105,7 @@ import { createMessageMutationGuard, type MessageMutationOperation } from '../do
 import { formatTokenEstimate, formatTokenEstimateShort, sumMessageTokenEstimate } from '../domain/messageTokenUsage'
 import { ChatSessionRunIndicator, type ChatSessionRunIndicatorKind } from './components/ChatSessionRunIndicator'
 import { ChatMessageList } from './components/ChatMessageList'
+import { CustomScrollArea } from './components/CustomScrollArea'
 import { StickerInlineImage } from './components/MessageMedia'
 import { workspaceRoleTargetId } from '../domain/workspaceRoleTarget'
 import type { AiChatToastOptions } from '../gateway/capabilities'
@@ -843,7 +844,8 @@ function ComposerInputControls(props: {
           },
         }}
       >
-        <Box sx={{ p: 0.75, maxHeight: 340, overflowY: 'auto', bgcolor: 'rgba(250,245,255,.96)' }}>
+        <CustomScrollArea hostSx={{ maxHeight: 340, bgcolor: 'rgba(250,245,255,.96)' }} scrollSx={{ maxHeight: 340 }}>
+          <Box sx={{ p: 0.75 }}>
           <Stack direction="row" spacing={1} alignItems="center" sx={{ px: 1, pb: 0.75 }}>
             <Chip size="small" color="secondary" label="/" />
             <Box sx={{ minWidth: 0 }}>
@@ -898,7 +900,8 @@ function ComposerInputControls(props: {
               没有匹配的命令
             </Typography>
           )}
-        </Box>
+          </Box>
+        </CustomScrollArea>
       </Popover>
 
       <Popover
@@ -911,7 +914,8 @@ function ComposerInputControls(props: {
         disableEnforceFocus
         PaperProps={{ sx: { width: 280, maxHeight: 320, overflow: 'hidden' } }}
       >
-        <Box sx={{ p: 0.5, maxHeight: 320, overflowY: 'auto' }}>
+        <CustomScrollArea hostSx={{ maxHeight: 320 }} scrollSx={{ maxHeight: 320 }}>
+          <Box sx={{ p: 0.5 }}>
           <Typography variant="caption" color="text.secondary" sx={{ px: 1, display: 'block', pb: 0.5 }}>
             点名回答：选择要被 @ 的角色
           </Typography>
@@ -948,7 +952,8 @@ function ComposerInputControls(props: {
               没找到匹配的角色
             </Typography>
           )}
-        </Box>
+          </Box>
+        </CustomScrollArea>
       </Popover>
 
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap', px: 0.25 }}>
@@ -3681,11 +3686,14 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
           },
           '.prose pre': {
             overflow: 'auto',
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
             padding: 12,
             borderRadius: 12,
             background: '#0b1220',
             color: '#e5e7eb',
             border: '1px solid rgba(255,255,255,.06)',
+            '&::-webkit-scrollbar': { display: 'none', width: 0, height: 0 },
           },
           '.prose pre.fw-code-block': {
             position: 'relative',
@@ -3730,17 +3738,36 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
           '.prose img': { maxWidth: '100%', height: 'auto' },
           '.prose img.fw-sticker': { maxWidth: 160, maxHeight: 160, width: 'auto', height: 'auto', display: 'inline-block', verticalAlign: 'middle', borderRadius: 12 },
           '.prose .fw-sticker-miss': { color: 'rgba(0,0,0,.55)' },
+          '.eucli-inline-scroll-host, [data-eucli-inline-scroll-host="1"]': {
+            display: 'block',
+            maxWidth: '100%',
+            overflow: 'auto',
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
+            borderRadius: 12,
+            '&::-webkit-scrollbar': { display: 'none', width: 0, height: 0 },
+          },
+          '[data-eucli-inline-scroll-host="1"] > table': {
+            width: 'max-content',
+            minWidth: '100%',
+            maxWidth: 'none',
+            display: 'table',
+          },
+          '[data-eucli-scroll-decorated="1"]': {
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
+            '&::-webkit-scrollbar': { display: 'none', width: 0, height: 0 },
+            [`&:hover [data-eucli-scroll-thumb="1"]`]: { opacity: '0.82 !important' },
+          },
+          '[data-eucli-scroll-thumb="1"]:hover': { background: 'rgba(51,65,85,.66) !important' },
           '.prose table': {
             borderCollapse: 'collapse',
             width: '100%',
             maxWidth: '100%',
-            overflowX: 'auto',
-            overflowY: 'hidden',
             borderRadius: 12,
-            display: 'block',
           },
           '.prose th, .prose td': { border: '1px solid rgba(0,0,0,.12)', padding: 8, verticalAlign: 'top' },
-          '.math-block': { margin: '10px 0', overflowX: 'auto' },
+          '.math-block': { margin: '10px 0', overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none', '&::-webkit-scrollbar': { display: 'none', width: 0, height: 0 } },
           // KaTeX 的上标/帽子等会超出行盒；inline 公式不要做滚动容器，否则很容易出现裁切或滚动条。
           '.prose .katex, .prose .katex-display': { maxWidth: '100%' },
           '.prose span.katex': { display: 'inline-block', overflow: 'visible', verticalAlign: 'middle' },
@@ -3789,7 +3816,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
             visibility: 'visible',
             pointerEvents: 'auto',
           },
-           '.mermaid-block': { margin: '10px 0', overflowX: 'auto', textAlign: 'center' },
+            '.mermaid-block': { margin: '10px 0', overflowX: 'auto', textAlign: 'center', scrollbarWidth: 'none', msOverflowStyle: 'none', '&::-webkit-scrollbar': { display: 'none', width: 0, height: 0 } },
             '.mermaid-block[data-mermaid="1"]': { cursor: 'zoom-in' },
              '.mermaid-block svg': { maxWidth: '100%', height: 'auto', display: 'block', margin: '0 auto' },
             '.mermaid-block-ready': {
@@ -3838,7 +3865,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
               '&:disabled': { opacity: 0.78, cursor: 'default' },
               '&:focus-visible': { outline: '2px solid rgba(25,118,210,.35)', outlineOffset: 2 },
             },
-           '.mermaid-error': { margin: '10px 0', overflowX: 'auto' },
+           '.mermaid-error': { margin: '10px 0', overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none', '&::-webkit-scrollbar': { display: 'none', width: 0, height: 0 } },
            '.mermaid-error-box': {
              position: 'relative',
              background: '#fff',
@@ -4008,12 +4035,15 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
               color: 'rgba(15,23,42,.92)',
               whiteSpace: 'pre-wrap',
               overflowWrap: 'anywhere',
-              maxHeight: 260,
-              overflow: 'auto',
-              fontSize: 12,
-              lineHeight: 1.55,
-              fontFamily: 'ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace',
-            },
+               maxHeight: 260,
+               overflow: 'auto',
+               scrollbarWidth: 'none',
+               msOverflowStyle: 'none',
+               fontSize: 12,
+               lineHeight: 1.55,
+               fontFamily: 'ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace',
+               '&::-webkit-scrollbar': { display: 'none', width: 0, height: 0 },
+             },
             '.prose .fw-tool-pre-raw': {
               background: 'rgba(88,28,135,.08)',
               border: '1px solid rgba(126,34,206,.18)',
@@ -4223,21 +4253,23 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                 bgcolor: transparentChatBg ? 'transparent' : 'background.default',
               }}
             >
-             <Box
+             <CustomScrollArea
                 ref={chatRootRef}
                 onClick={onClickOpenImageViewer}
-                sx={{
+                hostSx={{
                   flex: 1,
                   minHeight: 0,
-                  overflowY: 'auto',
-                 overflowX: 'hidden',
-                 pl: 2,
-                 pr: treeOpen && effectiveTreeView === 'right' ? `calc(16px + ${Math.round(treePanelW)}px)` : 2,
-                 pt: `calc(${TOPBAR_H}px + 16px)`,
-                 bgcolor: transparentChatBg ? 'transparent' : 'grey.50',
-                 paddingBottom: `calc(${Math.max(0, composerHeight)}px + 24px)`,
+                }}
+                scrollSx={{
+                  height: '100%',
+                  overflowX: 'hidden',
+                  pl: 2,
+                  pr: treeOpen && effectiveTreeView === 'right' ? `calc(16px + ${Math.round(treePanelW)}px)` : 2,
+                  pt: `calc(${TOPBAR_H}px + 16px)`,
+                  bgcolor: transparentChatBg ? 'transparent' : 'grey.50',
+                  paddingBottom: `calc(${Math.max(0, composerHeight)}px + 24px)`,
                }}
-             >
+              >
                 {s.loading ? (
                   <Typography variant="body2" color="text.secondary">
                     加载中…
@@ -4321,7 +4353,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                   onDeleteMessage={openDeleteMessageConfirm}
                 />
               )}
-             </Box>
+             </CustomScrollArea>
 
              <Popover
                open={!!attachView.el && !!attachViewItem}
@@ -5656,17 +5688,21 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                     )}
                   </Box>
 
-                  <Paper variant="outlined" sx={{ p: 1, bgcolor: 'grey.50', maxHeight: 200, overflow: 'auto' }}>
-                    <Typography variant="caption" sx={{ whiteSpace: 'pre-wrap', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}>
-                      {(() => {
-                        const sendLen = clampNum(fileAdjustSendLen, 0, fileAdjustFullLen)
-                        const snippet = fileAdjustRaw.slice(0, sendLen)
-                        if (snippet.length <= 4000) return snippet
-                        const head = snippet.slice(0, 1500).trimEnd()
-                        const tail = snippet.slice(Math.max(0, snippet.length - 1500)).trimStart()
-                        return `${head}\n\n…（中间省略 ${Math.max(0, snippet.length - head.length - tail.length)} 字符）…\n\n${tail}`
-                      })()}
-                    </Typography>
+                  <Paper variant="outlined" sx={{ bgcolor: 'grey.50' }}>
+                    <CustomScrollArea hostSx={{ maxHeight: 200 }} scrollSx={{ maxHeight: 200 }}>
+                      <Box sx={{ p: 1 }}>
+                        <Typography variant="caption" sx={{ whiteSpace: 'pre-wrap', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}>
+                          {(() => {
+                            const sendLen = clampNum(fileAdjustSendLen, 0, fileAdjustFullLen)
+                            const snippet = fileAdjustRaw.slice(0, sendLen)
+                            if (snippet.length <= 4000) return snippet
+                            const head = snippet.slice(0, 1500).trimEnd()
+                            const tail = snippet.slice(Math.max(0, snippet.length - 1500)).trimStart()
+                            return `${head}\n\n…（中间省略 ${Math.max(0, snippet.length - head.length - tail.length)} 字符）…\n\n${tail}`
+                          })()}
+                        </Typography>
+                      </Box>
+                    </CustomScrollArea>
                   </Paper>
                   <Typography variant="caption" color="text.secondary">
                     预览显示“将发送内容”的开头与截断点附近片段（超过 4000 字符会省略中间）。
@@ -5684,7 +5720,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
           anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
           transformOrigin={{ vertical: 'top', horizontal: 'left' }}
         >
-          <Box sx={{ width: 380, maxHeight: '70vh', overflowY: 'auto' }}>
+          <CustomScrollArea hostSx={{ width: 380, maxHeight: '70vh' }} scrollSx={{ maxHeight: '70vh' }}>
             {rolePickerMode === 'global' ? (
               <Box sx={{ px: 1.5, pt: 1.25, pb: 0.5 }}>
                 <Tabs
@@ -5888,7 +5924,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                 </Button>
               </Box>
             )}
-          </Box>
+          </CustomScrollArea>
         </Popover>
 
         <Popover
@@ -5907,7 +5943,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                 transition: 'transform 220ms ease',
               }}
             >
-              <Box sx={{ width: 420, maxHeight: '70vh', overflowY: 'auto', flex: '0 0 420px' }}>
+              <CustomScrollArea hostSx={{ width: 420, maxHeight: '70vh', flex: '0 0 420px' }} scrollSx={{ maxHeight: '70vh' }}>
                 <Box sx={{ p: 1.5, pb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
                   <Tooltip title={chatPickerSearchOpen ? '关闭搜索' : '搜索'}>
                     <IconButton
@@ -6256,9 +6292,9 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                     </List>
                   )
                 })()}
-              </Box>
+              </CustomScrollArea>
 
-              <Box sx={{ width: 420, maxHeight: '70vh', overflowY: 'auto', flex: '0 0 420px' }}>
+              <CustomScrollArea hostSx={{ width: 420, maxHeight: '70vh', flex: '0 0 420px' }} scrollSx={{ maxHeight: '70vh' }}>
                 <Box sx={{ p: 1.5, pb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
                   <Tooltip title="返回历史记录">
                     <IconButton size="small" onClick={() => setChatPickerView('history')}>
@@ -6326,7 +6362,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                 ) : (
                   <List dense sx={{ py: 0 }}>{renderFavoriteFolderTree('', 0)}</List>
                 )}
-              </Box>
+              </CustomScrollArea>
             </Box>
           </Box>
         </Popover>

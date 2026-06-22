@@ -1,5 +1,6 @@
 import * as React from 'react'
 import { Box, Button, Paper, Stack, Typography } from '@mui/material'
+import { CustomScrollArea } from '../components/CustomScrollArea'
 
 export type SettingsTabValue = 'appearance' | 'attachments' | 'data' | 'groups' | 'roles' | 'workspaces' | 'providers' | 'modelGroups' | 'services' | 'tools' | 'stickers' | 'hookPrompts' | 'placeholders' | 'systemPlugins' | 'eb'
 
@@ -50,7 +51,7 @@ function SettingsNavigationSidebar(props: { value: SettingsTabValue; onChange: (
         <Typography variant="body2" sx={{ px: 0.75, fontWeight: 900, whiteSpace: 'nowrap' }}>
           设置分区
         </Typography>
-        <Box sx={{ minHeight: 0, overflowY: 'auto', scrollbarGutter: 'stable' }}>
+        <CustomScrollArea hostSx={{ minHeight: 0, flex: 1 }} scrollSx={{ height: '100%' }}>
           <Stack spacing={0.5}>
             {SETTINGS_NAVIGATION_ITEMS.map((item) => (
               <Button
@@ -64,7 +65,7 @@ function SettingsNavigationSidebar(props: { value: SettingsTabValue; onChange: (
               </Button>
             ))}
           </Stack>
-        </Box>
+        </CustomScrollArea>
       </Stack>
     </Paper>
   )
@@ -83,7 +84,7 @@ export function SettingsPageLayout(props: { topbarHeight: number; value: Setting
         }}
       >
         <SettingsNavigationSidebar value={props.value} onChange={props.onChange} />
-        <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: 'auto', scrollbarGutter: 'stable' }}>{props.children}</Box>
+        <CustomScrollArea hostSx={{ flex: 1, minWidth: 0, minHeight: 0 }} scrollSx={{ height: '100%' }}>{props.children}</CustomScrollArea>
       </Box>
     </Box>
   )

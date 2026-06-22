@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { Alert, Box, Chip, Stack, Typography } from '@mui/material'
 import { normalizeErrorPayload, normalizeErrorPayloads, type ErrorPayload } from '../../domain/errorPayload'
+import { CustomScrollArea } from './CustomScrollArea'
 
 function stringifyDetails(value: unknown) {
   if (value === undefined || value === null) return ''
@@ -57,23 +58,20 @@ function ErrorNode(props: { error: ErrorPayload; depth?: number }) {
               <Box component="summary" sx={{ cursor: 'pointer', fontSize: 12, fontWeight: 800 }}>
                 原始错误详情
               </Box>
-              <Box
-                component="pre"
-                sx={{
-                  mt: 0.75,
-                  mb: 0,
-                  maxHeight: 260,
-                  overflow: 'auto',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                  fontSize: 12,
-                  p: 1,
-                  borderRadius: 1.5,
-                  bgcolor: 'rgba(0,0,0,.04)',
-                }}
-              >
-                {details}
-              </Box>
+              <CustomScrollArea hostSx={{ mt: 0.75, maxHeight: 260, borderRadius: 1.5, bgcolor: 'rgba(0,0,0,.04)' }} scrollSx={{ maxHeight: 260 }}>
+                <Box
+                  component="pre"
+                  sx={{
+                    m: 0,
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    fontSize: 12,
+                    p: 1,
+                  }}
+                >
+                  {details}
+                </Box>
+              </CustomScrollArea>
             </Box>
           ) : null}
         </Stack>

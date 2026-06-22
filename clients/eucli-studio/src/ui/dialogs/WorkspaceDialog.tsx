@@ -5,7 +5,6 @@ import {
   Button,
   Dialog,
   DialogActions,
-  DialogContent,
   DialogTitle,
   Divider,
   IconButton,
@@ -19,6 +18,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import SettingsIcon from '@mui/icons-material/Settings'
 import { NEW_WORKSPACE_ID } from '../../domain/constants'
+import { ScrollableDialogContent } from '../components/ScrollableDialogContent'
 
 export function WorkspaceDialog(props: { open: boolean; controller: any; draft: any }) {
   const { open, controller, draft } = props
@@ -40,8 +40,7 @@ export function WorkspaceDialog(props: { open: boolean; controller: any; draft: 
           <CloseIcon fontSize="small" />
         </IconButton>
       </DialogTitle>
-      <DialogContent dividers>
-        <Stack spacing={2}>
+      <ScrollableDialogContent>
           <TextField
             label="工作区名称"
             value={String((draft as any)?.workspaceName || '')}
@@ -148,8 +147,7 @@ export function WorkspaceDialog(props: { open: boolean; controller: any; draft: 
               </Box>
             ))}
           </Stack>
-        </Stack>
-      </DialogContent>
+      </ScrollableDialogContent>
       <DialogActions>
         <Button onClick={() => controller.actions.closeModal?.()}>取消</Button>
         <Button variant="contained" onClick={() => controller.actions.saveWorkspace?.()}>

@@ -95,6 +95,32 @@ func TestCachedHeartbeatPluginRefreshesAfterConfigSave(t *testing.T) {
 	}
 }
 
+func TestSavePluginUserConfigRejectsValuesOutsideDeclaredOptions(t *testing.T) {
+	root := t.TempDir()
+	pluginDir := writeTestPlugin(t, root, "select-plugin", `{"status":"success","values":{"value":"ok"}}`)
+	manifest := testPluginManifest("select-plugin", "选择插件", types.SystemPluginLifecycleOnDemand)
+	manifest["configSchema"] = map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"mode": map[string]any{
+				"type": "string",
+				"enum": []string{"safe", "fast"},
+			},
+		},
+	}
+	writeTestManifest(t, pluginDir, manifest)
+	system, err := NewSystem(Config{SourceDir: root, DataDir: filepath.Join(root, "data"), Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("NewSystem() error = %v", err)
+	}
+	if _, err := system.SavePluginUserConfig(context.Background(), "select-plugin", types.SystemPluginUserConfig{UserConfig: map[string]any{"mode": "safe"}}); err != nil {
+		t.Fatalf("SavePluginUserConfig() valid option error = %v", err)
+	}
+	if _, err := system.SavePluginUserConfig(context.Background(), "select-plugin", types.SystemPluginUserConfig{UserConfig: map[string]any{"mode": "unsafe"}}); err == nil {
+		t.Fatalf("SavePluginUserConfig() invalid option error = nil")
+	}
+}
+
 func TestResolvePlaceholderValuesRunsPluginRequestsInParallel(t *testing.T) {
 	root := t.TempDir()
 	markerFile := filepath.Join(root, "marker.txt")

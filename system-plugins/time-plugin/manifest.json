@@ -31,7 +31,7 @@
         "type": "string",
         "title": "时区",
         "description": "选择当前时间使用的时区。",
-        "enum": ["Local", "Asia/Shanghai", "UTC", "Asia/Tokyo", "Europe/London", "America/New_York"],
+        "enum": ["Asia/Shanghai", "Local", "UTC", "Asia/Tokyo", "Europe/London", "America/New_York"],
         "enumLabels": {
           "Local": "本机时区",
           "Asia/Shanghai": "中国标准时间",

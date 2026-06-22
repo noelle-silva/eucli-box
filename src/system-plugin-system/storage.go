@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -101,7 +102,90 @@ func validateUserConfig(manifest types.SystemPluginManifest, config types.System
 			return pluginInvalid("system plugin placeholder name override references unknown interface", nil)
 		}
 	}
+	if err := validateConfigValues(manifest.ConfigSchema, config.UserConfig); err != nil {
+		return err
+	}
 	return nil
+}
+
+func validateConfigValues(schema map[string]any, values map[string]any) error {
+	return validateConfigObject("", schema, values)
+}
+
+func validateConfigObject(path string, schema map[string]any, values map[string]any) error {
+	properties := objectMap(schema["properties"])
+	if len(properties) == 0 || len(values) == 0 {
+		return nil
+	}
+	for key, value := range values {
+		fieldSchema := objectMap(properties[key])
+		if len(fieldSchema) == 0 {
+			continue
+		}
+		fieldPath := joinConfigPath(path, key)
+		if err := validateConfigValue(fieldPath, fieldSchema, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateConfigValue(path string, schema map[string]any, value any) error {
+	allowedValues := stringSet(schema["enum"])
+	if len(allowedValues) == 0 {
+		if childValues := objectMap(value); len(childValues) > 0 {
+			return validateConfigObject(path, schema, childValues)
+		}
+		return nil
+	}
+	text := strings.TrimSpace(fmt.Sprint(value))
+	if _, ok := allowedValues[text]; !ok {
+		return pluginInvalid("system plugin config value is outside declared options: "+path, nil)
+	}
+	return nil
+}
+
+func joinConfigPath(parent string, key string) string {
+	key = strings.TrimSpace(key)
+	if parent == "" {
+		return key
+	}
+	if key == "" {
+		return parent
+	}
+	return parent + "." + key
+}
+
+func objectMap(value any) map[string]any {
+	if out, ok := value.(map[string]any); ok {
+		return out
+	}
+	return nil
+}
+
+func stringSet(value any) map[string]struct{} {
+	out := map[string]struct{}{}
+	switch items := value.(type) {
+	case []any:
+		for _, item := range items {
+			addStringSetItem(out, item)
+		}
+	case []string:
+		for _, item := range items {
+			addStringSetItem(out, item)
+		}
+	default:
+		return nil
+	}
+	return out
+}
+
+func addStringSetItem(out map[string]struct{}, item any) {
+	text := strings.TrimSpace(fmt.Sprint(item))
+	if text == "" {
+		return
+	}
+	out[text] = struct{}{}
 }
 
 func writeJSONFile(ctx context.Context, target string, value any) error {

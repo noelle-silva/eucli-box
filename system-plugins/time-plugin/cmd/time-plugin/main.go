@@ -12,6 +12,7 @@ const (
 	actionResolvePlaceholders = "resolve_placeholders"
 	currentTimeInterfaceID    = "current-time"
 	defaultFormat             = "2006-01-02 15:04:05"
+	defaultTimezone           = "Asia/Shanghai"
 	localTimezone             = "Local"
 )
 
@@ -73,7 +74,7 @@ func main() {
 }
 
 func loadConfig(defaultConfig map[string]any, userConfig map[string]any) (pluginConfig, error) {
-	config := pluginConfig{Format: defaultFormat, Timezone: localTimezone}
+	config := pluginConfig{Format: defaultFormat, Timezone: defaultTimezone}
 	applyConfigMap(&config, defaultConfig)
 	applyConfigMap(&config, userConfig)
 	config.Format = strings.TrimSpace(config.Format)
@@ -85,7 +86,7 @@ func loadConfig(defaultConfig map[string]any, userConfig map[string]any) (plugin
 		return pluginConfig{}, fmt.Errorf("时间格式不在可选范围内")
 	}
 	if config.Timezone == "" {
-		config.Timezone = localTimezone
+		config.Timezone = defaultTimezone
 	}
 	if _, ok := allowedTimezones[config.Timezone]; !ok {
 		return pluginConfig{}, fmt.Errorf("时区不在可选范围内")

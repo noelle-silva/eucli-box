@@ -70,6 +70,7 @@ import { ProviderConfigEditor } from './components/ProviderConfigEditor'
 import { useAiChatState } from './hooks/useAiChatState'
 import { useDeferredChatSwitch } from './hooks/useDeferredChatSwitch'
 import { useEvent } from './hooks/useEvent'
+import { useLazyListWindow } from './hooks/useLazyListWindow'
 import { findAtMentionTrigger } from './utils/mention'
 import { ProvidersDialog } from './dialogs/ProvidersDialog'
 import { RoleDialog } from './dialogs/RoleDialog'
@@ -170,6 +171,18 @@ const SOFT_POPOVER_HEADER_SX = {
 const SOFT_POPOVER_LIST_SX = {
   px: 0.75,
   py: 0.75,
+}
+
+const CHAT_HISTORY_PAGE_SIZE = 20
+const CHAT_HISTORY_BOTTOM_THRESHOLD_RATIO = 0.25
+
+function chatHistoryMatchesSearch(chat: any, fallbackTitle: string, queryText: string) {
+  const q = String(queryText || '').trim().toLowerCase()
+  if (!q) return true
+  if (!chat) return false
+  const title = String(chat?.title || fallbackTitle || '')
+  const raw = String(chat?.lastMessagePreview || '')
+  return (title + '\n' + raw).toLowerCase().includes(q)
 }
 
 const SOFT_POPOVER_ITEM_SX = {
@@ -1846,6 +1859,31 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
   const [chatPickerSearchOpen, setChatPickerSearchOpen] = React.useState(false)
   const [chatPickerSearchText, setChatPickerSearchText] = React.useState('')
   const chatPickerSearchInputRef = React.useRef<HTMLInputElement | null>(null)
+  const chatHistoryTotal = React.useMemo(() => {
+    if (activeTargetKind === 'group') {
+      if (!activeGroup) return 0
+      const box = (data as any)?.chatsByGroup?.[String((activeGroup as any).id || '')]
+      const chats = sortChatListItemsForDisplay(Array.isArray(box?.chatMetas) && box.chatMetas.length ? box.chatMetas : Array.isArray(box?.chats) ? box.chats : [])
+      return chats.filter((chat: any) => chatHistoryMatchesSearch(chat, '群聊', chatPickerSearchText)).length
+    }
+    if (activeTargetKind === 'workspace') {
+      if (!activeWorkspace) return 0
+      const box = (data as any)?.chatsByWorkspace?.[String(activeChatTargetId || '')]
+      const chats = sortChatListItemsForDisplay(Array.isArray(box?.chatMetas) && box.chatMetas.length ? box.chatMetas : Array.isArray(box?.chats) ? box.chats : [])
+      return chats.filter((chat: any) => chatHistoryMatchesSearch(chat, '工作区会话', chatPickerSearchText)).length
+    }
+    const role = activeRole
+    if (!role) return 0
+    const box = data?.chatsByRole?.[String(role.id)]
+    const chats = sortChatListItemsForDisplay(Array.isArray(box?.chatMetas) && box.chatMetas.length ? box.chatMetas : Array.isArray(box?.chats) ? box.chats : [])
+    return chats.filter((chat: any) => chatHistoryMatchesSearch(chat, '新聊天', chatPickerSearchText)).length
+  }, [activeTargetKind, activeGroup, activeWorkspace, activeChatTargetId, activeRole, data, chatPickerSearchText])
+  const { scrollRef: chatHistoryScrollRef, onScrollPositionChange: onChatHistoryScrollPositionChange, visibleCount: chatHistoryVisibleCount } = useLazyListWindow({
+    resetKey: [chatPickerEl ? 'open' : 'closed', chatPickerView, activeTargetKind, activeChatTargetId, chatPickerSearchText].join(':'),
+    total: chatHistoryTotal,
+    pageSize: CHAT_HISTORY_PAGE_SIZE,
+    bottomThresholdRatio: CHAT_HISTORY_BOTTOM_THRESHOLD_RATIO,
+  })
   const [favoriteSearchOpen, setFavoriteSearchOpen] = React.useState(false)
   const [favoriteSearchText, setFavoriteSearchText] = React.useState('')
   const favoriteSearchInputRef = React.useRef<HTMLInputElement | null>(null)
@@ -6146,7 +6184,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                 transition: 'transform 220ms ease',
               }}
             >
-              <CustomScrollArea hostSx={{ width: 420, maxHeight: '70vh', flex: '0 0 420px' }} scrollSx={{ maxHeight: '70vh' }}>
+              <CustomScrollArea ref={chatHistoryScrollRef} onScrollPositionChange={onChatHistoryScrollPositionChange} hostSx={{ width: 420, maxHeight: '70vh', flex: '0 0 420px' }} scrollSx={{ maxHeight: '70vh' }}>
                 <Box sx={SOFT_POPOVER_HEADER_SX}>
                   <Tooltip title={chatPickerSearchOpen ? '关闭搜索' : '搜索'}>
                     <IconButton
@@ -6193,14 +6231,6 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                   </Box>
                 </Collapse>
                 {(() => {
-                  const q = String(chatPickerSearchText || '').trim().toLowerCase()
-                  const match = (chat: any, fallbackTitle: string) => {
-                    if (!q) return true
-                    if (!chat) return false
-                    const title = String(chat?.title || fallbackTitle || '')
-                    const raw = String(chat?.lastMessagePreview || '')
-                    return (title + '\n' + raw).toLowerCase().includes(q)
-                  }
                   if (activeTargetKind === 'group') {
                     if (!activeGroup) {
                       return (
@@ -6219,8 +6249,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                         ? (s as any).pendingGroupChat.chat
                         : null
                     const hasPending = !!pendingChat
-                    const showPending = hasPending && match(pendingChat, '群聊')
-                    const shownChats = chats.filter((c: any) => match(c, '群聊'))
+                    const showPending = hasPending && chatHistoryMatchesSearch(pendingChat, '群聊', chatPickerSearchText)
+                    const shownChats = chats.filter((c: any) => chatHistoryMatchesSearch(c, '群聊', chatPickerSearchText)).slice(0, chatHistoryVisibleCount)
                     if (!showPending && !shownChats.length) {
                       return (
                         <Box sx={{ p: 2 }}>
@@ -6318,8 +6348,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                         ? (s as any).pendingWorkspaceChat.chat
                         : null
                     const hasPending = !!pendingChat
-                    const showPending = hasPending && match(pendingChat, '工作区会话')
-                    const shownChats = chats.filter((c: any) => match(c, '工作区会话'))
+                    const showPending = hasPending && chatHistoryMatchesSearch(pendingChat, '工作区会话', chatPickerSearchText)
+                    const shownChats = chats.filter((c: any) => chatHistoryMatchesSearch(c, '工作区会话', chatPickerSearchText)).slice(0, chatHistoryVisibleCount)
                     if (!showPending && !shownChats.length) {
                       return (
                         <Box sx={{ p: 2 }}>
@@ -6414,8 +6444,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                   const activeChatId = String(box?.activeChatId || '')
                   const pendingChat = s?.pendingChat && String(s.pendingChat?.roleId || '') === String(role.id) ? s.pendingChat.chat : null
                   const hasPending = !!pendingChat
-                  const showPending = hasPending && match(pendingChat, '新聊天')
-                  const shownChats = chats.filter((c: any) => match(c, '新聊天'))
+                  const showPending = hasPending && chatHistoryMatchesSearch(pendingChat, '新聊天', chatPickerSearchText)
+                  const shownChats = chats.filter((c: any) => chatHistoryMatchesSearch(c, '新聊天', chatPickerSearchText)).slice(0, chatHistoryVisibleCount)
                   if (!showPending && !shownChats.length) {
                     return (
                       <Box sx={{ p: 2 }}>

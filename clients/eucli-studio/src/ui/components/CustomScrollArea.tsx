@@ -25,6 +25,7 @@ export type CustomScrollAreaProps = {
   scrollSx?: SxProps<Theme>
   className?: string
   onClick?: React.MouseEventHandler<HTMLDivElement>
+  onScrollPositionChange?: (el: HTMLDivElement) => void
 }
 
 function sxList(value?: SxProps<Theme>) {
@@ -33,7 +34,7 @@ function sxList(value?: SxProps<Theme>) {
 }
 
 export const CustomScrollArea = React.forwardRef<HTMLDivElement, CustomScrollAreaProps>(function CustomScrollArea(props, forwardedRef) {
-  const { children, hostSx, scrollSx, className, onClick } = props
+  const { children, hostSx, scrollSx, className, onClick, onScrollPositionChange } = props
   const scrollRef = React.useRef<HTMLDivElement | null>(null)
   const contentRef = React.useRef<HTMLDivElement | null>(null)
   const dragRef = React.useRef<DragState | null>(null)
@@ -47,7 +48,8 @@ export const CustomScrollArea = React.forwardRef<HTMLDivElement, CustomScrollAre
     if (!el) return
     const next = measureCustomScrollArea(el)
     setMetrics((current) => (sameCustomScrollMetrics(current, next) ? current : next))
-  }, [])
+    onScrollPositionChange?.(el)
+  }, [onScrollPositionChange])
 
   React.useLayoutEffect(() => {
     const el = scrollRef.current

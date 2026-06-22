@@ -991,6 +991,87 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
           fontFamily:
             'system-ui,-apple-system,"Segoe UI","Microsoft YaHei","PingFang SC","Noto Sans CJK SC",Roboto,Arial,sans-serif',
         },
+        components: {
+          MuiDialog: {
+            styleOverrides: {
+              paper: {
+                borderRadius: 24,
+                background: 'linear-gradient(135deg, rgba(255,255,255,.98), rgba(248,250,252,.92))',
+                boxShadow: '0 30px 90px rgba(15,23,42,.24)',
+                backgroundImage: 'linear-gradient(135deg, rgba(255,255,255,.98), rgba(248,250,252,.92))',
+                overflow: 'hidden',
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 16,
+                  backgroundColor: 'rgba(255,255,255,.74)',
+                  boxShadow: '0 8px 22px rgba(15,23,42,.045)',
+                  transition: 'background-color .16s ease, box-shadow .16s ease',
+                },
+                '& .MuiOutlinedInput-root .MuiOutlinedInput-notchedOutline': { border: 0 },
+                '& .MuiOutlinedInput-root:hover': {
+                  backgroundColor: 'rgba(255,255,255,.94)',
+                  boxShadow: '0 10px 26px rgba(15,23,42,.065)',
+                },
+                '& .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline': { border: 0 },
+                '& .MuiOutlinedInput-root.Mui-focused': {
+                  backgroundColor: 'rgba(239,246,255,.96)',
+                  boxShadow: '0 12px 30px rgba(37,99,235,.10)',
+                },
+                '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': { border: 0 },
+                '& .MuiInputLabel-root': { fontWeight: 700, color: 'rgba(71,85,105,.88)' },
+                '& .MuiInputLabel-root.Mui-focused': { color: '#2563eb' },
+                '& .MuiPaper-outlined': {
+                  border: 0,
+                  borderRadius: 20,
+                  backgroundColor: 'rgba(255,255,255,.72)',
+                  boxShadow: '0 10px 28px rgba(15,23,42,.07)',
+                },
+                '& .MuiButton-outlined': {
+                  border: 0,
+                  backgroundColor: 'rgba(255,255,255,.62)',
+                  boxShadow: '0 8px 22px rgba(15,23,42,.045)',
+                },
+                '& .MuiButton-outlined:hover': {
+                  border: 0,
+                  backgroundColor: 'rgba(255,255,255,.9)',
+                  boxShadow: '0 10px 26px rgba(15,23,42,.065)',
+                },
+                '& .MuiChip-outlined': {
+                  border: 0,
+                  backgroundColor: 'rgba(241,245,249,.9)',
+                  fontWeight: 800,
+                },
+              },
+            },
+          },
+          MuiDialogTitle: {
+            styleOverrides: {
+              root: {
+                padding: '20px 24px 12px',
+                fontWeight: 900,
+              },
+            },
+          },
+          MuiDialogContent: {
+            styleOverrides: {
+              root: {
+                backgroundColor: 'rgba(248,250,252,.74)',
+                '&.MuiDialogContent-dividers': {
+                  borderTop: 0,
+                  borderBottom: 0,
+                },
+              },
+            },
+          },
+          MuiDialogActions: {
+            styleOverrides: {
+              root: {
+                padding: '12px 24px 20px',
+                backgroundColor: 'rgba(248,250,252,.74)',
+                gap: 8,
+              },
+            },
+          },
+        },
       }),
     [],
   )

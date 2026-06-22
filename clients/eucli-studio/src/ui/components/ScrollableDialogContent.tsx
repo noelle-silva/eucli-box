@@ -12,7 +12,7 @@ type ScrollableDialogContentProps = {
 export function ScrollableDialogContent(props: ScrollableDialogContentProps) {
   const { children, spacing = 2, maxHeight = 'calc(100vh - 190px)', contentSx } = props
   return (
-    <DialogContent dividers sx={{ p: 0, overflow: 'hidden' }}>
+    <DialogContent sx={{ p: 0, overflow: 'hidden' }}>
       <CustomScrollArea hostSx={{ maxHeight }} scrollSx={{ maxHeight }}>
         <Stack spacing={spacing} sx={[{ p: 3 }, ...(Array.isArray(contentSx) ? contentSx : contentSx ? [contentSx] : [])]}>
           {children}

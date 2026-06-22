@@ -12,13 +12,35 @@
     }
   ],
   "configSchema": {
-    "format": {
-      "type": "string",
-      "description": "Go 时间格式模板，例如 2006-01-02 15:04:05"
-    },
-    "timezone": {
-      "type": "string",
-      "description": "IANA 时区名，例如 Local、Asia/Shanghai、UTC"
+    "type": "object",
+    "properties": {
+      "format": {
+        "type": "string",
+        "title": "时间显示格式",
+        "description": "选择当前时间的展示方式。",
+        "enum": ["2006-01-02 15:04:05", "2006-01-02", "15:04:05", "2006年01月02日 15:04:05", "2006-01-02T15:04:05Z07:00"],
+        "enumLabels": {
+          "2006-01-02 15:04:05": "完整日期时间",
+          "2006-01-02": "仅日期",
+          "15:04:05": "仅时间",
+          "2006年01月02日 15:04:05": "中文日期时间",
+          "2006-01-02T15:04:05Z07:00": "国际标准时间"
+        }
+      },
+      "timezone": {
+        "type": "string",
+        "title": "时区",
+        "description": "选择当前时间使用的时区。",
+        "enum": ["Local", "Asia/Shanghai", "UTC", "Asia/Tokyo", "Europe/London", "America/New_York"],
+        "enumLabels": {
+          "Local": "本机时区",
+          "Asia/Shanghai": "中国标准时间",
+          "UTC": "协调世界时",
+          "Asia/Tokyo": "日本东京时间",
+          "Europe/London": "英国伦敦时间",
+          "America/New_York": "美国纽约时间"
+        }
+      }
     }
   },
   "placeholderInterfaces": [

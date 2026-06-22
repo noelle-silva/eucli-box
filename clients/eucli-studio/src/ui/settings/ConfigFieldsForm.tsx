@@ -7,11 +7,16 @@ export type ConfigField = {
   label: string
   description: string
   type: 'string' | 'number' | 'boolean' | 'object' | 'array'
-  enumValues: string[]
+  enumOptions: ConfigOption[]
   required: boolean
   currentValue: any
   defaultValue: any
   schema: Record<string, any>
+}
+
+type ConfigOption = {
+  value: string
+  label: string
 }
 
 export function ConfigFieldsForm(props: {
@@ -91,15 +96,15 @@ function ConfigFieldControl(props: { field: ConfigField; onSetValue: (path: stri
     )
   }
 
-  if (field.enumValues.length) {
-    const selectValues = orderedUniqueStrings([...(displayValue == null || displayValue === '' ? [] : [String(displayValue)]), ...field.enumValues])
+  if (field.enumOptions.length) {
+    const selectOptions = configSelectOptions(field, displayValue)
     return (
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'flex-start' }}>
         <FormControl size="small" fullWidth>
           <InputLabel>{field.label}{field.required ? ' *' : ''}</InputLabel>
           <Select label={`${field.label}${field.required ? ' *' : ''}`} value={String(displayValue ?? '')} onChange={(event) => event.target.value === '' ? removeValue() : setValue(event.target.value)}>
             <MenuItem value=""><em>使用默认值</em></MenuItem>
-            {selectValues.map((value) => <MenuItem key={value} value={value}>{value}</MenuItem>)}
+            {selectOptions.map((option) => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}
           </Select>
           {helper ? <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>{helper}</Typography> : null}
         </FormControl>
@@ -213,7 +218,7 @@ function buildConfigFieldsFromSources(pathPrefix: string[], schema: Record<strin
       label: stringField(fieldSchema.title) || key,
       description: stringField(fieldSchema.description),
       type: inferConfigFieldType(fieldSchema, currentValue, defaultValue),
-      enumValues: stringArray(fieldSchema.enum),
+      enumOptions: enumOptionsFromSchema(fieldSchema),
       required: required.has(key),
       currentValue,
       defaultValue,
@@ -239,8 +244,20 @@ function inferConfigFieldType(schema: Record<string, any>, currentValue: any, de
 function configFieldHelper(field: ConfigField, hasValue: boolean): string {
   const parts: string[] = []
   if (field.description) parts.push(field.description)
-  if (!hasValue && field.defaultValue != null && field.type !== 'object' && field.type !== 'array') parts.push(`当前使用默认值：${String(field.defaultValue) || '（空）'}`)
+  if (!hasValue && field.defaultValue != null && field.type !== 'object' && field.type !== 'array') parts.push(`当前使用默认值：${configDisplayValue(field, field.defaultValue) || '（空）'}`)
   return parts.join(' ')
+}
+
+function configSelectOptions(field: ConfigField, displayValue: any): ConfigOption[] {
+  const labels = new Map(field.enumOptions.map((option) => [option.value, option.label]))
+  const values = orderedUniqueStrings([...(displayValue == null || displayValue === '' ? [] : [String(displayValue)]), ...field.enumOptions.map((option) => option.value)])
+  return values.map((value) => ({ value, label: labels.get(value) || value }))
+}
+
+function configDisplayValue(field: ConfigField, value: any): string {
+  const text = String(value ?? '')
+  const option = field.enumOptions.find((item) => item.value === text)
+  return option?.label || text
 }
 
 function numberFromInput(value: string): number | '' {
@@ -268,6 +285,11 @@ function stringField(value: any): string {
 
 function stringArray(value: any): string[] {
   return Array.isArray(value) ? value.map((item) => String(item || '').trim()).filter(Boolean) : []
+}
+
+function enumOptionsFromSchema(schema: Record<string, any>): ConfigOption[] {
+  const labels = plainObject(schema.enumLabels || schema['x-enumLabels'])
+  return stringArray(schema.enum).map((value) => ({ value, label: stringField(labels[value]) || value }))
 }
 
 function arrayFromLines(value: string): string[] {

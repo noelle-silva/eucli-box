@@ -400,7 +400,7 @@ export const ChatMessageList = React.memo(function ChatMessageList(props: ChatMe
         return (
           <Stack key={mid} direction="row" justifyContent={isUser ? 'flex-end' : 'flex-start'}>
             <Paper
-              variant="outlined"
+              elevation={0}
               data-mid={mid}
               onContextMenu={isEditing || isDisplayOnlyPendingRunTail ? undefined : (e) => onMessageContextMenu(e, mid, isUser ? 'user' : 'assistant')}
               sx={{
@@ -408,8 +408,9 @@ export const ChatMessageList = React.memo(function ChatMessageList(props: ChatMe
                 maxWidth: isUser ? 920 : '100%',
                 px: 1.5,
                 py: 1.25,
-                bgcolor: isUser ? 'rgba(25,118,210,.06)' : 'transparent',
-                borderColor: isUser ? 'rgba(25,118,210,.22)' : 'transparent',
+                bgcolor: isUser ? '#fff' : 'transparent',
+                backgroundImage: 'none',
+                boxShadow: 'none',
               }}
             >
               <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.75 }}>

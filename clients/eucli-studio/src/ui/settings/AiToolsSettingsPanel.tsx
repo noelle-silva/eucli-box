@@ -19,6 +19,7 @@ import { useEvent } from '../hooks/useEvent'
 import { ConfigFieldsForm } from './ConfigFieldsForm'
 import { SettingsListItem, SettingsPill, SettingsSection, SettingsSurface } from './SettingsSurfaces'
 import { ToolPromptDescriptionSection } from './ToolPromptDescriptionSection'
+import { plainObject, stringField } from './schemaFieldValues'
 
 type AiToolsSettingsPanelProps = {
   controller: any
@@ -263,8 +264,4 @@ function toolName(tool: any): string {
 
 function toolDescription(tool: any): string {
   return String(tool?.description || '').trim()
-}
-
-function plainObject(value: any): Record<string, any> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
 }

@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { Box, Button, FormControl, FormControlLabel, InputLabel, MenuItem, Select, Stack, Switch, TextField, Typography } from '@mui/material'
 import { SettingsSection } from './SettingsSurfaces'
+import { plainObject, stringField } from './schemaFieldValues'
 
 export type ConfigField = {
   path: string[]
@@ -274,14 +275,6 @@ function normalizeConfigPath(path: any): string[] {
 
 function isBlankConfigValue(value: any): boolean {
   return value === undefined || value === null
-}
-
-function plainObject(value: any): Record<string, any> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
-}
-
-function stringField(value: any): string {
-  return typeof value === 'string' ? value.trim() : ''
 }
 
 function stringArray(value: any): string[] {

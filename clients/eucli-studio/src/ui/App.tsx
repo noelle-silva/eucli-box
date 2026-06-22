@@ -124,6 +124,73 @@ type SettingsTab = SettingsTabValue
 
 type ChatSessionRunNoticeKind = Exclude<ChatSessionRunStatus, 'idle' | 'running'>
 
+const SOFT_POPOVER_PAPER_SX = {
+  borderRadius: 3,
+  bgcolor: 'rgba(255,255,255,.94)',
+  backgroundImage: 'linear-gradient(135deg, rgba(255,255,255,.98), rgba(248,250,252,.9))',
+  boxShadow: '0 24px 70px rgba(15,23,42,.18)',
+  overflow: 'hidden',
+  '& .MuiOutlinedInput-root': {
+    borderRadius: 2.25,
+    bgcolor: 'rgba(255,255,255,.72)',
+    boxShadow: '0 8px 22px rgba(15,23,42,.045)',
+    '& .MuiOutlinedInput-notchedOutline': { border: 0 },
+    '&:hover': { bgcolor: 'rgba(255,255,255,.94)', boxShadow: '0 10px 26px rgba(15,23,42,.065)' },
+    '&:hover .MuiOutlinedInput-notchedOutline': { border: 0 },
+    '&.Mui-focused': { bgcolor: 'rgba(239,246,255,.96)', boxShadow: '0 12px 30px rgba(37,99,235,.10)' },
+    '&.Mui-focused .MuiOutlinedInput-notchedOutline': { border: 0 },
+  },
+  '& .MuiInputLabel-root': { fontWeight: 700, color: 'text.secondary' },
+  '& .MuiTabs-indicator': { display: 'none' },
+  '& .MuiPaper-outlined': {
+    border: 0,
+    borderRadius: 2.5,
+    bgcolor: 'rgba(255,255,255,.72)',
+    boxShadow: '0 10px 28px rgba(15,23,42,.07)',
+  },
+  '& .MuiButton-outlined': {
+    border: 0,
+    bgcolor: 'rgba(255,255,255,.62)',
+    boxShadow: '0 8px 22px rgba(15,23,42,.045)',
+  },
+  '& .MuiButton-outlined:hover': {
+    border: 0,
+    bgcolor: 'rgba(255,255,255,.9)',
+    boxShadow: '0 10px 26px rgba(15,23,42,.065)',
+  },
+}
+
+const SOFT_POPOVER_HEADER_SX = {
+  p: 1.25,
+  display: 'flex',
+  alignItems: 'center',
+  gap: 1,
+}
+
+const SOFT_POPOVER_LIST_SX = {
+  px: 0.75,
+  py: 0.75,
+}
+
+const SOFT_POPOVER_ITEM_SX = {
+  my: 0.25,
+  borderRadius: 2.25,
+  alignItems: 'center',
+  transition: 'background-color .16s ease, box-shadow .16s ease',
+  '&.Mui-selected': {
+    bgcolor: 'rgba(59,130,246,.10)',
+    boxShadow: '0 10px 26px rgba(37,99,235,.09)',
+  },
+  '&.Mui-selected:hover': {
+    bgcolor: 'rgba(59,130,246,.14)',
+  },
+}
+
+const SOFT_POPOVER_ITEM_TOP_SX = {
+  ...SOFT_POPOVER_ITEM_SX,
+  alignItems: 'flex-start',
+}
+
 type ChatSessionRunNotice = {
   kind: ChatSessionRunNoticeKind
   changedAt: number
@@ -1068,6 +1135,41 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                 padding: '12px 24px 20px',
                 backgroundColor: 'rgba(248,250,252,.74)',
                 gap: 8,
+              },
+            },
+          },
+          MuiPopover: {
+            styleOverrides: {
+              paper: {
+                borderRadius: 24,
+                background: 'linear-gradient(135deg, rgba(255,255,255,.98), rgba(248,250,252,.92))',
+                boxShadow: '0 24px 70px rgba(15,23,42,.18)',
+                overflow: 'hidden',
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 18,
+                  backgroundColor: 'rgba(255,255,255,.72)',
+                  boxShadow: '0 8px 22px rgba(15,23,42,.045)',
+                },
+                '& .MuiOutlinedInput-root .MuiOutlinedInput-notchedOutline': { border: 0 },
+                '& .MuiOutlinedInput-root:hover': {
+                  backgroundColor: 'rgba(255,255,255,.94)',
+                  boxShadow: '0 10px 26px rgba(15,23,42,.065)',
+                },
+                '& .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline': { border: 0 },
+                '& .MuiOutlinedInput-root.Mui-focused': {
+                  backgroundColor: 'rgba(239,246,255,.96)',
+                  boxShadow: '0 12px 30px rgba(37,99,235,.10)',
+                },
+                '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': { border: 0 },
+                '& .MuiTabs-indicator': { display: 'none' },
+                '& .MuiTab-root': {
+                  borderRadius: 16,
+                  minHeight: 40,
+                  fontWeight: 800,
+                },
+                '& .MuiTab-root.Mui-selected': {
+                  backgroundColor: 'rgba(59,130,246,.10)',
+                },
               },
             },
           },
@@ -3298,7 +3400,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
         const expanded = !!favoriteFolderExpanded[fid]
         return (
           <React.Fragment key={`pick-${fid}`}>
-            <ListItemButton sx={{ pl: 1 + depth * 2, pr: 1 }} onClick={() => toggleFavoriteFolderChecked(fid)}>
+            <ListItemButton sx={{ ...SOFT_POPOVER_ITEM_SX, pl: 1 + depth * 2, pr: 1 }} onClick={() => toggleFavoriteFolderChecked(fid)}>
               <Checkbox
                 size="small"
                 edge="start"
@@ -3338,7 +3440,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
       const nodes: React.ReactNode[] = []
       if (!parentId && options?.includeRoot) {
         nodes.push(
-          <ListItemButton key="pick-root" sx={{ pl: 1, pr: 1 }} selected={!selectedId} onClick={() => onSelect('')}>
+          <ListItemButton key="pick-root" sx={{ ...SOFT_POPOVER_ITEM_SX, pl: 1, pr: 1 }} selected={!selectedId} onClick={() => onSelect('')}>
             <Box sx={{ width: 20 }} />
             <FolderOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary', ml: 0.5, mr: 1 }} />
             <ListItemText primary="顶层" secondary="移动到最外层" />
@@ -3353,7 +3455,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
         const expanded = !!favoriteFolderExpanded[fid]
         nodes.push(
           <React.Fragment key={`single-pick-${fid}`}>
-            <ListItemButton sx={{ pl: 1 + depth * 2, pr: 1 }} selected={selectedId === fid} onClick={() => onSelect(fid)}>
+            <ListItemButton sx={{ ...SOFT_POPOVER_ITEM_SX, pl: 1 + depth * 2, pr: 1 }} selected={selectedId === fid} onClick={() => onSelect(fid)}>
               {visibleChildren.length ? (
                 <IconButton
                   size="small"
@@ -3433,7 +3535,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
             return (
               <ListItemButton
                 key={`${fid}:${targetKind}:${targetId}:${chatId}`}
-                sx={{ pl: 3 + depth2 * 2, pr: 1, alignItems: 'flex-start', gap: 1 }}
+                selected={selected}
+                sx={{ ...SOFT_POPOVER_ITEM_TOP_SX, pl: 3 + depth2 * 2, pr: 1, gap: 1 }}
                 onClick={() => openFavoritedChat(targetKind as any, targetId, chatId)}
                 onContextMenu={(e) => onFavoriteChatContextMenu(e, fid, targetKind as any, targetId, chatId, String((chat as any)?.title || ''))}
               >
@@ -3456,7 +3559,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
         return (
           <React.Fragment key={fid}>
             <ListItemButton
-              sx={{ pl: 1 + depth2 * 2, pr: 1 }}
+              sx={{ ...SOFT_POPOVER_ITEM_SX, pl: 1 + depth2 * 2, pr: 1 }}
               onClick={() => toggleFavoriteFolderExpanded(fid)}
               onContextMenu={(e) => {
                 e.preventDefault()
@@ -5552,8 +5655,9 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
           onClose={closeTempModelPicker}
           anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
           transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+          PaperProps={{ sx: SOFT_POPOVER_PAPER_SX }}
         >
-          <Box data-area="temp-model" sx={{ width: 420, p: 1.5 }}>
+          <Box data-area="temp-model" sx={{ width: 420, p: 1.75 }}>
             <Stack spacing={1.25}>
               <Stack direction="row" spacing={1} alignItems="center">
                 <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>
@@ -5776,6 +5880,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
           onClose={closeRolePicker}
           anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
           transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+          PaperProps={{ sx: SOFT_POPOVER_PAPER_SX }}
         >
           <CustomScrollArea hostSx={{ width: 380, maxHeight: '70vh' }} scrollSx={{ maxHeight: '70vh' }}>
             {rolePickerMode === 'global' ? (
@@ -5791,9 +5896,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                 </Tabs>
               </Box>
             ) : null}
-            <Divider />
             {rolePickerTab === 'roles' ? (
-              <List dense sx={{ py: 0 }}>
+              <List dense sx={SOFT_POPOVER_LIST_SX}>
                 {roles.map((r: any) => {
                   const on = String(r?.id || '') === String(s.draft?.activeRoleId || '')
                   const modelRefText = formatModelRefText(r?.modelRef)
@@ -5809,7 +5913,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                           else controller.actions.setActiveRole(String(r?.id || ''))
                           closeRolePicker()
                         }}
-                        sx={{ borderBottom: '1px solid', borderColor: 'divider' }}
+                        sx={SOFT_POPOVER_ITEM_SX}
                     >
                       <ListItemAvatar>
                         <Avatar src={String(r?.avatarImage || '') || undefined} sx={{ width: 28, height: 28, fontSize: 14 }}>
@@ -5847,7 +5951,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                 })}
               </List>
             ) : rolePickerTab === 'groups' ? groups.length ? (
-              <List dense sx={{ py: 0 }}>
+              <List dense sx={SOFT_POPOVER_LIST_SX}>
                 {groups.map((g: any) => {
                   const on = String(g?.id || '') === String(activeGroupId || '')
                   return (
@@ -5858,7 +5962,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                         controller.actions.setActiveGroup?.(String(g?.id || ''))
                         closeRolePicker()
                       }}
-                      sx={{ borderBottom: '1px solid', borderColor: 'divider' }}
+                      sx={SOFT_POPOVER_ITEM_SX}
                     >
                       <ListItemAvatar>
                         <Avatar src={String(g?.avatarImage || '') || undefined} sx={{ width: 28, height: 28, fontSize: 14 }}>
@@ -5913,7 +6017,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                 </Button>
               </Box>
             ) : workspaces.length ? (
-              <List dense sx={{ py: 0 }}>
+              <List dense sx={SOFT_POPOVER_LIST_SX}>
                 {workspaces.map((workspace: any) => {
                   const workspaceId = String(workspace?.id || '')
                   const on = workspaceId === String(activeWorkspaceId || '')
@@ -5926,7 +6030,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                         controller.actions.setActiveWorkspace?.(workspaceId)
                         closeRolePicker()
                       }}
-                      sx={{ borderBottom: '1px solid', borderColor: 'divider' }}
+                      sx={SOFT_POPOVER_ITEM_SX}
                     >
                       <ListItemAvatar>
                         <Avatar sx={{ width: 28, height: 28, fontSize: 14, bgcolor: 'rgba(59,130,246,.12)', color: 'primary.main' }}>
@@ -5990,6 +6094,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
           onClose={closeChatPicker}
           anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
           transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+          PaperProps={{ sx: SOFT_POPOVER_PAPER_SX }}
         >
           <Box sx={{ width: 420, maxHeight: '70vh', overflow: 'hidden' }}>
             <Box
@@ -6001,7 +6106,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
               }}
             >
               <CustomScrollArea hostSx={{ width: 420, maxHeight: '70vh', flex: '0 0 420px' }} scrollSx={{ maxHeight: '70vh' }}>
-                <Box sx={{ p: 1.5, pb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box sx={SOFT_POPOVER_HEADER_SX}>
                   <Tooltip title={chatPickerSearchOpen ? '关闭搜索' : '搜索'}>
                     <IconButton
                       size="small"
@@ -6046,7 +6151,6 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                     />
                   </Box>
                 </Collapse>
-                <Divider />
                 {(() => {
                   const q = String(chatPickerSearchText || '').trim().toLowerCase()
                   const match = (chat: any, fallbackTitle: string) => {
@@ -6086,9 +6190,9 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                       )
                     }
                     return (
-                      <List dense sx={{ py: 0 }}>
+                      <List dense sx={SOFT_POPOVER_LIST_SX}>
                         {showPending ? (
-                          <ListItemButton selected sx={{ borderBottom: '1px solid', borderColor: 'divider', alignItems: 'flex-start' }}>
+                          <ListItemButton selected sx={SOFT_POPOVER_ITEM_TOP_SX}>
                             <ListItemText
                               sx={{ minWidth: 0 }}
                               primary={
@@ -6127,7 +6231,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                               onContextMenu={(e) =>
                                 onChatContextMenu(e, 'group', String((activeGroup as any)?.id || ''), String(c?.id || ''), String(c?.title || '群聊'))
                               }
-                              sx={{ borderBottom: '1px solid', borderColor: 'divider', alignItems: 'flex-start' }}
+                              sx={SOFT_POPOVER_ITEM_TOP_SX}
                             >
                               <ListItemText
                                 sx={{ minWidth: 0 }}
@@ -6185,9 +6289,9 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                       )
                     }
                     return (
-                      <List dense sx={{ py: 0 }}>
+                      <List dense sx={SOFT_POPOVER_LIST_SX}>
                         {showPending ? (
-                          <ListItemButton selected sx={{ borderBottom: '1px solid', borderColor: 'divider', alignItems: 'flex-start' }}>
+                          <ListItemButton selected sx={SOFT_POPOVER_ITEM_TOP_SX}>
                             <ListItemText
                               sx={{ minWidth: 0 }}
                               primary={
@@ -6226,7 +6330,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                               onContextMenu={(e) =>
                                 onChatContextMenu(e, 'workspace', String(activeChatTargetId || ''), String(c?.id || ''), String(c?.title || '工作区会话'))
                               }
-                              sx={{ borderBottom: '1px solid', borderColor: 'divider', alignItems: 'flex-start' }}
+                              sx={SOFT_POPOVER_ITEM_TOP_SX}
                             >
                               <ListItemText
                                 sx={{ minWidth: 0 }}
@@ -6281,9 +6385,9 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                     )
                   }
                   return (
-                    <List dense sx={{ py: 0 }}>
+                    <List dense sx={SOFT_POPOVER_LIST_SX}>
                       {showPending ? (
-                        <ListItemButton selected sx={{ borderBottom: '1px solid', borderColor: 'divider', alignItems: 'flex-start' }}>
+                        <ListItemButton selected sx={SOFT_POPOVER_ITEM_TOP_SX}>
                           <ListItemText
                             sx={{ minWidth: 0 }}
                             primary={
@@ -6322,7 +6426,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                             onContextMenu={(e) =>
                               onChatContextMenu(e, 'role', String(role?.id || ''), String(c?.id || ''), String(c?.title || '新聊天'))
                             }
-                            sx={{ borderBottom: '1px solid', borderColor: 'divider', alignItems: 'flex-start' }}
+                            sx={SOFT_POPOVER_ITEM_TOP_SX}
                           >
                             <ListItemText
                               sx={{ minWidth: 0 }}
@@ -6352,7 +6456,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
               </CustomScrollArea>
 
               <CustomScrollArea hostSx={{ width: 420, maxHeight: '70vh', flex: '0 0 420px' }} scrollSx={{ maxHeight: '70vh' }}>
-                <Box sx={{ p: 1.5, pb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box sx={SOFT_POPOVER_HEADER_SX}>
                   <Tooltip title="返回历史记录">
                     <IconButton size="small" onClick={() => setChatPickerView('history')}>
                       <ArrowBackRoundedIcon fontSize="inherit" />
@@ -6409,7 +6513,6 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                     />
                   </Box>
                 </Collapse>
-                <Divider />
                 {!favoriteFolders.length ? (
                   <Box sx={{ p: 2.5 }}>
                     <Typography variant="body2" color="text.secondary">
@@ -6417,7 +6520,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                     </Typography>
                   </Box>
                 ) : (
-                  <List dense sx={{ py: 0 }}>{renderFavoriteFolderTree('', 0)}</List>
+                  <List dense sx={SOFT_POPOVER_LIST_SX}>{renderFavoriteFolderTree('', 0)}</List>
                 )}
               </CustomScrollArea>
             </Box>
@@ -8091,7 +8194,7 @@ function PluginSettingsPage(props: {
               </SettingsSection>
 
               <SettingsSection>
-              <Stack direction="row" spacing={1} alignItems="center">
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ px: 0.25 }}>
                 <Typography sx={{ fontWeight: 900 }}>Mermaid AI 修复</Typography>
                 <Box sx={{ flex: 1 }} />
                 <Stack direction="row" alignItems="center" spacing={1}>

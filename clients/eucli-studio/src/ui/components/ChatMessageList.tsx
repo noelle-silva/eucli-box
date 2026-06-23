@@ -237,8 +237,9 @@ export const ChatMessageList = React.memo(function ChatMessageList(props: ChatMe
                   maxWidth: '100%',
                   px: 1.25,
                   py: 1.1,
-                  bgcolor: 'rgba(2, 132, 199, .05)',
-                  borderColor: 'rgba(2, 132, 199, .20)',
+                  bgcolor: '#fff',
+                  borderColor: 'rgba(15, 23, 42, .10)',
+                  boxShadow: '0 8px 22px rgba(15,23,42,.05)',
                 }}
               >
                 <Stack
@@ -263,7 +264,7 @@ export const ChatMessageList = React.memo(function ChatMessageList(props: ChatMe
                   }
                   sx={{ mb: 0.5, cursor: isEditing ? 'default' : 'pointer', userSelect: 'none' }}
                 >
-                  <StorageIcon sx={{ fontSize: 18, color: 'rgba(2, 132, 199, .85)' }} />
+                  <StorageIcon sx={{ fontSize: 18, color: 'rgba(15, 23, 42, .62)' }} />
                   <Typography variant="body2" sx={{ fontWeight: 900 }}>
                     {label}
                   </Typography>
@@ -317,8 +318,8 @@ export const ChatMessageList = React.memo(function ChatMessageList(props: ChatMe
                         whiteSpace: 'pre-wrap',
                         overflowWrap: 'anywhere',
                         wordBreak: 'break-word',
-                        bgcolor: 'rgba(255,255,255,.7)',
-                        border: '1px solid rgba(2, 132, 199, .18)',
+                        bgcolor: '#fff',
+                        border: '1px solid rgba(15, 23, 42, .10)',
                         borderRadius: 2,
                         px: 1,
                         py: 0.75,
@@ -524,6 +525,7 @@ export const ChatMessageList = React.memo(function ChatMessageList(props: ChatMe
                       text={content}
                       parts={assistantParts}
                       mid={mid}
+                      isGenerating={messageGenerating}
                       renderSafetyPolicyKey={renderSafetyPolicyKey}
                       chatRootRef={chatRootRef}
                       disabled={!canEdit}
@@ -539,6 +541,7 @@ export const ChatMessageList = React.memo(function ChatMessageList(props: ChatMe
                     text={content}
                     parts={assistantParts}
                     mid={mid}
+                    isGenerating={messageGenerating}
                     renderSafetyPolicyKey={renderSafetyPolicyKey}
                     chatRootRef={chatRootRef}
                     disabled={!canEdit}

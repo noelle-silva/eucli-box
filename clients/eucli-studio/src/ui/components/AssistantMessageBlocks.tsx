@@ -18,6 +18,7 @@ import { ToolConfirmationCard } from './ToolConfirmationCard'
 type AssistantMessageBlocksProps = {
   controller: any
   mid: string
+  isGenerating: boolean
   text: string
   parts: any[]
   renderSafetyPolicyKey: string
@@ -285,7 +286,7 @@ function ToolSessionCard(props: {
 }
 
 export function AssistantMessageBlocks(props: AssistantMessageBlocksProps) {
-  const { controller, mid, text, parts, renderSafetyPolicyKey, chatRootRef, disabled } = props
+  const { controller, mid, isGenerating, text, parts, renderSafetyPolicyKey, chatRootRef, disabled } = props
   const blocks = React.useMemo(() => planAssistantMessageBlocks(text, parts), [text, parts])
   const displayItems = React.useMemo(() => buildDisplayItems(blocks), [blocks])
   const [editing, setEditing] = React.useState<EditingBlock>({ id: '', text: '' })
@@ -369,7 +370,7 @@ export function AssistantMessageBlocks(props: AssistantMessageBlocksProps) {
           )
         }
         if (block.kind === 'reasoning') {
-          return <AssistantReasoningPanel key={block.id} controller={controller} mid={mid} text={String(block.part?.text || '')} renderSafetyPolicyKey={renderSafetyPolicyKey} chatRootRef={chatRootRef} />
+          return <AssistantReasoningPanel key={block.id} controller={controller} mid={mid} isGenerating={isGenerating} text={String(block.part?.text || '')} renderSafetyPolicyKey={renderSafetyPolicyKey} chatRootRef={chatRootRef} />
         }
         if (block.kind === 'tool_confirmation') {
           const info = readToolConfirmationInfo(block.part)

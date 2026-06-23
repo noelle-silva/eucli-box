@@ -127,12 +127,22 @@ func normalizeContextCompressionConfig(config types.ContextCompressionConfig) ty
 }
 
 func normalizeAssistModelSelection(modelPick string, customModelID string, coordinate types.ModelCoordinate) (string, string, types.ModelCoordinate) {
+	coordinate.Kind = strings.TrimSpace(coordinate.Kind)
+	coordinate.GroupID = strings.TrimSpace(coordinate.GroupID)
 	coordinate.ProviderID = strings.TrimSpace(coordinate.ProviderID)
 	coordinate.ProviderName = strings.TrimSpace(coordinate.ProviderName)
 	coordinate.ModelID = strings.TrimSpace(coordinate.ModelID)
 	modelPick = strings.TrimSpace(modelPick)
 	if coordinate.ModelID == "" && modelPick != "__custom__" {
 		coordinate.ModelID = modelPick
+	}
+	if coordinate.Kind == types.ModelCoordinateKindGroup || coordinate.GroupID != "" {
+		coordinate.Kind = types.ModelCoordinateKindGroup
+		coordinate.ProviderID = ""
+		coordinate.ProviderName = ""
+	} else if coordinate.ProviderID != "" || coordinate.ProviderName != "" {
+		coordinate.Kind = types.ModelCoordinateKindProvider
+		coordinate.GroupID = ""
 	}
 	modelPick = coordinate.ModelID
 	return modelPick, "", coordinate

@@ -39,12 +39,22 @@ func defaultStickerNamingConfig() types.StickerNamingConfig {
 }
 
 func normalizeStickerNamingConfig(config types.StickerNamingConfig) types.StickerNamingConfig {
+	config.Coordinate.Kind = strings.TrimSpace(config.Coordinate.Kind)
+	config.Coordinate.GroupID = strings.TrimSpace(config.Coordinate.GroupID)
 	config.Coordinate.ProviderID = strings.TrimSpace(config.Coordinate.ProviderID)
 	config.Coordinate.ProviderName = strings.TrimSpace(config.Coordinate.ProviderName)
 	config.Coordinate.ModelID = strings.TrimSpace(config.Coordinate.ModelID)
 	config.ModelPick = strings.TrimSpace(config.ModelPick)
 	if config.Coordinate.ModelID == "" && config.ModelPick != "__custom__" {
 		config.Coordinate.ModelID = config.ModelPick
+	}
+	if config.Coordinate.Kind == types.ModelCoordinateKindGroup || config.Coordinate.GroupID != "" {
+		config.Coordinate.Kind = types.ModelCoordinateKindGroup
+		config.Coordinate.ProviderID = ""
+		config.Coordinate.ProviderName = ""
+	} else if config.Coordinate.ProviderID != "" || config.Coordinate.ProviderName != "" {
+		config.Coordinate.Kind = types.ModelCoordinateKindProvider
+		config.Coordinate.GroupID = ""
 	}
 	config.ModelPick = config.Coordinate.ModelID
 	config.CustomModelID = ""

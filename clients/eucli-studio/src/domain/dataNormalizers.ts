@@ -68,6 +68,24 @@ function normalizeAsyncToolTasks(raw: unknown) {
     .filter((task: any) => !!task.id)
 }
 
+function normalizeAiServiceModelSelection(service: any, providers: any[]) {
+  const fallbackPid = String(providers?.[0]?.id || '')
+  const groupId = typeof service.groupId === 'string' ? String(service.groupId || '').trim() : ''
+  const kind = groupId || String(service.kind || '').trim() === 'model_group' ? 'model_group' : 'provider'
+  service.kind = kind
+  if (kind === 'model_group') {
+    service.groupId = groupId
+    service.providerId = ''
+  } else {
+    if (typeof service.providerId !== 'string') service.providerId = fallbackPid
+    if (!service.providerId || !providers.some((p: any) => String(p?.id || '') === String(service.providerId || ''))) service.providerId = fallbackPid
+    service.groupId = ''
+  }
+  if (typeof service.modelId !== 'string') service.modelId = ''
+  if (service.modelId === '__custom__') service.modelId = ''
+  service.customModelId = ''
+}
+
 function hasStoredBranching(raw: unknown) {
   return !!raw && typeof raw === 'object' && Number((raw as any).schemaVersion || 0) === CHAT_BRANCHING_SCHEMA_VERSION
 }
@@ -226,41 +244,24 @@ export function normalizeData(raw: any) {
   if (!as.mermaidFix || typeof as.mermaidFix !== 'object') as.mermaidFix = {}
   const mm = as.mermaidFix
   if (typeof mm.enabled !== 'boolean') mm.enabled = false
-  const fallbackPid = String(d.settings.providers?.[0]?.id || '')
-  if (typeof mm.providerId !== 'string') mm.providerId = fallbackPid
-  if (!mm.providerId || !d.settings.providers.some((p: any) => String(p?.id || '') === String(mm.providerId || ''))) mm.providerId = fallbackPid
-  if (typeof mm.modelId !== 'string') mm.modelId = ''
-  if (mm.modelId === '__custom__') mm.modelId = ''
-  mm.customModelId = ''
+  normalizeAiServiceModelSelection(mm, d.settings.providers)
   if (typeof mm.systemPrompt !== 'string') mm.systemPrompt = DEFAULT_MERMAID_FIX_SYSTEM_PROMPT
 
   if (!as.chatTitleNaming || typeof as.chatTitleNaming !== 'object') as.chatTitleNaming = {}
   const ctn = as.chatTitleNaming as any
   if (typeof ctn.enabled !== 'boolean') ctn.enabled = false
-  if (typeof ctn.providerId !== 'string') ctn.providerId = fallbackPid
-  if (!ctn.providerId || !d.settings.providers.some((p: any) => String(p?.id || '') === String(ctn.providerId || ''))) ctn.providerId = fallbackPid
-  if (typeof ctn.modelId !== 'string') ctn.modelId = ''
-  if (ctn.modelId === '__custom__') ctn.modelId = ''
-  ctn.customModelId = ''
+  normalizeAiServiceModelSelection(ctn, d.settings.providers)
   if (typeof ctn.systemPrompt !== 'string') ctn.systemPrompt = DEFAULT_CHAT_TITLE_NAMING_SYSTEM_PROMPT
 
   if (!as.stickerNaming || typeof as.stickerNaming !== 'object') as.stickerNaming = {}
   const sn = as.stickerNaming as any
   if (typeof sn.enabled !== 'boolean') sn.enabled = false
-  if (typeof sn.providerId !== 'string') sn.providerId = fallbackPid
-  if (!sn.providerId || !d.settings.providers.some((p: any) => String(p?.id || '') === String(sn.providerId || ''))) sn.providerId = fallbackPid
-  if (typeof sn.modelId !== 'string') sn.modelId = ''
-  if (sn.modelId === '__custom__') sn.modelId = ''
-  sn.customModelId = ''
+  normalizeAiServiceModelSelection(sn, d.settings.providers)
   if (typeof sn.systemPrompt !== 'string') sn.systemPrompt = DEFAULT_STICKER_NAMING_SYSTEM_PROMPT
 
   if (!as.contextCompression || typeof as.contextCompression !== 'object') as.contextCompression = {}
   const cc = as.contextCompression as any
-  if (typeof cc.providerId !== 'string') cc.providerId = fallbackPid
-  if (!cc.providerId || !d.settings.providers.some((p: any) => String(p?.id || '') === String(cc.providerId || ''))) cc.providerId = fallbackPid
-  if (typeof cc.modelId !== 'string') cc.modelId = ''
-  if (cc.modelId === '__custom__') cc.modelId = ''
-  cc.customModelId = ''
+  normalizeAiServiceModelSelection(cc, d.settings.providers)
   cc.retainRecentMessages = clamp(
     Math.round(Number(cc.retainRecentMessages || DEFAULT_CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES)),
     CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MIN,

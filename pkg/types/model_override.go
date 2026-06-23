@@ -32,6 +32,16 @@ func NormalizeModelOverrideCoordinate(coordinate ModelCoordinate) (ModelCoordina
 	return ModelCoordinate{Kind: ModelCoordinateKindProvider, ProviderID: providerID, ModelID: modelID}, true
 }
 
+func HasCompleteModelCoordinate(coordinate ModelCoordinate) bool {
+	if strings.TrimSpace(coordinate.ModelID) == "" {
+		return false
+	}
+	if strings.TrimSpace(coordinate.Kind) == ModelCoordinateKindGroup || strings.TrimSpace(coordinate.GroupID) != "" {
+		return strings.TrimSpace(coordinate.GroupID) != ""
+	}
+	return strings.TrimSpace(coordinate.ProviderID) != "" || strings.TrimSpace(coordinate.ProviderName) != ""
+}
+
 func ModelOverrideFromSessionMetadata(metadata map[string]string) (ModelCoordinate, bool) {
 	if len(metadata) == 0 {
 		return ModelCoordinate{}, false

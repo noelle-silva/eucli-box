@@ -283,17 +283,27 @@ func (p *projectionService) saveAssistConfigs(ctx context.Context, settings map[
 		if len(req.config) == 0 {
 			continue
 		}
+		kind := stringField(req.config, "kind")
 		providerID := stringField(req.config, "providerId")
+		groupID := stringField(req.config, "groupId")
 		modelID := stringField(req.config, "modelId")
-		body := map[string]any{"enabled": boolField(req.config, "enabled", false), "modelPick": modelID, "coordinate": map[string]any{"providerId": providerID, "modelId": modelID}, "systemPrompt": stringField(req.config, "systemPrompt"), "temperature": 0.2}
+		coordinate := assistModelCoordinate(kind, providerID, groupID, modelID)
+		body := map[string]any{"enabled": boolField(req.config, "enabled", false), "modelPick": modelID, "coordinate": coordinate, "systemPrompt": stringField(req.config, "systemPrompt"), "temperature": 0.2}
 		if req.path == "/api/assist/context-compression/config" {
-			body = map[string]any{"modelPick": modelID, "coordinate": map[string]any{"providerId": providerID, "modelId": modelID}, "retainRecentMessages": intField(req.config, "retainRecentMessages", 15), "temperature": 0.2}
+			body = map[string]any{"modelPick": modelID, "coordinate": coordinate, "retainRecentMessages": intField(req.config, "retainRecentMessages", 15), "temperature": 0.2}
 		}
 		if _, err := p.eb.request(ctx, ebRequest{Method: "PUT", Path: req.path, Body: mustJSON(body)}); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func assistModelCoordinate(kind string, providerID string, groupID string, modelID string) map[string]any {
+	if strings.TrimSpace(kind) == "model_group" || strings.TrimSpace(groupID) != "" {
+		return map[string]any{"kind": "model_group", "groupId": strings.TrimSpace(groupID), "modelId": strings.TrimSpace(modelID)}
+	}
+	return map[string]any{"kind": "provider", "providerId": strings.TrimSpace(providerID), "modelId": strings.TrimSpace(modelID)}
 }
 
 var dedicatedProjectionSettingKeys = map[string]struct{}{
@@ -410,14 +420,17 @@ func (p *projectionService) loadAssistConfig(ctx context.Context, path string) (
 		return nil, err
 	}
 	config := objectMap(data)
-	modelID := stringField(objectMap(config["coordinate"]), "modelId")
+	coordinate := objectMap(config["coordinate"])
+	modelID := stringField(coordinate, "modelId")
 	modelPick := stringField(config, "modelPick")
 	if modelID == "" && modelPick != "__custom__" {
 		modelID = modelPick
 	}
 	return map[string]any{
 		"enabled":              boolField(config, "enabled", false),
-		"providerId":           stringField(objectMap(config["coordinate"]), "providerId"),
+		"kind":                 stringField(coordinate, "kind"),
+		"groupId":              stringField(coordinate, "groupId"),
+		"providerId":           stringField(coordinate, "providerId"),
 		"modelId":              modelID,
 		"systemPrompt":         stringField(config, "systemPrompt"),
 		"retainRecentMessages": intField(config, "retainRecentMessages", 15),

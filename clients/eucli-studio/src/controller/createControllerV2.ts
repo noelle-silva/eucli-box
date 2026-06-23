@@ -1538,6 +1538,39 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     }
   }
 
+  function ensureAiServiceConfig(serviceName: string) {
+    if (!state.data) return null
+    if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
+    const services = state.data.settings.aiServices as any
+    if (!services[serviceName] || typeof services[serviceName] !== 'object') services[serviceName] = {} as any
+    return services[serviceName] as any
+  }
+
+  function setAiServiceModelSource(serviceName: string, value: any) {
+    const box = ensureAiServiceConfig(serviceName)
+    if (!box) return
+    const raw = String(value || '')
+    const parts = raw.split(':')
+    const kind = parts[0] === 'model_group' ? 'model_group' : 'provider'
+    const id = parts.slice(1).join(':')
+    box.kind = kind
+    box.providerId = kind === 'provider' ? id : ''
+    box.groupId = kind === 'model_group' ? id : ''
+    box.modelId = ''
+    box.customModelId = ''
+    saveMeta().catch(() => {})
+    emit()
+  }
+
+  function setAiServiceModelId(serviceName: string, modelId: any) {
+    const box = ensureAiServiceConfig(serviceName)
+    if (!box) return
+    box.modelId = String(modelId || '')
+    box.customModelId = ''
+    saveMeta().catch(() => {})
+    emit()
+  }
+
   // ============================================================
   // 20. ACTIONS — complete controller.actions object
   // ============================================================
@@ -1834,25 +1867,13 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       emit()
     },
     setMermaidFixProviderId: (providerId: any) => {
-      if (!state.data) return
-      const pid = String(providerId || '')
-      if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
-      if (!state.data.settings.aiServices.mermaidFix || typeof state.data.settings.aiServices.mermaidFix !== 'object') state.data.settings.aiServices.mermaidFix = {} as any
-      state.data.settings.aiServices.mermaidFix.providerId = pid
-      state.data.settings.aiServices.mermaidFix.modelId = ''
-      state.data.settings.aiServices.mermaidFix.customModelId = ''
-      saveMeta().catch(() => {})
-      emit()
+      setAiServiceModelSource('mermaidFix', `provider:${String(providerId || '')}`)
+    },
+    setMermaidFixModelSource: (source: any) => {
+      setAiServiceModelSource('mermaidFix', source)
     },
     setMermaidFixModelId: (modelId: any) => {
-      if (!state.data) return
-      const mid = String(modelId || '')
-      if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
-      if (!state.data.settings.aiServices.mermaidFix || typeof state.data.settings.aiServices.mermaidFix !== 'object') state.data.settings.aiServices.mermaidFix = {} as any
-      state.data.settings.aiServices.mermaidFix.modelId = mid
-      state.data.settings.aiServices.mermaidFix.customModelId = ''
-      saveMeta().catch(() => {})
-      emit()
+      setAiServiceModelId('mermaidFix', modelId)
     },
     setMermaidFixSystemPrompt: (systemPrompt: any) => {
       if (!state.data) return
@@ -1880,25 +1901,13 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       emit()
     },
     setChatTitleNamingProviderId: (providerId: any) => {
-      if (!state.data) return
-      const pid = String(providerId || '')
-      if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
-      if (!state.data.settings.aiServices.chatTitleNaming || typeof state.data.settings.aiServices.chatTitleNaming !== 'object') state.data.settings.aiServices.chatTitleNaming = {} as any
-      state.data.settings.aiServices.chatTitleNaming.providerId = pid
-      state.data.settings.aiServices.chatTitleNaming.modelId = ''
-      state.data.settings.aiServices.chatTitleNaming.customModelId = ''
-      saveMeta().catch(() => {})
-      emit()
+      setAiServiceModelSource('chatTitleNaming', `provider:${String(providerId || '')}`)
+    },
+    setChatTitleNamingModelSource: (source: any) => {
+      setAiServiceModelSource('chatTitleNaming', source)
     },
     setChatTitleNamingModelId: (modelId: any) => {
-      if (!state.data) return
-      const mid = String(modelId || '')
-      if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
-      if (!state.data.settings.aiServices.chatTitleNaming || typeof state.data.settings.aiServices.chatTitleNaming !== 'object') state.data.settings.aiServices.chatTitleNaming = {} as any
-      state.data.settings.aiServices.chatTitleNaming.modelId = mid
-      state.data.settings.aiServices.chatTitleNaming.customModelId = ''
-      saveMeta().catch(() => {})
-      emit()
+      setAiServiceModelId('chatTitleNaming', modelId)
     },
     setChatTitleNamingSystemPrompt: (systemPrompt: any) => {
       if (!state.data) return
@@ -1926,25 +1935,13 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       emit()
     },
     setStickerNamingProviderId: (providerId: any) => {
-      if (!state.data) return
-      const pid = String(providerId || '')
-      if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
-      if (!state.data.settings.aiServices.stickerNaming || typeof state.data.settings.aiServices.stickerNaming !== 'object') state.data.settings.aiServices.stickerNaming = {} as any
-      state.data.settings.aiServices.stickerNaming.providerId = pid
-      state.data.settings.aiServices.stickerNaming.modelId = ''
-      state.data.settings.aiServices.stickerNaming.customModelId = ''
-      saveMeta().catch(() => {})
-      emit()
+      setAiServiceModelSource('stickerNaming', `provider:${String(providerId || '')}`)
+    },
+    setStickerNamingModelSource: (source: any) => {
+      setAiServiceModelSource('stickerNaming', source)
     },
     setStickerNamingModelId: (modelId: any) => {
-      if (!state.data) return
-      const mid = String(modelId || '')
-      if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
-      if (!state.data.settings.aiServices.stickerNaming || typeof state.data.settings.aiServices.stickerNaming !== 'object') state.data.settings.aiServices.stickerNaming = {} as any
-      state.data.settings.aiServices.stickerNaming.modelId = mid
-      state.data.settings.aiServices.stickerNaming.customModelId = ''
-      saveMeta().catch(() => {})
-      emit()
+      setAiServiceModelId('stickerNaming', modelId)
     },
     setStickerNamingSystemPrompt: (systemPrompt: any) => {
       if (!state.data) return
@@ -1964,25 +1961,13 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       emit()
     },
     setContextCompressionProviderId: (providerId: any) => {
-      if (!state.data) return
-      const pid = String(providerId || '')
-      if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
-      if (!state.data.settings.aiServices.contextCompression || typeof state.data.settings.aiServices.contextCompression !== 'object') state.data.settings.aiServices.contextCompression = {} as any
-      state.data.settings.aiServices.contextCompression.providerId = pid
-      state.data.settings.aiServices.contextCompression.modelId = ''
-      state.data.settings.aiServices.contextCompression.customModelId = ''
-      saveMeta().catch(() => {})
-      emit()
+      setAiServiceModelSource('contextCompression', `provider:${String(providerId || '')}`)
+    },
+    setContextCompressionModelSource: (source: any) => {
+      setAiServiceModelSource('contextCompression', source)
     },
     setContextCompressionModelId: (modelId: any) => {
-      if (!state.data) return
-      const mid = String(modelId || '')
-      if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
-      if (!state.data.settings.aiServices.contextCompression || typeof state.data.settings.aiServices.contextCompression !== 'object') state.data.settings.aiServices.contextCompression = {} as any
-      state.data.settings.aiServices.contextCompression.modelId = mid
-      state.data.settings.aiServices.contextCompression.customModelId = ''
-      saveMeta().catch(() => {})
-      emit()
+      setAiServiceModelId('contextCompression', modelId)
     },
     setContextCompressionRetainRecentMessages: (value: any) => {
       if (!state.data) return

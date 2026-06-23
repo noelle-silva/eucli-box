@@ -8105,9 +8105,9 @@ function PluginSettingsPage(props: {
   }
 
   if (tab === 'services') {
+    const modelGroupList = Array.isArray(modelGroups?.items) ? modelGroups.items : []
     const ccCfg = (data?.settings?.aiServices?.contextCompression && typeof (data.settings.aiServices as any).contextCompression === 'object') ? (data.settings.aiServices as any).contextCompression : {}
-    const ccProviderId = String(ccCfg.providerId || providers?.[0]?.id || '')
-    const ccModelPick = String(ccCfg.modelId || '')
+    const ccSelection = aiServiceModelSelection(ccCfg, providers, modelGroupList)
     const ccRetainRecentMessages = Math.round(
       clampNum(
         Number(ccCfg.retainRecentMessages ?? DEFAULT_CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES),
@@ -8118,43 +8118,26 @@ function PluginSettingsPage(props: {
 
     const mmCfg = (data?.settings?.aiServices?.mermaidFix && typeof data.settings.aiServices.mermaidFix === 'object') ? data.settings.aiServices.mermaidFix : {}
     const mmEnabled = !!mmCfg.enabled
-    const mmProviderId = String(mmCfg.providerId || providers?.[0]?.id || '')
-    const mmModelPick = String(mmCfg.modelId || '')
+    const mmSelection = aiServiceModelSelection(mmCfg, providers, modelGroupList)
     const mmSystemPrompt = typeof mmCfg.systemPrompt === 'string' ? mmCfg.systemPrompt : ''
     const mmDefaultPrompt = String(controller?.defaults?.mermaidFixSystemPrompt || '')
     const mmPromptChanged = !!mmDefaultPrompt && mmSystemPrompt.trim() !== mmDefaultPrompt.trim()
 
     const ctnCfg = (data?.settings?.aiServices?.chatTitleNaming && typeof (data.settings.aiServices as any).chatTitleNaming === 'object') ? (data.settings.aiServices as any).chatTitleNaming : {}
     const ctnEnabled = !!ctnCfg.enabled
-    const ctnProviderId = String(ctnCfg.providerId || providers?.[0]?.id || '')
-    const ctnModelPick = String(ctnCfg.modelId || '')
+    const ctnSelection = aiServiceModelSelection(ctnCfg, providers, modelGroupList)
     const ctnSystemPrompt = typeof ctnCfg.systemPrompt === 'string' ? ctnCfg.systemPrompt : ''
     const ctnDefaultPrompt = String(controller?.defaults?.chatTitleNamingSystemPrompt || '')
     const ctnPromptChanged = !!ctnDefaultPrompt && ctnSystemPrompt.trim() !== ctnDefaultPrompt.trim()
 
     const snCfg = (data?.settings?.aiServices?.stickerNaming && typeof (data.settings.aiServices as any).stickerNaming === 'object') ? (data.settings.aiServices as any).stickerNaming : {}
     const snEnabled = !!snCfg.enabled
-    const snProviderId = String(snCfg.providerId || providers?.[0]?.id || '')
-    const snModelPick = String(snCfg.modelId || '')
+    const snSelection = aiServiceModelSelection(snCfg, providers, modelGroupList)
     const snSystemPrompt = typeof snCfg.systemPrompt === 'string' ? snCfg.systemPrompt : ''
     const snDefaultPrompt = String(controller?.defaults?.stickerNamingSystemPrompt || '')
     const snPromptChanged = !!snDefaultPrompt && snSystemPrompt.trim() !== snDefaultPrompt.trim()
 
-    const ccP = providers.find((x: any) => String(x?.id || '') === ccProviderId) || null
-    const ccModelItems = registeredModelItems(ccP)
-    const ccHasPickInList = !!ccModelPick && ccModelItems.some((x: any) => x.id === ccModelPick)
-
-    const mmP = providers.find((x: any) => String(x?.id || '') === mmProviderId) || null
-    const mmModelItems = registeredModelItems(mmP)
-    const mmHasPickInList = !!mmModelPick && mmModelItems.some((x: any) => x.id === mmModelPick)
-
-    const ctnP = providers.find((x: any) => String(x?.id || '') === ctnProviderId) || null
-    const ctnModelItems = registeredModelItems(ctnP)
-    const ctnHasPickInList = !!ctnModelPick && ctnModelItems.some((x: any) => x.id === ctnModelPick)
-
-    const snP = providers.find((x: any) => String(x?.id || '') === snProviderId) || null
-    const snModelItems = registeredModelItems(snP)
-    const snHasPickInList = !!snModelPick && snModelItems.some((x: any) => x.id === snModelPick)
+    const sourceSelectDisabled = loading || (!providers.length && !modelGroupList.length)
 
     return wrapSettingsPanel(
         <SettingsSurface>
@@ -8177,15 +8160,15 @@ function PluginSettingsPage(props: {
 
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', sm: 'center' }}>
                   <FormControl size="small" fullWidth>
-                    <InputLabel id="context-compression-provider">供应商</InputLabel>
+                    <InputLabel id="context-compression-source">模型来源</InputLabel>
                     <Select
-                      labelId="context-compression-provider"
-                      value={ccProviderId}
-                      label="供应商"
-                      onChange={(e) => controller.actions.setContextCompressionProviderId?.(e.target.value)}
-                      disabled={loading || !providers.length}
+                      labelId="context-compression-source"
+                      value={aiServiceSourceValue(ccSelection.sourceKind, ccSelection.sourceId)}
+                      label="模型来源"
+                      onChange={(e) => controller.actions.setContextCompressionModelSource?.(e.target.value)}
+                      disabled={sourceSelectDisabled}
                     >
-                      {providerSelectItems(providers)}
+                      {aiServiceSourceSelectItems(providers, modelGroupList)}
                     </Select>
                   </FormControl>
 
@@ -8193,15 +8176,15 @@ function PluginSettingsPage(props: {
                     <InputLabel id="context-compression-model">登记模型</InputLabel>
                     <Select
                       labelId="context-compression-model"
-                      value={ccHasPickInList ? ccModelPick : ''}
+                      value={ccSelection.hasPickInList ? ccSelection.modelPick : ''}
                       label="登记模型"
                       onChange={(e) => controller.actions.setContextCompressionModelId?.(e.target.value)}
-                      disabled={loading || !ccProviderId}
+                      disabled={loading || !ccSelection.sourceId}
                     >
                       <MenuItem value="">
                         <em>请选择…</em>
                       </MenuItem>
-                      {ccModelItems.map((item: any) => (
+                      {ccSelection.modelItems.map((item: any) => (
                         <MenuItem key={item.id} value={item.id}>
                           {item.hint ? `${item.label} / ${item.hint}` : item.label}
                         </MenuItem>
@@ -8249,7 +8232,7 @@ function PluginSettingsPage(props: {
                 </Stack>
 
                 <Typography variant="caption" color="text.secondary">
-                  仅可选择供应商设置中已登记的模型；如列表为空，请先到供应商设置刷新原始列表并登记模型。
+                  可选择供应商设置中已登记的模型，也可选择模型组中的对外模型。
                 </Typography>
               </SettingsSection>
 
@@ -8271,15 +8254,15 @@ function PluginSettingsPage(props: {
 
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', sm: 'center' }}>
                 <FormControl size="small" fullWidth>
-                  <InputLabel id="mmfix-provider">供应商</InputLabel>
+                  <InputLabel id="mmfix-source">模型来源</InputLabel>
                   <Select
-                    labelId="mmfix-provider"
-                    value={mmProviderId}
-                    label="供应商"
-                    onChange={(e) => controller.actions.setMermaidFixProviderId?.(e.target.value)}
-                    disabled={loading || !providers.length}
+                    labelId="mmfix-source"
+                    value={aiServiceSourceValue(mmSelection.sourceKind, mmSelection.sourceId)}
+                    label="模型来源"
+                    onChange={(e) => controller.actions.setMermaidFixModelSource?.(e.target.value)}
+                    disabled={sourceSelectDisabled}
                   >
-                    {providerSelectItems(providers)}
+                    {aiServiceSourceSelectItems(providers, modelGroupList)}
                   </Select>
                 </FormControl>
 
@@ -8289,15 +8272,15 @@ function PluginSettingsPage(props: {
                 <InputLabel id="mmfix-model">登记模型</InputLabel>
                 <Select
                   labelId="mmfix-model"
-                  value={mmHasPickInList ? mmModelPick : ''}
+                  value={mmSelection.hasPickInList ? mmSelection.modelPick : ''}
                   label="登记模型"
                   onChange={(e) => controller.actions.setMermaidFixModelId?.(e.target.value)}
-                  disabled={loading || !mmProviderId}
+                  disabled={loading || !mmSelection.sourceId}
                 >
                   <MenuItem value="">
                     <em>请选择…</em>
                   </MenuItem>
-                  {mmModelItems.map((item: any) => (
+                  {mmSelection.modelItems.map((item: any) => (
                     <MenuItem key={item.id} value={item.id}>
                       {item.hint ? `${item.label} / ${item.hint}` : item.label}
                     </MenuItem>
@@ -8306,7 +8289,7 @@ function PluginSettingsPage(props: {
               </FormControl>
 
               <Typography variant="caption" color="text.secondary">
-                仅可选择供应商设置中已登记的模型；如列表为空，请先到供应商设置刷新原始列表并登记模型。
+                可选择供应商设置中已登记的模型，也可选择模型组中的对外模型。
               </Typography>
 
               <TextField
@@ -8356,15 +8339,15 @@ function PluginSettingsPage(props: {
 
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', sm: 'center' }}>
                   <FormControl size="small" fullWidth>
-                    <InputLabel id="ctn-provider">供应商</InputLabel>
+                    <InputLabel id="ctn-source">模型来源</InputLabel>
                     <Select
-                      labelId="ctn-provider"
-                      value={ctnProviderId}
-                      label="供应商"
-                      onChange={(e) => controller.actions.setChatTitleNamingProviderId?.(e.target.value)}
-                      disabled={loading || !providers.length}
+                      labelId="ctn-source"
+                      value={aiServiceSourceValue(ctnSelection.sourceKind, ctnSelection.sourceId)}
+                      label="模型来源"
+                      onChange={(e) => controller.actions.setChatTitleNamingModelSource?.(e.target.value)}
+                      disabled={sourceSelectDisabled}
                     >
-                      {providerSelectItems(providers)}
+                      {aiServiceSourceSelectItems(providers, modelGroupList)}
                     </Select>
                   </FormControl>
 
@@ -8374,15 +8357,15 @@ function PluginSettingsPage(props: {
                   <InputLabel id="ctn-model">登记模型</InputLabel>
                   <Select
                     labelId="ctn-model"
-                    value={ctnHasPickInList ? ctnModelPick : ''}
+                    value={ctnSelection.hasPickInList ? ctnSelection.modelPick : ''}
                     label="登记模型"
                     onChange={(e) => controller.actions.setChatTitleNamingModelId?.(e.target.value)}
-                    disabled={loading || !ctnProviderId}
+                    disabled={loading || !ctnSelection.sourceId}
                   >
                     <MenuItem value="">
                       <em>请选择…</em>
                     </MenuItem>
-                    {ctnModelItems.map((item: any) => (
+                    {ctnSelection.modelItems.map((item: any) => (
                       <MenuItem key={item.id} value={item.id}>
                         {item.hint ? `${item.label} / ${item.hint}` : item.label}
                       </MenuItem>
@@ -8391,7 +8374,7 @@ function PluginSettingsPage(props: {
                 </FormControl>
 
                 <Typography variant="caption" color="text.secondary">
-                  仅可选择供应商设置中已登记的模型；如列表为空，请先到供应商设置刷新原始列表并登记模型。
+                  可选择供应商设置中已登记的模型，也可选择模型组中的对外模型。
                 </Typography>
 
                 <TextField
@@ -8441,15 +8424,15 @@ function PluginSettingsPage(props: {
 
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', sm: 'center' }}>
                   <FormControl size="small" fullWidth>
-                    <InputLabel id="sn-provider">供应商</InputLabel>
+                    <InputLabel id="sn-source">模型来源</InputLabel>
                     <Select
-                      labelId="sn-provider"
-                      value={snProviderId}
-                      label="供应商"
-                      onChange={(e) => controller.actions.setStickerNamingProviderId?.(e.target.value)}
-                      disabled={loading || !providers.length}
+                      labelId="sn-source"
+                      value={aiServiceSourceValue(snSelection.sourceKind, snSelection.sourceId)}
+                      label="模型来源"
+                      onChange={(e) => controller.actions.setStickerNamingModelSource?.(e.target.value)}
+                      disabled={sourceSelectDisabled}
                     >
-                      {providerSelectItems(providers)}
+                      {aiServiceSourceSelectItems(providers, modelGroupList)}
                     </Select>
                   </FormControl>
 
@@ -8459,15 +8442,15 @@ function PluginSettingsPage(props: {
                   <InputLabel id="sn-model">登记模型</InputLabel>
                   <Select
                     labelId="sn-model"
-                    value={snHasPickInList ? snModelPick : ''}
+                    value={snSelection.hasPickInList ? snSelection.modelPick : ''}
                     label="登记模型"
                     onChange={(e) => controller.actions.setStickerNamingModelId?.(e.target.value)}
-                    disabled={loading || !snProviderId}
+                    disabled={loading || !snSelection.sourceId}
                   >
                     <MenuItem value="">
                       <em>请选择…</em>
                     </MenuItem>
-                    {snModelItems.map((item: any) => (
+                    {snSelection.modelItems.map((item: any) => (
                       <MenuItem key={item.id} value={item.id}>
                         {item.hint ? `${item.label} / ${item.hint}` : item.label}
                       </MenuItem>
@@ -8476,7 +8459,7 @@ function PluginSettingsPage(props: {
                 </FormControl>
 
                 <Typography variant="caption" color="text.secondary">
-                  仅可选择供应商设置中已登记的模型；如列表为空，请先到供应商设置刷新原始列表并登记模型。
+                  可选择供应商设置中已登记的模型，也可选择模型组中的对外模型。
                 </Typography>
 
                 <TextField
@@ -8595,6 +8578,60 @@ function providerSelectItems(providers: any[]) {
       </MenuItem>
     )
   })
+}
+
+function aiServiceSourceValue(sourceKind: string, sourceId: string) {
+  const kind = String(sourceKind || '') === 'model_group' ? 'model_group' : 'provider'
+  const id = String(sourceId || '')
+  return id ? `${kind}:${id}` : ''
+}
+
+function aiServiceSourceSelectItems(providers: any[], modelGroups: any[]) {
+  const providerItems = (Array.isArray(providers) ? providers : []).map((provider: any) => {
+    const id = String(provider?.id || '')
+    const label = String(provider?.name || id)
+    return (
+      <MenuItem key={`provider:${id}`} value={`provider:${id}`}>
+        {label}
+      </MenuItem>
+    )
+  })
+  const groupItems = (Array.isArray(modelGroups) ? modelGroups : []).map((group: any) => {
+    const id = String(group?.id || '')
+    const label = String(group?.name || id)
+    return (
+      <MenuItem key={`model_group:${id}`} value={`model_group:${id}`}>
+        {`模型组 / ${label}`}
+      </MenuItem>
+    )
+  })
+  return [...providerItems, ...groupItems]
+}
+
+function modelGroupModelItems(group: any) {
+  const models = Array.isArray(group?.models) ? group.models : []
+  return models
+    .map((model: any) => {
+      const id = String(model?.id || '').trim()
+      const label = String(model?.name || model?.id || '').trim() || id
+      return { id, label, hint: '' }
+    })
+    .filter((model: any) => model.id)
+}
+
+function aiServiceModelSelection(config: any, providers: any[], modelGroups: any[]) {
+  const groupId = String(config?.groupId || '').trim()
+  const sourceKind = groupId || String(config?.kind || '').trim() === 'model_group' ? 'model_group' : 'provider'
+  const fallbackProviderId = String(providers?.[0]?.id || '')
+  const fallbackGroupId = String(modelGroups?.[0]?.id || '')
+  const sourceId = sourceKind === 'model_group' ? groupId || fallbackGroupId : String(config?.providerId || fallbackProviderId)
+  const source = sourceKind === 'model_group'
+    ? (Array.isArray(modelGroups) ? modelGroups : []).find((item: any) => String(item?.id || '') === sourceId) || null
+    : (Array.isArray(providers) ? providers : []).find((item: any) => String(item?.id || '') === sourceId) || null
+  const modelItems = sourceKind === 'model_group' ? modelGroupModelItems(source) : registeredModelItems(source)
+  const modelPick = String(config?.modelId || '')
+  const hasPickInList = !!modelPick && modelItems.some((item: any) => item.id === modelPick)
+  return { sourceKind, sourceId, modelPick, modelItems, hasPickInList }
 }
 
 function providerProtocolLabel(protocol: unknown) {

@@ -84,7 +84,7 @@ func (s *system) continueCompactRun(ctx context.Context, record *runRecord, cont
 		s.failCommandRun(record, runtimeStorageFailed("failed to load context compression config", err))
 		return
 	}
-	if strings.TrimSpace(config.Coordinate.ProviderID) == "" || strings.TrimSpace(config.Coordinate.ModelID) == "" {
+	if !types.HasCompleteModelCoordinate(config.Coordinate) {
 		s.failCommandRun(record, runtimeInvalid("请先在设置 > AI 微服务中配置上下文压缩模型", nil))
 		return
 	}

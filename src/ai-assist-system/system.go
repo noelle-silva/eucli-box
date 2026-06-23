@@ -64,7 +64,7 @@ func (s *system) GenerateStickerName(ctx context.Context, request types.StickerN
 	if !config.Enabled {
 		return types.StickerNameResult{}, assistInvalid("sticker naming is disabled", nil)
 	}
-	if strings.TrimSpace(config.Coordinate.ProviderID) == "" || strings.TrimSpace(config.Coordinate.ModelID) == "" {
+	if !types.HasCompleteModelCoordinate(config.Coordinate) {
 		return types.StickerNameResult{}, assistInvalid("model coordinate is required", nil)
 	}
 
@@ -124,7 +124,7 @@ func (s *system) GenerateChatTitle(ctx context.Context, request types.ChatTitleR
 	if !config.Enabled {
 		return types.ChatTitleResult{}, assistInvalid("chat title naming is disabled", nil)
 	}
-	if strings.TrimSpace(config.Coordinate.ProviderID) == "" || strings.TrimSpace(config.Coordinate.ModelID) == "" {
+	if !types.HasCompleteModelCoordinate(config.Coordinate) {
 		return types.ChatTitleResult{}, assistInvalid("model coordinate is required", nil)
 	}
 	session, err := s.storage.LoadSession(ctx, roleID, sessionID)
@@ -179,7 +179,7 @@ func (s *system) FixMermaidInMessage(ctx context.Context, request types.MermaidF
 	if !config.Enabled {
 		return types.MermaidFixResult{}, assistInvalid("mermaid fix is disabled", nil)
 	}
-	if strings.TrimSpace(config.Coordinate.ProviderID) == "" || strings.TrimSpace(config.Coordinate.ModelID) == "" {
+	if !types.HasCompleteModelCoordinate(config.Coordinate) {
 		return types.MermaidFixResult{}, assistInvalid("model coordinate is required", nil)
 	}
 	session, err := s.storage.LoadSession(ctx, roleID, sessionID)

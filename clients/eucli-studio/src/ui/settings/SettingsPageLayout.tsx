@@ -44,9 +44,10 @@ function SettingsNavigationSidebar(props: { value: SettingsTabValue; onChange: (
         overflow: 'hidden',
         p: 1,
         borderRadius: 3,
-        bgcolor: 'rgba(255,255,255,.84)',
-        backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,.96), rgba(248,250,252,.84))',
-        boxShadow: '0 18px 52px rgba(15,23,42,.08)',
+        color: 'var(--studio-text-primary)',
+        bgcolor: 'var(--studio-field)',
+        backgroundImage: 'none',
+        boxShadow: 'var(--studio-shadow-strong)',
       }}
     >
       <Stack spacing={0.75} sx={{ height: '100%', minHeight: 0 }}>
@@ -75,7 +76,7 @@ function SettingsNavigationSidebar(props: { value: SettingsTabValue; onChange: (
 
 export function SettingsPageLayout(props: { topbarHeight: number; value: SettingsTabValue; onChange: (value: SettingsTabValue) => void; children: React.ReactNode }) {
   return (
-    <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden', px: 2, pt: `calc(${props.topbarHeight}px + ${SETTINGS_PAGE_VERTICAL_PADDING}px)`, pb: 2, bgcolor: 'grey.50' }}>
+    <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden', px: 2, pt: `calc(${props.topbarHeight}px + ${SETTINGS_PAGE_VERTICAL_PADDING}px)`, pb: 2, bgcolor: 'var(--studio-canvas)' }}>
       <Box
         sx={{
           display: 'flex',

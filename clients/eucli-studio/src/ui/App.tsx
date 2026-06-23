@@ -38,7 +38,6 @@ import {
   Toolbar,
   Tooltip,
   Typography,
-  createTheme,
 } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import CloseIcon from '@mui/icons-material/Close'
@@ -89,6 +88,7 @@ import { EbSettingsPanel } from './settings/EbSettingsPanel'
 import { ModelGroupsSettingsPanel } from './settings/ModelGroupsSettingsPanel'
 import { SettingsPageLayout, type SettingsTabValue } from './settings/SettingsPageLayout'
 import { SettingsListItem, SettingsPill, SettingsSection, SettingsSurface } from './settings/SettingsSurfaces'
+import { ColorThemeSettingsSection } from './settings/ColorThemeSettingsSection'
 import { WorkspacesSettingsPanel } from './settings/WorkspacesSettingsPanel'
 import { HookPromptsSettingsPanel } from './settings/HookPromptsSettingsPanel'
 import { PlaceholderSettingsPanel } from './settings/PlaceholderSettingsPanel'
@@ -120,6 +120,8 @@ import {
 import { chatMessageMaterialKind, isSystemControlMessage } from '../domain/message'
 import type { HookPromptLibrary } from '../domain/hookPrompt'
 import type { PlaceholderLibrary } from '../domain/placeholder'
+import { resolveColorThemePreset } from '../domain/colorTheme'
+import { colorMixVar, colorThemeCssVariables, createStudioMuiTheme } from './colorThemeStyles'
 
 type SettingsTab = SettingsTabValue
 
@@ -128,7 +130,7 @@ type ChatSessionRunNoticeKind = Exclude<ChatSessionRunStatus, 'idle' | 'running'
 const SOFT_POPOVER_PAPER_SX = {
   borderRadius: 3,
   bgcolor: 'rgba(255,255,255,.94)',
-  backgroundImage: 'linear-gradient(135deg, rgba(255,255,255,.98), rgba(248,250,252,.9))',
+  backgroundImage: 'none',
   boxShadow: '0 24px 70px rgba(15,23,42,.18)',
   overflow: 'hidden',
   '& .MuiOutlinedInput-root': {
@@ -1061,137 +1063,9 @@ function ComposerInputControls(props: {
 export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDirectory; windowControls?: AiChatWindowControls }) {
   const { controller, dataDirectory, windowControls } = props
   const s = useAiChatState(controller)
-
-  const theme = React.useMemo(
-    () =>
-      createTheme({
-        palette: { mode: 'light' },
-        shape: { borderRadius: 12 },
-        typography: {
-          fontFamily:
-            'system-ui,-apple-system,"Segoe UI","Microsoft YaHei","PingFang SC","Noto Sans CJK SC",Roboto,Arial,sans-serif',
-        },
-        components: {
-          MuiDialog: {
-            styleOverrides: {
-              paper: {
-                borderRadius: 24,
-                background: 'linear-gradient(135deg, rgba(255,255,255,.98), rgba(248,250,252,.92))',
-                boxShadow: '0 30px 90px rgba(15,23,42,.24)',
-                backgroundImage: 'linear-gradient(135deg, rgba(255,255,255,.98), rgba(248,250,252,.92))',
-                overflow: 'hidden',
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: 16,
-                  backgroundColor: 'rgba(255,255,255,.74)',
-                  boxShadow: '0 8px 22px rgba(15,23,42,.045)',
-                  transition: 'background-color .16s ease, box-shadow .16s ease',
-                },
-                '& .MuiOutlinedInput-root .MuiOutlinedInput-notchedOutline': { border: 0 },
-                '& .MuiOutlinedInput-root:hover': {
-                  backgroundColor: 'rgba(255,255,255,.94)',
-                  boxShadow: '0 10px 26px rgba(15,23,42,.065)',
-                },
-                '& .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline': { border: 0 },
-                '& .MuiOutlinedInput-root.Mui-focused': {
-                  backgroundColor: 'rgba(239,246,255,.96)',
-                  boxShadow: '0 12px 30px rgba(37,99,235,.10)',
-                },
-                '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': { border: 0 },
-                '& .MuiInputLabel-root': { fontWeight: 700, color: 'rgba(71,85,105,.88)' },
-                '& .MuiInputLabel-root.Mui-focused': { color: '#2563eb' },
-                '& .MuiPaper-outlined': {
-                  border: 0,
-                  borderRadius: 20,
-                  backgroundColor: 'rgba(255,255,255,.72)',
-                  boxShadow: '0 10px 28px rgba(15,23,42,.07)',
-                },
-                '& .MuiButton-outlined': {
-                  border: 0,
-                  backgroundColor: 'rgba(255,255,255,.62)',
-                  boxShadow: '0 8px 22px rgba(15,23,42,.045)',
-                },
-                '& .MuiButton-outlined:hover': {
-                  border: 0,
-                  backgroundColor: 'rgba(255,255,255,.9)',
-                  boxShadow: '0 10px 26px rgba(15,23,42,.065)',
-                },
-                '& .MuiChip-outlined': {
-                  border: 0,
-                  backgroundColor: 'rgba(241,245,249,.9)',
-                  fontWeight: 800,
-                },
-              },
-            },
-          },
-          MuiDialogTitle: {
-            styleOverrides: {
-              root: {
-                padding: '20px 24px 12px',
-                fontWeight: 900,
-              },
-            },
-          },
-          MuiDialogContent: {
-            styleOverrides: {
-              root: {
-                backgroundColor: 'rgba(248,250,252,.74)',
-                '&.MuiDialogContent-dividers': {
-                  borderTop: 0,
-                  borderBottom: 0,
-                },
-              },
-            },
-          },
-          MuiDialogActions: {
-            styleOverrides: {
-              root: {
-                padding: '12px 24px 20px',
-                backgroundColor: 'rgba(248,250,252,.74)',
-                gap: 8,
-              },
-            },
-          },
-          MuiPopover: {
-            styleOverrides: {
-              paper: {
-                borderRadius: 24,
-                background: 'linear-gradient(135deg, rgba(255,255,255,.98), rgba(248,250,252,.92))',
-                boxShadow: '0 24px 70px rgba(15,23,42,.18)',
-                overflow: 'hidden',
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: 18,
-                  backgroundColor: 'rgba(255,255,255,.72)',
-                  boxShadow: '0 8px 22px rgba(15,23,42,.045)',
-                },
-                '& .MuiOutlinedInput-root .MuiOutlinedInput-notchedOutline': { border: 0 },
-                '& .MuiOutlinedInput-root:hover': {
-                  backgroundColor: 'rgba(255,255,255,.94)',
-                  boxShadow: '0 10px 26px rgba(15,23,42,.065)',
-                },
-                '& .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline': { border: 0 },
-                '& .MuiOutlinedInput-root.Mui-focused': {
-                  backgroundColor: 'rgba(239,246,255,.96)',
-                  boxShadow: '0 12px 30px rgba(37,99,235,.10)',
-                },
-                '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': { border: 0 },
-                '& .MuiTabs-indicator': { display: 'none' },
-                '& .MuiTab-root': {
-                  borderRadius: 16,
-                  minHeight: 40,
-                  fontWeight: 800,
-                },
-                '& .MuiTab-root.Mui-selected': {
-                  backgroundColor: 'rgba(59,130,246,.10)',
-                },
-              },
-            },
-          },
-        },
-      }),
-    [],
-  )
-
   const data = s.data
+  const colorThemePreset = resolveColorThemePreset(data?.settings?.colorTheme)
+  const theme = React.useMemo(() => createStudioMuiTheme(colorThemePreset), [colorThemePreset])
   const roles = Array.isArray(data?.roles) ? data.roles : []
   const groups = Array.isArray((data as any)?.groups) ? ((data as any).groups as any[]) : []
   const workspaces = Array.isArray((data as any)?.workspaces) ? ((data as any).workspaces as any[]) : []
@@ -3873,17 +3747,19 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
       <CssBaseline />
       <GlobalStyles
         styles={{
+          ':root': colorThemeCssVariables(colorThemePreset),
           'html, body': {
              height: '100%',
              width: '100%',
              overflow: 'hidden',
              overscrollBehavior: 'none',
-             backgroundColor: transparentChatBg ? `rgba(255,255,255,${bgAlpha})` : '#fff',
+             color: 'var(--studio-text-primary)',
+             background: transparentChatBg ? colorMixVar('--studio-canvas', Math.max(1, bgAlpha * 100)) : 'var(--studio-app-background)',
            },
           [`#${AI_STUDIO_CHAT_ROOT_ID}`]: {
             height: '100%',
             overflow: 'hidden',
-            backgroundColor: transparentChatBg ? `rgba(255,255,255,${bgAlpha})` : '#fff',
+            background: transparentChatBg ? colorMixVar('--studio-canvas', Math.max(1, bgAlpha * 100)) : 'var(--studio-app-background)',
             backdropFilter: transparentChatBg && chatBgBlur > 0 ? `blur(${chatBgBlur}px)` : 'none',
             WebkitBackdropFilter: transparentChatBg && chatBgBlur > 0 ? `blur(${chatBgBlur}px)` : 'none',
           },
@@ -3911,8 +3787,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
             overflow: 'auto',
             padding: 12,
             borderRadius: 12,
-            background: '#0b1220',
-            color: '#e5e7eb',
+            background: 'var(--studio-code-background)',
+            color: 'var(--studio-code-text)',
             border: '1px solid rgba(255,255,255,.06)',
           },
           '.prose pre.fw-code-block': {
@@ -3951,8 +3827,8 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
           '.prose blockquote': {
             margin: '10px 0',
             padding: '8px 12px',
-            borderLeft: '4px solid rgba(25,118,210,.35)',
-            background: 'rgba(25,118,210,.06)',
+            borderLeft: '4px solid var(--studio-primary)',
+            background: 'var(--studio-primary-soft)',
             borderRadius: 12,
           },
           '.prose img': { maxWidth: '100%', height: 'auto' },
@@ -4313,12 +4189,12 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
           }}
         />
 
-      <Box sx={{ height: '100%', minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+      <Box sx={{ height: '100%', minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative', color: 'var(--studio-text-primary)', background: 'var(--studio-app-background)' }}>
         <AppBar
           position="absolute"
           elevation={0}
           sx={{
-            bgcolor: `rgba(255,255,255,${topbarOpacity / 100})`,
+            bgcolor: colorMixVar('--studio-topbar', topbarOpacity),
             color: 'text.primary',
             borderBottom: 'none',
             backdropFilter: topbarBlur > 0 ? `blur(${topbarBlur}px)` : 'none',
@@ -4489,7 +4365,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                 display: 'flex',
                 flexDirection: 'column',
                 position: 'relative',
-                bgcolor: transparentChatBg ? 'transparent' : 'background.default',
+                bgcolor: transparentChatBg ? 'transparent' : 'var(--studio-canvas)',
               }}
             >
              <CustomScrollArea
@@ -4505,7 +4381,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                   pl: 2,
                   pr: treeOpen && effectiveTreeView === 'right' ? `calc(16px + ${Math.round(treePanelW)}px)` : 2,
                   pt: `calc(${TOPBAR_H}px + 16px)`,
-                  bgcolor: transparentChatBg ? 'transparent' : 'grey.50',
+                  bgcolor: transparentChatBg ? 'transparent' : 'var(--studio-paper-muted)',
                   paddingBottom: `calc(${Math.max(0, composerHeight)}px + 24px)`,
                }}
               >
@@ -4965,7 +4841,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                   overflow: 'hidden',
                   pointerEvents: treeOpen && effectiveTreeView === 'right' ? 'auto' : 'none',
                   borderLeft: treeOpen && effectiveTreeView === 'right' ? '1px solid rgba(0,0,0,.10)' : '1px solid transparent',
-                  bgcolor: transparentChatBg ? `rgba(255,255,255,${Math.max(0.72, bgAlpha)})` : 'background.paper',
+                  bgcolor: transparentChatBg ? colorMixVar('--studio-paper', Math.max(72, bgAlpha * 100)) : 'var(--studio-paper)',
                   zIndex: 1000,
                 }}
               >
@@ -5241,7 +5117,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                     height: 'min(80vh, 760px)',
                     borderRadius: 3,
                     overflow: 'hidden',
-                    bgcolor: transparentChatBg ? `rgba(255,255,255,${Math.max(0.72, bgAlpha)})` : 'background.paper',
+                    bgcolor: transparentChatBg ? colorMixVar('--studio-paper', Math.max(72, bgAlpha * 100)) : 'var(--studio-paper)',
                   },
                 }}
               >
@@ -7595,6 +7471,8 @@ function PluginSettingsPage(props: {
             </Typography>
           </Stack>
         </Stack>
+
+        <ColorThemeSettingsSection controller={controller} loading={loading} settings={data.settings} />
 
         <Typography variant="body2" sx={{ fontWeight: 900 }} color="text.secondary">
           组件调节

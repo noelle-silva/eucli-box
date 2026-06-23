@@ -32,7 +32,7 @@ export function ToolConfirmationCard(props: ToolConfirmationCardProps) {
         borderRadius: 3,
         overflow: 'hidden',
         borderColor: 'rgba(217,119,6,.34)',
-        background: 'linear-gradient(135deg, rgba(255,251,235,.96), rgba(255,255,255,.92))',
+        background: 'rgba(255,251,235,.96)',
       }}
     >
       <Box sx={{ px: 1.35, py: 1.15 }}>

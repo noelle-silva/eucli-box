@@ -19,32 +19,32 @@ function sxList(sx?: SxProps<Theme>) {
 }
 
 function toneBackground(tone: SurfaceTone) {
-  if (tone === 'selected') return 'rgba(59,130,246,.10)'
-  if (tone === 'danger') return 'rgba(239,68,68,.08)'
-  if (tone === 'info') return 'rgba(14,165,233,.09)'
-  if (tone === 'muted') return 'rgba(248,250,252,.88)'
-  return 'rgba(255,255,255,.82)'
+  if (tone === 'selected') return 'var(--studio-primary-soft)'
+  if (tone === 'danger') return 'color-mix(in srgb, var(--studio-danger) 10%, transparent)'
+  if (tone === 'info') return 'var(--studio-secondary-soft)'
+  if (tone === 'muted') return 'var(--studio-paper-muted)'
+  return 'var(--studio-field)'
 }
 
 const settingsFormControlSx = {
   '& .MuiOutlinedInput-root': {
     borderRadius: 2,
-    bgcolor: 'rgba(255,255,255,.72)',
-    boxShadow: '0 8px 22px rgba(15,23,42,.045)',
+    bgcolor: 'var(--studio-field)',
+    boxShadow: 'var(--studio-shadow-soft)',
     transition: 'background-color .16s ease, box-shadow .16s ease',
     '& .MuiOutlinedInput-notchedOutline': { border: 0 },
     '&:hover': {
-      bgcolor: 'rgba(255,255,255,.92)',
-      boxShadow: '0 10px 26px rgba(15,23,42,.065)',
+      bgcolor: 'var(--studio-field-hover)',
+      boxShadow: 'var(--studio-shadow-soft)',
     },
     '&:hover .MuiOutlinedInput-notchedOutline': { border: 0 },
     '&.Mui-focused': {
-      bgcolor: 'rgba(239,246,255,.96)',
-      boxShadow: '0 12px 30px rgba(37,99,235,.10)',
+      bgcolor: 'var(--studio-field-focus)',
+      boxShadow: 'var(--studio-focus)',
     },
     '&.Mui-focused .MuiOutlinedInput-notchedOutline': { border: 0 },
     '&.Mui-disabled': {
-      bgcolor: 'rgba(241,245,249,.74)',
+      bgcolor: 'var(--studio-paper-muted)',
       boxShadow: 'none',
     },
     '&.Mui-disabled .MuiOutlinedInput-notchedOutline': { border: 0 },
@@ -72,9 +72,10 @@ export function SettingsSurface(props: SurfaceProps) {
         {
           p: { xs: 1.5, sm: 1.75 },
           borderRadius: 3,
-          bgcolor: 'rgba(255,255,255,.86)',
-          backgroundImage: 'linear-gradient(135deg, rgba(255,255,255,.96), rgba(248,250,252,.82))',
-          boxShadow: '0 18px 52px rgba(15,23,42,.09)',
+          color: 'var(--studio-text-primary)',
+          bgcolor: 'var(--studio-field)',
+          backgroundImage: 'none',
+          boxShadow: 'var(--studio-shadow-strong)',
           ...settingsFormControlSx,
         },
         ...sxList(props.sx),
@@ -96,7 +97,7 @@ export const SettingsSection = React.forwardRef<HTMLDivElement, SectionProps>(fu
           p: { xs: 1.25, sm: 1.5 },
           borderRadius: 2.5,
           bgcolor: toneBackground(tone),
-          boxShadow: tone === 'selected' ? '0 12px 28px rgba(37,99,235,.10)' : '0 10px 24px rgba(15,23,42,.055)',
+          boxShadow: tone === 'selected' ? 'var(--studio-focus)' : 'var(--studio-shadow-soft)',
           ...settingsFormControlSx,
         },
         ...sxList(props.sx),

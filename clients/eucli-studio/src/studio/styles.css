@@ -38,10 +38,7 @@ textarea {
   display: flex;
   flex-direction: column;
   padding: 22px;
-  background:
-    radial-gradient(circle at 18% 8%, rgba(217, 163, 179, 0.38), transparent 32%),
-    radial-gradient(circle at 90% 12%, rgba(126, 152, 255, 0.22), transparent 28%),
-    linear-gradient(135deg, #f8f1f4 0%, #eef3ff 48%, #f5f7fb 100%);
+  background: #f5f7fb;
 }
 
 .bootFallbackTopbar {

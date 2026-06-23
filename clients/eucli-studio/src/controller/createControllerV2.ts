@@ -59,6 +59,13 @@ import {
   setActiveComposerInput,
 } from '../domain/sessionComposerDrafts'
 import { pendingChatForTarget } from '../domain/pendingChat'
+import {
+  COLOR_THEME_SETTING_KEY,
+  listColorThemePresets,
+  mergeImportedColorThemePresets,
+  normalizeColorThemeSettings,
+  parseColorThemePresetImport,
+} from '../domain/colorTheme'
 
 // ---- storage ----
 import { createChatWriteLock } from '../storage/chatWriteLock'
@@ -1660,6 +1667,34 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       state.data.settings.composerBlur = clamp(Math.round(Number(blur || 0)), 0, 24)
       if (commit) saveMeta().catch(() => {})
       emit()
+    },
+    setColorThemePreset: (presetId: any) => {
+      if (!state.data) return
+      const id = String(presetId || '').trim()
+      const settings = normalizeColorThemeSettings((state.data.settings as any)[COLOR_THEME_SETTING_KEY])
+      const exists = listColorThemePresets(settings).some((preset) => preset.id === id)
+      if (!exists) return api.ui?.showToast?.('配色预设不存在', { kind: 'error' })
+      ;(state.data.settings as any)[COLOR_THEME_SETTING_KEY] = { ...settings, activePresetId: id }
+      saveMeta().catch(() => {})
+      emit()
+      return true
+    },
+    importColorThemePresets: (jsonText: any) => {
+      if (!state.data) return false
+      try {
+        const presets = parseColorThemePresetImport(String(jsonText || ''), () => uid('color_theme'))
+        ;(state.data.settings as any)[COLOR_THEME_SETTING_KEY] = mergeImportedColorThemePresets(
+          (state.data.settings as any)[COLOR_THEME_SETTING_KEY],
+          presets,
+        )
+        saveMeta().catch(() => {})
+        emit()
+        api.ui?.showToast?.(`已导入 ${presets.length} 个配色预设`, { kind: 'success' })
+        return true
+      } catch (error: any) {
+        api.ui?.showToast?.(String(error?.message || error || '导入配色失败'), { kind: 'error' })
+        return false
+      }
     },
     requestSetRenderSafetyPolicy: (policy: any) => {
       if (!state.data) return

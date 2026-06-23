@@ -5761,11 +5761,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
                   onChange={(e) => onTempProviderChanged(String(e.target.value || ''))}
                   disabled={s.loading || !providers.length}
                 >
-                  {providers.map((pp: any) => (
-                    <MenuItem key={String(pp?.id || '')} value={String(pp?.id || '')}>
-                      {String(pp?.name || '')}
-                    </MenuItem>
-                  ))}
+                  {providerSelectItems(providers)}
                 </Select>
               </FormControl>
 
@@ -8189,14 +8185,7 @@ function PluginSettingsPage(props: {
                       onChange={(e) => controller.actions.setContextCompressionProviderId?.(e.target.value)}
                       disabled={loading || !providers.length}
                     >
-                      {providers.map((pp: any) => {
-                        const id = String(pp?.id || '')
-                        return (
-                          <MenuItem key={id} value={id}>
-                            {id}
-                          </MenuItem>
-                        )
-                      })}
+                      {providerSelectItems(providers)}
                     </Select>
                   </FormControl>
 
@@ -8290,14 +8279,7 @@ function PluginSettingsPage(props: {
                     onChange={(e) => controller.actions.setMermaidFixProviderId?.(e.target.value)}
                     disabled={loading || !providers.length}
                   >
-                    {providers.map((pp: any) => {
-                      const id = String(pp?.id || '')
-                      return (
-                        <MenuItem key={id} value={id}>
-                          {id}
-                        </MenuItem>
-                      )
-                    })}
+                    {providerSelectItems(providers)}
                   </Select>
                 </FormControl>
 
@@ -8382,14 +8364,7 @@ function PluginSettingsPage(props: {
                       onChange={(e) => controller.actions.setChatTitleNamingProviderId?.(e.target.value)}
                       disabled={loading || !providers.length}
                     >
-                      {providers.map((pp: any) => {
-                        const id = String(pp?.id || '')
-                        return (
-                          <MenuItem key={id} value={id}>
-                            {id}
-                          </MenuItem>
-                        )
-                      })}
+                      {providerSelectItems(providers)}
                     </Select>
                   </FormControl>
 
@@ -8474,14 +8449,7 @@ function PluginSettingsPage(props: {
                       onChange={(e) => controller.actions.setStickerNamingProviderId?.(e.target.value)}
                       disabled={loading || !providers.length}
                     >
-                      {providers.map((pp: any) => {
-                        const id = String(pp?.id || '')
-                        return (
-                          <MenuItem key={id} value={id}>
-                            {id}
-                          </MenuItem>
-                        )
-                      })}
+                      {providerSelectItems(providers)}
                     </Select>
                   </FormControl>
 
@@ -8614,6 +8582,19 @@ function registeredModelItems(provider: any) {
       return { id, label, hint }
     })
     .filter((model: any) => model.id)
+}
+
+function providerSelectItems(providers: any[]) {
+  const list = Array.isArray(providers) ? providers : []
+  return list.map((provider: any) => {
+    const id = String(provider?.id || '')
+    const label = String(provider?.name || id)
+    return (
+      <MenuItem key={id} value={id}>
+        {label}
+      </MenuItem>
+    )
+  })
 }
 
 function providerProtocolLabel(protocol: unknown) {

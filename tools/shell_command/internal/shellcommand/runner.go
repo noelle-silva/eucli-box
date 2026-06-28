@@ -17,6 +17,9 @@ func Execute(ctx context.Context, input types.ToolExecutionInput) types.ToolExec
 	if err != nil {
 		return failure("parse shell_command request", err, nil)
 	}
+	if block, blocked := checkHardlineCommand(request.Command); blocked {
+		return hardlineDeniedOutput(block)
+	}
 	provider, err := selectProvider(config, request.Provider, input.ToolDirectory)
 	if err != nil {
 		return failure("select shell_command provider", err, map[string]any{"provider": effectiveProviderName(config, request.Provider)})

@@ -61,18 +61,51 @@ func TestExecuteTimesOutCommand(t *testing.T) {
 func TestExecuteTruncatesCapturedOutput(t *testing.T) {
 	fixture := newShellCommandFixture(t)
 	result := Execute(context.Background(), types.ToolExecutionInput{
-		Arguments:            map[string]any{"command": "large", "maxOutputChars": 12},
+		Arguments:            map[string]any{"command": "ordered-large", "maxOutputChars": 12},
 		ToolDirectory:        fixture.toolDir,
 		HostWorkingDirectory: fixture.hostDir,
 	})
 	if result.Status != types.ToolStatusSuccess || result.Metadata["truncated"] != true {
 		t.Fatalf("result = %#v", result)
 	}
-	if len([]rune(result.Content)) != 12 {
-		t.Fatalf("content length = %d, content = %q", len([]rune(result.Content)), result.Content)
+	if result.Content != "89ABCDEFGHIJ" || result.Metadata["stdout"] != "89ABCDEFGHIJ" || result.Metadata["combinedOutput"] != "89ABCDEFGHIJ" {
+		t.Fatalf("tail output mismatch: content = %q, metadata = %#v", result.Content, result.Metadata)
 	}
 	if result.Metadata["invalidUTF8"] != false || result.Metadata["utf8ReplacementCount"] != 0 {
 		t.Fatalf("encoding metadata = %#v", result.Metadata)
+	}
+}
+
+func TestExecuteDeniesHardlineCommandBeforeProviderSelection(t *testing.T) {
+	fixture := newShellCommandFixture(t)
+	result := Execute(context.Background(), types.ToolExecutionInput{
+		Arguments:            map[string]any{"command": "rm -rf /", "provider": "missing-provider"},
+		ToolDirectory:        fixture.toolDir,
+		HostWorkingDirectory: fixture.hostDir,
+	})
+	if result.Status != types.ToolStatusDenied {
+		t.Fatalf("result = %#v", result)
+	}
+	if result.Metadata["hardlineBlocked"] != true || result.Metadata["denied"] != true || result.Metadata["hardlineRule"] == "" {
+		t.Fatalf("metadata = %#v", result.Metadata)
+	}
+	if !strings.Contains(result.Error, "hardline safety rule") || strings.Contains(result.Error, "missing-provider") {
+		t.Fatalf("error = %q", result.Error)
+	}
+}
+
+func TestExecuteDeniesHardlineCommandBeforeWorkdirResolution(t *testing.T) {
+	fixture := newShellCommandFixture(t)
+	result := Execute(context.Background(), types.ToolExecutionInput{
+		Arguments:            map[string]any{"command": "shutdown -h now", "workdir": filepath.Join(fixture.hostDir, "missing")},
+		ToolDirectory:        fixture.toolDir,
+		HostWorkingDirectory: fixture.hostDir,
+	})
+	if result.Status != types.ToolStatusDenied {
+		t.Fatalf("result = %#v", result)
+	}
+	if result.Content != result.Error || result.Metadata["error"] != result.Error || result.Metadata["hardlineBlocked"] != true {
+		t.Fatalf("result = %#v", result)
 	}
 }
 
@@ -239,7 +272,7 @@ func main() {
 	switch command {
 	case "print":
 		cwd, _ := os.Getwd()
-		fmt.Println("fixture-ok", cwd)
+		fmt.Println(cwd, "fixture-ok")
 	case "fail":
 		fmt.Fprintln(os.Stderr, "fixture-error")
 		os.Exit(7)
@@ -247,6 +280,8 @@ func main() {
 		time.Sleep(200 * time.Millisecond)
 	case "large":
 		fmt.Print(strings.Repeat("界", 30))
+	case "ordered-large":
+		fmt.Print("0123456789ABCDEFGHIJ")
 	case "partial-byte-truncate":
 		fmt.Print("界界")
 	case "invalid-utf8":

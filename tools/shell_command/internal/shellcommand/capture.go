@@ -1,7 +1,6 @@
 package shellcommand
 
 import (
-	"strings"
 	"sync"
 	"unicode/utf8"
 )
@@ -32,15 +31,17 @@ func newLimitedBuffer(limit int) *limitedBuffer {
 func (b *limitedBuffer) Write(payload []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.byteLimit > 0 && len(b.data) < b.byteLimit {
-		remaining := b.byteLimit - len(b.data)
-		if len(payload) <= remaining {
-			b.data = append(b.data, payload...)
-		} else {
-			b.data = append(b.data, payload[:remaining]...)
-			b.truncated = true
-		}
-	} else if len(payload) > 0 {
+	if len(payload) == 0 {
+		return len(payload), nil
+	}
+	if b.byteLimit <= 0 {
+		b.truncated = true
+		return len(payload), nil
+	}
+	b.data = append(b.data, payload...)
+	if len(b.data) > b.byteLimit {
+		drop := len(b.data) - b.byteLimit
+		b.data = b.data[drop:]
 		b.truncated = true
 	}
 	return len(payload), nil
@@ -53,33 +54,40 @@ func (b *limitedBuffer) Snapshot() capturedText {
 }
 
 func normalizeCapturedText(data []byte, charLimit int, byteTruncated bool) capturedText {
-	var builder strings.Builder
-	builder.Grow(len(data))
 	truncated := byteTruncated
+	if byteTruncated {
+		data = trimLeadingPartialUTF8(data)
+	}
+	runes := make([]rune, 0, len(data))
 	invalidCount := 0
-	runeCount := 0
 	for index := 0; index < len(data); {
-		if charLimit > 0 && runeCount >= charLimit {
-			truncated = true
-			break
-		}
 		r, size := utf8.DecodeRune(data[index:])
 		if r == utf8.RuneError && size == 1 {
 			if byteTruncated && !utf8.FullRune(data[index:]) {
 				truncated = true
 				break
 			}
-			builder.WriteByte('?')
+			runes = append(runes, '?')
 			invalidCount++
 			index++
-			runeCount++
 			continue
 		}
-		builder.WriteRune(r)
+		runes = append(runes, r)
 		index += size
-		runeCount++
 	}
-	return capturedText{Text: builder.String(), Truncated: truncated, InvalidUTF8: invalidCount > 0, ReplacementCount: invalidCount}
+	if charLimit > 0 && len(runes) > charLimit {
+		runes = runes[len(runes)-charLimit:]
+		truncated = true
+	}
+	return capturedText{Text: string(runes), Truncated: truncated, InvalidUTF8: invalidCount > 0, ReplacementCount: invalidCount}
+}
+
+func trimLeadingPartialUTF8(data []byte) []byte {
+	index := 0
+	for index < len(data) && data[index]&0xC0 == 0x80 {
+		index++
+	}
+	return data[index:]
 }
 
 type streamCapture struct {

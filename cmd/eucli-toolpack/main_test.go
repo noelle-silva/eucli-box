@@ -19,7 +19,7 @@ func TestRunBuildsShellCommandIntoAbsoluteDataDir(t *testing.T) {
 	if err := run(context.Background(), []string{"-tool", "shell_command", "-data-dir", dataDir, "-asset-root", "git-bash-root=" + gitBashRoot}); err != nil {
 		t.Fatalf("run() error = %v", err)
 	}
-	targetDir := filepath.Join(dataDir, "tools", "shell_command")
+	targetDir := filepath.Join(dataDir, "tool-bodies", "shell_command")
 	assertFile(t, filepath.Join(targetDir, "config.json"))
 	assertFile(t, filepath.Join(targetDir, "providers", "git-bash", "bin", "bash.exe"))
 	config := readRuntimeConfigFile(t, filepath.Join(targetDir, "config.json"))
@@ -32,9 +32,20 @@ func TestRunBuildsShellCommandIntoAbsoluteDataDir(t *testing.T) {
 	}
 	binaryRelPath := filepath.Join("binary", runtime.GOOS+"-"+runtime.GOARCH, executableName("shell_command"))
 	assertFile(t, filepath.Join(targetDir, binaryRelPath))
-	tool := readToolDefinitionFile(t, filepath.Join(targetDir, "data.json"))
-	if tool.ID != "shell_command" || tool.Directory != "." || tool.DefaultInvocationMode != types.ToolInvocationModeSync {
+	tool := readToolDefinitionFile(t, filepath.Join(targetDir, "definition.json"))
+	if tool.ID != "shell_command" || tool.BodyDirectory != "." || tool.DefaultInvocationMode != types.ToolInvocationModeSync {
 		t.Fatalf("tool definition = %#v", tool)
+	}
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		t.Fatalf("findRepoRoot() error = %v", err)
+	}
+	sourceTool, err := readToolDefinition(toolSource{ID: "shell_command", Dir: filepath.Join(repoRoot, "tools", "shell_command")})
+	if err != nil {
+		t.Fatalf("readToolDefinition() error = %v", err)
+	}
+	if tool.Version != sourceTool.Version || tool.EucliBoxCompatibility != sourceTool.EucliBoxCompatibility {
+		t.Fatalf("tool release metadata = %#v", tool)
 	}
 	providerSchema := tool.InputSchema["properties"].(map[string]any)["provider"].(map[string]any)
 	providerEnum := providerSchema["enum"].([]any)
@@ -58,13 +69,13 @@ func TestRunBuildsSciCalculatorWithBundledPythonRuntime(t *testing.T) {
 	if err := run(context.Background(), []string{"-tool", "sci_calculator", "-data-dir", dataDir, "-asset-root", "sci-calculator-python-runtime=" + pythonRoot}); err != nil {
 		t.Fatalf("run() error = %v", err)
 	}
-	targetDir := filepath.Join(dataDir, "tools", "sci_calculator")
+	targetDir := filepath.Join(dataDir, "tool-bodies", "sci_calculator")
 	assertFile(t, filepath.Join(targetDir, "config.json"))
 	assertFile(t, filepath.Join(targetDir, "runtime", "python", "python.exe"))
 	binaryRelPath := filepath.Join("binary", runtime.GOOS+"-"+runtime.GOARCH, executableName("sci_calculator"))
 	assertFile(t, filepath.Join(targetDir, binaryRelPath))
-	tool := readToolDefinitionFile(t, filepath.Join(targetDir, "data.json"))
-	if tool.ID != "sci_calculator" || tool.Name != "SciCalculator" || tool.Directory != "." || tool.DefaultInvocationMode != types.ToolInvocationModeSync {
+	tool := readToolDefinitionFile(t, filepath.Join(targetDir, "definition.json"))
+	if tool.ID != "sci_calculator" || tool.Name != "SciCalculator" || tool.BodyDirectory != "." || tool.DefaultInvocationMode != types.ToolInvocationModeSync {
 		t.Fatalf("tool definition = %#v", tool)
 	}
 	if len(tool.Binaries) != 1 || tool.Binaries[0].Path != filepath.ToSlash(binaryRelPath) || filepath.IsAbs(tool.Binaries[0].Path) {
@@ -77,7 +88,7 @@ func TestRunBuildsSciCalculatorWithoutBundledPythonRuntime(t *testing.T) {
 	if err := run(context.Background(), []string{"-tool", "sci_calculator", "-data-dir", dataDir}); err != nil {
 		t.Fatalf("run() error = %v", err)
 	}
-	targetDir := filepath.Join(dataDir, "tools", "sci_calculator")
+	targetDir := filepath.Join(dataDir, "tool-bodies", "sci_calculator")
 	assertFile(t, filepath.Join(targetDir, "config.json"))
 	if _, err := os.Stat(filepath.Join(targetDir, "runtime", "python", "python.exe")); !os.IsNotExist(err) {
 		t.Fatalf("bundled python stat error = %v, want not exist", err)
@@ -222,29 +233,79 @@ func TestCopyDeclaredAssetRootsRejectsEscapingRequiredFile(t *testing.T) {
 	}
 }
 
-func TestClearTargetToolDirectoryPreservesDeclaredTopLevelPaths(t *testing.T) {
-	targetDir := filepath.Join(t.TempDir(), "tool")
-	writeFixtureFile(t, filepath.Join(targetDir, "runtime", "Everything.db"))
-	writeFixtureFile(t, filepath.Join(targetDir, "providers", "everything", "Everything.exe"))
-	writeFixtureFile(t, filepath.Join(targetDir, "data.json"))
+func TestRunRebuildsToolBodyWithoutChangingToolData(t *testing.T) {
+	dataDir := filepath.Join(t.TempDir(), "runtime-data")
+	settings := filepath.Join(dataDir, "tool-data", "sci_calculator", "settings.json")
+	writeFixtureFile(t, settings)
 
-	if err := clearTargetToolDirectory(targetDir, []string{"runtime"}); err != nil {
-		t.Fatalf("clearTargetToolDirectory() error = %v", err)
+	if err := run(context.Background(), []string{"-tool", "sci_calculator", "-data-dir", dataDir}); err != nil {
+		t.Fatalf("run() error = %v", err)
 	}
-	assertFile(t, filepath.Join(targetDir, "runtime", "Everything.db"))
-	if _, err := os.Stat(filepath.Join(targetDir, "providers", "everything", "Everything.exe")); !os.IsNotExist(err) {
-		t.Fatalf("providers stat error = %v, want not exist", err)
+	payload, err := os.ReadFile(settings)
+	if err != nil {
+		t.Fatalf("ReadFile(settings) error = %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(targetDir, "data.json")); !os.IsNotExist(err) {
-		t.Fatalf("data.json stat error = %v, want not exist", err)
+	if string(payload) != "fixture" {
+		t.Fatalf("settings changed to %q", payload)
 	}
 }
 
-func TestValidatePreservePathsRejectsNestedPaths(t *testing.T) {
-	_, err := validatePreservePaths([]string{"runtime/cache"})
-	if err == nil || !strings.Contains(err.Error(), "relative top-level") {
-		t.Fatalf("validatePreservePaths() error = %v, want top-level error", err)
+func TestMigrateToolLayoutSeparatesAndVerifiesLegacyData(t *testing.T) {
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "data")
+	sourceDir := filepath.Join(root, "source", "demo")
+	writeMigrationSource(t, sourceDir)
+	legacyDir := filepath.Join(dataDir, "tools", "demo")
+	writeFixtureFile(t, filepath.Join(legacyDir, "binary", "windows-amd64", "demo.exe"))
+	writeFixtureFile(t, filepath.Join(legacyDir, "runtime", "cache.db"))
+	if err := os.WriteFile(filepath.Join(legacyDir, "config.json"), []byte(`{"mode":"default"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(config.json) error = %v", err)
 	}
+	writeLegacyToolDefinition(t, legacyDir)
+
+	if err := migrateToolLayout(context.Background(), dataDir, []toolSource{{ID: "demo", Dir: sourceDir}}); err != nil {
+		t.Fatalf("migrateToolLayout() error = %v", err)
+	}
+	assertFile(t, filepath.Join(dataDir, "tool-bodies", "demo", "binary", "windows-amd64", "demo.exe"))
+	assertFile(t, filepath.Join(dataDir, "tool-bodies", "demo", "config.json"))
+	assertFile(t, filepath.Join(dataDir, "tool-data", "demo", "runtime", "cache.db"))
+	assertFile(t, filepath.Join(dataDir, "tools", "demo", "runtime", "cache.db"))
+	if _, err := os.Stat(filepath.Join(dataDir, "tool-bodies", "demo", "runtime")); !os.IsNotExist(err) {
+		t.Fatalf("body runtime stat error = %v, want not exist", err)
+	}
+	definition := readToolDefinitionFile(t, filepath.Join(dataDir, "tool-bodies", "demo", "definition.json"))
+	if definition.Version != "0.1.0" || definition.BodyDirectory != "." || len(definition.UserConfig) != 0 || definition.PromptDescriptionOverride != "" {
+		t.Fatalf("definition = %#v", definition)
+	}
+	settings := readToolSettingsFile(t, filepath.Join(dataDir, "tool-data", "demo", "settings.json"))
+	if settings.UserConfig["token"] != "secret" || settings.PromptDescriptionOverride != "custom prompt" {
+		t.Fatalf("settings = %#v", settings)
+	}
+}
+
+func TestMigrateToolLayoutRejectsUnknownLegacyPathWithoutActivation(t *testing.T) {
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "data")
+	sourceDir := filepath.Join(root, "source", "demo")
+	writeMigrationSource(t, sourceDir)
+	legacyDir := filepath.Join(dataDir, "tools", "demo")
+	writeFixtureFile(t, filepath.Join(legacyDir, "binary", "windows-amd64", "demo.exe"))
+	writeFixtureFile(t, filepath.Join(legacyDir, "unknown", "state.bin"))
+	if err := os.WriteFile(filepath.Join(legacyDir, "config.json"), []byte(`{"mode":"default"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(config.json) error = %v", err)
+	}
+	writeLegacyToolDefinition(t, legacyDir)
+
+	err := migrateToolLayout(context.Background(), dataDir, []toolSource{{ID: "demo", Dir: sourceDir}})
+	if err == nil || !strings.Contains(err.Error(), "unrecognized legacy path") {
+		t.Fatalf("migrateToolLayout() error = %v, want unrecognized path", err)
+	}
+	for _, path := range []string{filepath.Join(dataDir, "tool-bodies"), filepath.Join(dataDir, "tool-data")} {
+		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+			t.Fatalf("migration target %s stat error = %v, want not exist", path, statErr)
+		}
+	}
+	assertFile(t, filepath.Join(legacyDir, "unknown", "state.bin"))
 }
 
 func TestReadToolDefinitionRequiresDefaultInvocationMode(t *testing.T) {
@@ -285,6 +346,60 @@ func readToolDefinitionFile(t *testing.T, path string) types.ToolDefinition {
 		t.Fatalf("Unmarshal(tool) error = %v", err)
 	}
 	return tool
+}
+
+func readToolSettingsFile(t *testing.T, path string) types.ToolUserSettings {
+	t.Helper()
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s) error = %v", path, err)
+	}
+	var settings types.ToolUserSettings
+	if err := json.Unmarshal(payload, &settings); err != nil {
+		t.Fatalf("Unmarshal(settings) error = %v", err)
+	}
+	return settings
+}
+
+func writeMigrationSource(t *testing.T, sourceDir string) {
+	t.Helper()
+	definition := types.ToolDefinition{
+		ID:                    "demo",
+		Name:                  "demo",
+		Description:           "Demo tool",
+		Version:               "0.1.0",
+		EucliBoxCompatibility: types.EucliBoxCompatibility{MinimumVersion: "0.1.0", MaximumVersionExclusive: "0.2.0"},
+		DefaultInvocationMode: types.ToolInvocationModeSync,
+		Type:                  "local",
+		BodyDirectory:         ".",
+	}
+	if err := writeJSON(filepath.Join(sourceDir, "tool.json"), definition); err != nil {
+		t.Fatalf("writeJSON(tool.json) error = %v", err)
+	}
+	toolpack := toolpackSpec{RuntimeConfig: runtimeConfigSpec{Source: "config.json"}, DataPaths: []string{"runtime"}}
+	if err := writeJSON(filepath.Join(sourceDir, "toolpack.json"), toolpack); err != nil {
+		t.Fatalf("writeJSON(toolpack.json) error = %v", err)
+	}
+}
+
+func writeLegacyToolDefinition(t *testing.T, legacyDir string) {
+	t.Helper()
+	legacy := map[string]any{
+		"id":                        "demo",
+		"name":                      "demo",
+		"description":               "Demo tool",
+		"defaultInvocationMode":     "sync",
+		"type":                      "local",
+		"directory":                 ".",
+		"userConfig":                map[string]any{"token": "secret"},
+		"promptDescriptionOverride": "custom prompt",
+		"binaries":                  []map[string]any{{"goos": "windows", "goarch": "amd64", "path": "binary/windows-amd64/demo.exe"}},
+		"createdAt":                 "2026-06-18T06:10:31Z",
+		"updatedAt":                 "2026-06-19T06:10:31Z",
+	}
+	if err := writeJSON(filepath.Join(legacyDir, "data.json"), legacy); err != nil {
+		t.Fatalf("writeJSON(data.json) error = %v", err)
+	}
 }
 
 func readRuntimeConfigFile(t *testing.T, path string) map[string]any {

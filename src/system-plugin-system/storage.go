@@ -39,6 +39,9 @@ func (s *system) SavePluginUserConfig(ctx context.Context, pluginID string, conf
 	if err != nil {
 		return types.SystemPluginView{}, err
 	}
+	if record.status != types.SystemPluginStatusActive {
+		return types.SystemPluginView{}, pluginInvalid(nonEmpty(record.statusMessage, "system plugin is unavailable"), nil)
+	}
 	config = normalizeUserConfig(config)
 	if err := validateUserConfig(record.manifest, config); err != nil {
 		return types.SystemPluginView{}, err
@@ -60,17 +63,25 @@ func (s *system) SavePluginUserConfig(ctx context.Context, pluginID string, conf
 }
 
 func (s *system) userConfigFile(pluginID string) (string, error) {
+	directory, err := s.pluginDataDirectory(pluginID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(directory, "config.json"), nil
+}
+
+func (s *system) pluginDataDirectory(pluginID string) (string, error) {
 	pluginID = strings.TrimSpace(pluginID)
 	if pluginID == "" {
 		return "", pluginInvalid("system plugin id is required", nil)
 	}
-	path := filepath.Join(s.dataDir, pluginID, "config.json")
+	path := filepath.Join(s.dataDir, pluginID)
 	abs, err := filepath.Abs(path)
 	if err != nil {
-		return "", pluginInvalid("failed to resolve system plugin user config path", err)
+		return "", pluginInvalid("failed to resolve system plugin data path", err)
 	}
 	if !pathWithin(s.dataDir, abs) {
-		return "", pluginInvalid("system plugin user config path must stay inside data directory", nil)
+		return "", pluginInvalid("system plugin data path must stay inside data directory", nil)
 	}
 	return filepath.Clean(abs), nil
 }

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -121,7 +122,22 @@ func (s *system) requestForRecord(record pluginRecord) (types.SystemPluginPlaceh
 	if err != nil {
 		return types.SystemPluginPlaceholderRequest{}, pluginExecutionFailed("failed to resolve host working directory", err)
 	}
-	return types.SystemPluginPlaceholderRequest{Action: pluginPlaceholderAction, PluginID: record.manifest.ID, PlaceholderInterfaces: record.interfaceViews(), UserConfig: copyMap(record.userConfig.UserConfig), DefaultConfig: copyMap(record.defaultConfig), PluginDirectory: record.directory, HostWorkingDirectory: hostWorkingDirectory}, nil
+	if strings.TrimSpace(record.dataDirectory) == "" {
+		return types.SystemPluginPlaceholderRequest{}, pluginExecutionFailed("system plugin data directory is unavailable", nil)
+	}
+	if err := os.MkdirAll(record.dataDirectory, 0o755); err != nil {
+		return types.SystemPluginPlaceholderRequest{}, pluginExecutionFailed("failed to create system plugin data directory", err)
+	}
+	return types.SystemPluginPlaceholderRequest{
+		Action:                pluginPlaceholderAction,
+		PluginID:              record.manifest.ID,
+		PlaceholderInterfaces: record.interfaceViews(),
+		UserConfig:            copyMap(record.userConfig.UserConfig),
+		DefaultConfig:         copyMap(record.defaultConfig),
+		PluginDirectory:       record.directory,
+		PluginDataDirectory:   record.dataDirectory,
+		HostWorkingDirectory:  hostWorkingDirectory,
+	}, nil
 }
 
 func (s *system) requestOnDemand(ctx context.Context, record pluginRecord, request types.SystemPluginPlaceholderRequest) (types.SystemPluginPlaceholderResponse, error) {

@@ -120,6 +120,7 @@ import {
 import { chatMessageMaterialKind, isSystemControlMessage } from '../domain/message'
 import type { HookPromptLibrary } from '../domain/hookPrompt'
 import type { PlaceholderLibrary } from '../domain/placeholder'
+import type { StudioBootstrap } from '../domain/release'
 import { resolveColorThemePreset } from '../domain/colorTheme'
 import { colorMixVar, colorThemeCssVariables, createStudioMuiTheme } from './colorThemeStyles'
 
@@ -1060,8 +1061,8 @@ function ComposerInputControls(props: {
   )
 }
 
-export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDirectory; windowControls?: AiChatWindowControls }) {
-  const { controller, dataDirectory, windowControls } = props
+export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap; dataDirectory?: AiChatDataDirectory; windowControls?: AiChatWindowControls }) {
+  const { controller, bootstrap, dataDirectory, windowControls } = props
   const s = useAiChatState(controller)
   const data = s.data
   const colorThemePreset = resolveColorThemePreset(data?.settings?.colorTheme)
@@ -6959,6 +6960,7 @@ export function AiChatApp(props: { controller: any; dataDirectory?: AiChatDataDi
             models={s.models}
             tools={(s as any).tools}
             modelRequestConfig={(s as any).modelRequestConfig}
+            bootstrap={bootstrap}
             hookPrompts={hookPrompts}
             placeholders={placeholders}
             systemPlugins={systemPlugins}
@@ -7357,6 +7359,7 @@ function PluginSettingsPage(props: {
   models: any
   tools: any
   modelRequestConfig: any
+  bootstrap?: StudioBootstrap
   hookPrompts: any
   placeholders: any
   systemPlugins: any
@@ -7368,7 +7371,7 @@ function PluginSettingsPage(props: {
   onTabChange: (tab: SettingsTab) => void
   dataDirectory?: AiChatDataDirectory
 }) {
-  const { controller, loading, data, roles, groups, workspaces, providers, modelGroups, models, tools, modelRequestConfig, hookPrompts, placeholders, systemPlugins, draft, activeRoleId, activeWorkspaceId, activeTargetKind, tab, onTabChange, dataDirectory } = props
+  const { controller, loading, data, roles, groups, workspaces, providers, modelGroups, models, tools, modelRequestConfig, bootstrap, hookPrompts, placeholders, systemPlugins, draft, activeRoleId, activeWorkspaceId, activeTargetKind, tab, onTabChange, dataDirectory } = props
   const [treeHotkeyRecording, setTreeHotkeyRecording] = React.useState(false)
 
   React.useEffect(() => {
@@ -7975,7 +7978,7 @@ function PluginSettingsPage(props: {
   }
 
   if (tab === 'eb') {
-    return wrapSettingsPanel(<EbSettingsPanel controller={controller} loading={loading} modelRequestConfig={modelRequestConfig} />)
+    return wrapSettingsPanel(<EbSettingsPanel controller={controller} loading={loading} modelRequestConfig={modelRequestConfig} bootstrap={bootstrap} />)
   }
 
   if (tab === 'stickers') {

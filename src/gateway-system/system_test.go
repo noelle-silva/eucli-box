@@ -13,6 +13,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"eucli-box/internal/boxrelease"
 	"eucli-box/pkg/types"
 	"eucli-box/pkg/workspaceprompt"
 )
@@ -28,6 +29,45 @@ func TestStartRunRoute(t *testing.T) {
 	}
 	if fakes.runtime.started.Message != "hello" {
 		t.Fatalf("started = %#v", fakes.runtime.started)
+	}
+}
+
+func TestReleaseRouteReturnsVersionAndClientCompatibility(t *testing.T) {
+	system := newTestGateway(t, newGatewayFakes())
+	req := httptest.NewRequest(http.MethodGet, "/api/release", nil)
+	req.Header.Set(clientVersionHeader, "0.1.9")
+	req.Header.Set(clientMinimumVersionHeader, "0.1.0")
+	req.Header.Set(clientMaximumVersionHeader, "0.2.0")
+	rec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Data types.EucliBoxReleaseInfo `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response error = %v", err)
+	}
+	expected, err := boxrelease.Load()
+	if err != nil {
+		t.Fatalf("boxrelease.Load() error = %v", err)
+	}
+	if response.Data.Version != expected.Version || response.Data.ClientCompatibility == nil || !response.Data.ClientCompatibility.Compatible {
+		t.Fatalf("release response = %#v", response.Data)
+	}
+}
+
+func TestBusinessRouteRejectsIncompatibleClient(t *testing.T) {
+	system := newTestGateway(t, newGatewayFakes())
+	req := httptest.NewRequest(http.MethodGet, "/api/roles", nil)
+	req.Header.Set(clientVersionHeader, "0.1.9")
+	req.Header.Set(clientMinimumVersionHeader, "0.2.0")
+	req.Header.Set(clientMaximumVersionHeader, "0.3.0")
+	rec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "gateway.incompatible_client") {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -499,6 +539,24 @@ func TestWebSocketForwardsRuntimeEvents(t *testing.T) {
 	}
 	if event.Type != "run_started" {
 		t.Fatalf("event = %#v", event)
+	}
+}
+
+func TestWebSocketRejectsIncompatibleClient(t *testing.T) {
+	system := newTestGateway(t, newGatewayFakes())
+	server := httptest.NewServer(system.Handler())
+	defer server.Close()
+	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws/events"
+	header := http.Header{}
+	header.Set(clientVersionHeader, "0.1.9")
+	header.Set(clientMinimumVersionHeader, "0.2.0")
+	header.Set(clientMaximumVersionHeader, "0.3.0")
+	conn, response, err := websocket.DefaultDialer.Dial(url, header)
+	if conn != nil {
+		_ = conn.Close()
+	}
+	if err == nil || response == nil || response.StatusCode != http.StatusConflict {
+		t.Fatalf("Dial() err=%v response=%v", err, response)
 	}
 }
 

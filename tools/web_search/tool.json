@@ -2,10 +2,15 @@
   "id": "web_search",
   "name": "web_search",
   "description": "Search the web through a selected search provider and return normalized markdown results with structured metadata.",
+  "version": "0.1.0",
+  "eucliBoxCompatibility": {
+    "minimumVersion": "0.1.0",
+    "maximumVersionExclusive": "0.2.0"
+  },
   "promptDescription": "Search the web through one enabled provider. Required [query] is the search text. Optional [provider] selects tavily or anysearch; if omitted, the configured default is anysearch. Optional [maxResults] controls result count. Optional [timeoutMs] controls request timeout. Optional [includeContent] includes longer provider content in the markdown output when the provider returns it. Tavily-specific optional fields: [searchDepth] ultra-fast|fast|basic|advanced, [topic] general|news|finance, [includeAnswer], [includeImages], [includeImageDescriptions], [includeRawContent] text|markdown, [country], [timeRange] day|week|month|year|d|w|m|y, [startDate], [endDate]. AnySearch-specific optional fields: [domain], [tag], [contentTypes], [zone] cn|intl, [language], [params]. API keys should be configured in tool user config or environment variables, not placed in prompts. The tool returns normalized markdown plus metadata including provider, query, resultsCount, statusCode, durationMs, truncated, and providerMetadata.",
   "defaultInvocationMode": "sync",
   "type": "local",
-  "directory": ".",
+  "bodyDirectory": ".",
   "userConfigSchema": {
     "type": "object",
     "properties": {

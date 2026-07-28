@@ -15,7 +15,7 @@ import (
 
 func TestInitializeCreatesStorageLayout(t *testing.T) {
 	system := newTestSystem(t)
-	for _, dir := range []string{"sessions", "roles", "providers", "tools", "stickers", "recycle", "meta"} {
+	for _, dir := range []string{"sessions", "roles", "providers", "tool-bodies", "tool-data", "stickers", "recycle", "meta"} {
 		assertDir(t, filepath.Join(system.paths.root, dir))
 	}
 	for _, dir := range []string{"roles", "groups", "workspaces"} {
@@ -680,9 +680,9 @@ func TestProviderAndToolStores(t *testing.T) {
 	}
 }
 
-func TestLoadToolResolvesRelativeDirectoryAgainstToolFolder(t *testing.T) {
+func TestLoadToolResolvesSeparateBodyAndDataDirectories(t *testing.T) {
 	system := newTestSystem(t)
-	tool := types.ToolDefinition{ID: "shell_command", Name: "shell_command", Description: "Run shell command", DefaultInvocationMode: types.ToolInvocationModeSync, Type: "local", Directory: ".", Binaries: []types.ToolBinary{{GOOS: "windows", GOARCH: "amd64", Path: "binary/windows-amd64/shell_command.exe"}}}
+	tool := types.ToolDefinition{ID: "shell_command", Name: "shell_command", Description: "Run shell command", DefaultInvocationMode: types.ToolInvocationModeSync, Type: "local", BodyDirectory: ".", Binaries: []types.ToolBinary{{GOOS: "windows", GOARCH: "amd64", Path: "binary/windows-amd64/shell_command.exe"}}}
 	if err := system.SaveTool(context.Background(), tool); err != nil {
 		t.Fatalf("SaveTool() error = %v", err)
 	}
@@ -690,9 +690,10 @@ func TestLoadToolResolvesRelativeDirectoryAgainstToolFolder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadTool() error = %v", err)
 	}
-	want := filepath.Join(system.paths.root, "tools", tool.ID)
-	if loaded.Directory != want {
-		t.Fatalf("directory = %q, want %q", loaded.Directory, want)
+	wantBody := filepath.Join(system.paths.root, "tool-bodies", tool.ID)
+	wantData := filepath.Join(system.paths.root, "tool-data", tool.ID)
+	if loaded.BodyDirectory != wantBody || loaded.DataDirectory != wantData {
+		t.Fatalf("directories = body %q data %q, want body %q data %q", loaded.BodyDirectory, loaded.DataDirectory, wantBody, wantData)
 	}
 }
 
@@ -704,7 +705,7 @@ func TestSaveToolUserSettingsPreservesToolDefinition(t *testing.T) {
 		Description:           "Run shell command",
 		DefaultInvocationMode: types.ToolInvocationModeSync,
 		Type:                  "local",
-		Directory:             ".",
+		BodyDirectory:         ".",
 		UserConfigSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -732,8 +733,8 @@ func TestSaveToolUserSettingsPreservesToolDefinition(t *testing.T) {
 	if updated.Name != tool.Name || updated.Description != tool.Description || updated.DefaultInvocationMode != tool.DefaultInvocationMode || updated.Type != tool.Type || updated.DefaultConfig["provider"] != "git-bash" || len(updated.Binaries) != 1 || updated.UserConfigSchema["type"] != "object" {
 		t.Fatalf("tool definition was not preserved: %#v", updated)
 	}
-	if updated.Directory != filepath.Join(system.paths.root, "tools", tool.ID) {
-		t.Fatalf("directory = %q", updated.Directory)
+	if updated.BodyDirectory != filepath.Join(system.paths.root, "tool-bodies", tool.ID) || updated.DataDirectory != filepath.Join(system.paths.root, "tool-data", tool.ID) {
+		t.Fatalf("directories = body %q data %q", updated.BodyDirectory, updated.DataDirectory)
 	}
 }
 

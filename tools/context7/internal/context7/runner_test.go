@@ -29,7 +29,7 @@ func TestExecuteSearchesLibraries(t *testing.T) {
 	defer server.Close()
 	fixture := newContext7Fixture(t, server.URL+"/search", server.URL+"/context", true)
 
-	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"action": "search", "libraryName": "react", "query": "hooks", "maxOutputChars": 24000}, UserConfig: map[string]any{"context7ApiKey": "ctx7sk-test"}, ToolDirectory: fixture.toolDir})
+	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"action": "search", "libraryName": "react", "query": "hooks", "maxOutputChars": 24000}, UserConfig: map[string]any{"context7ApiKey": "ctx7sk-test"}, ToolBodyDirectory: fixture.toolDir})
 
 	if result.Status != types.ToolStatusSuccess {
 		t.Fatalf("result = %#v", result)
@@ -56,7 +56,7 @@ func TestExecuteFetchesDocs(t *testing.T) {
 	defer server.Close()
 	fixture := newContext7Fixture(t, server.URL+"/search", server.URL+"/context", true)
 
-	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"action": "docs", "libraryId": "/vercel/next.js", "query": "middleware auth", "fast": true, "maxOutputChars": 24000}, ToolDirectory: fixture.toolDir})
+	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"action": "docs", "libraryId": "/vercel/next.js", "query": "middleware auth", "fast": true, "maxOutputChars": 24000}, ToolBodyDirectory: fixture.toolDir})
 
 	if result.Status != types.ToolStatusSuccess {
 		t.Fatalf("result = %#v", result)
@@ -72,7 +72,7 @@ func TestExecuteFetchesDocs(t *testing.T) {
 func TestExecuteRequiresLibraryNameForSearch(t *testing.T) {
 	fixture := newContext7Fixture(t, "http://127.0.0.1/search", "http://127.0.0.1/context", true)
 
-	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"action": "search", "query": "hooks"}, ToolDirectory: fixture.toolDir})
+	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"action": "search", "query": "hooks"}, ToolBodyDirectory: fixture.toolDir})
 
 	if result.Status != types.ToolStatusFailed || !strings.Contains(result.Error, "libraryName") {
 		t.Fatalf("result = %#v", result)
@@ -82,7 +82,7 @@ func TestExecuteRequiresLibraryNameForSearch(t *testing.T) {
 func TestExecuteRequiresAPIKeyWhenAnonymousDisabled(t *testing.T) {
 	fixture := newContext7Fixture(t, "http://127.0.0.1/search", "http://127.0.0.1/context", false)
 
-	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"action": "search", "libraryName": "react", "query": "hooks"}, ToolDirectory: fixture.toolDir})
+	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"action": "search", "libraryName": "react", "query": "hooks"}, ToolBodyDirectory: fixture.toolDir})
 
 	if result.Status != types.ToolStatusFailed || !strings.Contains(result.Error, "requires API key") {
 		t.Fatalf("result = %#v", result)

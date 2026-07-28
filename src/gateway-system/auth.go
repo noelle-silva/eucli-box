@@ -5,6 +5,14 @@ import (
 	"strings"
 
 	apperrors "eucli-box/pkg/errors"
+	"eucli-box/pkg/release"
+	"eucli-box/pkg/types"
+)
+
+const (
+	clientVersionHeader        = "X-Eucli-Studio-Version"
+	clientMinimumVersionHeader = "X-Eucli-Studio-Minimum-Box-Version"
+	clientMaximumVersionHeader = "X-Eucli-Studio-Maximum-Box-Version"
 )
 
 func (s *system) authWrap(next http.HandlerFunc) http.HandlerFunc {
@@ -13,8 +21,34 @@ func (s *system) authWrap(next http.HandlerFunc) http.HandlerFunc {
 			writeError(w, err)
 			return
 		}
+		if r.URL.Path != "/api/release" {
+			if err := s.validateClientCompatibility(r); err != nil {
+				writeError(w, err)
+				return
+			}
+		}
 		next(w, r)
 	}
+}
+
+func (s *system) clientCompatibility(r *http.Request) *types.CompatibilityStatus {
+	version := strings.TrimSpace(r.Header.Get(clientVersionHeader))
+	minimum := strings.TrimSpace(r.Header.Get(clientMinimumVersionHeader))
+	maximum := strings.TrimSpace(r.Header.Get(clientMaximumVersionHeader))
+	if version == "" && minimum == "" && maximum == "" {
+		return nil
+	}
+	compatibility := types.EucliBoxCompatibility{MinimumVersion: minimum, MaximumVersionExclusive: maximum}
+	status := release.AssessEucliBoxCompatibility(version, s.boxRelease.Version, compatibility)
+	return &status
+}
+
+func (s *system) validateClientCompatibility(r *http.Request) error {
+	status := s.clientCompatibility(r)
+	if status == nil || status.Compatible {
+		return nil
+	}
+	return gatewayClientIncompatible(status.Reason, *status)
 }
 
 func (s *system) validateRequestKey(r *http.Request) error {

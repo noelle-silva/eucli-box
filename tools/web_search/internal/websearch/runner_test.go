@@ -26,7 +26,7 @@ func TestExecuteSearchesTavilyProvider(t *testing.T) {
 	}))
 	defer server.Close()
 	fixture := newWebSearchFixture(t, server.URL, "http://127.0.0.1/anysearch")
-	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "golang", "provider": "tavily", "maxResults": 3, "searchDepth": "advanced"}, UserConfig: map[string]any{"tavilyApiKey": "tvly-test"}, DefaultConfig: map[string]any{"maxOutputChars": 20000}, ToolDirectory: fixture.toolDir})
+	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "golang", "provider": "tavily", "maxResults": 3, "searchDepth": "advanced"}, UserConfig: map[string]any{"tavilyApiKey": "tvly-test"}, DefaultConfig: map[string]any{"maxOutputChars": 20000}, ToolBodyDirectory: fixture.toolDir})
 	if result.Status != types.ToolStatusSuccess {
 		t.Fatalf("result = %#v", result)
 	}
@@ -50,7 +50,7 @@ func TestExecuteSearchesAnySearchProviderAnonymously(t *testing.T) {
 	}))
 	defer server.Close()
 	fixture := newWebSearchFixture(t, "http://127.0.0.1/tavily", server.URL)
-	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "agent search", "provider": "anysearch", "domain": "code", "tag": "code.doc", "contentTypes": []any{"web", "doc"}}, DefaultConfig: map[string]any{"maxOutputChars": 20000}, ToolDirectory: fixture.toolDir})
+	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "agent search", "provider": "anysearch", "domain": "code", "tag": "code.doc", "contentTypes": []any{"web", "doc"}}, DefaultConfig: map[string]any{"maxOutputChars": 20000}, ToolBodyDirectory: fixture.toolDir})
 	if result.Status != types.ToolStatusSuccess {
 		t.Fatalf("result = %#v", result)
 	}
@@ -72,7 +72,7 @@ func TestExecuteUsesAnySearchDefaultProvider(t *testing.T) {
 	}))
 	defer server.Close()
 	fixture := newWebSearchFixture(t, "http://127.0.0.1/tavily", server.URL)
-	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "default provider"}, DefaultConfig: map[string]any{"provider": "anysearch", "maxOutputChars": 20000}, ToolDirectory: fixture.toolDir})
+	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "default provider"}, DefaultConfig: map[string]any{"provider": "anysearch", "maxOutputChars": 20000}, ToolBodyDirectory: fixture.toolDir})
 	if result.Status != types.ToolStatusSuccess || result.Metadata["provider"] != "anysearch" || !strings.Contains(result.Content, "Default") {
 		t.Fatalf("result = %#v", result)
 	}
@@ -80,7 +80,7 @@ func TestExecuteUsesAnySearchDefaultProvider(t *testing.T) {
 
 func TestExecuteFailsWhenTavilyKeyMissing(t *testing.T) {
 	fixture := newWebSearchFixture(t, "http://127.0.0.1/tavily", "http://127.0.0.1/anysearch")
-	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "golang", "provider": "tavily"}, ToolDirectory: fixture.toolDir})
+	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "golang", "provider": "tavily"}, ToolBodyDirectory: fixture.toolDir})
 	if result.Status != types.ToolStatusFailed || !strings.Contains(result.Error, "requires API key") {
 		t.Fatalf("result = %#v", result)
 	}
@@ -88,7 +88,7 @@ func TestExecuteFailsWhenTavilyKeyMissing(t *testing.T) {
 
 func TestExecuteRejectsProviderMaxResults(t *testing.T) {
 	fixture := newWebSearchFixture(t, "http://127.0.0.1/tavily", "http://127.0.0.1/anysearch")
-	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "golang", "provider": "tavily", "maxResults": 21}, UserConfig: map[string]any{"tavilyApiKey": "tvly-test"}, ToolDirectory: fixture.toolDir})
+	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "golang", "provider": "tavily", "maxResults": 21}, UserConfig: map[string]any{"tavilyApiKey": "tvly-test"}, ToolBodyDirectory: fixture.toolDir})
 	if result.Status != types.ToolStatusFailed || !strings.Contains(result.Error, "between 1 and 20") {
 		t.Fatalf("result = %#v", result)
 	}

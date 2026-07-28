@@ -19,3 +19,7 @@ func gatewayServerFailed(message string, cause error) error {
 func gatewayWebSocketFailed(message string, cause error) error {
 	return apperrors.Wrap(systemName, "gateway.websocket_failed", message, cause)
 }
+
+func gatewayClientIncompatible(message string, details any) error {
+	return apperrors.NewWithDetails(systemName, "gateway.incompatible_client", message, details)
+}

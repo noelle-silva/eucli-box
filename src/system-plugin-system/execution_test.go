@@ -18,12 +18,13 @@ func TestCachedHeartbeatPluginUsesCachedValues(t *testing.T) {
 	root := t.TempDir()
 	pluginDir := writeTestPlugin(t, root, "cached-plugin", `{"status":"success","values":{"status":"initial"}}`)
 	writeTestManifest(t, pluginDir, map[string]any{
-		"id":                  "cached-plugin",
-		"name":                "缓存插件",
-		"description":         "提供缓存值",
-		"version":             "0.1.0",
-		"lifecycleType":       types.SystemPluginLifecycleCachedHeartbeat,
-		"heartbeatIntervalMs": 3600000,
+		"id":                    "cached-plugin",
+		"name":                  "缓存插件",
+		"description":           "提供缓存值",
+		"version":               "0.1.0",
+		"eucliBoxCompatibility": testEucliBoxCompatibility(),
+		"lifecycleType":         types.SystemPluginLifecycleCachedHeartbeat,
+		"heartbeatIntervalMs":   3600000,
 		"binaries": []map[string]string{{
 			"goos":   runtime.GOOS,
 			"goarch": runtime.GOARCH,
@@ -57,12 +58,13 @@ func TestCachedHeartbeatPluginRefreshesAfterConfigSave(t *testing.T) {
 	root := t.TempDir()
 	pluginDir := writeTestPlugin(t, root, "cached-plugin", `{"status":"success","values":{"status":"initial"}}`)
 	writeTestManifest(t, pluginDir, map[string]any{
-		"id":                  "cached-plugin",
-		"name":                "缓存插件",
-		"description":         "提供缓存值",
-		"version":             "0.1.0",
-		"lifecycleType":       types.SystemPluginLifecycleCachedHeartbeat,
-		"heartbeatIntervalMs": 3600000,
+		"id":                    "cached-plugin",
+		"name":                  "缓存插件",
+		"description":           "提供缓存值",
+		"version":               "0.1.0",
+		"eucliBoxCompatibility": testEucliBoxCompatibility(),
+		"lifecycleType":         types.SystemPluginLifecycleCachedHeartbeat,
+		"heartbeatIntervalMs":   3600000,
 		"binaries": []map[string]string{{
 			"goos":   runtime.GOOS,
 			"goarch": runtime.GOARCH,
@@ -162,6 +164,71 @@ func TestResolvePlaceholderValuesKeepsSuccessfulPluginWhenAnotherFails(t *testin
 	}
 }
 
+func TestIncompatiblePluginRemainsVisibleAndDoesNotExecute(t *testing.T) {
+	root := t.TempDir()
+	pluginDir := writeTestPlugin(t, root, "future-plugin", `{"status":"success","values":{"value":"must-not-run"}}`)
+	manifest := testPluginManifest("future-plugin", "未来插件", types.SystemPluginLifecycleOnDemand)
+	manifest["eucliBoxCompatibility"] = map[string]string{"minimumVersion": "0.2.0", "maximumVersionExclusive": "0.3.0"}
+	writeTestManifest(t, pluginDir, manifest)
+	system, err := NewSystem(Config{SourceDir: root, DataDir: filepath.Join(root, "data"), Timeout: time.Second, BoxVersion: "0.1.0"})
+	if err != nil {
+		t.Fatalf("NewSystem() error = %v", err)
+	}
+	plugins, err := system.ListPlugins(context.Background())
+	if err != nil {
+		t.Fatalf("ListPlugins() error = %v", err)
+	}
+	if len(plugins) != 1 || plugins[0].Status != types.SystemPluginStatusUnavailable || plugins[0].Compatibility.Compatible || !strings.Contains(plugins[0].StatusMessage, "不在所需范围") {
+		t.Fatalf("plugins = %#v", plugins)
+	}
+	values, problems := system.ResolvePlaceholderValues(context.Background())
+	if len(values) != 0 || len(problems) != 1 {
+		t.Fatalf("values = %#v, problems = %#v", values, problems)
+	}
+}
+
+func TestInvalidPluginManifestRemainsVisibleWithoutInventedIdentity(t *testing.T) {
+	root := t.TempDir()
+	pluginDir := writeTestPlugin(t, root, "invalid-plugin", `{"status":"success","values":{"value":"must-not-run"}}`)
+	manifest := testPluginManifest("invalid-plugin", "无效插件", types.SystemPluginLifecycleOnDemand)
+	delete(manifest, "id")
+	writeTestManifest(t, pluginDir, manifest)
+	system, err := NewSystem(Config{SourceDir: root, DataDir: filepath.Join(root, "data"), Timeout: time.Second, BoxVersion: "0.1.0"})
+	if err != nil {
+		t.Fatalf("NewSystem() error = %v", err)
+	}
+	plugins, err := system.ListPlugins(context.Background())
+	if err != nil {
+		t.Fatalf("ListPlugins() error = %v", err)
+	}
+	if len(plugins) != 1 || plugins[0].ID != "" || plugins[0].SourceID != "invalid-plugin" || plugins[0].Status != types.SystemPluginStatusUnavailable || !strings.Contains(plugins[0].StatusMessage, "id is required") {
+		t.Fatalf("plugins = %#v", plugins)
+	}
+}
+
+func TestPluginRequestIncludesSeparateBodyAndDataDirectories(t *testing.T) {
+	root := t.TempDir()
+	pluginDir := writeTestPlugin(t, root, "paths-plugin", `{"status":"success","values":{"value":"ok"}}`)
+	writeTestManifest(t, pluginDir, testPluginManifest("paths-plugin", "路径插件", types.SystemPluginLifecycleOnDemand))
+	dataRoot := filepath.Join(root, "data")
+	created, err := NewSystem(Config{SourceDir: root, DataDir: dataRoot, Timeout: time.Second, BoxVersion: "0.1.0"})
+	if err != nil {
+		t.Fatalf("NewSystem() error = %v", err)
+	}
+	actual := created.(*system)
+	record, err := actual.findRecord(context.Background(), "paths-plugin")
+	if err != nil {
+		t.Fatalf("findRecord() error = %v", err)
+	}
+	request, err := actual.requestForRecord(record)
+	if err != nil {
+		t.Fatalf("requestForRecord() error = %v", err)
+	}
+	if request.PluginDirectory != pluginDir || request.PluginDataDirectory != filepath.Join(dataRoot, "paths-plugin") {
+		t.Fatalf("request directories = body %q data %q", request.PluginDirectory, request.PluginDataDirectory)
+	}
+}
+
 func writeTestManifest(t *testing.T, pluginDir string, manifest map[string]any) {
 	t.Helper()
 	payload, err := json.MarshalIndent(manifest, "", "  ")
@@ -178,11 +245,12 @@ func writeTestManifest(t *testing.T, pluginDir string, manifest map[string]any) 
 
 func testPluginManifest(pluginID string, pluginName string, lifecycleType string) map[string]any {
 	return map[string]any{
-		"id":            pluginID,
-		"name":          pluginName,
-		"description":   pluginName,
-		"version":       "0.1.0",
-		"lifecycleType": lifecycleType,
+		"id":                    pluginID,
+		"name":                  pluginName,
+		"description":           pluginName,
+		"version":               "0.1.0",
+		"eucliBoxCompatibility": testEucliBoxCompatibility(),
+		"lifecycleType":         lifecycleType,
 		"binaries": []map[string]string{{
 			"goos":   runtime.GOOS,
 			"goarch": runtime.GOARCH,
@@ -194,6 +262,10 @@ func testPluginManifest(pluginID string, pluginName string, lifecycleType string
 			"description": "值",
 		}},
 	}
+}
+
+func testEucliBoxCompatibility() map[string]string {
+	return map[string]string{"minimumVersion": "0.1.0", "maximumVersionExclusive": "0.2.0"}
 }
 
 func writeTestPlugin(t *testing.T, root string, pluginID string, response string) string {

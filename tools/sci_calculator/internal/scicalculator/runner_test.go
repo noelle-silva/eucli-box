@@ -19,10 +19,10 @@ func TestExecuteRunsCalculatorThroughPython(t *testing.T) {
 	fixture := newSciCalculatorFixture(t)
 
 	result := Execute(context.Background(), types.ToolExecutionInput{
-		Arguments:     map[string]any{"expression": "sqrt(variance([2,4,4,4,5,5,7,9])) + integral('exp(-x**2)', '-inf', 'inf')"},
-		UserConfig:    map[string]any{"pythonExecutable": python},
-		DefaultConfig: map[string]any{"pythonExecutable": "python", "maxOutputChars": 20000},
-		ToolDirectory: fixture.toolDir,
+		Arguments:         map[string]any{"expression": "sqrt(variance([2,4,4,4,5,5,7,9])) + integral('exp(-x**2)', '-inf', 'inf')"},
+		UserConfig:        map[string]any{"pythonExecutable": python},
+		DefaultConfig:     map[string]any{"pythonExecutable": "python", "maxOutputChars": 20000},
+		ToolBodyDirectory: fixture.toolDir,
 	})
 
 	if result.Status != types.ToolStatusSuccess {
@@ -38,10 +38,10 @@ func TestExecuteReportsCalculatorErrors(t *testing.T) {
 	fixture := newSciCalculatorFixture(t)
 
 	result := Execute(context.Background(), types.ToolExecutionInput{
-		Arguments:     map[string]any{"expression": "1/0"},
-		UserConfig:    map[string]any{"pythonExecutable": python},
-		DefaultConfig: map[string]any{"pythonExecutable": "python", "maxOutputChars": 20000},
-		ToolDirectory: fixture.toolDir,
+		Arguments:         map[string]any{"expression": "1/0"},
+		UserConfig:        map[string]any{"pythonExecutable": python},
+		DefaultConfig:     map[string]any{"pythonExecutable": "python", "maxOutputChars": 20000},
+		ToolBodyDirectory: fixture.toolDir,
 	})
 
 	if result.Status != types.ToolStatusFailed || !strings.Contains(result.Error, "Division by zero") {
@@ -54,10 +54,10 @@ func TestExecuteTruncatesCalculatorOutput(t *testing.T) {
 	fakePython := buildFakePython(t)
 
 	result := Execute(context.Background(), types.ToolExecutionInput{
-		Arguments:     map[string]any{"expression": "large", "maxOutputChars": 12},
-		UserConfig:    map[string]any{"pythonExecutable": fakePython},
-		DefaultConfig: map[string]any{"pythonExecutable": "python", "maxOutputChars": 20000},
-		ToolDirectory: fixture.toolDir,
+		Arguments:         map[string]any{"expression": "large", "maxOutputChars": 12},
+		UserConfig:        map[string]any{"pythonExecutable": fakePython},
+		DefaultConfig:     map[string]any{"pythonExecutable": "python", "maxOutputChars": 20000},
+		ToolBodyDirectory: fixture.toolDir,
 	})
 
 	if result.Status != types.ToolStatusSuccess || result.Metadata["truncated"] != true {
@@ -81,10 +81,10 @@ func TestExecutePrefersBundledPythonRuntime(t *testing.T) {
 	}
 
 	result := Execute(context.Background(), types.ToolExecutionInput{
-		Arguments:     map[string]any{"expression": "large", "maxOutputChars": 12},
-		UserConfig:    map[string]any{"pythonExecutable": configuredPython},
-		DefaultConfig: map[string]any{"pythonExecutable": "missing-python-command", "maxOutputChars": 20000},
-		ToolDirectory: fixture.toolDir,
+		Arguments:         map[string]any{"expression": "large", "maxOutputChars": 12},
+		UserConfig:        map[string]any{"pythonExecutable": configuredPython},
+		DefaultConfig:     map[string]any{"pythonExecutable": "missing-python-command", "maxOutputChars": 20000},
+		ToolBodyDirectory: fixture.toolDir,
 	})
 
 	if result.Status != types.ToolStatusSuccess || result.Metadata["pythonExecutable"] != bundledPython {
@@ -101,12 +101,12 @@ func TestExecuteRejectsEscapingBundledPythonPath(t *testing.T) {
 	})
 
 	result := Execute(context.Background(), types.ToolExecutionInput{
-		Arguments:     map[string]any{"expression": "1+1"},
-		DefaultConfig: map[string]any{"pythonExecutable": "python", "maxOutputChars": 20000},
-		ToolDirectory: fixture.toolDir,
+		Arguments:         map[string]any{"expression": "1+1"},
+		DefaultConfig:     map[string]any{"pythonExecutable": "python", "maxOutputChars": 20000},
+		ToolBodyDirectory: fixture.toolDir,
 	})
 
-	if result.Status != types.ToolStatusFailed || !strings.Contains(result.Error, "must stay inside tool directory") {
+	if result.Status != types.ToolStatusFailed || !strings.Contains(result.Error, "must stay inside tool body directory") {
 		t.Fatalf("result = %#v", result)
 	}
 }
@@ -115,9 +115,9 @@ func TestExecuteRequiresExpression(t *testing.T) {
 	fixture := newSciCalculatorFixture(t)
 
 	result := Execute(context.Background(), types.ToolExecutionInput{
-		Arguments:     map[string]any{},
-		DefaultConfig: map[string]any{"pythonExecutable": "python", "maxOutputChars": 20000},
-		ToolDirectory: fixture.toolDir,
+		Arguments:         map[string]any{},
+		DefaultConfig:     map[string]any{"pythonExecutable": "python", "maxOutputChars": 20000},
+		ToolBodyDirectory: fixture.toolDir,
 	})
 
 	if result.Status != types.ToolStatusFailed || !strings.Contains(result.Error, "expression") {
@@ -135,10 +135,10 @@ func TestExecuteStopsCalculatorWhenContextCancels(t *testing.T) {
 
 	started := time.Now()
 	result := Execute(ctx, types.ToolExecutionInput{
-		Arguments:     map[string]any{"expression": "sleep"},
-		UserConfig:    map[string]any{"pythonExecutable": fakePython},
-		DefaultConfig: map[string]any{"pythonExecutable": "python", "maxOutputChars": 20000},
-		ToolDirectory: fixture.toolDir,
+		Arguments:         map[string]any{"expression": "sleep"},
+		UserConfig:        map[string]any{"pythonExecutable": fakePython},
+		DefaultConfig:     map[string]any{"pythonExecutable": "python", "maxOutputChars": 20000},
+		ToolBodyDirectory: fixture.toolDir,
 	})
 
 	if result.Status != types.ToolStatusFailed || !strings.Contains(result.Error, context.DeadlineExceeded.Error()) {

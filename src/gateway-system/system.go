@@ -3,11 +3,14 @@ package gateway
 import (
 	"context"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 
+	"eucli-box/internal/boxrelease"
+	"eucli-box/pkg/release"
 	"eucli-box/pkg/types"
 )
 
@@ -155,12 +158,14 @@ type AIAssistSystem interface {
 type Config struct {
 	Addr         string
 	Key          string
+	BoxVersion   string
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
 }
 
 type system struct {
 	config        Config
+	boxRelease    types.EucliBoxRelease
 	runtime       RuntimeSystem
 	roles         RoleSystem
 	groups        ChatGroupSystem
@@ -230,8 +235,21 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups Ch
 	if config.ReadTimeout < 0 || config.WriteTimeout < 0 {
 		return nil, gatewayInvalid("server timeouts cannot be negative", nil)
 	}
+	boxVersion := strings.TrimSpace(config.BoxVersion)
+	if boxVersion == "" {
+		release, err := boxrelease.Load()
+		if err != nil {
+			return nil, gatewayDependencyFailed("eucli-box 发布资料无效", err)
+		}
+		boxVersion = release.Version
+	}
+	if err := release.ValidateVersion(boxVersion); err != nil {
+		return nil, gatewayInvalid("eucli-box 版本无效", err)
+	}
+	boxRelease := types.EucliBoxRelease{Version: boxVersion}
 	s := &system{
 		config:        config,
+		boxRelease:    boxRelease,
 		runtime:       runtime,
 		roles:         roles,
 		groups:        groups,

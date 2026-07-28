@@ -2,8 +2,12 @@ package toolcalling
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
+	"eucli-box/internal/boxrelease"
+	"eucli-box/pkg/release"
 	"eucli-box/pkg/types"
 )
 
@@ -35,10 +39,12 @@ type StorageSystem interface {
 
 type Config struct {
 	ToolTimeout time.Duration
+	BoxVersion  string
 }
 
 type system struct {
 	config     Config
+	boxVersion string
 	permission PermissionSystem
 	storage    StorageSystem
 }
@@ -56,5 +62,16 @@ func NewSystem(config Config, permission PermissionSystem, storage StorageSystem
 	if config.ToolTimeout == 0 {
 		config.ToolTimeout = 120 * time.Second
 	}
-	return &system{config: config, permission: permission, storage: storage}, nil
+	boxVersion := strings.TrimSpace(config.BoxVersion)
+	if boxVersion == "" {
+		info, err := boxrelease.Load()
+		if err != nil {
+			return nil, toolInvalid("eucli-box 发布资料无效", err)
+		}
+		boxVersion = info.Version
+	}
+	if err := release.ValidateVersion(boxVersion); err != nil {
+		return nil, toolInvalid(fmt.Sprintf("eucli-box 版本无效：%v", err), err)
+	}
+	return &system{config: config, boxVersion: boxVersion, permission: permission, storage: storage}, nil
 }

@@ -38,6 +38,9 @@ func (s *system) availableTools(ctx context.Context, roleID string) ([]types.Too
 	}
 	tools := make([]types.ToolDefinition, 0, len(summaries))
 	for _, summary := range summaries {
+		if summary.Status == types.ToolAvailabilityUnavailable {
+			continue
+		}
 		_, idOk := filter[summary.ID]
 		_, nameOk := filter[summary.Name]
 		if !idOk && !nameOk {
@@ -46,6 +49,9 @@ func (s *system) availableTools(ctx context.Context, roleID string) ([]types.Too
 		tool, err := s.tools.LoadTool(ctx, summary.ID)
 		if err != nil {
 			return nil, runtimeToolFailed("failed to load available tool", err)
+		}
+		if tool.Status == types.ToolAvailabilityUnavailable {
+			continue
 		}
 		tools = append(tools, tool)
 	}

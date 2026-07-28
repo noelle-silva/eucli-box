@@ -10,7 +10,7 @@ import (
 )
 
 func Execute(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
-	config, err := loadConfig(input.ToolDirectory)
+	config, err := loadConfig(input.ToolBodyDirectory)
 	if err != nil {
 		return failure("load web_search config", err, nil)
 	}

@@ -5,6 +5,7 @@ import RefreshIcon from '@mui/icons-material/Refresh'
 import RestartAltIcon from '@mui/icons-material/RestartAlt'
 import SaveIcon from '@mui/icons-material/Save'
 import { MODEL_REQUEST_TIMEOUT_LIMITS } from '../../controller/modelRequestConfig'
+import { compatibilityRangeText, type StudioBootstrap } from '../../domain/release'
 import { useEvent } from '../hooks/useEvent'
 import { SettingsPill, SettingsSection, SettingsSurface } from './SettingsSurfaces'
 
@@ -12,10 +13,11 @@ type EbSettingsPanelProps = {
   controller: any
   loading: boolean
   modelRequestConfig: any
+  bootstrap?: StudioBootstrap
 }
 
 export function EbSettingsPanel(props: EbSettingsPanelProps) {
-  const { controller, loading, modelRequestConfig } = props
+  const { controller, loading, modelRequestConfig, bootstrap } = props
   const box = modelRequestConfig && typeof modelRequestConfig === 'object' ? modelRequestConfig : {}
   const draft = box.draft && typeof box.draft === 'object' ? box.draft : {}
   const value = box.value && typeof box.value === 'object' ? box.value : {}
@@ -61,6 +63,28 @@ export function EbSettingsPanel(props: EbSettingsPanelProps) {
               </Button>
             </Stack>
           </Stack>
+
+          {bootstrap ? (
+            <SettingsSection tone="muted">
+              <Stack spacing={1}>
+                <Stack direction="row" spacing={0.75} alignItems="center" sx={{ flexWrap: 'wrap' }}>
+                  <Typography sx={{ fontWeight: 900 }}>版本与连接</Typography>
+                  <SettingsPill tone={bootstrap.businessAvailable ? 'selected' : 'danger'}>
+                    {bootstrap.businessAvailable ? '适用' : '不可用'}
+                  </SettingsPill>
+                </Stack>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25} sx={{ flexWrap: 'wrap' }}>
+                  <ReleaseFact label="客户端版本" value={bootstrap.clientVersion || '版本资料无效'} />
+                  <ReleaseFact label="eucli-box 版本" value={bootstrap.eucliBoxVersion || '版本资料无效'} />
+                  <ReleaseFact label="客户端所需范围" value={compatibilityRangeText(bootstrap.clientEucliBoxCompatibility)} />
+                </Stack>
+                {bootstrap.eucliBoxIssue ? (
+                  <Typography variant="caption" color="error">{bootstrap.eucliBoxIssue}</Typography>
+                ) : null}
+              </Stack>
+            </SettingsSection>
+          ) : null}
+
           <Stack spacing={1.25}>
             <TimeoutField
               label="模型列表总超时"
@@ -109,6 +133,15 @@ export function EbSettingsPanel(props: EbSettingsPanelProps) {
           </SettingsSection>
         </Stack>
     </SettingsSurface>
+  )
+}
+
+function ReleaseFact(props: { label: string; value: string }) {
+  return (
+    <Box sx={{ minWidth: { xs: 0, sm: 180 }, flex: '1 1 180px' }}>
+      <Typography variant="caption" color="text.secondary">{props.label}</Typography>
+      <Typography variant="body2" sx={{ fontWeight: 800, overflowWrap: 'anywhere' }}>{props.value}</Typography>
+    </Box>
   )
 }
 

@@ -8,7 +8,7 @@ import (
 )
 
 func Execute(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
-	config, err := loadConfig(input.ToolDirectory)
+	config, err := loadConfig(input.ToolBodyDirectory)
 	if err != nil {
 		return failure("load everything config", err, nil)
 	}
@@ -26,12 +26,12 @@ func Execute(ctx context.Context, input types.ToolExecutionInput) types.ToolExec
 	metadata["runtimeSource"] = provider.RuntimeSource
 	var lock *runtimeLock
 	if usesBundledRuntime(provider) {
-		lock, err = acquireBundledRuntimeLock(ctx, input.ToolDirectory, config, request)
+		lock, err = acquireBundledRuntimeLock(ctx, input.ToolDataDirectory, config, request)
 		if err != nil {
 			return failure("lock bundled Everything runtime", err, metadata)
 		}
 		defer lock.Release()
-		request, err = ensureBundledRuntime(ctx, input.ToolDirectory, config, provider, request)
+		request, err = ensureBundledRuntime(ctx, input.ToolDataDirectory, config, provider, request)
 		if err != nil {
 			return failure("prepare bundled Everything runtime", err, metadata)
 		}

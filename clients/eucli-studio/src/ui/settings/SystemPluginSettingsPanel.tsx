@@ -2,7 +2,8 @@ import * as React from 'react'
 import { Box, Button, Stack, TextField, Typography } from '@mui/material'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import SaveIcon from '@mui/icons-material/Save'
-import { lifecycleTypeLabel, pluginStatusLabel, type SystemPluginDetail } from '../../domain/systemPlugin'
+import { lifecycleTypeLabel, pluginStatusLabel, systemPluginLocatorId, type SystemPluginDetail } from '../../domain/systemPlugin'
+import { compatibilityRangeText } from '../../domain/release'
 import { cloneConfigObject, ConfigFieldsForm, removeConfigValueAtPath, setConfigValueAtPath } from './ConfigFieldsForm'
 import { SettingsSection, SettingsSurface } from './SettingsSurfaces'
 
@@ -20,6 +21,7 @@ export function SystemPluginSettingsPanel(props: SystemPluginSettingsPanelProps)
   const { controller, loading, systemPlugins } = props
   const busy = loading || !!systemPlugins?.loading || !!systemPlugins?.detailLoading || !!systemPlugins?.saving
   const selectedPlugin = systemPlugins?.selectedPlugin as SystemPluginDetail | null
+  const unavailable = selectedPlugin?.status !== 'active'
   const [nameOverrides, setNameOverrides] = React.useState<Record<string, string>>({})
   const [configDraft, setConfigDraft] = React.useState<Record<string, any>>({})
   const [localError, setLocalError] = React.useState('')
@@ -54,7 +56,7 @@ export function SystemPluginSettingsPanel(props: SystemPluginSettingsPanelProps)
             <Typography variant="caption" color="text.secondary">管理本地系统插件、占位符接口名字和插件用户配置。</Typography>
           </Box>
           <Button startIcon={<RefreshIcon />} variant="text" onClick={() => controller.actions.refreshSystemPlugins?.(true)} disabled={busy}>{systemPlugins?.loading ? '刷新中…' : '刷新'}</Button>
-          <Button startIcon={<SaveIcon />} variant="contained" onClick={save} disabled={busy || !selectedPlugin?.id}>{systemPlugins?.saving ? '保存中…' : '保存设置'}</Button>
+          <Button startIcon={<SaveIcon />} variant="contained" onClick={save} disabled={busy || unavailable || !selectedPlugin?.id}>{systemPlugins?.saving ? '保存中…' : '保存设置'}</Button>
         </Stack>
         {systemPlugins?.error ? <Typography variant="body2" color="error">{String(systemPlugins.error || '')}</Typography> : null}
         {systemPlugins?.detailError ? <Typography variant="body2" color="error">{String(systemPlugins.detailError || '')}</Typography> : null}
@@ -66,10 +68,12 @@ export function SystemPluginSettingsPanel(props: SystemPluginSettingsPanelProps)
             <Stack spacing={1}>
               <Typography variant="body2" sx={{ fontWeight: 900 }}>插件列表</Typography>
               {Array.isArray(systemPlugins?.items) && systemPlugins.items.length ? systemPlugins.items.map((plugin: any) => {
-                const selected = text(plugin.id) === text(systemPlugins?.selectedPluginId)
+                const locatorId = systemPluginLocatorId(plugin)
+                const selected = locatorId === text(systemPlugins?.selectedPluginId)
+                const pluginUnavailable = text(plugin.status) !== 'active'
                 return (
-                  <Button key={plugin.id} variant={selected ? 'contained' : 'text'} color={selected ? 'primary' : 'inherit'} onClick={() => controller.actions.openSystemPlugin?.(plugin.id)} sx={{ justifyContent: 'flex-start', textTransform: 'none' }}>
-                    <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{String(plugin.name || plugin.id)}</Box>
+                  <Button key={locatorId} variant={selected ? 'contained' : 'text'} color={pluginUnavailable ? 'error' : selected ? 'primary' : 'inherit'} onClick={() => controller.actions.openSystemPlugin?.(locatorId)} sx={{ justifyContent: 'flex-start', textTransform: 'none' }}>
+                    <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{String(plugin.name || locatorId)} · v{String(plugin.version || '无效')} · {pluginStatusLabel(plugin.status)}</Box>
                   </Button>
                 )
               }) : <Typography variant="body2" color="text.secondary">暂无已加载插件。</Typography>}
@@ -83,6 +87,7 @@ export function SystemPluginSettingsPanel(props: SystemPluginSettingsPanelProps)
                   <Stack spacing={0.5}>
                     <Typography sx={{ fontWeight: 900 }}>{selectedPlugin.name || selectedPlugin.id}</Typography>
                     <Typography variant="body2" color="text.secondary">{selectedPlugin.description}</Typography>
+                    <Typography variant="caption" color="text.secondary">版本：{selectedPlugin.version || '无效'}；适用本体：{compatibilityRangeText(selectedPlugin.eucliBoxCompatibility)}</Typography>
                     <Typography variant="caption" color="text.secondary">类型：{lifecycleTypeLabel(selectedPlugin.lifecycleType)}；状态：{pluginStatusLabel(selectedPlugin.status)}</Typography>
                     {selectedPlugin.statusMessage ? <Typography variant="caption" color="error">{selectedPlugin.statusMessage}</Typography> : null}
                   </Stack>
@@ -94,7 +99,7 @@ export function SystemPluginSettingsPanel(props: SystemPluginSettingsPanelProps)
                     {selectedPlugin.placeholderInterfaces.length ? selectedPlugin.placeholderInterfaces.map((item) => (
                       <Stack key={item.id} spacing={0.5}>
                         <Typography variant="body2" sx={{ fontWeight: 800 }}>{item.description || item.id}</Typography>
-                        <TextField size="small" label={`占位符名（默认：${item.defaultName}）`} value={nameOverrides[item.id] ?? item.effectiveName ?? item.defaultName} onChange={(e) => setNameOverrides((current) => ({ ...current, [item.id]: e.target.value }))} disabled={busy} fullWidth />
+                        <TextField size="small" label={`占位符名（默认：${item.defaultName}）`} value={nameOverrides[item.id] ?? item.effectiveName ?? item.defaultName} onChange={(e) => setNameOverrides((current) => ({ ...current, [item.id]: e.target.value }))} disabled={busy || unavailable} fullWidth />
                       </Stack>
                     )) : <Typography variant="body2" color="text.secondary">这个插件没有声明占位符接口。</Typography>}
                   </Stack>
@@ -103,15 +108,17 @@ export function SystemPluginSettingsPanel(props: SystemPluginSettingsPanelProps)
                 <SettingsSection>
                   <Stack spacing={1}>
                     <Typography variant="body2" sx={{ fontWeight: 900 }}>用户配置</Typography>
-                    <ConfigFieldsForm
-                      schema={selectedPlugin.configSchema}
-                      defaultConfig={selectedPlugin.defaultConfig}
-                      userConfig={selectedPlugin.userConfig}
-                      draftConfig={configDraft}
-                      emptyText="这个插件当前没有可编辑的用户配置字段。"
-                      onSetValue={(path, value) => setConfigDraft((current) => setConfigValueAtPath(current, path, value))}
-                      onRemoveValue={(path) => setConfigDraft((current) => removeConfigValueAtPath(current, path))}
-                    />
+                    <Box component="fieldset" disabled={unavailable} sx={{ p: 0, m: 0, minWidth: 0, border: 0 }}>
+                      <ConfigFieldsForm
+                        schema={selectedPlugin.configSchema}
+                        defaultConfig={selectedPlugin.defaultConfig}
+                        userConfig={selectedPlugin.userConfig}
+                        draftConfig={configDraft}
+                        emptyText="这个插件当前没有可编辑的用户配置字段。"
+                        onSetValue={(path, value) => setConfigDraft((current) => setConfigValueAtPath(current, path, value))}
+                        onRemoveValue={(path) => setConfigDraft((current) => removeConfigValueAtPath(current, path))}
+                      />
+                    </Box>
                     <Typography variant="caption" color="text.secondary">配置保存后会在下一次提示词解析时生效。</Typography>
                   </Stack>
                 </SettingsSection>

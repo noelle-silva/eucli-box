@@ -70,6 +70,8 @@ func statusForCode(code string) int {
 		return http.StatusBadRequest
 	case hasSuffix(code, "not_found"):
 		return http.StatusNotFound
+	case hasSuffix(code, "incompatible_client"):
+		return http.StatusConflict
 	default:
 		return http.StatusInternalServerError
 	}

@@ -13,12 +13,13 @@ import (
 )
 
 type ebClient struct {
-	config *configStore
-	http   *http.Client
+	config  *configStore
+	release clientRelease
+	http    *http.Client
 }
 
-func newEBClient(config *configStore) *ebClient {
-	return &ebClient{config: config, http: &http.Client{Timeout: 120 * time.Second}}
+func newEBClient(config *configStore, release clientRelease) *ebClient {
+	return &ebClient{config: config, release: release, http: &http.Client{Timeout: 120 * time.Second}}
 }
 
 type ebRequest struct {
@@ -84,6 +85,7 @@ func (c *ebClient) request(ctx context.Context, req ebRequest) (any, error) {
 	if cfg.EucliBoxKey != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+cfg.EucliBoxKey)
 	}
+	c.release.applyHeaders(httpReq.Header)
 
 	resp, err := c.http.Do(httpReq)
 	if err != nil {

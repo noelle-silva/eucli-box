@@ -50,34 +50,55 @@ func (h *eventHub) broadcast(event eventFrame) {
 }
 
 type eventBridge struct {
-	config *configStore
-	hub    *eventHub
+	service *service
+	hub     *eventHub
 }
 
-func newEventBridge(config *configStore, hub *eventHub) *eventBridge {
-	return &eventBridge{config: config, hub: hub}
+func newEventBridge(service *service, hub *eventHub) *eventBridge {
+	return &eventBridge{service: service, hub: hub}
 }
 
 func (b *eventBridge) run(ctx context.Context) {
 	for {
+		state := b.service.connectionSnapshot()
+		if state == nil || !state.BusinessAvailable {
+			select {
+			case <-ctx.Done():
+				return
+			case <-b.service.connectionChanged:
+				continue
+			}
+		}
+		connectionCtx, cancel := context.WithCancel(ctx)
+		done := make(chan error, 1)
+		go func() { done <- b.connectOnce(connectionCtx) }()
+		select {
+		case <-ctx.Done():
+			cancel()
+			<-done
+			return
+		case <-b.service.connectionChanged:
+			cancel()
+			<-done
+			continue
+		case err := <-done:
+			cancel()
+			if err != nil && ctx.Err() == nil {
+				log.Printf("event bridge: %v", err)
+			}
+		}
 		select {
 		case <-ctx.Done():
 			return
-		default:
-		}
-		if err := b.connectOnce(ctx); err != nil {
-			log.Printf("event bridge: %v", err)
-		}
-		select {
-		case <-ctx.Done():
-			return
+		case <-b.service.connectionChanged:
+			continue
 		case <-time.After(1500 * time.Millisecond):
 		}
 	}
 }
 
 func (b *eventBridge) connectOnce(ctx context.Context) error {
-	cfg, err := b.config.requireConfigured()
+	cfg, err := b.service.config.requireConfigured()
 	if err != nil {
 		return err
 	}
@@ -94,11 +115,16 @@ func (b *eventBridge) connectOnce(ctx context.Context) error {
 	if cfg.EucliBoxKey != "" {
 		header.Set("Authorization", "Bearer "+cfg.EucliBoxKey)
 	}
+	b.service.release.applyHeaders(header)
 	conn, _, err := websocket.DefaultDialer.DialContext(ctx, target.String(), header)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
+	go func() {
+		<-ctx.Done()
+		_ = conn.Close()
+	}()
 	for {
 		_, payload, err := conn.ReadMessage()
 		if err != nil {

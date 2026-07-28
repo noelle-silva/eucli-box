@@ -92,7 +92,7 @@ func newExecutableFixture(t *testing.T) executableFixture {
 
 func (f executableFixture) run(t *testing.T, arguments map[string]any) types.ToolExecutionOutput {
 	t.Helper()
-	input := types.ToolExecutionInput{ActionID: "action-test", ToolName: "shell_command", Arguments: arguments, ToolDirectory: f.toolDir, HostWorkingDirectory: f.hostDir}
+	input := types.ToolExecutionInput{ActionID: "action-test", ToolName: "shell_command", Arguments: arguments, ToolBodyDirectory: f.toolDir, ToolDataDirectory: f.toolDir, HostWorkingDirectory: f.hostDir}
 	payload, err := json.Marshal(input)
 	if err != nil {
 		t.Fatalf("Marshal(input) error = %v", err)

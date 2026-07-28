@@ -9,7 +9,7 @@ import (
 )
 
 func Execute(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
-	config, err := loadConfig(input.ToolDirectory)
+	config, err := loadConfig(input.ToolBodyDirectory)
 	if err != nil {
 		return failure("load sci_calculator config", err, nil)
 	}
@@ -17,7 +17,7 @@ func Execute(ctx context.Context, input types.ToolExecutionInput) types.ToolExec
 	if err != nil {
 		return failure("parse sci_calculator request", err, nil)
 	}
-	result, err := runPythonCalculator(ctx, input.ToolDirectory, request)
+	result, err := runPythonCalculator(ctx, input.ToolBodyDirectory, request)
 	metadata := map[string]any{
 		"expression":       request.Expression,
 		"pythonExecutable": request.PythonExecutable,

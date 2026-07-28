@@ -25,7 +25,10 @@ func (s *system) Execute(ctx context.Context, plan types.ToolRunPlan) (types.Too
 	if err := validatePlan(plan); err != nil {
 		return types.ToolResult{}, err
 	}
-	if err := ensureToolDirectory(plan.Tool); err != nil {
+	if plan.Tool.Status == types.ToolAvailabilityUnavailable {
+		return deniedResult(plan, plan.Tool.StatusMessage), nil
+	}
+	if err := ensureToolBodyDirectory(plan.Tool); err != nil {
 		return types.ToolResult{}, err
 	}
 	if resolved, err := selectExecutable(plan.Tool); err != nil {
@@ -41,14 +44,14 @@ func (s *system) Execute(ctx context.Context, plan types.ToolRunPlan) (types.Too
 	if err != nil {
 		return types.ToolResult{}, toolExecutionInvalid("failed to resolve host working directory", err)
 	}
-	input, err := json.Marshal(types.ToolExecutionInput{ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Arguments: plan.Action.Arguments, UserConfig: plan.Tool.UserConfig, DefaultConfig: plan.Tool.DefaultConfig, ToolDirectory: plan.Tool.Directory, HostWorkingDirectory: hostWorkingDirectory})
+	input, err := json.Marshal(types.ToolExecutionInput{ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Arguments: plan.Action.Arguments, UserConfig: plan.Tool.UserConfig, DefaultConfig: plan.Tool.DefaultConfig, ToolBodyDirectory: plan.Tool.BodyDirectory, ToolDataDirectory: plan.Tool.DataDirectory, HostWorkingDirectory: hostWorkingDirectory})
 	if err != nil {
 		return types.ToolResult{}, toolExecutionInvalid("failed to encode tool input", err)
 	}
 	toolCtx, cancel := context.WithTimeout(ctx, s.config.ToolTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(toolCtx, plan.Executable)
-	cmd.Dir = plan.Tool.Directory
+	cmd.Dir = plan.Tool.BodyDirectory
 	cmd.Stdin = bytes.NewReader(input)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

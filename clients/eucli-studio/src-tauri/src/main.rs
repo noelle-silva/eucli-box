@@ -130,6 +130,7 @@ fn start_backend_process(app: &tauri::AppHandle, slot: &mut Option<BackendProces
     let mut command = backend_command(app)?;
     command.env("FW_APP_SESSION_TOKEN", &token);
     command.env("FW_APP_DATA_DIR", data_dir);
+    command.env("EUCLI_STUDIO_RELEASE_JSON", include_str!("../../release.json"));
     command.stdin(Stdio::null());
     command.stdout(Stdio::piped());
     command.stderr(Stdio::inherit());

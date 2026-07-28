@@ -10,5 +10,5 @@
   "runtimeConfig": {
     "source": "config.json"
   },
-  "preservePaths": ["runtime"]
+  "dataPaths": ["runtime"]
 }

@@ -2,11 +2,14 @@ package systemplugin
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"eucli-box/internal/boxrelease"
+	"eucli-box/pkg/release"
 	"eucli-box/pkg/types"
 )
 
@@ -22,15 +25,17 @@ type System interface {
 }
 
 type Config struct {
-	SourceDir string
-	DataDir   string
-	Timeout   time.Duration
+	SourceDir  string
+	DataDir    string
+	Timeout    time.Duration
+	BoxVersion string
 }
 
 type system struct {
-	sourceDir string
-	dataDir   string
-	timeout   time.Duration
+	sourceDir  string
+	dataDir    string
+	timeout    time.Duration
+	boxVersion string
 
 	mu              sync.Mutex
 	persistent      map[string]*persistentProcess
@@ -63,7 +68,26 @@ func NewSystem(config Config) (System, error) {
 	if config.Timeout < 0 {
 		return nil, pluginInvalid("system plugin timeout cannot be negative", nil)
 	}
-	return &system{sourceDir: filepath.Clean(sourceAbs), dataDir: filepath.Clean(dataAbs), timeout: config.Timeout, persistent: map[string]*persistentProcess{}, cachedValues: map[string]cachedPlaceholderValues{}, failures: map[string]string{}}, nil
+	boxVersion := strings.TrimSpace(config.BoxVersion)
+	if boxVersion == "" {
+		info, err := boxrelease.Load()
+		if err != nil {
+			return nil, pluginInvalid("eucli-box 发布资料无效", err)
+		}
+		boxVersion = info.Version
+	}
+	if err := release.ValidateVersion(boxVersion); err != nil {
+		return nil, pluginInvalid(fmt.Sprintf("eucli-box 版本无效：%v", err), err)
+	}
+	return &system{
+		sourceDir:    filepath.Clean(sourceAbs),
+		dataDir:      filepath.Clean(dataAbs),
+		timeout:      config.Timeout,
+		boxVersion:   boxVersion,
+		persistent:   map[string]*persistentProcess{},
+		cachedValues: map[string]cachedPlaceholderValues{},
+		failures:     map[string]string{},
+	}, nil
 }
 
 func (s *system) Start(ctx context.Context) error {

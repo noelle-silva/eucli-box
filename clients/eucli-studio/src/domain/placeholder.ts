@@ -67,7 +67,9 @@ export function normalizePlaceholderLibrary(raw: unknown): PlaceholderLibrary {
     const name = text(folder.name)
     if (!id || !name || knownFolderIds.has(id)) continue
     knownFolderIds.add(id)
-    const names = Array.isArray(folder.placeholderNames) ? folder.placeholderNames.map(text).filter((item) => item && knownNames.has(item)) : []
+    const names: string[] = Array.isArray(folder.placeholderNames)
+      ? folder.placeholderNames.map((item: unknown) => text(item)).filter((item: string) => item !== '' && knownNames.has(item))
+      : []
     folders.push({
       id,
       name,
@@ -108,7 +110,7 @@ export function normalizePlaceholderDependencyNode(raw: unknown): PlaceholderDep
     name: text(box.name),
     missing: !!box.missing,
     cycle: !!box.cycle,
-    children: Array.isArray(box.children) ? box.children.map(normalizePlaceholderDependencyNode).filter((item) => item.name) : [],
+    children: Array.isArray(box.children) ? box.children.map(normalizePlaceholderDependencyNode).filter((item: PlaceholderDependencyNode) => item.name) : [],
   }
 }
 

@@ -13,6 +13,10 @@ func (s *system) handleEventsWebSocket(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	if err := s.validateClientCompatibility(r); err != nil {
+		writeError(w, err)
+		return
+	}
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return

@@ -20,8 +20,11 @@ func (s *system) Prepare(ctx context.Context, roleID string, workspaceID string,
 	if err != nil {
 		return types.ToolRunPlan{}, err
 	}
-	if err := validateToolDefinition(tool); err != nil {
+	if err := validateToolCore(tool); err != nil {
 		return types.ToolRunPlan{}, err
+	}
+	if tool.Status == types.ToolAvailabilityUnavailable {
+		return unavailableToolPlan(roleID, action, tool), nil
 	}
 	fence, err := s.evaluateWorkspaceFence(ctx, workspaceID, tool, action)
 	if err != nil {
@@ -49,7 +52,7 @@ func (s *system) planFromDecision(roleID string, action types.ToolAction, tool t
 	default:
 		return types.ToolRunPlan{}, toolPermissionFailed("unexpected permission status", nil)
 	}
-	if err := ensureToolDirectory(tool); err != nil {
+	if err := ensureToolBodyDirectory(tool); err != nil {
 		return types.ToolRunPlan{}, err
 	}
 	executable, err := selectExecutable(tool)
@@ -57,6 +60,15 @@ func (s *system) planFromDecision(roleID string, action types.ToolAction, tool t
 		return types.ToolRunPlan{}, err
 	}
 	return types.ToolRunPlan{ID: utils.NewID("tool-plan"), RoleID: roleID, Action: action, Tool: tool, InvocationMode: invocationMode, Decision: decision, WorkspaceFence: fence, PlanStatus: types.ToolPlanStatusReady, Executable: executable, CreatedAt: time.Now().UTC()}, nil
+}
+
+func unavailableToolPlan(roleID string, action types.ToolAction, tool types.ToolDefinition) types.ToolRunPlan {
+	reason := strings.TrimSpace(tool.StatusMessage)
+	if reason == "" {
+		reason = "工具当前不可用"
+	}
+	decision := types.PermissionDecision{ID: utils.NewID("tool-decision"), ActionID: action.ID, ToolName: action.ToolName, Status: types.PermissionStatusDenied, Reason: reason, CreatedAt: time.Now().UTC()}
+	return types.ToolRunPlan{ID: utils.NewID("tool-plan"), RoleID: roleID, Action: action, Tool: tool, InvocationMode: resolveInvocationMode(action, tool), Decision: decision, PlanStatus: types.ToolPlanStatusDenied, CreatedAt: time.Now().UTC()}
 }
 
 func resolveInvocationMode(action types.ToolAction, tool types.ToolDefinition) types.ToolInvocationMode {

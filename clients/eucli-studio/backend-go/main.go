@@ -24,14 +24,18 @@ func run() error {
 		return errors.New("eucli-studio backend missing FW_APP_SESSION_TOKEN")
 	}
 	dataDir := strings.TrimSpace(os.Getenv("FW_APP_DATA_DIR"))
+	release, err := loadClientRelease(os.Getenv(clientReleaseEnvironment))
+	if err != nil {
+		return err
+	}
 	store, err := newConfigStore(dataDir)
 	if err != nil {
 		return err
 	}
 	hub := newEventHub()
-	svc := newService(store, hub)
+	svc := newService(store, release, hub)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	go newEventBridge(store, hub).run(ctx)
+	go newEventBridge(svc, hub).run(ctx)
 	return newDirectServer(token, svc, hub).listenAndServe(ctx)
 }

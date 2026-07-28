@@ -106,6 +106,7 @@ import { loadHookPromptLibrary, saveHookPromptLibrary, updateGroupSessionHookPro
 import { normalizePlaceholderLibrary, type PlaceholderLibrary } from '../domain/placeholder'
 import { loadPlaceholderDependencies, loadPlaceholderLibrary, loadPlaceholderProblems, previewPlaceholders, savePlaceholderLibrary } from './placeholderClient'
 import { createPlaceholderFromSystemPluginInterface, loadAvailableSystemPluginPlaceholderInterfaces, loadSystemPlugin, loadSystemPlugins, saveSystemPluginUserConfig } from './systemPluginClient'
+import { systemPluginLocatorId } from '../domain/systemPlugin'
 import { addNativeToolsToPolicy, addToolsToPolicy, emptyRoleToolPolicy, removeNativeToolFromPolicy, removeToolFromPolicy, setToolRunMode } from '../domain/toolPolicy'
 import { readActiveEbRunCardsForTarget, removeEbRoleRunCard, upsertEbRoleRunCard } from '../domain/activeRunCards'
 import { loadWorkspaceSession, saveWorkspaceSession, workspaceSessionToChat } from './workspaceBridge'
@@ -796,7 +797,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     emit()
     try {
       const items = await loadSystemPlugins(netRequest)
-      const selectedPluginId = state.systemPlugins.selectedPluginId || String(items[0]?.id || '')
+      const selectedPluginId = state.systemPlugins.selectedPluginId || systemPluginLocatorId(items[0] || { id: '', sourceId: '' })
       state.systemPlugins = { ...state.systemPlugins, loading: false, error: '', items, selectedPluginId }
       emit()
       if (selectedPluginId) await openSystemPlugin(selectedPluginId).catch(() => null)

@@ -9,7 +9,7 @@ import (
 )
 
 func Execute(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
-	config, err := loadConfig(input.ToolDirectory)
+	config, err := loadConfig(input.ToolBodyDirectory)
 	if err != nil {
 		return failure("load shell_command config", err, nil)
 	}
@@ -20,7 +20,7 @@ func Execute(ctx context.Context, input types.ToolExecutionInput) types.ToolExec
 	if block, blocked := checkHardlineCommand(request.Command); blocked {
 		return hardlineDeniedOutput(block)
 	}
-	provider, err := selectProvider(config, request.Provider, input.ToolDirectory)
+	provider, err := selectProvider(config, request.Provider, input.ToolBodyDirectory)
 	if err != nil {
 		return failure("select shell_command provider", err, map[string]any{"provider": effectiveProviderName(config, request.Provider)})
 	}

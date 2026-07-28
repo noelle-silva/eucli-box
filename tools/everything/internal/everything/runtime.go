@@ -21,8 +21,8 @@ type runtimeLock struct {
 
 const scopedInstanceSuffix = "-scoped"
 
-func acquireBundledRuntimeLock(ctx context.Context, toolDirectory string, config Config, request searchRequest) (*runtimeLock, error) {
-	runtimeDir, err := bundledRuntimeDir(toolDirectory, config.Runtime.Directory)
+func acquireBundledRuntimeLock(ctx context.Context, toolDataDirectory string, config Config, request searchRequest) (*runtimeLock, error) {
+	runtimeDir, err := bundledRuntimeDir(toolDataDirectory, config.Runtime.Directory)
 	if err != nil {
 		return nil, err
 	}
@@ -85,11 +85,11 @@ func (l *runtimeLock) Release() {
 	}
 }
 
-func ensureBundledRuntime(ctx context.Context, toolDirectory string, config Config, provider selectedProvider, request searchRequest) (searchRequest, error) {
+func ensureBundledRuntime(ctx context.Context, toolDataDirectory string, config Config, provider selectedProvider, request searchRequest) (searchRequest, error) {
 	if strings.TrimSpace(request.InstanceName) == "" {
 		request.InstanceName = defaultBundledInstanceName(config, request)
 	}
-	runtimeRootDir, err := bundledRuntimeDir(toolDirectory, config.Runtime.Directory)
+	runtimeRootDir, err := bundledRuntimeDir(toolDataDirectory, config.Runtime.Directory)
 	if err != nil {
 		return searchRequest{}, err
 	}
@@ -138,10 +138,10 @@ func defaultBundledInstanceName(config Config, request searchRequest) string {
 	return name
 }
 
-func bundledRuntimeDir(toolDirectory string, runtimeDirectory string) (string, error) {
-	toolDirectory = strings.TrimSpace(toolDirectory)
-	if toolDirectory == "" {
-		return "", fmt.Errorf("toolDirectory is required")
+func bundledRuntimeDir(toolDataDirectory string, runtimeDirectory string) (string, error) {
+	toolDataDirectory = strings.TrimSpace(toolDataDirectory)
+	if toolDataDirectory == "" {
+		return "", fmt.Errorf("toolDataDirectory is required")
 	}
 	path := strings.TrimSpace(runtimeDirectory)
 	if path == "" {
@@ -151,9 +151,9 @@ func bundledRuntimeDir(toolDirectory string, runtimeDirectory string) (string, e
 	if filepath.IsAbs(cleaned) || filepath.VolumeName(cleaned) != "" {
 		return "", fmt.Errorf("runtime.directory must be relative")
 	}
-	resolved := filepath.Clean(filepath.Join(toolDirectory, cleaned))
-	if !pathWithin(toolDirectory, resolved) {
-		return "", fmt.Errorf("runtime.directory escapes tool directory")
+	resolved := filepath.Clean(filepath.Join(toolDataDirectory, cleaned))
+	if !pathWithin(toolDataDirectory, resolved) {
+		return "", fmt.Errorf("runtime.directory escapes tool data directory")
 	}
 	return resolved, nil
 }

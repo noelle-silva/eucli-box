@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"eucli-box/internal/boxrelease"
 	"eucli-box/pkg/types"
 	agentruntime "eucli-box/src/agent-runtime-system"
 	aiassist "eucli-box/src/ai-assist-system"
@@ -34,6 +35,11 @@ func main() {
 func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	boxRelease, err := boxrelease.Load()
+	if err != nil {
+		return fmt.Errorf("load eucli-box release metadata: %w", err)
+	}
+	log.Printf("eucli-box v%s", boxRelease.Version)
 
 	networkSystem, err := networkrequest.NewSystem(networkrequest.Config{MaxTimeout: time.Duration(types.ModelRequestCompletionTimeoutMaxMs) * time.Millisecond})
 	if err != nil {
@@ -69,13 +75,13 @@ func run() error {
 	}
 	log.Printf("[5/11] permission-system       ✓")
 
-	toolSystem, err := toolcalling.NewSystem(toolcalling.Config{}, permissionSystem, storageSystem)
+	toolSystem, err := toolcalling.NewSystem(toolcalling.Config{BoxVersion: boxRelease.Version}, permissionSystem, storageSystem)
 	if err != nil {
 		return fmt.Errorf("start tool calling system: %w", err)
 	}
 	log.Printf("[6/11] tool-calling-system     ✓")
 
-	systemPluginSystem, err := systemplugin.NewSystem(systemplugin.Config{DataDir: filepath.Join(dataDir, "system-plugins")})
+	systemPluginSystem, err := systemplugin.NewSystem(systemplugin.Config{DataDir: filepath.Join(dataDir, "system-plugins"), BoxVersion: boxRelease.Version})
 	if err != nil {
 		return fmt.Errorf("start system plugin system: %w", err)
 	}
@@ -106,17 +112,17 @@ func run() error {
 	if readBoxKey(dataDir) != "" {
 		busyKey = " (key: active)"
 	}
-	gatewaySystem, err := gateway.NewSystem(gateway.Config{Addr: envOrDefault("EUCLI_BOX_ADDR", "127.0.0.1:8765"), Key: readBoxKey(dataDir)}, runtimeSystem, roleSystem, storageSystem, storageSystem, providerSystem, toolSystem, storageSystem, storageSystem, storageSystem, placeholderSystem, systemPluginSystem, assistSystem)
+	gatewaySystem, err := gateway.NewSystem(gateway.Config{Addr: envOrDefault("EUCLI_BOX_ADDR", "127.0.0.1:8765"), Key: readBoxKey(dataDir), BoxVersion: boxRelease.Version}, runtimeSystem, roleSystem, storageSystem, storageSystem, providerSystem, toolSystem, storageSystem, storageSystem, storageSystem, placeholderSystem, systemPluginSystem, assistSystem)
 	if err != nil {
 		return fmt.Errorf("start gateway system: %w", err)
 	}
 	log.Printf("[11/11] gateway-system         ✓%s", busyKey)
 
-	log.Printf("eucli-box is starting on %s ...", envOrDefault("EUCLI_BOX_ADDR", "127.0.0.1:8765"))
+	log.Printf("eucli-box v%s is starting on %s ...", boxRelease.Version, envOrDefault("EUCLI_BOX_ADDR", "127.0.0.1:8765"))
 	if err := gatewaySystem.Start(ctx); err != nil {
 		return fmt.Errorf("start gateway listener: %w", err)
 	}
-	log.Printf("eucli-box is ready — listening on %s", envOrDefault("EUCLI_BOX_ADDR", "127.0.0.1:8765"))
+	log.Printf("eucli-box v%s is ready — listening on %s", boxRelease.Version, envOrDefault("EUCLI_BOX_ADDR", "127.0.0.1:8765"))
 
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

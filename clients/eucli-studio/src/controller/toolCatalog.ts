@@ -1,5 +1,6 @@
 import { now } from '../core/utils'
 import type { AiChatShowToast } from '../gateway/capabilities'
+import { normalizeCompatibilityStatus, normalizeEucliBoxCompatibility } from '../domain/release'
 
 export function createToolCatalog(deps: {
   getState: () => any
@@ -163,6 +164,11 @@ function normalizeToolSummaries(value: any): any[] {
       id,
       name,
       description: String((item as any).description || '').trim(),
+      version: String((item as any).version || '').trim(),
+      eucliBoxCompatibility: normalizeEucliBoxCompatibility((item as any).eucliBoxCompatibility),
+      compatibility: normalizeCompatibilityStatus((item as any).compatibility),
+      status: String((item as any).status || '').trim(),
+      statusMessage: String((item as any).statusMessage || '').trim(),
       type: String((item as any).type || '').trim(),
       updatedAt: (item as any).updatedAt,
     })
@@ -179,6 +185,11 @@ function normalizeToolDefinition(value: any): any {
     description: String((source as any).description || '').trim(),
     promptDescription: String((source as any).promptDescription || '').trim(),
     promptDescriptionOverride: String((source as any).promptDescriptionOverride ?? ''),
+    version: String((source as any).version || '').trim(),
+    eucliBoxCompatibility: normalizeEucliBoxCompatibility((source as any).eucliBoxCompatibility),
+    compatibility: normalizeCompatibilityStatus((source as any).compatibility),
+    status: String((source as any).status || '').trim(),
+    statusMessage: String((source as any).statusMessage || '').trim(),
     type: String((source as any).type || '').trim(),
     inputSchema: objectOrNull((source as any).inputSchema),
     userConfigSchema: objectOrNull((source as any).userConfigSchema),

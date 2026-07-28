@@ -21,7 +21,7 @@ func newPaths(root string) (paths, error) {
 }
 
 func (p paths) baseDirs() []string {
-	return []string{p.root, p.sessionsRoot(), p.sessionRolesRoot(), p.sessionGroupsRoot(), p.sessionWorkspacesRoot(), p.rolesRoot(), p.groupsRoot(), p.workspacesRoot(), p.providersRoot(), p.toolsRoot(), p.stickersRoot(), p.recycleRoot(), p.metaRoot()}
+	return []string{p.root, p.sessionsRoot(), p.sessionRolesRoot(), p.sessionGroupsRoot(), p.sessionWorkspacesRoot(), p.rolesRoot(), p.groupsRoot(), p.workspacesRoot(), p.providersRoot(), p.toolBodiesRoot(), p.toolDataRoot(), p.stickersRoot(), p.recycleRoot(), p.metaRoot()}
 }
 
 func (p paths) sessionsRoot() string   { return filepath.Join(p.root, "sessions") }
@@ -29,7 +29,8 @@ func (p paths) rolesRoot() string      { return filepath.Join(p.root, "roles") }
 func (p paths) groupsRoot() string     { return filepath.Join(p.root, "groups") }
 func (p paths) workspacesRoot() string { return filepath.Join(p.root, "workspaces") }
 func (p paths) providersRoot() string  { return filepath.Join(p.root, "providers") }
-func (p paths) toolsRoot() string      { return filepath.Join(p.root, "tools") }
+func (p paths) toolBodiesRoot() string { return filepath.Join(p.root, "tool-bodies") }
+func (p paths) toolDataRoot() string   { return filepath.Join(p.root, "tool-data") }
 func (p paths) stickersRoot() string   { return filepath.Join(p.root, "stickers") }
 func (p paths) recycleRoot() string    { return filepath.Join(p.root, "recycle") }
 func (p paths) metaRoot() string       { return filepath.Join(p.root, "meta") }
@@ -238,16 +239,28 @@ func (p paths) providerDataFile(providerID string) (string, error) {
 	return filepath.Join(dir, "data.json"), nil
 }
 
-func (p paths) toolDir(toolID string) (string, error) {
-	return p.safeJoin(p.toolsRoot(), toolID)
+func (p paths) toolBodyDir(toolID string) (string, error) {
+	return p.safeJoin(p.toolBodiesRoot(), toolID)
 }
 
-func (p paths) toolDataFile(toolID string) (string, error) {
-	dir, err := p.toolDir(toolID)
+func (p paths) toolBodyDefinitionFile(toolID string) (string, error) {
+	dir, err := p.toolBodyDir(toolID)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "data.json"), nil
+	return filepath.Join(dir, "definition.json"), nil
+}
+
+func (p paths) toolDataDir(toolID string) (string, error) {
+	return p.safeJoin(p.toolDataRoot(), toolID)
+}
+
+func (p paths) toolUserSettingsFile(toolID string) (string, error) {
+	dir, err := p.toolDataDir(toolID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "settings.json"), nil
 }
 
 func (p paths) stickerCategoryDir(categoryName string) (string, error) {

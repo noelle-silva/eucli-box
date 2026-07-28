@@ -184,10 +184,10 @@ func resolveSearchProvider(config Config, input types.ToolExecutionInput) (selec
 		executable, source, err := resolveConfiguredExecutable(value, config.ESPathEnv)
 		return selectedProvider{ID: "external", ESExecutable: executable, ExecutableSource: source, RuntimeSource: "external"}, err
 	}
-	return resolveBundledProvider(config, input.ToolDirectory)
+	return resolveBundledProvider(config, input.ToolBodyDirectory)
 }
 
-func resolveBundledProvider(config Config, toolDirectory string) (selectedProvider, error) {
+func resolveBundledProvider(config Config, toolBodyDirectory string) (selectedProvider, error) {
 	for _, provider := range config.Providers {
 		if provider.ID != config.DefaultProvider {
 			continue
@@ -195,11 +195,11 @@ func resolveBundledProvider(config Config, toolDirectory string) (selectedProvid
 		if !provider.Enabled {
 			return selectedProvider{}, fmt.Errorf("provider %q is disabled", provider.ID)
 		}
-		esExecutable, err := resolveBundledExecutable(toolDirectory, provider.ID, provider.Executables, "es")
+		esExecutable, err := resolveBundledExecutable(toolBodyDirectory, provider.ID, provider.Executables, "es")
 		if err != nil {
 			return selectedProvider{}, err
 		}
-		runtimeExecutable, err := resolveBundledExecutable(toolDirectory, provider.ID, provider.RuntimeExecutables, "runtime")
+		runtimeExecutable, err := resolveBundledExecutable(toolBodyDirectory, provider.ID, provider.RuntimeExecutables, "runtime")
 		if err != nil {
 			return selectedProvider{}, err
 		}
@@ -208,9 +208,9 @@ func resolveBundledProvider(config Config, toolDirectory string) (selectedProvid
 	return selectedProvider{}, fmt.Errorf("provider %q is not configured", config.DefaultProvider)
 }
 
-func resolveBundledExecutable(toolDirectory string, providerID string, executables []types.ToolBinary, label string) (string, error) {
-	if strings.TrimSpace(toolDirectory) == "" {
-		return "", fmt.Errorf("toolDirectory is required")
+func resolveBundledExecutable(toolBodyDirectory string, providerID string, executables []types.ToolBinary, label string) (string, error) {
+	if strings.TrimSpace(toolBodyDirectory) == "" {
+		return "", fmt.Errorf("toolBodyDirectory is required")
 	}
 	for _, candidate := range executables {
 		if candidate.GOOS != runtime.GOOS || candidate.GOARCH != runtime.GOARCH {
@@ -223,9 +223,9 @@ func resolveBundledExecutable(toolDirectory string, providerID string, executabl
 		if filepath.IsAbs(path) || filepath.VolumeName(path) != "" {
 			return "", fmt.Errorf("provider %q %s executable path must be relative", providerID, label)
 		}
-		resolved := filepath.Clean(filepath.Join(toolDirectory, filepath.FromSlash(path)))
-		if !pathWithin(toolDirectory, resolved) {
-			return "", fmt.Errorf("provider %q %s executable escapes tool directory", providerID, label)
+		resolved := filepath.Clean(filepath.Join(toolBodyDirectory, filepath.FromSlash(path)))
+		if !pathWithin(toolBodyDirectory, resolved) {
+			return "", fmt.Errorf("provider %q %s executable escapes tool body directory", providerID, label)
 		}
 		if err := ensureExecutableFile(resolved, fmt.Sprintf("provider %q %s executable", providerID, label)); err != nil {
 			return "", err

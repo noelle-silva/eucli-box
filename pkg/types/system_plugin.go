@@ -25,7 +25,8 @@ type SystemPluginManifest struct {
 	ID                    string                             `json:"id"`
 	Name                  string                             `json:"name"`
 	Description           string                             `json:"description"`
-	Version               string                             `json:"version,omitempty"`
+	Version               string                             `json:"version"`
+	EucliBoxCompatibility EucliBoxCompatibility              `json:"eucliBoxCompatibility"`
 	LifecycleType         string                             `json:"lifecycleType"`
 	HeartbeatIntervalMs   int64                              `json:"heartbeatIntervalMs,omitempty"`
 	Binaries              []SystemPluginBinary               `json:"binaries"`
@@ -47,9 +48,12 @@ type SystemPluginPlaceholderInterfaceView struct {
 
 type SystemPluginView struct {
 	ID                    string                                 `json:"id"`
+	SourceID              string                                 `json:"sourceId"`
 	Name                  string                                 `json:"name"`
 	Description           string                                 `json:"description"`
-	Version               string                                 `json:"version,omitempty"`
+	Version               string                                 `json:"version"`
+	EucliBoxCompatibility EucliBoxCompatibility                  `json:"eucliBoxCompatibility"`
+	Compatibility         CompatibilityStatus                    `json:"compatibility"`
 	LifecycleType         string                                 `json:"lifecycleType"`
 	Status                string                                 `json:"status"`
 	StatusMessage         string                                 `json:"statusMessage,omitempty"`
@@ -60,13 +64,16 @@ type SystemPluginView struct {
 }
 
 type SystemPluginSummary struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Description   string `json:"description"`
-	Version       string `json:"version,omitempty"`
-	LifecycleType string `json:"lifecycleType"`
-	Status        string `json:"status"`
-	StatusMessage string `json:"statusMessage,omitempty"`
+	ID                    string                `json:"id"`
+	SourceID              string                `json:"sourceId"`
+	Name                  string                `json:"name"`
+	Description           string                `json:"description"`
+	Version               string                `json:"version"`
+	EucliBoxCompatibility EucliBoxCompatibility `json:"eucliBoxCompatibility"`
+	Compatibility         CompatibilityStatus   `json:"compatibility"`
+	LifecycleType         string                `json:"lifecycleType"`
+	Status                string                `json:"status"`
+	StatusMessage         string                `json:"statusMessage,omitempty"`
 }
 
 type SystemPluginAvailablePlaceholderInterface struct {
@@ -96,6 +103,7 @@ type SystemPluginPlaceholderRequest struct {
 	UserConfig            map[string]any                         `json:"userConfig,omitempty"`
 	DefaultConfig         map[string]any                         `json:"defaultConfig,omitempty"`
 	PluginDirectory       string                                 `json:"pluginDirectory"`
+	PluginDataDirectory   string                                 `json:"pluginDataDirectory"`
 	HostWorkingDirectory  string                                 `json:"hostWorkingDirectory"`
 }
 

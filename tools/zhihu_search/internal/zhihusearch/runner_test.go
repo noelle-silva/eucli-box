@@ -30,7 +30,7 @@ func TestExecuteSearchesZhihuContent(t *testing.T) {
 	defer server.Close()
 	fixture := newZhihuSearchFixture(t, server.URL)
 
-	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "AI Agent", "count": 3}, UserConfig: map[string]any{"zhihuAccessSecret": "zhihu-secret"}, ToolDirectory: fixture.toolDir})
+	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "AI Agent", "count": 3}, UserConfig: map[string]any{"zhihuAccessSecret": "zhihu-secret"}, ToolBodyDirectory: fixture.toolDir})
 
 	if result.Status != types.ToolStatusSuccess {
 		t.Fatalf("result = %#v", result)
@@ -60,7 +60,7 @@ func TestExecuteSearchesGlobalAndCapsCount(t *testing.T) {
 	defer server.Close()
 	fixture := newZhihuSearchFixture(t, server.URL)
 
-	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "rave", "search_type": "global", "count": 25}, UserConfig: map[string]any{"zhihuAccessSecret": "zhihu-secret"}, ToolDirectory: fixture.toolDir})
+	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "rave", "search_type": "global", "count": 25}, UserConfig: map[string]any{"zhihuAccessSecret": "zhihu-secret"}, ToolBodyDirectory: fixture.toolDir})
 
 	if result.Status != types.ToolStatusSuccess {
 		t.Fatalf("result = %#v", result)
@@ -76,7 +76,7 @@ func TestExecuteSearchesGlobalAndCapsCount(t *testing.T) {
 func TestExecuteFailsWhenSecretMissing(t *testing.T) {
 	fixture := newZhihuSearchFixture(t, "http://127.0.0.1")
 
-	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "AI Agent"}, ToolDirectory: fixture.toolDir})
+	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "AI Agent"}, ToolBodyDirectory: fixture.toolDir})
 
 	if result.Status != types.ToolStatusFailed || !strings.Contains(result.Error, "requires API key") {
 		t.Fatalf("result = %#v", result)
@@ -86,7 +86,7 @@ func TestExecuteFailsWhenSecretMissing(t *testing.T) {
 func TestExecuteRejectsInvalidSearchType(t *testing.T) {
 	fixture := newZhihuSearchFixture(t, "http://127.0.0.1")
 
-	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "AI Agent", "searchType": "bad"}, UserConfig: map[string]any{"zhihuAccessSecret": "zhihu-secret"}, ToolDirectory: fixture.toolDir})
+	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "AI Agent", "searchType": "bad"}, UserConfig: map[string]any{"zhihuAccessSecret": "zhihu-secret"}, ToolBodyDirectory: fixture.toolDir})
 
 	if result.Status != types.ToolStatusFailed || !strings.Contains(result.Error, "zhihu_search or global_search") {
 		t.Fatalf("result = %#v", result)
@@ -100,7 +100,7 @@ func TestExecuteFailsWhenAPIReportsError(t *testing.T) {
 	defer server.Close()
 	fixture := newZhihuSearchFixture(t, server.URL)
 
-	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "AI Agent"}, UserConfig: map[string]any{"zhihuAccessSecret": "zhihu-secret"}, ToolDirectory: fixture.toolDir})
+	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "AI Agent"}, UserConfig: map[string]any{"zhihuAccessSecret": "zhihu-secret"}, ToolBodyDirectory: fixture.toolDir})
 
 	if result.Status != types.ToolStatusFailed || !strings.Contains(result.Error, "invalid secret") || result.Metadata["code"] != 401 {
 		t.Fatalf("result = %#v", result)
@@ -114,7 +114,7 @@ func TestExecuteIgnoresEndpointArguments(t *testing.T) {
 	defer server.Close()
 	fixture := newZhihuSearchFixture(t, server.URL)
 
-	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "AI Agent", "baseURL": "http://127.0.0.1:1"}, UserConfig: map[string]any{"zhihuAccessSecret": "zhihu-secret"}, ToolDirectory: fixture.toolDir})
+	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "AI Agent", "baseURL": "http://127.0.0.1:1"}, UserConfig: map[string]any{"zhihuAccessSecret": "zhihu-secret"}, ToolBodyDirectory: fixture.toolDir})
 
 	if result.Status != types.ToolStatusSuccess {
 		t.Fatalf("result = %#v", result)

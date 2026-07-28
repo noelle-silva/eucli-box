@@ -38,14 +38,14 @@ tools/shell_command
 运行包目录：
 
 ```text
-data/tools/shell_command
+data/tool-bodies/shell_command
 ```
 
 构建后的运行包包含：
 
 ```text
-data/tools/shell_command/
-  data.json
+data/tool-bodies/shell_command/
+  definition.json
   config.json
   binary/windows-amd64/shell_command.exe
   providers/
@@ -53,7 +53,7 @@ data/tools/shell_command/
 
 `tools/shell_command` 是开发态源码和声明。
 
-`data/tools/shell_command` 是 e-b 运行时读取的工具包产物。
+`data/tool-bodies/shell_command` 是 e-b 运行时读取的工具本体产物；用户设置和运行资料保存在独立的 `data/tool-data/shell_command` 中。
 
 ## 构建方式
 

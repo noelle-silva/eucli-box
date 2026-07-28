@@ -2,10 +2,15 @@
   "id": "zhihu_search",
   "name": "zhihu_search",
   "description": "Search Zhihu through the Zhihu OpenAPI and return normalized markdown results with structured sources and items.",
+  "version": "0.1.0",
+  "eucliBoxCompatibility": {
+    "minimumVersion": "0.1.0",
+    "maximumVersionExclusive": "0.2.0"
+  },
   "promptDescription": "Search Zhihu through the Zhihu OpenAPI. Required [query] is the search text. Optional [searchType] selects zhihu_search or global_search; aliases zhihu, site, global, and all are accepted. Optional [count] controls result count and is capped by the selected search type: zhihu_search returns 1-10 results, global_search returns 1-20 results. Optional [timeoutMs] controls request timeout. Optional [maxOutputChars] controls markdown output length. Optional [description] records why the lookup is being run. API secrets should be configured in tool user config or ZHIHU_ACCESS_SECRET, not placed in prompts. The tool returns markdown plus metadata including searchType, query, resultsCount, statusCode, durationMs, code, apiMessage, sources, and items.",
   "defaultInvocationMode": "sync",
   "type": "local",
-  "directory": ".",
+  "bodyDirectory": ".",
   "userConfigSchema": {
     "type": "object",
     "properties": {

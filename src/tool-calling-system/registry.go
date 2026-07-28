@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"eucli-box/pkg/release"
 	"eucli-box/pkg/types"
 )
 
@@ -34,13 +35,29 @@ func (s *system) LoadTool(ctx context.Context, toolID string) (types.ToolDefinit
 	if err != nil {
 		return types.ToolDefinition{}, toolNotFound("failed to load tool", err)
 	}
-	return tool, nil
+	return s.annotateTool(tool), nil
 }
 
 func (s *system) ListTools(ctx context.Context) ([]types.ToolSummary, error) {
-	tools, err := s.storage.ListTools(ctx)
+	summaries, err := s.storage.ListTools(ctx)
 	if err != nil {
 		return nil, toolStorageFailed("failed to list tools", err)
+	}
+	tools := make([]types.ToolSummary, 0, len(summaries))
+	for _, summary := range summaries {
+		if summary.Status == types.ToolAvailabilityUnavailable {
+			tools = append(tools, summary)
+			continue
+		}
+		tool, err := s.storage.LoadTool(ctx, summary.ID)
+		if err != nil {
+			summary.Status = types.ToolAvailabilityUnavailable
+			summary.StatusMessage = "工具本体资料不可读取：" + err.Error()
+			tools = append(tools, summary)
+			continue
+		}
+		tool = s.annotateTool(tool)
+		tools = append(tools, types.ToolSummary{ID: tool.ID, Name: tool.Name, Description: tool.Description, Version: tool.Version, EucliBoxCompatibility: tool.EucliBoxCompatibility, Compatibility: tool.Compatibility, Status: tool.Status, StatusMessage: tool.StatusMessage, Type: tool.Type, UpdatedAt: tool.UpdatedAt})
 	}
 	return tools, nil
 }
@@ -53,7 +70,7 @@ func (s *system) SaveToolUserSettings(ctx context.Context, toolID string, settin
 	if err != nil {
 		return types.ToolDefinition{}, toolStorageFailed("failed to save tool user settings", err)
 	}
-	return tool, nil
+	return s.annotateTool(tool), nil
 }
 
 func (s *system) resolveTool(ctx context.Context, toolName string) (types.ToolDefinition, error) {
@@ -70,6 +87,19 @@ func (s *system) resolveTool(ctx context.Context, toolName string) (types.ToolDe
 }
 
 func validateToolDefinition(tool types.ToolDefinition) error {
+	if err := validateToolCore(tool); err != nil {
+		return err
+	}
+	if err := release.ValidateVersion(tool.Version); err != nil {
+		return toolInvalid("tool version is invalid: "+err.Error(), err)
+	}
+	if err := release.ValidateEucliBoxCompatibility(tool.EucliBoxCompatibility); err != nil {
+		return toolInvalid("tool eucli-box compatibility is invalid: "+err.Error(), err)
+	}
+	return nil
+}
+
+func validateToolCore(tool types.ToolDefinition) error {
 	if strings.TrimSpace(tool.ID) == "" {
 		return toolInvalid("tool id is required", nil)
 	}
@@ -85,8 +115,8 @@ func validateToolDefinition(tool types.ToolDefinition) error {
 	if tool.Type != "local" && tool.Type != "network" {
 		return toolInvalid("tool type must be local or network", nil)
 	}
-	if strings.TrimSpace(tool.Directory) == "" {
-		return toolInvalid("tool directory is required", nil)
+	if strings.TrimSpace(tool.BodyDirectory) == "" {
+		return toolInvalid("tool body directory is required", nil)
 	}
 	if len(tool.Binaries) == 0 {
 		return toolInvalid("tool must declare at least one platform binary", nil)
@@ -94,24 +124,24 @@ func validateToolDefinition(tool types.ToolDefinition) error {
 	return nil
 }
 
-func ensureToolDirectory(tool types.ToolDefinition) error {
-	if strings.TrimSpace(tool.Directory) == "" {
-		return toolInvalid("tool directory is required", nil)
+func ensureToolBodyDirectory(tool types.ToolDefinition) error {
+	if strings.TrimSpace(tool.BodyDirectory) == "" {
+		return toolInvalid("tool body directory is required", nil)
 	}
-	info, err := os.Stat(tool.Directory)
+	info, err := os.Stat(tool.BodyDirectory)
 	if err != nil {
-		return toolNotFound("tool directory does not exist", err)
+		return toolNotFound("tool body directory does not exist", err)
 	}
 	if !info.IsDir() {
-		return toolInvalid("tool directory is not a directory", nil)
+		return toolInvalid("tool body directory is not a directory", nil)
 	}
 	return nil
 }
 
 func cleanExecutablePath(tool types.ToolDefinition, executable string) (string, error) {
-	toolDir, err := filepath.Abs(tool.Directory)
+	toolDir, err := filepath.Abs(tool.BodyDirectory)
 	if err != nil {
-		return "", toolInvalid("failed to resolve tool directory", err)
+		return "", toolInvalid("failed to resolve tool body directory", err)
 	}
 	var resolved string
 	if filepath.IsAbs(executable) {
@@ -124,9 +154,25 @@ func cleanExecutablePath(tool types.ToolDefinition, executable string) (string, 
 		return "", toolInvalid("failed to resolve tool executable", err)
 	}
 	if !pathWithin(toolDir, absResolved) {
-		return "", toolInvalid("tool executable must stay inside tool directory", nil)
+		return "", toolInvalid("tool executable must stay inside tool body directory", nil)
 	}
 	return absResolved, nil
+}
+
+func (s *system) annotateTool(tool types.ToolDefinition) types.ToolDefinition {
+	status := release.AssessEucliBoxCompatibility(tool.Version, s.boxVersion, tool.EucliBoxCompatibility)
+	if err := validateToolCore(tool); err != nil {
+		status = types.CompatibilityStatus{Reason: "工具本体资料无效：" + err.Error(), CurrentEucliBoxVersion: s.boxVersion, RequiredEucliBoxCompatibility: tool.EucliBoxCompatibility}
+	}
+	tool.Compatibility = status
+	if status.Compatible {
+		tool.Status = types.ToolAvailabilityActive
+		tool.StatusMessage = ""
+		return tool
+	}
+	tool.Status = types.ToolAvailabilityUnavailable
+	tool.StatusMessage = status.Reason
+	return tool
 }
 
 func pathWithin(base string, child string) bool {

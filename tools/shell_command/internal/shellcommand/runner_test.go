@@ -17,7 +17,7 @@ func TestExecuteRunsBundledProviderCommand(t *testing.T) {
 	fixture := newShellCommandFixture(t)
 	result := Execute(context.Background(), types.ToolExecutionInput{
 		Arguments:            map[string]any{"command": "print", "workdir": ".", "description": "fixture run"},
-		ToolDirectory:        fixture.toolDir,
+		ToolBodyDirectory:    fixture.toolDir,
 		HostWorkingDirectory: fixture.hostDir,
 	})
 	if result.Status != types.ToolStatusSuccess {
@@ -35,7 +35,7 @@ func TestExecuteReturnsFailureWithProcessMetadata(t *testing.T) {
 	fixture := newShellCommandFixture(t)
 	result := Execute(context.Background(), types.ToolExecutionInput{
 		Arguments:            map[string]any{"command": "fail", "timeoutMs": 10000},
-		ToolDirectory:        fixture.toolDir,
+		ToolBodyDirectory:    fixture.toolDir,
 		HostWorkingDirectory: fixture.hostDir,
 	})
 	if result.Status != types.ToolStatusFailed || result.Error != "command exited with code 7" {
@@ -50,7 +50,7 @@ func TestExecuteTimesOutCommand(t *testing.T) {
 	fixture := newShellCommandFixture(t)
 	result := Execute(context.Background(), types.ToolExecutionInput{
 		Arguments:            map[string]any{"command": "sleep", "timeoutMs": 10},
-		ToolDirectory:        fixture.toolDir,
+		ToolBodyDirectory:    fixture.toolDir,
 		HostWorkingDirectory: fixture.hostDir,
 	})
 	if result.Status != types.ToolStatusFailed || result.Metadata["timedOut"] != true {
@@ -62,7 +62,7 @@ func TestExecuteTruncatesCapturedOutput(t *testing.T) {
 	fixture := newShellCommandFixture(t)
 	result := Execute(context.Background(), types.ToolExecutionInput{
 		Arguments:            map[string]any{"command": "ordered-large", "maxOutputChars": 12},
-		ToolDirectory:        fixture.toolDir,
+		ToolBodyDirectory:    fixture.toolDir,
 		HostWorkingDirectory: fixture.hostDir,
 	})
 	if result.Status != types.ToolStatusSuccess || result.Metadata["truncated"] != true {
@@ -80,7 +80,7 @@ func TestExecuteDeniesHardlineCommandBeforeProviderSelection(t *testing.T) {
 	fixture := newShellCommandFixture(t)
 	result := Execute(context.Background(), types.ToolExecutionInput{
 		Arguments:            map[string]any{"command": "rm -rf /", "provider": "missing-provider"},
-		ToolDirectory:        fixture.toolDir,
+		ToolBodyDirectory:    fixture.toolDir,
 		HostWorkingDirectory: fixture.hostDir,
 	})
 	if result.Status != types.ToolStatusDenied {
@@ -98,7 +98,7 @@ func TestExecuteDeniesHardlineCommandBeforeWorkdirResolution(t *testing.T) {
 	fixture := newShellCommandFixture(t)
 	result := Execute(context.Background(), types.ToolExecutionInput{
 		Arguments:            map[string]any{"command": "shutdown -h now", "workdir": filepath.Join(fixture.hostDir, "missing")},
-		ToolDirectory:        fixture.toolDir,
+		ToolBodyDirectory:    fixture.toolDir,
 		HostWorkingDirectory: fixture.hostDir,
 	})
 	if result.Status != types.ToolStatusDenied {
@@ -113,7 +113,7 @@ func TestExecuteDoesNotMarkByteTruncationAsInvalidUTF8(t *testing.T) {
 	fixture := newShellCommandFixture(t)
 	result := Execute(context.Background(), types.ToolExecutionInput{
 		Arguments:            map[string]any{"command": "partial-byte-truncate", "maxOutputChars": 1},
-		ToolDirectory:        fixture.toolDir,
+		ToolBodyDirectory:    fixture.toolDir,
 		HostWorkingDirectory: fixture.hostDir,
 	})
 	if result.Status != types.ToolStatusSuccess || result.Metadata["truncated"] != true {
@@ -131,7 +131,7 @@ func TestExecuteMarksInvalidUTF8Output(t *testing.T) {
 	fixture := newShellCommandFixture(t)
 	result := Execute(context.Background(), types.ToolExecutionInput{
 		Arguments:            map[string]any{"command": "invalid-utf8"},
-		ToolDirectory:        fixture.toolDir,
+		ToolBodyDirectory:    fixture.toolDir,
 		HostWorkingDirectory: fixture.hostDir,
 	})
 	if result.Status != types.ToolStatusSuccess {
@@ -150,7 +150,7 @@ func TestExecuteUsesUserConfigDefaults(t *testing.T) {
 	result := Execute(context.Background(), types.ToolExecutionInput{
 		Arguments:            map[string]any{"command": "large"},
 		UserConfig:           map[string]any{"workdir": ".", "description": "configured run", "timeoutMs": 10000, "maxOutputChars": 8},
-		ToolDirectory:        fixture.toolDir,
+		ToolBodyDirectory:    fixture.toolDir,
 		HostWorkingDirectory: fixture.hostDir,
 	})
 	if result.Status != types.ToolStatusSuccess || result.Metadata["description"] != "configured run" || result.Metadata["maxOutputChars"] != 8 {
@@ -168,7 +168,7 @@ func TestExecuteFailsWhenBundledProviderMissing(t *testing.T) {
 	}
 	result := Execute(context.Background(), types.ToolExecutionInput{
 		Arguments:            map[string]any{"command": "print"},
-		ToolDirectory:        fixture.toolDir,
+		ToolBodyDirectory:    fixture.toolDir,
 		HostWorkingDirectory: fixture.hostDir,
 	})
 	if result.Status != types.ToolStatusFailed || !strings.Contains(result.Error, "bundled executable is missing") {

@@ -19,7 +19,8 @@ func TestExecuteUsesBundledEverythingProvider(t *testing.T) {
 	result := Execute(context.Background(), types.ToolExecutionInput{
 		Arguments:            map[string]any{"query": "notes", "scopePath": ".", "maxResults": 3, "description": "fixture search"},
 		DefaultConfig:        map[string]any{"maxOutputChars": 20000},
-		ToolDirectory:        fixture.toolDir,
+		ToolBodyDirectory:    fixture.toolDir,
+		ToolDataDirectory:    fixture.dataDir,
 		HostWorkingDirectory: fixture.hostDir,
 	})
 	if result.Status != types.ToolStatusSuccess {
@@ -39,7 +40,8 @@ func TestExecuteAllowsExplicitExternalCLIOverride(t *testing.T) {
 		Arguments:            map[string]any{"query": "notes", "scopePath": ".", "maxResults": 3, "description": "fixture search"},
 		UserConfig:           map[string]any{"esPath": fixture.esExe},
 		DefaultConfig:        map[string]any{"maxOutputChars": 20000},
-		ToolDirectory:        fixture.toolDir,
+		ToolBodyDirectory:    fixture.toolDir,
+		ToolDataDirectory:    fixture.dataDir,
 		HostWorkingDirectory: fixture.hostDir,
 	})
 	if result.Status != types.ToolStatusSuccess {
@@ -60,7 +62,8 @@ func TestExecuteDefaultsToBundledFullDiskRuntime(t *testing.T) {
 	result := Execute(context.Background(), types.ToolExecutionInput{
 		Arguments:            map[string]any{"query": "notes", "maxResults": 3, "description": "default full disk"},
 		DefaultConfig:        map[string]any{"maxOutputChars": 20000},
-		ToolDirectory:        fixture.toolDir,
+		ToolBodyDirectory:    fixture.toolDir,
+		ToolDataDirectory:    fixture.dataDir,
 		HostWorkingDirectory: fixture.hostDir,
 	})
 	if result.Status != types.ToolStatusSuccess {
@@ -100,7 +103,7 @@ func TestWindowsServiceBinaryPathParsing(t *testing.T) {
 
 func TestExecuteFailsWhenBundledProviderMissing(t *testing.T) {
 	fixture := newEverythingFixture(t, false)
-	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "notes"}, ToolDirectory: fixture.toolDir})
+	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "notes"}, ToolBodyDirectory: fixture.toolDir, ToolDataDirectory: fixture.dataDir})
 	if result.Status != types.ToolStatusFailed || !strings.Contains(result.Error, "provider \"bundled\" es executable does not exist") {
 		t.Fatalf("result = %#v", result)
 	}
@@ -108,7 +111,7 @@ func TestExecuteFailsWhenBundledProviderMissing(t *testing.T) {
 
 func TestExecuteRejectsInvalidLimit(t *testing.T) {
 	fixture := newEverythingFixture(t, true)
-	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "notes", "maxResults": 999}, UserConfig: map[string]any{"esPath": fixture.esExe}, ToolDirectory: fixture.toolDir})
+	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "notes", "maxResults": 999}, UserConfig: map[string]any{"esPath": fixture.esExe}, ToolBodyDirectory: fixture.toolDir, ToolDataDirectory: fixture.dataDir})
 	if result.Status != types.ToolStatusFailed || !strings.Contains(result.Error, "between 1 and 500") {
 		t.Fatalf("result = %#v", result)
 	}
@@ -118,7 +121,8 @@ func TestExecuteRejectsUnsupportedActionArgument(t *testing.T) {
 	fixture := newEverythingFixture(t, true)
 	result := Execute(context.Background(), types.ToolExecutionInput{
 		Arguments:            map[string]any{"action": "search", "query": "notes"},
-		ToolDirectory:        fixture.toolDir,
+		ToolBodyDirectory:    fixture.toolDir,
+		ToolDataDirectory:    fixture.dataDir,
 		HostWorkingDirectory: fixture.hostDir,
 	})
 	if result.Status != types.ToolStatusFailed || !strings.Contains(result.Error, "not supported") {
@@ -249,12 +253,12 @@ func TestBundledRuntimeLockSerializesRuntimePreparation(t *testing.T) {
 	fixture := newEverythingFixture(t, true)
 	request := searchRequest{TimeoutMs: 40}
 	config := fixtureConfig()
-	first, err := acquireBundledRuntimeLock(context.Background(), fixture.toolDir, config, request)
+	first, err := acquireBundledRuntimeLock(context.Background(), fixture.dataDir, config, request)
 	if err != nil {
 		t.Fatal(err)
 	}
 	startedAt := time.Now()
-	second, err := acquireBundledRuntimeLock(context.Background(), fixture.toolDir, config, request)
+	second, err := acquireBundledRuntimeLock(context.Background(), fixture.dataDir, config, request)
 	if err == nil {
 		second.Release()
 		t.Fatal("second lock must wait until timeout while first lock is held")
@@ -263,7 +267,7 @@ func TestBundledRuntimeLockSerializesRuntimePreparation(t *testing.T) {
 		t.Fatalf("lock returned too quickly: %s", time.Since(startedAt))
 	}
 	first.Release()
-	third, err := acquireBundledRuntimeLock(context.Background(), fixture.toolDir, config, searchRequest{TimeoutMs: 1000})
+	third, err := acquireBundledRuntimeLock(context.Background(), fixture.dataDir, config, searchRequest{TimeoutMs: 1000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,6 +276,7 @@ func TestBundledRuntimeLockSerializesRuntimePreparation(t *testing.T) {
 
 type everythingFixture struct {
 	toolDir string
+	dataDir string
 	hostDir string
 	esExe   string
 }
@@ -323,6 +328,7 @@ func newEverythingFixture(t *testing.T, includeBundledProvider bool) everythingF
 	t.Helper()
 	root := t.TempDir()
 	toolDir := filepath.Join(root, "tool")
+	dataDir := filepath.Join(root, "data")
 	hostDir := filepath.Join(root, "host")
 	esExe := filepath.Join(root, executableName("fake-es"))
 	bundledDir := filepath.Join(toolDir, "providers", "everything")
@@ -331,10 +337,13 @@ func newEverythingFixture(t *testing.T, includeBundledProvider bool) everythingF
 	if err := os.MkdirAll(toolDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(tool) error = %v", err)
 	}
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(data) error = %v", err)
+	}
 	if err := os.MkdirAll(hostDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(host) error = %v", err)
 	}
-	t.Setenv("FAKE_EVERYTHING_TOOL_DIR", toolDir)
+	t.Setenv("FAKE_EVERYTHING_TOOL_DIR", dataDir)
 	buildFakeES(t, esExe)
 	if includeBundledProvider {
 		if err := os.MkdirAll(bundledDir, 0o755); err != nil {
@@ -351,7 +360,7 @@ func newEverythingFixture(t *testing.T, includeBundledProvider bool) everythingF
 	if err := os.WriteFile(filepath.Join(toolDir, "config.json"), payload, 0o644); err != nil {
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
-	return everythingFixture{toolDir: toolDir, hostDir: hostDir, esExe: esExe}
+	return everythingFixture{toolDir: toolDir, dataDir: dataDir, hostDir: hostDir, esExe: esExe}
 }
 
 func fixtureConfig() Config {

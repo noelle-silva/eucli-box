@@ -1,3 +1,5 @@
+import { normalizeCompatibilityStatus, normalizeEucliBoxCompatibility, type CompatibilityStatus, type EucliBoxCompatibility } from './release'
+
 export type SystemPluginPlaceholderInterface = {
   id: string
   defaultName: string
@@ -7,9 +9,12 @@ export type SystemPluginPlaceholderInterface = {
 
 export type SystemPluginSummary = {
   id: string
+  sourceId: string
   name: string
   description: string
   version?: string
+  eucliBoxCompatibility: EucliBoxCompatibility
+  compatibility: CompatibilityStatus
   lifecycleType: string
   status: string
   statusMessage?: string
@@ -45,12 +50,27 @@ function objectMap(value: unknown): Record<string, any> {
 
 export function normalizeSystemPluginSummaries(raw: unknown): SystemPluginSummary[] {
   const items = Array.isArray(raw) ? raw : []
-  return items.map(normalizeSystemPluginSummary).filter((item) => item.id)
+  return items.map(normalizeSystemPluginSummary).filter(systemPluginLocatorId)
 }
 
 export function normalizeSystemPluginSummary(raw: unknown): SystemPluginSummary {
   const box = raw && typeof raw === 'object' ? (raw as any) : {}
-  return { id: text(box.id), name: text(box.name), description: text(box.description), version: text(box.version), lifecycleType: text(box.lifecycleType), status: text(box.status), statusMessage: text(box.statusMessage) }
+  return {
+    id: text(box.id),
+    sourceId: text(box.sourceId),
+    name: text(box.name),
+    description: text(box.description),
+    version: text(box.version),
+    eucliBoxCompatibility: normalizeEucliBoxCompatibility(box.eucliBoxCompatibility),
+    compatibility: normalizeCompatibilityStatus(box.compatibility),
+    lifecycleType: text(box.lifecycleType),
+    status: text(box.status),
+    statusMessage: text(box.statusMessage),
+  }
+}
+
+export function systemPluginLocatorId(plugin: Pick<SystemPluginSummary, 'id' | 'sourceId'>): string {
+  return text(plugin.id) || text(plugin.sourceId)
 }
 
 export function normalizeSystemPluginDetail(raw: unknown): SystemPluginDetail {
@@ -62,7 +82,7 @@ export function normalizeSystemPluginDetail(raw: unknown): SystemPluginDetail {
     defaultConfig: objectMap(box.defaultConfig),
     userConfig: objectMap(box.userConfig),
     configSchema: objectMap(box.configSchema),
-    placeholderInterfaces: interfaces.map(normalizeSystemPluginPlaceholderInterface).filter((item) => item.id),
+    placeholderInterfaces: interfaces.map(normalizeSystemPluginPlaceholderInterface).filter((item: SystemPluginPlaceholderInterface) => item.id),
   }
 }
 

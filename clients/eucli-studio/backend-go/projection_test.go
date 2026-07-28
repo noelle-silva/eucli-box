@@ -231,7 +231,7 @@ func TestSessionFavoritesStorageKeyUsesRootAction(t *testing.T) {
 	if _, err := store.save(clientConfig{EucliBoxURL: server.URL}); err != nil {
 		t.Fatalf("save config error = %v", err)
 	}
-	projection := newProjectionService(store, newEBClient(store))
+	projection := newProjectionService(store, newEBClient(store, testClientRelease()))
 	favorites := map[string]any{
 		"folders":            []any{map[string]any{"id": "favf-1", "name": "Important", "parentId": "", "createdAt": float64(1), "updatedAt": float64(1)}},
 		"chatRefsByFolderId": map[string]any{"favf-1": []any{map[string]any{"targetKind": "role", "targetId": "developer", "chatId": "session-1", "addedAt": float64(2)}}},
@@ -293,7 +293,7 @@ func TestMetaSavePreservesStickerProjectionSettings(t *testing.T) {
 		t.Fatalf("save config error = %v", err)
 	}
 
-	projection := newProjectionService(store, newEBClient(store))
+	projection := newProjectionService(store, newEBClient(store, testClientRelease()))
 	if err := projection.set(context.Background(), "stickers/index", map[string]any{"enabled": true}); err != nil {
 		t.Fatalf("save stickers error = %v", err)
 	}

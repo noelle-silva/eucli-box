@@ -20,6 +20,7 @@ import { ConfigFieldsForm } from './ConfigFieldsForm'
 import { SettingsListItem, SettingsPill, SettingsSection, SettingsSurface } from './SettingsSurfaces'
 import { ToolPromptDescriptionSection } from './ToolPromptDescriptionSection'
 import { plainObject, stringField } from './schemaFieldValues'
+import { compatibilityRangeText, type CompatibilityStatus, type EucliBoxCompatibility } from '../../domain/release'
 
 type AiToolsSettingsPanelProps = {
   controller: any
@@ -31,6 +32,11 @@ type ToolSummary = {
   id?: unknown
   name?: unknown
   description?: unknown
+  version?: unknown
+  eucliBoxCompatibility?: EucliBoxCompatibility
+  compatibility?: CompatibilityStatus
+  status?: unknown
+  statusMessage?: unknown
   type?: unknown
   updatedAt?: unknown
 }
@@ -110,8 +116,9 @@ function ToolCard(props: { controller: any; tool: ToolSummary; loading: boolean 
   const id = toolId(tool)
   const name = toolName(tool)
   const description = toolDescription(tool)
+  const unavailable = String(tool.status || '').trim() !== 'active'
   return (
-    <SettingsListItem>
+    <SettingsListItem tone={unavailable ? 'danger' : 'default'}>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25} alignItems={{ xs: 'stretch', sm: 'center' }}>
         <Stack direction="row" spacing={1.25} alignItems="flex-start" sx={{ minWidth: 0, flex: 1 }}>
           <Box sx={{ width: 38, height: 38, borderRadius: 2, bgcolor: 'grey.100', display: 'grid', placeItems: 'center', color: 'text.secondary', flexShrink: 0 }}>
@@ -121,10 +128,14 @@ function ToolCard(props: { controller: any; tool: ToolSummary; loading: boolean 
             <Stack direction="row" spacing={0.75} alignItems="center" sx={{ flexWrap: 'wrap' }}>
               <Typography sx={{ fontWeight: 900 }}>{name}</Typography>
               {String(tool.type || '').trim() ? <SettingsPill>{String(tool.type)}</SettingsPill> : null}
+              <SettingsPill tone={unavailable ? 'danger' : 'selected'}>{unavailable ? '不可用' : '可用'}</SettingsPill>
+              <SettingsPill>v{String(tool.version || '无效')}</SettingsPill>
             </Stack>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
               {description || '暂无描述'}
             </Typography>
+            <Typography variant="caption" color="text.secondary">适用本体：{compatibilityRangeText(tool.eucliBoxCompatibility)}</Typography>
+            {unavailable && String(tool.statusMessage || '').trim() ? <Typography variant="caption" color="error" sx={{ display: 'block' }}>{String(tool.statusMessage)}</Typography> : null}
           </Box>
         </Stack>
         <Button variant="text" onClick={() => controller.actions.openToolConfig?.(id)} disabled={loading || !id} sx={{ alignSelf: { xs: 'flex-end', sm: 'center' } }}>
@@ -140,6 +151,7 @@ function ToolConfigDialog(props: { controller: any; tools: any }) {
   const selectedTool = tools?.selectedTool && typeof tools.selectedTool === 'object' ? tools.selectedTool : null
   const open = !!tools?.selectedToolId || !!selectedTool || !!tools?.detailLoading
   const name = toolName(selectedTool || { id: tools?.selectedToolId })
+  const unavailable = String(selectedTool?.status || '').trim() !== 'active'
   const save = useEvent(() => controller.actions.saveSelectedToolConfig?.())
 
   return (
@@ -177,29 +189,37 @@ function ToolConfigDialog(props: { controller: any; tools: any }) {
                   <Stack direction="row" spacing={0.75} alignItems="center" sx={{ flexWrap: 'wrap' }}>
                     <Typography sx={{ fontWeight: 900 }}>{toolName(selectedTool)}</Typography>
                     {String(selectedTool.type || '').trim() ? <SettingsPill>{String(selectedTool.type)}</SettingsPill> : null}
+                    <SettingsPill tone={unavailable ? 'danger' : 'selected'}>{unavailable ? '不可用' : '可用'}</SettingsPill>
+                    <SettingsPill>v{String(selectedTool.version || '无效')}</SettingsPill>
                   </Stack>
                   <Typography variant="body2" color="text.secondary">
                     {toolDescription(selectedTool) || '暂无描述'}
                   </Typography>
+                  <Typography variant="caption" color="text.secondary">适用本体：{compatibilityRangeText(selectedTool.eucliBoxCompatibility)}</Typography>
+                  {unavailable && selectedTool.statusMessage ? <Typography variant="caption" color="error">{String(selectedTool.statusMessage)}</Typography> : null}
                 </Stack>
               </SettingsSection>
 
-              <ToolPromptDescriptionSection controller={controller} tool={selectedTool} tools={tools} />
+              <Box component="fieldset" disabled={unavailable} sx={{ p: 0, m: 0, minWidth: 0, border: 0 }}>
+                <Stack spacing={1.5}>
+                  <ToolPromptDescriptionSection controller={controller} tool={selectedTool} tools={tools} />
 
-              <SettingsSection>
-                <Stack spacing={1.25}>
-                  <Typography sx={{ fontWeight: 900 }}>用户配置</Typography>
-                  <ConfigFieldsForm
-                    schema={selectedTool?.userConfigSchema}
-                    defaultConfig={selectedTool?.defaultConfig}
-                    userConfig={selectedTool?.userConfig}
-                    draftConfig={tools?.configDraft}
-                    emptyText="该工具当前没有可编辑的用户配置字段。"
-                    onSetValue={(path, value) => controller.actions.setToolConfigValue?.(path, value)}
-                    onRemoveValue={(path) => controller.actions.removeToolConfigValue?.(path)}
-                  />
+                  <SettingsSection>
+                    <Stack spacing={1.25}>
+                      <Typography sx={{ fontWeight: 900 }}>用户配置</Typography>
+                      <ConfigFieldsForm
+                        schema={selectedTool?.userConfigSchema}
+                        defaultConfig={selectedTool?.defaultConfig}
+                        userConfig={selectedTool?.userConfig}
+                        draftConfig={tools?.configDraft}
+                        emptyText="该工具当前没有可编辑的用户配置字段。"
+                        onSetValue={(path, value) => controller.actions.setToolConfigValue?.(path, value)}
+                        onRemoveValue={(path) => controller.actions.removeToolConfigValue?.(path)}
+                      />
+                    </Stack>
+                  </SettingsSection>
                 </Stack>
-              </SettingsSection>
+              </Box>
 
               {tools?.saveError ? (
                 <Typography variant="body2" color="error">
@@ -214,7 +234,7 @@ function ToolConfigDialog(props: { controller: any; tools: any }) {
       </DialogContent>
       <DialogActions>
         <Button onClick={() => controller.actions.closeToolConfig?.()}>取消</Button>
-        <Button variant="contained" onClick={save} disabled={!selectedTool || !!tools?.saving || !!tools?.detailLoading}>
+        <Button variant="contained" onClick={save} disabled={!selectedTool || unavailable || !!tools?.saving || !!tools?.detailLoading}>
           {tools?.saving ? '保存中…' : '保存配置'}
         </Button>
       </DialogActions>

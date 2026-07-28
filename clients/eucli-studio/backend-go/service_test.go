@@ -11,7 +11,7 @@ func TestRuntimeStorageStaysInRuntimeRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newConfigStore() error = %v", err)
 	}
-	svc := newService(store, nil)
+	svc := newBusinessReadyTestService(store, nil)
 	ctx := context.Background()
 	key := "runtime/lock.chat.role.role-1.chat-1"
 
@@ -50,7 +50,7 @@ func TestChatUpdatedNoticeUsesRuntimeStorage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newConfigStore() error = %v", err)
 	}
-	svc := newService(store, nil)
+	svc := newBusinessReadyTestService(store, nil)
 	ctx := context.Background()
 	key := "runtime/" + chatUpdatedNoticeRuntimeKey
 

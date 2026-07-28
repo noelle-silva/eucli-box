@@ -433,9 +433,12 @@ func testTool(t *testing.T, executable string) types.ToolDefinition {
 		ID:                    "file-reader",
 		Name:                  "file-reader",
 		Description:           "Read files",
+		Version:               "0.1.0",
+		EucliBoxCompatibility: types.EucliBoxCompatibility{MinimumVersion: "0.1.0", MaximumVersionExclusive: "0.2.0"},
 		DefaultInvocationMode: types.ToolInvocationModeSync,
 		Type:                  "local",
-		Directory:             dir,
+		BodyDirectory:         dir,
+		DataDirectory:         filepath.Join(dir, "data"),
 		Binaries:              []types.ToolBinary{{GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Path: filepath.Base(executable)}},
 		UserConfig:            map[string]any{"limit": 10},
 	}

@@ -2,6 +2,33 @@
 
 eucli-box 是本地 AI 工作台的业务端，使用 Go 编写，负责角色、会话、模型供应商、工具调用、表情包和辅助生成能力的全部业务逻辑、数据保存与服务暴露。
 
+## 版本与适用范围
+
+- eucli-box 的产品版本由本体发布资料唯一确定，启动信息和 `GET /api/release` 会读取同一版本事实。
+- 桌面客户端、AI 工具和系统插件分别声明自己适用的 eucli-box 版本范围。
+- 版本或适用范围缺失、错误、不匹配时，相关发布物不会被默认放行。
+- 工具和插件不适用时仍会显示，但不能使用；客户端不适用时保留连接设置，但不能进入正常业务。
+
+检查所有发布物的版本、适用范围和中文文档：
+
+```bash
+go run ./cmd/eucli-version
+```
+
+检查一个指定发布物：
+
+```bash
+go run ./cmd/eucli-version -target tool:everything
+```
+
+调整一个指定发布物的版本：
+
+```bash
+go run ./cmd/eucli-version -target tool:everything -version 0.1.1 -message "说明本次版本变化"
+```
+
+可用目标写法为 `eucli-box`、`eucli-studio`、`tool:<工具ID>` 和 `plugin:<插件ID>`。调整动作只接受更高的三段正式版本，并在写入前后完整检查版本、适用范围和中文文档。
+
 ## 架构关系
 
 eucli-box 是整个系统的业务核心（以下简称"业务端"或"e-b"）。所有业务数据、业务逻辑、提示流组装和模型调用都在业务端完成。
@@ -32,6 +59,8 @@ eucli-box 是整个系统的业务核心（以下简称"业务端"或"e-b"）。
 
 - `data/` 是运行期数据目录，不是源码目录。
 - `data/meta/` 只用于保存长期辅助信息，例如版本标记、功能偏好和模型分组等稳定配置。
+- `data/tool-bodies/{工具ID}/` 保存可随版本整体更换的工具本体。
+- `data/tool-data/{工具ID}/` 保存用户设置、自定义说明、密钥、缓存、索引和运行状态，不随工具本体重建而删除。
 - 角色会话统一保存到 `data/sessions/roles/{roleId}/{sessionId}/`，对应的角色索引放在 `data/sessions/roles/index.json`。
 - 群组会话和工作区会话分别保留在 `data/sessions/groups/` 与 `data/sessions/workspaces/` 下。
 - 模型请求过程不再默认落成独立流水文件，避免运行期目录持续积累无下游消费的小文件。

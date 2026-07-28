@@ -28,7 +28,7 @@ func parseRequest(input types.ToolExecutionInput, config Config) (calculationReq
 	if len([]rune(expression)) > config.Limits.MaxExpressionChars {
 		return calculationRequest{}, fmt.Errorf("argument \"expression\" must be at most %d characters", config.Limits.MaxExpressionChars)
 	}
-	pythonExecutable, err := configuredPythonExecutable(input, config, input.ToolDirectory)
+	pythonExecutable, err := configuredPythonExecutable(input, config, input.ToolBodyDirectory)
 	if err != nil {
 		return calculationRequest{}, err
 	}
@@ -49,8 +49,8 @@ func parseRequest(input types.ToolExecutionInput, config Config) (calculationReq
 	return calculationRequest{Expression: expression, PythonExecutable: pythonExecutable, MaxOutputChars: maxOutputChars, Description: description}, nil
 }
 
-func configuredPythonExecutable(input types.ToolExecutionInput, config Config, toolDir string) (string, error) {
-	if bundled, ok, err := bundledPythonExecutable(config, toolDir); err != nil {
+func configuredPythonExecutable(input types.ToolExecutionInput, config Config, toolBodyDir string) (string, error) {
+	if bundled, ok, err := bundledPythonExecutable(config, toolBodyDir); err != nil {
 		return "", err
 	} else if ok {
 		return bundled, nil
@@ -69,20 +69,20 @@ func configuredPythonExecutable(input types.ToolExecutionInput, config Config, t
 	return strings.TrimSpace(config.DefaultPythonExecutable), nil
 }
 
-func bundledPythonExecutable(config Config, toolDir string) (string, bool, error) {
+func bundledPythonExecutable(config Config, toolBodyDir string) (string, bool, error) {
 	bundledPath := strings.TrimSpace(config.BundledPythonExecutable)
 	if bundledPath == "" {
 		return "", false, nil
 	}
-	if strings.TrimSpace(toolDir) == "" {
+	if strings.TrimSpace(toolBodyDir) == "" {
 		return "", false, nil
 	}
 	if filepath.IsAbs(bundledPath) || filepath.VolumeName(bundledPath) != "" {
 		return "", false, fmt.Errorf("bundledPythonExecutable must be relative to tool directory")
 	}
-	resolved := filepath.Clean(filepath.Join(toolDir, filepath.FromSlash(bundledPath)))
-	if !pathWithin(toolDir, resolved) {
-		return "", false, fmt.Errorf("bundledPythonExecutable must stay inside tool directory")
+	resolved := filepath.Clean(filepath.Join(toolBodyDir, filepath.FromSlash(bundledPath)))
+	if !pathWithin(toolBodyDir, resolved) {
+		return "", false, fmt.Errorf("bundledPythonExecutable must stay inside tool body directory")
 	}
 	info, err := os.Stat(resolved)
 	if err != nil {

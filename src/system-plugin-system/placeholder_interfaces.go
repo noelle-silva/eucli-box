@@ -21,6 +21,9 @@ func (s *system) AvailablePlaceholderInterfaces(ctx context.Context, library typ
 	}
 	out := []types.SystemPluginAvailablePlaceholderInterface{}
 	for _, record := range records {
+		if record.status != types.SystemPluginStatusActive {
+			continue
+		}
 		for _, item := range record.manifest.PlaceholderInterfaces {
 			key := record.manifest.ID + "\x00" + item.ID
 			if _, ok := existing[key]; ok {
@@ -36,6 +39,9 @@ func (s *system) CreatePlaceholderFromInterface(ctx context.Context, library typ
 	record, err := s.findRecord(ctx, pluginID)
 	if err != nil {
 		return types.PlaceholderLibrary{}, err
+	}
+	if record.status != types.SystemPluginStatusActive {
+		return types.PlaceholderLibrary{}, pluginInvalid(nonEmpty(record.statusMessage, "system plugin is unavailable"), nil)
 	}
 	interfaceID = strings.TrimSpace(interfaceID)
 	for _, item := range library.Placeholders {

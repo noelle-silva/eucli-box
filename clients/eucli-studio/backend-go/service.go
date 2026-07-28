@@ -7,26 +7,31 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 type service struct {
-	config     *configStore
-	eb         *ebClient
-	projection *projectionService
-	runtime    *runtimeStore
-	hub        *eventHub
+	config            *configStore
+	release           clientRelease
+	eb                *ebClient
+	projection        *projectionService
+	runtime           *runtimeStore
+	hub               *eventHub
+	connectionMu      sync.RWMutex
+	connectionState   *runtimeBootstrap
+	connectionChanged chan struct{}
 }
 
-func newService(config *configStore, hub *eventHub) *service {
-	eb := newEBClient(config)
-	return &service{config: config, eb: eb, projection: newProjectionService(config, eb), runtime: newRuntimeStore(), hub: hub}
+func newService(config *configStore, release clientRelease, hub *eventHub) *service {
+	eb := newEBClient(config, release)
+	return &service{config: config, release: release, eb: eb, projection: newProjectionService(config, eb), runtime: newRuntimeStore(), hub: hub, connectionChanged: make(chan struct{}, 1)}
 }
 
 func (s *service) dispatch(ctx context.Context, method string, params json.RawMessage) (any, error) {
 	switch method {
 	case "aiChat.healthCheck":
 		cfg, _ := s.config.load()
-		return map[string]any{"version": 1, "status": "ok", "configured": cfg.EucliBoxURL != ""}, nil
+		return map[string]any{"protocolVersion": directProtocolVersion, "clientVersion": s.release.Version, "status": "ok", "configured": cfg.EucliBoxURL != ""}, nil
 	case "studio.bootstrap":
 		return s.bootstrap(ctx)
 	case "eucli.config.get":
@@ -36,7 +41,19 @@ func (s *service) dispatch(ctx context.Context, method string, params json.RawMe
 		if err := json.Unmarshal(paramsOrEmpty(params), &cfg); err != nil {
 			return nil, err
 		}
-		return s.config.save(cfg)
+		saved, err := s.config.save(cfg)
+		if err == nil {
+			s.clearConnectionState()
+		}
+		return saved, err
+	}
+	if !isBusinessMethod(method) {
+		return nil, newError("METHOD_NOT_FOUND", "未知请求："+method)
+	}
+	if err := s.requireBusinessConnection(); err != nil {
+		return nil, err
+	}
+	switch method {
 	case "eucli.eb.request":
 		var req ebRequest
 		if err := json.Unmarshal(paramsOrEmpty(params), &req); err != nil {
@@ -93,6 +110,32 @@ func (s *service) dispatch(ctx context.Context, method string, params json.RawMe
 		return nil, newError("NOT_IMPLEMENTED", fmt.Sprintf("%s 必须由宿主 UI 处理", method))
 	default:
 		return nil, newError("METHOD_NOT_FOUND", "未知请求："+method)
+	}
+}
+
+func isBusinessMethod(method string) bool {
+	switch method {
+	case "eucli.eb.request",
+		"aiChat.netRequest",
+		"aiChat.submitChatCompletion",
+		"aiChat.submitManyChatCompletions",
+		"aiChat.submitRawServiceRequest",
+		"aiChat.cancelAssistant",
+		"aiChat.getAssistantRuntime",
+		"aiChat.readAssistantStream",
+		"aiChat.consumeAssistantFinal",
+		"aiChat.resetAssistantRuntime",
+		"aiChat.waitServiceFinal",
+		"aiChat.storageGet",
+		"aiChat.storageSet",
+		"aiChat.storageRemove",
+		"aiChat.imageRead",
+		"aiChat.imageWrite",
+		"aiChat.imageDelete",
+		"aiChat.imagePick":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -213,30 +256,6 @@ func firstPresent(raw map[string]any, keys ...string) any {
 		}
 	}
 	return ""
-}
-
-func (s *service) bootstrap(ctx context.Context) (any, error) {
-	cfg, err := s.config.load()
-	if err != nil {
-		return nil, err
-	}
-	info := map[string]any{
-		"eucliBoxConfigured": false,
-		"eucliBoxReachable":  false,
-		"eucliBoxUrl":        cfg.EucliBoxURL,
-		"eucliBoxIssue":      "",
-	}
-	if strings.TrimSpace(cfg.EucliBoxURL) == "" {
-		return info, nil
-	}
-	info["eucliBoxConfigured"] = true
-	_, err = s.eb.request(ctx, ebRequest{Method: "GET", Path: "/api/roles", Timeout: 8000})
-	if err != nil {
-		info["eucliBoxIssue"] = err.Error()
-		return info, nil
-	}
-	info["eucliBoxReachable"] = true
-	return info, nil
 }
 
 func storageKey(params json.RawMessage) (string, error) {

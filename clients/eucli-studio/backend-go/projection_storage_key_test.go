@@ -43,7 +43,7 @@ func TestGroupChatIndexStorageKeyDoesNotSaveGroupSession(t *testing.T) {
 		t.Fatalf("save config error = %v", err)
 	}
 
-	projection := newProjectionService(store, newEBClient(store))
+	projection := newProjectionService(store, newEBClient(store, testClientRelease()))
 	if err := projection.set(context.Background(), "groups/群组/chats/index", map[string]any{"activeChatId": "chat-1"}); err != nil {
 		t.Fatalf("projection.set() error = %v", err)
 	}

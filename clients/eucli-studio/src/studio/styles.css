@@ -121,6 +121,43 @@ textarea {
   margin-top: 18px;
 }
 
+.releaseFacts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0 0;
+}
+
+.releaseFacts > div {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(73, 82, 106, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.releaseFacts dt {
+  color: #697386;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.releaseFacts dd {
+  margin: 5px 0 0;
+  color: #1f2430;
+  font-size: 13px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.releaseFacts dd[data-compatible="false"] {
+  color: #8d2635;
+}
+
+.releaseFacts dd[data-compatible="true"] {
+  color: #167047;
+}
+
 .eucliConfigLabel {
   display: grid;
   gap: 7px;
@@ -193,5 +230,9 @@ textarea {
 
   .toast {
     bottom: 16px;
+  }
+
+  .releaseFacts {
+    grid-template-columns: 1fr;
   }
 }

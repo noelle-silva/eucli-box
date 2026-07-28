@@ -1,0 +1,136 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	"eucli-box/pkg/release"
+	"eucli-box/pkg/types"
+)
+
+type runtimeBootstrap struct {
+	ClientVersion               string                      `json:"clientVersion"`
+	ClientEucliBoxCompatibility types.EucliBoxCompatibility `json:"clientEucliBoxCompatibility"`
+	EucliBoxConfigured          bool                        `json:"eucliBoxConfigured"`
+	EucliBoxReachable           bool                        `json:"eucliBoxReachable"`
+	EucliBoxURL                 string                      `json:"eucliBoxUrl"`
+	EucliBoxVersion             string                      `json:"eucliBoxVersion,omitempty"`
+	EucliBoxCompatibility       *types.CompatibilityStatus  `json:"eucliBoxCompatibility,omitempty"`
+	BusinessAvailable           bool                        `json:"businessAvailable"`
+	EucliBoxIssue               string                      `json:"eucliBoxIssue,omitempty"`
+}
+
+func (s *service) bootstrap(ctx context.Context) (runtimeBootstrap, error) {
+	cfg, err := s.config.load()
+	if err != nil {
+		return runtimeBootstrap{}, err
+	}
+	info := runtimeBootstrap{
+		ClientVersion:               s.release.Version,
+		ClientEucliBoxCompatibility: s.release.EucliBoxCompatibility,
+		EucliBoxURL:                 cfg.EucliBoxURL,
+	}
+	if strings.TrimSpace(cfg.EucliBoxURL) == "" {
+		s.setConnectionState(info)
+		return info, nil
+	}
+	info.EucliBoxConfigured = true
+	raw, err := s.eb.request(ctx, ebRequest{Method: "GET", Path: "/api/release", Timeout: 8000})
+	if err != nil {
+		info.EucliBoxIssue = err.Error()
+		s.setConnectionState(info)
+		return info, nil
+	}
+	info.EucliBoxReachable = true
+	boxRelease, err := decodeBoxRelease(raw)
+	if err != nil {
+		info.EucliBoxIssue = err.Error()
+		s.setConnectionState(info)
+		return info, nil
+	}
+	info.EucliBoxVersion = boxRelease.Version
+	info.EucliBoxCompatibility = boxRelease.ClientCompatibility
+	if boxRelease.ClientCompatibility == nil {
+		info.EucliBoxIssue = "eucli-box 未返回客户端适用判断"
+	} else if !boxRelease.ClientCompatibility.Compatible {
+		info.EucliBoxIssue = strings.TrimSpace(boxRelease.ClientCompatibility.Reason)
+		if info.EucliBoxIssue == "" {
+			info.EucliBoxIssue = "eucli-box 返回了不适用状态，但未提供原因"
+		}
+	} else if !sameCompatibility(boxRelease.ClientCompatibility.RequiredEucliBoxCompatibility, s.release.EucliBoxCompatibility) {
+		info.EucliBoxIssue = "eucli-box 返回的客户端适用范围与客户端发布资料不一致"
+	} else {
+		info.BusinessAvailable = true
+	}
+	s.setConnectionState(info)
+	return info, nil
+}
+
+func decodeBoxRelease(raw any) (types.EucliBoxReleaseInfo, error) {
+	payload, err := json.Marshal(raw)
+	if err != nil {
+		return types.EucliBoxReleaseInfo{}, fmt.Errorf("读取 eucli-box 发布结果失败：%w", err)
+	}
+	var info types.EucliBoxReleaseInfo
+	if err := json.Unmarshal(payload, &info); err != nil {
+		return types.EucliBoxReleaseInfo{}, fmt.Errorf("读取 eucli-box 发布结果失败：%w", err)
+	}
+	if err := release.ValidateVersion(info.Version); err != nil {
+		return types.EucliBoxReleaseInfo{}, fmt.Errorf("eucli-box 返回了无效版本：%w", err)
+	}
+	return info, nil
+}
+
+func sameCompatibility(left types.EucliBoxCompatibility, right types.EucliBoxCompatibility) bool {
+	return left.MinimumVersion == right.MinimumVersion && left.MaximumVersionExclusive == right.MaximumVersionExclusive
+}
+
+func (s *service) requireBusinessConnection() error {
+	s.connectionMu.RLock()
+	state := s.connectionState
+	s.connectionMu.RUnlock()
+	if state == nil {
+		return newError("EUCLI_BOX_CONNECTION_REQUIRED", "请先检查 eucli-box 连接和版本适用状态")
+	}
+	if !state.BusinessAvailable {
+		message := strings.TrimSpace(state.EucliBoxIssue)
+		if message == "" {
+			message = "当前连接不可用于正常业务，但连接状态未提供原因"
+		}
+		return newErrorWithDetails("EUCLI_BOX_INCOMPATIBLE", message, *state)
+	}
+	return nil
+}
+
+func (s *service) setConnectionState(state runtimeBootstrap) {
+	s.connectionMu.Lock()
+	s.connectionState = &state
+	s.connectionMu.Unlock()
+	s.signalConnectionChanged()
+}
+
+func (s *service) clearConnectionState() {
+	s.connectionMu.Lock()
+	s.connectionState = nil
+	s.connectionMu.Unlock()
+	s.signalConnectionChanged()
+}
+
+func (s *service) connectionSnapshot() *runtimeBootstrap {
+	s.connectionMu.RLock()
+	defer s.connectionMu.RUnlock()
+	if s.connectionState == nil {
+		return nil
+	}
+	copy := *s.connectionState
+	return &copy
+}
+
+func (s *service) signalConnectionChanged() {
+	select {
+	case s.connectionChanged <- struct{}{}:
+	default:
+	}
+}

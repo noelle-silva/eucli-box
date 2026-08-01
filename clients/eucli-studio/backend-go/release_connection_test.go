@@ -93,7 +93,10 @@ func TestBootstrapRequiresCompatibleEucliBox(t *testing.T) {
 				_ = json.NewEncoder(w).Encode(map[string]any{"data": test.response})
 			}))
 			defer server.Close()
-			svc := newService(configuredTestStore(t, server.URL), testClientRelease(), nil)
+			svc, err := newService(configuredTestStore(t, server.URL), testClientRelease(), nil, fakeClientReleaseChecker{})
+			if err != nil {
+				t.Fatalf("newService() error = %v", err)
+			}
 			info, err := svc.bootstrap(context.Background())
 			if err != nil {
 				t.Fatalf("bootstrap() error = %v", err)
@@ -113,7 +116,10 @@ func TestBusinessMethodsRequireSuccessfulBootstrap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newConfigStore() error = %v", err)
 	}
-	svc := newService(store, testClientRelease(), nil)
+	svc, err := newService(store, testClientRelease(), nil, fakeClientReleaseChecker{})
+	if err != nil {
+		t.Fatalf("newService() error = %v", err)
+	}
 	_, err = svc.dispatch(context.Background(), "aiChat.storageGet", json.RawMessage(`{"key":"runtime/test"}`))
 	var coded codedError
 	if !errors.As(err, &coded) || coded.Code() != "EUCLI_BOX_CONNECTION_REQUIRED" {

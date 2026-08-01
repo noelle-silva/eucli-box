@@ -20,5 +20,8 @@ func Load() (types.EucliBoxRelease, error) {
 	if err := release.ValidateVersion(info.Version); err != nil {
 		return types.EucliBoxRelease{}, fmt.Errorf("eucli-box 发布资料无效：%w", err)
 	}
+	if err := release.ValidateVersion(info.DataVersion); err != nil {
+		return types.EucliBoxRelease{}, fmt.Errorf("eucli-box 数据版本资料无效：%w", err)
+	}
 	return info, nil
 }

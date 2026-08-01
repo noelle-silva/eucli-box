@@ -6,7 +6,7 @@ import { createDirectCapabilitiesAdapter } from '../direct/createDirectCapabilit
 import { createAiChatCapabilitiesFromHostApi, type AiChatShowToast } from '../gateway/capabilities'
 import { AI_CHAT_DIRECT_PROTOCOL_VERSION } from '../protocol/aiChatProtocol'
 import { AI_STUDIO_APP_ID, AI_STUDIO_CONTROLLER_KEY } from '../runtime/aiStudioGlobals'
-import { normalizeStudioBootstrap, type StudioBootstrap } from '../domain/release'
+import { normalizeReleaseCheckSnapshot, normalizeStudioBootstrap, type ReleaseCheckSnapshot, type StudioBootstrap } from '../domain/release'
 
 type BackendEndpoint = {
   url: string
@@ -18,6 +18,8 @@ export type AiChatAppRuntime = {
   bootstrap: StudioBootstrap
   getEucliBoxConfig: () => Promise<EucliBoxConfig>
   setEucliBoxConfig: (config: EucliBoxConfigInput) => Promise<EucliBoxConfig>
+  getBootstrap: () => Promise<StudioBootstrap>
+  refreshReleaseChecks: () => Promise<ReleaseCheckSnapshot>
   dispose: () => void
 }
 
@@ -55,6 +57,8 @@ export async function createAiChatAppRuntime(options: AiChatAppHostOptions): Pro
     bootstrap,
     getEucliBoxConfig: () => directClient.invoke<EucliBoxConfig>('eucli.config.get'),
     setEucliBoxConfig: (config) => directClient.invoke<EucliBoxConfig>('eucli.config.set', config),
+    getBootstrap: async () => normalizeStudioBootstrap(await directClient.invoke('studio.bootstrap')),
+    refreshReleaseChecks: async () => normalizeReleaseCheckSnapshot(await directClient.invoke('releaseChecks.refresh')),
     dispose() {
       try {
         if (controller && (window as any)[AI_STUDIO_CONTROLLER_KEY] === controller) {

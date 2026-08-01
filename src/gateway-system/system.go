@@ -155,6 +155,11 @@ type AIAssistSystem interface {
 	FixMermaidInMessage(ctx context.Context, request types.MermaidFixRequest) (types.MermaidFixResult, error)
 }
 
+type ReleaseCheckSystem interface {
+	Snapshot() types.ReleaseCheckSnapshot
+	Refresh(ctx context.Context) types.ReleaseCheckSnapshot
+}
+
 type Config struct {
 	Addr         string
 	Key          string
@@ -178,6 +183,7 @@ type system struct {
 	placeholders  PlaceholderSystem
 	systemPlugins SystemPluginSystem
 	assist        AIAssistSystem
+	releaseChecks ReleaseCheckSystem
 	mux           *http.ServeMux
 	server        *http.Server
 	upgrader      websocket.Upgrader
@@ -186,7 +192,7 @@ type system struct {
 	connections map[*websocket.Conn]struct{}
 }
 
-func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups ChatGroupSystem, workspaces WorkspaceSystem, providers ProviderSystem, tools ToolSystem, sessions SessionSystem, stickers StickerSystem, hooks HookPromptSystem, placeholders PlaceholderSystem, systemPlugins SystemPluginSystem, assist AIAssistSystem) (System, error) {
+func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups ChatGroupSystem, workspaces WorkspaceSystem, providers ProviderSystem, tools ToolSystem, sessions SessionSystem, stickers StickerSystem, hooks HookPromptSystem, placeholders PlaceholderSystem, systemPlugins SystemPluginSystem, assist AIAssistSystem, releaseChecks ReleaseCheckSystem) (System, error) {
 	if runtime == nil {
 		return nil, gatewayInvalid("runtime system dependency is required", nil)
 	}
@@ -223,6 +229,9 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups Ch
 	if assist == nil {
 		return nil, gatewayInvalid("ai assist system dependency is required", nil)
 	}
+	if releaseChecks == nil {
+		return nil, gatewayInvalid("release check system dependency is required", nil)
+	}
 	if config.Addr == "" {
 		config.Addr = "127.0.0.1:8765"
 	}
@@ -246,7 +255,11 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups Ch
 	if err := release.ValidateVersion(boxVersion); err != nil {
 		return nil, gatewayInvalid("eucli-box 版本无效", err)
 	}
-	boxRelease := types.EucliBoxRelease{Version: boxVersion}
+	boxRelease, err := boxrelease.Load()
+	if err != nil {
+		return nil, gatewayDependencyFailed("eucli-box 发布资料无效", err)
+	}
+	boxRelease.Version = boxVersion
 	s := &system{
 		config:        config,
 		boxRelease:    boxRelease,
@@ -260,6 +273,7 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups Ch
 		stickers:      stickers,
 		hooks:         hooks,
 		assist:        assist,
+		releaseChecks: releaseChecks,
 		placeholders:  placeholders,
 		systemPlugins: systemPlugins,
 		mux:           http.NewServeMux(),

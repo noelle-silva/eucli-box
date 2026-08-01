@@ -21,13 +21,22 @@ func (s *system) authWrap(next http.HandlerFunc) http.HandlerFunc {
 			writeError(w, err)
 			return
 		}
-		if r.URL.Path != "/api/release" {
+		if !releaseMaintenancePath(r.URL.Path) {
 			if err := s.validateClientCompatibility(r); err != nil {
 				writeError(w, err)
 				return
 			}
 		}
 		next(w, r)
+	}
+}
+
+func releaseMaintenancePath(path string) bool {
+	switch path {
+	case "/api/release", "/api/release-checks", "/api/release-checks/refresh":
+		return true
+	default:
+		return false
 	}
 }
 

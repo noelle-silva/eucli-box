@@ -1,0 +1,85 @@
+package releasechecksystem
+
+import (
+	"context"
+	"errors"
+	"sync"
+	"testing"
+	"time"
+
+	"eucli-box/pkg/releasecheck"
+	"eucli-box/pkg/types"
+)
+
+func TestRefreshUsesInstalledFactsAndKeepsSingleCheckInFlight(t *testing.T) {
+	started := make(chan struct{})
+	continueCheck := make(chan struct{})
+	runner := &fakeRunner{run: func(installed []releasecheck.InstalledArtifact) types.ReleaseCheckSnapshot {
+		close(started)
+		<-continueCheck
+		if len(installed) != 3 {
+			t.Errorf("installed = %#v", installed)
+		}
+		return types.ReleaseCheckSnapshot{Status: types.ReleaseCheckStatusCompleted, Results: []types.ReleaseCheckResult{}}
+	}}
+	system := newSystem(Config{Interval: time.Hour, Now: time.Now}, runner, fakeTools{}, fakePlugins{}, "0.1.0")
+	done := make(chan types.ReleaseCheckSnapshot, 1)
+	go func() { done <- system.Refresh(context.Background()) }()
+	<-started
+	second := system.Refresh(context.Background())
+	if second.Status != types.ReleaseCheckStatusChecking {
+		t.Fatalf("second snapshot = %#v", second)
+	}
+	close(continueCheck)
+	if result := <-done; result.Status != types.ReleaseCheckStatusCompleted {
+		t.Fatalf("result = %#v", result)
+	}
+	if runner.calls() != 1 {
+		t.Fatalf("runner calls = %d", runner.calls())
+	}
+}
+
+func TestRefreshKeepsSourceResultsButMarksLocalInventoryFailure(t *testing.T) {
+	runner := &fakeRunner{run: func(installed []releasecheck.InstalledArtifact) types.ReleaseCheckSnapshot {
+		return types.ReleaseCheckSnapshot{Status: types.ReleaseCheckStatusCompleted, Results: []types.ReleaseCheckResult{
+			{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindBox, ID: "eucli-box"}, Status: types.ReleaseCheckStatusCompleted},
+			{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "context7"}, Status: types.ReleaseCheckStatusCompleted, LatestVersion: "0.1.1"},
+		}}
+	}}
+	system := newSystem(Config{Interval: time.Hour, Now: time.Now}, runner, fakeTools{err: errors.New("unavailable")}, fakePlugins{}, "0.1.0")
+	snapshot := system.Refresh(context.Background())
+	if snapshot.Status != types.ReleaseCheckStatusFailed || snapshot.Results[0].Status != types.ReleaseCheckStatusCompleted || snapshot.Results[1].Status != types.ReleaseCheckStatusFailed || snapshot.Results[1].LatestVersion != "0.1.1" {
+		t.Fatalf("snapshot = %#v", snapshot)
+	}
+}
+
+type fakeRunner struct {
+	mu  sync.Mutex
+	n   int
+	run func(installed []releasecheck.InstalledArtifact) types.ReleaseCheckSnapshot
+}
+
+func (f *fakeRunner) Check(_ context.Context, installed []releasecheck.InstalledArtifact, _ string) types.ReleaseCheckSnapshot {
+	f.mu.Lock()
+	f.n++
+	f.mu.Unlock()
+	return f.run(installed)
+}
+
+func (f *fakeRunner) calls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.n
+}
+
+type fakeTools struct{ err error }
+
+func (f fakeTools) ListTools(context.Context) ([]types.ToolSummary, error) {
+	return []types.ToolSummary{{ID: "context7", Version: "0.1.0", EucliBoxCompatibility: types.EucliBoxCompatibility{MinimumVersion: "0.1.0", MaximumVersionExclusive: "0.2.0"}}}, f.err
+}
+
+type fakePlugins struct{ err error }
+
+func (f fakePlugins) ListPlugins(context.Context) ([]types.SystemPluginSummary, error) {
+	return []types.SystemPluginSummary{{ID: "time-plugin", Version: "0.1.0", EucliBoxCompatibility: types.EucliBoxCompatibility{MinimumVersion: "0.1.0", MaximumVersionExclusive: "0.2.0"}}}, f.err
+}

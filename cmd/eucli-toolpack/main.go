@@ -28,6 +28,7 @@ type options struct {
 	tool               string
 	dataDir            string
 	migrateLayout      bool
+	buildTime          time.Time
 	assetRoots         assetRootFlags
 	requiredAssetRoots requiredAssetRootFlags
 }
@@ -80,6 +81,7 @@ func run(ctx context.Context, args []string) error {
 	flags.StringVar(&opts.tool, "tool", "all", "tool id to build, or all")
 	flags.StringVar(&opts.dataDir, "data-dir", "data", "runtime data directory")
 	flags.BoolVar(&opts.migrateLayout, "migrate-layout", false, "move existing tool bodies and tool data into the current layout")
+	buildTimeValue := flags.String("build-time", "", "stable RFC3339 build time; defaults to the current time")
 	flags.Var(&opts.assetRoots, "asset-root", "tool asset root in name=path form; repeatable")
 	flags.Var(&opts.requiredAssetRoots, "require-asset-root", "asset root name that must be provided when declared by a matched tool; repeatable")
 	if err := flags.Parse(args); err != nil {
@@ -110,6 +112,11 @@ func run(ctx context.Context, args []string) error {
 		}
 		return migrateToolLayout(ctx, dataDir, tools)
 	}
+	buildTime, err := resolveBuildTime(*buildTimeValue)
+	if err != nil {
+		return err
+	}
+	opts.buildTime = buildTime
 	for _, source := range tools {
 		if err := buildTool(ctx, repoRoot, dataDir, source, opts); err != nil {
 			return err
@@ -192,14 +199,13 @@ func buildTool(ctx context.Context, repoRoot string, dataDir string, source tool
 		return fmt.Errorf("create binary directory: %w", err)
 	}
 	packagePath := "./" + filepath.ToSlash(filepath.Join("tools", source.ID, "cmd", source.ID))
-	cmd := exec.CommandContext(ctx, "go", "build", "-o", binaryAbsPath, packagePath)
+	cmd := exec.CommandContext(ctx, "go", "build", "-trimpath", "-o", binaryAbsPath, packagePath)
 	cmd.Dir = repoRoot
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("build %s: %w", source.ID, err)
 	}
-	now := time.Now().UTC()
 	definition.BodyDirectory = "."
 	definition.DataDirectory = ""
 	definition.UserConfig = nil
@@ -209,9 +215,9 @@ func buildTool(ctx context.Context, repoRoot string, dataDir string, source tool
 	definition.StatusMessage = ""
 	definition.Binaries = []types.ToolBinary{{GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Path: binaryRelPath}}
 	if definition.CreatedAt.IsZero() {
-		definition.CreatedAt = now
+		definition.CreatedAt = opts.buildTime
 	}
-	definition.UpdatedAt = now
+	definition.UpdatedAt = opts.buildTime
 	if err := writeJSON(filepath.Join(stagingDir, "definition.json"), definition); err != nil {
 		return err
 	}

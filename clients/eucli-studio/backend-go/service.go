@@ -8,23 +8,45 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
+
+	"eucli-box/pkg/releasecheck"
+	"eucli-box/pkg/types"
 )
 
-type service struct {
-	config            *configStore
-	release           clientRelease
-	eb                *ebClient
-	projection        *projectionService
-	runtime           *runtimeStore
-	hub               *eventHub
-	connectionMu      sync.RWMutex
-	connectionState   *runtimeBootstrap
-	connectionChanged chan struct{}
+type releaseChecker interface {
+	CheckOnly(ctx context.Context, installed []releasecheck.InstalledArtifact, currentBoxVersion string, requested []types.ReleaseArtifactIdentity) types.ReleaseCheckSnapshot
 }
 
-func newService(config *configStore, release clientRelease, hub *eventHub) *service {
+type service struct {
+	config              *configStore
+	release             clientRelease
+	eb                  *ebClient
+	projection          *projectionService
+	runtime             *runtimeStore
+	hub                 *eventHub
+	connectionMu        sync.RWMutex
+	connectionState     *runtimeBootstrap
+	connectionChanged   chan struct{}
+	releaseChecker      releaseChecker
+	releaseCheckMu      sync.RWMutex
+	releaseChecks       types.ReleaseCheckSnapshot
+	releaseCheckRunning bool
+}
+
+func newService(config *configStore, release clientRelease, hub *eventHub, checker releaseChecker) (*service, error) {
+	if config == nil {
+		return nil, errors.New("eucli-studio config store is required")
+	}
+	if checker == nil {
+		return nil, errors.New("eucli-studio release checker is required")
+	}
 	eb := newEBClient(config, release)
-	return &service{config: config, release: release, eb: eb, projection: newProjectionService(config, eb), runtime: newRuntimeStore(), hub: hub, connectionChanged: make(chan struct{}, 1)}
+	return &service{
+		config: config, release: release, eb: eb, projection: newProjectionService(config, eb), runtime: newRuntimeStore(), hub: hub,
+		connectionChanged: make(chan struct{}, 1), releaseChecker: checker,
+		releaseChecks: releasecheck.PendingSnapshot(),
+	}, nil
 }
 
 func (s *service) dispatch(ctx context.Context, method string, params json.RawMessage) (any, error) {
@@ -34,6 +56,8 @@ func (s *service) dispatch(ctx context.Context, method string, params json.RawMe
 		return map[string]any{"protocolVersion": directProtocolVersion, "clientVersion": s.release.Version, "status": "ok", "configured": cfg.EucliBoxURL != ""}, nil
 	case "studio.bootstrap":
 		return s.bootstrap(ctx)
+	case "releaseChecks.refresh":
+		return s.refreshReleaseChecks(ctx)
 	case "eucli.config.get":
 		return s.config.load()
 	case "eucli.config.set":
@@ -111,6 +135,57 @@ func (s *service) dispatch(ctx context.Context, method string, params json.RawMe
 	default:
 		return nil, newError("METHOD_NOT_FOUND", "未知请求："+method)
 	}
+}
+
+func (s *service) startStandaloneReleaseCheck(ctx context.Context) {
+	cfg, err := s.config.load()
+	if err != nil || strings.TrimSpace(cfg.EucliBoxURL) != "" {
+		return
+	}
+	s.releaseCheckMu.Lock()
+	if s.releaseCheckRunning {
+		s.releaseCheckMu.Unlock()
+		return
+	}
+	s.releaseCheckRunning = true
+	s.releaseChecks = releasecheck.CheckingSnapshot(s.releaseChecks, time.Now().UTC())
+	s.releaseCheckMu.Unlock()
+	go func() {
+		snapshot := s.checkBoxOfficialSource(ctx)
+		s.releaseCheckMu.Lock()
+		s.releaseChecks = snapshot
+		s.releaseCheckRunning = false
+		s.releaseCheckMu.Unlock()
+	}()
+}
+
+func (s *service) refreshReleaseChecks(ctx context.Context) (types.ReleaseCheckSnapshot, error) {
+	state := s.connectionSnapshot()
+	if state != nil && state.EucliBoxReachable {
+		raw, err := s.eb.request(ctx, ebRequest{Method: "POST", Path: "/api/release-checks/refresh", Timeout: 30000})
+		if err != nil {
+			return types.ReleaseCheckSnapshot{}, err
+		}
+		return decodeReleaseCheckSnapshot(raw)
+	}
+	snapshot := s.checkBoxOfficialSource(ctx)
+	s.releaseCheckMu.Lock()
+	s.releaseChecks = snapshot
+	s.releaseCheckRunning = false
+	s.releaseCheckMu.Unlock()
+	return snapshot, nil
+}
+
+func (s *service) checkBoxOfficialSource(ctx context.Context) types.ReleaseCheckSnapshot {
+	return s.releaseChecker.CheckOnly(ctx, nil, "", []types.ReleaseArtifactIdentity{{Kind: types.ReleaseArtifactKindBox, ID: types.ReleaseArtifactKindBox}})
+}
+
+func (s *service) releaseCheckSnapshot() types.ReleaseCheckSnapshot {
+	s.releaseCheckMu.RLock()
+	defer s.releaseCheckMu.RUnlock()
+	result := s.releaseChecks
+	result.Results = append([]types.ReleaseCheckResult(nil), s.releaseChecks.Results...)
+	return result
 }
 
 func isBusinessMethod(method string) bool {

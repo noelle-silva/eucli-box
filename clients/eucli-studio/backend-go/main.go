@@ -9,6 +9,8 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+
+	"eucli-box/pkg/releasecheck"
 )
 
 func main() {
@@ -33,9 +35,17 @@ func run() error {
 		return err
 	}
 	hub := newEventHub()
-	svc := newService(store, release, hub)
+	checker, err := releasecheck.New(releasecheck.Config{})
+	if err != nil {
+		return err
+	}
+	svc, err := newService(store, release, hub, checker)
+	if err != nil {
+		return err
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	svc.startStandaloneReleaseCheck(ctx)
 	go newEventBridge(svc, hub).run(ctx)
 	return newDirectServer(token, svc, hub).listenAndServe(ctx)
 }

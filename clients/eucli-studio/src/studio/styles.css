@@ -121,6 +121,13 @@ textarea {
   margin-top: 18px;
 }
 
+.eucliReleaseChecks {
+  margin-top: 16px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(73, 82, 106, 0.06);
+}
+
 .releaseFacts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

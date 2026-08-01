@@ -7,6 +7,7 @@ import SaveIcon from '@mui/icons-material/Save'
 import { MODEL_REQUEST_TIMEOUT_LIMITS } from '../../controller/modelRequestConfig'
 import { compatibilityRangeText, type StudioBootstrap } from '../../domain/release'
 import { useEvent } from '../hooks/useEvent'
+import { ReleaseChecksPanel } from '../release/ReleaseChecksPanel'
 import { SettingsPill, SettingsSection, SettingsSurface } from './SettingsSurfaces'
 
 type EbSettingsPanelProps = {
@@ -14,10 +15,12 @@ type EbSettingsPanelProps = {
   loading: boolean
   modelRequestConfig: any
   bootstrap?: StudioBootstrap
+  releaseCheckBusy?: boolean
+  onRefreshReleaseChecks?: () => Promise<void> | void
 }
 
 export function EbSettingsPanel(props: EbSettingsPanelProps) {
-  const { controller, loading, modelRequestConfig, bootstrap } = props
+  const { controller, loading, modelRequestConfig, bootstrap, releaseCheckBusy, onRefreshReleaseChecks } = props
   const box = modelRequestConfig && typeof modelRequestConfig === 'object' ? modelRequestConfig : {}
   const draft = box.draft && typeof box.draft === 'object' ? box.draft : {}
   const value = box.value && typeof box.value === 'object' ? box.value : {}
@@ -82,6 +85,12 @@ export function EbSettingsPanel(props: EbSettingsPanelProps) {
                   <Typography variant="caption" color="error">{bootstrap.eucliBoxIssue}</Typography>
                 ) : null}
               </Stack>
+            </SettingsSection>
+          ) : null}
+
+          {bootstrap ? (
+            <SettingsSection tone="muted">
+              <ReleaseChecksPanel snapshot={bootstrap.releaseChecks} busy={releaseCheckBusy} onRefresh={onRefreshReleaseChecks} />
             </SettingsSection>
           ) : null}
 

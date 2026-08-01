@@ -1061,8 +1061,8 @@ function ComposerInputControls(props: {
   )
 }
 
-export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap; dataDirectory?: AiChatDataDirectory; windowControls?: AiChatWindowControls }) {
-  const { controller, bootstrap, dataDirectory, windowControls } = props
+export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap; dataDirectory?: AiChatDataDirectory; windowControls?: AiChatWindowControls; releaseCheckBusy?: boolean; onRefreshReleaseChecks?: () => Promise<void> | void }) {
+  const { controller, bootstrap, dataDirectory, windowControls, releaseCheckBusy, onRefreshReleaseChecks } = props
   const s = useAiChatState(controller)
   const data = s.data
   const colorThemePreset = resolveColorThemePreset(data?.settings?.colorTheme)
@@ -6961,6 +6961,8 @@ export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap;
             tools={(s as any).tools}
             modelRequestConfig={(s as any).modelRequestConfig}
             bootstrap={bootstrap}
+            releaseCheckBusy={releaseCheckBusy}
+            onRefreshReleaseChecks={onRefreshReleaseChecks}
             hookPrompts={hookPrompts}
             placeholders={placeholders}
             systemPlugins={systemPlugins}
@@ -7360,6 +7362,8 @@ function PluginSettingsPage(props: {
   tools: any
   modelRequestConfig: any
   bootstrap?: StudioBootstrap
+  releaseCheckBusy?: boolean
+  onRefreshReleaseChecks?: () => Promise<void> | void
   hookPrompts: any
   placeholders: any
   systemPlugins: any
@@ -7371,7 +7375,7 @@ function PluginSettingsPage(props: {
   onTabChange: (tab: SettingsTab) => void
   dataDirectory?: AiChatDataDirectory
 }) {
-  const { controller, loading, data, roles, groups, workspaces, providers, modelGroups, models, tools, modelRequestConfig, bootstrap, hookPrompts, placeholders, systemPlugins, draft, activeRoleId, activeWorkspaceId, activeTargetKind, tab, onTabChange, dataDirectory } = props
+  const { controller, loading, data, roles, groups, workspaces, providers, modelGroups, models, tools, modelRequestConfig, bootstrap, releaseCheckBusy, onRefreshReleaseChecks, hookPrompts, placeholders, systemPlugins, draft, activeRoleId, activeWorkspaceId, activeTargetKind, tab, onTabChange, dataDirectory } = props
   const [treeHotkeyRecording, setTreeHotkeyRecording] = React.useState(false)
 
   React.useEffect(() => {
@@ -7978,7 +7982,7 @@ function PluginSettingsPage(props: {
   }
 
   if (tab === 'eb') {
-    return wrapSettingsPanel(<EbSettingsPanel controller={controller} loading={loading} modelRequestConfig={modelRequestConfig} bootstrap={bootstrap} />)
+    return wrapSettingsPanel(<EbSettingsPanel controller={controller} loading={loading} modelRequestConfig={modelRequestConfig} bootstrap={bootstrap} releaseCheckBusy={releaseCheckBusy} onRefreshReleaseChecks={onRefreshReleaseChecks} />)
   }
 
   if (tab === 'stickers') {

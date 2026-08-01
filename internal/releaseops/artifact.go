@@ -28,6 +28,7 @@ type Artifact struct {
 	Directory     string
 	MetadataPath  string
 	Version       string
+	DataVersion   string
 	Compatibility *types.EucliBoxCompatibility
 	READMEPath    string
 	ChangelogPath string
@@ -140,6 +141,7 @@ func loadMetadata(artifact *Artifact) error {
 			return metadataError(*artifact, err)
 		}
 		artifact.Version = strings.TrimSpace(info.Version)
+		artifact.DataVersion = strings.TrimSpace(info.DataVersion)
 	case KindClient:
 		var info clientRelease
 		if err := decodeStrictJSON(payload, &info); err != nil {
@@ -170,6 +172,11 @@ func loadMetadata(artifact *Artifact) error {
 	}
 	if err := release.ValidateVersion(artifact.Version); err != nil {
 		return fmt.Errorf("%s 版本无效：%w", artifact.Target(), err)
+	}
+	if artifact.Kind == KindBox {
+		if err := release.ValidateVersion(artifact.DataVersion); err != nil {
+			return fmt.Errorf("%s 数据版本无效：%w", artifact.Target(), err)
+		}
 	}
 	if artifact.Compatibility != nil {
 		artifact.Compatibility.MinimumVersion = strings.TrimSpace(artifact.Compatibility.MinimumVersion)

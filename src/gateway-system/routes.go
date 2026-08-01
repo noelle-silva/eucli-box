@@ -2,6 +2,8 @@ package gateway
 
 func (s *system) registerRoutes() {
 	s.mux.HandleFunc("GET /api/release", s.authWrap(s.handleRelease))
+	s.mux.HandleFunc("GET /api/release-checks", s.authWrap(s.handleReleaseChecks))
+	s.mux.HandleFunc("POST /api/release-checks/refresh", s.authWrap(s.handleRefreshReleaseChecks))
 	s.mux.HandleFunc("POST /api/runs", s.authWrap(s.handleStartRun))
 	s.mux.HandleFunc("GET /api/runs", s.authWrap(s.handleListActiveRuns))
 	s.mux.HandleFunc("GET /api/runs/{runID}", s.authWrap(s.handleGetRun))

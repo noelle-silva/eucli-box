@@ -10,6 +10,43 @@ export type CompatibilityStatus = {
   requiredEucliBoxCompatibility: EucliBoxCompatibility
 }
 
+export type ReleaseArtifactIdentity = {
+  kind: 'eucli-box' | 'tool' | 'plugin' | string
+  id: string
+}
+
+export type OfficialReleaseSource = {
+  kind: string
+  repository: string
+  owner: string
+  name: string
+}
+
+export type ReleaseCheckResult = {
+  artifact: ReleaseArtifactIdentity
+  source: OfficialReleaseSource
+  installed: boolean
+  currentVersion: string
+  latestVersion: string
+  status: 'not_checked' | 'checking' | 'completed' | 'failed' | string
+  checkedAt: string
+  updateAvailable: boolean
+  releaseUrl: string
+  releaseNotes: string
+  downloadSize: number
+  compatibility: CompatibilityStatus | null
+  affectedArtifacts: ReleaseArtifactIdentity[]
+  failureReason: string
+}
+
+export type ReleaseCheckSnapshot = {
+  status: 'not_checked' | 'checking' | 'completed' | 'failed' | string
+  startedAt: string
+  checkedAt: string
+  results: ReleaseCheckResult[]
+  failureReason: string
+}
+
 export type StudioBootstrap = {
   clientVersion: string
   clientEucliBoxCompatibility: EucliBoxCompatibility
@@ -20,6 +57,7 @@ export type StudioBootstrap = {
   eucliBoxCompatibility: CompatibilityStatus | null
   businessAvailable: boolean
   eucliBoxIssue: string
+  releaseChecks: ReleaseCheckSnapshot
 }
 
 export function normalizeEucliBoxCompatibility(value: unknown): EucliBoxCompatibility {
@@ -54,6 +92,57 @@ export function normalizeStudioBootstrap(value: unknown): StudioBootstrap {
       : null,
     businessAvailable: source.businessAvailable === true,
     eucliBoxIssue: text(source.eucliBoxIssue),
+    releaseChecks: normalizeReleaseCheckSnapshot(source.releaseChecks),
+  }
+}
+
+export function normalizeReleaseCheckSnapshot(value: unknown): ReleaseCheckSnapshot {
+  const source = objectValue(value)
+  return {
+    status: text(source.status) || 'not_checked',
+    startedAt: text(source.startedAt),
+    checkedAt: text(source.checkedAt),
+    results: Array.isArray(source.results) ? source.results.map(normalizeReleaseCheckResult) : [],
+    failureReason: text(source.failureReason),
+  }
+}
+
+function normalizeReleaseCheckResult(value: unknown): ReleaseCheckResult {
+  const source = objectValue(value)
+  return {
+    artifact: normalizeReleaseArtifactIdentity(source.artifact),
+    source: normalizeOfficialReleaseSource(source.source),
+    installed: source.installed === true,
+    currentVersion: text(source.currentVersion),
+    latestVersion: text(source.latestVersion),
+    status: text(source.status) || 'not_checked',
+    checkedAt: text(source.checkedAt),
+    updateAvailable: source.updateAvailable === true,
+    releaseUrl: text(source.releaseUrl),
+    releaseNotes: text(source.releaseNotes),
+    downloadSize: finiteNumber(source.downloadSize),
+    compatibility: source.compatibility && typeof source.compatibility === 'object'
+      ? normalizeCompatibilityStatus(source.compatibility)
+      : null,
+    affectedArtifacts: Array.isArray(source.affectedArtifacts)
+      ? source.affectedArtifacts.map(normalizeReleaseArtifactIdentity)
+      : [],
+    failureReason: text(source.failureReason),
+  }
+}
+
+function normalizeReleaseArtifactIdentity(value: unknown): ReleaseArtifactIdentity {
+  const source = objectValue(value)
+  return { kind: text(source.kind), id: text(source.id) }
+}
+
+function normalizeOfficialReleaseSource(value: unknown): OfficialReleaseSource {
+  const source = objectValue(value)
+  return {
+    kind: text(source.kind),
+    repository: text(source.repository),
+    owner: text(source.owner),
+    name: text(source.name),
   }
 }
 
@@ -70,4 +159,9 @@ function objectValue(value: unknown): Record<string, any> {
 
 function text(value: unknown): string {
   return String(value ?? '').trim()
+}
+
+function finiteNumber(value: unknown): number {
+  const number = Number(value)
+  return Number.isFinite(number) && number >= 0 ? number : 0
 }

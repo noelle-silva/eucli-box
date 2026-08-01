@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"eucli-box/internal/boxrelease"
 	"eucli-box/pkg/types"
 )
 
@@ -133,8 +134,12 @@ func (s *system) Initialize(ctx context.Context) error {
 	if err := ensureDirs(s.paths.baseDirs()...); err != nil {
 		return storageInitFailed("failed to create data directories", err)
 	}
+	releaseInfo, err := boxrelease.Load()
+	if err != nil {
+		return storageInitFailed("failed to read target data version", err)
+	}
 	now := time.Now().UTC()
-	version := storageVersion{Version: "1.0.0", CreatedAt: now, UpdatedAt: now}
+	version := storageVersion{Version: releaseInfo.DataVersion, CreatedAt: now, UpdatedAt: now}
 	if dataFileExists(s.paths.metaVersionFile()) {
 		current, err := readJSON[storageVersion](ctx, s.paths.metaVersionFile())
 		if err != nil {

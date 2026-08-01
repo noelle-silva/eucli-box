@@ -29,6 +29,59 @@ go run ./cmd/eucli-version -target tool:everything -version 0.1.1 -message "说�
 
 可用目标写法为 `eucli-box`、`eucli-studio`、`tool:<工具ID>` 和 `plugin:<插件ID>`。调整动作只接受更高的三段正式版本，并在写入前后完整检查版本、适用范围和中文文档。
 
+## 正式成品与发布
+
+首期正式成品只支持 Windows x64。业务端、每个 AI 工具和每个系统插件分别制作和发布，客户端自身不在本次发行范围内。
+
+查看全部正式发布目标及其固定官方来源：
+
+```cmd
+scripts\release.cmd list
+```
+
+制作一个正式成品：
+
+```cmd
+scripts\release.cmd build -target eucli-box
+scripts\release.cmd build -target tool:context7
+scripts\release.cmd build -target plugin:time-plugin
+```
+
+正式成品只能从已经完整进入 Git 记录的源码状态制作。制作现场和结果分别进入 `.release/work/` 与 `.release/output/`，脱敏记录进入 `.release/logs/`；这些运行资料均不进入源码管理。
+
+真实发布前必须确认源码状态完整、目标版本和中文更新说明正确，并在本地发布配置 `.release/config/github.env` 中分别填写业务端、AI 工具和系统插件的 GitHub 凭据：
+
+```dotenv
+EUCLI_BOX_GITHUB_TOKEN=
+EUCLI_TOOLS_GITHUB_TOKEN=
+EUCLI_PLUGINS_GITHUB_TOKEN=
+```
+
+`github.env` 只保存在当前开发环境并随 `.release/` 由 Git 忽略，不进入源码记录、日志和发行成品。发布动作仍必须显式确认：
+
+```cmd
+scripts\release.cmd publish -target eucli-box -confirm-publish
+```
+
+发布流程先建立未公开发行，上传后重新读取并核对远端内容，核对通过才公开，公开后再复核一次。相同发布物和相同版本已经存在时会直接拒绝。
+
+只读复核一个已经公开的正式发行：
+
+```cmd
+scripts\release.cmd remote -target eucli-box
+scripts\release.cmd remote -target tool:context7 -version 0.1.0
+```
+
+阶段一、二的自动验证入口：
+
+```cmd
+scripts\release\verify-stage-01.cmd
+scripts\release\verify-stage-02.cmd preflight
+scripts\release\verify-stage-02.cmd remote
+```
+
+`preflight` 只在隔离现场验证本地发布规则和只读版本检查；`remote` 只读复核已经公开的 11 个正式发行。自动版本检查只读取小型发行资料，不下载、不安装，也不改变当前环境。
+
 ## 架构关系
 
 eucli-box 是整个系统的业务核心（以下简称"业务端"或"e-b"）。所有业务数据、业务逻辑、提示流组装和模型调用都在业务端完成。

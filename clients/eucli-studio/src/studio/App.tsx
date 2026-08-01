@@ -8,7 +8,8 @@ import type { AiChatController } from '../controller/types'
 import type { AiChatToastKind, AiChatToastOptions } from '../gateway/capabilities'
 import { AI_STUDIO_CHAT_ROOT_ID } from '../runtime/aiStudioGlobals'
 import { createAiChatAppRuntime, type AiChatAppRuntime, type EucliBoxConfig } from './aiChatAppHost'
-import { compatibilityRangeText, type StudioBootstrap } from '../domain/release'
+import { compatibilityRangeText, type ReleaseCheckSnapshot, type StudioBootstrap } from '../domain/release'
+import { ReleaseChecksPanel } from '../ui/release/ReleaseChecksPanel'
 
 type DataDirStatus = {
   dataDir: string
@@ -74,10 +75,12 @@ export function App() {
   const [eucliBoxKeyDraft, setEucliBoxKeyDraft] = React.useState('')
   const [eucliBoxConfigBusy, setEucliBoxConfigBusy] = React.useState(false)
   const [runtimeBootstrap, setRuntimeBootstrap] = React.useState<StudioBootstrap | null>(null)
+  const [releaseCheckBusy, setReleaseCheckBusy] = React.useState(false)
   const runtimeRef = React.useRef<AiChatAppRuntime | null>(null)
   const runtimeVersionRef = React.useRef(0)
   const mountedRef = React.useRef(false)
   const toastSeqRef = React.useRef(0)
+  const releaseCheckBusyRef = React.useRef(false)
 
   const showToast = React.useCallback((message: unknown, options?: AiChatToastOptions) => {
     const text = String((message as any)?.message || message || '').trim()
@@ -105,6 +108,8 @@ export function App() {
     runtimeRef.current = null
     setController(null)
     setRuntimeBootstrap(null)
+    releaseCheckBusyRef.current = false
+    setReleaseCheckBusy(false)
     if (isCancelled()) return null
     const runtime = await createAiChatAppRuntime({
       showToast,
@@ -208,6 +213,32 @@ export function App() {
   }, [connectBackend, handleCommand, refreshDataDirStatus])
 
   React.useEffect(() => {
+    const status = runtimeBootstrap?.releaseChecks.status
+    if (bootStatus !== 'ready' || status !== 'not_checked' && status !== 'checking') return
+    const runtime = runtimeRef.current
+    const runtimeVersion = runtimeVersionRef.current
+    if (!runtime) return
+    const activeRuntime = runtime
+    let cancelled = false
+
+    async function syncPendingCheck() {
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        await new Promise(resolve => window.setTimeout(resolve, attempt === 0 ? 400 : 1000))
+        if (cancelled || runtimeVersionRef.current !== runtimeVersion) return
+        const next = await activeRuntime.getBootstrap().catch(() => null)
+        if (!next || cancelled || runtimeVersionRef.current !== runtimeVersion) return
+        setRuntimeBootstrap(current => current ? { ...current, releaseChecks: next.releaseChecks } : current)
+        if (next.releaseChecks.status !== 'not_checked' && next.releaseChecks.status !== 'checking') return
+      }
+    }
+
+    void syncPendingCheck()
+    return () => {
+      cancelled = true
+    }
+  }, [bootStatus, runtimeBootstrap?.releaseChecks.status])
+
+  React.useEffect(() => {
     if (!toast) return
     const timer = window.setTimeout(() => setToast(current => current?.id === toast.id ? null : current), 3200)
     return () => window.clearTimeout(timer)
@@ -262,6 +293,45 @@ export function App() {
     }
   }
 
+  const refreshReleaseChecks = React.useCallback(async () => {
+    const runtime = runtimeRef.current
+    if (!runtime || releaseCheckBusyRef.current) return
+    const runtimeVersion = runtimeVersionRef.current
+    releaseCheckBusyRef.current = true
+    setReleaseCheckBusy(true)
+    setRuntimeBootstrap(current => current ? {
+      ...current,
+      releaseChecks: {
+        ...current.releaseChecks,
+        status: 'checking',
+        startedAt: new Date().toISOString(),
+        failureReason: '',
+      },
+    } : current)
+    try {
+      const snapshot = await runtime.refreshReleaseChecks()
+      if (runtimeVersionRef.current !== runtimeVersion || !mountedRef.current) return
+      setRuntimeBootstrap(current => current ? { ...current, releaseChecks: snapshot } : current)
+    } catch (error: any) {
+      if (runtimeVersionRef.current !== runtimeVersion || !mountedRef.current) return
+      const message = String(error?.message || error || '检查正式版本失败')
+      const failed: ReleaseCheckSnapshot = {
+        status: 'failed',
+        startedAt: '',
+        checkedAt: new Date().toISOString(),
+        results: [],
+        failureReason: message,
+      }
+      setRuntimeBootstrap(current => current ? { ...current, releaseChecks: failed } : current)
+      showToast(message, { kind: 'error' })
+    } finally {
+      if (runtimeVersionRef.current === runtimeVersion && mountedRef.current) {
+        releaseCheckBusyRef.current = false
+        setReleaseCheckBusy(false)
+      }
+    }
+  }, [showToast])
+
   const runtimeBootstrapIssue = bootStatus === 'ready' && runtimeBootstrap && !runtimeBootstrap.businessAvailable
     ? runtimeBootstrap.eucliBoxIssue
     : ''
@@ -282,11 +352,13 @@ export function App() {
               onPick: pickDataDir,
               onRefresh: refreshDataDirStatus,
             }}
-            windowControls={{
+             windowControls={{
               standalone: launchInfo.standalone,
-              actions: WINDOW_CONTROL_ACTIONS,
-            }}
-          />
+               actions: WINDOW_CONTROL_ACTIONS,
+             }}
+             releaseCheckBusy={releaseCheckBusy}
+             onRefreshReleaseChecks={refreshReleaseChecks}
+           />
         </div>
       ) : needsEucliBoxConnection ? (
         <EucliBoxConfigScreen
@@ -297,9 +369,11 @@ export function App() {
           busy={eucliBoxConfigBusy}
           issue={runtimeBootstrapIssue}
           bootstrap={runtimeBootstrap}
+          releaseCheckBusy={releaseCheckBusy}
           onUrlChange={setEucliBoxUrlDraft}
           onKeyChange={setEucliBoxKeyDraft}
           onSubmit={saveEucliBoxConfig}
+          onRefreshReleaseChecks={refreshReleaseChecks}
         />
       ) : (
         <BootFallback
@@ -332,11 +406,13 @@ function EucliBoxConfigScreen(props: {
   busy: boolean
   issue: string
   bootstrap: StudioBootstrap
+  releaseCheckBusy: boolean
   onUrlChange: (value: string) => void
   onKeyChange: (value: string) => void
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void
+  onRefreshReleaseChecks: () => Promise<void> | void
 }) {
-  const { standalone, windowControlActions, urlDraft, keyDraft, busy, issue, bootstrap, onUrlChange, onKeyChange, onSubmit } = props
+  const { standalone, windowControlActions, urlDraft, keyDraft, busy, issue, bootstrap, releaseCheckBusy, onUrlChange, onKeyChange, onSubmit, onRefreshReleaseChecks } = props
   const onTopbarPointerDown = React.useCallback((event: React.PointerEvent<HTMLElement>) => {
     if (event.button !== 0) return
     const target = event.target
@@ -360,6 +436,9 @@ function EucliBoxConfigScreen(props: {
           <div><dt>连接状态</dt><dd data-compatible={bootstrap.businessAvailable ? 'true' : 'false'}>{bootstrap.businessAvailable ? '适用' : bootstrap.eucliBoxReachable ? '不适用' : '未连接'}</dd></div>
         </dl>
         {issue ? <div className="bootFallbackIssue">{issue}</div> : null}
+        <div className="eucliReleaseChecks">
+          <ReleaseChecksPanel snapshot={bootstrap.releaseChecks} busy={releaseCheckBusy} onRefresh={onRefreshReleaseChecks} compact />
+        </div>
         <form className="eucliConfigForm" onSubmit={onSubmit}>
           <label className="eucliConfigLabel">
             <span>Gateway 地址</span>

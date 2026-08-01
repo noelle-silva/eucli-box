@@ -53,8 +53,31 @@ func TestReleaseRouteReturnsVersionAndClientCompatibility(t *testing.T) {
 	if err != nil {
 		t.Fatalf("boxrelease.Load() error = %v", err)
 	}
-	if response.Data.Version != expected.Version || response.Data.ClientCompatibility == nil || !response.Data.ClientCompatibility.Compatible {
+	if response.Data.Version != expected.Version || response.Data.DataVersion != expected.DataVersion || response.Data.ClientCompatibility == nil || !response.Data.ClientCompatibility.Compatible {
 		t.Fatalf("release response = %#v", response.Data)
+	}
+}
+
+func TestReleaseCheckRoutesReadAndRefreshOneAuthority(t *testing.T) {
+	fakes := newGatewayFakes()
+	fakes.releaseChecks.snapshot = types.ReleaseCheckSnapshot{Status: types.ReleaseCheckStatusCompleted, Results: []types.ReleaseCheckResult{{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindBox, ID: "eucli-box"}, LatestVersion: "0.1.1"}}}
+	system := newTestGateway(t, fakes)
+	for _, test := range []struct {
+		method string
+		path   string
+	}{
+		{method: http.MethodGet, path: "/api/release-checks"},
+		{method: http.MethodPost, path: "/api/release-checks/refresh"},
+	} {
+		req := httptest.NewRequest(test.method, test.path, nil)
+		rec := httptest.NewRecorder()
+		system.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"latestVersion":"0.1.1"`) {
+			t.Fatalf("%s %s status=%d body=%s", test.method, test.path, rec.Code, rec.Body.String())
+		}
+	}
+	if fakes.releaseChecks.refreshes != 1 {
+		t.Fatalf("refreshes = %d", fakes.releaseChecks.refreshes)
 	}
 }
 
@@ -562,7 +585,7 @@ func TestWebSocketRejectsIncompatibleClient(t *testing.T) {
 
 func newTestGateway(t *testing.T, fakes *gatewayFakes) System {
 	t.Helper()
-	system, err := NewSystem(Config{}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist)
+	system, err := NewSystem(Config{}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseChecks)
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -582,11 +605,26 @@ type gatewayFakes struct {
 	placeholders  *fakeGatewayPlaceholders
 	systemPlugins *fakeGatewaySystemPlugins
 	assist        *fakeGatewayAssist
+	releaseChecks *fakeGatewayReleaseChecks
 }
 
 func newGatewayFakes() *gatewayFakes {
 	stickers := newFakeGatewayStickers()
-	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), groups: newFakeGatewayGroups(), workspaces: newFakeGatewayWorkspaces(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, hooks: &fakeGatewayHooks{}, placeholders: &fakeGatewayPlaceholders{}, systemPlugins: &fakeGatewaySystemPlugins{}, assist: &fakeGatewayAssist{stickers: stickers}}
+	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), groups: newFakeGatewayGroups(), workspaces: newFakeGatewayWorkspaces(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, hooks: &fakeGatewayHooks{}, placeholders: &fakeGatewayPlaceholders{}, systemPlugins: &fakeGatewaySystemPlugins{}, assist: &fakeGatewayAssist{stickers: stickers}, releaseChecks: &fakeGatewayReleaseChecks{snapshot: types.ReleaseCheckSnapshot{Status: types.ReleaseCheckStatusNotChecked, Results: []types.ReleaseCheckResult{}}}}
+}
+
+type fakeGatewayReleaseChecks struct {
+	snapshot  types.ReleaseCheckSnapshot
+	refreshes int
+}
+
+func (f *fakeGatewayReleaseChecks) Snapshot() types.ReleaseCheckSnapshot {
+	return f.snapshot
+}
+
+func (f *fakeGatewayReleaseChecks) Refresh(context.Context) types.ReleaseCheckSnapshot {
+	f.refreshes++
+	return f.snapshot
 }
 
 type fakeGatewayHooks struct {

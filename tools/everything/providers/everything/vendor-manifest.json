@@ -1,30 +1,35 @@
 {
   "schemaVersion": 1,
-  "name": "Everything",
-  "architecture": "windows-x64",
-  "runtimeVersion": "1.4.1.1032",
-  "cliVersion": "1.1.0.30",
-  "source": {
-    "runtimeUrl": "https://www.voidtools.com/Everything-1.4.1.1032.x64.zip",
-    "cliUrl": "https://www.voidtools.com/ES-1.1.0.30.x64.zip",
-    "licenseUrl": "https://www.voidtools.com/License.txt"
-  },
+  "name": "everything-root",
+  "version": "Everything 1.4.1.1032; ES 1.1.0.30",
+  "platform": "windows-x64",
+  "source": "https://www.voidtools.com/",
+  "sources": [
+    "https://www.voidtools.com/Everything-1.4.1.1032.x64.zip",
+    "https://www.voidtools.com/ES-1.1.0.30.x64.zip",
+    "https://www.voidtools.com/License.txt"
+  ],
   "files": [
     {
-      "path": "Everything.exe",
+      "name": "Everything.exe",
+      "size": 2272424,
       "sha256": "f191f756996a14a11e5445fa7103d302efd510cf2fbf920e6c0c8ed51d512e36"
     },
     {
-      "path": "es.exe",
-      "sha256": "9a9b851f9da14a29626126d9b5f8ef71b569b3cf7e3e70bfbf57f4f00a9b9383"
-    },
-    {
-      "path": "License.txt",
+      "name": "License.txt",
+      "size": 2699,
       "sha256": "c13d19adcbfd5d07e9512de9df99956a3423399ed1fadc5fd33186697ad8df2f"
     },
     {
-      "path": "THIRD_PARTY_NOTICES.md",
+      "name": "THIRD_PARTY_NOTICES.md",
+      "size": 512,
       "sha256": "ab4395ce7e8049691359737f5f9ed3ab67f03ab01f93eb58c88d24eae7617e91"
+    },
+    {
+      "name": "es.exe",
+      "size": 154736,
+      "sha256": "9a9b851f9da14a29626126d9b5f8ef71b569b3cf7e3e70bfbf57f4f00a9b9383"
     }
-  ]
+  ],
+  "treeSha256": "0fac39cb12f4cd36e58d9eede4635a54120d5264d8cb0549b1174f4739c68cb0"
 }

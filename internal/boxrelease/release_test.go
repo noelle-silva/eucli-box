@@ -14,4 +14,7 @@ func TestLoadReturnsValidBoxRelease(t *testing.T) {
 	if err := release.ValidateVersion(info.Version); err != nil {
 		t.Fatalf("version %q is invalid: %v", info.Version, err)
 	}
+	if err := release.ValidateVersion(info.DataVersion); err != nil {
+		t.Fatalf("data version %q is invalid: %v", info.DataVersion, err)
+	}
 }

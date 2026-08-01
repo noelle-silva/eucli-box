@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "platform": "windows-x64",
+  "sources": [
+    {
+      "kind": "eucli-box",
+      "repository": "https://github.com/noelle-silva/eucli-box"
+    },
+    {
+      "kind": "tool",
+      "repository": "https://github.com/noelle-silva/eucli-box-ai-tools"
+    },
+    {
+      "kind": "plugin",
+      "repository": "https://github.com/noelle-silva/eucli-box-system-plugins"
+    }
+  ],
+  "artifacts": [
+    { "kind": "eucli-box", "id": "eucli-box" },
+    { "kind": "tool", "id": "context7" },
+    { "kind": "tool", "id": "everything" },
+    { "kind": "tool", "id": "file_operator" },
+    { "kind": "tool", "id": "sci_calculator" },
+    { "kind": "tool", "id": "shell_command" },
+    { "kind": "tool", "id": "web_search" },
+    { "kind": "tool", "id": "zhihu_search" },
+    { "kind": "plugin", "id": "system-info-plugin" },
+    { "kind": "plugin", "id": "time-plugin" },
+    { "kind": "plugin", "id": "weather-plugin" }
+  ]
+}

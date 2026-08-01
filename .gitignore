@@ -15,6 +15,7 @@ build/
 **/build/
 .vite/
 **/.vite/
+.release/
 
 # Compiled binaries
 *.exe

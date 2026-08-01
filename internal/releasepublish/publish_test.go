@@ -23,6 +23,7 @@ func TestPublishCreatesDraftVerifiesAssetsAndPublishes(t *testing.T) {
 	fixture := newPublishFixture(t)
 	publisher := fixture.publisher(t)
 	input := testPublishInput(t)
+	manifest := manifestForInput(t, input)
 
 	result, err := publisher.Publish(context.Background(), input)
 	if err != nil {
@@ -31,7 +32,7 @@ func TestPublishCreatesDraftVerifiesAssetsAndPublishes(t *testing.T) {
 	if fixture.draft || fixture.patchCount != 1 || fixture.downloadCount != 4 {
 		t.Fatalf("fixture state: draft=%v patch=%d downloads=%d", fixture.draft, fixture.patchCount, fixture.downloadCount)
 	}
-	if result.TagName != input.Manifest.TagName || len(result.Assets) != 2 || result.ReleaseURL == "" {
+	if result.TagName != manifest.TagName || len(result.Assets) != 2 || result.ReleaseURL == "" {
 		t.Fatalf("result = %#v", result)
 	}
 }
@@ -39,7 +40,7 @@ func TestPublishCreatesDraftVerifiesAssetsAndPublishes(t *testing.T) {
 func TestPublishRejectsDuplicateVersionBeforeCreatingDraft(t *testing.T) {
 	fixture := newPublishFixture(t)
 	input := testPublishInput(t)
-	fixture.duplicateTag = input.Manifest.TagName
+	fixture.duplicateTag = manifestForInput(t, input).TagName
 	publisher := fixture.publisher(t)
 
 	if _, err := publisher.Publish(context.Background(), input); err == nil || !strings.Contains(err.Error(), "相同发布物和版本") {
@@ -80,17 +81,18 @@ func TestPublishKeepsDraftWhenDownloadedAssetDiffers(t *testing.T) {
 func TestDownloadPublishedAcceptsPublicReleaseWithoutToken(t *testing.T) {
 	fixture := newPublishFixture(t)
 	input := testPublishInput(t)
+	manifest := manifestForInput(t, input)
 	fixture.seedPublished(input)
 	publisher, err := New(Config{Client: fixture.server.Client(), APIBaseURL: fixture.server.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
 	target := t.TempDir()
-	result, err := publisher.DownloadPublished(context.Background(), input.Manifest.Artifact, input.Manifest.Version, target)
+	result, err := publisher.DownloadPublished(context.Background(), manifest.Artifact, manifest.Version, target)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Manifest.TagName != input.Manifest.TagName || result.ReleaseURL == "" {
+	if result.Manifest.TagName != manifest.TagName || result.ReleaseURL == "" {
 		t.Fatalf("result = %#v", result)
 	}
 }
@@ -133,7 +135,8 @@ func (f *publishFixture) seedPublished(input PublishInput) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.draft = false
-	f.tag = input.Manifest.TagName
+	manifest := manifestForInput(f.t, input)
+	f.tag = manifest.TagName
 	notes, _ := os.ReadFile(input.NotesPath)
 	f.body = strings.TrimSpace(string(notes))
 	for _, path := range []string{input.ArchivePath, input.ManifestPath} {
@@ -287,7 +290,20 @@ func testPublishInput(t *testing.T) PublishInput {
 	if err := os.WriteFile(notesPath, []byte("## 0.1.0\n\n- 测试正式发布。\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return PublishInput{Manifest: manifest, ArchivePath: archivePath, ManifestPath: manifestPath, NotesPath: notesPath}
+	return PublishInput{ArchivePath: archivePath, ManifestPath: manifestPath, NotesPath: notesPath}
+}
+
+func manifestForInput(t *testing.T, input PublishInput) types.ReleaseManifest {
+	t.Helper()
+	payload, err := os.ReadFile(input.ManifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := release.DecodeReleaseManifest(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return manifest
 }
 
 func escapedTag(tag string) string {

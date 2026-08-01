@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"time"
 
@@ -43,7 +42,6 @@ type Publisher struct {
 }
 
 type PublishInput struct {
-	Manifest     types.ReleaseManifest
 	ArchivePath  string
 	ManifestPath string
 	NotesPath    string
@@ -89,20 +87,21 @@ func (p *Publisher) Publish(ctx context.Context, input PublishInput) (result Res
 	if err != nil {
 		return Result{}, err
 	}
-	if existing, findErr := p.findReleaseByTag(ctx, prepared.source, input.Manifest.TagName); findErr != nil {
+	manifest := prepared.manifest
+	if existing, findErr := p.findReleaseByTag(ctx, prepared.source, manifest.TagName); findErr != nil {
 		return Result{}, findErr
 	} else if existing != nil {
-		return Result{}, fmt.Errorf("官方来源已经存在相同发布物和版本：%s", input.Manifest.TagName)
+		return Result{}, fmt.Errorf("官方来源已经存在相同发布物和版本：%s", manifest.TagName)
 	}
 
-	draft, err := p.createDraft(ctx, prepared.source, input.Manifest, prepared.notes)
+	draft, err := p.createDraft(ctx, prepared.source, manifest, prepared.notes)
 	if err != nil {
 		return Result{}, err
 	}
 	result = Result{
-		Artifact:   input.Manifest.Artifact,
-		Version:    input.Manifest.Version,
-		TagName:    input.Manifest.TagName,
+		Artifact:   manifest.Artifact,
+		Version:    manifest.Version,
+		TagName:    manifest.TagName,
 		Repository: prepared.source.Repository,
 		ReleaseID:  draft.ID,
 		ReleaseURL: draft.HTMLURL,
@@ -122,7 +121,7 @@ func (p *Publisher) Publish(ctx context.Context, input PublishInput) (result Res
 	if err != nil {
 		return result, err
 	}
-	if err = validateRemoteRelease(remoteDraft, input.Manifest.TagName, prepared.notes, true, prepared.assets); err != nil {
+	if err = validateRemoteRelease(remoteDraft, manifest.TagName, prepared.notes, true, prepared.assets); err != nil {
 		return result, err
 	}
 	if err = p.verifyRemoteAssets(ctx, remoteDraft, prepared.assets); err != nil {
@@ -135,7 +134,7 @@ func (p *Publisher) Publish(ctx context.Context, input PublishInput) (result Res
 	if err != nil {
 		return result, err
 	}
-	if err = validateRemoteRelease(publicRelease, input.Manifest.TagName, prepared.notes, false, prepared.assets); err != nil {
+	if err = validateRemoteRelease(publicRelease, manifest.TagName, prepared.notes, false, prepared.assets); err != nil {
 		return result, err
 	}
 	if err = p.verifyRemoteAssets(ctx, publicRelease, prepared.assets); err != nil {
@@ -150,9 +149,10 @@ func (p *Publisher) Publish(ctx context.Context, input PublishInput) (result Res
 }
 
 type preparedInput struct {
-	source types.OfficialReleaseSource
-	notes  string
-	assets []localAsset
+	manifest types.ReleaseManifest
+	source   types.OfficialReleaseSource
+	notes    string
+	assets   []localAsset
 }
 
 type localAsset struct {
@@ -161,8 +161,8 @@ type localAsset struct {
 }
 
 func (p *Publisher) prepareInput(input PublishInput) (preparedInput, error) {
-	manifest := input.Manifest
-	if err := release.ValidateReleaseManifest(manifest); err != nil {
+	manifestPath, manifestPayload, manifest, err := readManifestFile(input.ManifestPath)
+	if err != nil {
 		return preparedInput{}, err
 	}
 	if manifest.VerificationOnly || !manifest.Source.Recorded {
@@ -189,17 +189,6 @@ func (p *Publisher) prepareInput(input PublishInput) (preparedInput, error) {
 	if err := release.ValidateArchiveDigest(manifest, archivePayload); err != nil {
 		return preparedInput{}, err
 	}
-	manifestPath, manifestPayload, err := readRegularFile(input.ManifestPath, strings.TrimSuffix(manifest.Archive.Name, ".zip")+".manifest.json")
-	if err != nil {
-		return preparedInput{}, err
-	}
-	decoded, err := release.DecodeReleaseManifest(manifestPayload)
-	if err != nil {
-		return preparedInput{}, err
-	}
-	if !reflect.DeepEqual(decoded, manifest) {
-		return preparedInput{}, fmt.Errorf("待上传发行清单与已验收成品不一致")
-	}
 	_, notesPayload, err := readRegularFile(input.NotesPath, "release-notes.md")
 	if err != nil {
 		return preparedInput{}, err
@@ -210,7 +199,34 @@ func (p *Publisher) prepareInput(input PublishInput) (preparedInput, error) {
 	}
 	manifestRecord := types.ReleaseFileRecord{Name: filepath.Base(manifestPath), Size: int64(len(manifestPayload)), SHA256: release.SHA256(manifestPayload)}
 	assets := []localAsset{{Path: archivePath, Record: manifest.Archive}, {Path: manifestPath, Record: manifestRecord}}
-	return preparedInput{source: source, notes: notes, assets: assets}, nil
+	return preparedInput{manifest: manifest, source: source, notes: notes, assets: assets}, nil
+}
+
+func readManifestFile(path string) (string, []byte, types.ReleaseManifest, error) {
+	absolute, err := filepath.Abs(strings.TrimSpace(path))
+	if err != nil || strings.TrimSpace(path) == "" {
+		return "", nil, types.ReleaseManifest{}, fmt.Errorf("待发布发行清单路径无效")
+	}
+	info, err := os.Stat(absolute)
+	if err != nil {
+		return "", nil, types.ReleaseManifest{}, err
+	}
+	if info.IsDir() {
+		return "", nil, types.ReleaseManifest{}, fmt.Errorf("待发布发行清单不能是目录")
+	}
+	payload, err := os.ReadFile(absolute)
+	if err != nil {
+		return "", nil, types.ReleaseManifest{}, err
+	}
+	manifest, err := release.DecodeReleaseManifest(payload)
+	if err != nil {
+		return "", nil, types.ReleaseManifest{}, err
+	}
+	expectedName := strings.TrimSuffix(manifest.Archive.Name, ".zip") + ".manifest.json"
+	if filepath.Base(absolute) != expectedName {
+		return "", nil, types.ReleaseManifest{}, fmt.Errorf("待发布发行清单文件名必须为 %s", expectedName)
+	}
+	return absolute, payload, manifest, nil
 }
 
 func readRegularFile(path string, expectedName string) (string, []byte, error) {

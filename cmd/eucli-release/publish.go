@@ -75,7 +75,6 @@ func runPublish(ctx context.Context, args []string) error {
 		return fmt.Errorf("正式发布准备失败，现场保留在 %s：%w", runRoot, err)
 	}
 	publishResult, err := publisher.Publish(ctx, releasepublish.PublishInput{
-		Manifest:     buildResult.Manifest,
 		ArchivePath:  buildResult.ArchivePath,
 		ManifestPath: buildResult.ManifestPath,
 		NotesPath:    buildResult.NotesPath,

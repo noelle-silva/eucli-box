@@ -20,7 +20,7 @@ func main() {
 
 func run(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("必须指定 stage-01 或 stage-02")
+		return fmt.Errorf("必须指定 stage-01、stage-02、stage-03 或 dev-local-box")
 	}
 	command := strings.TrimSpace(args[0])
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
@@ -42,6 +42,10 @@ func run(ctx context.Context, args []string) error {
 		return releaseverify.Stage01(ctx, root, *runRoot)
 	case "stage-02":
 		return releaseverify.Stage02(ctx, root, *runRoot, *mode)
+	case "stage-03":
+		return releaseverify.Stage03(ctx, root, *runRoot, *mode)
+	case "dev-local-box":
+		return releaseverify.DevLocalBox(ctx, root, *runRoot, *mode)
 	default:
 		return fmt.Errorf("未知验证阶段 %q", command)
 	}

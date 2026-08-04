@@ -36,7 +36,7 @@ func TestCachedHeartbeatPluginUsesCachedValues(t *testing.T) {
 			"description": "状态",
 		}},
 	})
-	system, err := NewSystem(Config{SourceDir: root, DataDir: filepath.Join(root, "data"), Timeout: time.Second})
+	system, err := NewSystem(Config{SourceDir: root, DataDir: filepath.Join(root, "data"), Timeout: testPluginTimeout()})
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -76,7 +76,7 @@ func TestCachedHeartbeatPluginRefreshesAfterConfigSave(t *testing.T) {
 			"description": "状态",
 		}},
 	})
-	system, err := NewSystem(Config{SourceDir: root, DataDir: filepath.Join(root, "data"), Timeout: time.Second})
+	system, err := NewSystem(Config{SourceDir: root, DataDir: filepath.Join(root, "data"), Timeout: testPluginTimeout()})
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -111,7 +111,7 @@ func TestSavePluginUserConfigRejectsValuesOutsideDeclaredOptions(t *testing.T) {
 		},
 	}
 	writeTestManifest(t, pluginDir, manifest)
-	system, err := NewSystem(Config{SourceDir: root, DataDir: filepath.Join(root, "data"), Timeout: time.Second})
+	system, err := NewSystem(Config{SourceDir: root, DataDir: filepath.Join(root, "data"), Timeout: testPluginTimeout()})
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -151,7 +151,7 @@ func TestResolvePlaceholderValuesKeepsSuccessfulPluginWhenAnotherFails(t *testin
 	writeTestManifest(t, failDir, testPluginManifest("fail-plugin", "失败插件", types.SystemPluginLifecycleOnDemand))
 	successDir := writeTestPlugin(t, root, "success-plugin", `{"status":"success","values":{"value":"ok"}}`)
 	writeTestManifest(t, successDir, testPluginManifest("success-plugin", "成功插件", types.SystemPluginLifecycleOnDemand))
-	system, err := NewSystem(Config{SourceDir: root, DataDir: filepath.Join(root, "data"), Timeout: time.Second})
+	system, err := NewSystem(Config{SourceDir: root, DataDir: filepath.Join(root, "data"), Timeout: testPluginTimeout()})
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -170,7 +170,7 @@ func TestIncompatiblePluginRemainsVisibleAndDoesNotExecute(t *testing.T) {
 	manifest := testPluginManifest("future-plugin", "未来插件", types.SystemPluginLifecycleOnDemand)
 	manifest["eucliBoxCompatibility"] = map[string]string{"minimumVersion": "0.2.0", "maximumVersionExclusive": "0.3.0"}
 	writeTestManifest(t, pluginDir, manifest)
-	system, err := NewSystem(Config{SourceDir: root, DataDir: filepath.Join(root, "data"), Timeout: time.Second, BoxVersion: "0.1.0"})
+	system, err := NewSystem(Config{SourceDir: root, DataDir: filepath.Join(root, "data"), Timeout: testPluginTimeout(), BoxVersion: "0.1.0"})
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -193,7 +193,7 @@ func TestInvalidPluginManifestRemainsVisibleWithoutInventedIdentity(t *testing.T
 	manifest := testPluginManifest("invalid-plugin", "无效插件", types.SystemPluginLifecycleOnDemand)
 	delete(manifest, "id")
 	writeTestManifest(t, pluginDir, manifest)
-	system, err := NewSystem(Config{SourceDir: root, DataDir: filepath.Join(root, "data"), Timeout: time.Second, BoxVersion: "0.1.0"})
+	system, err := NewSystem(Config{SourceDir: root, DataDir: filepath.Join(root, "data"), Timeout: testPluginTimeout(), BoxVersion: "0.1.0"})
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -211,7 +211,7 @@ func TestPluginRequestIncludesSeparateBodyAndDataDirectories(t *testing.T) {
 	pluginDir := writeTestPlugin(t, root, "paths-plugin", `{"status":"success","values":{"value":"ok"}}`)
 	writeTestManifest(t, pluginDir, testPluginManifest("paths-plugin", "路径插件", types.SystemPluginLifecycleOnDemand))
 	dataRoot := filepath.Join(root, "data")
-	created, err := NewSystem(Config{SourceDir: root, DataDir: dataRoot, Timeout: time.Second, BoxVersion: "0.1.0"})
+	created, err := NewSystem(Config{SourceDir: root, DataDir: dataRoot, Timeout: testPluginTimeout(), BoxVersion: "0.1.0"})
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -315,6 +315,13 @@ func testPluginScriptName() string {
 		return "plugin.bat"
 	}
 	return "plugin.sh"
+}
+
+func testPluginTimeout() time.Duration {
+	if runtime.GOOS == "windows" {
+		return 10 * time.Second
+	}
+	return time.Second
 }
 
 func parallelTestScripts(markerFile string) (string, string) {

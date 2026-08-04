@@ -16,8 +16,22 @@ import (
 
 type System interface {
 	Start(ctx context.Context) error
+	StartLocal(ctx context.Context) (LocalStartResult, error)
 	Shutdown(ctx context.Context) error
 	Handler() http.Handler
+}
+
+type LocalStartResult struct {
+	Endpoint string
+}
+
+type LocalRunInfo struct {
+	InstallIdentity  string
+	DataIdentity     string
+	RunIdentity      string
+	ProcessID        int
+	ProcessStartedAt time.Time
+	Version          string
 }
 
 type RuntimeSystem interface {
@@ -161,11 +175,19 @@ type ReleaseCheckSystem interface {
 }
 
 type Config struct {
-	Addr         string
-	Key          string
-	BoxVersion   string
-	ReadTimeout  time.Duration
-	WriteTimeout time.Duration
+	Addr              string
+	Key               string
+	BoxVersion        string
+	ReadTimeout       time.Duration
+	WriteTimeout      time.Duration
+	LocalRun          bool
+	LocalInstallID    string
+	LocalDataID       string
+	LocalRunID        string
+	LocalCredential   string
+	LocalProcessID    int
+	LocalProcessStart time.Time
+	LocalStop         func()
 }
 
 type system struct {
@@ -187,6 +209,9 @@ type system struct {
 	mux           *http.ServeMux
 	server        *http.Server
 	upgrader      websocket.Upgrader
+	localInfo     LocalRunInfo
+	endpoint      string
+	localStopOnce sync.Once
 
 	wsMu        sync.Mutex
 	connections map[*websocket.Conn]struct{}
@@ -232,7 +257,20 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups Ch
 	if releaseChecks == nil {
 		return nil, gatewayInvalid("release check system dependency is required", nil)
 	}
-	if config.Addr == "" {
+	if config.LocalRun {
+		if config.Addr == "" {
+			config.Addr = "127.0.0.1:0"
+		}
+		if config.Addr != "127.0.0.1:0" {
+			return nil, gatewayInvalid("受托模式地址必须为 127.0.0.1:0", nil)
+		}
+		if strings.TrimSpace(config.LocalCredential) == "" {
+			return nil, gatewayInvalid("受托模式本次凭证不能为空", nil)
+		}
+		if config.LocalStop == nil {
+			return nil, gatewayInvalid("受托模式停止回调不能为空", nil)
+		}
+	} else if config.Addr == "" {
 		config.Addr = "127.0.0.1:8765"
 	}
 	if config.ReadTimeout == 0 {
@@ -279,6 +317,14 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups Ch
 		mux:           http.NewServeMux(),
 		upgrader:      websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
 		connections:   map[*websocket.Conn]struct{}{},
+		localInfo: LocalRunInfo{
+			InstallIdentity:  strings.TrimSpace(config.LocalInstallID),
+			DataIdentity:     strings.TrimSpace(config.LocalDataID),
+			RunIdentity:      strings.TrimSpace(config.LocalRunID),
+			ProcessID:        config.LocalProcessID,
+			ProcessStartedAt: config.LocalProcessStart.UTC(),
+			Version:          boxVersion,
+		},
 	}
 	s.registerRoutes()
 	s.server = &http.Server{Addr: config.Addr, Handler: s.mux, ReadTimeout: config.ReadTimeout, WriteTimeout: config.WriteTimeout}

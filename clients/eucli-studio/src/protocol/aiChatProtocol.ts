@@ -21,6 +21,9 @@ export const AI_CHAT_DIRECT_METHOD = {
   imageWrite: 'aiChat.imageWrite',
   imageDelete: 'aiChat.imageDelete',
   imagePick: 'aiChat.imagePick',
+  localBoxStatus: 'localBox.status',
+  localBoxInstall: 'localBox.install',
+  localBoxExit: 'localBox.exit',
 } as const
 
 export const AI_CHAT_DIRECT_EVENT = {
@@ -28,6 +31,7 @@ export const AI_CHAT_DIRECT_EVENT = {
   runFinal: 'aiChat.run.final',
   chatUpdated: 'aiChat.chat.updated',
   eucliBoxRunEvent: 'eucliBox.run.event',
+  localBoxState: 'localBox.state',
 } as const
 
 export type AiChatDirectMethod = (typeof AI_CHAT_DIRECT_METHOD)[keyof typeof AI_CHAT_DIRECT_METHOD]

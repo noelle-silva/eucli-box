@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"net"
 	"net/http"
 	"strings"
 
@@ -61,6 +62,18 @@ func (s *system) validateClientCompatibility(r *http.Request) error {
 }
 
 func (s *system) validateRequestKey(r *http.Request) error {
+	if s.config.LocalRun {
+		if !requestFromLoopback(r) {
+			return gatewayNotAuthorized("local gateway only accepts loopback requests", nil)
+		}
+		if r.URL.Query().Get("token") != "" {
+			return gatewayNotAuthorized("local gateway does not accept query credentials", nil)
+		}
+		if extractAuthorizationBearer(r) != strings.TrimSpace(s.config.LocalCredential) {
+			return gatewayNotAuthorized("local session credential mismatch", nil)
+		}
+		return nil
+	}
 	key := strings.TrimSpace(s.config.Key)
 	if key == "" {
 		return nil
@@ -73,10 +86,27 @@ func (s *system) validateRequestKey(r *http.Request) error {
 }
 
 func extractRequestKey(r *http.Request) string {
-	if auth := r.Header.Get("Authorization"); auth != "" {
-		return strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
+	if value := extractAuthorizationBearer(r); value != "" {
+		return value
 	}
 	return strings.TrimSpace(r.URL.Query().Get("token"))
+}
+
+func extractAuthorizationBearer(r *http.Request) string {
+	auth := strings.TrimSpace(r.Header.Get("Authorization"))
+	if !strings.HasPrefix(auth, "Bearer ") {
+		return ""
+	}
+	return strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
+}
+
+func requestFromLoopback(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err != nil {
+		host = strings.TrimSpace(r.RemoteAddr)
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func gatewayNotAuthorized(message string, cause error) error {

@@ -1,3 +1,5 @@
+import { normalizeLocalBoxState, type LocalBoxState } from './localBox'
+
 export type EucliBoxCompatibility = {
   minimumVersion: string
   maximumVersionExclusive: string
@@ -50,6 +52,7 @@ export type ReleaseCheckSnapshot = {
 export type StudioBootstrap = {
   clientVersion: string
   clientEucliBoxCompatibility: EucliBoxCompatibility
+  localBox: LocalBoxState
   eucliBoxConfigured: boolean
   eucliBoxReachable: boolean
   eucliBoxUrl: string
@@ -83,6 +86,7 @@ export function normalizeStudioBootstrap(value: unknown): StudioBootstrap {
   return {
     clientVersion: text(source.clientVersion),
     clientEucliBoxCompatibility: normalizeEucliBoxCompatibility(source.clientEucliBoxCompatibility),
+    localBox: normalizeLocalBoxState(source.localBox),
     eucliBoxConfigured: source.eucliBoxConfigured === true,
     eucliBoxReachable: source.eucliBoxReachable === true,
     eucliBoxUrl: text(source.eucliBoxUrl),

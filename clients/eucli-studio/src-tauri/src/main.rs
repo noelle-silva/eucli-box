@@ -81,10 +81,28 @@ fn hide_to_tray(window: tauri::WebviewWindow) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn backend_endpoint(app: tauri::AppHandle, state: tauri::State<'_, BackendState>) -> Result<BackendEndpoint, String> {
-    let mut guard = state.process.lock().map_err(|_| "后端状态锁已损坏".to_string())?;
+fn exit_app(app: tauri::AppHandle, state: tauri::State<'_, BackendState>) -> Result<(), String> {
+    stop_backend_process(&state)?;
+    app.exit(0);
+    Ok(())
+}
+
+#[tauri::command]
+fn backend_endpoint(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BackendState>,
+) -> Result<BackendEndpoint, String> {
+    let mut guard = state
+        .process
+        .lock()
+        .map_err(|_| "后端状态锁已损坏".to_string())?;
     if let Some(process) = guard.as_mut() {
-        if process.child.try_wait().map_err(|e| format!("检查后端进程失败: {e}"))?.is_none() {
+        if process
+            .child
+            .try_wait()
+            .map_err(|e| format!("检查后端进程失败: {e}"))?
+            .is_none()
+        {
             return Ok(process.endpoint.clone());
         }
     }
@@ -97,7 +115,9 @@ fn backend_endpoint(app: tauri::AppHandle, state: tauri::State<'_, BackendState>
 fn data_dir_status(app: tauri::AppHandle) -> Result<DataDirStatus, String> {
     let configured = load_data_dir_setting(&app)?;
     let default_data_dir = default_data_dir(&app)?;
-    let data_dir = configured.clone().unwrap_or_else(|| default_data_dir.clone());
+    let data_dir = env_data_dir()
+        .or_else(|| configured.clone())
+        .unwrap_or_else(|| default_data_dir.clone());
     let writable_result = ensure_writable_dir(&data_dir);
     let writable_error = writable_result.as_ref().err().cloned();
     Ok(DataDirStatus {
@@ -110,7 +130,27 @@ fn data_dir_status(app: tauri::AppHandle) -> Result<DataDirStatus, String> {
 }
 
 #[tauri::command]
-fn pick_data_dir(app: tauri::AppHandle, state: tauri::State<'_, BackendState>) -> Result<Option<DataDirStatus>, String> {
+fn pick_data_dir(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BackendState>,
+) -> Result<Option<DataDirStatus>, String> {
+    {
+        let mut guard = state
+            .process
+            .lock()
+            .map_err(|_| "后端状态锁已损坏".to_string())?;
+        if let Some(process) = guard.as_mut() {
+            if process
+                .child
+                .try_wait()
+                .map_err(|e| format!("检查后端进程失败: {e}"))?
+                .is_none()
+            {
+                return Err("请先真正退出客户端，再切换数据目录".to_string());
+            }
+            *guard = None;
+        }
+    }
     let folder = rfd::FileDialog::new()
         .set_title("选择 AI Studio 数据目录")
         .pick_folder();
@@ -124,33 +164,56 @@ fn pick_data_dir(app: tauri::AppHandle, state: tauri::State<'_, BackendState>) -
     Ok(Some(data_dir_status(app)?))
 }
 
-fn start_backend_process(app: &tauri::AppHandle, slot: &mut Option<BackendProcess>) -> Result<BackendEndpoint, String> {
+fn start_backend_process(
+    app: &tauri::AppHandle,
+    slot: &mut Option<BackendProcess>,
+) -> Result<BackendEndpoint, String> {
     let data_dir = data_dir_status(app.clone())?.data_dir;
     let token = create_session_token();
     let mut command = backend_command(app)?;
     command.env("FW_APP_SESSION_TOKEN", &token);
     command.env("FW_APP_DATA_DIR", data_dir);
-    command.env("EUCLI_STUDIO_RELEASE_JSON", include_str!("../../release.json"));
+    command.env(
+        "EUCLI_STUDIO_RELEASE_JSON",
+        include_str!("../../release.json"),
+    );
     command.stdin(Stdio::null());
     command.stdout(Stdio::piped());
     command.stderr(Stdio::inherit());
 
-    let mut child = command.spawn().map_err(|e| format!("启动 eucli-studio Go 后端失败: {e}"))?;
-    let stdout = child.stdout.take().ok_or_else(|| "Go 后端 stdout 不可用".to_string())?;
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("启动 eucli-studio Go 后端失败: {e}"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "Go 后端 stdout 不可用".to_string())?;
     let mut reader = BufReader::new(stdout);
     let mut line = String::new();
-    reader.read_line(&mut line).map_err(|e| format!("读取 Go 后端 ready 信息失败: {e}"))?;
-    let ready: BackendReadyFrame = serde_json::from_str(line.trim()).map_err(|e| format!("解析 Go 后端 ready 信息失败: {e}"))?;
+    reader
+        .read_line(&mut line)
+        .map_err(|e| format!("读取 Go 后端 ready 信息失败: {e}"))?;
+    let ready: BackendReadyFrame = serde_json::from_str(line.trim())
+        .map_err(|e| format!("解析 Go 后端 ready 信息失败: {e}"))?;
     if ready.frame_type != "ready" || !ready.ipc.url.starts_with("ws://127.0.0.1:") {
         return Err("Go 后端 ready 信息无效".to_string());
     }
-    let endpoint = BackendEndpoint { url: ready.ipc.url, token };
-    *slot = Some(BackendProcess { child, endpoint: endpoint.clone() });
+    let endpoint = BackendEndpoint {
+        url: ready.ipc.url,
+        token,
+    };
+    *slot = Some(BackendProcess {
+        child,
+        endpoint: endpoint.clone(),
+    });
     Ok(endpoint)
 }
 
 fn stop_backend_process(state: &tauri::State<'_, BackendState>) -> Result<(), String> {
-    let mut guard = state.process.lock().map_err(|_| "后端状态锁已损坏".to_string())?;
+    let mut guard = state
+        .process
+        .lock()
+        .map_err(|_| "后端状态锁已损坏".to_string())?;
     if let Some(mut process) = guard.take() {
         let _ = process.child.kill();
         let _ = process.child.wait();
@@ -209,7 +272,9 @@ fn backend_binary_name() -> String {
 }
 
 fn backend_go_dir() -> Result<PathBuf, String> {
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("backend-go");
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("backend-go");
     if dir.is_dir() {
         Ok(dir)
     } else {
@@ -218,7 +283,10 @@ fn backend_go_dir() -> Result<PathBuf, String> {
 }
 
 fn create_session_token() -> String {
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
     format!("eucli-studio-{nanos}-{}", std::process::id())
 }
 
@@ -227,6 +295,15 @@ fn default_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .app_data_dir()
         .map(|dir| dir.join("data"))
         .map_err(|e| format!("读取默认数据目录失败: {e}"))
+}
+
+// env_data_dir 返回开发体验入口通过环境变量显式指定的客户端数据目录。
+// 正式客户端启动时不存在该环境变量，仍然使用设置或默认目录。
+fn env_data_dir() -> Option<PathBuf> {
+    std::env::var("FW_APP_DATA_DIR")
+        .ok()
+        .map(|value| PathBuf::from(value.trim()))
+        .filter(|path| !path.as_os_str().is_empty())
 }
 
 fn settings_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -242,7 +319,8 @@ fn load_data_dir_setting(app: &tauri::AppHandle) -> Result<Option<PathBuf>, Stri
         return Ok(None);
     }
     let text = std::fs::read_to_string(&path).map_err(|e| format!("读取数据目录配置失败: {e}"))?;
-    let value: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("解析数据目录配置失败: {e}"))?;
+    let value: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("解析数据目录配置失败: {e}"))?;
     let data_dir = value
         .get("dataDir")
         .and_then(|v| v.as_str())
@@ -259,14 +337,17 @@ fn save_data_dir_setting(app: &tauri::AppHandle, data_dir: &Path) -> Result<(), 
         std::fs::create_dir_all(parent).map_err(|e| format!("创建配置目录失败: {e}"))?;
     }
     let payload = serde_json::json!({ "dataDir": data_dir.display().to_string() });
-    let text = serde_json::to_string_pretty(&payload).map_err(|e| format!("序列化配置失败: {e}"))?;
+    let text =
+        serde_json::to_string_pretty(&payload).map_err(|e| format!("序列化配置失败: {e}"))?;
     std::fs::write(path, format!("{text}\n")).map_err(|e| format!("保存数据目录配置失败: {e}"))
 }
 
 fn ensure_writable_dir(path: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(path).map_err(|e| format!("数据目录不可创建: {} ({e})", path.display()))?;
+    std::fs::create_dir_all(path)
+        .map_err(|e| format!("数据目录不可创建: {} ({e})", path.display()))?;
     let test_path = path.join(WRITE_TEST_FILE);
-    std::fs::write(&test_path, b"ok").map_err(|e| format!("数据目录不可写: {} ({e})", path.display()))?;
+    std::fs::write(&test_path, b"ok")
+        .map_err(|e| format!("数据目录不可写: {} ({e})", path.display()))?;
     let _ = std::fs::remove_file(test_path);
     Ok(())
 }
@@ -285,9 +366,16 @@ fn main() {
             fw_initial_command,
             app_ready,
             hide_to_tray,
+            exit_app,
             data_dir_status,
             pick_data_dir
         ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .run(context)
         .expect("error while running AI Studio app");
 }

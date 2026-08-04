@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"strings"
 	"time"
@@ -76,33 +75,31 @@ func Verify(ctx context.Context, options VerifyOptions) (VerifyResult, error) {
 	if err != nil {
 		return VerifyResult{}, err
 	}
-	archivePayload, err := os.ReadFile(archivePath)
-	if err != nil {
-		return VerifyResult{}, fmt.Errorf("读取压缩包失败：%w", err)
-	}
-	if err := release.ValidateArchiveDigest(manifest, archivePayload); err != nil {
-		return VerifyResult{}, err
-	}
 	extracted := filepath.Join(workspace, "extracted")
-	if err := readZipToDirectory(archivePath, extracted); err != nil {
+	if err := os.MkdirAll(extracted, 0o755); err != nil {
 		return VerifyResult{}, err
 	}
-	if err := validatePackageBoundary(extracted, manifest.Artifact); err != nil {
+	archiveRecord, err := release.CollectFileRecords(filepath.Dir(archivePath))
+	if err != nil {
+		return VerifyResult{}, fmt.Errorf("读取压缩包资料失败：%w", err)
+	}
+	foundArchive := false
+	for _, record := range archiveRecord {
+		if record.Name == filepath.Base(archivePath) {
+			foundArchive = true
+			if record.Size != manifest.Archive.Size || record.SHA256 != manifest.Archive.SHA256 {
+				return VerifyResult{}, fmt.Errorf("压缩包完整性与发行清单不一致")
+			}
+		}
+	}
+	if !foundArchive {
+		return VerifyResult{}, fmt.Errorf("压缩包资料缺失")
+	}
+	if err := release.ExtractArchive(release.ExtractArchiveOptions{ArchivePath: archivePath, TargetDir: extracted}); err != nil {
+		return VerifyResult{}, err
+	}
+	if _, err := release.ValidateExtractedPackage(release.ValidateExtractedPackageOptions{Directory: extracted, Manifest: manifest}); err != nil {
 		return VerifyResult{}, fmt.Errorf("解包后的成品边界无效：%w", err)
-	}
-	if err := compareRecords(extracted, manifest.Files); err != nil {
-		return VerifyResult{}, err
-	}
-	productPayload, err := os.ReadFile(filepath.Join(extracted, "release-product.json"))
-	if err != nil {
-		return VerifyResult{}, err
-	}
-	product, err := release.DecodeReleaseProductRecord(productPayload)
-	if err != nil {
-		return VerifyResult{}, err
-	}
-	if product.Artifact != manifest.Artifact || product.Version != manifest.Version || product.Platform != manifest.Platform || product.OfficialSource != manifest.OfficialSource || product.DataVersion != manifest.DataVersion || !reflect.DeepEqual(product.ExternalAssets, manifest.ExternalAssets) {
-		return VerifyResult{}, fmt.Errorf("包内身份资料与发行清单不一致")
 	}
 	if err := launchCheck(ctx, manifest.Artifact, extracted, environmentDir, tempDir, evidenceDir, options.Timeout); err != nil {
 		return VerifyResult{}, err
@@ -118,24 +115,6 @@ func Verify(ctx context.Context, options VerifyOptions) (VerifyResult, error) {
 		return VerifyResult{}, err
 	}
 	return result, nil
-}
-
-func compareRecords(root string, expected []types.ReleaseFileRecord) error {
-	actual, err := recordsForDirectory(root)
-	if err != nil {
-		return err
-	}
-	if len(actual) != len(expected) {
-		return fmt.Errorf("解包后的文件数量与发行清单不一致")
-	}
-	for index := range expected {
-		left := actual[index]
-		right := expected[index]
-		if left != right {
-			return fmt.Errorf("文件完整性与发行清单不一致：%s", right.Name)
-		}
-	}
-	return nil
 }
 
 func launchCheck(parent context.Context, identity types.ReleaseArtifactIdentity, directory string, environment string, temp string, evidence string, timeout time.Duration) error {

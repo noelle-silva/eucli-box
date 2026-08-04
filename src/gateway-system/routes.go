@@ -1,6 +1,10 @@
 package gateway
 
 func (s *system) registerRoutes() {
+	if s.config.LocalRun {
+		s.mux.HandleFunc("GET /api/local-run", s.localAuthWrap(s.handleLocalRun))
+		s.mux.HandleFunc("POST /api/local-run/stop", s.localAuthWrap(s.handleLocalRunStop))
+	}
 	s.mux.HandleFunc("GET /api/release", s.authWrap(s.handleRelease))
 	s.mux.HandleFunc("GET /api/release-checks", s.authWrap(s.handleReleaseChecks))
 	s.mux.HandleFunc("POST /api/release-checks/refresh", s.authWrap(s.handleRefreshReleaseChecks))

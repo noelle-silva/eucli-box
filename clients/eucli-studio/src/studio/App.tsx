@@ -7,9 +7,12 @@ import { StandaloneWindowControls, type WindowControlActions } from '../ui/compo
 import type { AiChatController } from '../controller/types'
 import type { AiChatToastKind, AiChatToastOptions } from '../gateway/capabilities'
 import { AI_STUDIO_CHAT_ROOT_ID } from '../runtime/aiStudioGlobals'
-import { createAiChatAppRuntime, type AiChatAppRuntime, type EucliBoxConfig } from './aiChatAppHost'
+import { createAiChatAppRuntime, type AiChatAppRuntime } from './aiChatAppHost'
 import { compatibilityRangeText, type ReleaseCheckSnapshot, type StudioBootstrap } from '../domain/release'
 import { ReleaseChecksPanel } from '../ui/release/ReleaseChecksPanel'
+import { LocalBoxInstallPanel } from '../ui/local-box/LocalBoxInstallPanel'
+import { LocalBoxStatusPanel, localBoxStatusLabel } from '../ui/local-box/LocalBoxStatusPanel'
+import { localBoxSourceLabel } from '../domain/localBox'
 
 type DataDirStatus = {
   dataDir: string
@@ -42,7 +45,7 @@ function getTauriWindowSafe() {
 
 const TAURI_WINDOW = getTauriWindowSafe()
 
-const WINDOW_CONTROL_ACTIONS: WindowControlActions = {
+const BASE_WINDOW_CONTROL_ACTIONS: WindowControlActions = {
   minimize: () => TAURI_WINDOW?.minimize?.(),
   toggleMaximize: () => TAURI_WINDOW?.toggleMaximize?.(),
   closeToTray: () => TAURI_WINDOW ? invoke('hide_to_tray') : Promise.resolve(),
@@ -70,17 +73,15 @@ export function App() {
   const [controller, setController] = React.useState<AiChatController | null>(null)
   const [toast, setToast] = React.useState<ToastMessage | null>(null)
   const [launchInfo, setLaunchInfo] = React.useState<FwLaunchInfo>({ launched: false, standalone: true, mode: 'standalone' })
-  const [eucliBoxConfig, setEucliBoxConfig] = React.useState<EucliBoxConfig | null>(null)
-  const [eucliBoxUrlDraft, setEucliBoxUrlDraft] = React.useState('http://127.0.0.1:8765')
-  const [eucliBoxKeyDraft, setEucliBoxKeyDraft] = React.useState('')
-  const [eucliBoxConfigBusy, setEucliBoxConfigBusy] = React.useState(false)
   const [runtimeBootstrap, setRuntimeBootstrap] = React.useState<StudioBootstrap | null>(null)
   const [releaseCheckBusy, setReleaseCheckBusy] = React.useState(false)
+  const [localBoxBusy, setLocalBoxBusy] = React.useState(false)
   const runtimeRef = React.useRef<AiChatAppRuntime | null>(null)
   const runtimeVersionRef = React.useRef(0)
   const mountedRef = React.useRef(false)
   const toastSeqRef = React.useRef(0)
   const releaseCheckBusyRef = React.useRef(false)
+  const localBoxBusyRef = React.useRef(false)
 
   const showToast = React.useCallback((message: unknown, options?: AiChatToastOptions) => {
     const text = String((message as any)?.message || message || '').trim()
@@ -107,9 +108,11 @@ export function App() {
     runtimeRef.current?.dispose()
     runtimeRef.current = null
     setController(null)
-    setRuntimeBootstrap(null)
-    releaseCheckBusyRef.current = false
-    setReleaseCheckBusy(false)
+      setRuntimeBootstrap(null)
+      releaseCheckBusyRef.current = false
+      setReleaseCheckBusy(false)
+      localBoxBusyRef.current = false
+      setLocalBoxBusy(false)
     if (isCancelled()) return null
     const runtime = await createAiChatAppRuntime({
       showToast,
@@ -120,14 +123,12 @@ export function App() {
       return null
     }
     runtimeRef.current = runtime
+    runtime.subscribeLocalBoxState(state => {
+      if (runtimeVersionRef.current !== runtimeVersion || !mountedRef.current) return
+      setRuntimeBootstrap(current => current ? { ...current, localBox: state } : current)
+    })
     setController(runtime.controller)
     setRuntimeBootstrap(runtime.bootstrap)
-    const config = await runtime.getEucliBoxConfig().catch(() => null)
-    if (config && !isCancelled() && runtimeVersionRef.current === runtimeVersion) {
-      setEucliBoxConfig(config)
-      setEucliBoxUrlDraft(config.eucliBoxUrl || 'http://127.0.0.1:8765')
-      setEucliBoxKeyDraft(config.eucliBoxKey || '')
-    }
     setBootStatus('ready')
     setBootError('')
     return runtime
@@ -268,31 +269,6 @@ export function App() {
     }
   }
 
-  async function saveEucliBoxConfig(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const runtime = runtimeRef.current
-    if (!runtime || eucliBoxConfigBusy) return
-    const eucliBoxUrl = eucliBoxUrlDraft.trim().replace(/\/+$/, '')
-    const eucliBoxKey = eucliBoxKeyDraft.trim()
-    if (!eucliBoxUrl) {
-      showToast('请填写 eucli-box 地址', { kind: 'error' })
-      return
-    }
-    try {
-      setEucliBoxConfigBusy(true)
-      const config = await runtime.setEucliBoxConfig({ eucliBoxUrl, eucliBoxKey })
-      setEucliBoxConfig(config)
-      setEucliBoxUrlDraft(config.eucliBoxUrl || eucliBoxUrl)
-      setEucliBoxKeyDraft(config.eucliBoxKey || '')
-      showToast('eucli-box 连接配置已保存', { kind: 'success' })
-      await connectMountedBackend()
-    } catch (error: any) {
-      showToast(String(error?.message || error || '保存 eucli-box 连接配置失败'), { kind: 'error' })
-    } finally {
-      if (mountedRef.current) setEucliBoxConfigBusy(false)
-    }
-  }
-
   const refreshReleaseChecks = React.useCallback(async () => {
     const runtime = runtimeRef.current
     if (!runtime || releaseCheckBusyRef.current) return
@@ -332,12 +308,66 @@ export function App() {
     }
   }, [showToast])
 
+  const installLocalBox = React.useCallback(async () => {
+    const runtime = runtimeRef.current
+    if (!runtime || localBoxBusyRef.current) return
+    const runtimeVersion = runtimeVersionRef.current
+    localBoxBusyRef.current = true
+    setLocalBoxBusy(true)
+    try {
+      const currentState = runtimeRef.current ? await runtime.getLocalBoxStatus() : null
+      const state = currentState?.installed
+        ? currentState
+        : await runtime.installLocalBox()
+      if (runtimeVersionRef.current !== runtimeVersion || !mountedRef.current) return
+      setRuntimeBootstrap(current => current ? { ...current, localBox: state } : current)
+      if (state.connected) await connectMountedBackend()
+    } catch (error: any) {
+      if (runtimeVersionRef.current !== runtimeVersion || !mountedRef.current) return
+      showToast(String(error?.message || error || '安装业务端失败'), { kind: 'error' })
+    } finally {
+      if (runtimeVersionRef.current === runtimeVersion && mountedRef.current) {
+        localBoxBusyRef.current = false
+        setLocalBoxBusy(false)
+      }
+    }
+  }, [connectMountedBackend, showToast])
+
+  const trueExit = React.useCallback(async () => {
+    const runtime = runtimeRef.current
+    if (!runtime || localBoxBusyRef.current) return
+    try {
+      localBoxBusyRef.current = true
+      setLocalBoxBusy(true)
+      const state = await runtime.exitLocalBox()
+      setRuntimeBootstrap(current => current ? { ...current, localBox: state } : current)
+      if (state.status !== 'stopped') {
+        const message = state.error.message || '业务端没有确认停止，窗口保持打开。'
+        showToast(message, { kind: 'error' })
+        return
+      }
+      await invoke('exit_app')
+    } catch (error: any) {
+      showToast(String(error?.message || error || '真正退出失败'), { kind: 'error' })
+    } finally {
+      if (mountedRef.current) {
+        localBoxBusyRef.current = false
+        setLocalBoxBusy(false)
+      }
+    }
+  }, [showToast])
+
+  const windowControlActions = React.useMemo<WindowControlActions>(() => ({
+    ...BASE_WINDOW_CONTROL_ACTIONS,
+    trueExit,
+  }), [trueExit])
+
   const runtimeBootstrapIssue = bootStatus === 'ready' && runtimeBootstrap && !runtimeBootstrap.businessAvailable
     ? runtimeBootstrap.eucliBoxIssue
     : ''
   const issue = bootError || dataDirStatus?.error || (dataDirStatus && !dataDirStatus.writable ? '数据目录不可写' : '')
   const needsEucliBoxConnection = bootStatus === 'ready' && !!runtimeBootstrap && !runtimeBootstrap.businessAvailable
-  const canRenderChatApp = !!controller && bootStatus === 'ready' && runtimeBootstrap?.businessAvailable === true && !issue
+  const canRenderChatApp = !!controller && bootStatus === 'ready' && runtimeBootstrap?.businessAvailable === true && runtimeBootstrap.localBox.connected && !issue
 
   return (
     <div className="appShell">
@@ -354,25 +384,21 @@ export function App() {
             }}
              windowControls={{
               standalone: launchInfo.standalone,
-               actions: WINDOW_CONTROL_ACTIONS,
+                actions: windowControlActions,
              }}
              releaseCheckBusy={releaseCheckBusy}
              onRefreshReleaseChecks={refreshReleaseChecks}
            />
         </div>
       ) : needsEucliBoxConnection ? (
-        <EucliBoxConfigScreen
+        <LocalBoxGateScreen
           standalone={launchInfo.standalone}
-          windowControlActions={WINDOW_CONTROL_ACTIONS}
-          urlDraft={eucliBoxUrlDraft}
-          keyDraft={eucliBoxKeyDraft}
-          busy={eucliBoxConfigBusy}
+          windowControlActions={windowControlActions}
+          busy={localBoxBusy}
           issue={runtimeBootstrapIssue}
           bootstrap={runtimeBootstrap}
           releaseCheckBusy={releaseCheckBusy}
-          onUrlChange={setEucliBoxUrlDraft}
-          onKeyChange={setEucliBoxKeyDraft}
-          onSubmit={saveEucliBoxConfig}
+          onInstall={installLocalBox}
           onRefreshReleaseChecks={refreshReleaseChecks}
         />
       ) : (
@@ -381,7 +407,7 @@ export function App() {
           issue={issue || ''}
           pendingCommand={commandLabel(pendingCommand)}
           standalone={launchInfo.standalone}
-          windowControlActions={WINDOW_CONTROL_ACTIONS}
+          windowControlActions={windowControlActions}
           onPickDataDir={pickDataDir}
         />
       )}
@@ -398,21 +424,18 @@ function normalizeLaunchInfo(raw: FwLaunchInfo): FwLaunchInfo {
   }
 }
 
-function EucliBoxConfigScreen(props: {
+function LocalBoxGateScreen(props: {
   standalone: boolean
   windowControlActions: WindowControlActions
-  urlDraft: string
-  keyDraft: string
   busy: boolean
   issue: string
   bootstrap: StudioBootstrap
   releaseCheckBusy: boolean
-  onUrlChange: (value: string) => void
-  onKeyChange: (value: string) => void
-  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void
+  onInstall: () => Promise<void> | void
   onRefreshReleaseChecks: () => Promise<void> | void
 }) {
-  const { standalone, windowControlActions, urlDraft, keyDraft, busy, issue, bootstrap, releaseCheckBusy, onUrlChange, onKeyChange, onSubmit, onRefreshReleaseChecks } = props
+  const { standalone, windowControlActions, busy, issue, bootstrap, releaseCheckBusy, onInstall, onRefreshReleaseChecks } = props
+  const localBox = bootstrap.localBox
   const onTopbarPointerDown = React.useCallback((event: React.PointerEvent<HTMLElement>) => {
     if (event.button !== 0) return
     const target = event.target
@@ -428,32 +451,33 @@ function EucliBoxConfigScreen(props: {
         {standalone ? <StandaloneWindowControls actions={windowControlActions} /> : null}
       </header>
       <section className="bootFallbackCard eucliConfigCard">
-        <div className="bootFallbackTitle">连接 eucli-box</div>
+        <div className="bootFallbackTitle">安装并连接业务端</div>
         <dl className="releaseFacts">
           <div><dt>客户端版本</dt><dd>{bootstrap.clientVersion || '版本资料无效'}</dd></div>
           <div><dt>所需本体范围</dt><dd>{compatibilityRangeText(bootstrap.clientEucliBoxCompatibility)}</dd></div>
-          <div><dt>本体版本</dt><dd>{bootstrap.eucliBoxVersion || (bootstrap.eucliBoxReachable ? '版本资料无效' : '尚未读取')}</dd></div>
-          <div><dt>连接状态</dt><dd data-compatible={bootstrap.businessAvailable ? 'true' : 'false'}>{bootstrap.businessAvailable ? '适用' : bootstrap.eucliBoxReachable ? '不适用' : '未连接'}</dd></div>
+          <div><dt>业务端状态</dt><dd data-compatible={localBox.connected ? 'true' : 'false'}>{localBoxStatusLabel(localBox.status)}</dd></div>
+          <div><dt>业务端来源</dt><dd data-source={localBox.source}>{localBoxSourceLabel(localBox.source)}</dd></div>
+          <div><dt>业务端版本</dt><dd>{localBox.currentVersion || localBox.latestVersion || '尚未安装'}</dd></div>
+          <div><dt>下载大小</dt><dd>{localBox.downloadSize > 0 ? formatLocalBoxBytes(localBox.downloadSize) : '未知'}</dd></div>
         </dl>
+        <LocalBoxStatusPanel state={localBox} />
+        <LocalBoxInstallPanel state={localBox} busy={busy} onInstall={onInstall} />
         {issue ? <div className="bootFallbackIssue">{issue}</div> : null}
         <div className="eucliReleaseChecks">
           <ReleaseChecksPanel snapshot={bootstrap.releaseChecks} busy={releaseCheckBusy} onRefresh={onRefreshReleaseChecks} compact />
         </div>
-        <form className="eucliConfigForm" onSubmit={onSubmit}>
-          <label className="eucliConfigLabel">
-            <span>Gateway 地址</span>
-            <input value={urlDraft} onChange={event => onUrlChange(event.target.value)} placeholder="http://127.0.0.1:8765" disabled={busy} />
-          </label>
-          <label className="eucliConfigLabel">
-            <span>Key</span>
-            <input value={keyDraft} onChange={event => onKeyChange(event.target.value)} placeholder="如未启用 key 可留空" disabled={busy} type="password" />
-          </label>
-          <button type="submit" disabled={busy}>{busy ? '保存中…' : '保存并重新连接'}</button>
-        </form>
       </section>
     </main>
   )
 }
+
+function formatLocalBoxBytes(value: number) {
+  if (value < 1024) return `${Math.round(value)} B`
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
+  if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`
+  return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`
+}
+
 
 function BootFallback(props: {
   status: BootStatus

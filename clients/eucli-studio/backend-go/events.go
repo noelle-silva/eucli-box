@@ -98,11 +98,11 @@ func (b *eventBridge) run(ctx context.Context) {
 }
 
 func (b *eventBridge) connectOnce(ctx context.Context) error {
-	cfg, err := b.service.config.requireConfigured()
+	connection, err := b.service.currentBoxConnection()
 	if err != nil {
 		return err
 	}
-	target, err := url.Parse(strings.TrimRight(cfg.EucliBoxURL, "/") + "/ws/events")
+	target, err := url.Parse(strings.TrimRight(connection.BaseURL, "/") + "/ws/events")
 	if err != nil {
 		return err
 	}
@@ -112,8 +112,8 @@ func (b *eventBridge) connectOnce(ctx context.Context) error {
 		target.Scheme = "wss"
 	}
 	header := http.Header{}
-	if cfg.EucliBoxKey != "" {
-		header.Set("Authorization", "Bearer "+cfg.EucliBoxKey)
+	if connection.Credential != "" {
+		header.Set("Authorization", "Bearer "+connection.Credential)
 	}
 	b.service.release.applyHeaders(header)
 	conn, _, err := websocket.DefaultDialer.DialContext(ctx, target.String(), header)

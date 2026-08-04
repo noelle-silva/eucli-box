@@ -8,6 +8,7 @@ import (
 const directProtocolVersion = 2
 
 const directEventChatUpdated = "aiChat.chat.updated"
+const directEventLocalBoxState = "localBox.state"
 
 type requestFrame struct {
 	ID     string          `json:"id"`

@@ -13,13 +13,18 @@ import (
 )
 
 type ebClient struct {
-	config  *configStore
-	release clientRelease
-	http    *http.Client
+	config             *configStore
+	release            clientRelease
+	http               *http.Client
+	connectionProvider func() (*boxConnection, error)
 }
 
 func newEBClient(config *configStore, release clientRelease) *ebClient {
 	return &ebClient{config: config, release: release, http: &http.Client{Timeout: 120 * time.Second}}
+}
+
+func (c *ebClient) setConnectionProvider(provider func() (*boxConnection, error)) {
+	c.connectionProvider = provider
 }
 
 type ebRequest struct {
@@ -31,7 +36,7 @@ type ebRequest struct {
 }
 
 func (c *ebClient) request(ctx context.Context, req ebRequest) (any, error) {
-	cfg, err := c.config.requireConfigured()
+	connection, err := c.connection()
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +52,7 @@ func (c *ebClient) request(ctx context.Context, req ebRequest) (any, error) {
 		return nil, newError("BAD_REQUEST", "websocket paths are not valid HTTP request targets")
 	}
 
-	target, err := url.Parse(cfg.EucliBoxURL + path)
+	target, err := url.Parse(strings.TrimRight(connection.BaseURL, "/") + path)
 	if err != nil {
 		return nil, err
 	}
@@ -82,8 +87,8 @@ func (c *ebClient) request(ctx context.Context, req ebRequest) (any, error) {
 	if body != nil {
 		httpReq.Header.Set("Content-Type", "application/json")
 	}
-	if cfg.EucliBoxKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+cfg.EucliBoxKey)
+	if connection.Credential != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+connection.Credential)
 	}
 	c.release.applyHeaders(httpReq.Header)
 
@@ -113,6 +118,17 @@ func (c *ebClient) request(ctx context.Context, req ebRequest) (any, error) {
 		}
 	}
 	return decoded, nil
+}
+
+func (c *ebClient) connection() (*boxConnection, error) {
+	if c.connectionProvider != nil {
+		return c.connectionProvider()
+	}
+	cfg, err := c.config.requireConfigured()
+	if err != nil {
+		return nil, err
+	}
+	return &boxConnection{Source: boxConnectionSourceManual, BaseURL: cfg.EucliBoxURL, Credential: cfg.EucliBoxKey}, nil
 }
 
 func responseDetails(resp *http.Response, payload []byte) map[string]any {

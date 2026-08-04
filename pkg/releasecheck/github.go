@@ -32,8 +32,47 @@ type githubReleaseAsset struct {
 }
 
 type releaseCandidate struct {
-	release  githubRelease
-	manifest types.ReleaseManifest
+	release       githubRelease
+	manifest      types.ReleaseManifest
+	archive       githubReleaseAsset
+	manifestAsset githubReleaseAsset
+}
+
+type ReleaseCandidate struct {
+	Artifact     types.ReleaseArtifactIdentity
+	Manifest     types.ReleaseManifest
+	ReleaseURL   string
+	ManifestURL  string
+	ManifestSize int64
+	ArchiveURL   string
+	ReleaseNotes string
+}
+
+func (c *Checker) LatestCandidate(ctx context.Context, identity types.ReleaseArtifactIdentity) (*ReleaseCandidate, error) {
+	if !c.catalog.Contains(identity) {
+		return nil, fmt.Errorf("发布物不在正式白名单中")
+	}
+	source, err := c.catalog.SourceFor(identity.Kind)
+	if err != nil {
+		return nil, err
+	}
+	releases, err := c.readRepositoryReleases(ctx, source)
+	if err != nil {
+		return nil, err
+	}
+	candidate, err := c.latestCandidate(ctx, source, identity, releases)
+	if err != nil || candidate == nil {
+		return nil, err
+	}
+	return &ReleaseCandidate{
+		Artifact:     identity,
+		Manifest:     candidate.manifest,
+		ReleaseURL:   candidate.release.HTMLURL,
+		ManifestURL:  candidate.manifestAsset.BrowserDownloadURL,
+		ManifestSize: candidate.manifestAsset.Size,
+		ArchiveURL:   candidate.archive.BrowserDownloadURL,
+		ReleaseNotes: strings.TrimSpace(candidate.release.Body),
+	}, nil
 }
 
 func (c *Checker) readRepositoryReleases(ctx context.Context, source types.OfficialReleaseSource) ([]githubRelease, error) {
@@ -104,10 +143,13 @@ func (c *Checker) latestCandidate(ctx context.Context, source types.OfficialRele
 		if err != nil {
 			return nil, fmt.Errorf("%s 官方发行 %q 的成品文件异常：%w", identity.ID, item.TagName, err)
 		}
+		if err := c.validateArchiveURL(source, archiveAsset.BrowserDownloadURL); err != nil {
+			return nil, fmt.Errorf("%s 官方发行 %q 的成品地址无效：%w", identity.ID, item.TagName, err)
+		}
 		if archiveAsset.Size != manifest.Archive.Size {
 			return nil, fmt.Errorf("%s 官方发行 %q 的成品大小与清单不一致", identity.ID, item.TagName)
 		}
-		candidate := &releaseCandidate{release: item, manifest: manifest}
+		candidate := &releaseCandidate{release: item, manifest: manifest, archive: archiveAsset, manifestAsset: manifestAsset}
 		if latest == nil {
 			latest = candidate
 			continue
@@ -209,6 +251,24 @@ func (c *Checker) validateAssetURL(source types.OfficialReleaseSource, value str
 			return nil
 		}
 		return fmt.Errorf("隔离检查地址越过本次官方来源服务")
+	}
+	prefix := strings.TrimSuffix(source.Repository, "/") + "/releases/download/"
+	if !strings.HasPrefix(value, prefix) {
+		return fmt.Errorf("下载地址不是固定官方仓库")
+	}
+	return nil
+}
+
+func (c *Checker) validateArchiveURL(source types.OfficialReleaseSource, value string) error {
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(c.apiBaseURL, "http://127.0.0.1:") {
+		if err := c.validateAssetURL(source, value); err == nil {
+			return nil
+		}
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+		return fmt.Errorf("下载地址无效")
 	}
 	prefix := strings.TrimSuffix(source.Repository, "/") + "/releases/download/"
 	if !strings.HasPrefix(value, prefix) {

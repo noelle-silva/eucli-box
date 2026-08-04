@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"eucli-box/pkg/releasecheck"
 )
@@ -35,11 +36,19 @@ func run() error {
 		return err
 	}
 	hub := newEventHub()
-	checker, err := releasecheck.New(releasecheck.Config{})
+	source, checker, devBoxRoot, err := resolveLocalBoxSource()
 	if err != nil {
 		return err
 	}
-	svc, err := newService(store, release, hub, checker)
+	if source == nil {
+		officialChecker, err := releasecheck.New(releasecheck.Config{})
+		if err != nil {
+			return err
+		}
+		checker = officialChecker
+		source = &officialArtifactSource{checker: officialChecker}
+	}
+	svc, err := newService(store, release, hub, source, checker, devBoxRoot)
 	if err != nil {
 		return err
 	}
@@ -47,5 +56,22 @@ func run() error {
 	defer stop()
 	svc.startStandaloneReleaseCheck(ctx)
 	go newEventBridge(svc, hub).run(ctx)
-	return newDirectServer(token, svc, hub).listenAndServe(ctx)
+	serverErr := newDirectServer(token, svc, hub).listenAndServe(ctx)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	if shutdownErr := svc.shutdownLocalBox(shutdownCtx); shutdownErr != nil && serverErr == nil {
+		return shutdownErr
+	}
+	return serverErr
+}
+
+// resolveLocalBoxSource 根据开发体验入口的环境变量显式建立成品来源。
+// 没有开发来源标记时返回 nil，由调用方建立官方来源；
+// 有开发来源标记时即使资料缺失也返回开发来源，让客户端直接报告开发成品不可用，
+// 绝不回退到读取官方旧正式版。
+func resolveLocalBoxSource() (localBoxArtifactSource, releaseChecker, string, error) {
+	if strings.TrimSpace(os.Getenv(devSourceEnvironment)) != devSourceEnabled {
+		return nil, nil, "", nil
+	}
+	return newDevelopmentArtifactSource(os.Getenv(devManifestEnvironment), os.Getenv(devArchiveEnvironment)), nil, strings.TrimSpace(os.Getenv(devBoxRootEnvironment)), nil
 }

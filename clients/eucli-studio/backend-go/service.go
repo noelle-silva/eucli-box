@@ -16,6 +16,7 @@ import (
 
 type releaseChecker interface {
 	CheckOnly(ctx context.Context, installed []releasecheck.InstalledArtifact, currentBoxVersion string, requested []types.ReleaseArtifactIdentity) types.ReleaseCheckSnapshot
+	LatestCandidate(ctx context.Context, identity types.ReleaseArtifactIdentity) (*releasecheck.ReleaseCandidate, error)
 }
 
 type service struct {
@@ -27,26 +28,34 @@ type service struct {
 	hub                 *eventHub
 	connectionMu        sync.RWMutex
 	connectionState     *runtimeBootstrap
+	businessConnection  *boxConnection
 	connectionChanged   chan struct{}
+	localBox            *localBoxManager
+	shutdownMu          sync.RWMutex
+	shutdown            func()
 	releaseChecker      releaseChecker
 	releaseCheckMu      sync.RWMutex
 	releaseChecks       types.ReleaseCheckSnapshot
 	releaseCheckRunning bool
 }
 
-func newService(config *configStore, release clientRelease, hub *eventHub, checker releaseChecker) (*service, error) {
+func newService(config *configStore, release clientRelease, hub *eventHub, source localBoxArtifactSource, checker releaseChecker, devBoxRoot string) (*service, error) {
 	if config == nil {
 		return nil, errors.New("eucli-studio config store is required")
 	}
-	if checker == nil {
-		return nil, errors.New("eucli-studio release checker is required")
-	}
 	eb := newEBClient(config, release)
-	return &service{
+	paths, err := newLocalBoxPathsWithRoot(filepath.Dir(config.path), devBoxRoot)
+	if err != nil {
+		return nil, err
+	}
+	service := &service{
 		config: config, release: release, eb: eb, projection: newProjectionService(config, eb), runtime: newRuntimeStore(), hub: hub,
 		connectionChanged: make(chan struct{}, 1), releaseChecker: checker,
 		releaseChecks: releasecheck.PendingSnapshot(),
-	}, nil
+	}
+	eb.setConnectionProvider(service.currentBoxConnection)
+	service.localBox = newLocalBoxManager(paths, source, service.publishLocalBoxState, service.setLocalBoxConnection, service.clearLocalBoxConnection)
+	return service, nil
 }
 
 func (s *service) dispatch(ctx context.Context, method string, params json.RawMessage) (any, error) {
@@ -56,6 +65,12 @@ func (s *service) dispatch(ctx context.Context, method string, params json.RawMe
 		return map[string]any{"protocolVersion": directProtocolVersion, "clientVersion": s.release.Version, "status": "ok", "configured": cfg.EucliBoxURL != ""}, nil
 	case "studio.bootstrap":
 		return s.bootstrap(ctx)
+	case "localBox.status":
+		return s.localBoxStatus(ctx)
+	case "localBox.install":
+		return s.localBoxInstall(ctx)
+	case "localBox.exit":
+		return s.localBoxExit(ctx)
 	case "releaseChecks.refresh":
 		return s.refreshReleaseChecks(ctx)
 	case "eucli.config.get":
@@ -137,7 +152,86 @@ func (s *service) dispatch(ctx context.Context, method string, params json.RawMe
 	}
 }
 
+func (s *service) localBoxStatus(ctx context.Context) (localBoxState, error) {
+	if s.localBox == nil {
+		return initialLocalBoxState(), nil
+	}
+	return s.localBox.status(ctx)
+}
+
+func (s *service) localBoxInstall(ctx context.Context) (localBoxState, error) {
+	if s.localBox == nil {
+		return initialLocalBoxState(), newError("LOCAL_BOX_INSTALL_FAILED", "本机业务端职责未初始化")
+	}
+	return s.localBox.install(ctx)
+}
+
+func (s *service) localBoxExit(ctx context.Context) (localBoxState, error) {
+	if s.localBox == nil {
+		state := initialLocalBoxState()
+		state.Status = localBoxStatusStopped
+		return state, nil
+	}
+	state, err := s.localBox.stop(ctx)
+	if err == nil && state.Status == localBoxStatusStopped {
+		s.requestShutdown()
+	}
+	return state, err
+}
+
+func (s *service) setLocalBoxConnection(connection *boxConnection) {
+	s.connectionMu.Lock()
+	s.businessConnection = connection
+	s.connectionMu.Unlock()
+	s.signalConnectionChanged()
+}
+
+func (s *service) clearLocalBoxConnection() {
+	s.connectionMu.Lock()
+	s.businessConnection = nil
+	if s.connectionState != nil {
+		state := *s.connectionState
+		state.BusinessAvailable = false
+		state.EucliBoxIssue = "LOCAL_BOX_START_FAILED: 受托业务端连接已断开"
+		s.connectionState = &state
+	}
+	s.connectionMu.Unlock()
+	s.signalConnectionChanged()
+}
+
+func (s *service) publishLocalBoxState(state localBoxState) {
+	if s.hub != nil {
+		s.hub.broadcast(eventFrame{Type: "event", Name: directEventLocalBoxState, Payload: state})
+	}
+}
+
+func (s *service) shutdownLocalBox(ctx context.Context) error {
+	if s.localBox == nil {
+		return nil
+	}
+	_, err := s.localBox.stop(ctx)
+	return err
+}
+
+func (s *service) setShutdown(fn func()) {
+	s.shutdownMu.Lock()
+	s.shutdown = fn
+	s.shutdownMu.Unlock()
+}
+
+func (s *service) requestShutdown() {
+	s.shutdownMu.RLock()
+	shutdown := s.shutdown
+	s.shutdownMu.RUnlock()
+	if shutdown != nil {
+		go shutdown()
+	}
+}
+
 func (s *service) startStandaloneReleaseCheck(ctx context.Context) {
+	if s.releaseChecker == nil {
+		return
+	}
 	cfg, err := s.config.load()
 	if err != nil || strings.TrimSpace(cfg.EucliBoxURL) != "" {
 		return
@@ -160,6 +254,9 @@ func (s *service) startStandaloneReleaseCheck(ctx context.Context) {
 }
 
 func (s *service) refreshReleaseChecks(ctx context.Context) (types.ReleaseCheckSnapshot, error) {
+	if s.releaseChecker == nil {
+		return s.releaseCheckSnapshot(), nil
+	}
 	state := s.connectionSnapshot()
 	if state != nil && state.EucliBoxReachable {
 		raw, err := s.eb.request(ctx, ebRequest{Method: "POST", Path: "/api/release-checks/refresh", Timeout: 30000})
@@ -177,6 +274,9 @@ func (s *service) refreshReleaseChecks(ctx context.Context) (types.ReleaseCheckS
 }
 
 func (s *service) checkBoxOfficialSource(ctx context.Context) types.ReleaseCheckSnapshot {
+	if s.releaseChecker == nil {
+		return releasecheck.PendingSnapshot()
+	}
 	return s.releaseChecker.CheckOnly(ctx, nil, "", []types.ReleaseArtifactIdentity{{Kind: types.ReleaseArtifactKindBox, ID: types.ReleaseArtifactKindBox}})
 }
 

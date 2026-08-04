@@ -18,7 +18,7 @@ func testClientRelease() clientRelease {
 }
 
 func newBusinessReadyTestService(config *configStore, hub *eventHub) *service {
-	svc, err := newService(config, testClientRelease(), hub, fakeClientReleaseChecker{})
+	svc, err := newService(config, testClientRelease(), hub, nil, fakeClientReleaseChecker{}, "")
 	if err != nil {
 		panic(err)
 	}
@@ -35,4 +35,8 @@ func (f fakeClientReleaseChecker) CheckOnly(context.Context, []releasecheck.Inst
 		return releasecheck.PendingSnapshot()
 	}
 	return f.snapshot
+}
+
+func (f fakeClientReleaseChecker) LatestCandidate(context.Context, types.ReleaseArtifactIdentity) (*releasecheck.ReleaseCandidate, error) {
+	return nil, nil
 }

@@ -93,11 +93,11 @@ func TestBootstrapRequiresCompatibleEucliBox(t *testing.T) {
 				_ = json.NewEncoder(w).Encode(map[string]any{"data": test.response})
 			}))
 			defer server.Close()
-			svc, err := newService(configuredTestStore(t, server.URL), testClientRelease(), nil, fakeClientReleaseChecker{})
+			svc, err := newService(configuredTestStore(t, server.URL), testClientRelease(), nil, nil, fakeClientReleaseChecker{}, "")
 			if err != nil {
 				t.Fatalf("newService() error = %v", err)
 			}
-			info, err := svc.bootstrap(context.Background())
+			info, err := svc.bootstrapConnected(context.Background(), runtimeBootstrap{})
 			if err != nil {
 				t.Fatalf("bootstrap() error = %v", err)
 			}
@@ -116,7 +116,7 @@ func TestBusinessMethodsRequireSuccessfulBootstrap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newConfigStore() error = %v", err)
 	}
-	svc, err := newService(store, testClientRelease(), nil, fakeClientReleaseChecker{})
+	svc, err := newService(store, testClientRelease(), nil, nil, fakeClientReleaseChecker{}, "")
 	if err != nil {
 		t.Fatalf("newService() error = %v", err)
 	}

@@ -23,13 +23,17 @@ func newDirectServer(token string, service *service, hub *eventHub) *directServe
 }
 
 func (s *directServer) listenAndServe(ctx context.Context) error {
+	serverContext, cancel := context.WithCancel(ctx)
+	defer cancel()
+	s.service.setShutdown(cancel)
+	defer s.service.setShutdown(nil)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return err
 	}
 	server := &http.Server{Handler: s}
 	go func() {
-		<-ctx.Done()
+		<-serverContext.Done()
 		_ = server.Close()
 	}()
 	addr := listener.Addr().(*net.TCPAddr)
@@ -79,6 +83,9 @@ func (s *directServer) handleConnection(conn *directConnection) {
 			continue
 		}
 		_ = conn.writeJSON(okResponse(frame.ID, result))
+		if frame.Method == "localBox.exit" {
+			s.service.requestShutdown()
+		}
 	}
 }
 

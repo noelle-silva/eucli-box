@@ -6,7 +6,9 @@ import { createDirectCapabilitiesAdapter } from '../direct/createDirectCapabilit
 import { createAiChatCapabilitiesFromHostApi, type AiChatShowToast } from '../gateway/capabilities'
 import { AI_CHAT_DIRECT_PROTOCOL_VERSION } from '../protocol/aiChatProtocol'
 import { AI_STUDIO_APP_ID, AI_STUDIO_CONTROLLER_KEY } from '../runtime/aiStudioGlobals'
+import { normalizeLocalBoxState, type LocalBoxState } from '../domain/localBox'
 import { normalizeReleaseCheckSnapshot, normalizeStudioBootstrap, type ReleaseCheckSnapshot, type StudioBootstrap } from '../domain/release'
+import { AI_CHAT_DIRECT_METHOD } from '../protocol/aiChatProtocol'
 
 type BackendEndpoint = {
   url: string
@@ -20,6 +22,10 @@ export type AiChatAppRuntime = {
   setEucliBoxConfig: (config: EucliBoxConfigInput) => Promise<EucliBoxConfig>
   getBootstrap: () => Promise<StudioBootstrap>
   refreshReleaseChecks: () => Promise<ReleaseCheckSnapshot>
+  getLocalBoxStatus: () => Promise<LocalBoxState>
+  installLocalBox: () => Promise<LocalBoxState>
+  exitLocalBox: () => Promise<LocalBoxState>
+  subscribeLocalBoxState: (listener: (state: LocalBoxState) => void) => () => void
   dispose: () => void
 }
 
@@ -42,7 +48,7 @@ export async function createAiChatAppRuntime(options: AiChatAppHostOptions): Pro
   const baseApi = createAiStudioHostApi(options)
   const { api, directClient } = await createDirectCapabilitiesAdapter(baseApi)
   const bootstrap = normalizeStudioBootstrap(await directClient.invoke('studio.bootstrap'))
-  const created = bootstrap.businessAvailable
+  const created = bootstrap.businessAvailable && bootstrap.localBox.connected
     ? createAiChatControllerV2({ capabilities: createAiChatCapabilitiesFromHostApi(api, AI_STUDIO_APP_ID) })
     : null
   const controller = created?.controller || null
@@ -59,6 +65,13 @@ export async function createAiChatAppRuntime(options: AiChatAppHostOptions): Pro
     setEucliBoxConfig: (config) => directClient.invoke<EucliBoxConfig>('eucli.config.set', config),
     getBootstrap: async () => normalizeStudioBootstrap(await directClient.invoke('studio.bootstrap')),
     refreshReleaseChecks: async () => normalizeReleaseCheckSnapshot(await directClient.invoke('releaseChecks.refresh')),
+    getLocalBoxStatus: async () => normalizeLocalBoxState(await directClient.invoke(AI_CHAT_DIRECT_METHOD.localBoxStatus)),
+    installLocalBox: async () => normalizeLocalBoxState(await directClient.invoke(AI_CHAT_DIRECT_METHOD.localBoxInstall, {}, { timeoutMs: 10 * 60 * 1000 })),
+    exitLocalBox: async () => normalizeLocalBoxState(await directClient.invoke(AI_CHAT_DIRECT_METHOD.localBoxExit, {}, { timeoutMs: 45_000 })),
+    subscribeLocalBoxState: listener => directClient.subscribe(event => {
+      if (event.name !== 'localBox.state') return
+      listener(normalizeLocalBoxState(event.payload))
+    }),
     dispose() {
       try {
         if (controller && (window as any)[AI_STUDIO_CONTROLLER_KEY] === controller) {

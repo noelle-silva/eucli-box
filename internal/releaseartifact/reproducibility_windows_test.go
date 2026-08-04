@@ -20,7 +20,7 @@ func TestBuildProducesSameArtifactFromSameSource(t *testing.T) {
 			OutputRoot:       root + "\\output",
 			EvidenceRoot:     root + "\\evidence",
 			VerificationOnly: true,
-			AssetCacheRoot:   root + "\\asset-cache",
+			AssetRoot:        root + "\\assets",
 		})
 		if err != nil {
 			t.Fatalf("build artifact %d: %v", index+1, err)

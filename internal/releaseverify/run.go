@@ -1,10 +1,13 @@
 package releaseverify
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"eucli-box/pkg/workspace"
 )
 
 type runPaths struct {
@@ -15,6 +18,7 @@ type runPaths struct {
 	temp        string
 	cache       string
 	evidence    string
+	sharedCache string
 }
 
 const (
@@ -31,7 +35,7 @@ type cleanupEntry struct {
 }
 
 func prepareRun(repositoryRoot string, runRoot string, stage string) (runPaths, error) {
-	repositoryRoot, err := existingDirectory(repositoryRoot, "仓库根目录")
+	repositoryRoot, err := existingPlainDirectory(repositoryRoot, "仓库根目录")
 	if err != nil {
 		return runPaths{}, err
 	}
@@ -39,9 +43,12 @@ func prepareRun(repositoryRoot string, runRoot string, stage string) (runPaths, 
 	if err != nil || strings.TrimSpace(runRoot) == "" {
 		return runPaths{}, fmt.Errorf("验证运行目录无效")
 	}
-	expectedParent := filepath.Join(repositoryRoot, ".release", "verification", "stage-"+stage)
+	expectedParent := workspace.VerificationStageRoot(repositoryRoot, stage)
 	if !pathWithin(expectedParent, runRoot) || samePath(expectedParent, runRoot) || !strings.HasPrefix(filepath.Base(runRoot), "run-") {
 		return runPaths{}, fmt.Errorf("验证运行目录必须位于 %s 的独立 run-* 目录中", expectedParent)
+	}
+	if err := ensurePlainDirectoryPath(repositoryRoot, runRoot, "验证运行目录"); err != nil {
+		return runPaths{}, err
 	}
 	if _, err := os.Stat(runRoot); err == nil {
 		entries, readErr := os.ReadDir(runRoot)
@@ -67,9 +74,10 @@ func prepareRun(repositoryRoot string, runRoot string, stage string) (runPaths, 
 		temp:        filepath.Join(runRoot, "temp"),
 		cache:       filepath.Join(runRoot, "cache"),
 		evidence:    filepath.Join(runRoot, "evidence"),
+		sharedCache: workspace.VerificationCacheRoot(repositoryRoot),
 	}
-	for _, path := range []string{paths.root, paths.inputs, paths.workspace, paths.environment, paths.temp, paths.cache, paths.evidence} {
-		if err := os.MkdirAll(path, 0o755); err != nil {
+	for _, path := range []string{paths.inputs, paths.workspace, paths.environment, paths.temp, paths.cache, paths.evidence, paths.sharedCache} {
+		if err := ensurePlainDirectoryPath(repositoryRoot, path, "验证资料目录"); err != nil {
 			return runPaths{}, err
 		}
 	}
@@ -135,19 +143,95 @@ func cleanupEntryNames(entries []cleanupEntry) []string {
 	return names
 }
 
-func existingDirectory(value string, label string) (string, error) {
+func existingPlainDirectory(value string, label string) (string, error) {
 	absolute, err := filepath.Abs(strings.TrimSpace(value))
 	if err != nil || strings.TrimSpace(value) == "" {
 		return "", fmt.Errorf("%s无效", label)
 	}
-	info, err := os.Stat(absolute)
-	if err != nil {
+	absolute = filepath.Clean(absolute)
+	if err := assertPlainDirectoryChain(absolute, label); err != nil {
 		return "", err
 	}
-	if !info.IsDir() {
-		return "", fmt.Errorf("%s必须是目录", label)
+	return absolute, nil
+}
+
+// ensurePlainDirectoryPath 只沿真实目录建立验证资料路径。
+// 每一级都会重新检查，目录联接点和符号链接不能把验证写入带到边界之外。
+func ensurePlainDirectoryPath(base string, target string, label string) error {
+	base, err := existingPlainDirectory(base, "验证目录根")
+	if err != nil {
+		return err
 	}
-	return filepath.Clean(absolute), nil
+	target, err = filepath.Abs(strings.TrimSpace(target))
+	if err != nil || strings.TrimSpace(target) == "" {
+		return fmt.Errorf("%s无效", label)
+	}
+	target = filepath.Clean(target)
+	if !pathWithin(base, target) {
+		return fmt.Errorf("%s越过验证目录根", label)
+	}
+	relative, err := filepath.Rel(base, target)
+	if err != nil {
+		return fmt.Errorf("确定%s路径失败：%w", label, err)
+	}
+	if relative == "." {
+		return nil
+	}
+	current := base
+	for _, name := range strings.Split(relative, string(filepath.Separator)) {
+		current = filepath.Join(current, name)
+		if err := ensurePlainDirectory(current, label); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensurePlainDirectory(path string, label string) error {
+	if err := assertPlainDirectory(path, label); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.Mkdir(path, 0o755); err != nil && !os.IsExist(err) {
+		return fmt.Errorf("建立%s失败：%w", label, err)
+	}
+	return assertPlainDirectory(path, label)
+}
+
+func assertPlainDirectoryChain(path string, label string) error {
+	chain := make([]string, 0, 8)
+	for current := filepath.Clean(path); ; current = filepath.Dir(current) {
+		chain = append(chain, current)
+		parent := filepath.Dir(current)
+		if parent == current {
+			break
+		}
+	}
+	for index := len(chain) - 1; index >= 0; index-- {
+		if err := assertPlainDirectory(chain[index], label); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func assertPlainDirectory(path string, label string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return fmt.Errorf("读取%s失败：%w", label, err)
+	}
+	reparsePoint, err := isReparsePoint(path, info)
+	if err != nil {
+		return fmt.Errorf("检查%s目录边界失败：%w", label, err)
+	}
+	if reparsePoint {
+		return fmt.Errorf("%s不能经过目录联接点或符号链接：%s", label, path)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s必须是目录", label)
+	}
+	return nil
 }
 
 func pathWithin(base string, child string) bool {

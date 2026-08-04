@@ -3,6 +3,7 @@ $ErrorActionPreference = "Stop"
 
 $script:DisposableDirectories = @("inputs", "workspace", "environment", "temp", "cache")
 $script:AllowedRunEntries = @("evidence") + $script:DisposableDirectories
+$script:ReleaseRootRelative = ".dev-workspace\.release"
 
 function Get-NormalizedPath {
     param([Parameter(Mandatory = $true)][string]$Path)
@@ -102,23 +103,83 @@ function Assert-PlainDirectory {
     }
 }
 
+function Assert-PlainDirectoryChain {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $paths = New-Object System.Collections.Generic.List[string]
+    $current = Get-NormalizedPath -Path $Path
+    while ($true) {
+        [void]$paths.Add($current)
+        $parentValue = Split-Path -Parent $current
+        if ([string]::IsNullOrWhiteSpace($parentValue)) {
+            break
+        }
+        $parent = Get-NormalizedPath -Path $parentValue
+        if (Test-SamePath -Left $parent -Right $current) {
+            break
+        }
+        $current = $parent
+    }
+    for ($index = $paths.Count - 1; $index -ge 0; $index--) {
+        Assert-PlainDirectory -Path $paths[$index]
+    }
+}
+
+function Get-FileSystemInfosRecursive {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $directory = New-Object System.IO.DirectoryInfo($Path)
+    foreach ($entry in $directory.GetFileSystemInfos()) {
+        if (($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw [System.Security.SecurityException]::new("Cleanup directory contains a reparse point: $($entry.FullName)")
+        }
+        $entry
+        if (($entry.Attributes -band [System.IO.FileAttributes]::Directory) -ne 0) {
+            Get-FileSystemInfosRecursive -Path $entry.FullName
+        }
+    }
+}
+
 function Assert-CleanupTreeHasNoReparsePoints {
     param([Parameter(Mandatory = $true)][string]$Path)
 
     Assert-PlainDirectory -Path $Path
-    $pending = New-Object System.Collections.Generic.Stack[System.IO.DirectoryInfo]
-    $pending.Push((Get-Item -LiteralPath $Path -Force))
-    while ($pending.Count -gt 0) {
-        $directory = $pending.Pop()
-        foreach ($entry in Get-ChildItem -LiteralPath $directory.FullName -Force) {
-            if (($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-                throw [System.Security.SecurityException]::new("Cleanup directory contains a reparse point: $($entry.FullName)")
-            }
-            if ($entry.PSIsContainer) {
-                $pending.Push($entry)
-            }
+    $longPath = "\\?\" + (Get-NormalizedPath -Path $Path)
+    Get-FileSystemInfosRecursive -Path $longPath | Out-Null
+}
+
+function Remove-LongPathEntry {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $longPath = "\\?\" + (Get-NormalizedPath -Path $Path)
+    if ([System.IO.File]::Exists($longPath)) {
+        [System.IO.File]::Delete($longPath)
+        return
+    }
+    if (-not [System.IO.Directory]::Exists($longPath)) {
+        throw "Cleanup target does not exist: $Path"
+    }
+    Remove-LongPathTree -Path $longPath
+}
+
+function Remove-LongPathTree {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $directory = New-Object System.IO.DirectoryInfo($Path)
+    if (($directory.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw [System.Security.SecurityException]::new("Cleanup directory contains a reparse point: $Path")
+    }
+    foreach ($entry in $directory.GetFileSystemInfos()) {
+        if (($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw [System.Security.SecurityException]::new("Cleanup directory contains a reparse point: $($entry.FullName)")
+        }
+        if (($entry.Attributes -band [System.IO.FileAttributes]::Directory) -ne 0) {
+            Remove-LongPathTree -Path $entry.FullName
+        } else {
+            [System.IO.File]::Delete($entry.FullName)
         }
     }
+    [System.IO.Directory]::Delete($Path)
 }
 
 function Get-CleanupState {
@@ -245,13 +306,13 @@ function Complete-VerificationRun {
     param(
         [Parameter(Mandatory = $true)][string]$RepositoryRoot,
         [Parameter(Mandatory = $true)][string]$RunRoot,
-        [Parameter(Mandatory = $true)][ValidateSet("01", "02")][string]$Stage,
+        [Parameter(Mandatory = $true)][ValidateSet("01", "02", "03", "dev")][string]$Stage,
         [Parameter(Mandatory = $true)][string]$Mode
     )
 
     $repositoryRoot = Get-NormalizedPath -Path $RepositoryRoot
     $runRoot = Get-NormalizedPath -Path $RunRoot
-    $expectedParent = Get-NormalizedPath -Path (Join-Path $repositoryRoot ".release\verification\stage-$Stage")
+    $expectedParent = Get-NormalizedPath -Path (Join-Path $repositoryRoot "$script:ReleaseRootRelative\verification\stage-$Stage")
     $actualParent = Get-NormalizedPath -Path (Split-Path -Parent $runRoot)
     $runName = Split-Path -Leaf $runRoot
 
@@ -262,13 +323,14 @@ function Complete-VerificationRun {
         throw "Repository root is invalid."
     }
     foreach ($path in @(
-        (Join-Path $repositoryRoot ".release"),
-        (Join-Path $repositoryRoot ".release\verification"),
+        $repositoryRoot,
+        (Join-Path $repositoryRoot $script:ReleaseRootRelative),
+        (Join-Path $repositoryRoot "$script:ReleaseRootRelative\verification"),
         $expectedParent,
         $runRoot,
         (Join-Path $runRoot "evidence")
     )) {
-        Assert-PlainDirectory -Path $path
+        Assert-PlainDirectoryChain -Path $path
     }
 
     $reportPath = Join-Path $runRoot "evidence\report.json"
@@ -328,7 +390,7 @@ function Complete-VerificationRun {
         }
 
         try {
-            Remove-Item -LiteralPath $target.Path -Recurse -Force
+            Remove-LongPathEntry -Path $target.Path
             if (Test-Path -LiteralPath $target.Path) {
                 throw "Cleanup target still exists: $($target.Path)"
             }

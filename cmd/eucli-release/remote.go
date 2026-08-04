@@ -12,6 +12,7 @@ import (
 	"eucli-box/internal/releaseops"
 	"eucli-box/internal/releasepublish"
 	"eucli-box/pkg/releasecatalog"
+	"eucli-box/pkg/workspace"
 )
 
 type remoteReport struct {
@@ -25,7 +26,7 @@ func runRemote(ctx context.Context, args []string) error {
 	rootValue := flags.String("root", ".", "repository root")
 	target := flags.String("target", "", "release target")
 	version := flags.String("version", "", "released version; defaults to local version")
-	workspace := flags.String("workspace", "", "remote verification workspace")
+	workspaceValue := flags.String("workspace", "", "remote verification workspace")
 	resultFile := flags.String("result-file", "", "write result JSON")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -48,9 +49,9 @@ func runRemote(ctx context.Context, args []string) error {
 		}
 		*version = artifact.Version
 	}
-	workRoot := strings.TrimSpace(*workspace)
+	workRoot := strings.TrimSpace(*workspaceValue)
 	if workRoot == "" {
-		parent := filepath.Join(root, ".release", "work")
+		parent := workspace.WorkRoot(root)
 		if err := os.MkdirAll(parent, 0o755); err != nil {
 			return err
 		}

@@ -13,9 +13,17 @@ import (
 )
 
 func runCommand(ctx context.Context, paths runPaths, name string, workdir string, command string, args ...string) error {
+	return runCommandWithEnvironment(ctx, paths, name, workdir, command, nil, args...)
+}
+
+func runCommandWithEnvironment(ctx context.Context, paths runPaths, name string, workdir string, command string, extra map[string]string, args ...string) error {
+	fmt.Printf("[验证] 开始：%s\n", name)
 	cmd := exec.CommandContext(ctx, command, args...)
 	cmd.Dir = workdir
 	cmd.Env = verificationEnvironment(os.Environ(), paths)
+	for key, value := range extra {
+		cmd.Env = append(cmd.Env, key+"="+value)
+	}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -26,11 +34,14 @@ func runCommand(ctx context.Context, paths runPaths, name string, workdir string
 	payload = append(payload, []byte("\nstderr:\n")...)
 	payload = append(payload, stderr.Bytes()...)
 	if writeErr := os.WriteFile(logPath, payload, 0o644); writeErr != nil {
+		fmt.Printf("[验证] 失败：%s（证据写入失败）\n", name)
 		return writeErr
 	}
 	if err != nil {
+		fmt.Printf("[验证] 失败：%s\n", name)
 		return fmt.Errorf("%w：%s", err, strings.TrimSpace(stderr.String()))
 	}
+	fmt.Printf("[验证] 完成：%s\n", name)
 	return nil
 }
 
@@ -38,8 +49,8 @@ func verificationEnvironment(base []string, paths runPaths) []string {
 	replacements := map[string]string{
 		"TEMP":         paths.temp,
 		"TMP":          paths.temp,
-		"GOCACHE":      filepath.Join(paths.cache, "go-build"),
-		"GOMODCACHE":   filepath.Join(paths.cache, "go-mod"),
+		"GOCACHE":      filepath.Join(paths.sharedCache, "go-build"),
+		"GOMODCACHE":   filepath.Join(paths.sharedCache, "go-mod"),
 		"GOTMPDIR":     filepath.Join(paths.temp, "go"),
 		"GOTELEMETRY":  "off",
 		"GH_TOKEN":     "",

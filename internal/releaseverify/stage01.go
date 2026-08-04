@@ -8,6 +8,7 @@ import (
 
 	"eucli-box/internal/releaseartifact"
 	"eucli-box/pkg/releasecatalog"
+	"eucli-box/pkg/workspace"
 )
 
 func Stage01(ctx context.Context, repositoryRoot string, runRoot string) error {
@@ -36,8 +37,14 @@ func Stage01(ctx context.Context, repositoryRoot string, runRoot string) error {
 		recorder.fail("读取正式发布物清单", catalogErr)
 	} else {
 		recorder.pass("读取正式发布物清单", fmt.Sprintf("共 %d 个 Windows x64 独立发布物", len(catalog.Artifacts)))
-		for _, identity := range catalog.SortedArtifacts() {
+		artifacts := catalog.SortedArtifacts()
+		for index, identity := range artifacts {
 			target := releasecatalog.Target(identity)
+			fail := func(reason string, err error) {
+				recorder.fail("制作并验收 "+target, err)
+				fmt.Printf("[验证] 失败：制作并验收 %s（%s）\n", target, reason)
+			}
+			fmt.Printf("[验证] 开始：制作并验收 %s（第 %d/%d 个）\n", target, index+1, len(artifacts))
 			evidenceRoot := filepath.Join(paths.evidence, "artifacts", strings.ReplaceAll(target, ":", "-"))
 			result, buildErr := releaseartifact.Build(ctx, releaseartifact.BuildOptions{
 				Root:             repositoryRoot,
@@ -46,17 +53,18 @@ func Stage01(ctx context.Context, repositoryRoot string, runRoot string) error {
 				OutputRoot:       filepath.Join(paths.workspace, "output"),
 				EvidenceRoot:     evidenceRoot,
 				VerificationOnly: true,
-				AssetCacheRoot:   filepath.Join(paths.cache, "release-assets"),
+				AssetRoot:        workspace.VerificationAssetRoot(repositoryRoot),
 			})
 			if buildErr != nil {
-				recorder.fail("制作并验收 "+target, buildErr)
+				fail("制作失败", buildErr)
 				continue
 			}
 			if result.Manifest.Artifact != identity || !result.Manifest.VerificationOnly || result.Manifest.Platform != "windows-x64" {
-				recorder.fail("制作并验收 "+target, fmt.Errorf("成品身份、平台或验证标记不一致"))
+				fail("身份不一致", fmt.Errorf("成品身份、平台或验证标记不一致"))
 				continue
 			}
 			recorder.pass("制作并验收 "+target, fmt.Sprintf("%s，%d 字节，SHA-256 %s", result.Manifest.Archive.Name, result.Manifest.Archive.Size, result.Manifest.Archive.SHA256))
+			fmt.Printf("[验证] 完成：制作并验收 %s（%s）\n", target, result.Manifest.Archive.Name)
 		}
 	}
 

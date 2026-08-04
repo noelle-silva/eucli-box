@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"eucli-box/pkg/workspace"
 )
 
 func TestPrepareRunRejectsOutsideDirectory(t *testing.T) {
@@ -16,7 +18,7 @@ func TestPrepareRunRejectsOutsideDirectory(t *testing.T) {
 
 func TestPrepareRunRejectsExistingUnknownContent(t *testing.T) {
 	repositoryRoot := t.TempDir()
-	runRoot := filepath.Join(repositoryRoot, ".release", "verification", "stage-01", "run-existing")
+	runRoot := filepath.Join(workspace.VerificationStageRoot(repositoryRoot, "01"), "run-existing")
 	if err := os.MkdirAll(runRoot, 0o755); err != nil {
 		t.Fatalf("create run root: %v", err)
 	}

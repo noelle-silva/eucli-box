@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("01", "02")]
+    [ValidateSet("01", "02", "03", "dev")]
     [string]$Stage,
 
     [string]$Mode = ""
@@ -41,7 +41,22 @@ if ($Stage -eq "01") {
         throw "Stage 01 does not accept a mode."
     }
     $Mode = "full"
-} elseif ($Mode -ne "preflight" -and $Mode -ne "remote") {
+} elseif ($Stage -eq "02") {
+    if ($Mode -ne "preflight" -and $Mode -ne "remote") {
+        throw "Usage: verify-stage-02.cmd <preflight|remote>"
+    }
+} elseif ($Stage -eq "03") {
+    if ([string]::IsNullOrWhiteSpace($Mode)) {
+        $Mode = "default"
+    } elseif ($Mode -ne "default" -and $Mode -ne "experience") {
+        throw "Usage: verify-stage-03.cmd [experience]"
+    }
+} elseif ($Stage -eq "dev") {
+    if (-not [string]::IsNullOrWhiteSpace($Mode) -and $Mode -ne "default") {
+        throw "Usage: verify-dev-box.cmd"
+    }
+    $Mode = "default"
+} else {
     throw "Usage: verify-stage-02.cmd <preflight|remote>"
 }
 
@@ -51,10 +66,12 @@ if (-not (Test-Path -LiteralPath (Join-Path $repositoryRoot "go.mod") -PathType 
 }
 
 $runId = [DateTime]::UtcNow.ToString("yyyyMMddTHHmmssfffffffZ", [Globalization.CultureInfo]::InvariantCulture)
-$runRoot = Join-Path $repositoryRoot ".release\verification\stage-$Stage\run-$runId"
+$runRoot = Join-Path $repositoryRoot ".dev-workspace\.release\verification\stage-$Stage\run-$runId"
 if (Test-Path -LiteralPath $runRoot) {
     throw "Verification run already exists: $runRoot"
 }
+
+$verificationCacheRoot = Join-Path $repositoryRoot ".dev-workspace\.release\verification\cache"
 
 [System.IO.Directory]::CreateDirectory((Join-Path $runRoot "temp")) | Out-Null
 [System.IO.Directory]::CreateDirectory((Join-Path $runRoot "cache")) | Out-Null
@@ -68,8 +85,8 @@ $manualCleanupRequired = $false
 try {
     $env:TEMP = Join-Path $runRoot "temp"
     $env:TMP = $env:TEMP
-    $env:GOCACHE = Join-Path $runRoot "cache\bootstrap-go-build"
-    $env:GOMODCACHE = Join-Path $runRoot "cache\bootstrap-go-mod"
+    $env:GOCACHE = Join-Path $verificationCacheRoot "go-build"
+    $env:GOMODCACHE = Join-Path $verificationCacheRoot "go-mod"
     $env:GOTMPDIR = Join-Path $runRoot "temp\bootstrap-go"
     $env:GOTELEMETRY = "off"
 
@@ -81,8 +98,11 @@ try {
     Push-Location $repositoryRoot
     try {
         $arguments = @("run", "./cmd/eucli-release-verify", "stage-$Stage", "-root", $repositoryRoot, "-run-root", $runRoot)
-        if ($Stage -eq "02") {
+        if ($Stage -eq "02" -or $Stage -eq "03") {
             $arguments += @("-mode", $Mode)
+        }
+        if ($Stage -eq "dev") {
+            $arguments = @("run", "./cmd/eucli-release-verify", "dev-local-box", "-root", $repositoryRoot, "-run-root", $runRoot, "-mode", $Mode)
         }
         & go @arguments
         $verificationExitCode = $LASTEXITCODE

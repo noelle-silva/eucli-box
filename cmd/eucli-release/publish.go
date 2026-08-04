@@ -10,6 +10,7 @@ import (
 
 	"eucli-box/internal/releaseartifact"
 	"eucli-box/internal/releasepublish"
+	"eucli-box/pkg/workspace"
 )
 
 type publishReport struct {
@@ -43,8 +44,7 @@ func runPublish(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("读取正式发布凭据失败：%w", err)
 	}
-	releaseRoot := filepath.Join(root, ".release")
-	workParent := filepath.Join(releaseRoot, "work")
+	workParent := workspace.WorkRoot(root)
 	if err := os.MkdirAll(workParent, 0o755); err != nil {
 		return err
 	}
@@ -65,7 +65,7 @@ func runPublish(ctx context.Context, args []string) error {
 		OutputRoot:       filepath.Join(runRoot, "output"),
 		EvidenceRoot:     filepath.Join(runRoot, "evidence"),
 		VerificationOnly: false,
-		AssetCacheRoot:   filepath.Join(workParent, "asset-cache"),
+		AssetRoot:        workspace.AssetRoot(root),
 	})
 	if err != nil {
 		return fmt.Errorf("正式发布制作失败，现场保留在 %s：%w", runRoot, err)
@@ -82,7 +82,7 @@ func runPublish(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("正式发布失败，现场保留在 %s：%w", runRoot, err)
 	}
-	finalRoot := filepath.Join(releaseRoot, "output")
+	finalRoot := workspace.OutputRoot(root)
 	finalDir := filepath.Join(finalRoot, releaseOutputName(identity), buildResult.Manifest.Version)
 	if _, err := os.Stat(finalDir); err == nil {
 		return fmt.Errorf("远端已经公开，但本地正式成品目录已存在，现场保留在 %s：%s", runRoot, finalDir)
@@ -100,7 +100,7 @@ func runPublish(ctx context.Context, args []string) error {
 	buildResult.ManifestPath = filepath.Join(finalDir, filepath.Base(buildResult.ManifestPath))
 	buildResult.NotesPath = filepath.Join(finalDir, filepath.Base(buildResult.NotesPath))
 	report := publishReport{Build: buildResult, Publish: publishResult}
-	logPath := filepath.Join(releaseRoot, "logs", runLabel("publish")+".json")
+	logPath := filepath.Join(workspace.LogsRoot(root), runLabel("publish")+".json")
 	if err := writeJSONFile(logPath, report); err != nil {
 		return fmt.Errorf("远端已经公开且本地成品已保存，但写入脱敏记录失败：%w", err)
 	}

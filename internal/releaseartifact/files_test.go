@@ -1,6 +1,10 @@
 package releaseartifact
 
-import "testing"
+import (
+	"testing"
+
+	"eucli-box/pkg/workspace"
+)
 
 func TestForbiddenPackagePathAllowsVerifiedAssetResources(t *testing.T) {
 	roots := []string{"runtime/python"}
@@ -16,7 +20,7 @@ func TestForbiddenPackagePathKeepsSensitiveFilesForbiddenInsideAssets(t *testing
 	roots := []string{"runtime/python"}
 	for _, name := range []string{
 		"runtime/python/.git/config",
-		"runtime/python/.release/state.json",
+		"runtime/python/" + workspace.WorkspaceDirectory + "/state.json",
 		"runtime/python/.env.production",
 		"runtime/python/private.key",
 		"runtime/python/cache/state.bin",

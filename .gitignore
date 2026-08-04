@@ -15,7 +15,7 @@ build/
 **/build/
 .vite/
 **/.vite/
-.release/
+.dev-workspace/
 
 # Compiled binaries
 *.exe
@@ -26,6 +26,7 @@ build/
 # eucli-box runtime data
 data/*
 !data/.gitkeep
+**/data.lock
 
 # Logs
 *.log

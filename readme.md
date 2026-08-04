@@ -47,9 +47,9 @@ scripts\release.cmd build -target tool:context7
 scripts\release.cmd build -target plugin:time-plugin
 ```
 
-正式成品只能从已经完整进入 Git 记录的源码状态制作。制作现场和结果分别进入 `.release/work/` 与 `.release/output/`，脱敏记录进入 `.release/logs/`；这些运行资料均不进入源码管理。
+正式成品只能从已经完整进入 Git 记录的源码状态制作。制作现场和结果分别进入 `.dev-workspace/.release/work/` 与 `.dev-workspace/.release/output/`，脱敏记录进入 `.dev-workspace/.release/logs/`；这些运行资料均不进入源码管理。
 
-真实发布前必须确认源码状态完整、目标版本和中文更新说明正确，并在本地发布配置 `.release/config/github.env` 中分别填写业务端、AI 工具和系统插件的 GitHub 凭据：
+真实发布前必须确认源码状态完整、目标版本和中文更新说明正确，并在本地发布配置 `.dev-workspace/.release/config/github.env` 中分别填写业务端、AI 工具和系统插件的 GitHub 凭据：
 
 ```dotenv
 EUCLI_BOX_GITHUB_TOKEN=
@@ -57,7 +57,7 @@ EUCLI_TOOLS_GITHUB_TOKEN=
 EUCLI_PLUGINS_GITHUB_TOKEN=
 ```
 
-`github.env` 只保存在当前开发环境并随 `.release/` 由 Git 忽略，不进入源码记录、日志和发行成品。发布动作仍必须显式确认：
+`github.env` 只保存在当前开发环境并随 `.dev-workspace/` 由 Git 忽略，不进入源码记录、日志和发行成品。发布动作仍必须显式确认：
 
 ```cmd
 scripts\release.cmd publish -target eucli-box -confirm-publish

@@ -7,18 +7,18 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
+
+	"eucli-box/pkg/workspace"
 )
 
 func TestFinalizerCleansBootstrapDirectoriesAndCompletesReport(t *testing.T) {
 	repositoryRoot := repositoryRootForTest(t)
 	runRoot := filepath.Join(
-		repositoryRoot,
-		".release",
-		"verification",
-		"stage-02",
+		workspace.VerificationStageRoot(repositoryRoot, "02"),
 		fmt.Sprintf("run-finalizer-test-%d", time.Now().UnixNano()),
 	)
 	t.Cleanup(func() { _ = os.RemoveAll(runRoot) })
@@ -69,10 +69,7 @@ func TestFinalizerCleansBootstrapDirectoriesAndCompletesReport(t *testing.T) {
 func TestFinalizerPassesChecksAndReportsManualCleanupWhenDeleteFails(t *testing.T) {
 	repositoryRoot := repositoryRootForTest(t)
 	runRoot := filepath.Join(
-		repositoryRoot,
-		".release",
-		"verification",
-		"stage-02",
+		workspace.VerificationStageRoot(repositoryRoot, "02"),
 		fmt.Sprintf("run-finalizer-manual-%d", time.Now().UnixNano()),
 	)
 	t.Cleanup(func() { _ = os.RemoveAll(runRoot) })
@@ -125,13 +122,62 @@ func TestFinalizerPassesChecksAndReportsManualCleanupWhenDeleteFails(t *testing.
 	}
 }
 
+func TestFinalizerCleansLongPathTree(t *testing.T) {
+	repositoryRoot := repositoryRootForTest(t)
+	runRoot := filepath.Join(
+		workspace.VerificationStageRoot(repositoryRoot, "02"),
+		fmt.Sprintf("run-finalizer-long-path-%d", time.Now().UnixNano()),
+	)
+	t.Cleanup(func() { _ = os.RemoveAll(runRoot) })
+
+	evidence := filepath.Join(runRoot, "evidence")
+	for _, path := range append([]string{evidence}, disposablePaths(runRoot)...) {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatalf("create finalizer fixture: %v", err)
+		}
+	}
+	longPath := filepath.Join(runRoot, "workspace")
+	segment := strings.Repeat("long-path-segment-", 5)
+	for index := 0; index < 4; index++ {
+		longPath = filepath.Join(longPath, fmt.Sprintf("%d-%s", index, segment))
+	}
+	if len(longPath) <= syscall.MAX_PATH {
+		t.Fatalf("fixture path is not long enough: %d", len(longPath))
+	}
+	if err := os.MkdirAll(longPath, 0o755); err != nil {
+		t.Fatalf("create long path fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(longPath, "marker.txt"), []byte("temporary"), 0o644); err != nil {
+		t.Fatalf("write long path fixture: %v", err)
+	}
+	report := Report{
+		Stage:   "02",
+		Mode:    "preflight",
+		RunRoot: runRoot,
+		Status:  "cleanup_pending",
+		Checks:  []Check{{Name: "sample", Status: "passed", Summary: "passed"}},
+		Cleanup: newCleanup("pending", nil, disposableDirectories()),
+	}
+	if err := writeReport(filepath.Join(evidence, "report.json"), report); err != nil {
+		t.Fatalf("write finalizer fixture: %v", err)
+	}
+
+	if output, err := runFinalizerForTest(repositoryRoot, runRoot, "02", "preflight"); err != nil {
+		t.Fatalf("run finalizer: %v\n%s", err, output)
+	}
+	if _, err := os.Stat(filepath.Join(runRoot, "workspace")); !os.IsNotExist(err) {
+		t.Fatalf("long path workspace remains: %v", err)
+	}
+	actual := readReportForTest(t, filepath.Join(evidence, "report.json"))
+	if actual.Status != "passed" || actual.Cleanup.Status != "passed" {
+		t.Fatalf("unexpected long path cleanup report: %#v", actual)
+	}
+}
+
 func TestFinalizerRejectsMismatchedStageWithoutCleaning(t *testing.T) {
 	repositoryRoot := repositoryRootForTest(t)
 	runRoot := filepath.Join(
-		repositoryRoot,
-		".release",
-		"verification",
-		"stage-02",
+		workspace.VerificationStageRoot(repositoryRoot, "02"),
 		fmt.Sprintf("run-finalizer-mismatch-%d", time.Now().UnixNano()),
 	)
 	t.Cleanup(func() { _ = os.RemoveAll(runRoot) })
@@ -166,7 +212,7 @@ func TestFinalizerRejectsMismatchedStageWithoutCleaning(t *testing.T) {
 
 func TestFinalizerRejectsReparsePointWithoutCleaning(t *testing.T) {
 	repositoryRoot := repositoryRootForTest(t)
-	verificationRoot := filepath.Join(repositoryRoot, ".release", "verification")
+	verificationRoot := workspace.VerificationRoot(repositoryRoot)
 	identifier := time.Now().UnixNano()
 	runRoot := filepath.Join(verificationRoot, "stage-02", fmt.Sprintf("run-finalizer-reparse-%d", identifier))
 	externalRoot := filepath.Join(verificationRoot, fmt.Sprintf("finalizer-external-%d", identifier))

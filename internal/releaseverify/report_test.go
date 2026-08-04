@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"eucli-box/pkg/workspace"
 )
 
 func TestWriteReportReplacesExistingReport(t *testing.T) {
@@ -86,7 +88,7 @@ func TestRecorderFinishRetainsFailedVerification(t *testing.T) {
 func newRunPathsForTest(t *testing.T) runPaths {
 	t.Helper()
 	repositoryRoot := t.TempDir()
-	runRoot := filepath.Join(repositoryRoot, ".release", "verification", "stage-01", "run-test")
+	runRoot := filepath.Join(workspace.VerificationStageRoot(repositoryRoot, "01"), "run-test")
 	paths, err := prepareRun(repositoryRoot, runRoot, "01")
 	if err != nil {
 		t.Fatalf("prepare run: %v", err)

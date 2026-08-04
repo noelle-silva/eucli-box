@@ -17,6 +17,7 @@ import (
 	"eucli-box/pkg/release"
 	"eucli-box/pkg/releasecatalog"
 	"eucli-box/pkg/types"
+	"eucli-box/pkg/workspace"
 )
 
 type BuildOptions struct {
@@ -26,7 +27,7 @@ type BuildOptions struct {
 	OutputRoot       string
 	EvidenceRoot     string
 	VerificationOnly bool
-	AssetCacheRoot   string
+	AssetRoot        string
 }
 
 type BuildResult struct {
@@ -99,16 +100,16 @@ func Build(ctx context.Context, options BuildOptions) (BuildResult, error) {
 		return BuildResult{}, fmt.Errorf("建立本次制作目录失败：%w", err)
 	}
 	result := BuildResult{WorkDir: workDir}
-	assetCacheRoot := strings.TrimSpace(options.AssetCacheRoot)
-	if assetCacheRoot == "" {
-		assetCacheRoot = filepath.Join(workDir, "asset-cache")
+	assetRoot := strings.TrimSpace(options.AssetRoot)
+	if assetRoot == "" {
+		assetRoot = workspace.AssetRoot(root)
 	}
 	assetRoots, err := releaseasset.PrepareRequired(ctx, releaseasset.PrepareOptions{
 		RepositoryRoot: root,
 		Artifact:       identity,
-		OutputRoot:     filepath.Join(workDir, "assets"),
-		CacheRoot:      assetCacheRoot,
-		TempRoot:       filepath.Join(workDir, "asset-temp"),
+		OutputRoot:     filepath.Join(assetRoot, "prepared"),
+		CacheRoot:      filepath.Join(assetRoot, "cache"),
+		TempRoot:       filepath.Join(assetRoot, "temp"),
 	})
 	if err != nil {
 		return result, err
@@ -348,11 +349,11 @@ func buildEnvironment(base []string, root string) []string {
 func resolveRoots(root string, options BuildOptions) (string, string, error) {
 	workRoot := strings.TrimSpace(options.WorkRoot)
 	if workRoot == "" {
-		workRoot = filepath.Join(root, ".release", "work")
+		workRoot = workspace.WorkRoot(root)
 	}
 	outputRoot := strings.TrimSpace(options.OutputRoot)
 	if outputRoot == "" {
-		outputRoot = filepath.Join(root, ".release", "output")
+		outputRoot = workspace.OutputRoot(root)
 	}
 	var err error
 	workRoot, err = filepath.Abs(workRoot)

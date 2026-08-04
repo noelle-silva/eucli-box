@@ -122,27 +122,33 @@ func runStage02Remote(ctx context.Context, root string, paths runPaths, recorder
 		recorder.fail("读取正式发布物清单", err)
 		return
 	}
-	for _, identity := range catalog.SortedArtifacts() {
+	artifacts := catalog.SortedArtifacts()
+	for index, identity := range artifacts {
 		target := releasecatalog.Target(identity)
+		fail := func(reason string, err error) {
+			recorder.fail("远端复核 "+target, err)
+			fmt.Printf("[验证] 失败：远端复核 %s（%s）\n", target, reason)
+		}
+		fmt.Printf("[验证] 开始：远端复核 %s（第 %d/%d 个）\n", target, index+1, len(artifacts))
 		token, tokenErr := credentials.TokenFor(identity.Kind)
 		if tokenErr != nil {
-			recorder.fail("远端复核 "+target, tokenErr)
+			fail("读取凭据", tokenErr)
 			continue
 		}
 		publisher, publisherErr := releasepublish.New(releasepublish.Config{Token: token})
 		if publisherErr != nil {
-			recorder.fail("远端复核 "+target, publisherErr)
+			fail("准备复核", publisherErr)
 			continue
 		}
 		artifact, resolveErr := releaseops.Resolve(root, target)
 		if resolveErr != nil {
-			recorder.fail("远端复核 "+target, resolveErr)
+			fail("解析版本", resolveErr)
 			continue
 		}
 		remoteRoot := filepath.Join(paths.workspace, "remote", strings.ReplaceAll(target, ":", "-"))
 		download, downloadErr := publisher.DownloadPublished(ctx, identity, artifact.Version, filepath.Join(remoteRoot, "download"))
 		if downloadErr != nil {
-			recorder.fail("远端复核 "+target, downloadErr)
+			fail("下载远端成品", downloadErr)
 			continue
 		}
 		verified, verifyErr := releaseartifact.Verify(ctx, releaseartifact.VerifyOptions{
@@ -151,12 +157,12 @@ func runStage02Remote(ctx context.Context, root string, paths runPaths, recorder
 			Workspace:    filepath.Join(remoteRoot, "verification"),
 		})
 		if verifyErr != nil {
-			recorder.fail("远端复核 "+target, verifyErr)
+			fail("验收远端成品", verifyErr)
 			continue
 		}
 		evidenceTarget := filepath.Join(paths.evidence, "remote", strings.ReplaceAll(target, ":", "-")+".json")
 		if err := os.MkdirAll(filepath.Dir(evidenceTarget), 0o755); err != nil {
-			recorder.fail("远端复核 "+target, err)
+			fail("写入证据", err)
 			continue
 		}
 		summary := map[string]any{
@@ -167,13 +173,14 @@ func runStage02Remote(ctx context.Context, root string, paths runPaths, recorder
 		}
 		payload, marshalErr := json.MarshalIndent(summary, "", "  ")
 		if marshalErr != nil {
-			recorder.fail("远端复核 "+target, marshalErr)
+			fail("生成证据", marshalErr)
 			continue
 		}
 		if err := os.WriteFile(evidenceTarget, append(payload, '\n'), 0o644); err != nil {
-			recorder.fail("远端复核 "+target, err)
+			fail("写入证据", err)
 			continue
 		}
 		recorder.pass("远端复核 "+target, download.ReleaseURL)
+		fmt.Printf("[验证] 完成：远端复核 %s\n", target)
 	}
 }

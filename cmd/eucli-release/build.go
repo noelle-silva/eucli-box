@@ -4,10 +4,10 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"eucli-box/internal/releaseartifact"
+	"eucli-box/pkg/workspace"
 )
 
 func runBuild(ctx context.Context, args []string) error {
@@ -17,7 +17,7 @@ func runBuild(ctx context.Context, args []string) error {
 	workRoot := flags.String("work-root", "", "build workspace root")
 	outputRoot := flags.String("output-root", "", "artifact output root")
 	evidenceRoot := flags.String("evidence-root", "", "verification evidence root")
-	assetCacheRoot := flags.String("asset-cache-root", "", "verified external input cache")
+	assetRoot := flags.String("asset-root", "", "verified external asset root")
 	verificationOnly := flags.Bool("verification-only", false, "mark output as verification only")
 	resultFile := flags.String("result-file", "", "write result JSON")
 	if err := flags.Parse(args); err != nil {
@@ -30,8 +30,8 @@ func runBuild(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(*assetCacheRoot) == "" {
-		*assetCacheRoot = filepath.Join(root, ".release", "work", "asset-cache")
+	if strings.TrimSpace(*assetRoot) == "" {
+		*assetRoot = workspace.AssetRoot(root)
 	}
 	result, err := releaseartifact.Build(ctx, releaseartifact.BuildOptions{
 		Root:             root,
@@ -40,7 +40,7 @@ func runBuild(ctx context.Context, args []string) error {
 		OutputRoot:       *outputRoot,
 		EvidenceRoot:     *evidenceRoot,
 		VerificationOnly: *verificationOnly,
-		AssetCacheRoot:   *assetCacheRoot,
+		AssetRoot:        *assetRoot,
 	})
 	if err != nil {
 		return err

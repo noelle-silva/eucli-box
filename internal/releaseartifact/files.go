@@ -14,6 +14,7 @@ import (
 	"eucli-box/internal/releaseasset"
 	"eucli-box/pkg/release"
 	"eucli-box/pkg/types"
+	"eucli-box/pkg/workspace"
 )
 
 func copyFile(source string, target string) error {
@@ -301,7 +302,7 @@ func forbiddenPackagePath(name string, externalAssetRoots []string) bool {
 	parts := strings.Split(strings.ToLower(filepath.ToSlash(name)), "/")
 	for _, part := range parts {
 		switch part {
-		case ".git", ".release":
+		case ".git", workspace.WorkspaceDirectory:
 			return true
 		}
 		if strings.HasPrefix(part, ".env") || strings.HasSuffix(part, ".key") {

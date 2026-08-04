@@ -8,9 +8,10 @@ import (
 	"strings"
 
 	"eucli-box/pkg/types"
+	"eucli-box/pkg/workspace"
 )
 
-const relativePath = ".release/config/github.env"
+const relativePath = workspace.RelativeCredentialsPath
 
 var keyByKind = map[string]string{
 	types.ReleaseArtifactKindBox:    "EUCLI_BOX_GITHUB_TOKEN",

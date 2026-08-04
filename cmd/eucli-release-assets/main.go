@@ -10,6 +10,7 @@ import (
 
 	"eucli-box/internal/releaseasset"
 	"eucli-box/pkg/releasecatalog"
+	"eucli-box/pkg/workspace"
 )
 
 func main() {
@@ -44,7 +45,7 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	base := filepath.Join(repositoryRoot, ".release", "assets")
+	base := workspace.AssetRoot(repositoryRoot)
 	if strings.TrimSpace(*output) == "" {
 		*output = filepath.Join(base, "prepared")
 	}

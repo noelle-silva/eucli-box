@@ -31,6 +31,19 @@ type VerifyResult struct {
 	Evidence string
 }
 
+// VerifyProductOptions 是只使用官方索引产品记录的远端复核参数。
+type VerifyProductOptions struct {
+	ArchivePath string
+	Product     types.ReleaseProductRecord
+	Workspace   string
+	Timeout     time.Duration
+}
+
+type VerifyProductResult struct {
+	Product  types.ReleaseProductRecord
+	Evidence string
+}
+
 func Verify(ctx context.Context, options VerifyOptions) (VerifyResult, error) {
 	if ctx == nil {
 		return VerifyResult{}, fmt.Errorf("验收上下文不能为空")
@@ -46,37 +59,17 @@ func Verify(ctx context.Context, options VerifyOptions) (VerifyResult, error) {
 	if err != nil {
 		return VerifyResult{}, err
 	}
-	workspace, err := filepath.Abs(strings.TrimSpace(options.Workspace))
-	if err != nil || strings.TrimSpace(options.Workspace) == "" {
-		return VerifyResult{}, fmt.Errorf("验收工作区无效")
-	}
-	if err := os.RemoveAll(workspace); err != nil {
-		return VerifyResult{}, fmt.Errorf("清理验收工作区失败：%w", err)
-	}
-	if err := os.MkdirAll(workspace, 0o755); err != nil {
-		return VerifyResult{}, fmt.Errorf("建立验收工作区失败：%w", err)
-	}
-	evidenceDir := filepath.Join(workspace, "evidence")
-	if err := os.MkdirAll(evidenceDir, 0o755); err != nil {
+	workspace, evidenceDir, environmentDir, tempDir, err := verifyWorkspace(options.Workspace)
+	if err != nil {
 		return VerifyResult{}, err
 	}
-	environmentDir := filepath.Join(workspace, "environment")
-	tempDir := filepath.Join(workspace, "temp")
-	for _, directory := range []string{environmentDir, tempDir} {
-		if err := os.MkdirAll(directory, 0o755); err != nil {
-			return VerifyResult{}, err
-		}
-	}
+	_ = workspace
 	manifestPayload, err := os.ReadFile(manifestPath)
 	if err != nil {
 		return VerifyResult{}, fmt.Errorf("读取发行清单失败：%w", err)
 	}
 	manifest, err := release.DecodeReleaseManifest(manifestPayload)
 	if err != nil {
-		return VerifyResult{}, err
-	}
-	extracted := filepath.Join(workspace, "extracted")
-	if err := os.MkdirAll(extracted, 0o755); err != nil {
 		return VerifyResult{}, err
 	}
 	archiveRecord, err := release.CollectFileRecords(filepath.Dir(archivePath))
@@ -95,26 +88,99 @@ func Verify(ctx context.Context, options VerifyOptions) (VerifyResult, error) {
 	if !foundArchive {
 		return VerifyResult{}, fmt.Errorf("压缩包资料缺失")
 	}
+	product := types.ReleaseProductRecord{
+		SchemaVersion:    manifest.SchemaVersion,
+		Artifact:         manifest.Artifact,
+		Version:          manifest.Version,
+		Platform:         manifest.Platform,
+		OfficialSource:   manifest.OfficialSource,
+		Compatibility:    manifest.Compatibility,
+		Source:           manifest.Source,
+		DataVersion:      manifest.DataVersion,
+		ExternalAssets:   manifest.ExternalAssets,
+		VerificationOnly: manifest.VerificationOnly,
+	}
+	evidence, err := verifyProductContent(ctx, archivePath, product, evidenceDir, environmentDir, tempDir, options.Timeout)
+	if err != nil {
+		return VerifyResult{}, err
+	}
+	return VerifyResult{Manifest: manifest, Evidence: evidence}, nil
+}
+
+// VerifyProduct 只依据官方索引的产品记录复核一个已下载压缩包：
+// 解包、包内身份核对和真实启动验收。压缩包摘要已在下载时核对完成。
+func VerifyProduct(ctx context.Context, options VerifyProductOptions) (VerifyProductResult, error) {
+	if ctx == nil {
+		return VerifyProductResult{}, fmt.Errorf("验收上下文不能为空")
+	}
+	if err := release.ValidateReleaseProductRecord(options.Product); err != nil {
+		return VerifyProductResult{}, err
+	}
+	if options.Timeout <= 0 {
+		options.Timeout = 45 * time.Second
+	}
+	archivePath, err := absoluteRegularFile(options.ArchivePath, "压缩包")
+	if err != nil {
+		return VerifyProductResult{}, err
+	}
+	_, evidenceDir, environmentDir, tempDir, err := verifyWorkspace(options.Workspace)
+	if err != nil {
+		return VerifyProductResult{}, err
+	}
+	evidence, err := verifyProductContent(ctx, archivePath, options.Product, evidenceDir, environmentDir, tempDir, options.Timeout)
+	if err != nil {
+		return VerifyProductResult{}, err
+	}
+	return VerifyProductResult{Product: options.Product, Evidence: evidence}, nil
+}
+
+// verifyWorkspace 建立一次验收的隔离工作区并返回关键子目录。
+func verifyWorkspace(workspaceValue string) (string, string, string, string, error) {
+	workspace, err := filepath.Abs(strings.TrimSpace(workspaceValue))
+	if err != nil || strings.TrimSpace(workspaceValue) == "" {
+		return "", "", "", "", fmt.Errorf("验收工作区无效")
+	}
+	if err := os.RemoveAll(workspace); err != nil {
+		return "", "", "", "", fmt.Errorf("清理验收工作区失败：%w", err)
+	}
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		return "", "", "", "", fmt.Errorf("建立验收工作区失败：%w", err)
+	}
+	evidenceDir := filepath.Join(workspace, "evidence")
+	environmentDir := filepath.Join(workspace, "environment")
+	tempDir := filepath.Join(workspace, "temp")
+	for _, directory := range []string{evidenceDir, environmentDir, tempDir} {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			return "", "", "", "", err
+		}
+	}
+	return workspace, evidenceDir, environmentDir, tempDir, nil
+}
+
+// verifyProductContent 完成解包、包内核对、真实启动验收并写下验收证据。
+func verifyProductContent(ctx context.Context, archivePath string, product types.ReleaseProductRecord, evidenceDir string, environmentDir string, tempDir string, timeout time.Duration) (string, error) {
+	extracted := filepath.Join(filepath.Dir(evidenceDir), "extracted")
+	if err := os.MkdirAll(extracted, 0o755); err != nil {
+		return "", err
+	}
 	if err := release.ExtractArchive(release.ExtractArchiveOptions{ArchivePath: archivePath, TargetDir: extracted}); err != nil {
-		return VerifyResult{}, err
+		return "", err
 	}
-	if _, err := release.ValidateExtractedPackage(release.ValidateExtractedPackageOptions{Directory: extracted, Manifest: manifest}); err != nil {
-		return VerifyResult{}, fmt.Errorf("解包后的成品边界无效：%w", err)
+	if _, err := release.ValidateExtractedPackage(release.ValidateExtractedPackageOptions{Directory: extracted, Product: product}); err != nil {
+		return "", fmt.Errorf("解包后的成品边界无效：%w", err)
 	}
-	if err := launchCheck(ctx, manifest.Artifact, extracted, environmentDir, tempDir, evidenceDir, options.Timeout); err != nil {
-		return VerifyResult{}, err
+	if err := launchCheck(ctx, product.Artifact, extracted, environmentDir, tempDir, evidenceDir, timeout); err != nil {
+		return "", err
 	}
-	result := VerifyResult{Manifest: manifest, Evidence: evidenceDir}
 	if err := writeJSON(filepath.Join(evidenceDir, "verification-result.json"), map[string]any{
 		"status":   "passed",
-		"artifact": manifest.Artifact,
-		"version":  manifest.Version,
-		"platform": manifest.Platform,
-		"archive":  manifest.Archive,
+		"artifact": product.Artifact,
+		"version":  product.Version,
+		"platform": product.Platform,
 	}); err != nil {
-		return VerifyResult{}, err
+		return "", err
 	}
-	return result, nil
+	return evidenceDir, nil
 }
 
 func launchCheck(parent context.Context, identity types.ReleaseArtifactIdentity, directory string, environment string, temp string, evidence string, timeout time.Duration) error {

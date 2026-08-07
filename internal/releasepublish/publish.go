@@ -161,7 +161,7 @@ type localAsset struct {
 }
 
 func (p *Publisher) prepareInput(input PublishInput) (preparedInput, error) {
-	manifestPath, manifestPayload, manifest, err := readManifestFile(input.ManifestPath)
+	_, _, manifest, err := readManifestFile(input.ManifestPath)
 	if err != nil {
 		return preparedInput{}, err
 	}
@@ -197,8 +197,7 @@ func (p *Publisher) prepareInput(input PublishInput) (preparedInput, error) {
 	if notes == "" {
 		return preparedInput{}, fmt.Errorf("正式发行说明不能为空")
 	}
-	manifestRecord := types.ReleaseFileRecord{Name: filepath.Base(manifestPath), Size: int64(len(manifestPayload)), SHA256: release.SHA256(manifestPayload)}
-	assets := []localAsset{{Path: archivePath, Record: manifest.Archive}, {Path: manifestPath, Record: manifestRecord}}
+	assets := []localAsset{{Path: archivePath, Record: manifest.Archive}}
 	return preparedInput{manifest: manifest, source: source, notes: notes, assets: assets}, nil
 }
 

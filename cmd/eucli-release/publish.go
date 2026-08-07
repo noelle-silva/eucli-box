@@ -7,15 +7,19 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"eucli-box/internal/releaseartifact"
 	"eucli-box/internal/releasepublish"
+	"eucli-box/pkg/releasecatalog"
+	"eucli-box/pkg/types"
 	"eucli-box/pkg/workspace"
 )
 
 type publishReport struct {
-	Build   releaseartifact.BuildResult `json:"build"`
-	Publish releasepublish.Result       `json:"publish"`
+	Build     releaseartifact.BuildResult `json:"build"`
+	Publish   releasepublish.Result       `json:"publish"`
+	IndexPush bool                        `json:"indexPush"`
 }
 
 func runPublish(ctx context.Context, args []string) error {
@@ -36,7 +40,11 @@ func runPublish(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	_, identity, err := resolveTarget(*target)
+	catalog, identity, err := resolveTarget(*target)
+	if err != nil {
+		return err
+	}
+	source, err := catalog.SourceFor(identity.Kind)
 	if err != nil {
 		return err
 	}
@@ -82,6 +90,29 @@ func runPublish(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("正式发布失败，现场保留在 %s：%w", runRoot, err)
 	}
+	notes, err := os.ReadFile(buildResult.NotesPath)
+	if err != nil {
+		return fmt.Errorf("正式发布已公开但读取发行说明失败，现场保留在 %s：%w", runRoot, err)
+	}
+	indexUpdate := releasepublish.IndexUpdate{
+		Artifact:       identity,
+		Version:        buildResult.Manifest.Version,
+		PublishedAt:    time.Now().UTC(),
+		SourceRevision: buildResult.Manifest.Source.Commit,
+		DataVersion:    buildResult.Manifest.DataVersion,
+		Compatibility:  buildResult.Manifest.Compatibility,
+		ReleaseNotes:   string(notes),
+		Package: releasecatalog.IndexPackage{
+			Platform:   types.ReleasePlatformWindowsX64,
+			ReleaseTag: buildResult.Manifest.TagName,
+			FileName:   buildResult.Manifest.Archive.Name,
+			SizeBytes:  buildResult.Manifest.Archive.Size,
+			SHA256:     buildResult.Manifest.Archive.SHA256,
+		},
+	}
+	if err := publisher.UpdateIndex(ctx, source, indexUpdate); err != nil {
+		return fmt.Errorf("正式发布已公开但索引登记失败，现场保留在 %s：%w", runRoot, err)
+	}
 	finalRoot := workspace.OutputRoot(root)
 	finalDir := filepath.Join(finalRoot, releaseOutputName(identity), buildResult.Manifest.Version)
 	if _, err := os.Stat(finalDir); err == nil {
@@ -99,7 +130,7 @@ func runPublish(ctx context.Context, args []string) error {
 	buildResult.ArchivePath = filepath.Join(finalDir, filepath.Base(buildResult.ArchivePath))
 	buildResult.ManifestPath = filepath.Join(finalDir, filepath.Base(buildResult.ManifestPath))
 	buildResult.NotesPath = filepath.Join(finalDir, filepath.Base(buildResult.NotesPath))
-	report := publishReport{Build: buildResult, Publish: publishResult}
+	report := publishReport{Build: buildResult, Publish: publishResult, IndexPush: true}
 	logPath := filepath.Join(workspace.LogsRoot(root), runLabel("publish")+".json")
 	if err := writeJSONFile(logPath, report); err != nil {
 		return fmt.Errorf("远端已经公开且本地成品已保存，但写入脱敏记录失败：%w", err)

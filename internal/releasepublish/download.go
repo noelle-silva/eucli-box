@@ -3,6 +3,7 @@ package releasepublish
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,60 +13,73 @@ import (
 	"eucli-box/pkg/types"
 )
 
-type DownloadResult struct {
-	Manifest     types.ReleaseManifest
-	ArchivePath  string
-	ManifestPath string
-	ReleaseURL   string
+// readIndex 从官方仓库源码读取统一版本索引；隔离验证环境使用同源模拟服务。
+func (p *Publisher) readIndex(ctx context.Context, source types.OfficialReleaseSource) (releasecatalog.Index, error) {
+	return releasecatalog.ReadIndex(ctx, p.client, source, p.indexBase())
 }
 
+// indexBase 返回读取索引与构造下载地址的基础地址；隔离验证环境使用同源模拟服务。
+func (p *Publisher) indexBase() string {
+	if strings.HasPrefix(p.apiBaseURL, "http://127.0.0.1:") {
+		return strings.TrimRight(p.apiBaseURL, "/")
+	}
+	return ""
+}
+
+func releaseTagURL(source types.OfficialReleaseSource, tag string) (string, error) {
+	if strings.TrimSpace(tag) == "" {
+		return "", fmt.Errorf("发行标签不能为空")
+	}
+	parsed, err := url.Parse(strings.TrimSuffix(source.Repository, "/"))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("官方来源地址无效")
+	}
+	return fmt.Sprintf("%s/releases/tag/%s", strings.TrimSuffix(source.Repository, "/"), url.PathEscape(tag)), nil
+}
+
+type DownloadResult struct {
+	Product     types.ReleaseProductRecord
+	ArchivePath string
+	ReleaseURL  string
+}
+
+// DownloadPublished 从官方仓库的统一版本索引取得指定发布物的指定版本事实，
+// 只下载该版本的一个目标压缩包并完成大小与 SHA-256 核对；
+// 不列举 Release、不读取 Release 附属资料。
 func (p *Publisher) DownloadPublished(ctx context.Context, identity types.ReleaseArtifactIdentity, version string, targetRoot string) (DownloadResult, error) {
 	if !p.catalog.Contains(identity) {
 		return DownloadResult{}, fmt.Errorf("发布物不在正式白名单中")
-	}
-	tag, err := releasecatalog.TagName(identity, version)
-	if err != nil {
-		return DownloadResult{}, err
 	}
 	source, err := p.catalog.SourceFor(identity.Kind)
 	if err != nil {
 		return DownloadResult{}, err
 	}
-	remote, err := p.findReleaseByTag(ctx, source, tag)
+	index, err := p.readIndex(ctx, source)
 	if err != nil {
 		return DownloadResult{}, err
 	}
-	if remote == nil || remote.Draft || remote.Prerelease {
-		return DownloadResult{}, fmt.Errorf("官方来源没有公开正式发行 %s", tag)
+	record, ok := index.Version(identity, version)
+	if !ok {
+		return DownloadResult{}, fmt.Errorf("官方索引没有发布物 %s 的正式版本 %s", releasecatalog.Target(identity), version)
 	}
-	manifestAsset, err := uniqueRemoteManifest(remote.Assets)
+	pkg, ok := record.PackageFor(types.ReleasePlatformWindowsX64)
+	if !ok {
+		return DownloadResult{}, fmt.Errorf("官方索引没有 %s 的 %s 平台压缩包", releasecatalog.Target(identity), types.ReleasePlatformWindowsX64)
+	}
+	archiveURL, err := releasecatalog.DownloadURL(p.indexBase(), source, pkg)
 	if err != nil {
-		return DownloadResult{}, err
+		return DownloadResult{}, fmt.Errorf("官方索引压缩包地址无效：%w", err)
 	}
-	manifestPayload, err := p.downloadAsset(ctx, manifestAsset.URL, manifestAsset.Size)
+	releaseURL, err := releaseTagURL(source, pkg.ReleaseTag)
 	if err != nil {
-		return DownloadResult{}, err
+		return DownloadResult{}, fmt.Errorf("官方发行页地址无效：%w", err)
 	}
-	manifest, err := release.DecodeReleaseManifest(manifestPayload)
+	archivePayload, err := p.downloadAsset(ctx, archiveURL, pkg.SizeBytes)
 	if err != nil {
-		return DownloadResult{}, err
+		return DownloadResult{}, fmt.Errorf("下载 %s 失败：%w", pkg.FileName, err)
 	}
-	if manifest.VerificationOnly || !manifest.Source.Recorded {
-		return DownloadResult{}, fmt.Errorf("远端发行使用了仅供验证的成品")
-	}
-	if err := release.ValidateManifestIdentity(manifest, identity, tag, source.Repository); err != nil {
-		return DownloadResult{}, err
-	}
-	archiveAsset, err := namedRemoteAsset(remote.Assets, manifest.Archive.Name)
-	if err != nil {
-		return DownloadResult{}, err
-	}
-	archivePayload, err := p.downloadAsset(ctx, archiveAsset.URL, archiveAsset.Size)
-	if err != nil {
-		return DownloadResult{}, err
-	}
-	if err := release.ValidateArchiveDigest(manifest, archivePayload); err != nil {
-		return DownloadResult{}, err
+	if int64(len(archivePayload)) != pkg.SizeBytes || !strings.EqualFold(release.SHA256(archivePayload), pkg.SHA256) {
+		return DownloadResult{}, fmt.Errorf("下载的 %s 与官方索引不一致", pkg.FileName)
 	}
 	targetRoot, err = filepath.Abs(strings.TrimSpace(targetRoot))
 	if err != nil || strings.TrimSpace(targetRoot) == "" {
@@ -74,39 +88,19 @@ func (p *Publisher) DownloadPublished(ctx context.Context, identity types.Releas
 	if err := os.MkdirAll(targetRoot, 0o755); err != nil {
 		return DownloadResult{}, err
 	}
-	archivePath := filepath.Join(targetRoot, manifest.Archive.Name)
-	manifestPath := filepath.Join(targetRoot, manifestAsset.Name)
+	archivePath := filepath.Join(targetRoot, pkg.FileName)
 	if err := os.WriteFile(archivePath, archivePayload, 0o644); err != nil {
 		return DownloadResult{}, err
 	}
-	if err := os.WriteFile(manifestPath, manifestPayload, 0o644); err != nil {
-		return DownloadResult{}, err
+	product := types.ReleaseProductRecord{
+		SchemaVersion:  release.ReleaseManifestSchemaVersion,
+		Artifact:       identity,
+		Version:        record.Version,
+		Platform:       types.ReleasePlatformWindowsX64,
+		OfficialSource: source.Repository,
+		Compatibility:  record.Compatibility,
+		Source:         types.ReleaseSourceRecord{Repository: source.Repository, Commit: record.SourceRevision, Recorded: true},
+		DataVersion:    record.DataVersion,
 	}
-	return DownloadResult{Manifest: manifest, ArchivePath: archivePath, ManifestPath: manifestPath, ReleaseURL: remote.HTMLURL}, nil
-}
-
-func uniqueRemoteManifest(assets []githubReleaseAsset) (githubReleaseAsset, error) {
-	matches := make([]githubReleaseAsset, 0, 1)
-	for _, asset := range assets {
-		if strings.HasSuffix(strings.ToLower(asset.Name), ".manifest.json") {
-			matches = append(matches, asset)
-		}
-	}
-	if len(matches) != 1 {
-		return githubReleaseAsset{}, fmt.Errorf("远端发行必须且只能包含一份发行清单")
-	}
-	return matches[0], nil
-}
-
-func namedRemoteAsset(assets []githubReleaseAsset, name string) (githubReleaseAsset, error) {
-	matches := make([]githubReleaseAsset, 0, 1)
-	for _, asset := range assets {
-		if asset.Name == name {
-			matches = append(matches, asset)
-		}
-	}
-	if len(matches) != 1 {
-		return githubReleaseAsset{}, fmt.Errorf("远端发行必须且只能包含文件 %s", name)
-	}
-	return matches[0], nil
+	return DownloadResult{Product: product, ArchivePath: archivePath, ReleaseURL: releaseURL}, nil
 }

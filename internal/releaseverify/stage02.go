@@ -151,10 +151,10 @@ func runStage02Remote(ctx context.Context, root string, paths runPaths, recorder
 			fail("下载远端成品", downloadErr)
 			continue
 		}
-		verified, verifyErr := releaseartifact.Verify(ctx, releaseartifact.VerifyOptions{
-			ArchivePath:  download.ArchivePath,
-			ManifestPath: download.ManifestPath,
-			Workspace:    filepath.Join(remoteRoot, "verification"),
+		verified, verifyErr := releaseartifact.VerifyProduct(ctx, releaseartifact.VerifyProductOptions{
+			ArchivePath: download.ArchivePath,
+			Product:     download.Product,
+			Workspace:   filepath.Join(remoteRoot, "verification"),
 		})
 		if verifyErr != nil {
 			fail("验收远端成品", verifyErr)
@@ -169,7 +169,7 @@ func runStage02Remote(ctx context.Context, root string, paths runPaths, recorder
 			"artifact":   identity,
 			"version":    artifact.Version,
 			"releaseUrl": download.ReleaseURL,
-			"archive":    verified.Manifest.Archive,
+			"product":    verified.Product,
 		}
 		payload, marshalErr := json.MarshalIndent(summary, "", "  ")
 		if marshalErr != nil {

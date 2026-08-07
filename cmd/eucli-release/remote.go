@@ -12,13 +12,14 @@ import (
 	"eucli-box/internal/releaseops"
 	"eucli-box/internal/releasepublish"
 	"eucli-box/pkg/releasecatalog"
+	"eucli-box/pkg/types"
 	"eucli-box/pkg/workspace"
 )
 
 type remoteReport struct {
-	ReleaseURL string                       `json:"releaseUrl"`
-	Manifest   any                          `json:"manifest"`
-	Verified   releaseartifact.VerifyResult `json:"verified"`
+	ReleaseURL string                           `json:"releaseUrl"`
+	Product    types.ReleaseProductRecord       `json:"product"`
+	Verified   releaseartifact.VerifyProductResult `json:"verified"`
 }
 
 func runRemote(ctx context.Context, args []string) error {
@@ -80,15 +81,15 @@ func runRemote(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("远端只读复核失败，现场保留在 %s：%w", workRoot, err)
 	}
-	verified, err := releaseartifact.Verify(ctx, releaseartifact.VerifyOptions{
-		ArchivePath:  download.ArchivePath,
-		ManifestPath: download.ManifestPath,
-		Workspace:    filepath.Join(workRoot, "verification"),
+	verified, err := releaseartifact.VerifyProduct(ctx, releaseartifact.VerifyProductOptions{
+		ArchivePath: download.ArchivePath,
+		Product:     download.Product,
+		Workspace:   filepath.Join(workRoot, "verification"),
 	})
 	if err != nil {
 		return fmt.Errorf("远端成品验收失败，现场保留在 %s：%w", workRoot, err)
 	}
-	report := remoteReport{ReleaseURL: download.ReleaseURL, Manifest: download.Manifest, Verified: verified}
+	report := remoteReport{ReleaseURL: download.ReleaseURL, Product: download.Product, Verified: verified}
 	if path := strings.TrimSpace(*resultFile); path != "" {
 		if err := writeJSONFile(path, report); err != nil {
 			return err

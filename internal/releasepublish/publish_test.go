@@ -2,6 +2,7 @@ package releasepublish
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,13 +14,14 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"eucli-box/pkg/release"
 	"eucli-box/pkg/releasecatalog"
 	"eucli-box/pkg/types"
 )
 
-func TestPublishCreatesDraftVerifiesAssetsAndPublishes(t *testing.T) {
+func TestPublishCreatesDraftVerifiesArchiveAndPublishes(t *testing.T) {
 	fixture := newPublishFixture(t)
 	publisher := fixture.publisher(t)
 	input := testPublishInput(t)
@@ -29,10 +31,10 @@ func TestPublishCreatesDraftVerifiesAssetsAndPublishes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fixture.draft || fixture.patchCount != 1 || fixture.downloadCount != 4 {
+	if fixture.draft || fixture.patchCount != 1 || fixture.downloadCount != 2 {
 		t.Fatalf("fixture state: draft=%v patch=%d downloads=%d", fixture.draft, fixture.patchCount, fixture.downloadCount)
 	}
-	if result.TagName != manifest.TagName || len(result.Assets) != 2 || result.ReleaseURL == "" {
+	if result.TagName != manifest.TagName || len(result.Assets) != 1 || result.ReleaseURL == "" {
 		t.Fatalf("result = %#v", result)
 	}
 }
@@ -78,7 +80,7 @@ func TestPublishKeepsDraftWhenDownloadedAssetDiffers(t *testing.T) {
 	}
 }
 
-func TestDownloadPublishedAcceptsPublicReleaseWithoutToken(t *testing.T) {
+func TestDownloadPublishedReadsIndexAndDownloadsArchive(t *testing.T) {
 	fixture := newPublishFixture(t)
 	input := testPublishInput(t)
 	manifest := manifestForInput(t, input)
@@ -92,8 +94,96 @@ func TestDownloadPublishedAcceptsPublicReleaseWithoutToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Manifest.TagName != manifest.TagName || result.ReleaseURL == "" {
+	if result.Product.Version != manifest.Version || result.Product.Artifact != manifest.Artifact || result.ReleaseURL == "" {
 		t.Fatalf("result = %#v", result)
+	}
+	if _, err := os.Stat(result.ArchivePath); err != nil {
+		t.Fatalf("archive missing: %v", err)
+	}
+}
+
+func TestUpdateIndexAppendsVersionRecord(t *testing.T) {
+	fixture := newPublishFixture(t)
+	fixture.indexPayload = nil
+	fixture.indexSHA = ""
+	publisher := fixture.publisher(t)
+	catalog, err := releasecatalog.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity := types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "context7"}
+	source, err := catalog.SourceFor(identity.Kind)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := testPublishInput(t)
+	manifest := manifestForInput(t, input)
+	update := IndexUpdate{
+		Artifact:       identity,
+		Version:        manifest.Version,
+		PublishedAt:    time.Date(2026, 7, 31, 8, 0, 0, 0, time.UTC),
+		SourceRevision: manifest.Source.Commit,
+		Compatibility:  manifest.Compatibility,
+		ReleaseNotes:   "## 0.1.0\n\n- 测试正式发布。",
+		Package: releasecatalog.IndexPackage{
+			Platform:   types.ReleasePlatformWindowsX64,
+			ReleaseTag: manifest.TagName,
+			FileName:   manifest.Archive.Name,
+			SizeBytes:  manifest.Archive.Size,
+			SHA256:     manifest.Archive.SHA256,
+		},
+	}
+	if err := publisher.UpdateIndex(context.Background(), source, update); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.putIndexCount != 1 {
+		t.Fatalf("put count = %d", fixture.putIndexCount)
+	}
+	index, err := releasecatalog.DecodeIndex(fixture.indexPayload)
+	if err != nil {
+		t.Fatalf("stored index invalid: %v", err)
+	}
+	version, ok := index.LatestVersion(identity)
+	if !ok || version.Version != manifest.Version {
+		t.Fatalf("index version = %#v ok=%v", version, ok)
+	}
+}
+
+func TestUpdateIndexRejectsDuplicateVersion(t *testing.T) {
+	fixture := newPublishFixture(t)
+	fixture.indexPayload = nil
+	fixture.indexSHA = ""
+	publisher := fixture.publisher(t)
+	catalog, err := releasecatalog.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity := types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "context7"}
+	source, err := catalog.SourceFor(identity.Kind)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := testPublishInput(t)
+	manifest := manifestForInput(t, input)
+	update := IndexUpdate{
+		Artifact:       identity,
+		Version:        manifest.Version,
+		PublishedAt:    time.Date(2026, 7, 31, 8, 0, 0, 0, time.UTC),
+		SourceRevision: manifest.Source.Commit,
+		Compatibility:  manifest.Compatibility,
+		Package: releasecatalog.IndexPackage{
+			Platform:   types.ReleasePlatformWindowsX64,
+			ReleaseTag: manifest.TagName,
+			FileName:   manifest.Archive.Name,
+			SizeBytes:  manifest.Archive.Size,
+			SHA256:     manifest.Archive.SHA256,
+		},
+	}
+	if err := publisher.UpdateIndex(context.Background(), source, update); err != nil {
+		t.Fatal(err)
+	}
+	if err := publisher.UpdateIndex(context.Background(), source, update); err == nil || !strings.Contains(err.Error(), "相同发布物和版本") {
+		t.Fatalf("second UpdateIndex() error = %v", err)
 	}
 }
 
@@ -113,6 +203,9 @@ type publishFixture struct {
 	patchCount     int
 	downloadCount  int
 	nextAssetID    int64
+	indexPayload   []byte
+	indexSHA       string
+	putIndexCount  int
 }
 
 func newPublishFixture(t *testing.T) *publishFixture {
@@ -139,13 +232,40 @@ func (f *publishFixture) seedPublished(input PublishInput) {
 	f.tag = manifest.TagName
 	notes, _ := os.ReadFile(input.NotesPath)
 	f.body = strings.TrimSpace(string(notes))
-	for _, path := range []string{input.ArchivePath, input.ManifestPath} {
-		payload, _ := os.ReadFile(path)
-		f.nextAssetID++
-		id := f.nextAssetID
-		f.payloads[id] = payload
-		f.assets = append(f.assets, githubReleaseAsset{ID: id, Name: filepath.Base(path), Size: int64(len(payload)), URL: fmt.Sprintf("%s/assets/%d", f.server.URL, id), BrowserDownloadURL: fmt.Sprintf("%s/assets/%d", f.server.URL, id)})
+	payload, _ := os.ReadFile(input.ArchivePath)
+	f.nextAssetID++
+	id := f.nextAssetID
+	f.payloads[id] = payload
+	f.assets = append(f.assets, githubReleaseAsset{ID: id, Name: filepath.Base(input.ArchivePath), Size: int64(len(payload)), URL: fmt.Sprintf("%s/assets/%d", f.server.URL, id), BrowserDownloadURL: fmt.Sprintf("%s/assets/%d", f.server.URL, id)})
+	index := releasecatalog.Index{
+		SchemaVersion: releasecatalog.IndexSchemaVersion,
+		UpdatedAt:     time.Date(2026, 7, 31, 8, 0, 0, 0, time.UTC),
+		Artifacts: []releasecatalog.IndexArtifact{{
+			Kind: manifest.Artifact.Kind,
+			ID:   manifest.Artifact.ID,
+			Versions: []releasecatalog.IndexVersion{{
+				Version:        manifest.Version,
+				PublishedAt:    time.Date(2026, 7, 31, 8, 0, 0, 0, time.UTC),
+				SourceRevision: manifest.Source.Commit,
+				Compatibility:  manifest.Compatibility,
+				ReleaseNotes:   strings.TrimSpace(string(notes)),
+				Packages: []releasecatalog.IndexPackage{{
+					Platform:   types.ReleasePlatformWindowsX64,
+					ReleaseTag: manifest.TagName,
+					FileName:   manifest.Archive.Name,
+					SizeBytes:  manifest.Archive.Size,
+					SHA256:     manifest.Archive.SHA256,
+				}},
+			}},
+		}},
 	}
+	payloadJSON, err := json.MarshalIndent(index, "", "  ")
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	payloadJSON = append(payloadJSON, '\n')
+	f.indexPayload = payloadJSON
+	f.indexSHA = "blob-sha-of-index"
 }
 
 func (f *publishFixture) serveHTTP(w http.ResponseWriter, r *http.Request) {
@@ -163,6 +283,59 @@ func (f *publishFixture) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		if f.changeDownload {
 			payload = append([]byte(nil), payload...)
 			payload[0] ^= 0xff
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(payload)
+		return
+	}
+	if strings.HasSuffix(r.URL.Path, "/contents/release-catalog/index.json") && r.Method == http.MethodGet {
+		if f.indexPayload == nil {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"content":  base64.StdEncoding.EncodeToString(f.indexPayload),
+			"sha":      f.indexSHA,
+			"encoding": "base64",
+		})
+		return
+	}
+	if strings.HasSuffix(r.URL.Path, "/contents/release-catalog/index.json") && r.Method == http.MethodPut {
+		f.putIndexCount++
+		var request struct {
+			Content string `json:"content"`
+			SHA     string `json:"sha"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		payload, err := base64.StdEncoding.DecodeString(request.Content)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		f.indexPayload = payload
+		f.indexSHA = "blob-sha-" + fmt.Sprint(f.putIndexCount)
+		_ = json.NewEncoder(w).Encode(map[string]any{"commit": map[string]any{"sha": "commit-sha-of-index"}})
+		return
+	}
+	if strings.HasSuffix(r.URL.Path, "/noelle-silva/eucli-box-ai-tools/main/release-catalog/index.json") {
+		if f.indexPayload == nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(f.indexPayload)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/releases/download/") {
+		if len(f.assets) == 0 {
+			http.NotFound(w, r)
+			return
+		}
+		asset := f.assets[0]
+		payload, ok := f.payloads[asset.ID]
+		if !ok {
+			http.NotFound(w, r)
+			return
 		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(payload)

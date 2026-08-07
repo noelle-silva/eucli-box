@@ -54,6 +54,10 @@ func (p *Publisher) DownloadPublished(ctx context.Context, identity types.Releas
 	if err != nil {
 		return DownloadResult{}, err
 	}
+	sourceRepository, err := p.catalog.SourceFor(types.ReleaseArtifactKindBox)
+	if err != nil {
+		return DownloadResult{}, err
+	}
 	index, err := p.readIndex(ctx, source)
 	if err != nil {
 		return DownloadResult{}, err
@@ -99,7 +103,7 @@ func (p *Publisher) DownloadPublished(ctx context.Context, identity types.Releas
 		Platform:       types.ReleasePlatformWindowsX64,
 		OfficialSource: source.Repository,
 		Compatibility:  record.Compatibility,
-		Source:         types.ReleaseSourceRecord{Repository: source.Repository, Commit: record.SourceRevision, Recorded: true},
+		Source:         types.ReleaseSourceRecord{Repository: sourceRepository.Repository, Commit: record.SourceRevision, Recorded: true},
 		DataVersion:    record.DataVersion,
 	}
 	return DownloadResult{Product: product, ArchivePath: archivePath, ReleaseURL: releaseURL}, nil

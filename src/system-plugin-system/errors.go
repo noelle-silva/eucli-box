@@ -19,3 +19,7 @@ func pluginWriteFailed(message string, cause error) error {
 func pluginExecutionFailed(message string, cause error) error {
 	return apperrors.Wrap(systemName, "system_plugin.execution_failed", message, cause)
 }
+
+func pluginExecutionInvalid(message string, cause error) error {
+	return apperrors.Wrap(systemName, "system_plugin.execution_invalid", message, cause)
+}

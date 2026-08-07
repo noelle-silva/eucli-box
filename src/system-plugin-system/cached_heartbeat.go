@@ -12,7 +12,12 @@ type cachedPlaceholderValues struct {
 	updatedAt time.Time
 }
 
-func (s *system) startCachedHeartbeat(ctx context.Context, pluginID string, interval time.Duration) {
+// startCachedHeartbeat 为单个插件建立独立 ticker；更新闸门可以单独停止该插件的新刷新。
+func (s *system) startCachedHeartbeat(pluginID string, interval time.Duration) {
+	ctx, cancel := context.WithCancel(context.Background())
+	s.mu.Lock()
+	s.heartbeats[pluginID] = cancel
+	s.mu.Unlock()
 	s.heartbeatWait.Add(1)
 	go func() {
 		defer s.heartbeatWait.Done()
@@ -31,7 +36,28 @@ func (s *system) startCachedHeartbeat(ctx context.Context, pluginID string, inte
 	}()
 }
 
+// stopCachedHeartbeat 停止指定插件的新刷新，并等待当前刷新真实结束。
+func (s *system) stopCachedHeartbeat(ctx context.Context, pluginID string) error {
+	s.mu.Lock()
+	cancel := s.heartbeats[pluginID]
+	delete(s.heartbeats, pluginID)
+	s.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	activity := s.activityFor(pluginID)
+	if err := activity.waitForIdle(ctx); err != nil {
+		return pluginExecutionFailed("system plugin heartbeat did not stop in time", err)
+	}
+	return nil
+}
+
 func (s *system) refreshCachedPlugin(ctx context.Context, pluginID string) error {
+	activity := s.activityFor(pluginID)
+	if blocked := activity.acquire(); blocked != "" {
+		return pluginExecutionFailed(blocked, nil)
+	}
+	defer activity.release()
 	records, err := s.discover(ctx)
 	if err != nil {
 		return err

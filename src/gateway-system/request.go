@@ -13,6 +13,9 @@ import (
 
 const maxRequestBodyBytes = 64 << 20
 
+// emptyRequestBody 固定为 {}；前端不能传入 URL、tag、manifest、archive、版本或路径。
+type emptyRequestBody struct{}
+
 func decodeJSON[T any](r *http.Request) (T, error) {
 	var value T
 	payload, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBodyBytes+1))

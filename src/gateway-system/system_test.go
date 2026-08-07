@@ -622,7 +622,7 @@ func (f *fakeGatewayReleaseChecks) Snapshot() types.ReleaseCheckSnapshot {
 	return f.snapshot
 }
 
-func (f *fakeGatewayReleaseChecks) Refresh(context.Context) types.ReleaseCheckSnapshot {
+func (f *fakeGatewayReleaseChecks) Refresh(context.Context, string) types.ReleaseCheckSnapshot {
 	f.refreshes++
 	return f.snapshot
 }
@@ -698,6 +698,22 @@ func (f *fakeGatewaySystemPlugins) AvailablePlaceholderInterfaces(ctx context.Co
 
 func (f *fakeGatewaySystemPlugins) CreatePlaceholderFromInterface(ctx context.Context, library types.PlaceholderLibrary, pluginID string, interfaceID string) (types.PlaceholderLibrary, error) {
 	return library, nil
+}
+
+func (f *fakeGatewaySystemPlugins) InstallPlugin(ctx context.Context, pluginID string) (types.ArtifactInstallState, error) {
+	return types.ArtifactInstallState{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: pluginID}, Status: types.ArtifactStatusActive, CurrentVersion: "0.1.0", Installed: true}, nil
+}
+
+func (f *fakeGatewaySystemPlugins) UpdatePlugin(ctx context.Context, pluginID string) (types.ArtifactInstallState, error) {
+	return types.ArtifactInstallState{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: pluginID}, Status: types.ArtifactStatusActive, CurrentVersion: "0.1.1", Installed: true}, nil
+}
+
+func (f *fakeGatewaySystemPlugins) PluginInstallState(ctx context.Context, pluginID string) (types.ArtifactInstallState, error) {
+	return types.ArtifactInstallState{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: pluginID}, Status: types.ArtifactStatusNotInstalled}, nil
+}
+
+func (f *fakeGatewaySystemPlugins) PluginActivity(ctx context.Context, pluginID string) (types.ArtifactActivityState, error) {
+	return types.ArtifactActivityState{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: pluginID}}, nil
 }
 
 type fakeGatewayWorkspaces struct {
@@ -1232,6 +1248,22 @@ func (f *fakeGatewayTools) SaveToolUserSettings(ctx context.Context, toolID stri
 	tool.PromptDescriptionOverride = settings.PromptDescriptionOverride
 	f.tools[toolID] = tool
 	return tool, nil
+}
+
+func (f *fakeGatewayTools) InstallTool(ctx context.Context, toolID string) (types.ArtifactInstallState, error) {
+	return types.ArtifactInstallState{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: toolID}, Status: types.ArtifactStatusActive, CurrentVersion: "0.1.0", Installed: true}, nil
+}
+
+func (f *fakeGatewayTools) UpdateTool(ctx context.Context, toolID string) (types.ArtifactInstallState, error) {
+	return types.ArtifactInstallState{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: toolID}, Status: types.ArtifactStatusActive, CurrentVersion: "0.1.1", Installed: true}, nil
+}
+
+func (f *fakeGatewayTools) ToolInstallState(ctx context.Context, toolID string) (types.ArtifactInstallState, error) {
+	return types.ArtifactInstallState{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: toolID}, Status: types.ArtifactStatusNotInstalled}, nil
+}
+
+func (f *fakeGatewayTools) ToolActivity(ctx context.Context, toolID string) (types.ArtifactActivityState, error) {
+	return types.ArtifactActivityState{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: toolID}}, nil
 }
 
 type fakeGatewayStickers struct {

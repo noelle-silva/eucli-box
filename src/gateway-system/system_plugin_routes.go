@@ -47,3 +47,53 @@ func (s *system) handleSaveSystemPluginUserConfig(w http.ResponseWriter, r *http
 	}
 	writeData(w, http.StatusOK, plugin)
 }
+
+func (s *system) handlePluginInstallState(w http.ResponseWriter, r *http.Request) {
+	pluginID, err := pathValue(r, "pluginID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	state, err := s.systemPlugins.PluginInstallState(r.Context(), pluginID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, state)
+}
+
+func (s *system) handleInstallPlugin(w http.ResponseWriter, r *http.Request) {
+	pluginID, err := pathValue(r, "pluginID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if _, err := decodeJSON[emptyRequestBody](r); err != nil {
+		writeError(w, err)
+		return
+	}
+	state, err := s.systemPlugins.InstallPlugin(r.Context(), pluginID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, state)
+}
+
+func (s *system) handleUpdatePlugin(w http.ResponseWriter, r *http.Request) {
+	pluginID, err := pathValue(r, "pluginID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if _, err := decodeJSON[emptyRequestBody](r); err != nil {
+		writeError(w, err)
+		return
+	}
+	state, err := s.systemPlugins.UpdatePlugin(r.Context(), pluginID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, state)
+}

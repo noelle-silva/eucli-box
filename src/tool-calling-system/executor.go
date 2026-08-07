@@ -40,6 +40,11 @@ func (s *system) Execute(ctx context.Context, plan types.ToolRunPlan) (types.Too
 	if executableErr != nil {
 		return types.ToolResult{}, executableErr
 	}
+	activity := s.activityFor(plan.Tool.ID)
+	if blocked := activity.acquire(); blocked != "" {
+		return types.ToolResult{}, toolExecutionInvalid(blocked, nil)
+	}
+	defer activity.release()
 	hostWorkingDirectory, err := os.Getwd()
 	if err != nil {
 		return types.ToolResult{}, toolExecutionInvalid("failed to resolve host working directory", err)

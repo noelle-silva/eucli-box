@@ -9,10 +9,14 @@ import (
 	"strings"
 	"time"
 
+	"eucli-box/pkg/release"
 	"eucli-box/pkg/types"
 )
 
 func (s *system) SaveTool(ctx context.Context, tool types.ToolDefinition) error {
+	if s.paths.managedToolPrograms() {
+		return storageInvalid("tool program is managed by install system", nil)
+	}
 	if _, err := cleanID(tool.ID); err != nil {
 		return err
 	}
@@ -42,9 +46,12 @@ func (s *system) LoadTool(ctx context.Context, toolID string) (types.ToolDefinit
 	if err != nil {
 		return types.ToolDefinition{}, err
 	}
-	bodyDirectory, err := s.resolveToolBodyDirectory(tool.ID, tool.BodyDirectory)
-	if err != nil {
-		return types.ToolDefinition{}, err
+	if !s.paths.managedToolPrograms() {
+		bodyDirectory, err := s.resolveToolBodyDirectory(tool.ID, tool.BodyDirectory)
+		if err != nil {
+			return types.ToolDefinition{}, err
+		}
+		tool.BodyDirectory = bodyDirectory
 	}
 	dataDirectory, err := s.paths.toolDataDir(tool.ID)
 	if err != nil {
@@ -54,7 +61,6 @@ func (s *system) LoadTool(ctx context.Context, toolID string) (types.ToolDefinit
 	if err != nil {
 		return types.ToolDefinition{}, err
 	}
-	tool.BodyDirectory = bodyDirectory
 	tool.DataDirectory = dataDirectory
 	tool.UserConfig = copyToolMap(settings.UserConfig)
 	tool.PromptDescriptionOverride = settings.PromptDescriptionOverride
@@ -65,7 +71,15 @@ func (s *system) LoadTool(ctx context.Context, toolID string) (types.ToolDefinit
 }
 
 func (s *system) ListTools(ctx context.Context) ([]types.ToolSummary, error) {
-	entries, err := os.ReadDir(s.paths.toolBodiesRoot())
+	if s.paths.managedToolPrograms() {
+		return s.listManagedTools(ctx)
+	}
+	return s.listDevTools(ctx)
+}
+
+// listDevTools 是普通开发启动的工具列表：扫描 tool-bodies 一级子目录。
+func (s *system) listDevTools(ctx context.Context) ([]types.ToolSummary, error) {
+	entries, err := os.ReadDir(s.paths.toolProgramsRoot())
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
@@ -81,24 +95,70 @@ func (s *system) ListTools(ctx context.Context) ([]types.ToolSummary, error) {
 			continue
 		}
 		toolID := entry.Name()
-		tool, err := s.loadToolDefinition(ctx, toolID)
-		if err != nil {
-			summaries = append(summaries, unavailableToolSummary(toolID, err))
+		summary, ok := s.toolSummaryFromDefinition(ctx, toolID)
+		if !ok {
+			summaries = append(summaries, unavailableToolSummary(toolID, storageReadFailed("failed to load tool definition", nil)))
 			continue
 		}
-		settings, settingsErr := s.loadToolUserSettings(ctx, tool.ID)
-		if settingsErr != nil {
-			summaries = append(summaries, unavailableToolSummary(tool.ID, settingsErr))
-			continue
-		}
-		updatedAt := tool.UpdatedAt
-		if settings.UpdatedAt.After(updatedAt) {
-			updatedAt = settings.UpdatedAt
-		}
-		summaries = append(summaries, types.ToolSummary{ID: tool.ID, Name: tool.Name, Description: tool.Description, Version: tool.Version, EucliBoxCompatibility: tool.EucliBoxCompatibility, Type: tool.Type, UpdatedAt: updatedAt})
+		summaries = append(summaries, summary)
 	}
 	sort.Slice(summaries, func(i, j int) bool { return summaries[i].ID < summaries[j].ID })
 	return summaries, nil
+}
+
+// listManagedTools 是受托模式的工具列表：只列出有有效当前版本记录的已安装工具。
+// 目录存在但没有当前版本记录视为未安装，不进入列表；记录存在但不可读视为损坏。
+func (s *system) listManagedTools(ctx context.Context) ([]types.ToolSummary, error) {
+	entries, err := os.ReadDir(s.paths.toolProgramsRoot())
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, storageReadFailed("failed to scan tool program directory", err)
+	}
+	summaries := make([]types.ToolSummary, 0, len(entries))
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return nil, storageReadFailed("scan cancelled", err)
+		}
+		if !entry.IsDir() {
+			continue
+		}
+		toolID := entry.Name()
+		_, loadErr := s.loadToolDefinition(ctx, toolID)
+		if loadErr != nil {
+			if errors.Is(loadErr, os.ErrNotExist) {
+				continue
+			}
+			summaries = append(summaries, unavailableToolSummary(toolID, loadErr))
+			continue
+		}
+		summary, ok := s.toolSummaryFromDefinition(ctx, toolID)
+		if !ok {
+			summaries = append(summaries, unavailableToolSummary(toolID, storageReadFailed("failed to load tool definition", nil)))
+			continue
+		}
+		summaries = append(summaries, summary)
+	}
+	sort.Slice(summaries, func(i, j int) bool { return summaries[i].ID < summaries[j].ID })
+	return summaries, nil
+}
+
+// toolSummaryFromDefinition 从已加载的定义和用户设置构造摘要；失败返回 false。
+func (s *system) toolSummaryFromDefinition(ctx context.Context, toolID string) (types.ToolSummary, bool) {
+	tool, err := s.loadToolDefinition(ctx, toolID)
+	if err != nil {
+		return types.ToolSummary{}, false
+	}
+	settings, err := s.loadToolUserSettings(ctx, tool.ID)
+	if err != nil {
+		return types.ToolSummary{}, false
+	}
+	updatedAt := tool.UpdatedAt
+	if settings.UpdatedAt.After(updatedAt) {
+		updatedAt = settings.UpdatedAt
+	}
+	return types.ToolSummary{ID: tool.ID, Name: tool.Name, Description: tool.Description, Version: tool.Version, EucliBoxCompatibility: tool.EucliBoxCompatibility, Type: tool.Type, UpdatedAt: updatedAt}, true
 }
 
 func (s *system) SaveToolUserSettings(ctx context.Context, toolID string, settings types.ToolUserSettings) (types.ToolDefinition, error) {
@@ -155,6 +215,13 @@ func (s *system) DeleteTool(ctx context.Context, toolID string) error {
 }
 
 func (s *system) loadToolDefinition(ctx context.Context, toolID string) (types.ToolDefinition, error) {
+	if s.paths.managedToolPrograms() {
+		return s.loadManagedToolDefinition(ctx, toolID)
+	}
+	return s.loadDevToolDefinition(ctx, toolID)
+}
+
+func (s *system) loadDevToolDefinition(ctx context.Context, toolID string) (types.ToolDefinition, error) {
 	target, err := s.paths.toolBodyDefinitionFile(toolID)
 	if err != nil {
 		return types.ToolDefinition{}, err
@@ -166,6 +233,32 @@ func (s *system) loadToolDefinition(ctx context.Context, toolID string) (types.T
 	if strings.TrimSpace(tool.ID) != toolID {
 		return types.ToolDefinition{}, storageInvalid("tool id does not match body directory", nil)
 	}
+	return tool, nil
+}
+
+// loadManagedToolDefinition 从当前版本记录解析出版本目录，再读取定义并注入运行期程序路径。
+func (s *system) loadManagedToolDefinition(ctx context.Context, toolID string) (types.ToolDefinition, error) {
+	programRoot, err := s.paths.toolProgramRoot(toolID)
+	if err != nil {
+		return types.ToolDefinition{}, err
+	}
+	store, err := release.NewProgramStore(programRoot, types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: toolID})
+	if err != nil {
+		return types.ToolDefinition{}, storageInvalid("tool program store is invalid", err)
+	}
+	current, err := store.Current()
+	if err != nil {
+		return types.ToolDefinition{}, err
+	}
+	target := filepath.Join(current.ProgramDirectory, "definition.json")
+	tool, err := readJSON[types.ToolDefinition](ctx, target)
+	if err != nil {
+		return types.ToolDefinition{}, err
+	}
+	if strings.TrimSpace(tool.ID) != toolID {
+		return types.ToolDefinition{}, storageInvalid("tool id does not match body directory", nil)
+	}
+	tool.BodyDirectory = current.ProgramDirectory
 	return tool, nil
 }
 

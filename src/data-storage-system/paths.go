@@ -6,10 +6,11 @@ import (
 )
 
 type paths struct {
-	root string
+	root           string
+	toolBodiesRoot string
 }
 
-func newPaths(root string) (paths, error) {
+func newPaths(root string, toolBodiesRoot string) (paths, error) {
 	if strings.TrimSpace(root) == "" {
 		return paths{}, storageInvalid("root directory is required", nil)
 	}
@@ -17,11 +18,20 @@ func newPaths(root string) (paths, error) {
 	if err != nil {
 		return paths{}, storageInvalid("failed to resolve root directory", err)
 	}
-	return paths{root: filepath.Clean(abs)}, nil
+	toolRoot := strings.TrimSpace(toolBodiesRoot)
+	if toolRoot == "" {
+		toolRoot = filepath.Join(abs, "tool-bodies")
+	} else {
+		toolRoot, err = filepath.Abs(toolRoot)
+		if err != nil {
+			return paths{}, storageInvalid("failed to resolve tool bodies root", err)
+		}
+	}
+	return paths{root: filepath.Clean(abs), toolBodiesRoot: filepath.Clean(toolRoot)}, nil
 }
 
 func (p paths) baseDirs() []string {
-	return []string{p.root, p.sessionsRoot(), p.sessionRolesRoot(), p.sessionGroupsRoot(), p.sessionWorkspacesRoot(), p.rolesRoot(), p.groupsRoot(), p.workspacesRoot(), p.providersRoot(), p.toolBodiesRoot(), p.toolDataRoot(), p.stickersRoot(), p.recycleRoot(), p.metaRoot()}
+	return []string{p.root, p.sessionsRoot(), p.sessionRolesRoot(), p.sessionGroupsRoot(), p.sessionWorkspacesRoot(), p.rolesRoot(), p.groupsRoot(), p.workspacesRoot(), p.providersRoot(), p.toolProgramsRoot(), p.toolDataRoot(), p.stickersRoot(), p.recycleRoot(), p.metaRoot()}
 }
 
 func (p paths) sessionsRoot() string   { return filepath.Join(p.root, "sessions") }
@@ -29,7 +39,17 @@ func (p paths) rolesRoot() string      { return filepath.Join(p.root, "roles") }
 func (p paths) groupsRoot() string     { return filepath.Join(p.root, "groups") }
 func (p paths) workspacesRoot() string { return filepath.Join(p.root, "workspaces") }
 func (p paths) providersRoot() string  { return filepath.Join(p.root, "providers") }
-func (p paths) toolBodiesRoot() string { return filepath.Join(p.root, "tool-bodies") }
+func (p paths) toolProgramsRoot() string { return p.toolBodiesRoot }
+
+// managedToolPrograms 表示工具程序由外部程序根目录托管（阶段四受托运行模式）。
+func (p paths) managedToolPrograms() bool {
+	return p.toolBodiesRoot != filepath.Join(p.root, "tool-bodies")
+}
+
+// toolProgramRoot 是单个工具的受管理程序根目录。
+func (p paths) toolProgramRoot(toolID string) (string, error) {
+	return p.safeJoin(p.toolBodiesRoot, toolID)
+}
 func (p paths) toolDataRoot() string   { return filepath.Join(p.root, "tool-data") }
 func (p paths) stickersRoot() string   { return filepath.Join(p.root, "stickers") }
 func (p paths) recycleRoot() string    { return filepath.Join(p.root, "recycle") }
@@ -240,7 +260,7 @@ func (p paths) providerDataFile(providerID string) (string, error) {
 }
 
 func (p paths) toolBodyDir(toolID string) (string, error) {
-	return p.safeJoin(p.toolBodiesRoot(), toolID)
+	return p.safeJoin(p.toolProgramsRoot(), toolID)
 }
 
 func (p paths) toolBodyDefinitionFile(toolID string) (string, error) {

@@ -85,6 +85,9 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("POST /api/tools", s.authWrap(s.handleSaveTool))
 	s.mux.HandleFunc("GET /api/tools/{toolID}", s.authWrap(s.handleLoadTool))
 	s.mux.HandleFunc("PUT /api/tools/{toolID}/user-config", s.authWrap(s.handleSaveToolUserSettings))
+	s.mux.HandleFunc("GET /api/tools/{toolID}/install-state", s.authWrap(s.handleToolInstallState))
+	s.mux.HandleFunc("POST /api/tools/{toolID}/install", s.authWrap(s.handleInstallTool))
+	s.mux.HandleFunc("POST /api/tools/{toolID}/update", s.authWrap(s.handleUpdateTool))
 
 	s.mux.HandleFunc("GET /api/stickers", s.authWrap(s.handleLoadStickerLibrary))
 	s.mux.HandleFunc("GET /api/stickers/image", s.authWrap(s.handleLoadStickerImage))
@@ -118,6 +121,9 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("GET /api/system-plugins", s.authWrap(s.handleListSystemPlugins))
 	s.mux.HandleFunc("GET /api/system-plugins/{pluginID}", s.authWrap(s.handleLoadSystemPlugin))
 	s.mux.HandleFunc("PUT /api/system-plugins/{pluginID}/user-config", s.authWrap(s.handleSaveSystemPluginUserConfig))
+	s.mux.HandleFunc("GET /api/system-plugins/{pluginID}/install-state", s.authWrap(s.handlePluginInstallState))
+	s.mux.HandleFunc("POST /api/system-plugins/{pluginID}/install", s.authWrap(s.handleInstallPlugin))
+	s.mux.HandleFunc("POST /api/system-plugins/{pluginID}/update", s.authWrap(s.handleUpdatePlugin))
 
 	s.mux.HandleFunc("GET /ws/events", s.handleEventsWebSocket)
 }

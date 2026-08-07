@@ -281,3 +281,53 @@ func (s *system) handleSaveToolUserSettings(w http.ResponseWriter, r *http.Reque
 	}
 	writeData(w, http.StatusOK, tool)
 }
+
+func (s *system) handleToolInstallState(w http.ResponseWriter, r *http.Request) {
+	toolID, err := pathValue(r, "toolID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	state, err := s.tools.ToolInstallState(r.Context(), toolID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, state)
+}
+
+func (s *system) handleInstallTool(w http.ResponseWriter, r *http.Request) {
+	toolID, err := pathValue(r, "toolID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if _, err := decodeJSON[emptyRequestBody](r); err != nil {
+		writeError(w, err)
+		return
+	}
+	state, err := s.tools.InstallTool(r.Context(), toolID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, state)
+}
+
+func (s *system) handleUpdateTool(w http.ResponseWriter, r *http.Request) {
+	toolID, err := pathValue(r, "toolID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if _, err := decodeJSON[emptyRequestBody](r); err != nil {
+		writeError(w, err)
+		return
+	}
+	state, err := s.tools.UpdateTool(r.Context(), toolID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, state)
+}

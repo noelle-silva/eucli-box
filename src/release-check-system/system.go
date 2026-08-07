@@ -6,22 +6,20 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"eucli-box/pkg/release"
+	"eucli-box/pkg/releasecatalog"
 	"eucli-box/pkg/releasecheck"
 	"eucli-box/pkg/types"
 )
 
-const defaultCheckInterval = 24 * time.Hour
-
 type System interface {
-	Start(ctx context.Context) error
 	Snapshot() types.ReleaseCheckSnapshot
-	Refresh(ctx context.Context) types.ReleaseCheckSnapshot
-	Shutdown(ctx context.Context) error
+	Refresh(ctx context.Context, kind string) types.ReleaseCheckSnapshot
 }
 
 type NetworkSystem interface {
@@ -38,29 +36,26 @@ type PluginSystem interface {
 
 type Config struct {
 	BoxVersion string
-	Interval   time.Duration
 	APIBaseURL string
+	IndexBase  string
 	Now        func() time.Time
 }
 
 type checkRunner interface {
-	Check(ctx context.Context, installed []releasecheck.InstalledArtifact, currentBoxVersion string) types.ReleaseCheckSnapshot
+	CheckOnly(ctx context.Context, installed []releasecheck.InstalledArtifact, currentBoxVersion string, requested []types.ReleaseArtifactIdentity) types.ReleaseCheckSnapshot
 }
 
 type system struct {
 	boxVersion string
-	interval   time.Duration
 	now        func() time.Time
 	checker    checkRunner
+	catalog    releasecatalog.Catalog
 	tools      ToolSystem
 	plugins    PluginSystem
 
 	mu       sync.RWMutex
 	snapshot types.ReleaseCheckSnapshot
 	running  bool
-	started  bool
-	cancel   context.CancelFunc
-	wait     sync.WaitGroup
 }
 
 func NewSystem(config Config, network NetworkSystem, tools ToolSystem, plugins PluginSystem) (System, error) {
@@ -77,70 +72,58 @@ func NewSystem(config Config, network NetworkSystem, tools ToolSystem, plugins P
 	if err := release.ValidateVersion(boxVersion); err != nil {
 		return nil, fmt.Errorf("发行检查的业务端版本无效：%w", err)
 	}
-	if config.Interval == 0 {
-		config.Interval = defaultCheckInterval
+	checker, err := releasecheck.New(releasecheck.Config{Client: networkHTTPDoer{network: network}, APIBaseURL: config.APIBaseURL, IndexBase: config.IndexBase, Now: config.Now})
+	if err != nil {
+		return nil, err
 	}
-	if config.Interval < 0 {
-		return nil, fmt.Errorf("发行检查间隔不能为负数")
+	return NewSystemWithChecker(config, checker, tools, plugins, boxVersion)
+}
+
+// NewSystemWithChecker 使用业务端统一创建的官方检查器；工具和插件安装系统共用同一份候选读取。
+func NewSystemWithChecker(config Config, checker checkRunner, tools ToolSystem, plugins PluginSystem, boxVersion string) (System, error) {
+	if checker == nil {
+		return nil, fmt.Errorf("发行检查需要官方候选读取器")
+	}
+	if tools == nil {
+		return nil, fmt.Errorf("发行检查需要工具状态能力")
+	}
+	if plugins == nil {
+		return nil, fmt.Errorf("发行检查需要插件状态能力")
+	}
+	if err := release.ValidateVersion(boxVersion); err != nil {
+		return nil, fmt.Errorf("发行检查的业务端版本无效：%w", err)
 	}
 	if config.Now == nil {
 		config.Now = func() time.Time { return time.Now().UTC() }
 	}
-	checker, err := releasecheck.New(releasecheck.Config{Client: networkHTTPDoer{network: network}, APIBaseURL: config.APIBaseURL, Now: config.Now})
+	catalog, err := releasecatalog.Load()
 	if err != nil {
 		return nil, err
 	}
-	return newSystem(config, checker, tools, plugins, boxVersion), nil
+	return newSystem(config, checker, catalog, tools, plugins, boxVersion), nil
 }
 
-func newSystem(config Config, checker checkRunner, tools ToolSystem, plugins PluginSystem, boxVersion string) *system {
+func newSystem(config Config, checker checkRunner, catalog releasecatalog.Catalog, tools ToolSystem, plugins PluginSystem, boxVersion string) *system {
 	return &system{
 		boxVersion: boxVersion,
-		interval:   config.Interval,
 		now:        config.Now,
 		checker:    checker,
+		catalog:    catalog,
 		tools:      tools,
 		plugins:    plugins,
 		snapshot:   releasecheck.PendingSnapshot(),
 	}
 }
 
-func (s *system) Start(ctx context.Context) error {
-	if ctx == nil {
-		return fmt.Errorf("发行检查启动上下文不能为空")
-	}
-	s.mu.Lock()
-	if s.started {
-		s.mu.Unlock()
-		return fmt.Errorf("发行检查已经启动")
-	}
-	runCtx, cancel := context.WithCancel(ctx)
-	s.started = true
-	s.cancel = cancel
-	s.wait.Add(1)
-	s.mu.Unlock()
-	go s.loop(runCtx)
-	return nil
-}
-
-func (s *system) loop(ctx context.Context) {
-	defer s.wait.Done()
-	s.Refresh(ctx)
-	ticker := time.NewTicker(s.interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			s.Refresh(ctx)
-		}
-	}
-}
-
-func (s *system) Refresh(ctx context.Context) types.ReleaseCheckSnapshot {
+// Refresh 执行一次用户主动的分类刷新。kind 为空表示全量刷新；
+// kind 只能是 eucli-box、tool 或 plugin，且只读取该分类对应官方仓库的一份统一版本索引。
+func (s *system) Refresh(ctx context.Context, kind string) types.ReleaseCheckSnapshot {
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	kind = strings.TrimSpace(kind)
+	if kind != "" && !validRefreshKind(kind) {
+		return failedKindSnapshot(s.now, fmt.Errorf("不支持的刷新分类 %q", kind))
 	}
 	s.mu.Lock()
 	if s.running {
@@ -149,15 +132,22 @@ func (s *system) Refresh(ctx context.Context) types.ReleaseCheckSnapshot {
 		return snapshot
 	}
 	s.running = true
-	s.snapshot = releasecheck.CheckingSnapshot(s.snapshot, s.now())
+	previous := cloneSnapshot(s.snapshot)
+	s.snapshot = releasecheck.CheckingSnapshot(previous, s.now())
 	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.running = false
+		s.mu.Unlock()
+	}()
 
+	requested := s.requestedArtifacts(kind)
 	installed, localFailures := s.installedArtifacts(ctx)
-	snapshot := s.checker.Check(ctx, installed, s.boxVersion)
+	snapshot := s.checker.CheckOnly(ctx, installed, s.boxVersion, requested)
 	applyLocalFailures(&snapshot, localFailures)
+	snapshot = mergeKindSnapshot(previous, snapshot, kind)
 
 	s.mu.Lock()
-	s.running = false
 	s.snapshot = cloneSnapshot(snapshot)
 	s.mu.Unlock()
 	return snapshot
@@ -169,27 +159,67 @@ func (s *system) Snapshot() types.ReleaseCheckSnapshot {
 	return cloneSnapshot(s.snapshot)
 }
 
-func (s *system) Shutdown(ctx context.Context) error {
-	if ctx == nil {
-		return fmt.Errorf("发行检查停止上下文不能为空")
+// requestedArtifacts 按刷新分类筛选正式白名单中的发布物。
+func (s *system) requestedArtifacts(kind string) []types.ReleaseArtifactIdentity {
+	requested := make([]types.ReleaseArtifactIdentity, 0, len(s.catalog.Artifacts))
+	for _, artifact := range s.catalog.Artifacts {
+		if kind != "" && artifact.Kind != kind {
+			continue
+		}
+		requested = append(requested, artifact)
 	}
-	s.mu.Lock()
-	cancel := s.cancel
-	s.cancel = nil
-	s.mu.Unlock()
-	if cancel != nil {
-		cancel()
+	return requested
+}
+
+// mergeKindSnapshot 把本次分类刷新结果与上一次快照合并：
+// 本次刷新的分类使用最新结果，其他分类保留上一次成功结果；全量刷新直接替换全部。
+func mergeKindSnapshot(previous types.ReleaseCheckSnapshot, current types.ReleaseCheckSnapshot, kind string) types.ReleaseCheckSnapshot {
+	if kind == "" {
+		return current
 	}
-	done := make(chan struct{})
-	go func() {
-		s.wait.Wait()
-		close(done)
-	}()
-	select {
-	case <-ctx.Done():
-		return fmt.Errorf("等待发行检查停止失败：%w", ctx.Err())
-	case <-done:
-		return nil
+	results := make([]types.ReleaseCheckResult, 0, len(current.Results)+len(previous.Results))
+	for _, result := range current.Results {
+		results = append(results, result)
+	}
+	for _, result := range previous.Results {
+		if result.Artifact.Kind == kind {
+			continue
+		}
+		results = append(results, result)
+	}
+	sort.Slice(results, func(i int, j int) bool {
+		if results[i].Artifact.Kind != results[j].Artifact.Kind {
+			return results[i].Artifact.Kind < results[j].Artifact.Kind
+		}
+		return results[i].Artifact.ID < results[j].Artifact.ID
+	})
+	status := types.ReleaseCheckStatusCompleted
+	for _, result := range results {
+		if result.Status == types.ReleaseCheckStatusFailed {
+			status = types.ReleaseCheckStatusFailed
+			break
+		}
+	}
+	return types.ReleaseCheckSnapshot{Status: status, StartedAt: current.StartedAt, CheckedAt: current.CheckedAt, Results: results}
+}
+
+func validRefreshKind(kind string) bool {
+	switch kind {
+	case types.ReleaseArtifactKindBox, types.ReleaseArtifactKindTool, types.ReleaseArtifactKindPlugin:
+		return true
+	default:
+		return false
+	}
+}
+
+func failedKindSnapshot(now func() time.Time, err error) types.ReleaseCheckSnapshot {
+	started := now()
+	return types.ReleaseCheckSnapshot{
+		Status:        types.ReleaseCheckStatusFailed,
+		StartedAt:     started,
+		CheckedAt:     started,
+		Results:       []types.ReleaseCheckResult{},
+		FailureReason: strings.TrimSpace(err.Error()),
 	}
 }
 
@@ -204,9 +234,15 @@ func (s *system) installedArtifacts(ctx context.Context) ([]releasecheck.Install
 		failures[types.ReleaseArtifactKindTool] = "读取当前工具状态失败：" + err.Error()
 	} else {
 		for _, tool := range tools {
+			if tool.Status != types.ToolAvailabilityActive {
+				continue
+			}
 			identity := types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: strings.TrimSpace(tool.ID)}
 			version := strings.TrimSpace(tool.Version)
 			if identity.ID == "" || release.ValidateVersion(version) != nil {
+				continue
+			}
+			if release.ValidateEucliBoxCompatibility(tool.EucliBoxCompatibility) != nil {
 				continue
 			}
 			compatibility := tool.EucliBoxCompatibility
@@ -218,9 +254,15 @@ func (s *system) installedArtifacts(ctx context.Context) ([]releasecheck.Install
 		failures[types.ReleaseArtifactKindPlugin] = "读取当前插件状态失败：" + err.Error()
 	} else {
 		for _, plugin := range plugins {
+			if !plugin.Installed {
+				continue
+			}
 			identity := types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: strings.TrimSpace(plugin.ID)}
 			version := strings.TrimSpace(plugin.Version)
 			if identity.ID == "" || release.ValidateVersion(version) != nil {
+				continue
+			}
+			if release.ValidateEucliBoxCompatibility(plugin.EucliBoxCompatibility) != nil {
 				continue
 			}
 			compatibility := plugin.EucliBoxCompatibility

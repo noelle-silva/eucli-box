@@ -45,6 +45,10 @@ func (s *system) ListPlugins(ctx context.Context) ([]types.SystemPluginSummary, 
 			LifecycleType:         record.manifest.LifecycleType,
 			Status:                record.status,
 			StatusMessage:         record.statusMessage,
+			Installed:             true,
+			CurrentVersion:        record.manifest.Version,
+			InstallStatus:         s.installStatusFor(record),
+			Active:                s.activityFor(record.manifest.ID).state().Active,
 		})
 	}
 	return summaries, nil
@@ -55,13 +59,24 @@ func (s *system) LoadPlugin(ctx context.Context, pluginID string) (types.SystemP
 	if err != nil {
 		return types.SystemPluginView{}, err
 	}
-	return record.view(), nil
+	view := record.view()
+	view.Active = s.activityFor(record.locatorID()).state().Active
+	view.InstallStatus = s.installStatusFor(record)
+	return view, nil
 }
 
 func (s *system) discover(ctx context.Context) ([]pluginRecord, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, pluginReadFailed("read cancelled", err)
 	}
+	if s.managedPrograms() {
+		return s.discoverManaged(ctx)
+	}
+	return s.discoverDev(ctx)
+}
+
+// discoverDev 是普通开发启动的插件发现：扫描 SourceDir 一级子目录。
+func (s *system) discoverDev(ctx context.Context) ([]pluginRecord, error) {
 	entries, err := os.ReadDir(s.sourceDir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -88,6 +103,49 @@ func (s *system) discover(ctx context.Context) ([]pluginRecord, error) {
 	return records, nil
 }
 
+// discoverManaged 是受托模式的插件发现：只生成有有效当前版本记录的已安装插件。
+// 目录存在但没有当前版本记录视为未安装，不生成可执行记录。
+func (s *system) discoverManaged(ctx context.Context) ([]pluginRecord, error) {
+	entries, err := os.ReadDir(s.sourceDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, pluginReadFailed("failed to read system plugin program directory", err)
+	}
+	records := []pluginRecord{}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, pluginReadFailed("read cancelled", err)
+		}
+		pluginID := entry.Name()
+		directory := filepath.Join(s.sourceDir, pluginID)
+		store, err := release.NewProgramStore(directory, types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: pluginID})
+		if err != nil {
+			continue
+		}
+		current, err := store.Current()
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			records = append(records, unavailablePluginRecord(pluginID, directory, "当前插件版本记录不可读："+err.Error(), s.boxVersion))
+			continue
+		}
+		record, ok := s.loadManagedRecord(ctx, current.ProgramDirectory, pluginID, current.Version)
+		if ok {
+			records = append(records, record)
+		}
+	}
+	sort.SliceStable(records, func(i, j int) bool {
+		return records[i].displayName() < records[j].displayName()
+	})
+	return records, nil
+}
+
 func (s *system) loadRecord(ctx context.Context, directory string, sourceID string) (pluginRecord, bool) {
 	manifestFile := filepath.Join(directory, "manifest.json")
 	if !fileExists(manifestFile) {
@@ -99,6 +157,28 @@ func (s *system) loadRecord(ctx context.Context, directory string, sourceID stri
 		return unavailablePluginRecord(sourceID, directory, reason, s.boxVersion), true
 	}
 	manifest = normalizeManifest(manifest)
+	return s.buildRecord(ctx, manifest, sourceID, directory), true
+}
+
+// loadManagedRecord 从当前版本目录加载插件；版本必须与当前版本记录一致。
+func (s *system) loadManagedRecord(ctx context.Context, directory string, sourceID string, expectedVersion string) (pluginRecord, bool) {
+	manifestFile := filepath.Join(directory, "manifest.json")
+	if !fileExists(manifestFile) {
+		return unavailablePluginRecord(sourceID, directory, "系统插件版本目录缺少 manifest.json", s.boxVersion), true
+	}
+	manifest, err := readJSONFile[types.SystemPluginManifest](ctx, manifestFile)
+	if err != nil {
+		reason := "系统插件声明无法读取：" + err.Error()
+		return unavailablePluginRecord(sourceID, directory, reason, s.boxVersion), true
+	}
+	manifest = normalizeManifest(manifest)
+	if manifest.Version != strings.TrimSpace(expectedVersion) {
+		return unavailablePluginRecord(sourceID, directory, "插件版本与当前版本记录不一致", s.boxVersion), true
+	}
+	return s.buildRecord(ctx, manifest, sourceID, directory), true
+}
+
+func (s *system) buildRecord(ctx context.Context, manifest types.SystemPluginManifest, sourceID string, directory string) pluginRecord {
 	record := pluginRecord{
 		manifest:      manifest,
 		sourceID:      sourceID,
@@ -141,7 +221,7 @@ func (s *system) loadRecord(ctx context.Context, directory string, sourceID stri
 	if failure := s.getFailure(manifest.ID); failure != "" {
 		record.markUnavailable(failure)
 	}
-	return record, true
+	return record
 }
 
 func (s *system) findRecord(ctx context.Context, pluginID string) (pluginRecord, error) {
@@ -259,11 +339,30 @@ func (r pluginRecord) view() types.SystemPluginView {
 		LifecycleType:         r.manifest.LifecycleType,
 		Status:                r.status,
 		StatusMessage:         r.statusMessage,
+		Installed:             true,
+		CurrentVersion:        r.manifest.Version,
 		DefaultConfig:         copyMap(r.defaultConfig),
 		UserConfig:            copyMap(r.userConfig.UserConfig),
 		ConfigSchema:          copyMap(r.manifest.ConfigSchema),
 		PlaceholderInterfaces: r.interfaceViews(),
 	}
+}
+
+// installStatusFor 把插件状态映射到统一安装状态词表。
+func (s *system) installStatusFor(record pluginRecord) string {
+	operationFile := filepath.Join(s.pluginProgramRoot(record.locatorID()), "operation.json")
+	if recordValue, err := release.ReadOperationRecord(operationFile); err == nil && recordValue.Result == release.OperationResultFailed {
+		return types.ArtifactStatusFailed
+	}
+	if record.status == types.SystemPluginStatusActive {
+		return types.ArtifactStatusActive
+	}
+	return types.ArtifactStatusUnavailable
+}
+
+// managedPrograms 表示插件程序由外部程序根目录托管（阶段四受托运行模式）。
+func (s *system) managedPrograms() bool {
+	return s.programRoot != ""
 }
 
 func unavailablePluginRecord(sourceID string, directory string, reason string, boxVersion string) pluginRecord {

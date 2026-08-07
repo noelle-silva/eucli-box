@@ -57,6 +57,12 @@ type SystemPluginView struct {
 	LifecycleType         string                                 `json:"lifecycleType"`
 	Status                string                                 `json:"status"`
 	StatusMessage         string                                 `json:"statusMessage,omitempty"`
+	Installed             bool                                   `json:"installed,omitempty"`
+	CurrentVersion        string                                 `json:"currentVersion,omitempty"`
+	InstallStatus         string                                 `json:"installStatus,omitempty"`
+	InstallPhase          string                                 `json:"installPhase,omitempty"`
+	OperationID           string                                 `json:"operationId,omitempty"`
+	Active                bool                                   `json:"active,omitempty"`
 	DefaultConfig         map[string]any                         `json:"defaultConfig,omitempty"`
 	UserConfig            map[string]any                         `json:"userConfig,omitempty"`
 	ConfigSchema          map[string]any                         `json:"configSchema,omitempty"`
@@ -74,6 +80,12 @@ type SystemPluginSummary struct {
 	LifecycleType         string                `json:"lifecycleType"`
 	Status                string                `json:"status"`
 	StatusMessage         string                `json:"statusMessage,omitempty"`
+	Installed             bool                  `json:"installed,omitempty"`
+	CurrentVersion        string                `json:"currentVersion,omitempty"`
+	InstallStatus         string                `json:"installStatus,omitempty"`
+	InstallPhase          string                `json:"installPhase,omitempty"`
+	OperationID           string                `json:"operationId,omitempty"`
+	Active                bool                  `json:"active,omitempty"`
 }
 
 type SystemPluginAvailablePlaceholderInterface struct {

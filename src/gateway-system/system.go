@@ -89,6 +89,10 @@ type ToolSystem interface {
 	LoadTool(ctx context.Context, toolID string) (types.ToolDefinition, error)
 	ListTools(ctx context.Context) ([]types.ToolSummary, error)
 	SaveToolUserSettings(ctx context.Context, toolID string, settings types.ToolUserSettings) (types.ToolDefinition, error)
+	InstallTool(ctx context.Context, toolID string) (types.ArtifactInstallState, error)
+	UpdateTool(ctx context.Context, toolID string) (types.ArtifactInstallState, error)
+	ToolInstallState(ctx context.Context, toolID string) (types.ArtifactInstallState, error)
+	ToolActivity(ctx context.Context, toolID string) (types.ArtifactActivityState, error)
 }
 
 type SessionSystem interface {
@@ -161,6 +165,10 @@ type SystemPluginSystem interface {
 	SavePluginUserConfig(ctx context.Context, pluginID string, config types.SystemPluginUserConfig) (types.SystemPluginView, error)
 	AvailablePlaceholderInterfaces(ctx context.Context, library types.PlaceholderLibrary) ([]types.SystemPluginAvailablePlaceholderInterface, error)
 	CreatePlaceholderFromInterface(ctx context.Context, library types.PlaceholderLibrary, pluginID string, interfaceID string) (types.PlaceholderLibrary, error)
+	InstallPlugin(ctx context.Context, pluginID string) (types.ArtifactInstallState, error)
+	UpdatePlugin(ctx context.Context, pluginID string) (types.ArtifactInstallState, error)
+	PluginInstallState(ctx context.Context, pluginID string) (types.ArtifactInstallState, error)
+	PluginActivity(ctx context.Context, pluginID string) (types.ArtifactActivityState, error)
 }
 
 type AIAssistSystem interface {
@@ -171,7 +179,7 @@ type AIAssistSystem interface {
 
 type ReleaseCheckSystem interface {
 	Snapshot() types.ReleaseCheckSnapshot
-	Refresh(ctx context.Context) types.ReleaseCheckSnapshot
+	Refresh(ctx context.Context, kind string) types.ReleaseCheckSnapshot
 }
 
 type Config struct {

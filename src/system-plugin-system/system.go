@@ -10,8 +10,11 @@ import (
 
 	"eucli-box/internal/boxrelease"
 	"eucli-box/pkg/release"
+	"eucli-box/pkg/releasecheck"
 	"eucli-box/pkg/types"
 )
+
+const defaultUpdateWaitTimeout = 30 * time.Second
 
 type System interface {
 	Start(ctx context.Context) error
@@ -22,6 +25,11 @@ type System interface {
 	AvailablePlaceholderInterfaces(ctx context.Context, library types.PlaceholderLibrary) ([]types.SystemPluginAvailablePlaceholderInterface, error)
 	CreatePlaceholderFromInterface(ctx context.Context, library types.PlaceholderLibrary, pluginID string, interfaceID string) (types.PlaceholderLibrary, error)
 	Shutdown(ctx context.Context) error
+
+	InstallPlugin(ctx context.Context, pluginID string) (types.ArtifactInstallState, error)
+	UpdatePlugin(ctx context.Context, pluginID string) (types.ArtifactInstallState, error)
+	PluginInstallState(ctx context.Context, pluginID string) (types.ArtifactInstallState, error)
+	PluginActivity(ctx context.Context, pluginID string) (types.ArtifactActivityState, error)
 }
 
 type Config struct {
@@ -29,20 +37,29 @@ type Config struct {
 	DataDir    string
 	Timeout    time.Duration
 	BoxVersion string
+	ProgramRoot string
+	Candidates  releasecheck.CandidateReader
+	HTTPClient  release.HTTPDoer
 }
 
 type system struct {
-	sourceDir  string
-	dataDir    string
-	timeout    time.Duration
-	boxVersion string
+	sourceDir   string
+	dataDir     string
+	timeout     time.Duration
+	boxVersion  string
+	programRoot string
+	candidates  releasecheck.CandidateReader
+	httpClient  release.HTTPDoer
 
 	mu              sync.Mutex
 	persistent      map[string]*persistentProcess
 	cachedValues    map[string]cachedPlaceholderValues
 	heartbeatCancel context.CancelFunc
+	heartbeats      map[string]context.CancelFunc
 	heartbeatWait   sync.WaitGroup
 	failures        map[string]string
+	activities      map[string]*pluginActivity
+	updateWaitTimeout time.Duration
 }
 
 func NewSystem(config Config) (System, error) {
@@ -79,14 +96,34 @@ func NewSystem(config Config) (System, error) {
 	if err := release.ValidateVersion(boxVersion); err != nil {
 		return nil, pluginInvalid(fmt.Sprintf("eucli-box 版本无效：%v", err), err)
 	}
+	programRoot := strings.TrimSpace(config.ProgramRoot)
+	if programRoot != "" {
+		if config.Candidates == nil {
+			return nil, pluginInvalid("official candidate reader is required for managed plugin programs", nil)
+		}
+		if config.HTTPClient == nil {
+			return nil, pluginInvalid("download client is required for managed plugin programs", nil)
+		}
+		programAbs, absErr := filepath.Abs(programRoot)
+		if absErr != nil {
+			return nil, pluginInvalid("failed to resolve program root", absErr)
+		}
+		programRoot = filepath.Clean(programAbs)
+	}
 	return &system{
-		sourceDir:    filepath.Clean(sourceAbs),
-		dataDir:      filepath.Clean(dataAbs),
-		timeout:      config.Timeout,
-		boxVersion:   boxVersion,
-		persistent:   map[string]*persistentProcess{},
-		cachedValues: map[string]cachedPlaceholderValues{},
-		failures:     map[string]string{},
+		sourceDir:         filepath.Clean(sourceAbs),
+		dataDir:           filepath.Clean(dataAbs),
+		timeout:           config.Timeout,
+		boxVersion:        boxVersion,
+		programRoot:       programRoot,
+		candidates:        config.Candidates,
+		httpClient:        config.HTTPClient,
+		persistent:        map[string]*persistentProcess{},
+		cachedValues:      map[string]cachedPlaceholderValues{},
+		heartbeats:        map[string]context.CancelFunc{},
+		failures:          map[string]string{},
+		activities:        map[string]*pluginActivity{},
+		updateWaitTimeout: defaultUpdateWaitTimeout,
 	}, nil
 }
 
@@ -95,10 +132,6 @@ func (s *system) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
-	s.mu.Lock()
-	s.heartbeatCancel = heartbeatCancel
-	s.mu.Unlock()
 	for _, record := range records {
 		if record.status != types.SystemPluginStatusActive {
 			continue
@@ -112,7 +145,7 @@ func (s *system) Start(ctx context.Context) error {
 			if err := s.refreshCachedPlugin(ctx, record.manifest.ID); err != nil {
 				s.setFailure(record.manifest.ID, err.Error())
 			}
-			s.startCachedHeartbeat(heartbeatCtx, record.manifest.ID, time.Duration(record.manifest.HeartbeatIntervalMs)*time.Millisecond)
+			s.startCachedHeartbeat(record.manifest.ID, time.Duration(record.manifest.HeartbeatIntervalMs)*time.Millisecond)
 		}
 	}
 	return nil
@@ -122,11 +155,16 @@ func (s *system) Shutdown(ctx context.Context) error {
 	s.mu.Lock()
 	heartbeatCancel := s.heartbeatCancel
 	s.heartbeatCancel = nil
+	heartbeats := s.heartbeats
+	s.heartbeats = map[string]context.CancelFunc{}
 	processes := s.persistent
 	s.persistent = map[string]*persistentProcess{}
 	s.mu.Unlock()
 	if heartbeatCancel != nil {
 		heartbeatCancel()
+	}
+	for _, cancel := range heartbeats {
+		cancel()
 	}
 	done := make(chan struct{})
 	go func() {

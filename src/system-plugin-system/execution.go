@@ -72,7 +72,13 @@ func (s *system) resolveRecordValues(ctx context.Context, record pluginRecord) (
 		}
 		return resolved, nil
 	}
+	activity := s.activityFor(record.manifest.ID)
+	if blocked := activity.acquire(); blocked != "" {
+		s.setFailure(record.manifest.ID, blocked)
+		return nil, pluginProblems(record)
+	}
 	resolved, err := s.resolveRecord(ctx, record)
+	activity.release()
 	if err != nil {
 		s.setFailure(record.manifest.ID, err.Error())
 		return nil, pluginProblems(record)
@@ -246,7 +252,24 @@ func (p *persistentProcess) request(ctx context.Context, request types.SystemPlu
 	}
 }
 
-func (p *persistentProcess) close(ctx context.Context) {
+// stopGracefully 关闭输入并等待进程真实退出；只关闭管道但进程仍存在不算结束。
+func (p *persistentProcess) stopGracefully(ctx context.Context) error {
+	_ = p.stdin.Close()
+	done := make(chan struct{})
+	go func() {
+		_ = p.cmd.Wait()
+		close(done)
+	}()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-done:
+		return nil
+	}
+}
+
+// forceStopAndWait 仅在明确的停止超时后使用，仍必须等待真实退出并返回结果。
+func (p *persistentProcess) forceStopAndWait(ctx context.Context) error {
 	_ = p.stdin.Close()
 	if p.cmd.Process != nil {
 		_ = p.cmd.Process.Kill()
@@ -258,8 +281,15 @@ func (p *persistentProcess) close(ctx context.Context) {
 	}()
 	select {
 	case <-ctx.Done():
+		return ctx.Err()
 	case <-done:
+		return nil
 	}
+}
+
+// close 只保留全局关闭或错误丢弃语义；不能把“已经关闭管道”报告为活动结束。
+func (p *persistentProcess) close(ctx context.Context) {
+	_ = p.forceStopAndWait(ctx)
 }
 
 func (s *system) dropPersistentProcess(pluginID string) {

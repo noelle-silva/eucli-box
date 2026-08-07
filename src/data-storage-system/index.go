@@ -77,7 +77,11 @@ func (s *system) rebuildToolIndex(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return writeIndex(ctx, filepath.Join(s.paths.toolBodiesRoot(), "index.json"), rootIndex[types.ToolSummary]{Items: tools})
+	root := s.paths.toolProgramsRoot()
+	if s.paths.managedToolPrograms() {
+		root = s.paths.toolDataRoot()
+	}
+	return writeIndex(ctx, filepath.Join(root, "index.json"), rootIndex[types.ToolSummary]{Items: tools})
 }
 
 func (s *system) rebuildAllSessionIndexes(ctx context.Context) error {

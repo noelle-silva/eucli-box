@@ -107,7 +107,8 @@ type System interface {
 }
 
 type Config struct {
-	RootDir string
+	RootDir        string
+	ToolBodiesRoot string
 }
 
 type system struct {
@@ -120,7 +121,7 @@ func NewSystem(config Config) (System, error) {
 	if root == "" {
 		root = "data"
 	}
-	paths, err := newPaths(root)
+	paths, err := newPaths(root, config.ToolBodiesRoot)
 	if err != nil {
 		return nil, err
 	}

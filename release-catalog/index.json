@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-08-07T18:45:42.740854Z",
+  "updatedAt": "2026-08-07T18:48:48.3840793Z",
   "artifacts": [
     {
       "kind": "eucli-box",
@@ -19,6 +19,22 @@
               "fileName": "eucli-box_0.1.0_windows-x64.zip",
               "sizeBytes": 6814024,
               "sha256": "8a2eb9cebf8acb389d5474107c5b34eb4da93abefaae371485793bcc722d9c69"
+            }
+          ]
+        },
+        {
+          "version": "0.1.1",
+          "publishedAt": "2026-08-07T18:48:47.9641263Z",
+          "sourceRevision": "dabd664571f7e5ce0822aaec17f9605c0c3d0710",
+          "dataVersion": "1.0.0",
+          "releaseNotes": "## 0.1.1 - 2026-08-04\n\n- 完善开发版业务端安装与本机运行体验",
+          "packages": [
+            {
+              "platform": "windows-x64",
+              "releaseTag": "v0.1.1",
+              "fileName": "eucli-box_0.1.1_windows-x64.zip",
+              "sizeBytes": 7091708,
+              "sha256": "4c7ca0908a1a16a438f019e3d02258ad006e441c18489648e87d783ec82a1439"
             }
           ]
         }

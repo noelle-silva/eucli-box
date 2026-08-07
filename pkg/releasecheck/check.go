@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	defaultAPIBaseURL = "https://api.github.com"
-	defaultTimeout    = 15 * time.Second
+	defaultAPIBaseURL  = "https://api.github.com"
+	defaultIndexBase   = "https://raw.githubusercontent.com"
+	defaultTimeout     = 15 * time.Second
 )
 
 type HTTPDoer interface {
@@ -31,18 +32,20 @@ type InstalledArtifact struct {
 type Config struct {
 	Client     HTTPDoer
 	APIBaseURL string
+	IndexBase  string
 	Timeout    time.Duration
 	Now        func() time.Time
 	Token      string
 }
 
 type Checker struct {
-	catalog    releasecatalog.Catalog
-	client     HTTPDoer
-	apiBaseURL string
-	timeout    time.Duration
-	now        func() time.Time
-	token      string
+	catalog      releasecatalog.Catalog
+	client       HTTPDoer
+	apiBaseURL   string
+	indexBaseURL string
+	timeout      time.Duration
+	now          func() time.Time
+	token        string
 }
 
 func New(config Config) (*Checker, error) {
@@ -60,6 +63,10 @@ func New(config Config) (*Checker, error) {
 	if !strings.HasPrefix(config.APIBaseURL, "https://") && !strings.HasPrefix(config.APIBaseURL, "http://127.0.0.1:") {
 		return nil, fmt.Errorf("发行检查 API 必须使用 GitHub HTTPS 地址")
 	}
+	config.IndexBase = strings.TrimRight(strings.TrimSpace(config.IndexBase), "/")
+	if config.IndexBase == "" {
+		config.IndexBase = defaultIndexBase
+	}
 	if config.Timeout == 0 {
 		config.Timeout = defaultTimeout
 	}
@@ -70,12 +77,13 @@ func New(config Config) (*Checker, error) {
 		config.Now = func() time.Time { return time.Now().UTC() }
 	}
 	return &Checker{
-		catalog:    catalog,
-		client:     config.Client,
-		apiBaseURL: config.APIBaseURL,
-		timeout:    config.Timeout,
-		now:        config.Now,
-		token:      strings.TrimSpace(config.Token),
+		catalog:      catalog,
+		client:       config.Client,
+		apiBaseURL:   config.APIBaseURL,
+		indexBaseURL: config.IndexBase,
+		timeout:      config.Timeout,
+		now:          config.Now,
+		token:        strings.TrimSpace(config.Token),
 	}, nil
 }
 
@@ -83,6 +91,8 @@ func (c *Checker) Check(ctx context.Context, installed []InstalledArtifact, curr
 	return c.CheckOnly(ctx, installed, currentBoxVersion, c.catalog.Artifacts)
 }
 
+// CheckOnly 按请求的发布物类别分别读取对应官方仓库的统一版本索引。
+// 每个被请求的类别只读取一次索引；不读取其他类别仓库，不列举 Release，不读取 Release 附属资料。
 func (c *Checker) CheckOnly(ctx context.Context, installed []InstalledArtifact, currentBoxVersion string, requested []types.ReleaseArtifactIdentity) types.ReleaseCheckSnapshot {
 	started := c.now()
 	if ctx == nil {
@@ -95,65 +105,97 @@ func (c *Checker) CheckOnly(ctx context.Context, installed []InstalledArtifact, 
 		}
 	}
 	installedByIdentity := normalizeInstalled(installed)
-	results := make([]types.ReleaseCheckResult, 0, len(requestedSet))
-	for _, source := range c.catalog.Sources {
-		if !sourceRequested(source.Kind, requestedSet) {
+
+	kindRequested := make(map[string]struct{})
+	for _, artifact := range c.catalog.Artifacts {
+		if _, requested := requestedSet[identityKey(artifact)]; requested {
+			kindRequested[artifact.Kind] = struct{}{}
+		}
+	}
+	kindIndexes := make(map[string]releasecatalog.Index, len(kindRequested))
+	kindErrors := make(map[string]error, len(kindRequested))
+	for kind := range kindRequested {
+		source, err := c.catalog.SourceFor(kind)
+		if err != nil {
+			kindErrors[kind] = err
 			continue
 		}
-		releases, err := c.readRepositoryReleases(ctx, source)
-		for _, artifact := range c.catalog.Artifacts {
-			if artifact.Kind != source.Kind {
-				continue
-			}
-			if _, requested := requestedSet[identityKey(artifact)]; !requested {
-				continue
-			}
-			installedArtifact, isInstalled := installedByIdentity[identityKey(artifact)]
-			result := types.ReleaseCheckResult{
-				Artifact:       artifact,
-				Source:         normalizedSource(c.catalog, source),
-				Installed:      isInstalled,
-				CurrentVersion: installedArtifact.Version,
-				Status:         types.ReleaseCheckStatusCompleted,
-				CheckedAt:      started,
-			}
-			if err != nil {
-				result.Status = types.ReleaseCheckStatusFailed
-				result.FailureReason = err.Error()
-				results = append(results, result)
-				continue
-			}
-			candidate, candidateErr := c.latestCandidate(ctx, source, artifact, releases)
-			if candidateErr != nil {
-				result.Status = types.ReleaseCheckStatusFailed
-				result.FailureReason = candidateErr.Error()
-				results = append(results, result)
-				continue
-			}
-			if candidate != nil {
-				result.LatestVersion = candidate.manifest.Version
-				result.ReleaseURL = candidate.release.HTMLURL
-				result.ReleaseNotes = strings.TrimSpace(candidate.release.Body)
-				result.DownloadSize = candidate.manifest.Archive.Size
-				if isInstalled {
-					order, compareErr := release.CompareVersions(candidate.manifest.Version, installedArtifact.Version)
-					if compareErr != nil {
-						result.Status = types.ReleaseCheckStatusFailed
-						result.FailureReason = compareErr.Error()
-						results = append(results, result)
-						continue
-					}
-					result.UpdateAvailable = order > 0
-				} else {
-					result.UpdateAvailable = true
-				}
-				if candidate.manifest.Compatibility != nil && strings.TrimSpace(currentBoxVersion) != "" {
-					status := release.AssessEucliBoxCompatibility(candidate.manifest.Version, currentBoxVersion, *candidate.manifest.Compatibility)
-					result.Compatibility = &status
-				}
+		index, err := c.readIndex(ctx, source)
+		if err != nil {
+			kindErrors[kind] = err
+			continue
+		}
+		kindIndexes[kind] = index
+	}
+
+	results := make([]types.ReleaseCheckResult, 0, len(requestedSet))
+	for _, artifact := range c.catalog.Artifacts {
+		if _, requested := requestedSet[identityKey(artifact)]; !requested {
+			continue
+		}
+		installedArtifact, isInstalled := installedByIdentity[identityKey(artifact)]
+		source, sourceErr := c.catalog.SourceFor(artifact.Kind)
+		if sourceErr != nil {
+			sourceErr = fmt.Errorf("读取 %s 官方来源失败：%w", artifact.Kind, sourceErr)
+		}
+		result := types.ReleaseCheckResult{
+			Artifact:       artifact,
+			Source:         source,
+			Installed:      isInstalled,
+			CurrentVersion: installedArtifact.Version,
+			Status:         types.ReleaseCheckStatusCompleted,
+			CheckedAt:      started,
+		}
+		if sourceErr != nil || kindErrors[artifact.Kind] != nil {
+			result.Status = types.ReleaseCheckStatusFailed
+			if sourceErr != nil {
+				result.FailureReason = sourceErr.Error()
+			} else {
+				result.FailureReason = kindErrors[artifact.Kind].Error()
 			}
 			results = append(results, result)
+			continue
 		}
+		index := kindIndexes[artifact.Kind]
+		version, ok := index.LatestVersion(artifact)
+		if !ok {
+			result.Status = types.ReleaseCheckStatusFailed
+			result.FailureReason = fmt.Sprintf("%s 官方索引没有该发布物的正式版本", artifact.ID)
+			results = append(results, result)
+			continue
+		}
+		pkg, ok := version.PackageFor(types.ReleasePlatformWindowsX64)
+		if !ok {
+			result.Status = types.ReleaseCheckStatusFailed
+			result.FailureReason = fmt.Sprintf("%s 官方索引没有 %s 平台压缩包", artifact.ID, types.ReleasePlatformWindowsX64)
+			results = append(results, result)
+			continue
+		}
+		result.LatestVersion = version.Version
+		result.PublishedAt = version.PublishedAt
+		result.IndexUpdatedAt = index.UpdatedAt
+		result.ReleaseNotes = strings.TrimSpace(version.ReleaseNotes)
+		result.DownloadSize = pkg.SizeBytes
+		if releaseURL, urlErr := releaseTagURL(source, pkg.ReleaseTag); urlErr == nil {
+			result.ReleaseURL = releaseURL
+		}
+		if isInstalled {
+			order, compareErr := release.CompareVersions(version.Version, installedArtifact.Version)
+			if compareErr != nil {
+				result.Status = types.ReleaseCheckStatusFailed
+				result.FailureReason = compareErr.Error()
+				results = append(results, result)
+				continue
+			}
+			result.UpdateAvailable = order > 0
+		} else {
+			result.UpdateAvailable = true
+		}
+		if version.Compatibility != nil && strings.TrimSpace(currentBoxVersion) != "" {
+			status := release.AssessEucliBoxCompatibility(version.Version, currentBoxVersion, *version.Compatibility)
+			result.Compatibility = &status
+		}
+		results = append(results, result)
 	}
 	sort.Slice(results, func(i int, j int) bool {
 		if results[i].Artifact.Kind != results[j].Artifact.Kind {
@@ -228,13 +270,4 @@ func normalizedSource(catalog releasecatalog.Catalog, source types.OfficialRelea
 
 func identityKey(identity types.ReleaseArtifactIdentity) string {
 	return identity.Kind + ":" + identity.ID
-}
-
-func sourceRequested(kind string, requested map[string]struct{}) bool {
-	for key := range requested {
-		if strings.HasPrefix(key, kind+":") {
-			return true
-		}
-	}
-	return false
 }

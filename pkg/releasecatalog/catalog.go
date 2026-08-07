@@ -68,6 +68,10 @@ func Validate(catalog Catalog) error {
 		item.Repository = normalized.repository
 		item.Owner = normalized.owner
 		item.Name = normalized.name
+		item.Ref = strings.TrimSpace(item.Ref)
+		if item.Ref == "" || strings.ContainsAny(item.Ref, " \t\r\n\\") || item.Ref == "." || item.Ref == ".." {
+			return fmt.Errorf("%s 官方来源必须指定固定索引引用", item.Kind)
+		}
 		sources[item.Kind] = item
 	}
 	if len(sources) != len(expectedKinds) {
@@ -116,6 +120,7 @@ func (c Catalog) SourceFor(kind string) (types.OfficialReleaseSource, error) {
 		source.Repository = normalized.repository
 		source.Owner = normalized.owner
 		source.Name = normalized.name
+		source.Ref = strings.TrimSpace(source.Ref)
 		return source, nil
 	}
 	return types.OfficialReleaseSource{}, fmt.Errorf("发布物类别 %q 没有固定官方来源", kind)

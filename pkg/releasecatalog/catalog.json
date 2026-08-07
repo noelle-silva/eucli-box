@@ -4,15 +4,18 @@
   "sources": [
     {
       "kind": "eucli-box",
-      "repository": "https://github.com/noelle-silva/eucli-box"
+      "repository": "https://github.com/noelle-silva/eucli-box",
+      "ref": "main"
     },
     {
       "kind": "tool",
-      "repository": "https://github.com/noelle-silva/eucli-box-ai-tools"
+      "repository": "https://github.com/noelle-silva/eucli-box-ai-tools",
+      "ref": "main"
     },
     {
       "kind": "plugin",
-      "repository": "https://github.com/noelle-silva/eucli-box-system-plugins"
+      "repository": "https://github.com/noelle-silva/eucli-box-system-plugins",
+      "ref": "main"
     }
   ],
   "artifacts": [

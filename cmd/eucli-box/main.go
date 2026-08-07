@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -15,6 +18,8 @@ import (
 
 	"eucli-box/internal/boxrelease"
 	"eucli-box/pkg/localrun"
+	"eucli-box/pkg/release"
+	"eucli-box/pkg/releasecheck"
 	"eucli-box/pkg/types"
 	agentruntime "eucli-box/src/agent-runtime-system"
 	aiassist "eucli-box/src/ai-assist-system"
@@ -56,7 +61,26 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("start network request system: %w", err)
 	}
-	log.Printf("[1/12] network-request-system ✓")
+	log.Printf("[1/13] network-request-system ✓")
+
+	programRoot := strings.TrimSpace(os.Getenv("EUCLI_BOX_PROGRAM_ROOT"))
+	if programRoot != "" {
+		programRoot, err = filepath.Abs(programRoot)
+		if err != nil {
+			return fmt.Errorf("program root is invalid: %w", err)
+		}
+		programRoot = filepath.Clean(programRoot)
+	}
+	officialDoer := boxOfficialHTTPDoer{network: networkSystem}
+	apiBaseURL := strings.TrimSpace(os.Getenv("EUCLI_BOX_RELEASE_API_BASE"))
+	if apiBaseURL == "" {
+		apiBaseURL = "https://api.github.com"
+	}
+	officialChecker, err := releasecheck.New(releasecheck.Config{Client: officialDoer, APIBaseURL: apiBaseURL})
+	if err != nil {
+		return fmt.Errorf("create official candidate checker: %w", err)
+	}
+	log.Printf("[2/13] official candidate reader %s", programStatusLabel(programRoot))
 
 	dataDir := envOrDefault("EUCLI_BOX_DATA_DIR", "data")
 	if localConfig.Enabled {
@@ -83,71 +107,82 @@ func run() error {
 			return err
 		}
 	}
-	storageSystem, err := datastorage.NewSystem(datastorage.Config{RootDir: dataDir})
+	toolBodiesRoot := ""
+	toolProgramRoot := ""
+	if programRoot != "" {
+		toolBodiesRoot = filepath.Join(programRoot, "tools")
+		toolProgramRoot = toolBodiesRoot
+	}
+	storageSystem, err := datastorage.NewSystem(datastorage.Config{RootDir: dataDir, ToolBodiesRoot: toolBodiesRoot})
 	if err != nil {
 		return fmt.Errorf("start data storage system: %w", err)
 	}
 	if err := storageSystem.Initialize(ctx); err != nil {
 		return fmt.Errorf("initialize data storage system: %w", err)
 	}
-	log.Printf("[2/12] data-storage-system     ✓  (%s)", dataDir)
+	log.Printf("[3/13] data-storage-system     ✓  (%s)", dataDir)
 
 	providerSystem, err := modelprovider.NewSystem(modelprovider.Config{}, networkSystem, storageSystem)
 	if err != nil {
 		return fmt.Errorf("start model provider system: %w", err)
 	}
-	log.Printf("[3/12] model-provider-system   ✓")
+	log.Printf("[4/13] model-provider-system   ✓")
 
 	roleSystem, err := roleprompt.NewSystem(roleprompt.Config{}, storageSystem, providerSystem)
 	if err != nil {
 		return fmt.Errorf("start role prompt system: %w", err)
 	}
-	log.Printf("[4/12] role-prompt-system      ✓")
+	log.Printf("[5/13] role-prompt-system      ✓")
 
 	permissionSystem, err := permission.NewSystem(permission.Config{}, roleSystem)
 	if err != nil {
 		return fmt.Errorf("start permission system: %w", err)
 	}
-	log.Printf("[5/12] permission-system       ✓")
+	log.Printf("[6/13] permission-system       ✓")
 
-	toolSystem, err := toolcalling.NewSystem(toolcalling.Config{BoxVersion: boxRelease.Version}, permissionSystem, storageSystem)
+	toolSystem, err := toolcalling.NewSystem(toolcalling.Config{BoxVersion: boxRelease.Version, ProgramRoot: toolProgramRoot, Candidates: officialChecker, HTTPClient: officialDoer}, permissionSystem, storageSystem)
 	if err != nil {
 		return fmt.Errorf("start tool calling system: %w", err)
 	}
-	log.Printf("[6/12] tool-calling-system     ✓")
+	log.Printf("[7/13] tool-calling-system     ✓")
 
-	systemPluginSystem, err := systemplugin.NewSystem(systemplugin.Config{DataDir: filepath.Join(dataDir, "system-plugins"), BoxVersion: boxRelease.Version})
+	pluginSourceDir := ""
+	pluginDataDir := filepath.Join(dataDir, "system-plugins")
+	if programRoot != "" {
+		pluginSourceDir = filepath.Join(programRoot, "system-plugins")
+	}
+	systemPluginSystem, err := systemplugin.NewSystem(systemplugin.Config{SourceDir: pluginSourceDir, DataDir: pluginDataDir, BoxVersion: boxRelease.Version, ProgramRoot: programRoot, Candidates: officialChecker, HTTPClient: officialDoer})
 	if err != nil {
 		return fmt.Errorf("start system plugin system: %w", err)
 	}
 	if err := systemPluginSystem.Start(ctx); err != nil {
 		return fmt.Errorf("initialize system plugin system: %w", err)
 	}
-	log.Printf("[7/12] system-plugin-system    ✓")
+	log.Printf("[8/13] system-plugin-system    ✓")
 
 	placeholderSystem, err := placeholdersystem.NewSystem(placeholdersystem.Config{RootDir: dataDir, SystemPlugins: systemPluginSystem})
 	if err != nil {
 		return fmt.Errorf("start placeholder system: %w", err)
 	}
-	log.Printf("[8/12] placeholder-system      ✓")
+	log.Printf("[9/13] placeholder-system      ✓")
 
 	runtimeSystem, err := agentruntime.NewSystem(agentruntime.Config{}, storageSystem, roleSystem, providerSystem, toolSystem, placeholderSystem)
 	if err != nil {
 		return fmt.Errorf("start agent runtime system: %w", err)
 	}
-	log.Printf("[9/12] agent-runtime-system    ✓")
+	log.Printf("[10/13] agent-runtime-system    ✓")
 
 	assistSystem, err := aiassist.NewSystem(aiassist.Config{}, storageSystem, providerSystem)
 	if err != nil {
 		return fmt.Errorf("start ai assist system: %w", err)
 	}
-	log.Printf("[10/12] ai-assist-system        ✓")
+	log.Printf("[11/13] ai-assist-system        ✓")
 
-	releaseCheckSystem, err := releasechecksystem.NewSystem(releasechecksystem.Config{BoxVersion: boxRelease.Version}, networkSystem, toolSystem, systemPluginSystem)
+	releaseCheckSystem, err := releasechecksystem.NewSystemWithChecker(releasechecksystem.Config{BoxVersion: boxRelease.Version}, officialChecker, toolSystem, systemPluginSystem, boxRelease.Version)
 	if err != nil {
 		return fmt.Errorf("start release check system: %w", err)
 	}
-	log.Printf("[11/12] release-check-system    ✓")
+	log.Printf("[12/13] release-check-system    ✓")
 
 	busyKey := ""
 	if !localConfig.Enabled && readBoxKey(dataDir) != "" {
@@ -172,7 +207,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("start gateway system: %w", err)
 	}
-	log.Printf("[12/12] gateway-system         ✓%s", busyKey)
+	log.Printf("[13/13] gateway-system         ✓%s", busyKey)
 
 	log.Printf("eucli-box v%s is starting on %s ...", boxRelease.Version, gatewayConfig.Addr)
 	endpoint := "http://" + gatewayConfig.Addr
@@ -210,9 +245,6 @@ func run() error {
 	} else if err := gatewaySystem.Start(ctx); err != nil {
 		return fmt.Errorf("start gateway listener: %w", err)
 	}
-	if err := releaseCheckSystem.Start(ctx); err != nil {
-		return fmt.Errorf("start release checks: %w", err)
-	}
 	log.Printf("eucli-box v%s is ready — listening on %s", boxRelease.Version, endpoint)
 
 	<-ctx.Done()
@@ -220,9 +252,6 @@ func run() error {
 	defer cancel()
 	if err := gatewaySystem.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("shutdown gateway system: %w", err)
-	}
-	if err := releaseCheckSystem.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("shutdown release check system: %w", err)
 	}
 	if err := systemPluginSystem.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("shutdown system plugin system: %w", err)
@@ -323,3 +352,44 @@ func readBoxKey(dataDir string) string {
 	}
 	return strings.TrimSpace(string(payload))
 }
+
+func programStatusLabel(programRoot string) string {
+	if programRoot == "" {
+		return "(development path)"
+	}
+	return "✓  (" + programRoot + ")"
+}
+
+// boxOfficialHTTPDoer 是业务端网络系统对官方发行检查的只读适配器；
+// 只允许固定官方 HTTPS 地址和隔离验证地址，不能成为通用请求通道。
+type boxOfficialHTTPDoer struct {
+	network interface {
+		Do(ctx context.Context, request types.HTTPRequest) (types.HTTPResponse, error)
+	}
+}
+
+func (d boxOfficialHTTPDoer) Do(request *http.Request) (*http.Response, error) {
+	target := request.URL.String()
+	allowed := strings.HasPrefix(target, "https://api.github.com/") || strings.HasPrefix(target, "https://github.com/") || strings.HasPrefix(target, "http://127.0.0.1:")
+	if !allowed {
+		return nil, fmt.Errorf("发行检查只能访问固定官方地址")
+	}
+	headers := make(map[string]string, len(request.Header))
+	for name, values := range request.Header {
+		if len(values) > 0 {
+			headers[name] = values[0]
+		}
+	}
+	response, err := d.network.Do(request.Context(), types.HTTPRequest{Method: request.Method, URL: target, Headers: headers})
+	if err != nil {
+		return nil, err
+	}
+	return &http.Response{
+		StatusCode: response.StatusCode,
+		Header:     http.Header(response.Headers),
+		Body:       io.NopCloser(bytes.NewReader(response.Body)),
+		Request:    request,
+	}, nil
+}
+
+var _ release.HTTPDoer = boxOfficialHTTPDoer{}

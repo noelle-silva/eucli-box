@@ -3,6 +3,7 @@
 package localrun
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"syscall"
@@ -55,6 +56,7 @@ const (
 	localRunFileReadMask                   = 0x00120089
 	localRunFileWriteMask                  = 0x00120116
 	localRunProtectedDACL                  = 0x80000000
+	localRunErrorInvalidParameter          = syscall.Errno(87)
 )
 
 type localRunTrustee struct {
@@ -140,6 +142,9 @@ func ProcessStartedAt(pid int) (time.Time, error) {
 func ProcessMatches(pid int, startedAt time.Time) (bool, error) {
 	actual, err := ProcessStartedAt(pid)
 	if err != nil {
+		if errors.Is(err, localRunErrorInvalidParameter) {
+			return false, nil
+		}
 		return false, err
 	}
 	return actual.Equal(startedAt.UTC()), nil

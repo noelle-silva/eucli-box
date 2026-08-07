@@ -6,7 +6,7 @@ param(
     [string]$RunRoot,
 
     [Parameter(Mandatory = $true)]
-    [ValidateSet("01", "02", "03", "dev")]
+    [ValidateSet("01", "02", "03", "04", "dev")]
     [string]$Stage,
 
     [Parameter(Mandatory = $true)]

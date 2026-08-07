@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("01", "02", "03", "dev")]
+    [ValidateSet("01", "02", "03", "04", "dev")]
     [string]$Stage,
 
     [string]$Mode = ""
@@ -51,6 +51,12 @@ if ($Stage -eq "01") {
     } elseif ($Mode -ne "default" -and $Mode -ne "experience") {
         throw "Usage: verify-stage-03.cmd [experience]"
     }
+} elseif ($Stage -eq "04") {
+    if ([string]::IsNullOrWhiteSpace($Mode)) {
+        $Mode = "default"
+    } elseif ($Mode -ne "default" -and $Mode -ne "experience") {
+        throw "Usage: verify-stage-04.cmd [experience]"
+    }
 } elseif ($Stage -eq "dev") {
     if (-not [string]::IsNullOrWhiteSpace($Mode) -and $Mode -ne "default") {
         throw "Usage: verify-dev-box.cmd"
@@ -98,7 +104,7 @@ try {
     Push-Location $repositoryRoot
     try {
         $arguments = @("run", "./cmd/eucli-release-verify", "stage-$Stage", "-root", $repositoryRoot, "-run-root", $runRoot)
-        if ($Stage -eq "02" -or $Stage -eq "03") {
+        if ($Stage -eq "02" -or $Stage -eq "03" -or $Stage -eq "04") {
             $arguments += @("-mode", $Mode)
         }
         if ($Stage -eq "dev") {

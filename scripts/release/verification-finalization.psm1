@@ -306,7 +306,7 @@ function Complete-VerificationRun {
     param(
         [Parameter(Mandatory = $true)][string]$RepositoryRoot,
         [Parameter(Mandatory = $true)][string]$RunRoot,
-        [Parameter(Mandatory = $true)][ValidateSet("01", "02", "03", "dev")][string]$Stage,
+        [Parameter(Mandatory = $true)][ValidateSet("01", "02", "03", "04", "dev")][string]$Stage,
         [Parameter(Mandatory = $true)][string]$Mode
     )
 

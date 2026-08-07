@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-08-07T18:45:42.740854Z",
+  "artifacts": [
+    {
+      "kind": "eucli-box",
+      "id": "eucli-box",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishedAt": "2026-08-01T15:18:28Z",
+          "sourceRevision": "95189feeb3fca09ce0e1963c0d0a0cae4f4dd90e",
+          "dataVersion": "1.0.0",
+          "releaseNotes": "## 0.1.0 - 2026-07-26\n\n- 建立 eucli-box 独立产品版本，并在启动信息和发布查询中显示。\n- 建立客户端、AI 工具和系统插件统一的三段版本与适用范围判断。\n- 不适用工具和插件继续显示但停止使用；不适用客户端保留连接设置并阻止正常业务。\n- 将工具本体与长期工具数据物理分开，并完成现有资料的一次性核对整理。\n- 新增专用版本检查与调整命令，统一核对版本、适用范围和中文文档。\n- 建立业务端、7 个 AI 工具和 3 个系统插件各自独立的 Windows x64 正式成品制作与验收能力。\n- 建立固定官方来源、未公开上传、远端回读核对、公开和公开后复核的正式发布流程。\n- 新增业务端自动版本检查：只读取公开发行资料，区分无新版、发现新版和检查失败，不自动下载或安装。\n- 新增隔离的阶段验证入口，验证现场统一保存在 `.release/verification/`，成功后只保留脱敏证据。\n- 将验证成果与隔离现场收尾分开报告：自动清理受本机限制时明确保留人工清理位置，不再推翻已经通过的成果和安全检查。\n- 新增本地发布配置 `.release/config/github.env` 的三类 GitHub 凭据读取规则，业务端、AI 工具和系统插件分别使用固定字段，凭据文件不进入源码记录。",
+          "packages": [
+            {
+              "platform": "windows-x64",
+              "releaseTag": "v0.1.0",
+              "fileName": "eucli-box_0.1.0_windows-x64.zip",
+              "sizeBytes": 6814024,
+              "sha256": "8a2eb9cebf8acb389d5474107c5b34eb4da93abefaae371485793bcc722d9c69"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -8,12 +8,19 @@ type ReleaseChecksPanelProps = {
   busy?: boolean
   onRefresh?: () => Promise<void> | void
   compact?: boolean
+  kindFilter?: string
+  onToolAction?: (artifact: ReleaseArtifactIdentity, action: 'install' | 'update') => Promise<void> | void
+  onPluginAction?: (artifact: ReleaseArtifactIdentity, action: 'install' | 'update') => Promise<void> | void
+  toolActionBusy?: boolean
+  pluginActionBusy?: boolean
 }
 
 export function ReleaseChecksPanel(props: ReleaseChecksPanelProps) {
   const snapshot = props.snapshot || emptySnapshot()
   const checking = props.busy === true || snapshot.status === 'checking'
-  const results = Array.isArray(snapshot.results) ? snapshot.results : []
+  const results = Array.isArray(snapshot.results)
+    ? snapshot.results.filter((result) => !props.kindFilter || String(result.artifact?.kind || '') === props.kindFilter)
+    : []
 
   return (
     <Stack spacing={1.25} aria-live="polite">
@@ -49,7 +56,15 @@ export function ReleaseChecksPanel(props: ReleaseChecksPanelProps) {
       {results.length ? (
         <Stack spacing={1}>
           {results.map((result) => (
-            <ReleaseCheckItem key={`${result.artifact.kind}:${result.artifact.id}`} result={result} compact={props.compact === true} />
+            <ReleaseCheckItem
+              key={`${result.artifact.kind}:${result.artifact.id}`}
+              result={result}
+              compact={props.compact === true}
+              onToolAction={props.onToolAction}
+              onPluginAction={props.onPluginAction}
+              toolActionBusy={props.toolActionBusy === true}
+              pluginActionBusy={props.pluginActionBusy === true}
+            />
           ))}
         </Stack>
       ) : (
@@ -61,10 +76,18 @@ export function ReleaseChecksPanel(props: ReleaseChecksPanelProps) {
   )
 }
 
-function ReleaseCheckItem(props: { result: ReleaseCheckResult; compact: boolean }) {
+function ReleaseCheckItem(props: { result: ReleaseCheckResult; compact: boolean; onToolAction?: (artifact: ReleaseArtifactIdentity, action: 'install' | 'update') => Promise<void> | void; onPluginAction?: (artifact: ReleaseArtifactIdentity, action: 'install' | 'update') => Promise<void> | void; toolActionBusy: boolean; pluginActionBusy: boolean }) {
   const { result, compact } = props
   const status = resultStatus(result)
   const compatibility = result.compatibility
+  const kind = String(result.artifact.kind || '')
+  const isTool = kind === 'tool'
+  const isPlugin = kind === 'plugin'
+  const actionBusy = (isTool && props.toolActionBusy) || (isPlugin && props.pluginActionBusy)
+  const actionHandler = isTool ? props.onToolAction : isPlugin ? props.onPluginAction : undefined
+  const canInstall = status.label === '可安装' && !!actionHandler
+  const canUpdate = status.label === '可更新' && !!actionHandler
+  const actionLabel = status.label === '可安装' ? '安装' : status.label === '可更新' ? '更新' : ''
 
   return (
     <Box sx={{ p: compact ? 1.1 : 1.35, borderRadius: 2, bgcolor: 'action.hover' }}>
@@ -74,6 +97,17 @@ function ReleaseCheckItem(props: { result: ReleaseCheckResult; compact: boolean 
             {artifactLabel(result.artifact)}
           </Typography>
           <StatusPill status={status.tone} label={status.label} />
+          {actionLabel ? (
+            <Button
+              size="small"
+              variant="contained"
+              disabled={actionBusy || !(canInstall || canUpdate)}
+              onClick={() => actionHandler?.(result.artifact, canInstall ? 'install' : 'update')}
+              sx={{ minWidth: 72 }}
+            >
+              {actionBusy ? '处理中…' : actionLabel}
+            </Button>
+          ) : null}
         </Stack>
 
         <Stack direction="row" spacing={1.5} sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>

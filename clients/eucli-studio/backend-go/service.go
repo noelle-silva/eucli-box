@@ -72,7 +72,11 @@ func (s *service) dispatch(ctx context.Context, method string, params json.RawMe
 	case "localBox.exit":
 		return s.localBoxExit(ctx)
 	case "releaseChecks.refresh":
-		return s.refreshReleaseChecks(ctx)
+		var refreshReq struct {
+			Kind string `json:"kind"`
+		}
+		_ = json.Unmarshal(paramsOrEmpty(params), &refreshReq)
+		return s.refreshReleaseChecks(ctx, refreshReq.Kind)
 	case "eucli.config.get":
 		return s.config.load()
 	case "eucli.config.set":
@@ -228,48 +232,58 @@ func (s *service) requestShutdown() {
 	}
 }
 
-func (s *service) startStandaloneReleaseCheck(ctx context.Context) {
-	if s.releaseChecker == nil {
-		return
+func (s *service) refreshReleaseChecks(ctx context.Context, kind string) (types.ReleaseCheckSnapshot, error) {
+	kind = strings.TrimSpace(kind)
+	if kind != "" && kind != types.ReleaseArtifactKindBox && kind != types.ReleaseArtifactKindTool && kind != types.ReleaseArtifactKindPlugin {
+		return failedReleaseCheckSnapshot(s.releaseCheckSnapshot(), fmt.Errorf("不支持的刷新分类 %q", kind)), nil
 	}
-	cfg, err := s.config.load()
-	if err != nil || strings.TrimSpace(cfg.EucliBoxURL) != "" {
-		return
+	state := s.connectionSnapshot()
+	if (state == nil || !state.EucliBoxReachable) && s.releaseChecker == nil {
+		return s.releaseCheckSnapshot(), nil
 	}
+
 	s.releaseCheckMu.Lock()
 	if s.releaseCheckRunning {
+		snapshot := cloneReleaseCheckSnapshot(s.releaseChecks)
 		s.releaseCheckMu.Unlock()
-		return
+		return snapshot, nil
 	}
+	previous := cloneReleaseCheckSnapshot(s.releaseChecks)
 	s.releaseCheckRunning = true
-	s.releaseChecks = releasecheck.CheckingSnapshot(s.releaseChecks, time.Now().UTC())
+	s.releaseChecks = releasecheck.CheckingSnapshot(previous, time.Now().UTC())
 	s.releaseCheckMu.Unlock()
-	go func() {
-		snapshot := s.checkBoxOfficialSource(ctx)
+	defer func() {
 		s.releaseCheckMu.Lock()
-		s.releaseChecks = snapshot
 		s.releaseCheckRunning = false
 		s.releaseCheckMu.Unlock()
 	}()
-}
 
-func (s *service) refreshReleaseChecks(ctx context.Context) (types.ReleaseCheckSnapshot, error) {
-	if s.releaseChecker == nil {
-		return s.releaseCheckSnapshot(), nil
-	}
-	state := s.connectionSnapshot()
 	if state != nil && state.EucliBoxReachable {
-		raw, err := s.eb.request(ctx, ebRequest{Method: "POST", Path: "/api/release-checks/refresh", Timeout: 30000})
+		body := mustJSON(map[string]any{"kind": kind})
+		raw, err := s.eb.request(ctx, ebRequest{Method: "POST", Path: "/api/release-checks/refresh", Query: nil, Body: body, Timeout: 30000})
 		if err != nil {
-			return types.ReleaseCheckSnapshot{}, err
+			snapshot := failedReleaseCheckSnapshot(previous, err)
+			s.storeReleaseCheckSnapshot(snapshot)
+			return snapshot, nil
 		}
-		return decodeReleaseCheckSnapshot(raw)
+		snapshot, err := decodeReleaseCheckSnapshot(raw)
+		if err != nil {
+			snapshot := failedReleaseCheckSnapshot(previous, err)
+			s.storeReleaseCheckSnapshot(snapshot)
+			return snapshot, nil
+		}
+		snapshot = preservePreviousReleaseResults(previous, snapshot)
+		s.storeReleaseCheckSnapshot(snapshot)
+		return snapshot, nil
+	}
+	if kind != "" && kind != types.ReleaseArtifactKindBox {
+		snapshot := failedReleaseCheckSnapshot(previous, fmt.Errorf("工具和插件刷新需要先连接业务端"))
+		s.storeReleaseCheckSnapshot(snapshot)
+		return snapshot, nil
 	}
 	snapshot := s.checkBoxOfficialSource(ctx)
-	s.releaseCheckMu.Lock()
-	s.releaseChecks = snapshot
-	s.releaseCheckRunning = false
-	s.releaseCheckMu.Unlock()
+	snapshot = preservePreviousReleaseResults(previous, snapshot)
+	s.storeReleaseCheckSnapshot(snapshot)
 	return snapshot, nil
 }
 
@@ -283,9 +297,53 @@ func (s *service) checkBoxOfficialSource(ctx context.Context) types.ReleaseCheck
 func (s *service) releaseCheckSnapshot() types.ReleaseCheckSnapshot {
 	s.releaseCheckMu.RLock()
 	defer s.releaseCheckMu.RUnlock()
-	result := s.releaseChecks
-	result.Results = append([]types.ReleaseCheckResult(nil), s.releaseChecks.Results...)
+	return cloneReleaseCheckSnapshot(s.releaseChecks)
+}
+
+func (s *service) storeReleaseCheckSnapshot(snapshot types.ReleaseCheckSnapshot) {
+	s.releaseCheckMu.Lock()
+	s.releaseChecks = cloneReleaseCheckSnapshot(snapshot)
+	s.releaseCheckMu.Unlock()
+}
+
+func cloneReleaseCheckSnapshot(snapshot types.ReleaseCheckSnapshot) types.ReleaseCheckSnapshot {
+	result := snapshot
+	result.Results = append([]types.ReleaseCheckResult(nil), snapshot.Results...)
+	for index := range result.Results {
+		result.Results[index].AffectedArtifacts = append([]types.ReleaseArtifactIdentity(nil), snapshot.Results[index].AffectedArtifacts...)
+	}
 	return result
+}
+
+func failedReleaseCheckSnapshot(previous types.ReleaseCheckSnapshot, err error) types.ReleaseCheckSnapshot {
+	now := time.Now().UTC()
+	return types.ReleaseCheckSnapshot{
+		Status:        types.ReleaseCheckStatusFailed,
+		StartedAt:     now,
+		CheckedAt:     now,
+		Results:       append([]types.ReleaseCheckResult(nil), previous.Results...),
+		FailureReason: strings.TrimSpace(err.Error()),
+	}
+}
+
+func preservePreviousReleaseResults(previous types.ReleaseCheckSnapshot, current types.ReleaseCheckSnapshot) types.ReleaseCheckSnapshot {
+	if current.Status != types.ReleaseCheckStatusFailed || previous.Status != types.ReleaseCheckStatusCompleted || !allReleaseResultsFailed(current.Results) {
+		return current
+	}
+	current.Results = append([]types.ReleaseCheckResult(nil), previous.Results...)
+	return current
+}
+
+func allReleaseResultsFailed(results []types.ReleaseCheckResult) bool {
+	if len(results) == 0 {
+		return true
+	}
+	for _, result := range results {
+		if result.Status != types.ReleaseCheckStatusFailed {
+			return false
+		}
+	}
+	return true
 }
 
 func isBusinessMethod(method string) bool {

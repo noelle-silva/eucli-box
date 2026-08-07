@@ -80,6 +80,7 @@ func startLocalBoxProcess(ctx context.Context, paths localBoxPaths, record local
 		"EUCLI_BOX_RUN_ID":             runIdentity,
 		"EUCLI_BOX_SESSION_CREDENTIAL": sessionCredential,
 		"EUCLI_BOX_DATA_DIR":           record.DataDir,
+		"EUCLI_BOX_PROGRAM_ROOT":       filepath.Dir(record.ProgramDir),
 		"EUCLI_BOX_REGISTRATION_PATH":  paths.registrationPath,
 		"EUCLI_BOX_ADDR":               "127.0.0.1:0",
 		"TEMP":                         tempDir,

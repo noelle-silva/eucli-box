@@ -21,7 +21,7 @@ export type AiChatAppRuntime = {
   getEucliBoxConfig: () => Promise<EucliBoxConfig>
   setEucliBoxConfig: (config: EucliBoxConfigInput) => Promise<EucliBoxConfig>
   getBootstrap: () => Promise<StudioBootstrap>
-  refreshReleaseChecks: () => Promise<ReleaseCheckSnapshot>
+  refreshReleaseChecks: (kind?: string) => Promise<ReleaseCheckSnapshot>
   getLocalBoxStatus: () => Promise<LocalBoxState>
   installLocalBox: () => Promise<LocalBoxState>
   exitLocalBox: () => Promise<LocalBoxState>
@@ -64,7 +64,7 @@ export async function createAiChatAppRuntime(options: AiChatAppHostOptions): Pro
     getEucliBoxConfig: () => directClient.invoke<EucliBoxConfig>('eucli.config.get'),
     setEucliBoxConfig: (config) => directClient.invoke<EucliBoxConfig>('eucli.config.set', config),
     getBootstrap: async () => normalizeStudioBootstrap(await directClient.invoke('studio.bootstrap')),
-    refreshReleaseChecks: async () => normalizeReleaseCheckSnapshot(await directClient.invoke('releaseChecks.refresh')),
+    refreshReleaseChecks: async (kind?: string) => normalizeReleaseCheckSnapshot(await directClient.invoke('releaseChecks.refresh', kind ? { kind } : {})),
     getLocalBoxStatus: async () => normalizeLocalBoxState(await directClient.invoke(AI_CHAT_DIRECT_METHOD.localBoxStatus)),
     installLocalBox: async () => normalizeLocalBoxState(await directClient.invoke(AI_CHAT_DIRECT_METHOD.localBoxInstall, {}, { timeoutMs: 10 * 60 * 1000 })),
     exitLocalBox: async () => normalizeLocalBoxState(await directClient.invoke(AI_CHAT_DIRECT_METHOD.localBoxExit, {}, { timeoutMs: 45_000 })),

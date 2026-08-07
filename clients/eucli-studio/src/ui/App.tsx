@@ -1061,7 +1061,7 @@ function ComposerInputControls(props: {
   )
 }
 
-export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap; dataDirectory?: AiChatDataDirectory; windowControls?: AiChatWindowControls; releaseCheckBusy?: boolean; onRefreshReleaseChecks?: () => Promise<void> | void }) {
+export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap; dataDirectory?: AiChatDataDirectory; windowControls?: AiChatWindowControls; releaseCheckBusy?: boolean; onRefreshReleaseChecks?: (kind?: string) => Promise<void> | void }) {
   const { controller, bootstrap, dataDirectory, windowControls, releaseCheckBusy, onRefreshReleaseChecks } = props
   const s = useAiChatState(controller)
   const data = s.data
@@ -7363,7 +7363,7 @@ function PluginSettingsPage(props: {
   modelRequestConfig: any
   bootstrap?: StudioBootstrap
   releaseCheckBusy?: boolean
-  onRefreshReleaseChecks?: () => Promise<void> | void
+  onRefreshReleaseChecks?: (kind?: string) => Promise<void> | void
   hookPrompts: any
   placeholders: any
   systemPlugins: any
@@ -7966,7 +7966,7 @@ function PluginSettingsPage(props: {
   }
 
   if (tab === 'tools') {
-    return wrapSettingsPanel(<AiToolsSettingsPanel controller={controller} loading={loading} tools={tools} />)
+    return wrapSettingsPanel(<AiToolsSettingsPanel controller={controller} loading={loading} tools={tools} releaseChecks={bootstrap?.releaseChecks} releaseCheckBusy={releaseCheckBusy} onRefreshReleaseChecks={onRefreshReleaseChecks} />)
   }
 
   if (tab === 'hookPrompts') {
@@ -7978,7 +7978,7 @@ function PluginSettingsPage(props: {
   }
 
   if (tab === 'systemPlugins') {
-    return wrapSettingsPanel(<SystemPluginSettingsPanel controller={controller} loading={loading} systemPlugins={systemPlugins} />)
+    return wrapSettingsPanel(<SystemPluginSettingsPanel controller={controller} loading={loading} systemPlugins={systemPlugins} releaseChecks={bootstrap?.releaseChecks} releaseCheckBusy={releaseCheckBusy} onRefreshReleaseChecks={onRefreshReleaseChecks} />)
   }
 
   if (tab === 'eb') {

@@ -1,4 +1,5 @@
 import { normalizePlaceholderLibrary, type PlaceholderLibrary } from '../domain/placeholder'
+import { normalizeArtifactInstallState, type ArtifactInstallState } from '../domain/release'
 import {
   normalizeAvailableSystemPluginPlaceholderInterfaces,
   normalizeSystemPluginDetail,
@@ -34,4 +35,19 @@ export async function loadAvailableSystemPluginPlaceholderInterfaces(netRequest:
 export async function createPlaceholderFromSystemPluginInterface(netRequest: EbNetRequest, pluginId: string, interfaceId: string): Promise<PlaceholderLibrary> {
   const response = await netRequest({ method: 'POST', path: '/api/placeholders/plugin-interfaces', body: { pluginId, interfaceId }, timeoutMs: 15000 })
   return normalizePlaceholderLibrary(response?.body)
+}
+
+export async function loadSystemPluginInstallState(netRequest: EbNetRequest, pluginId: string): Promise<ArtifactInstallState> {
+  const response = await netRequest({ method: 'GET', path: `/api/system-plugins/${encodeURIComponent(pluginId)}/install-state`, timeoutMs: 15000 })
+  return normalizeArtifactInstallState(response?.body)
+}
+
+export async function installSystemPlugin(netRequest: EbNetRequest, pluginId: string): Promise<ArtifactInstallState> {
+  const response = await netRequest({ method: 'POST', path: `/api/system-plugins/${encodeURIComponent(pluginId)}/install`, body: {}, timeoutMs: 180000 })
+  return normalizeArtifactInstallState(response?.body)
+}
+
+export async function updateSystemPlugin(netRequest: EbNetRequest, pluginId: string): Promise<ArtifactInstallState> {
+  const response = await netRequest({ method: 'POST', path: `/api/system-plugins/${encodeURIComponent(pluginId)}/update`, body: {}, timeoutMs: 180000 })
+  return normalizeArtifactInstallState(response?.body)
 }

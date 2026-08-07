@@ -49,6 +49,88 @@ export type ReleaseCheckSnapshot = {
   failureReason: string
 }
 
+export type ReleaseOperationProgress = {
+  receivedBytes: number
+  totalBytes: number
+}
+
+export type ReleaseOperationError = {
+  code: string
+  phase: string
+  message: string
+}
+
+export type ArtifactInstallState = {
+  operationId: string
+  artifact: ReleaseArtifactIdentity
+  installed: boolean
+  currentVersion: string
+  targetVersion: string
+  status: string
+  phase: string
+  progress: ReleaseOperationProgress
+  error: ReleaseOperationError
+}
+
+export type ArtifactActivityState = {
+  artifact: ReleaseArtifactIdentity
+  active: boolean
+  activeRequests: number
+  updating: boolean
+  reason: string
+}
+
+export const artifactStatusLabels: Record<string, string> = {
+  not_installed: '未安装',
+  checking_release: '检查发行中',
+  ready_to_install: '可安装',
+  ready_to_update: '可更新',
+  downloading: '下载中',
+  verifying: '核对中',
+  checking_activity: '检查活动中',
+  preparing: '准备中',
+  switching: '切换中',
+  starting: '启动中',
+  active: '已启用',
+  unavailable: '不适用',
+  failed: '失败',
+  blocked: '被阻止',
+  restoring: '恢复中',
+}
+
+export function normalizeArtifactInstallState(value: unknown): ArtifactInstallState {
+  const source = objectValue(value)
+  return {
+    operationId: text(source.operationId),
+    artifact: normalizeReleaseArtifactIdentity(source.artifact),
+    installed: source.installed === true,
+    currentVersion: text(source.currentVersion),
+    targetVersion: text(source.targetVersion),
+    status: text(source.status),
+    phase: text(source.phase),
+    progress: {
+      receivedBytes: finiteNumber((source as any).progress?.receivedBytes),
+      totalBytes: finiteNumber((source as any).progress?.totalBytes),
+    },
+    error: {
+      code: text((source as any).error?.code),
+      phase: text((source as any).error?.phase),
+      message: text((source as any).error?.message),
+    },
+  }
+}
+
+export function normalizeArtifactActivityState(value: unknown): ArtifactActivityState {
+  const source = objectValue(value)
+  return {
+    artifact: normalizeReleaseArtifactIdentity(source.artifact),
+    active: source.active === true,
+    activeRequests: finiteNumber(source.activeRequests),
+    updating: source.updating === true,
+    reason: text(source.reason),
+  }
+}
+
 export type StudioBootstrap = {
   clientVersion: string
   clientEucliBoxCompatibility: EucliBoxCompatibility

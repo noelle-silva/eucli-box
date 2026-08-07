@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -57,9 +56,9 @@ func (m *localBoxManager) readLatestCandidate(ctx context.Context, state localBo
 		m.publishState(failed)
 		return failed, nil
 	}
-	state.LatestVersion = candidate.Manifest.Version
+	state.LatestVersion = candidate.Version
 	state.ReleaseNotes = candidate.ReleaseNotes
-	state.DownloadSize = candidate.Manifest.Archive.Size
+	state.DownloadSize = candidate.SizeBytes
 	if !state.Installed {
 		state.Status = localBoxStatusReadyToInstall
 	}
@@ -67,19 +66,21 @@ func (m *localBoxManager) readLatestCandidate(ctx context.Context, state localBo
 	return state, nil
 }
 
-func (m *localBoxManager) downloadAndVerify(ctx context.Context, candidate *releasecheck.ReleaseCandidate, workDir string, state localBoxState) (types.ReleaseManifest, localBoxState, error) {
+// downloadAndVerify 取得目标压缩包、核对、安全解包并完成包内核对，
+// 返回已经完整验收的解包结果；不判断适用范围、不切换当前版本。
+func (m *localBoxManager) downloadAndVerify(ctx context.Context, candidate *releasecheck.ReleaseCandidate, workDir string, state localBoxState) (release.ValidatedPackage, localBoxState, error) {
 	downloadDir := filepath.Join(workDir, "download")
 	extractedDir := filepath.Join(workDir, "extracted")
 	if m.source == nil {
-		return types.ReleaseManifest{}, state, localBoxOperationFailure("LOCAL_BOX_RELEASE_UNAVAILABLE", errors.New("业务端候选读取能力未初始化"))
+		return release.ValidatedPackage{}, state, localBoxOperationFailure("LOCAL_BOX_RELEASE_UNAVAILABLE", errors.New("业务端候选读取能力未初始化"))
 	}
 	state.Status = localBoxStatusDownloading
-	state.Progress = localBoxProgress{Phase: localBoxStatusDownloading, TotalBytes: candidate.ManifestSize}
+	state.Progress = localBoxProgress{Phase: localBoxStatusDownloading, TotalBytes: candidate.SizeBytes}
 	m.publishState(state)
 	if err := writeLocalBoxInstallWorkState(workDir, state); err != nil {
-		return types.ReleaseManifest{}, state, localBoxOperationFailure("LOCAL_BOX_DOWNLOAD_FAILED", err)
+		return release.ValidatedPackage{}, state, localBoxOperationFailure("LOCAL_BOX_DOWNLOAD_FAILED", err)
 	}
-	manifest, err := m.source.AcquireArtifacts(ctx, candidate, downloadDir, func(progress localBoxProgress) {
+	archivePath, err := m.source.AcquireArchive(ctx, candidate, downloadDir, func(progress localBoxProgress) {
 		state.Progress = progress
 		state.Progress.ReceivedBytes = progress.ReceivedBytes
 		if progress.TotalBytes > 0 {
@@ -89,34 +90,33 @@ func (m *localBoxManager) downloadAndVerify(ctx context.Context, candidate *rele
 		m.publishState(state)
 	})
 	if err != nil {
-		return types.ReleaseManifest{}, state, localBoxOperationFailure(localBoxErrorCodeFrom(err, "LOCAL_BOX_PACKAGE_INVALID"), err)
+		return release.ValidatedPackage{}, state, localBoxOperationFailure(localBoxErrorCodeFrom(err, "LOCAL_BOX_PACKAGE_INVALID"), err)
 	}
 	state.Status = localBoxStatusVerifying
 	state.Progress.Phase = localBoxStatusVerifying
 	state.Progress.ReceivedBytes = 0
 	m.publishState(state)
 	if err := writeLocalBoxInstallWorkState(workDir, state); err != nil {
-		return types.ReleaseManifest{}, state, localBoxOperationFailure("LOCAL_BOX_PACKAGE_INVALID", err)
+		return release.ValidatedPackage{}, state, localBoxOperationFailure("LOCAL_BOX_PACKAGE_INVALID", err)
 	}
-	if err := release.ExtractArchive(release.ExtractArchiveOptions{ArchivePath: filepath.Join(downloadDir, manifest.Archive.Name), TargetDir: extractedDir}); err != nil {
-		return types.ReleaseManifest{}, state, localBoxOperationFailure("LOCAL_BOX_PACKAGE_INVALID", err)
+	expected, err := m.source.ExpectedProduct(ctx, candidate)
+	if err != nil {
+		return release.ValidatedPackage{}, state, localBoxOperationFailure("LOCAL_BOX_PACKAGE_INVALID", err)
 	}
-	if _, err := release.ValidateExtractedPackage(release.ValidateExtractedPackageOptions{Directory: extractedDir, Manifest: manifest}); err != nil {
-		return types.ReleaseManifest{}, state, localBoxOperationFailure("LOCAL_BOX_PACKAGE_INVALID", err)
+	if err := release.ExtractArchive(release.ExtractArchiveOptions{ArchivePath: archivePath, TargetDir: extractedDir}); err != nil {
+		return release.ValidatedPackage{}, state, localBoxOperationFailure("LOCAL_BOX_PACKAGE_INVALID", err)
 	}
-	return manifest, state, nil
+	validated, err := release.ValidateExtractedPackage(release.ValidateExtractedPackageOptions{Directory: extractedDir, Product: expected})
+	if err != nil {
+		return release.ValidatedPackage{}, state, localBoxOperationFailure("LOCAL_BOX_PACKAGE_INVALID", err)
+	}
+	return validated, state, nil
 }
 
-func sameReleaseManifest(left types.ReleaseManifest, right types.ReleaseManifest) bool {
-	leftPayload, leftErr := json.Marshal(left)
-	rightPayload, rightErr := json.Marshal(right)
-	return leftErr == nil && rightErr == nil && string(leftPayload) == string(rightPayload)
-}
-
-func localBoxInstallRecordFromManifest(manifest types.ReleaseManifest, paths localBoxPaths, installIdentity string, dataIdentity string, source localBoxSourceKind) localBoxInstallRecord {
+func localBoxInstallRecordFromProduct(product types.ReleaseProductRecord, paths localBoxPaths, installIdentity string, dataIdentity string, source localBoxSourceKind) localBoxInstallRecord {
 	return localBoxInstallRecord{
 		SchemaVersion: 1, Artifact: types.ReleaseArtifactIdentity{Kind: localBoxArtifactID, ID: localBoxArtifactID},
-		Source: string(source), Version: manifest.Version, Platform: manifest.Platform, InstallIdentity: installIdentity,
+		Source: string(source), Version: product.Version, Platform: product.Platform, InstallIdentity: installIdentity,
 		DataIdentity: dataIdentity, ProgramDir: paths.programDir, DataDir: paths.dataDir, RuntimeDir: paths.runtimeDir,
 	}
 }

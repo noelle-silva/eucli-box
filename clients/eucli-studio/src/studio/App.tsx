@@ -214,32 +214,6 @@ export function App() {
   }, [connectBackend, handleCommand, refreshDataDirStatus])
 
   React.useEffect(() => {
-    const status = runtimeBootstrap?.releaseChecks.status
-    if (bootStatus !== 'ready' || status !== 'not_checked' && status !== 'checking') return
-    const runtime = runtimeRef.current
-    const runtimeVersion = runtimeVersionRef.current
-    if (!runtime) return
-    const activeRuntime = runtime
-    let cancelled = false
-
-    async function syncPendingCheck() {
-      for (let attempt = 0; attempt < 12; attempt += 1) {
-        await new Promise(resolve => window.setTimeout(resolve, attempt === 0 ? 400 : 1000))
-        if (cancelled || runtimeVersionRef.current !== runtimeVersion) return
-        const next = await activeRuntime.getBootstrap().catch(() => null)
-        if (!next || cancelled || runtimeVersionRef.current !== runtimeVersion) return
-        setRuntimeBootstrap(current => current ? { ...current, releaseChecks: next.releaseChecks } : current)
-        if (next.releaseChecks.status !== 'not_checked' && next.releaseChecks.status !== 'checking') return
-      }
-    }
-
-    void syncPendingCheck()
-    return () => {
-      cancelled = true
-    }
-  }, [bootStatus, runtimeBootstrap?.releaseChecks.status])
-
-  React.useEffect(() => {
     if (!toast) return
     const timer = window.setTimeout(() => setToast(current => current?.id === toast.id ? null : current), 3200)
     return () => window.clearTimeout(timer)
@@ -269,7 +243,7 @@ export function App() {
     }
   }
 
-  const refreshReleaseChecks = React.useCallback(async () => {
+  const refreshReleaseChecks = React.useCallback(async (kind?: string) => {
     const runtime = runtimeRef.current
     if (!runtime || releaseCheckBusyRef.current) return
     const runtimeVersion = runtimeVersionRef.current
@@ -285,7 +259,7 @@ export function App() {
       },
     } : current)
     try {
-      const snapshot = await runtime.refreshReleaseChecks()
+      const snapshot = await runtime.refreshReleaseChecks(kind)
       if (runtimeVersionRef.current !== runtimeVersion || !mountedRef.current) return
       setRuntimeBootstrap(current => current ? { ...current, releaseChecks: snapshot } : current)
     } catch (error: any) {
@@ -432,7 +406,7 @@ function LocalBoxGateScreen(props: {
   bootstrap: StudioBootstrap
   releaseCheckBusy: boolean
   onInstall: () => Promise<void> | void
-  onRefreshReleaseChecks: () => Promise<void> | void
+  onRefreshReleaseChecks: (kind?: string) => Promise<void> | void
 }) {
   const { standalone, windowControlActions, busy, issue, bootstrap, releaseCheckBusy, onInstall, onRefreshReleaseChecks } = props
   const localBox = bootstrap.localBox
@@ -464,7 +438,7 @@ function LocalBoxGateScreen(props: {
         <LocalBoxInstallPanel state={localBox} busy={busy} onInstall={onInstall} />
         {issue ? <div className="bootFallbackIssue">{issue}</div> : null}
         <div className="eucliReleaseChecks">
-          <ReleaseChecksPanel snapshot={bootstrap.releaseChecks} busy={releaseCheckBusy} onRefresh={onRefreshReleaseChecks} compact />
+          <ReleaseChecksPanel snapshot={bootstrap.releaseChecks} busy={releaseCheckBusy} onRefresh={() => onRefreshReleaseChecks?.('eucli-box')} compact />
         </div>
       </section>
     </main>

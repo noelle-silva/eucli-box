@@ -269,7 +269,8 @@ func (m *localBoxManager) status(ctx context.Context) (localBoxState, error) {
 	}
 	state := installStateFor(record)
 	if record == nil {
-		return m.readLatestCandidate(ctx, state)
+		m.publishState(state)
+		return state, nil
 	}
 	if m.recordSourceMismatch(record) {
 		state = localBoxFailure(state, "LOCAL_BOX_SOURCE_MISMATCH", "已安装业务端与当前成品来源不匹配，需要重新安装", localBoxStatusStopped)
@@ -339,9 +340,9 @@ func (m *localBoxManager) install(ctx context.Context) (localBoxState, error) {
 		m.publishState(state)
 		return state, nil
 	}
-	state.LatestVersion = candidate.Manifest.Version
+	state.LatestVersion = candidate.Version
 	state.ReleaseNotes = candidate.ReleaseNotes
-	state.DownloadSize = candidate.Manifest.Archive.Size
+	state.DownloadSize = candidate.SizeBytes
 	state.Status = localBoxStatusReadyToInstall
 	m.publishState(state)
 
@@ -357,8 +358,7 @@ func (m *localBoxManager) install(ctx context.Context) (localBoxState, error) {
 	if err := writeLocalBoxInstallWorkState(workDir, state); err != nil {
 		return m.installFailure(state, "LOCAL_BOX_INSTALL_FAILED", err.Error(), state.Status)
 	}
-	extractedDir := filepath.Join(workDir, "extracted")
-	manifest, nextState, err := m.downloadAndVerify(ctx, candidate, workDir, state)
+	validated, nextState, err := m.downloadAndVerify(ctx, candidate, workDir, state)
 	if err != nil {
 		return m.installFailure(state, localBoxErrorCode(err, "LOCAL_BOX_PACKAGE_INVALID"), err.Error(), state.Progress.Phase)
 	}
@@ -390,11 +390,11 @@ func (m *localBoxManager) install(ctx context.Context) (localBoxState, error) {
 	if err := prepareProgramTarget(m.paths.programDir); err != nil {
 		return m.installFailure(state, "LOCAL_BOX_INSTALL_FAILED", err.Error(), localBoxStatusInstalling)
 	}
-	if err := os.Rename(extractedDir, m.paths.programDir); err != nil {
+	if err := os.Rename(validated.Directory, m.paths.programDir); err != nil {
 		return m.installFailure(state, "LOCAL_BOX_INSTALL_FAILED", fmt.Sprintf("启用业务端程序失败：%v", err), localBoxStatusInstalling)
 	}
 	programInstalled := true
-	record := localBoxInstallRecordFromManifest(manifest, m.paths, installIdentity, dataIdentity.DataIdentity, m.sourceKind())
+	record := localBoxInstallRecordFromProduct(validated.Product, m.paths, installIdentity, dataIdentity.DataIdentity, m.sourceKind())
 	if err := m.writeInstall(record); err != nil {
 		if programInstalled {
 			_ = os.RemoveAll(m.paths.programDir)

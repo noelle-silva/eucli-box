@@ -15,17 +15,22 @@ import BuildIcon from '@mui/icons-material/Build'
 import CloseIcon from '@mui/icons-material/Close'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import SettingsIcon from '@mui/icons-material/Settings'
+import StorefrontIcon from '@mui/icons-material/Storefront'
 import { useEvent } from '../hooks/useEvent'
 import { ConfigFieldsForm } from './ConfigFieldsForm'
 import { SettingsListItem, SettingsPill, SettingsSection, SettingsSurface } from './SettingsSurfaces'
 import { ToolPromptDescriptionSection } from './ToolPromptDescriptionSection'
+import { ArtifactStoreDialog } from './ArtifactStoreDialog'
 import { plainObject, stringField } from './schemaFieldValues'
-import { compatibilityRangeText, type CompatibilityStatus, type EucliBoxCompatibility } from '../../domain/release'
+import { compatibilityRangeText, type CompatibilityStatus, type EucliBoxCompatibility, type ReleaseArtifactIdentity, type ReleaseCheckSnapshot } from '../../domain/release'
 
 type AiToolsSettingsPanelProps = {
   controller: any
   loading: boolean
   tools: any
+  releaseChecks?: ReleaseCheckSnapshot | null
+  releaseCheckBusy?: boolean
+  onRefreshReleaseChecks?: (kind?: string) => Promise<void> | void
 }
 
 type ToolSummary = {
@@ -42,12 +47,21 @@ type ToolSummary = {
 }
 
 export function AiToolsSettingsPanel(props: AiToolsSettingsPanelProps) {
-  const { controller, loading, tools } = props
+  const { controller, loading, tools, releaseChecks, releaseCheckBusy, onRefreshReleaseChecks } = props
   const [filter, setFilter] = React.useState('')
+  const [storeOpen, setStoreOpen] = React.useState(false)
 
   React.useEffect(() => {
     controller.actions.refreshTools?.(false)
   }, [controller])
+
+  const handleStoreAction = useEvent(async (artifact: ReleaseArtifactIdentity, action: 'install' | 'update') => {
+    const toolId = String(artifact?.id || '').trim()
+    if (!toolId) return
+    if (action === 'install') await controller.actions.installTool?.(toolId)
+    else await controller.actions.updateTool?.(toolId)
+    await Promise.resolve(onRefreshReleaseChecks?.('tool')).catch(() => {})
+  })
 
   const items = toolItems(tools)
   const query = filter.trim().toLowerCase()
@@ -71,9 +85,14 @@ export function AiToolsSettingsPanel(props: AiToolsSettingsPanelProps) {
                 </Typography>
               </Box>
             </Stack>
-            <Button startIcon={<RefreshIcon />} variant="text" onClick={() => controller.actions.refreshTools?.(true)} disabled={loading || !!tools?.loading}>
-              {tools?.loading ? '刷新中…' : '刷新工具'}
-            </Button>
+            <Stack direction="row" spacing={1} justifyContent="flex-end">
+              <Button startIcon={<StorefrontIcon />} variant="contained" onClick={() => setStoreOpen(true)}>
+                商店
+              </Button>
+              <Button startIcon={<RefreshIcon />} variant="text" onClick={() => controller.actions.refreshTools?.(true)} disabled={loading || !!tools?.loading}>
+                {tools?.loading ? '刷新中…' : '刷新工具'}
+              </Button>
+            </Stack>
           </Stack>
 
           <TextField
@@ -93,7 +112,7 @@ export function AiToolsSettingsPanel(props: AiToolsSettingsPanelProps) {
 
           <Stack spacing={1.25}>
             {filtered.length ? (
-              filtered.map((tool) => <ToolCard key={toolId(tool)} controller={controller} tool={tool} loading={loading} />)
+              filtered.map((tool) => <ToolCard key={toolId(tool)} controller={controller} tool={tool} loading={loading} installState={tools?.installState} />)
             ) : (
               <SettingsSection tone="muted" sx={{ p: 3, textAlign: 'center' }}>
                 <Typography sx={{ fontWeight: 900 }}>{tools?.loading ? '工具列表加载中…' : '暂无可显示工具'}</Typography>
@@ -106,17 +125,36 @@ export function AiToolsSettingsPanel(props: AiToolsSettingsPanelProps) {
         </Stack>
       </SettingsSurface>
 
+      {tools?.installError ? (
+        <Typography variant="body2" color="error" sx={{ mt: 1 }}>
+          {String(tools.installError || '')}
+        </Typography>
+      ) : null}
+
       <ToolConfigDialog controller={controller} tools={tools} />
+
+      <ArtifactStoreDialog
+        open={storeOpen}
+        onClose={() => setStoreOpen(false)}
+        kind="tool"
+        title="AI 工具商店"
+        results={releaseChecks?.results || []}
+        installState={tools?.installState}
+        actionBusy={tools?.installLoading === true || releaseCheckBusy === true}
+        onAction={handleStoreAction}
+        onRefresh={() => onRefreshReleaseChecks?.('tool')}
+      />
     </>
   )
 }
 
-function ToolCard(props: { controller: any; tool: ToolSummary; loading: boolean }) {
-  const { controller, tool, loading } = props
+function ToolCard(props: { controller: any; tool: ToolSummary; loading: boolean; installState: any }) {
+  const { controller, tool, loading, installState } = props
   const id = toolId(tool)
   const name = toolName(tool)
   const description = toolDescription(tool)
   const unavailable = String(tool.status || '').trim() !== 'active'
+  const stateForTool = installState && typeof installState === 'object' && String(installState.artifact?.id || '') === id ? installState : null
   return (
     <SettingsListItem tone={unavailable ? 'danger' : 'default'}>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25} alignItems={{ xs: 'stretch', sm: 'center' }}>
@@ -136,6 +174,7 @@ function ToolCard(props: { controller: any; tool: ToolSummary; loading: boolean 
             </Typography>
             <Typography variant="caption" color="text.secondary">适用本体：{compatibilityRangeText(tool.eucliBoxCompatibility)}</Typography>
             {unavailable && String(tool.statusMessage || '').trim() ? <Typography variant="caption" color="error" sx={{ display: 'block' }}>{String(tool.statusMessage)}</Typography> : null}
+            {stateForTool ? <InstallStatusLine state={stateForTool} /> : null}
           </Box>
         </Stack>
         <Button variant="text" onClick={() => controller.actions.openToolConfig?.(id)} disabled={loading || !id} sx={{ alignSelf: { xs: 'flex-end', sm: 'center' } }}>
@@ -144,6 +183,26 @@ function ToolCard(props: { controller: any; tool: ToolSummary; loading: boolean 
       </Stack>
     </SettingsListItem>
   )
+}
+
+function InstallStatusLine(props: { state: any }) {
+  const state = props.state && typeof props.state === 'object' ? props.state : {}
+  const status = String(state.status || '')
+  const error = state.error && typeof state.error === 'object' ? state.error : {}
+  const code = String(error.code || '')
+  const message = String(error.message || '')
+  const phase = String(error.phase || '')
+  const busy = status === 'downloading' || status === 'verifying' || status === 'preparing' || status === 'switching' || status === 'starting' || status === 'checking_release' || status === 'checking_activity' || status === 'restoring'
+  if (busy) {
+    return <Typography variant="caption" color="info.main" sx={{ display: 'block' }}>正在处理安装/更新：{status}</Typography>
+  }
+  if (status === 'blocked' && code) {
+    return <Typography variant="caption" color="warning.main" sx={{ display: 'block' }}>操作被阻止（{code}）：{message || '请稍后重试'}</Typography>
+  }
+  if (status === 'failed' && code) {
+    return <Typography variant="caption" color="error" sx={{ display: 'block' }}>上次操作失败（{code}@{phase || '未知阶段'}）：{message || '未知原因'}</Typography>
+  }
+  return null
 }
 
 function ToolConfigDialog(props: { controller: any; tools: any }) {

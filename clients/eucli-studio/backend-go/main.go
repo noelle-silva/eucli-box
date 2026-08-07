@@ -54,7 +54,6 @@ func run() error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	svc.startStandaloneReleaseCheck(ctx)
 	go newEventBridge(svc, hub).run(ctx)
 	serverErr := newDirectServer(token, svc, hub).listenAndServe(ctx)
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)

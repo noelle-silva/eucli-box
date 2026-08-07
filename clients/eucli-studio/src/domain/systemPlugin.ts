@@ -18,6 +18,12 @@ export type SystemPluginSummary = {
   lifecycleType: string
   status: string
   statusMessage?: string
+  installed?: boolean
+  currentVersion?: string
+  installStatus?: string
+  installPhase?: string
+  operationId?: string
+  active?: boolean
 }
 
 export type SystemPluginDetail = SystemPluginSummary & {
@@ -66,6 +72,12 @@ export function normalizeSystemPluginSummary(raw: unknown): SystemPluginSummary 
     lifecycleType: text(box.lifecycleType),
     status: text(box.status),
     statusMessage: text(box.statusMessage),
+    installed: box.installed === true,
+    currentVersion: text(box.currentVersion),
+    installStatus: text(box.installStatus),
+    installPhase: text(box.installPhase),
+    operationId: text(box.operationId),
+    active: box.active === true,
   }
 }
 

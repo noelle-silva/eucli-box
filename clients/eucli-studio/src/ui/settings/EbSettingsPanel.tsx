@@ -16,7 +16,7 @@ type EbSettingsPanelProps = {
   modelRequestConfig: any
   bootstrap?: StudioBootstrap
   releaseCheckBusy?: boolean
-  onRefreshReleaseChecks?: () => Promise<void> | void
+  onRefreshReleaseChecks?: (kind?: string) => Promise<void> | void
 }
 
 export function EbSettingsPanel(props: EbSettingsPanelProps) {
@@ -90,7 +90,12 @@ export function EbSettingsPanel(props: EbSettingsPanelProps) {
 
           {bootstrap ? (
             <SettingsSection tone="muted">
-              <ReleaseChecksPanel snapshot={bootstrap.releaseChecks} busy={releaseCheckBusy} onRefresh={onRefreshReleaseChecks} />
+              <ReleaseChecksPanel
+                snapshot={bootstrap.releaseChecks}
+                busy={releaseCheckBusy}
+                onRefresh={onRefreshReleaseChecks}
+                kindFilter="eucli-box"
+              />
             </SettingsSection>
           ) : null}
 

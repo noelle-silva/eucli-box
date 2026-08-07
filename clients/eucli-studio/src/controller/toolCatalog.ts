@@ -1,6 +1,6 @@
 import { now } from '../core/utils'
 import type { AiChatShowToast } from '../gateway/capabilities'
-import { normalizeCompatibilityStatus, normalizeEucliBoxCompatibility } from '../domain/release'
+import { normalizeArtifactInstallState, normalizeCompatibilityStatus, normalizeEucliBoxCompatibility, type ArtifactInstallState } from '../domain/release'
 
 export function createToolCatalog(deps: {
   getState: () => any
@@ -130,7 +130,59 @@ export function createToolCatalog(deps: {
     }
   }
 
-  return { refreshTools, openToolConfig, closeToolConfig, setToolConfigValue, removeToolConfigValue, setToolPromptDescriptionDraft, resetToolPromptDescriptionDraftToDefault, saveSelectedToolConfig }
+  async function loadToolInstallState(toolIdRaw: any) {
+    const toolId = String(toolIdRaw || '').trim()
+    if (!toolId) return null
+    patchCatalog({ installLoading: true, installError: '' })
+    deps.emit()
+    try {
+      const response = await deps.netRequest({ method: 'GET', path: `/api/tools/${encodeURIComponent(toolId)}/install-state`, timeoutMs: 15000 })
+      const status = Number(response?.status || 0)
+      if (status < 200 || status >= 300) throw new Error(`HTTP ${status}`)
+      const state = normalizeArtifactInstallState(response?.body)
+      patchCatalog({ installLoading: false, installError: '', installState: state })
+      return state
+    } catch (e: any) {
+      const error = String(e?.message || e || '工具安装状态加载失败')
+      patchCatalog({ installLoading: false, installError: error })
+      return null
+    } finally {
+      deps.emit()
+    }
+  }
+
+  async function installTool(toolIdRaw: any) {
+    return runToolOperation(toolIdRaw, 'install')
+  }
+
+  async function updateTool(toolIdRaw: any) {
+    return runToolOperation(toolIdRaw, 'update')
+  }
+
+  async function runToolOperation(toolIdRaw: any, action: 'install' | 'update') {
+    const toolId = String(toolIdRaw || '').trim()
+    if (!toolId) return null
+    patchCatalog({ installLoading: true, installError: '' })
+    deps.emit()
+    try {
+      const response = await deps.netRequest({ method: 'POST', path: `/api/tools/${encodeURIComponent(toolId)}/${action}`, body: {}, timeoutMs: 180000 })
+      const status = Number(response?.status || 0)
+      if (status < 200 || status >= 300) throw new Error(`HTTP ${status}`)
+      const state = normalizeArtifactInstallState(response?.body)
+      patchCatalog({ installLoading: false, installError: '', installState: state })
+      await refreshTools(true)
+      return state
+    } catch (e: any) {
+      const error = String(e?.message || e || (action === 'install' ? '工具安装失败' : '工具更新失败'))
+      patchCatalog({ installLoading: false, installError: error })
+      deps.showToast?.(error, { kind: 'error' })
+      return null
+    } finally {
+      deps.emit()
+    }
+  }
+
+  return { refreshTools, openToolConfig, closeToolConfig, setToolConfigValue, removeToolConfigValue, setToolPromptDescriptionDraft, resetToolPromptDescriptionDraftToDefault, saveSelectedToolConfig, loadToolInstallState, installTool, updateTool }
 }
 
 function defaultToolCatalogState() {
@@ -147,6 +199,9 @@ function defaultToolCatalogState() {
     promptDescriptionDraft: '',
     saving: false,
     saveError: '',
+    installLoading: false,
+    installError: '',
+    installState: null as ArtifactInstallState | null,
   }
 }
 

@@ -105,7 +105,7 @@ import { HOOK_PROMPT_SESSION_METADATA_KEY, HOOK_PROMPT_SESSION_METADATA_MODE_KEY
 import { loadHookPromptLibrary, saveHookPromptLibrary, updateGroupSessionHookPrompt, updateRoleSessionHookPrompt, updateWorkspaceSessionHookPrompt } from './hookPromptClient'
 import { normalizePlaceholderLibrary, type PlaceholderLibrary } from '../domain/placeholder'
 import { loadPlaceholderDependencies, loadPlaceholderLibrary, loadPlaceholderProblems, previewPlaceholders, savePlaceholderLibrary } from './placeholderClient'
-import { createPlaceholderFromSystemPluginInterface, loadAvailableSystemPluginPlaceholderInterfaces, loadSystemPlugin, loadSystemPlugins, saveSystemPluginUserConfig } from './systemPluginClient'
+import { createPlaceholderFromSystemPluginInterface, installSystemPlugin as installSystemPluginClient, loadAvailableSystemPluginPlaceholderInterfaces, loadSystemPlugin, loadSystemPluginInstallState as loadSystemPluginInstallStateClient, loadSystemPlugins, saveSystemPluginUserConfig, updateSystemPlugin as updateSystemPluginClient } from './systemPluginClient'
 import { systemPluginLocatorId } from '../domain/systemPlugin'
 import { addNativeToolsToPolicy, addToolsToPolicy, emptyRoleToolPolicy, removeNativeToolFromPolicy, removeToolFromPolicy, setToolRunMode } from '../domain/toolPolicy'
 import { readActiveEbRunCardsForTarget, removeEbRoleRunCard, upsertEbRoleRunCard } from '../domain/activeRunCards'
@@ -137,8 +137,8 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     modelGroups: defaultModelGroupsState(),
     hookPrompts: { loading: false, error: '', library: { presets: [] } as HookPromptLibrary },
     placeholders: { loading: false, error: '', library: { placeholders: [], folders: [] } as PlaceholderLibrary, preview: { text: '', problems: [] as any[] }, problems: [] as any[], dependencyTree: { name: '' } as any },
-    systemPlugins: { loading: false, error: '', items: [] as any[], selectedPluginId: '', selectedPlugin: null as any, detailLoading: false, detailError: '', saving: false, saveError: '', availableInterfaces: [] as any[] },
-    tools: { loading: false, error: '', items: [] as any[], fetchedAt: 0, detailLoading: false, detailError: '', selectedToolId: '', selectedTool: null as any, configDraft: {} as Record<string, any>, promptDescriptionDraft: '', saving: false, saveError: '' },
+    systemPlugins: { loading: false, error: '', items: [] as any[], selectedPluginId: '', selectedPlugin: null as any, detailLoading: false, detailError: '', saving: false, saveError: '', availableInterfaces: [] as any[], installLoading: false, installError: '', installState: null as any },
+    tools: { loading: false, error: '', items: [] as any[], fetchedAt: 0, detailLoading: false, detailError: '', selectedToolId: '', selectedTool: null as any, configDraft: {} as Record<string, any>, promptDescriptionDraft: '', saving: false, saveError: '', installLoading: false, installError: '', installState: null as any },
     modelRequestConfig: defaultModelRequestConfigState(),
     pendingChat: null as any,
     pendingGroupChat: null as any,
@@ -863,6 +863,58 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     return interfaces
   }
 
+  async function loadSystemPluginInstallState(pluginIdRaw: any) {
+    const pluginId = String(pluginIdRaw || '').trim()
+    if (!pluginId) return null
+    const netRequest = capabilities.net?.request
+    if (typeof netRequest !== 'function') throw new Error('业务端请求通道不可用')
+    state.systemPlugins = { ...state.systemPlugins, installLoading: true, installError: '' }
+    emit()
+    try {
+      const installState = await loadSystemPluginInstallStateClient(netRequest, pluginId)
+      state.systemPlugins = { ...state.systemPlugins, installLoading: false, installError: '', installState }
+      emit()
+      return installState
+    } catch (e: any) {
+      const message = String(e?.message || e || '插件安装状态加载失败')
+      state.systemPlugins = { ...state.systemPlugins, installLoading: false, installError: message }
+      emit()
+      return null
+    }
+  }
+
+  async function installSystemPluginAction(pluginIdRaw: any) {
+    return runSystemPluginOperation(pluginIdRaw, 'install')
+  }
+
+  async function updateSystemPluginAction(pluginIdRaw: any) {
+    return runSystemPluginOperation(pluginIdRaw, 'update')
+  }
+
+  async function runSystemPluginOperation(pluginIdRaw: any, action: 'install' | 'update') {
+    const pluginId = String(pluginIdRaw || '').trim()
+    if (!pluginId) return null
+    const netRequest = capabilities.net?.request
+    if (typeof netRequest !== 'function') throw new Error('业务端请求通道不可用')
+    state.systemPlugins = { ...state.systemPlugins, installLoading: true, installError: '' }
+    emit()
+    try {
+      const installState = action === 'install'
+        ? await installSystemPluginClient(netRequest, pluginId)
+        : await updateSystemPluginClient(netRequest, pluginId)
+      state.systemPlugins = { ...state.systemPlugins, installLoading: false, installError: '', installState }
+      emit()
+      await refreshSystemPlugins(true).catch(() => null)
+      return installState
+    } catch (e: any) {
+      const message = String(e?.message || e || (action === 'install' ? '插件安装失败' : '插件更新失败'))
+      state.systemPlugins = { ...state.systemPlugins, installLoading: false, installError: message }
+      api.ui?.showToast?.(message, { kind: 'error' })
+      emit()
+      return null
+    }
+  }
+
   async function createPlaceholderFromSystemPlugin(pluginId: any, interfaceId: any) {
     const netRequest = capabilities.net?.request
     if (typeof netRequest !== 'function') throw new Error('业务端请求通道不可用')
@@ -1164,7 +1216,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     emit,
     showToast: api.ui?.showToast,
   })
-  const { refreshTools, openToolConfig, closeToolConfig, setToolConfigValue, removeToolConfigValue, setToolPromptDescriptionDraft, resetToolPromptDescriptionDraftToDefault, saveSelectedToolConfig } = toolCatalog
+  const { refreshTools, openToolConfig, closeToolConfig, setToolConfigValue, removeToolConfigValue, setToolPromptDescriptionDraft, resetToolPromptDescriptionDraftToDefault, saveSelectedToolConfig, loadToolInstallState, installTool, updateTool } = toolCatalog
 
   const modelRequestConfigController = createModelRequestConfigController({
     getState: () => state,
@@ -2059,6 +2111,9 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     setToolPromptDescriptionDraft: (value: any) => setToolPromptDescriptionDraft(value),
     resetToolPromptDescriptionDraftToDefault: () => resetToolPromptDescriptionDraftToDefault(),
     saveSelectedToolConfig: () => saveSelectedToolConfig(),
+    loadToolInstallState: (toolId: any) => loadToolInstallState(toolId),
+    installTool: (toolId: any) => installTool(toolId),
+    updateTool: (toolId: any) => updateTool(toolId),
     refreshModelRequestConfig: (force: any) => refreshModelRequestConfig(!!force),
     setModelRequestConfigDraft: (key: any, value: any) => setModelRequestConfigDraft(key, value),
     resetModelRequestConfigDraftToDefaults: () => resetModelRequestConfigDraftToDefaults(),
@@ -2085,6 +2140,9 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     saveSystemPluginConfig: (pluginId: any, config: any) => saveSystemPluginConfig(pluginId, config),
     refreshAvailableSystemPluginPlaceholderInterfaces: () => refreshAvailableSystemPluginPlaceholderInterfaces(),
     createPlaceholderFromSystemPlugin: (pluginId: any, interfaceId: any) => createPlaceholderFromSystemPlugin(pluginId, interfaceId),
+    loadSystemPluginInstallState: (pluginId: any) => loadSystemPluginInstallState(pluginId),
+    installSystemPlugin: (pluginId: any) => installSystemPluginAction(pluginId),
+    updateSystemPlugin: (pluginId: any) => updateSystemPluginAction(pluginId),
     selectHookPromptForActiveChat: (mode: any, presetId: any) => selectHookPromptForActiveChat(mode, presetId),
     openRoleToolWhitelist: () => {
       state.draft.roleToolWhitelistOpen = true

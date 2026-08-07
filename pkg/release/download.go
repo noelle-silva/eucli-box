@@ -33,6 +33,13 @@ type DownloadFileOptions struct {
 	ExpectedSHA256 string
 	MaxBytes       int64
 	Headers        http.Header
+	OnProgress     func(DownloadProgress)
+}
+
+// DownloadProgress 只报告下载进度；总量未知时必须为 0，不能填假值。
+type DownloadProgress struct {
+	ReceivedBytes int64
+	TotalBytes    int64
 }
 
 func DownloadFile(ctx context.Context, options DownloadFileOptions) (types.ReleaseFileRecord, error) {
@@ -123,7 +130,12 @@ func downloadFile(ctx context.Context, options DownloadFileOptions, requireDiges
 	}()
 
 	hash := sha256.New()
-	written, err := io.Copy(io.MultiWriter(temporary, hash), io.LimitReader(response.Body, maxBytes+1))
+	total := options.ExpectedSize
+	if total <= 0 {
+		total = response.ContentLength
+	}
+	writer := &progressReporter{target: io.MultiWriter(temporary, hash), onProgress: options.OnProgress, total: total}
+	written, err := io.Copy(writer, io.LimitReader(response.Body, maxBytes+1))
 	if err != nil {
 		cleanup()
 		return types.ReleaseFileRecord{}, fmt.Errorf("写入下载文件失败：%w", err)
@@ -162,4 +174,21 @@ func validSHA256(value string) bool {
 		}
 	}
 	return true
+}
+
+// progressReporter 按已写入字节调用回调；回调不写日志和用户数据，也不能改变下载结果。
+type progressReporter struct {
+	target     io.Writer
+	onProgress func(DownloadProgress)
+	received   int64
+	total      int64
+}
+
+func (w *progressReporter) Write(payload []byte) (int, error) {
+	written, err := w.target.Write(payload)
+	w.received += int64(written)
+	if w.onProgress != nil {
+		w.onProgress(DownloadProgress{ReceivedBytes: w.received, TotalBytes: w.total})
+	}
+	return written, err
 }

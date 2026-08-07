@@ -25,7 +25,7 @@ type ExtractArchiveOptions struct {
 
 type ValidateExtractedPackageOptions struct {
 	Directory string
-	Manifest  types.ReleaseManifest
+	Product   types.ReleaseProductRecord
 }
 
 type ValidatedPackage struct {
@@ -46,23 +46,8 @@ func ExtractArchive(options ExtractArchiveOptions) error {
 	if err != nil {
 		return fmt.Errorf("解包目标目录无效：%w", err)
 	}
-	if info, statErr := os.Stat(target); statErr == nil {
-		if !info.IsDir() {
-			return fmt.Errorf("解包目标必须是目录")
-		}
-		entries, readErr := os.ReadDir(target)
-		if readErr != nil {
-			return fmt.Errorf("读取解包目标目录失败：%w", readErr)
-		}
-		if len(entries) != 0 {
-			return fmt.Errorf("解包目标目录必须为空")
-		}
-	} else if os.IsNotExist(statErr) {
-		if err := os.MkdirAll(target, 0o755); err != nil {
-			return fmt.Errorf("建立解包目标目录失败：%w", err)
-		}
-	} else {
-		return fmt.Errorf("读取解包目标目录失败：%w", statErr)
+	if err := EnsureEmptyDirectory(target); err != nil {
+		return err
 	}
 
 	archive, err := zip.OpenReader(archivePath)
@@ -141,14 +126,10 @@ func ValidateExtractedPackage(options ValidateExtractedPackageOptions) (Validate
 	if err != nil {
 		return ValidatedPackage{}, err
 	}
-	if err := ValidateReleaseManifest(options.Manifest); err != nil {
+	if err := ValidateReleaseProductRecord(options.Product); err != nil {
 		return ValidatedPackage{}, err
 	}
 	if err := validatePackageBoundary(directory); err != nil {
-		return ValidatedPackage{}, err
-	}
-	files, err := CompareFileRecords(directory, options.Manifest.Files)
-	if err != nil {
 		return ValidatedPackage{}, err
 	}
 	productPayload, err := os.ReadFile(filepath.Join(directory, "release-product.json"))
@@ -159,16 +140,47 @@ func ValidateExtractedPackage(options ValidateExtractedPackageOptions) (Validate
 	if err != nil {
 		return ValidatedPackage{}, err
 	}
-	if product.Artifact != options.Manifest.Artifact || product.Version != options.Manifest.Version || product.Platform != options.Manifest.Platform || product.OfficialSource != options.Manifest.OfficialSource || product.DataVersion != options.Manifest.DataVersion || !reflect.DeepEqual(product.Compatibility, options.Manifest.Compatibility) || !reflect.DeepEqual(product.ExternalAssets, options.Manifest.ExternalAssets) {
-		return ValidatedPackage{}, fmt.Errorf("包内身份资料与发行清单不一致")
-	}
-	if err := validateExtractedExternalAssets(directory, options.Manifest.ExternalAssets); err != nil {
+	if err := validateExpectedProduct(options.Product, product); err != nil {
 		return ValidatedPackage{}, err
 	}
-	if err := validateRequiredPackageFiles(directory, options.Manifest.Artifact); err != nil {
+	if err := validateExtractedExternalAssets(directory, product.ExternalAssets); err != nil {
+		return ValidatedPackage{}, err
+	}
+	if err := validateRequiredPackageFiles(directory, options.Product.Artifact); err != nil {
+		return ValidatedPackage{}, err
+	}
+	files, err := CollectFileRecords(directory)
+	if err != nil {
 		return ValidatedPackage{}, err
 	}
 	return ValidatedPackage{Directory: directory, Product: product, Files: files}, nil
+}
+
+// validateExpectedProduct 核对包内身份资料与官方候选期望完全一致；
+// 外部附带内容以包内身份资料自身声明为准并单独自洽核对。
+func validateExpectedProduct(expected types.ReleaseProductRecord, actual types.ReleaseProductRecord) error {
+	if actual.Artifact != expected.Artifact {
+		return fmt.Errorf("包内身份资料与官方候选不一致")
+	}
+	if actual.Version != expected.Version || actual.Platform != expected.Platform || actual.OfficialSource != expected.OfficialSource {
+		return fmt.Errorf("包内身份资料与官方候选不一致")
+	}
+	if !reflect.DeepEqual(actual.Compatibility, expected.Compatibility) {
+		return fmt.Errorf("包内适用范围与官方候选不一致")
+	}
+	if actual.DataVersion != expected.DataVersion {
+		return fmt.Errorf("包内数据版本与官方候选不一致")
+	}
+	if actual.Source.Commit != expected.Source.Commit || actual.Source.Repository != expected.Source.Repository {
+		return fmt.Errorf("包内来源记录与官方候选不一致")
+	}
+	if !expected.VerificationOnly && !actual.Source.Recorded {
+		return fmt.Errorf("正式成品来源必须已经完整记录")
+	}
+	if actual.VerificationOnly != expected.VerificationOnly {
+		return fmt.Errorf("包内验证标记与官方候选不一致")
+	}
+	return nil
 }
 
 func CollectFileRecords(root string) ([]types.ReleaseFileRecord, error) {
@@ -469,6 +481,19 @@ func fileRecord(path string, name string) (types.ReleaseFileRecord, error) {
 	return types.ReleaseFileRecord{Name: filepath.ToSlash(name), Size: size, SHA256: hex.EncodeToString(digest.Sum(nil))}, nil
 }
 
+// RecordForFile 返回单个文件的名称、大小和 SHA-256。
+func RecordForFile(path string) (int64, string, error) {
+	path, err := filepath.Abs(strings.TrimSpace(path))
+	if err != nil || strings.TrimSpace(path) == "" {
+		return 0, "", fmt.Errorf("文件路径无效")
+	}
+	record, err := fileRecord(path, filepath.Base(path))
+	if err != nil {
+		return 0, "", err
+	}
+	return record.Size, record.SHA256, nil
+}
+
 func safeArchivePath(value string) (string, error) {
 	name := filepath.ToSlash(strings.TrimSpace(value))
 	if name == "" || strings.HasPrefix(name, "/") || strings.Contains(name, "\\") || filepath.VolumeName(name) != "" {
@@ -495,6 +520,9 @@ func existingDirectory(value string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if err := EnsurePlainDirectory(absolute); err != nil {
+		return "", err
+	}
 	info, err := os.Stat(absolute)
 	if err != nil {
 		return "", err
@@ -503,6 +531,81 @@ func existingDirectory(value string) (string, error) {
 		return "", fmt.Errorf("路径必须是目录")
 	}
 	return filepath.Clean(absolute), nil
+}
+
+// EnsureEmptyDirectory 建立（若不存在）或核对一个空的普通目录；路径链不得包含重解析点。
+func EnsureEmptyDirectory(path string) error {
+	path = filepath.Clean(path)
+	info, err := os.Stat(path)
+	switch {
+	case err == nil:
+		if !info.IsDir() {
+			return fmt.Errorf("目录路径实际是普通文件或未知类型：%s", path)
+		}
+	case os.IsNotExist(err):
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			return fmt.Errorf("建立目录失败：%w", err)
+		}
+	default:
+		return fmt.Errorf("读取目录失败：%w", err)
+	}
+	if err := EnsurePlainDirectory(path); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return fmt.Errorf("读取目录内容失败：%w", err)
+	}
+	if len(entries) != 0 {
+		return fmt.Errorf("目录必须为空：%s", path)
+	}
+	return nil
+}
+
+// EnsurePlainDirectory 核对已存在目录的整条路径链不包含符号链接或重解析点。
+func EnsurePlainDirectory(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("路径不是普通目录：%s", path)
+	}
+	hasReparse, err := pathChainHasReparsePoint(path)
+	if err != nil {
+		return err
+	}
+	if hasReparse {
+		return fmt.Errorf("目录路径包含符号链接或重解析点：%s", path)
+	}
+	return nil
+}
+
+// pathChainHasReparsePoint 检查从已存在路径向上到根之间是否存在重解析点。
+func pathChainHasReparsePoint(path string) (bool, error) {
+	current := filepath.Clean(path)
+	for {
+		reparse, err := isReparsePoint(current)
+		if err != nil {
+			if os.IsNotExist(err) {
+				parent := filepath.Dir(current)
+				if parent == current {
+					return false, nil
+				}
+				current = parent
+				continue
+			}
+			return false, err
+		}
+		if reparse {
+			return true, nil
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return false, nil
+		}
+		current = parent
+	}
 }
 
 func absoluteRegularFile(value string, label string) (string, error) {
@@ -519,6 +622,13 @@ func absoluteRegularFile(value string, label string) (string, error) {
 	}
 	if info.IsDir() {
 		return "", fmt.Errorf("%s不能是目录", label)
+	}
+	reparse, err := isReparsePoint(absolute)
+	if err != nil {
+		return "", fmt.Errorf("读取%s失败：%w", label, err)
+	}
+	if reparse {
+		return "", fmt.Errorf("%s不能是符号链接或重解析点", label)
 	}
 	return filepath.Clean(absolute), nil
 }

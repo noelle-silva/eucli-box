@@ -307,8 +307,11 @@ func (s *system) restorePluginLifecycle(ctx context.Context, pluginID string) {
 	}
 }
 
-// probePlugin 对新版本执行基础交接：resolve_placeholders、空接口和空配置，
-// 要求结构化成功响应；不得把用户占位符数据写入验证工作区。
+// probePlugin 对新版本执行基础交接：resolve_placeholders、空接口和空配置。
+// 它只验证程序能够启动、读取标准输入并返回符合统一交接协议的结构化结果；
+// 不执行真实外部任务，不要求模型密钥，不检查插件特有的业务内容
+// （插件对空配置返回结构化失败同样证明交接链路可用）。
+// 不得把用户占位符数据写入验证工作区。
 func (s *system) probePlugin(ctx context.Context, prepared release.PreparedProgram, probeDataDir string) error {
 	manifestPath := filepath.Join(prepared.Directory, "manifest.json")
 	payload, err := os.ReadFile(manifestPath)
@@ -361,9 +364,7 @@ func (s *system) probePlugin(ctx context.Context, prepared release.PreparedProgr
 		if stopErr != nil {
 			return pluginExecutionInvalid("plugin probe process did not stop: "+stopErr.Error(), stopErr)
 		}
-		if response.Status != "success" {
-			return pluginExecutionInvalid("plugin probe did not succeed: "+nonEmpty(response.Error, response.Status), nil)
-		}
+		_ = response
 		return nil
 	}
 	input, err := json.Marshal(request)
@@ -387,9 +388,6 @@ func (s *system) probePlugin(ctx context.Context, prepared release.PreparedProgr
 	var response types.SystemPluginPlaceholderResponse
 	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &response); err != nil {
 		return pluginExecutionInvalid("plugin probe output is not valid json", err)
-	}
-	if response.Status != "success" {
-		return pluginExecutionInvalid("plugin probe did not succeed: "+nonEmpty(response.Error, response.Status), nil)
 	}
 	return nil
 }

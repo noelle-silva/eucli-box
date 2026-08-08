@@ -370,7 +370,7 @@ type boxOfficialHTTPDoer struct {
 
 func (d boxOfficialHTTPDoer) Do(request *http.Request) (*http.Response, error) {
 	target := request.URL.String()
-	allowed := strings.HasPrefix(target, "https://api.github.com/") || strings.HasPrefix(target, "https://github.com/") || strings.HasPrefix(target, "http://127.0.0.1:")
+	allowed := strings.HasPrefix(target, "https://api.github.com/") || strings.HasPrefix(target, "https://github.com/") || strings.HasPrefix(target, "https://raw.githubusercontent.com/") || strings.HasPrefix(target, "http://127.0.0.1:")
 	if !allowed {
 		return nil, fmt.Errorf("发行检查只能访问固定官方地址")
 	}

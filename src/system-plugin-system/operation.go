@@ -210,6 +210,9 @@ func (s *system) runPluginOperation(ctx context.Context, pluginID string, action
 		s.endUpdateAndRestoreLifecycle(activity, ctx, pluginID)
 		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusFailed, types.ArtifactPhaseSwitch, code, message)
 	}
+	// 新版本已经启用，旧版本的失败记录不再适用于当前插件状态；
+	// 不清除会让插件一直无法使用，且无法通过占位符解析自愈。
+	s.setFailure(pluginID, "")
 
 	record.Phase = types.ArtifactPhaseRefresh
 	_ = s.writeOperation(pluginID, record)

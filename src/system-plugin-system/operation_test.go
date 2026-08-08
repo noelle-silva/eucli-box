@@ -315,6 +315,33 @@ func TestInstallPluginCompletesAndBecomesActive(t *testing.T) {
 	}
 }
 
+func TestUpdatePluginClearsStaleFailureAfterSwitch(t *testing.T) {
+	fixture := newPluginOperationFixture(t)
+	fixture.makePluginCandidate("demo", "0.1.0", types.SystemPluginLifecycleOnDemand, false)
+	if _, err := fixture.system.InstallPlugin(context.Background(), "demo"); err != nil {
+		t.Fatalf("InstallPlugin() error = %v", err)
+	}
+	fixture.realSystem.setFailure("demo", "旧版本的失败记录")
+	fixture.makePluginCandidate("demo", "0.1.1", types.SystemPluginLifecycleOnDemand, false)
+	state, err := fixture.system.UpdatePlugin(context.Background(), "demo")
+	if err != nil {
+		t.Fatalf("UpdatePlugin() error = %v", err)
+	}
+	if state.Status != types.ArtifactStatusActive || state.CurrentVersion != "0.1.1" {
+		t.Fatalf("state = %#v", state)
+	}
+	if failure := fixture.realSystem.getFailure("demo"); failure != "" {
+		t.Fatalf("stale failure not cleared: %q", failure)
+	}
+	plugins, err := fixture.system.ListPlugins(context.Background())
+	if err != nil {
+		t.Fatalf("ListPlugins() error = %v", err)
+	}
+	if len(plugins) != 1 || plugins[0].Status != types.SystemPluginStatusActive {
+		t.Fatalf("plugins = %#v", plugins)
+	}
+}
+
 func TestInstallPluginRejectsIncompatibleCandidateBeforeDownload(t *testing.T) {
 	fixture := newPluginOperationFixture(t)
 	fixture.makePluginCandidate("demo", "0.1.0", types.SystemPluginLifecycleOnDemand, false)

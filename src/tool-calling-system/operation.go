@@ -237,8 +237,10 @@ func (s *system) restoreVersion(ctx context.Context, toolID string, store releas
 	return nil
 }
 
-// probeTool 对准备完成的版本执行基础交接：空业务参数、空用户配置和当前程序目录，
-// 要求结构化成功结果；不得调用真实外部服务，不得要求模型密钥。
+// probeTool 对准备完成的版本执行基础交接：空业务参数、空用户配置和当前程序目录。
+// 它只验证程序能够启动、读取标准输入并返回符合统一交接协议的结构化结果；
+// 不执行真实外部任务，不要求模型密钥，不检查工具特有的业务内容
+// （强参数工具对空参数返回结构化失败同样证明交接链路可用）。
 func (s *system) probeTool(ctx context.Context, prepared release.PreparedProgram, probeDataDir string) error {
 	definitionPath := filepath.Join(prepared.Directory, "definition.json")
 	payload, err := os.ReadFile(definitionPath)
@@ -293,13 +295,6 @@ func (s *system) probeTool(ctx context.Context, prepared release.PreparedProgram
 	var output types.ToolExecutionOutput
 	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &output); err != nil {
 		return toolExecutionInvalid("tool probe output is not valid json", err)
-	}
-	if output.Status != types.ToolStatusSuccess {
-		message := output.Error
-		if message == "" {
-			message = output.Content
-		}
-		return toolExecutionInvalid("tool probe did not succeed: "+message, nil)
 	}
 	return nil
 }

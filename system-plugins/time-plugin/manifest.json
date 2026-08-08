@@ -2,7 +2,7 @@
   "id": "time-plugin",
   "name": "时间插件",
   "description": "提供当前本地时间占位符",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "eucliBoxCompatibility": {
     "minimumVersion": "0.1.0",
     "maximumVersionExclusive": "0.2.0"

@@ -17,6 +17,9 @@ build/
 **/.vite/
 .dev-workspace/
 
+# Development tools (independent Git repository)
+dev-tools/
+
 # Compiled binaries
 *.exe
 *.dll

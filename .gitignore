@@ -17,8 +17,8 @@ build/
 **/.vite/
 .dev-workspace/
 
-# Development tools (independent Git repository)
-dev-tools/
+# Independent module development tool (kept out of the main repository Git)
+.dev-tools/worktree-overlay/
 
 # Compiled binaries
 *.exe

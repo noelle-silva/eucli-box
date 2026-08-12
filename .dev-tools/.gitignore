@@ -1,0 +1,12 @@
+# Build outputs
+build/
+**/build/
+
+# Logs
+*.log
+
+# Environment and local machine files
+.env
+.env.*
+!.env.example
+Thumbs.db

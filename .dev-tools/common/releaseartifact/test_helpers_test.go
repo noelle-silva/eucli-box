@@ -17,8 +17,12 @@ func repositoryRootForTest(t *testing.T) string {
 		t.Fatalf("resolve working directory: %v", err)
 	}
 	for {
+		// 工具资料位于主仓库根 tools/；开发工具模块自身的 go.mod 不是工具资料根，
+		// 必须继续向上找到同时具备 go.mod 与工具资料目录的主仓库根。
 		if _, err := os.Stat(filepath.Join(current, "go.mod")); err == nil {
-			return current
+			if _, err := os.Stat(filepath.Join(current, "tools", "context7", "tool.json")); err == nil {
+				return current
+			}
 		}
 		parent := filepath.Dir(current)
 		if parent == current {

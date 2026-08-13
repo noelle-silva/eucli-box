@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"eucli-box/pkg/localrun"
+	"eucli-box/pkg/release"
 )
 
 type localBoxProcess struct {
@@ -50,7 +51,7 @@ type localBoxRunResponse struct {
 	Version          string    `json:"version"`
 }
 
-func startLocalBoxProcess(ctx context.Context, paths localBoxPaths, record localBoxInstallRecord) (*localBoxProcess, error) {
+func startLocalBoxProcess(ctx context.Context, paths localBoxPaths, record localBoxInstallRecord, program release.CurrentProgram) (*localBoxProcess, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -72,8 +73,8 @@ func startLocalBoxProcess(ctx context.Context, paths localBoxPaths, record local
 	if err := os.MkdirAll(tempDir, 0o700); err != nil {
 		return nil, fmt.Errorf("建立受托临时目录失败：%w", err)
 	}
-	command := exec.Command(filepath.Join(record.ProgramDir, "eucli-box.exe"))
-	command.Dir = record.ProgramDir
+	command := exec.Command(filepath.Join(program.ProgramDirectory, "eucli-box.exe"))
+	command.Dir = program.ProgramDirectory
 	command.Env = localBoxEnvironment(os.Environ(), map[string]string{
 		"EUCLI_BOX_LOCAL_RUN":          "1",
 		"EUCLI_BOX_INSTALL_ID":         record.InstallIdentity,
@@ -81,7 +82,7 @@ func startLocalBoxProcess(ctx context.Context, paths localBoxPaths, record local
 		"EUCLI_BOX_RUN_ID":             runIdentity,
 		"EUCLI_BOX_SESSION_CREDENTIAL": sessionCredential,
 		"EUCLI_BOX_DATA_DIR":           record.DataDir,
-		"EUCLI_BOX_PROGRAM_ROOT":       filepath.Dir(record.ProgramDir),
+		"EUCLI_BOX_PROGRAM_ROOT":       paths.rootDir,
 		"EUCLI_BOX_REGISTRATION_PATH":  paths.registrationPath,
 		"EUCLI_BOX_ADDR":               "127.0.0.1:0",
 		"TEMP":                         tempDir,
@@ -139,7 +140,7 @@ func startLocalBoxProcess(ctx context.Context, paths localBoxPaths, record local
 			process.terminateAndWait()
 			return nil, fmt.Errorf("解析业务端 ready 失败：%w", err)
 		}
-		if ready.Type != "local-box-ready" || ready.InstallIdentity != record.InstallIdentity || ready.DataIdentity != record.DataIdentity || ready.RunIdentity != runIdentity || ready.Version != record.Version {
+		if ready.Type != "local-box-ready" || ready.InstallIdentity != record.InstallIdentity || ready.DataIdentity != record.DataIdentity || ready.RunIdentity != runIdentity || ready.Version != program.Version {
 			process.terminateAndWait()
 			return nil, errors.New("LOCAL_BOX_START_FAILED: ready 运行事实不一致")
 		}
@@ -156,7 +157,7 @@ func startLocalBoxProcess(ctx context.Context, paths localBoxPaths, record local
 		facts := localrun.RegistrationFacts{
 			InstallIdentity: record.InstallIdentity, DataIdentity: record.DataIdentity, RunIdentity: runIdentity,
 			Endpoint: ready.Endpoint, SessionCredential: sessionCredential, ProcessID: command.Process.Pid,
-			ProcessStartedAt: processStartedAt, BoxVersion: record.Version,
+			ProcessStartedAt: processStartedAt, BoxVersion: program.Version,
 		}
 		if err := localrun.MatchRegistration(registration, facts); err != nil {
 			process.terminateAndWait()
@@ -200,9 +201,9 @@ func preparePreviousRegistration(path string) error {
 }
 
 // reconnectBackgroundBox 尝试精准重连后台运行中的同一业务端：
-// 只接受登记中安装身份、数据身份、运行身份全部与本次安装记录一致的运行；
+// 只接受登记中安装身份、数据身份、版本全部与本次安装记录一致的运行；
 // 通过 /api/local-run 真实核对后才复用连接，不猜测端口或进程。
-func reconnectBackgroundBox(ctx context.Context, record localBoxInstallRecord, paths localBoxPaths) (*localBoxProcess, error) {
+func reconnectBackgroundBox(ctx context.Context, record localBoxInstallRecord, program release.CurrentProgram, paths localBoxPaths) (*localBoxProcess, error) {
 	registration, err := localrun.ReadRegistration(paths.registrationPath)
 	if err != nil {
 		return nil, err
@@ -212,6 +213,9 @@ func reconnectBackgroundBox(ctx context.Context, record localBoxInstallRecord, p
 	}
 	if registration.InstallIdentity != record.InstallIdentity || registration.DataIdentity != record.DataIdentity {
 		return nil, errors.New("LOCAL_BOX_REGISTRATION_INVALID: 登记安装身份不一致")
+	}
+	if registration.BoxVersion != program.Version {
+		return nil, errors.New("LOCAL_BOX_REGISTRATION_INVALID: 登记业务端版本与当前安装版本不一致")
 	}
 	matches, err := localrun.ProcessMatches(registration.ProcessID, registration.ProcessStartedAt)
 	if err != nil {

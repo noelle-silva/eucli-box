@@ -30,12 +30,13 @@ type InstalledArtifact struct {
 }
 
 type Config struct {
-	Client     HTTPDoer
-	APIBaseURL string
-	IndexBase  string
-	Timeout    time.Duration
-	Now        func() time.Time
-	Token      string
+	Client       HTTPDoer
+	APIBaseURL   string
+	IndexBase    string
+	DownloadBase string
+	Timeout      time.Duration
+	Now          func() time.Time
+	Token        string
 }
 
 type Checker struct {
@@ -43,6 +44,7 @@ type Checker struct {
 	client       HTTPDoer
 	apiBaseURL   string
 	indexBaseURL string
+	downloadBase string
 	timeout      time.Duration
 	now          func() time.Time
 	token        string
@@ -67,6 +69,7 @@ func New(config Config) (*Checker, error) {
 	if config.IndexBase == "" {
 		config.IndexBase = defaultIndexBase
 	}
+	config.DownloadBase = strings.TrimRight(strings.TrimSpace(config.DownloadBase), "/")
 	if config.Timeout == 0 {
 		config.Timeout = defaultTimeout
 	}
@@ -81,6 +84,7 @@ func New(config Config) (*Checker, error) {
 		client:       config.Client,
 		apiBaseURL:   config.APIBaseURL,
 		indexBaseURL: config.IndexBase,
+		downloadBase: config.DownloadBase,
 		timeout:      config.Timeout,
 		now:          config.Now,
 		token:        strings.TrimSpace(config.Token),

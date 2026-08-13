@@ -25,6 +25,9 @@ export function localBoxStatusLabel(status: string) {
     case 'failed': return '失败'
     case 'stopping': return '停止中'
     case 'stopped': return '已停止'
+    case 'waiting_stop': return '等待业务端结束'
+    case 'switching': return '切换版本中'
+    case 'restoring': return '恢复中'
     default: return status || '未知'
   }
 }

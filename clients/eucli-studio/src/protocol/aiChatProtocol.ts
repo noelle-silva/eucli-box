@@ -23,6 +23,7 @@ export const AI_CHAT_DIRECT_METHOD = {
   imagePick: 'aiChat.imagePick',
   localBoxStatus: 'localBox.status',
   localBoxInstall: 'localBox.install',
+  localBoxUpdate: 'localBox.update',
   localBoxStart: 'localBox.start',
   localBoxRestart: 'localBox.restart',
   localBoxStop: 'localBox.stop',

@@ -24,6 +24,7 @@ export type AiChatAppRuntime = {
   refreshReleaseChecks: (kind?: string) => Promise<ReleaseCheckSnapshot>
   getLocalBoxStatus: () => Promise<LocalBoxState>
   installLocalBox: () => Promise<LocalBoxState>
+  updateLocalBox: () => Promise<LocalBoxState>
   startLocalBox: () => Promise<LocalBoxState>
   restartLocalBox: () => Promise<LocalBoxState>
   stopLocalBox: () => Promise<LocalBoxState>
@@ -76,6 +77,7 @@ export async function createAiChatAppRuntime(options: AiChatAppHostOptions): Pro
     refreshReleaseChecks: async (kind?: string) => normalizeReleaseCheckSnapshot(await directClient.invoke('releaseChecks.refresh', kind ? { kind } : {})),
     getLocalBoxStatus: async () => normalizeLocalBoxState(await directClient.invoke(AI_CHAT_DIRECT_METHOD.localBoxStatus)),
     installLocalBox: async () => normalizeLocalBoxState(await directClient.invoke(AI_CHAT_DIRECT_METHOD.localBoxInstall, {}, { timeoutMs: 10 * 60 * 1000 })),
+    updateLocalBox: async () => normalizeLocalBoxState(await directClient.invoke(AI_CHAT_DIRECT_METHOD.localBoxUpdate, {}, { timeoutMs: 10 * 60 * 1000 })),
     startLocalBox: async () => normalizeLocalBoxState(await directClient.invoke(AI_CHAT_DIRECT_METHOD.localBoxStart, {}, { timeoutMs: 45_000 })),
     restartLocalBox: async () => normalizeLocalBoxState(await directClient.invoke(AI_CHAT_DIRECT_METHOD.localBoxRestart, {}, { timeoutMs: 45_000 })),
     stopLocalBox: async () => normalizeLocalBoxState(await directClient.invoke(AI_CHAT_DIRECT_METHOD.localBoxStop, {}, { timeoutMs: 45_000 })),

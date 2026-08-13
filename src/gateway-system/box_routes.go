@@ -19,6 +19,17 @@ func (s *system) handleBoxInfo(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleBoxActiveWork 只读报告当前未结束的真实工作，
+// 供程序更换在下载前判断；不停止任何工作，不改变任何状态。
+func (s *system) handleBoxActiveWork(w http.ResponseWriter, r *http.Request) {
+	activeRuns, err := s.runtime.ListActiveRuns(r.Context())
+	if err != nil {
+		writeError(w, gatewayDependencyFailed("读取真实工作状态失败", err))
+		return
+	}
+	writeData(w, http.StatusOK, map[string]any{"activeWork": activeRuns})
+}
+
 // handleBoxShutdown 处理业务端停止请求：
 // 存在未结束的真实工作时返回工作列表要求确认；没有未结束工作或用户已确认时触发正常退出。
 func (s *system) handleBoxShutdown(w http.ResponseWriter, r *http.Request) {

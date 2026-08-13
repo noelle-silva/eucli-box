@@ -115,9 +115,9 @@ func (m *localBoxManager) downloadAndVerify(ctx context.Context, candidate *rele
 
 func localBoxInstallRecordFromProduct(product types.ReleaseProductRecord, paths localBoxPaths, installIdentity string, dataIdentity string, source localBoxSourceKind) localBoxInstallRecord {
 	return localBoxInstallRecord{
-		SchemaVersion: 1, Artifact: types.ReleaseArtifactIdentity{Kind: localBoxArtifactID, ID: localBoxArtifactID},
-		Source: string(source), Version: product.Version, Platform: product.Platform, InstallIdentity: installIdentity,
-		DataIdentity: dataIdentity, ProgramDir: paths.programDir, DataDir: paths.dataDir, RuntimeDir: paths.runtimeDir,
+		SchemaVersion: 2, Artifact: types.ReleaseArtifactIdentity{Kind: localBoxArtifactID, ID: localBoxArtifactID},
+		Source: string(source), Platform: product.Platform, InstallIdentity: installIdentity,
+		DataIdentity: dataIdentity, DataDir: paths.dataDir, RuntimeDir: paths.runtimeDir,
 	}
 }
 

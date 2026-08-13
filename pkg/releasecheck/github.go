@@ -83,7 +83,7 @@ func (c *Checker) LatestCandidate(ctx context.Context, identity types.ReleaseArt
 	if !ok {
 		return nil, fmt.Errorf("%s 官方索引没有 %s 平台压缩包", identity.ID, types.ReleasePlatformWindowsX64)
 	}
-	archiveURL, err := releasecatalog.DownloadURL("", source, pkg)
+	archiveURL, err := releasecatalog.DownloadURL(c.downloadBase, source, pkg)
 	if err != nil {
 		return nil, fmt.Errorf("%s 官方索引压缩包地址无效：%w", identity.ID, err)
 	}

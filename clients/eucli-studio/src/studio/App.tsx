@@ -11,6 +11,7 @@ import { createAiChatAppRuntime, type AiChatAppRuntime } from './aiChatAppHost'
 import { compatibilityRangeText, type ReleaseCheckSnapshot, type StudioBootstrap } from '../domain/release'
 import { ReleaseChecksPanel } from '../ui/release/ReleaseChecksPanel'
 import { LocalBoxInstallPanel } from '../ui/local-box/LocalBoxInstallPanel'
+import { LocalBoxUpdatePanel } from '../ui/local-box/LocalBoxUpdatePanel'
 import { LocalBoxStatusPanel, localBoxStatusLabel } from '../ui/local-box/LocalBoxStatusPanel'
 import { localBoxSourceLabel } from '../domain/localBox'
 import type { ClientSettings } from './aiChatAppHost'
@@ -309,6 +310,34 @@ export function App() {
     }
   }, [connectMountedBackend, showToast])
 
+  const updateLocalBox = React.useCallback(async () => {
+    const runtime = runtimeRef.current
+    if (!runtime || localBoxBusyRef.current) return
+    const runtimeVersion = runtimeVersionRef.current
+    localBoxBusyRef.current = true
+    setLocalBoxBusy(true)
+    try {
+      const state = await runtime.updateLocalBox()
+      if (runtimeVersionRef.current !== runtimeVersion || !mountedRef.current) return
+      setRuntimeBootstrap(current => current ? { ...current, localBox: state } : current)
+      if (state.connected) {
+        await connectMountedBackend()
+        return
+      }
+      if (state.error.code) {
+        showToast(state.error.message || '更新业务端未完成', { kind: 'error' })
+      }
+    } catch (error: any) {
+      if (runtimeVersionRef.current !== runtimeVersion || !mountedRef.current) return
+      showToast(String(error?.message || error || '更新业务端失败'), { kind: 'error' })
+    } finally {
+      if (runtimeVersionRef.current === runtimeVersion && mountedRef.current) {
+        localBoxBusyRef.current = false
+        setLocalBoxBusy(false)
+      }
+    }
+  }, [connectMountedBackend, showToast])
+
   const loadClientSettings = React.useCallback(async () => {
     const runtime = runtimeRef.current
     if (!runtime) return
@@ -455,6 +484,7 @@ export function App() {
              onStartBox={startLocalBox}
              onRestartBox={restartLocalBox}
              onStopBox={stopLocalBox}
+             onUpdateLocalBox={updateLocalBox}
            />
         </div>
       ) : needsEucliBoxConnection ? (
@@ -466,6 +496,7 @@ export function App() {
           bootstrap={runtimeBootstrap}
           releaseCheckBusy={releaseCheckBusy}
           onInstall={installLocalBox}
+          onUpdate={updateLocalBox}
           onRefreshReleaseChecks={refreshReleaseChecks}
         />
       ) : (
@@ -499,10 +530,14 @@ function LocalBoxGateScreen(props: {
   bootstrap: StudioBootstrap
   releaseCheckBusy: boolean
   onInstall: () => Promise<void> | void
+  onUpdate: () => Promise<void> | void
   onRefreshReleaseChecks: (kind?: string) => Promise<void> | void
 }) {
-  const { standalone, windowControlActions, busy, issue, bootstrap, releaseCheckBusy, onInstall, onRefreshReleaseChecks } = props
+  const { standalone, windowControlActions, busy, issue, bootstrap, releaseCheckBusy, onInstall, onUpdate, onRefreshReleaseChecks } = props
   const localBox = bootstrap.localBox
+  const boxCheck = Array.isArray(bootstrap.releaseChecks?.results)
+    ? bootstrap.releaseChecks.results.find((result) => String(result.artifact?.kind || '') === 'eucli-box') || null
+    : null
   const onTopbarPointerDown = React.useCallback((event: React.PointerEvent<HTMLElement>) => {
     if (event.button !== 0) return
     const target = event.target
@@ -529,6 +564,7 @@ function LocalBoxGateScreen(props: {
         </dl>
         <LocalBoxStatusPanel state={localBox} />
         <LocalBoxInstallPanel state={localBox} busy={busy} onInstall={onInstall} />
+        <LocalBoxUpdatePanel state={localBox} check={boxCheck} busy={busy} onUpdate={onUpdate} />
         {issue ? <div className="bootFallbackIssue">{issue}</div> : null}
         <div className="eucliReleaseChecks">
           <ReleaseChecksPanel snapshot={bootstrap.releaseChecks} busy={releaseCheckBusy} onRefresh={() => onRefreshReleaseChecks?.('eucli-box')} compact />

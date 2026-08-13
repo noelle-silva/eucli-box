@@ -19,8 +19,7 @@ type localBoxPaths struct {
 	clientDataDir    string
 	rootDir          string
 	installPath      string
-	programDir       string
-	executablePath   string
+	programStoreDir  string
 	dataDir          string
 	runtimeDir       string
 	registrationPath string
@@ -56,8 +55,7 @@ func newLocalBoxPathsWithRoot(clientDataDir string, boxRoot string) (localBoxPat
 		clientDataDir:    filepath.Clean(absolute),
 		rootDir:          root,
 		installPath:      filepath.Join(root, "install.json"),
-		programDir:       filepath.Join(root, "program"),
-		executablePath:   filepath.Join(root, "program", "eucli-box.exe"),
+		programStoreDir:  filepath.Join(root, "program", "eucli-box"),
 		dataDir:          filepath.Join(root, "data"),
 		runtimeDir:       runtimeDir,
 		registrationPath: filepath.Join(runtimeDir, "registration.json"),
@@ -65,15 +63,15 @@ func newLocalBoxPathsWithRoot(clientDataDir string, boxRoot string) (localBoxPat
 	}, nil
 }
 
+// localBoxInstallRecord 是当前版本为 2 的安装记录：
+// 当前版本与程序目录不再保存在记录中，由程序版本仓库的 current.json 单独说真话。
 type localBoxInstallRecord struct {
 	SchemaVersion   int                           `json:"schemaVersion"`
 	Artifact        types.ReleaseArtifactIdentity `json:"artifact"`
 	Source          string                        `json:"source,omitempty"`
-	Version         string                        `json:"version"`
 	Platform        string                        `json:"platform"`
 	InstallIdentity string                        `json:"installIdentity"`
 	DataIdentity    string                        `json:"dataIdentity"`
-	ProgramDir      string                        `json:"programDir"`
 	DataDir         string                        `json:"dataDir"`
 	RuntimeDir      string                        `json:"runtimeDir"`
 }
@@ -200,25 +198,42 @@ func (m *localBoxManager) readInstall() (*localBoxInstallRecord, error) {
 		return nil, localBoxInstallRecordError{err: fmt.Errorf("LOCAL_BOX_INSTALL_FAILED: 安装资料损坏：%w", err)}
 	}
 	if err := validateLocalBoxInstallRecord(record, m.paths); err != nil {
+		if isLocalBoxLegacyLayoutError(err) {
+			return nil, localBoxInstallRecordError{err: err}
+		}
 		return nil, localBoxInstallRecordError{err: fmt.Errorf("LOCAL_BOX_INSTALL_FAILED: 安装资料无效：%w", err)}
 	}
 	return &record, nil
 }
 
+// isLocalBoxLegacyLayoutError 判断错误是否来自旧版平铺安装布局（v1 安装记录）。
+func isLocalBoxLegacyLayoutError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "LOCAL_BOX_LEGACY_LAYOUT")
+}
+
+// isLocalBoxLegacyLayout 判断读取安装记录返回的错误是否属于旧版平铺布局。
+func isLocalBoxLegacyLayout(err error) bool {
+	var target localBoxInstallRecordError
+	return errors.As(err, &target) && isLocalBoxLegacyLayoutError(target.Unwrap())
+}
+
 func validateLocalBoxInstallRecord(record localBoxInstallRecord, paths localBoxPaths) error {
-	if record.SchemaVersion != 1 || record.Artifact.Kind != localBoxArtifactID || record.Artifact.ID != localBoxArtifactID {
+	if record.SchemaVersion != 2 {
+		if record.SchemaVersion == 1 {
+			return errors.New("LOCAL_BOX_LEGACY_LAYOUT: 旧版平铺安装布局，需要重新安装")
+		}
+		return errors.New("安装资料身份无效")
+	}
+	if record.Artifact.Kind != localBoxArtifactID || record.Artifact.ID != localBoxArtifactID {
 		return errors.New("安装资料身份无效")
 	}
 	if record.Source != "" && !localBoxSourceKind(record.Source).valid() {
 		return errors.New("安装资料来源无效")
 	}
-	if err := release.ValidateVersion(record.Version); err != nil {
-		return err
-	}
 	if record.Platform != types.ReleasePlatformWindowsX64 {
 		return errors.New("安装资料平台无效")
 	}
-	if !filepath.IsAbs(record.ProgramDir) || !filepath.IsAbs(record.DataDir) || !filepath.IsAbs(record.RuntimeDir) {
+	if !filepath.IsAbs(record.DataDir) || !filepath.IsAbs(record.RuntimeDir) {
 		return errors.New("安装资料目录必须使用绝对路径")
 	}
 	if err := localrun.ValidateIdentity(record.InstallIdentity, localrun.IdentityKindInstall); err != nil {
@@ -227,15 +242,11 @@ func validateLocalBoxInstallRecord(record localBoxInstallRecord, paths localBoxP
 	if err := localrun.ValidateIdentity(record.DataIdentity, localrun.IdentityKindData); err != nil {
 		return err
 	}
-	for _, pair := range [][2]string{{record.ProgramDir, paths.programDir}, {record.DataDir, paths.dataDir}, {record.RuntimeDir, paths.runtimeDir}} {
+	for _, pair := range [][2]string{{record.DataDir, paths.dataDir}, {record.RuntimeDir, paths.runtimeDir}} {
 		actual, err := filepath.Abs(strings.TrimSpace(pair[0]))
 		if err != nil || filepath.Clean(actual) != filepath.Clean(pair[1]) {
 			return errors.New("安装资料目录事实无效")
 		}
-	}
-	programInfo, err := os.Stat(filepath.Join(record.ProgramDir, "eucli-box.exe"))
-	if err != nil || programInfo.IsDir() {
-		return errors.New("安装资料程序文件不存在")
 	}
 	return nil
 }
@@ -252,8 +263,24 @@ func isLocalBoxInstallRecordInvalid(err error) bool {
 	return errors.As(err, &target)
 }
 
+// programStore 返回业务端程序版本仓库；根目录名必须等于发布物 ID。
+func (m *localBoxManager) programStore() (release.ProgramStore, error) {
+	return release.NewProgramStore(m.paths.programStoreDir,
+		types.ReleaseArtifactIdentity{Kind: localBoxArtifactID, ID: localBoxArtifactID})
+}
+
+// currentProgramFacts 读取当前版本事实。
+// install.json 为 v2 且存在、但 current.json 缺失或核对失败时返回错误，不猜测版本。
+func (m *localBoxManager) currentProgramFacts() (release.CurrentProgram, error) {
+	store, err := m.programStore()
+	if err != nil {
+		return release.CurrentProgram{}, err
+	}
+	return store.Current()
+}
+
 func (m *localBoxManager) recoverCorruptInstallRecord() error {
-	info, err := os.Stat(m.paths.programDir)
+	info, err := os.Stat(m.paths.programStoreDir)
 	if errors.Is(err, os.ErrNotExist) {
 		return os.Remove(m.paths.installPath)
 	}
@@ -263,26 +290,26 @@ func (m *localBoxManager) recoverCorruptInstallRecord() error {
 	if !info.IsDir() {
 		return errors.New("损坏安装资料对应的程序目录不是目录")
 	}
-	entries, err := os.ReadDir(m.paths.programDir)
+	entries, err := os.ReadDir(m.paths.programStoreDir)
 	if err != nil {
 		return err
 	}
 	if len(entries) != 0 {
 		return errors.New("损坏安装资料对应的程序目录包含未知内容，拒绝自动覆盖")
 	}
-	if err := os.Remove(m.paths.programDir); err != nil {
+	if err := os.Remove(m.paths.programStoreDir); err != nil {
 		return err
 	}
 	return os.Remove(m.paths.installPath)
 }
 
-func installStateFor(record *localBoxInstallRecord) localBoxState {
+func installStateFor(record *localBoxInstallRecord, current release.CurrentProgram) localBoxState {
 	state := initialLocalBoxState()
 	if record == nil {
 		return state
 	}
 	state.Installed = true
-	state.CurrentVersion = record.Version
+	state.CurrentVersion = current.Version
 	state.Status = localBoxStatusStopped
 	return state
 }
@@ -298,17 +325,37 @@ func (m *localBoxManager) currentConnection() *boxConnection {
 }
 
 func (m *localBoxManager) status(ctx context.Context) (localBoxState, error) {
+	m.operation.Lock()
+	err := m.recoverPendingUpdate(ctx)
+	m.operation.Unlock()
+	if err != nil {
+		state := localBoxFailure(initialLocalBoxState(), localBoxErrorCodeFrom(err, localBoxErrorUpdateFailed), err.Error(), localBoxStatusNotInstalled)
+		m.publishState(state)
+		return state, nil
+	}
 	record, err := m.readInstall()
 	if err != nil {
+		if isLocalBoxLegacyLayout(err) {
+			state := localBoxFailure(initialLocalBoxState(), "LOCAL_BOX_LEGACY_LAYOUT", "旧版平铺安装布局，需要重新安装；数据不受影响", localBoxStatusNotInstalled)
+			m.publishState(state)
+			return state, nil
+		}
 		state := localBoxFailure(initialLocalBoxState(), "LOCAL_BOX_INSTALL_FAILED", err.Error(), localBoxStatusNotInstalled)
 		m.publishState(state)
 		return state, nil
 	}
-	state := installStateFor(record)
+	state := initialLocalBoxState()
 	if record == nil {
 		m.publishState(state)
 		return state, nil
 	}
+	current, err := m.currentProgramFacts()
+	if err != nil {
+		state = localBoxFailure(state, "LOCAL_BOX_INSTALL_FAILED", "程序资料不完整，需要重新安装", localBoxStatusStopped)
+		m.publishState(state)
+		return state, nil
+	}
+	state = installStateFor(record, current)
 	if m.recordSourceMismatch(record) {
 		state = localBoxFailure(state, "LOCAL_BOX_SOURCE_MISMATCH", "已安装业务端与当前成品来源不匹配，需要重新安装", localBoxStatusStopped)
 		m.publishState(state)
@@ -331,11 +378,22 @@ func (m *localBoxManager) install(ctx context.Context) (localBoxState, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
+	if err := m.recoverPendingUpdate(ctx); err != nil {
+		state := localBoxFailure(initialLocalBoxState(), localBoxErrorCodeFrom(err, localBoxErrorUpdateFailed), err.Error(), localBoxStatusNotInstalled)
+		m.publishState(state)
+		return state, nil
+	}
 	if m.currentProcess() != nil {
 		return m.currentState(), newError("LOCAL_BOX_INSTALL_FAILED", "业务端正在运行，不能重复安装")
 	}
 	if record, err := m.readInstall(); err != nil {
-		if isLocalBoxInstallRecordInvalid(err) {
+		if isLocalBoxLegacyLayout(err) {
+			if recoverErr := m.removeLegacyProgramLayout(); recoverErr != nil {
+				state := localBoxFailure(initialLocalBoxState(), "LOCAL_BOX_INSTALL_FAILED", recoverErr.Error(), localBoxStatusInstalling)
+				m.publishState(state)
+				return state, nil
+			}
+		} else if isLocalBoxInstallRecordInvalid(err) {
 			if recoverErr := m.recoverCorruptInstallRecord(); recoverErr != nil {
 				state := localBoxFailure(initialLocalBoxState(), "LOCAL_BOX_INSTALL_FAILED", recoverErr.Error(), localBoxStatusInstalling)
 				m.publishState(state)
@@ -348,7 +406,13 @@ func (m *localBoxManager) install(ctx context.Context) (localBoxState, error) {
 		}
 	} else if record != nil {
 		if !m.recordSourceMismatch(record) {
-			state := installStateFor(record)
+			current, factsErr := m.currentProgramFacts()
+			if factsErr != nil {
+				state := localBoxFailure(initialLocalBoxState(), "LOCAL_BOX_INSTALL_FAILED", "程序资料不完整，需要重新安装", localBoxStatusInstalling)
+				m.publishState(state)
+				return state, nil
+			}
+			state := installStateFor(record, current)
 			m.publishState(state)
 			return state, newError("LOCAL_BOX_INSTALL_FAILED", "业务端已经安装")
 		}
@@ -424,24 +488,27 @@ func (m *localBoxManager) install(ctx context.Context) (localBoxState, error) {
 	if err != nil {
 		return m.installFailure(state, "LOCAL_BOX_INSTALL_FAILED", err.Error(), localBoxStatusInstalling)
 	}
-	if err := prepareProgramTarget(m.paths.programDir); err != nil {
+	store, err := m.programStore()
+	if err != nil {
 		return m.installFailure(state, "LOCAL_BOX_INSTALL_FAILED", err.Error(), localBoxStatusInstalling)
 	}
-	if err := os.Rename(validated.Directory, m.paths.programDir); err != nil {
+	prepared, err := store.PrepareVersion(ctx, validated.Directory, validated.Product, validated.Files)
+	if err != nil {
+		return m.installFailure(state, "LOCAL_BOX_INSTALL_FAILED", fmt.Sprintf("准备业务端程序失败：%v", err), localBoxStatusInstalling)
+	}
+	if err := store.Activate(ctx, prepared, ""); err != nil {
+		_ = os.RemoveAll(m.paths.programStoreDir)
 		return m.installFailure(state, "LOCAL_BOX_INSTALL_FAILED", fmt.Sprintf("启用业务端程序失败：%v", err), localBoxStatusInstalling)
 	}
-	programInstalled := true
 	record := localBoxInstallRecordFromProduct(validated.Product, m.paths, installIdentity, dataIdentity.DataIdentity, m.sourceKind())
 	if err := m.writeInstall(record); err != nil {
-		if programInstalled {
-			_ = os.RemoveAll(m.paths.programDir)
-		}
 		return m.installFailure(state, "LOCAL_BOX_INSTALL_FAILED", err.Error(), localBoxStatusInstalling)
 	}
 	committed = true
 	state.Installed = true
-	state.CurrentVersion = record.Version
-	return m.startLocked(ctx, &record, state)
+	state.CurrentVersion = prepared.Version
+	program := release.CurrentProgram{Version: prepared.Version, ProgramDirectory: prepared.Directory}
+	return m.startLocked(ctx, &record, program, state)
 }
 
 func (m *localBoxManager) installFailure(state localBoxState, code string, message string, phase string) (localBoxState, error) {
@@ -460,10 +527,27 @@ func (m *localBoxManager) recordSourceMismatch(record *localBoxInstallRecord) bo
 	return localBoxSourceKind(record.Source).normalize() != m.sourceKind()
 }
 
-// prepareReinstall 在来源不匹配时清理旧程序目录和安装记录，保留数据目录。
+// removeLegacyProgramLayout 在旧版平铺布局（v1 安装记录）存在时一次性清理：
+// 先按 preparePreviousRegistration 的同一规则确认没有仍在运行的旧受托业务端（有则失败不清理），
+// 再删除旧平铺 <rootDir>/program 与 install.json，然后按全新安装继续。
+// 不做静默转换：旧平铺目录没有 versions/ 结构与逐文件核对事实，转换等于猜测。
+func (m *localBoxManager) removeLegacyProgramLayout() error {
+	if err := preparePreviousRegistration(m.paths.registrationPath); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(filepath.Join(m.paths.rootDir, "program")); err != nil {
+		return fmt.Errorf("清理旧版平铺程序目录失败：%w", err)
+	}
+	if err := os.Remove(m.paths.installPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("清理旧版安装记录失败：%w", err)
+	}
+	return nil
+}
+
+// prepareReinstall 在来源不匹配时清理程序版本仓库和安装记录，保留数据目录。
 // 安装记录已经通过严格核对，程序目录属于本次安装事实，可以安全清理。
 func (m *localBoxManager) prepareReinstall(record *localBoxInstallRecord) error {
-	if err := os.RemoveAll(record.ProgramDir); err != nil {
+	if err := os.RemoveAll(m.paths.programStoreDir); err != nil {
 		return fmt.Errorf("清理旧业务端程序失败：%w", err)
 	}
 	if err := os.Remove(m.paths.installPath); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -475,8 +559,18 @@ func (m *localBoxManager) prepareReinstall(record *localBoxInstallRecord) error 
 func (m *localBoxManager) start(ctx context.Context) (localBoxState, error) {
 	m.operation.Lock()
 	defer m.operation.Unlock()
+	if err := m.recoverPendingUpdate(ctx); err != nil {
+		state := localBoxFailure(initialLocalBoxState(), localBoxErrorCodeFrom(err, localBoxErrorUpdateFailed), err.Error(), localBoxStatusStarting)
+		m.publishState(state)
+		return state, nil
+	}
 	record, err := m.readInstall()
 	if err != nil {
+		if isLocalBoxLegacyLayout(err) {
+			state := localBoxFailure(initialLocalBoxState(), "LOCAL_BOX_LEGACY_LAYOUT", "旧版平铺安装布局，需要重新安装；数据不受影响", localBoxStatusStarting)
+			m.publishState(state)
+			return state, nil
+		}
 		state := localBoxFailure(initialLocalBoxState(), "LOCAL_BOX_INSTALL_FAILED", err.Error(), localBoxStatusStarting)
 		m.publishState(state)
 		return state, nil
@@ -484,23 +578,29 @@ func (m *localBoxManager) start(ctx context.Context) (localBoxState, error) {
 	if record == nil {
 		return m.readLatestCandidate(ctx, initialLocalBoxState())
 	}
+	current, err := m.currentProgramFacts()
+	if err != nil {
+		state := localBoxFailure(initialLocalBoxState(), "LOCAL_BOX_INSTALL_FAILED", "程序资料不完整，需要重新安装", localBoxStatusStarting)
+		m.publishState(state)
+		return state, nil
+	}
 	if process := m.currentProcess(); process != nil {
-		state := installStateFor(record)
+		state := installStateFor(record, current)
 		state.Status = localBoxStatusConnected
 		state.Connected = true
 		m.publishState(state)
 		return state, nil
 	}
-	return m.startLocked(ctx, record, installStateFor(record))
+	return m.startLocked(ctx, record, current, installStateFor(record, current))
 }
 
-func (m *localBoxManager) startLocked(ctx context.Context, record *localBoxInstallRecord, state localBoxState) (localBoxState, error) {
+func (m *localBoxManager) startLocked(ctx context.Context, record *localBoxInstallRecord, program release.CurrentProgram, state localBoxState) (localBoxState, error) {
 	state.Status = localBoxStatusStarting
 	state.Connected = false
 	m.publishState(state)
 	// 先尝试精准重连后台运行中的同一业务端；任何失败都回退到完整启动流程，
 	// 由 preparePreviousRegistration 完成数据占用、旧登记和进程身份的安全判断。
-	process, err := reconnectBackgroundBox(ctx, *record, m.paths)
+	process, err := reconnectBackgroundBox(ctx, *record, program, m.paths)
 	if err == nil {
 		m.mu.Lock()
 		m.process = process
@@ -513,10 +613,10 @@ func (m *localBoxManager) startLocked(ctx context.Context, record *localBoxInsta
 		state.Status = localBoxStatusConnected
 		state.Connected = true
 		m.publishState(state)
-		go m.monitor(process, record.Version)
+		go m.monitor(process, program.Version)
 		return state, nil
 	}
-	process, err = startLocalBoxProcess(ctx, m.paths, *record)
+	process, err = startLocalBoxProcess(ctx, m.paths, *record, program)
 	if err != nil {
 		return m.installFailure(state, localBoxErrorCode(err, "LOCAL_BOX_START_FAILED"), err.Error(), localBoxStatusStarting)
 	}
@@ -531,7 +631,7 @@ func (m *localBoxManager) startLocked(ctx context.Context, record *localBoxInsta
 	state.Status = localBoxStatusConnected
 	state.Connected = true
 	m.publishState(state)
-	go m.monitor(process, record.Version)
+	go m.monitor(process, program.Version)
 	return state, nil
 }
 
@@ -608,6 +708,12 @@ func (m *localBoxManager) stop(ctx context.Context) (localBoxState, error) {
 	if err := process.requestStop(ctx); err != nil {
 		return m.installFailure(state, "LOCAL_BOX_STOP_FAILED", err.Error(), localBoxStatusStopping)
 	}
+	return m.waitStoppedAndClear(ctx, process, state)
+}
+
+// waitStoppedAndClear 等待业务端进程真实结束并清理客户端连接状态；
+// 必须在操作互斥锁内调用，供 stop 与 update 共用。
+func (m *localBoxManager) waitStoppedAndClear(ctx context.Context, process *localBoxProcess, state localBoxState) (localBoxState, error) {
 	if process.reconnected {
 		if err := waitBackgroundProcessExit(ctx, process.registration); err != nil {
 			return m.installFailure(state, "LOCAL_BOX_NOT_STOPPED", err.Error(), localBoxStatusStopping)
@@ -659,25 +765,4 @@ func (m *localBoxManager) currentProcess() *localBoxProcess {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.process
-}
-
-func prepareProgramTarget(path string) error {
-	info, err := os.Stat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if !info.IsDir() {
-		return errors.New("程序目录目标不是目录")
-	}
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		return err
-	}
-	if len(entries) != 0 {
-		return errors.New("程序目录已经存在内容，拒绝覆盖")
-	}
-	return os.Remove(path)
 }

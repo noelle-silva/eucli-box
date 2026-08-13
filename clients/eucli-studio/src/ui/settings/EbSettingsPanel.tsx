@@ -5,8 +5,9 @@ import RefreshIcon from '@mui/icons-material/Refresh'
 import RestartAltIcon from '@mui/icons-material/RestartAlt'
 import SaveIcon from '@mui/icons-material/Save'
 import { MODEL_REQUEST_TIMEOUT_LIMITS } from '../../controller/modelRequestConfig'
-import { compatibilityRangeText, type StudioBootstrap } from '../../domain/release'
+import { compatibilityRangeText, type ReleaseCheckResult, type StudioBootstrap } from '../../domain/release'
 import { useEvent } from '../hooks/useEvent'
+import { LocalBoxUpdatePanel } from '../local-box/LocalBoxUpdatePanel'
 import { ReleaseChecksPanel } from '../release/ReleaseChecksPanel'
 import { SettingsPill, SettingsSection, SettingsSurface } from './SettingsSurfaces'
 
@@ -17,14 +18,20 @@ type EbSettingsPanelProps = {
   bootstrap?: StudioBootstrap
   releaseCheckBusy?: boolean
   onRefreshReleaseChecks?: (kind?: string) => Promise<void> | void
+  onUpdateLocalBox?: () => Promise<void> | void
 }
 
 export function EbSettingsPanel(props: EbSettingsPanelProps) {
-  const { controller, loading, modelRequestConfig, bootstrap, releaseCheckBusy, onRefreshReleaseChecks } = props
+  const { controller, loading, modelRequestConfig, bootstrap, releaseCheckBusy, onRefreshReleaseChecks, onUpdateLocalBox } = props
   const box = modelRequestConfig && typeof modelRequestConfig === 'object' ? modelRequestConfig : {}
   const draft = box.draft && typeof box.draft === 'object' ? box.draft : {}
   const value = box.value && typeof box.value === 'object' ? box.value : {}
   const busy = loading || !!box.loading || !!box.saving
+  const boxCheck: ReleaseCheckResult | null = bootstrap
+    ? (Array.isArray(bootstrap.releaseChecks?.results)
+        ? bootstrap.releaseChecks.results.find((result) => String(result.artifact?.kind || '') === 'eucli-box') || null
+        : null)
+    : null
 
   React.useEffect(() => {
     controller.actions.refreshModelRequestConfig?.(false)
@@ -85,6 +92,12 @@ export function EbSettingsPanel(props: EbSettingsPanelProps) {
                   <Typography variant="caption" color="error">{bootstrap.eucliBoxIssue}</Typography>
                 ) : null}
               </Stack>
+            </SettingsSection>
+          ) : null}
+
+          {bootstrap ? (
+            <SettingsSection tone="muted">
+              <LocalBoxUpdatePanel state={bootstrap.localBox} check={boxCheck} busy={false} onUpdate={() => onUpdateLocalBox?.()} />
             </SettingsSection>
           ) : null}
 

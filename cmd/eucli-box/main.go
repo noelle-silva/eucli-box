@@ -80,7 +80,12 @@ func run() error {
 	if apiBaseURL == "" {
 		apiBaseURL = "https://api.github.com"
 	}
-	officialChecker, err := releasecheck.New(releasecheck.Config{Client: officialDoer, APIBaseURL: apiBaseURL})
+	officialChecker, err := releasecheck.New(releasecheck.Config{
+		Client:       officialDoer,
+		APIBaseURL:   apiBaseURL,
+		IndexBase:    strings.TrimSpace(os.Getenv("EUCLI_BOX_RELEASE_INDEX_BASE")),
+		DownloadBase: strings.TrimSpace(os.Getenv("EUCLI_BOX_RELEASE_DOWNLOAD_BASE")),
+	})
 	if err != nil {
 		return fmt.Errorf("create official candidate checker: %w", err)
 	}

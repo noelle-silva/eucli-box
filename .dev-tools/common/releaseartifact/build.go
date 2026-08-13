@@ -276,7 +276,7 @@ func assemble(ctx context.Context, root string, workDir string, assembledDir str
 
 func assembleTool(ctx context.Context, root string, workDir string, assembledDir string, artifact releaseops.Artifact, assetRoots map[string]string, sourceTime time.Time) error {
 	dataDir := filepath.Join(workDir, "tool-build")
-	args := []string{"run", "./cmd/eucli-toolpack", "-tool", artifact.ID, "-data-dir", dataDir, "-build-time", sourceTime.UTC().Format(time.RFC3339Nano)}
+	args := []string{"run", "devtools/eucli-toolpack", "-tool", artifact.ID, "-data-dir", dataDir, "-build-time", sourceTime.UTC().Format(time.RFC3339Nano)}
 	keys := make([]string, 0, len(assetRoots))
 	for name := range assetRoots {
 		keys = append(keys, name)

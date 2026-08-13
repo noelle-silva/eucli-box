@@ -23,11 +23,12 @@ import (
 	"testing"
 	"time"
 
-	datastorage "eucli-box/src/data-storage-system"
-	toolcalling "eucli-box/src/tool-calling-system"
 	"eucli-box/pkg/release"
+	"eucli-box/pkg/releasecatalog"
 	"eucli-box/pkg/releasecheck"
 	"eucli-box/pkg/types"
+	datastorage "eucli-box/src/data-storage-system"
+	toolcalling "eucli-box/src/tool-calling-system"
 )
 
 const boxVersion = "0.1.1"
@@ -54,7 +55,7 @@ type toolPluginUpdateServer struct {
 	server          *httptest.Server
 	mu              sync.Mutex
 	byKey           map[string]*toolPluginUpdateCandidate
-	releases        map[string][]map[string]any
+	indexes         map[string][]byte
 	archiveRequests map[string]int
 }
 
@@ -62,7 +63,7 @@ func newToolPluginUpdateServer(t *testing.T) *toolPluginUpdateServer {
 	fixture := &toolPluginUpdateServer{
 		t:               t,
 		byKey:           map[string]*toolPluginUpdateCandidate{},
-		releases:        map[string][]map[string]any{},
+		indexes:         map[string][]byte{},
 		archiveRequests: map[string]int{},
 	}
 	fixture.server = httptest.NewServer(http.HandlerFunc(fixture.serveHTTP))
@@ -74,65 +75,128 @@ func (f *toolPluginUpdateServer) url() string { return f.server.URL }
 
 func (f *toolPluginUpdateServer) client() *http.Client { return f.server.Client() }
 
+// indexSource 是分类对应的固定官方来源（与 catalog.json 一致）。
+func indexSource(kind string) (owner string, name string, err error) {
+	switch kind {
+	case types.ReleaseArtifactKindTool:
+		return "noelle-silva", "eucli-box-ai-tools", nil
+	case types.ReleaseArtifactKindPlugin:
+		return "noelle-silva", "eucli-box-system-plugins", nil
+	case types.ReleaseArtifactKindBox:
+		return "noelle-silva", "eucli-box", nil
+	default:
+		return "", "", fmt.Errorf("未知发布物类别 %q", kind)
+	}
+}
+
 func (f *toolPluginUpdateServer) addCandidate(candidate *toolPluginUpdateCandidate) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	key := candidateKey(candidate.identity, candidate.version)
 	f.byKey[key] = candidate
-	tag := candidate.identity.ID + "/v" + candidate.version
-	manifestName := strings.TrimSuffix(candidate.manifest.Archive.Name, ".zip") + ".manifest.json"
-	entry := map[string]any{
-		"tag_name":   tag,
-		"draft":      false,
-		"prerelease": false,
-		"html_url":   "https://github.com/noelle-silva/eucli-box/releases/tag/" + tag,
-		"body":       "发行说明 " + candidate.version,
-		"assets": []map[string]any{
-			{"name": manifestName, "size": len(candidate.manifestJSON), "browser_download_url": f.server.URL + "/manifest/" + key},
-			{"name": candidate.manifest.Archive.Name, "size": len(candidate.archiveBytes), "browser_download_url": f.server.URL + "/archive/" + key},
-		},
+	f.rebuildIndexLocked(candidate.identity.Kind)
+}
+
+// rebuildIndexLocked 重建某个分类的统一版本索引 JSON；必须在持锁下调用。
+func (f *toolPluginUpdateServer) rebuildIndexLocked(kind string) {
+	owner, name, err := indexSource(kind)
+	if err != nil {
+		f.t.Fatalf("index source: %v", err)
 	}
-	f.releases[candidate.identity.Kind] = append(f.releases[candidate.identity.Kind], entry)
+	now := time.Now().UTC()
+	artifacts := make(map[string]*releasecatalog.IndexArtifact)
+	for _, candidate := range f.byKey {
+		if candidate.identity.Kind != kind {
+			continue
+		}
+		artifact := artifacts[candidate.identity.ID]
+		if artifact == nil {
+			artifact = &releasecatalog.IndexArtifact{Kind: kind, ID: candidate.identity.ID}
+			artifacts[candidate.identity.ID] = artifact
+		}
+		tag, tagErr := releasecatalog.TagName(candidate.identity, candidate.version)
+		if tagErr != nil {
+			f.t.Fatalf("tag name: %v", tagErr)
+		}
+		fileName, fileErr := releasecatalog.ArchiveName(candidate.identity, candidate.version)
+		if fileErr != nil {
+			f.t.Fatalf("archive name: %v", fileErr)
+		}
+		artifact.Versions = append(artifact.Versions, releasecatalog.IndexVersion{
+			Version:        candidate.version,
+			PublishedAt:    now,
+			SourceRevision: candidate.manifest.Source.Commit,
+			Compatibility:  candidate.manifest.Compatibility,
+			ReleaseNotes:   "release notes " + candidate.version,
+			Packages: []releasecatalog.IndexPackage{{
+				Platform:   types.ReleasePlatformWindowsX64,
+				ReleaseTag: tag,
+				FileName:   fileName,
+				SizeBytes:  int64(len(candidate.archiveBytes)),
+				SHA256:     release.SHA256(candidate.archiveBytes),
+			}},
+		})
+	}
+	sorted := make([]releasecatalog.IndexArtifact, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		sorted = append(sorted, *artifact)
+	}
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].ID < sorted[j].ID })
+	index := releasecatalog.Index{SchemaVersion: releasecatalog.IndexSchemaVersion, UpdatedAt: now, Artifacts: sorted}
+	payload, err := json.MarshalIndent(index, "", "  ")
+	if err != nil {
+		f.t.Fatalf("marshal index: %v", err)
+	}
+	if _, err := releasecatalog.DecodeIndex(payload); err != nil {
+		f.t.Fatalf("生成的 %s 索引无效：%v", kind, err)
+	}
+	f.indexes[owner+"/"+name] = payload
 }
 
 func (f *toolPluginUpdateServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	switch {
-	case strings.Contains(path, "/releases"):
-		kind := releaseKindFromPath(path)
-		f.mu.Lock()
-		items := f.releases[kind]
-		f.mu.Unlock()
-		if items == nil {
-			items = []map[string]any{}
-		}
-		_ = json.NewEncoder(w).Encode(items)
-	case strings.HasPrefix(path, "/manifest/"):
-		f.mu.Lock()
-		candidate := f.byKey[strings.TrimPrefix(path, "/manifest/")]
-		f.mu.Unlock()
-		if candidate == nil {
+	case strings.HasSuffix(path, "/release-catalog/index.json"):
+		// 索引路径：{IndexBase}/{owner}/{name}/{ref}/release-catalog/index.json
+		prefix := strings.Trim(strings.TrimSuffix(path, "/release-catalog/index.json"), "/")
+		parts := strings.Split(prefix, "/")
+		if len(parts) < 2 {
 			http.NotFound(w, r)
 			return
 		}
-		_, _ = w.Write(candidate.manifestJSON)
-	case strings.HasPrefix(path, "/archive/"):
-		key := strings.TrimPrefix(path, "/archive/")
+		key := parts[0] + "/" + parts[1]
 		f.mu.Lock()
-		candidate := f.byKey[key]
-		if candidate != nil {
-			f.archiveRequests[key]++
-		}
+		payload := f.indexes[key]
 		f.mu.Unlock()
-		if candidate == nil {
+		if payload == nil {
 			http.NotFound(w, r)
 			return
 		}
-		if candidate.brokenArchive {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(payload)
+	case strings.Contains(path, "/releases/download/"):
+		// 定向下载：/{owner}/{repo}/releases/download/{tag}/{fileName}
+		f.mu.Lock()
+		var matched *toolPluginUpdateCandidate
+		for _, candidate := range f.byKey {
+			if strings.HasSuffix(path, candidate.manifest.Archive.Name) {
+				matched = candidate
+				break
+			}
+		}
+		if matched != nil {
+			f.archiveRequests[candidateKey(matched.identity, matched.version)]++
+		}
+		f.mu.Unlock()
+		if matched == nil {
+			http.NotFound(w, r)
+			return
+		}
+		if matched.brokenArchive {
 			_, _ = w.Write([]byte("corrupted-archive-bytes"))
 			return
 		}
-		_, _ = w.Write(candidate.archiveBytes)
+		_, _ = w.Write(matched.archiveBytes)
 	default:
 		http.NotFound(w, r)
 	}
@@ -166,14 +230,30 @@ func (f *toolPluginUpdateServer) latestCandidateFor(identity types.ReleaseArtifa
 	if best == nil {
 		return nil
 	}
-	key := candidateKey(best.identity, best.version)
+	tag, tagErr := releasecatalog.TagName(best.identity, best.version)
+	if tagErr != nil {
+		f.t.Fatalf("tag name: %v", tagErr)
+	}
+	fileName, fileErr := releasecatalog.ArchiveName(best.identity, best.version)
+	if fileErr != nil {
+		f.t.Fatalf("archive name: %v", fileErr)
+	}
+	owner, name, err := indexSource(best.identity.Kind)
+	if err != nil {
+		f.t.Fatalf("index source: %v", err)
+	}
 	return &releasecheck.ReleaseCandidate{
-		Artifact:     best.identity,
-		Manifest:     best.manifest,
-		ManifestURL:  f.server.URL + "/manifest/" + key,
-		ManifestSize: int64(len(best.manifestJSON)),
-		ArchiveURL:   f.server.URL + "/archive/" + key,
-		ReleaseNotes: "release notes " + best.version,
+		Artifact:         best.identity,
+		Version:          best.version,
+		SourceRevision:   best.manifest.Source.Commit,
+		SourceRepository: best.manifest.Source.Repository,
+		DataVersion:      best.manifest.DataVersion,
+		Compatibility:    best.manifest.Compatibility,
+		ReleaseNotes:     "release notes " + best.version,
+		OfficialSource:   best.manifest.OfficialSource,
+		ArchiveURL:       f.server.URL + "/" + owner + "/" + name + "/releases/download/" + tag + "/" + fileName,
+		SizeBytes:        best.manifest.Archive.Size,
+		SHA256:           best.manifest.Archive.SHA256,
 	}
 }
 
@@ -238,13 +318,13 @@ func makeToolCandidateWithSleep(t *testing.T, server *toolPluginUpdateServer, id
 		t.Fatalf("marshal manifest: %v", err)
 	}
 	server.addCandidate(&toolPluginUpdateCandidate{
-		identity:      types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: id},
-		version:       version,
-		manifest:      manifest,
-		manifestJSON:  manifestJSON,
-		archiveBytes:  archiveBytes,
-		brokenBinary:  brokenBinary,
-		incompatible:  incompatible,
+		identity:     types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: id},
+		version:      version,
+		manifest:     manifest,
+		manifestJSON: manifestJSON,
+		archiveBytes: archiveBytes,
+		brokenBinary: brokenBinary,
+		incompatible: incompatible,
 	})
 }
 
@@ -302,11 +382,11 @@ func makeBrokenToolCandidate(t *testing.T, server *toolPluginUpdateServer, id st
 		t.Fatalf("marshal manifest: %v", err)
 	}
 	server.addCandidate(&toolPluginUpdateCandidate{
-		identity:      types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: id},
-		version:       version,
-		manifest:      manifest,
-		manifestJSON:  manifestJSON,
-		archiveBytes:  archiveBytes,
+		identity:     types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: id},
+		version:      version,
+		manifest:     manifest,
+		manifestJSON: manifestJSON,
+		archiveBytes: archiveBytes,
 	})
 }
 
@@ -357,14 +437,14 @@ func makePluginCandidate(t *testing.T, server *toolPluginUpdateServer, id string
 		t.Fatalf("marshal release manifest: %v", err)
 	}
 	server.addCandidate(&toolPluginUpdateCandidate{
-		identity:      types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: id},
-		version:       version,
-		manifest:      releaseManifest,
-		manifestJSON:  releaseManifestJSON,
-		archiveBytes:  archiveBytes,
-		brokenBinary:  brokenBinary,
-		incompatible:  incompatible,
-		lifecycle:     lifecycle,
+		identity:     types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: id},
+		version:      version,
+		manifest:     releaseManifest,
+		manifestJSON: releaseManifestJSON,
+		archiveBytes: archiveBytes,
+		brokenBinary: brokenBinary,
+		incompatible: incompatible,
+		lifecycle:    lifecycle,
 	})
 }
 
@@ -627,7 +707,8 @@ func startBox(t *testing.T, boxPath string, envDir string, serverURL string) *bo
 		"EUCLI_BOX_DATA_DIR="+boxData,
 		"EUCLI_BOX_PROGRAM_ROOT="+programRoot,
 		"EUCLI_BOX_ADDR=127.0.0.1:"+port,
-		"EUCLI_BOX_RELEASE_API_BASE="+serverURL,
+		"EUCLI_BOX_RELEASE_INDEX_BASE="+serverURL,
+		"EUCLI_BOX_RELEASE_DOWNLOAD_BASE="+serverURL,
 		"TEMP="+tempDir,
 		"TMP="+tempDir,
 	)

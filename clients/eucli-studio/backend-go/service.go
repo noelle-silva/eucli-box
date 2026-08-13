@@ -70,6 +70,8 @@ func (s *service) dispatch(ctx context.Context, method string, params json.RawMe
 		return s.localBoxStatus(ctx)
 	case "localBox.install":
 		return s.localBoxInstall(ctx)
+	case "localBox.update":
+		return s.localBoxUpdate(ctx)
 	case "localBox.start":
 		return s.localBoxStart(ctx)
 	case "localBox.restart":
@@ -186,6 +188,15 @@ func (s *service) localBoxInstall(ctx context.Context) (localBoxState, error) {
 		return initialLocalBoxState(), newError("LOCAL_BOX_INSTALL_FAILED", "本机业务端职责未初始化")
 	}
 	return s.localBox.install(ctx)
+}
+
+// localBoxUpdate 是业务端更新入口，属于非业务方法：
+// 客户端不适用时更新入口仍可用（需求 U3、设计 4.6）。
+func (s *service) localBoxUpdate(ctx context.Context) (localBoxState, error) {
+	if s.localBox == nil {
+		return initialLocalBoxState(), newError("LOCAL_BOX_UPDATE_FAILED", "本机业务端职责未初始化")
+	}
+	return s.localBox.update(ctx, s.release)
 }
 
 func (s *service) localBoxExit(ctx context.Context) (localBoxState, error) {

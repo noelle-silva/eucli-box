@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"eucli-box/pkg/localrun"
 	"eucli-box/pkg/release"
@@ -23,7 +24,8 @@ import (
 )
 
 type clientInstallCandidateChecker struct {
-	candidate *releasecheck.ReleaseCandidate
+	candidate    *releasecheck.ReleaseCandidate
+	manifestData []byte
 }
 
 type clientInstallFixture struct {
@@ -42,8 +44,43 @@ func (checker clientInstallCandidateChecker) LatestCandidate(context.Context, ty
 	return checker.candidate, nil
 }
 
-func (checker clientInstallCandidateChecker) AcquireArtifacts(ctx context.Context, candidate *releasecheck.ReleaseCandidate, downloadDir string, onProgress func(localBoxProgress)) (types.ReleaseManifest, error) {
-	return acquireOfficialArtifacts(ctx, candidate, downloadDir, onProgress)
+func (checker clientInstallCandidateChecker) AcquireArchive(ctx context.Context, candidate *releasecheck.ReleaseCandidate, downloadDir string, onProgress func(localBoxProgress)) (string, error) {
+	archiveClient := &localBoxProgressClient{base: &http.Client{Timeout: 5 * time.Second}, onRead: func(received int64) {
+		if onProgress != nil {
+			onProgress(localBoxProgress{Phase: localBoxStatusDownloading, ReceivedBytes: received, TotalBytes: candidate.SizeBytes})
+		}
+	}}
+	archiveName := release.ArchiveFileName(candidate.Artifact, candidate.Version)
+	target := filepath.Join(downloadDir, archiveName)
+	if err := os.MkdirAll(downloadDir, 0o700); err != nil {
+		return "", err
+	}
+	if _, err := release.DownloadFile(ctx, release.DownloadFileOptions{
+		Client: archiveClient, URL: candidate.ArchiveURL, TargetPath: target, ExpectedName: archiveName,
+		ExpectedSize: candidate.SizeBytes, ExpectedSHA256: candidate.SHA256, MaxBytes: candidate.SizeBytes + 1,
+	}); err != nil {
+		return "", err
+	}
+	return target, nil
+}
+
+func (checker clientInstallCandidateChecker) ExpectedProduct(ctx context.Context, candidate *releasecheck.ReleaseCandidate) (types.ReleaseProductRecord, error) {
+	manifest, err := release.DecodeReleaseManifest(checker.manifestData)
+	if err != nil {
+		return types.ReleaseProductRecord{}, err
+	}
+	return types.ReleaseProductRecord{
+		SchemaVersion:    manifest.SchemaVersion,
+		Artifact:         manifest.Artifact,
+		Version:          manifest.Version,
+		Platform:         manifest.Platform,
+		OfficialSource:   manifest.OfficialSource,
+		Compatibility:    manifest.Compatibility,
+		Source:           manifest.Source,
+		DataVersion:      manifest.DataVersion,
+		ExternalAssets:   manifest.ExternalAssets,
+		VerificationOnly: manifest.VerificationOnly,
+	}, nil
 }
 
 func TestClientInstallLocalBoxLifecycle(t *testing.T) {
@@ -128,7 +165,7 @@ func TestClientInstallDownloadFailureLeavesNoInstalledState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.Error.Code != "LOCAL_BOX_DOWNLOAD_FAILED" || state.Installed {
+	if state.Error.Code != "LOCAL_BOX_PACKAGE_INVALID" || state.Installed {
 		t.Fatalf("download failure state = %#v", state)
 	}
 	assertNoInstallRecord(t, paths)
@@ -246,11 +283,17 @@ func (fixture clientInstallFixture) server(archiveStatus int, archivePayload []b
 
 func (fixture clientInstallFixture) manager(paths localBoxPaths, serverURL string, onState func(localBoxState)) *localBoxManager {
 	candidate := &releasecheck.ReleaseCandidate{
-		Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindBox, ID: types.ReleaseArtifactKindBox},
-		Manifest: fixture.manifest, ManifestURL: serverURL + "/" + fixture.manifestName, ManifestSize: int64(len(fixture.manifestData)),
-		ArchiveURL: serverURL + "/" + fixture.archiveName,
+		Artifact:         types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindBox, ID: types.ReleaseArtifactKindBox},
+		Version:          fixture.manifest.Version,
+		SourceRevision:   fixture.manifest.Source.Commit,
+		SourceRepository: fixture.manifest.Source.Repository,
+		DataVersion:      fixture.manifest.DataVersion,
+		OfficialSource:   fixture.manifest.OfficialSource,
+		ArchiveURL:       serverURL + "/" + fixture.archiveName,
+		SizeBytes:        int64(len(fixture.archiveData)),
+		SHA256:           release.SHA256(fixture.archiveData),
 	}
-	return newLocalBoxManager(paths, clientInstallCandidateChecker{candidate: candidate}, onState, nil, nil)
+	return newLocalBoxManager(paths, clientInstallCandidateChecker{candidate: candidate, manifestData: fixture.manifestData}, onState, nil, nil)
 }
 
 func assertNoInstallRecord(t *testing.T, paths localBoxPaths) {

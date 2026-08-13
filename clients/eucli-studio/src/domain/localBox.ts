@@ -10,6 +10,9 @@ export type LocalBoxStatus =
   | 'failed'
   | 'stopping'
   | 'stopped'
+  | 'waiting_stop'
+  | 'switching'
+  | 'restoring'
 
 export type LocalBoxSource = 'official' | 'development'
 
@@ -20,6 +23,7 @@ export type LocalBoxState = {
   installed: boolean
   currentVersion: string
   latestVersion: string
+  targetVersion: string
   releaseNotes: string
   downloadSize: number
   progress: { phase: string; receivedBytes: number; totalBytes: number }
@@ -38,6 +42,7 @@ export function normalizeLocalBoxState(value: unknown): LocalBoxState {
     installed: source.installed === true,
     currentVersion: text(source.currentVersion),
     latestVersion: text(source.latestVersion),
+    targetVersion: text(source.targetVersion),
     releaseNotes: text(source.releaseNotes),
     downloadSize: finiteNumber(source.downloadSize),
     progress: {

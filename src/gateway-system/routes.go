@@ -23,6 +23,7 @@ func (s *system) registerAccessRoutes() {
 // registerBoxRoutes 注册业务端信息与生命周期控制路由。
 func (s *system) registerBoxRoutes() {
 	s.mux.HandleFunc("GET /api/box/info", s.authWrap(s.handleBoxInfo))
+	s.mux.HandleFunc("GET /api/box/active-work", s.requireTrustedConnection(s.handleBoxActiveWork))
 	s.mux.HandleFunc("POST /api/box/shutdown", s.requireTrustedConnection(s.handleBoxShutdown))
 }
 

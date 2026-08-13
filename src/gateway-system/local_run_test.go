@@ -27,7 +27,7 @@ func TestLocalRunRoutesRequireLoopbackAndBearerCredential(t *testing.T) {
 	request.Header.Set("Authorization", "Bearer session-test")
 	recorder = httptest.NewRecorder()
 	system.Handler().ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusInternalServerError || !strings.Contains(recorder.Body.String(), "local gateway does not accept query credentials") {
+	if recorder.Code != http.StatusUnauthorized || !strings.Contains(recorder.Body.String(), "local gateway does not accept query credentials") {
 		t.Fatalf("query credential status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 
@@ -36,7 +36,7 @@ func TestLocalRunRoutesRequireLoopbackAndBearerCredential(t *testing.T) {
 	request.Header.Set("Authorization", "Bearer session-test")
 	recorder = httptest.NewRecorder()
 	system.Handler().ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusInternalServerError || !strings.Contains(recorder.Body.String(), "local gateway only accepts loopback requests") {
+	if recorder.Code != http.StatusUnauthorized || !strings.Contains(recorder.Body.String(), "local gateway only accepts loopback requests") {
 		t.Fatalf("non-loopback status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }
@@ -49,7 +49,7 @@ func TestLocalRunStopIsIdentityBoundAndIdempotent(t *testing.T) {
 	request.Header.Set("Authorization", "Bearer session-test")
 	recorder := httptest.NewRecorder()
 	system.Handler().ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusInternalServerError || !strings.Contains(recorder.Body.String(), "local run identity mismatch") {
+	if recorder.Code != http.StatusUnauthorized || !strings.Contains(recorder.Body.String(), "local run identity mismatch") {
 		t.Fatalf("wrong identity status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 

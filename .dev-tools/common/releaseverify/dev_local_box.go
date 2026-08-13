@@ -11,7 +11,7 @@ import (
 // 开发模式必须使用当前源码本地成品安装业务端，缺失或损坏时明确失败且不回退官方来源；
 // 开发客户端和业务端资料只进入 .dev-runtime 边界；正式来源语义保持不变。
 func DevLocalBox(ctx context.Context, repositoryRoot string, runRoot string, mode string) error {
-	paths, err := prepareRun(repositoryRoot, runRoot, "dev")
+	paths, err := prepareRun(repositoryRoot, runRoot, "verify-dev-box")
 	if err != nil {
 		return err
 	}
@@ -22,7 +22,7 @@ func DevLocalBox(ctx context.Context, repositoryRoot string, runRoot string, mod
 	if mode != "default" {
 		return fmt.Errorf("开发业务端验证模式必须是 default")
 	}
-	recorder := newRecorder("dev", "default", paths.root)
+	recorder := newRecorder("verify-dev-box", "default", paths.root)
 	fmt.Printf("开发业务端验证目录：%s\n", paths.root)
 
 	dataBefore, dataErr := directorySnapshot(filepath.Join(repositoryRoot, "data"))

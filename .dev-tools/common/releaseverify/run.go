@@ -29,35 +29,34 @@ const (
 	verificationCacheDirectory       = "cache"
 )
 
+// validToolName 校验工具名只包含字母、数字、连字符与下划线。
+func validToolName(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, char := range value {
+		if char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9' || char == '-' || char == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 type cleanupEntry struct {
 	name string
 	path string
 }
 
-// toolNameForStage 把阶段编号映射为运行根使用的工具名。
-func toolNameForStage(stage string) string {
-	switch stage {
-	case "01":
-		return "verify-release-build"
-	case "02":
-		return "verify-release-publish"
-	case "03":
-		return "verify-client-install"
-	case "04":
-		return "verify-tool-plugin-update"
-	case "dev":
-		return "verify-dev-box"
-	default:
-		return "verify-" + stage
-	}
-}
-
-func prepareRun(repositoryRoot string, runRoot string, stage string) (runPaths, error) {
+func prepareRun(repositoryRoot string, runRoot string, tool string) (runPaths, error) {
 	repositoryRoot, err := toolkit.ExistingPlainDirectory(repositoryRoot, "仓库根目录")
 	if err != nil {
 		return runPaths{}, err
 	}
-	expectedParent := filepath.Join(repositoryRoot, ".dev-workspace", ".dev-tools-runtime", toolNameForStage(stage))
+	if !validToolName(tool) {
+		return runPaths{}, fmt.Errorf("验证工具名只能包含字母、数字、连字符与下划线：%q", tool)
+	}
+	expectedParent := filepath.Join(repositoryRoot, ".dev-workspace", ".dev-tools-runtime", tool)
 	if !toolkit.PathWithin(expectedParent, runRoot) || toolkit.SamePath(expectedParent, runRoot) || !strings.HasPrefix(filepath.Base(runRoot), "run-") {
 		return runPaths{}, fmt.Errorf("验证运行目录必须位于 %s 的独立 run-* 目录中", expectedParent)
 	}

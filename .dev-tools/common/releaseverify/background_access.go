@@ -8,9 +8,9 @@ import (
 	"strings"
 )
 
-// VerifyToolPluginUpdate 工具插件更新验证：工具与插件首次安装和手动更新。
-func VerifyToolPluginUpdate(ctx context.Context, repositoryRoot string, runRoot string, mode string) error {
-	paths, err := prepareRun(repositoryRoot, runRoot, "verify-tool-plugin-update")
+// BackgroundAccess 后台运行与业务端访问设置验证。
+func BackgroundAccess(ctx context.Context, repositoryRoot string, runRoot string, mode string) error {
+	paths, err := prepareRun(repositoryRoot, runRoot, "verify-background-access")
 	if err != nil {
 		return err
 	}
@@ -19,10 +19,10 @@ func VerifyToolPluginUpdate(ctx context.Context, repositoryRoot string, runRoot 
 		mode = "default"
 	}
 	if mode != "default" && mode != "experience" {
-		return fmt.Errorf("工具插件更新模式必须是 default 或 experience")
+		return fmt.Errorf("后台访问验证模式必须是 default 或 experience")
 	}
-	recorder := newRecorder("verify-tool-plugin-update", mode, paths.root)
-	fmt.Printf("工具插件更新 %s 验证目录：%s\n", mode, paths.root)
+	recorder := newRecorder("verify-background-access", mode, paths.root)
+	fmt.Printf("后台运行与访问设置 %s 验证目录：%s\n", mode, paths.root)
 
 	dataBefore, dataErr := directorySnapshot(filepath.Join(repositoryRoot, "data"))
 	gitBefore, gitErr := gitSnapshot(repositoryRoot)
@@ -37,9 +37,9 @@ func VerifyToolPluginUpdate(ctx context.Context, repositoryRoot string, runRoot 
 		recorder.pass("记录源码初始状态", "已记录当前工作区状态")
 	}
 
-	boxPath, err := prepareToolPluginUpdateBox(ctx, repositoryRoot, paths, recorder)
+	boxPath, err := prepareBackgroundAccessBox(ctx, repositoryRoot, paths, recorder)
 	if err == nil {
-		runToolPluginUpdateVerification(ctx, repositoryRoot, paths, recorder, boxPath)
+		runBackgroundAccessVerification(ctx, repositoryRoot, paths, recorder, boxPath)
 	}
 
 	if dataErr == nil {
@@ -49,7 +49,7 @@ func VerifyToolPluginUpdate(ctx context.Context, repositoryRoot string, runRoot 
 		} else if err := compareSnapshots("真实 data 目录", dataBefore, dataAfter); err != nil {
 			recorder.fail("确认真实数据未改变", err)
 		} else {
-			recorder.pass("确认真实数据未改变", "工具插件更新验证未写入真实 data 目录")
+			recorder.pass("确认真实数据未改变", "后台访问验证未写入真实 data 目录")
 		}
 	}
 	if gitErr == nil {
@@ -59,14 +59,14 @@ func VerifyToolPluginUpdate(ctx context.Context, repositoryRoot string, runRoot 
 		} else if err := compareSnapshots("源码工作区", gitBefore, gitAfter); err != nil {
 			recorder.fail("确认源码未被验证改写", err)
 		} else {
-			recorder.pass("确认源码未被验证改写", "工具插件更新验证只在本次隔离目录产生运行内容")
+			recorder.pass("确认源码未被验证改写", "后台访问验证只在本次隔离目录产生运行内容")
 		}
 	}
 	return recorder.finish(paths)
 }
 
-// prepareToolPluginUpdateBox 构建隔离业务端可执行文件供验证子进程使用。
-func prepareToolPluginUpdateBox(ctx context.Context, root string, paths runPaths, recorder *recorder) (string, error) {
+// prepareBackgroundAccessBox 构建隔离业务端可执行文件供验证子进程使用。
+func prepareBackgroundAccessBox(ctx context.Context, root string, paths runPaths, recorder *recorder) (string, error) {
 	boxPath := filepath.Join(paths.environment, "runtime", "eucli-box.exe")
 	if err := runCommand(ctx, paths, "构建隔离业务端", root, "go", "build", "-o", boxPath, "./cmd/eucli-box"); err != nil {
 		recorder.fail("构建隔离业务端", err)
@@ -83,10 +83,10 @@ func prepareToolPluginUpdateBox(ctx context.Context, root string, paths runPaths
 	return boxPath, nil
 }
 
-func runToolPluginUpdateVerification(ctx context.Context, root string, paths runPaths, recorder *recorder, boxPath string) {
-	runTest := "^TestToolPluginUpdate$"
-	if strings.TrimSpace(os.Getenv("EUCLI_TOOL_PLUGIN_UPDATE_MODE")) == "experience" {
-		runTest = "^TestToolPluginUpdateExperience$"
+func runBackgroundAccessVerification(ctx context.Context, root string, paths runPaths, recorder *recorder, boxPath string) {
+	runTest := "^TestBackgroundAccess$"
+	if strings.TrimSpace(os.Getenv("EUCLI_BACKGROUND_ACCESS_MODE")) == "experience" {
+		runTest = "^TestBackgroundAccessExperience$"
 	}
 	command := struct {
 		name    string
@@ -95,14 +95,14 @@ func runToolPluginUpdateVerification(ctx context.Context, root string, paths run
 		args    []string
 		env     map[string]string
 	}{
-		name:    "工具与插件首次安装、更新、活动保护与失败恢复",
+		name:    "后台运行、长期端口、长期 Key、权限边界与旧配置转换",
 		workdir: root,
 		command: "go",
-		args:    []string{"test", "-tags", "eucli_tool_plugin_update", "-run", runTest, "-count=1", "devtools/general-verification-tools/verify-tool-plugin-update/toolpluginupdateverify"},
+		args:    []string{"test", "-tags", "eucli_background_access", "-run", runTest, "-count=1", "devtools/general-verification-tools/verify-background-access/backgroundaccessverify"},
 		env: map[string]string{
-			"EUCLI_TOOL_PLUGIN_UPDATE_RUN_ROOT": paths.root,
-			"EUCLI_TOOL_PLUGIN_UPDATE_BOX":      boxPath,
-			"EUCLI_TOOL_PLUGIN_UPDATE_MODE":     os.Getenv("EUCLI_TOOL_PLUGIN_UPDATE_MODE"),
+			"EUCLI_BACKGROUND_ACCESS_RUN_ROOT": paths.root,
+			"EUCLI_BACKGROUND_ACCESS_BOX":      boxPath,
+			"EUCLI_BACKGROUND_ACCESS_MODE":     os.Getenv("EUCLI_BACKGROUND_ACCESS_MODE"),
 		},
 	}
 	if err := runCommandWithEnvironment(ctx, paths, command.name, command.workdir, command.command, command.env, command.args...); err != nil {

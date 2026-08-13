@@ -12,9 +12,10 @@ import (
 const configFileName = "eucli-studio-client-config.json"
 
 type clientConfig struct {
-	EucliBoxURL string           `json:"eucliBoxUrl"`
-	EucliBoxKey string           `json:"eucliBoxKey"`
-	Projection  projectionConfig `json:"projection"`
+	EucliBoxURL           string           `json:"eucliBoxUrl"`
+	EucliBoxKey           string           `json:"eucliBoxKey"`
+	KeepBoxRunningOnExit  bool             `json:"keepBoxRunningOnExit,omitempty"`
+	Projection            projectionConfig `json:"projection"`
 }
 
 type projectionConfig struct {
@@ -77,9 +78,10 @@ func (s *configStore) save(next clientConfig) (clientConfig, error) {
 	projection := normalizeProjection(next.Projection)
 	projection.UpdatedAt = nowMillis()
 	cfg := clientConfig{
-		EucliBoxURL: normalizeBaseURL(next.EucliBoxURL),
-		EucliBoxKey: strings.TrimSpace(next.EucliBoxKey),
-		Projection:  projection,
+		EucliBoxURL:          normalizeBaseURL(next.EucliBoxURL),
+		EucliBoxKey:          strings.TrimSpace(next.EucliBoxKey),
+		KeepBoxRunningOnExit: next.KeepBoxRunningOnExit,
+		Projection:           projection,
 	}
 	payload, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
@@ -111,6 +113,62 @@ func (s *configStore) updateProjection(fn func(*projectionConfig)) (projectionCo
 		return projectionConfig{}, err
 	}
 	return cfg.Projection, nil
+}
+
+// getSettings 读取客户端设置：当前只有退出后继续运行业务端开关。
+func (s *configStore) getSettings() (map[string]any, error) {
+	cfg, err := s.load()
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"keepBoxRunningOnExit": cfg.KeepBoxRunningOnExit}, nil
+}
+
+// updateSetting 保存单个客户端设置字段；当前只支持退出后继续运行业务端开关。
+func (s *configStore) updateSetting(name string, value any) (map[string]any, error) {
+	if name != "keepBoxRunningOnExit" {
+		return nil, newError("BAD_REQUEST", "不支持的客户端设置："+name)
+	}
+	enabled, ok := value.(bool)
+	if !ok {
+		return nil, newError("BAD_REQUEST", "keepBoxRunningOnExit 必须是布尔值")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cfg, err := s.loadLocked()
+	if err != nil {
+		return nil, err
+	}
+	cfg.KeepBoxRunningOnExit = enabled
+	payload, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(s.path, append(payload, '\n'), 0o600); err != nil {
+		return nil, err
+	}
+	return map[string]any{"keepBoxRunningOnExit": enabled}, nil
+}
+
+// clearLegacyConnection 清理客户端设置中保存的旧地址和旧 Key 副本；
+// 只在客户端已经通过本机受托连接成功连接后调用。
+func (s *configStore) clearLegacyConnection() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cfg, err := s.loadLocked()
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(cfg.EucliBoxURL) == "" && strings.TrimSpace(cfg.EucliBoxKey) == "" {
+		return nil
+	}
+	cfg.EucliBoxURL = ""
+	cfg.EucliBoxKey = ""
+	payload, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(s.path, append(payload, '\n'), 0o600)
 }
 
 func normalizeProjection(value projectionConfig) projectionConfig {

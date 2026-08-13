@@ -13,6 +13,7 @@ import { ReleaseChecksPanel } from '../ui/release/ReleaseChecksPanel'
 import { LocalBoxInstallPanel } from '../ui/local-box/LocalBoxInstallPanel'
 import { LocalBoxStatusPanel, localBoxStatusLabel } from '../ui/local-box/LocalBoxStatusPanel'
 import { localBoxSourceLabel } from '../domain/localBox'
+import type { ClientSettings } from './aiChatAppHost'
 
 type DataDirStatus = {
   dataDir: string
@@ -76,6 +77,7 @@ export function App() {
   const [runtimeBootstrap, setRuntimeBootstrap] = React.useState<StudioBootstrap | null>(null)
   const [releaseCheckBusy, setReleaseCheckBusy] = React.useState(false)
   const [localBoxBusy, setLocalBoxBusy] = React.useState(false)
+  const [clientSettings, setClientSettings] = React.useState<ClientSettings>({ keepBoxRunningOnExit: false })
   const runtimeRef = React.useRef<AiChatAppRuntime | null>(null)
   const runtimeVersionRef = React.useRef(0)
   const mountedRef = React.useRef(false)
@@ -101,8 +103,7 @@ export function App() {
     return status
   }, [])
 
-  const connectBackend = React.useCallback(async (isCancelled: () => boolean = () => false) => {
-    if (isCancelled()) return null
+  const connectBackend = React.useCallback(async (isCancelled: () => boolean = () => false) => {    if (isCancelled()) return null
     const runtimeVersion = runtimeVersionRef.current + 1
     runtimeVersionRef.current = runtimeVersion
     runtimeRef.current?.dispose()
@@ -131,6 +132,7 @@ export function App() {
     setRuntimeBootstrap(runtime.bootstrap)
     setBootStatus('ready')
     setBootError('')
+    void runtime.getClientSettings().then(setClientSettings).catch(() => {})
     return runtime
   }, [showToast])
 
@@ -307,8 +309,94 @@ export function App() {
     }
   }, [connectMountedBackend, showToast])
 
-  const trueExit = React.useCallback(async () => {
+  const loadClientSettings = React.useCallback(async () => {
     const runtime = runtimeRef.current
+    if (!runtime) return
+    try {
+      const settings = await runtime.getClientSettings()
+      setClientSettings(settings)
+    } catch (_) {
+      // 设置读取失败时保持默认值，不阻塞界面
+    }
+  }, [])
+
+  const changeKeepBoxRunningOnExit = React.useCallback(async (value: boolean) => {
+    const runtime = runtimeRef.current
+    if (!runtime) return
+    try {
+      const settings = await runtime.setClientSetting('keepBoxRunningOnExit', value)
+      setClientSettings(settings)
+    } catch (error: any) {
+      showToast(String(error?.message || error || '保存后台运行设置失败'), { kind: 'error' })
+    }
+  }, [showToast])
+
+  const startLocalBox = React.useCallback(async () => {
+    const runtime = runtimeRef.current
+    if (!runtime || localBoxBusyRef.current) return
+    const runtimeVersion = runtimeVersionRef.current
+    localBoxBusyRef.current = true
+    setLocalBoxBusy(true)
+    try {
+      const state = await runtime.startLocalBox()
+      if (runtimeVersionRef.current !== runtimeVersion || !mountedRef.current) return
+      setRuntimeBootstrap(current => current ? { ...current, localBox: state } : current)
+      if (state.connected) await connectMountedBackend()
+    } catch (error: any) {
+      if (runtimeVersionRef.current !== runtimeVersion || !mountedRef.current) return
+      showToast(String(error?.message || error || '启动业务端失败'), { kind: 'error' })
+    } finally {
+      if (runtimeVersionRef.current === runtimeVersion && mountedRef.current) {
+        localBoxBusyRef.current = false
+        setLocalBoxBusy(false)
+      }
+    }
+  }, [connectMountedBackend, showToast])
+
+  const restartLocalBox = React.useCallback(async () => {
+    const runtime = runtimeRef.current
+    if (!runtime || localBoxBusyRef.current) return
+    const runtimeVersion = runtimeVersionRef.current
+    localBoxBusyRef.current = true
+    setLocalBoxBusy(true)
+    try {
+      const state = await runtime.restartLocalBox()
+      if (runtimeVersionRef.current !== runtimeVersion || !mountedRef.current) return
+      setRuntimeBootstrap(current => current ? { ...current, localBox: state } : current)
+      if (state.connected) await connectMountedBackend()
+    } catch (error: any) {
+      if (runtimeVersionRef.current !== runtimeVersion || !mountedRef.current) return
+      showToast(String(error?.message || error || '重新启动业务端失败'), { kind: 'error' })
+    } finally {
+      if (runtimeVersionRef.current === runtimeVersion && mountedRef.current) {
+        localBoxBusyRef.current = false
+        setLocalBoxBusy(false)
+      }
+    }
+  }, [connectMountedBackend, showToast])
+
+  const stopLocalBox = React.useCallback(async () => {
+    const runtime = runtimeRef.current
+    if (!runtime || localBoxBusyRef.current) return
+    const runtimeVersion = runtimeVersionRef.current
+    localBoxBusyRef.current = true
+    setLocalBoxBusy(true)
+    try {
+      const state = await runtime.stopLocalBox()
+      if (runtimeVersionRef.current !== runtimeVersion || !mountedRef.current) return
+      setRuntimeBootstrap(current => current ? { ...current, localBox: state } : current)
+    } catch (error: any) {
+      if (runtimeVersionRef.current !== runtimeVersion || !mountedRef.current) return
+      showToast(String(error?.message || error || '停止业务端失败'), { kind: 'error' })
+    } finally {
+      if (runtimeVersionRef.current === runtimeVersion && mountedRef.current) {
+        localBoxBusyRef.current = false
+        setLocalBoxBusy(false)
+      }
+    }
+  }, [showToast])
+
+  const trueExit = React.useCallback(async () => {    const runtime = runtimeRef.current
     if (!runtime || localBoxBusyRef.current) return
     try {
       localBoxBusyRef.current = true
@@ -362,6 +450,11 @@ export function App() {
              }}
              releaseCheckBusy={releaseCheckBusy}
              onRefreshReleaseChecks={refreshReleaseChecks}
+             keepBoxRunningOnExit={clientSettings.keepBoxRunningOnExit}
+             onKeepBoxRunningOnExitChange={changeKeepBoxRunningOnExit}
+             onStartBox={startLocalBox}
+             onRestartBox={restartLocalBox}
+             onStopBox={stopLocalBox}
            />
         </div>
       ) : needsEucliBoxConnection ? (

@@ -1,6 +1,6 @@
-//go:build eucli_stage04
+//go:build eucli_tool_plugin_update
 
-package stage04verify
+package toolpluginupdateverify
 
 import (
 	"archive/zip"
@@ -37,7 +37,7 @@ const longActivitySleep = 35 * time.Second
 
 // ---------- 候选构造 ----------
 
-type stage04Candidate struct {
+type toolPluginUpdateCandidate struct {
 	identity      types.ReleaseArtifactIdentity
 	version       string
 	manifest      types.ReleaseManifest
@@ -49,19 +49,19 @@ type stage04Candidate struct {
 	lifecycle     string
 }
 
-type stage04Server struct {
+type toolPluginUpdateServer struct {
 	t               *testing.T
 	server          *httptest.Server
 	mu              sync.Mutex
-	byKey           map[string]*stage04Candidate
+	byKey           map[string]*toolPluginUpdateCandidate
 	releases        map[string][]map[string]any
 	archiveRequests map[string]int
 }
 
-func newStage04Server(t *testing.T) *stage04Server {
-	fixture := &stage04Server{
+func newToolPluginUpdateServer(t *testing.T) *toolPluginUpdateServer {
+	fixture := &toolPluginUpdateServer{
 		t:               t,
-		byKey:           map[string]*stage04Candidate{},
+		byKey:           map[string]*toolPluginUpdateCandidate{},
 		releases:        map[string][]map[string]any{},
 		archiveRequests: map[string]int{},
 	}
@@ -70,11 +70,11 @@ func newStage04Server(t *testing.T) *stage04Server {
 	return fixture
 }
 
-func (f *stage04Server) url() string { return f.server.URL }
+func (f *toolPluginUpdateServer) url() string { return f.server.URL }
 
-func (f *stage04Server) client() *http.Client { return f.server.Client() }
+func (f *toolPluginUpdateServer) client() *http.Client { return f.server.Client() }
 
-func (f *stage04Server) addCandidate(candidate *stage04Candidate) {
+func (f *toolPluginUpdateServer) addCandidate(candidate *toolPluginUpdateCandidate) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	key := candidateKey(candidate.identity, candidate.version)
@@ -95,7 +95,7 @@ func (f *stage04Server) addCandidate(candidate *stage04Candidate) {
 	f.releases[candidate.identity.Kind] = append(f.releases[candidate.identity.Kind], entry)
 }
 
-func (f *stage04Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
+func (f *toolPluginUpdateServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	switch {
 	case strings.Contains(path, "/releases"):
@@ -138,17 +138,17 @@ func (f *stage04Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (f *stage04Server) archiveRequestCount(identity types.ReleaseArtifactIdentity, version string) int {
+func (f *toolPluginUpdateServer) archiveRequestCount(identity types.ReleaseArtifactIdentity, version string) int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.archiveRequests[candidateKey(identity, version)]
 }
 
 // latestCandidateFor 返回某发布物的最高版本候选（供组件级验证复用同一隔离来源）。
-func (f *stage04Server) latestCandidateFor(identity types.ReleaseArtifactIdentity) *releasecheck.ReleaseCandidate {
+func (f *toolPluginUpdateServer) latestCandidateFor(identity types.ReleaseArtifactIdentity) *releasecheck.ReleaseCandidate {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	var best *stage04Candidate
+	var best *toolPluginUpdateCandidate
 	for key, candidate := range f.byKey {
 		parts := strings.SplitN(key, "/", 3)
 		if len(parts) != 3 || parts[0] != identity.Kind || parts[1] != identity.ID {
@@ -194,12 +194,12 @@ func candidateKey(identity types.ReleaseArtifactIdentity, version string) string
 
 // ---------- 成品构造 ----------
 
-func makeToolCandidate(t *testing.T, server *stage04Server, id string, version string, brokenBinary bool, incompatible bool) {
+func makeToolCandidate(t *testing.T, server *toolPluginUpdateServer, id string, version string, brokenBinary bool, incompatible bool) {
 	makeToolCandidateWithSleep(t, server, id, version, brokenBinary, incompatible, 2*time.Second)
 }
 
 // makeToolCandidateWithSleep 构造工具候选；sleepFor 控制 ActionID=sleep 时的真实执行时长。
-func makeToolCandidateWithSleep(t *testing.T, server *stage04Server, id string, version string, brokenBinary bool, incompatible bool, sleepFor time.Duration) {
+func makeToolCandidateWithSleep(t *testing.T, server *toolPluginUpdateServer, id string, version string, brokenBinary bool, incompatible bool, sleepFor time.Duration) {
 	t.Helper()
 	executable := buildProbeTool(t, fmt.Sprintf("tool-sleep-%d", sleepFor/time.Second))
 	payload := map[string][]byte{
@@ -237,7 +237,7 @@ func makeToolCandidateWithSleep(t *testing.T, server *stage04Server, id string, 
 	if err != nil {
 		t.Fatalf("marshal manifest: %v", err)
 	}
-	server.addCandidate(&stage04Candidate{
+	server.addCandidate(&toolPluginUpdateCandidate{
 		identity:      types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: id},
 		version:       version,
 		manifest:      manifest,
@@ -249,7 +249,7 @@ func makeToolCandidateWithSleep(t *testing.T, server *stage04Server, id string, 
 }
 
 // makeBrokenToolCandidate 构造四种损坏样例：损坏 ZIP、缺少身份文件、身份不一致、越界路径。
-func makeBrokenToolCandidate(t *testing.T, server *stage04Server, id string, version string, brokenKind string) {
+func makeBrokenToolCandidate(t *testing.T, server *toolPluginUpdateServer, id string, version string, brokenKind string) {
 	t.Helper()
 	executable := buildProbeTool(t, "tool")
 	compatibility := types.EucliBoxCompatibility{MinimumVersion: "0.1.0", MaximumVersionExclusive: "0.2.0"}
@@ -301,7 +301,7 @@ func makeBrokenToolCandidate(t *testing.T, server *stage04Server, id string, ver
 	if err != nil {
 		t.Fatalf("marshal manifest: %v", err)
 	}
-	server.addCandidate(&stage04Candidate{
+	server.addCandidate(&toolPluginUpdateCandidate{
 		identity:      types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: id},
 		version:       version,
 		manifest:      manifest,
@@ -310,7 +310,7 @@ func makeBrokenToolCandidate(t *testing.T, server *stage04Server, id string, ver
 	})
 }
 
-func makePluginCandidate(t *testing.T, server *stage04Server, id string, version string, lifecycle string, brokenBinary bool, incompatible bool) {
+func makePluginCandidate(t *testing.T, server *toolPluginUpdateServer, id string, version string, lifecycle string, brokenBinary bool, incompatible bool) {
 	t.Helper()
 	probeKind := "plugin"
 	if lifecycle == types.SystemPluginLifecyclePersistent {
@@ -356,7 +356,7 @@ func makePluginCandidate(t *testing.T, server *stage04Server, id string, version
 	if err != nil {
 		t.Fatalf("marshal release manifest: %v", err)
 	}
-	server.addCandidate(&stage04Candidate{
+	server.addCandidate(&toolPluginUpdateCandidate{
 		identity:      types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: id},
 		version:       version,
 		manifest:      releaseManifest,
@@ -765,7 +765,7 @@ func compareDirSnapshots(t *testing.T, label string, before map[string]string, a
 // ---------- 组件级工具系统（步骤 7/11/14 的真实执行与活动保护） ----------
 
 type serverCandidateReader struct {
-	server *stage04Server
+	server *toolPluginUpdateServer
 }
 
 func (r *serverCandidateReader) LatestCandidate(ctx context.Context, identity types.ReleaseArtifactIdentity) (*releasecheck.ReleaseCandidate, error) {
@@ -779,7 +779,7 @@ func (r *serverCandidateReader) LatestCandidate(ctx context.Context, identity ty
 type fakePermission struct{}
 
 func (f *fakePermission) Decide(ctx context.Context, roleID string, action types.ToolAction) (types.PermissionDecision, error) {
-	return types.PermissionDecision{ID: "stage04-d", ActionID: action.ID, ToolName: action.ToolName, Status: types.PermissionStatusAllowed}, nil
+	return types.PermissionDecision{ID: "tool-plugin-update-d", ActionID: action.ID, ToolName: action.ToolName, Status: types.PermissionStatusAllowed}, nil
 }
 
 func (f *fakePermission) ApplyConfirmation(ctx context.Context, decision types.PermissionDecision, confirmation types.ToolConfirmation) (types.PermissionDecision, error) {
@@ -787,7 +787,7 @@ func (f *fakePermission) ApplyConfirmation(ctx context.Context, decision types.P
 }
 
 // newComponentToolSystem 构造与业务端共享同一数据目录和程序根目录的工具系统组件。
-func newComponentToolSystem(t *testing.T, envDir string, programRoot string, server *stage04Server) toolcalling.System {
+func newComponentToolSystem(t *testing.T, envDir string, programRoot string, server *toolPluginUpdateServer) toolcalling.System {
 	t.Helper()
 	toolProgramRoot := filepath.Join(programRoot, "tools")
 	storage, err := datastorage.NewSystem(datastorage.Config{RootDir: filepath.Join(envDir, "box-data"), ToolBodiesRoot: toolProgramRoot})
@@ -828,7 +828,7 @@ func executeTool(t *testing.T, system toolcalling.System, toolID string, sleep b
 	plan := types.ToolRunPlan{
 		Action:     types.ToolAction{ID: actionID, ToolName: tool.Name, Arguments: map[string]any{}},
 		Tool:       tool,
-		Decision:   types.PermissionDecision{ID: "stage04-d", ActionID: actionID, ToolName: tool.Name, Status: types.PermissionStatusAllowed},
+		Decision:   types.PermissionDecision{ID: "tool-plugin-update-d", ActionID: actionID, ToolName: tool.Name, Status: types.PermissionStatusAllowed},
 		PlanStatus: types.ToolPlanStatusReady,
 		Executable: executable,
 	}
@@ -849,24 +849,24 @@ func executeToolSleep(t *testing.T, system toolcalling.System, toolID string) {
 
 // ---------- 步骤执行 ----------
 
-func TestStage04(t *testing.T) {
-	runRoot := os.Getenv("EUCLI_STAGE04_RUN_ROOT")
-	boxPath := os.Getenv("EUCLI_STAGE04_BOX")
+func TestToolPluginUpdate(t *testing.T) {
+	runRoot := os.Getenv("eucli_tool_plugin_update_RUN_ROOT")
+	boxPath := os.Getenv("eucli_tool_plugin_update_BOX")
 	if runRoot == "" || boxPath == "" {
-		t.Fatal("阶段四验证缺少运行目录或业务端可执行文件")
+		t.Fatal("工具插件更新验证缺少运行目录或业务端可执行文件")
 	}
 	envDir := filepath.Join(runRoot, "environment")
 	for _, name := range []string{"inputs", "workspace", "environment", "temp", "cache", "evidence"} {
 		info, err := os.Stat(filepath.Join(runRoot, name))
 		if err != nil || !info.IsDir() {
-			t.Fatalf("阶段四运行目录缺少 %s", name)
+			t.Fatalf("工具插件更新运行目录缺少 %s", name)
 		}
 	}
 	programRoot := filepath.Join(envDir, "program-root")
 	boxData := filepath.Join(envDir, "box-data")
 
 	// 步骤 3：隔离官方来源服务器，准备一个工具和一个插件的正式候选。
-	server := newStage04Server(t)
+	server := newToolPluginUpdateServer(t)
 	makeToolCandidate(t, server, "context7", "0.1.0", false, false)
 	makePluginCandidate(t, server, "time-plugin", "0.1.0", types.SystemPluginLifecycleOnDemand, false, false)
 	makeToolCandidate(t, server, "sci_calculator", "0.1.0", false, true)
@@ -1109,11 +1109,11 @@ func TestStage04(t *testing.T) {
 	}
 	programAfter := snapshotDir(programRoot)
 	compareDirSnapshots(t, "只读检查后的程序根目录", programBefore, programAfter)
-	t.Log("阶段四隔离验证完成")
+	t.Log("工具插件更新隔离验证完成")
 }
 
 // verifyPluginOnDemandActivity 制造 on-demand 活动并确认活动结束前不下载、不切换。
-func verifyPluginOnDemandActivity(t *testing.T, box *boxProcess, boxData string, server *stage04Server) {
+func verifyPluginOnDemandActivity(t *testing.T, box *boxProcess, boxData string, server *toolPluginUpdateServer) {
 	t.Helper()
 	marker := filepath.Join(boxData, "system-plugins", "time-plugin", "sleep-marker.txt")
 	if err := os.WriteFile(marker, []byte("sleep"), 0o644); err != nil {
@@ -1167,7 +1167,7 @@ func verifyPluginOnDemandActivity(t *testing.T, box *boxProcess, boxData string,
 }
 
 // verifyPluginPersistentActivity 制造 persistent 进程活动并确认更新被 PLUGIN_ACTIVE 拒绝。
-func verifyPluginPersistentActivity(t *testing.T, box *boxProcess, programRoot string, server *stage04Server, boxData string) {
+func verifyPluginPersistentActivity(t *testing.T, box *boxProcess, programRoot string, server *toolPluginUpdateServer, boxData string) {
 	t.Helper()
 	makePluginCandidate(t, server, "weather-plugin", "0.1.1", types.SystemPluginLifecyclePersistent, false, false)
 	status, payload := box.call(http.MethodPost, "/api/system-plugins/weather-plugin/install", "{}")
@@ -1199,7 +1199,7 @@ func verifyPluginPersistentActivity(t *testing.T, box *boxProcess, programRoot s
 }
 
 // verifyPluginHeartbeatActivity 制造 cached-heartbeat 刷新活动并确认活动结束前不下载、不切换。
-func verifyPluginHeartbeatActivity(t *testing.T, box *boxProcess, programRoot string, server *stage04Server, boxData string) {
+func verifyPluginHeartbeatActivity(t *testing.T, box *boxProcess, programRoot string, server *toolPluginUpdateServer, boxData string) {
 	t.Helper()
 	makePluginCandidate(t, server, "system-info-plugin", "0.1.1", types.SystemPluginLifecycleCachedHeartbeat, false, false)
 	status, payload := box.call(http.MethodPost, "/api/system-plugins/system-info-plugin/install", "{}")
@@ -1249,7 +1249,7 @@ func verifyPluginHeartbeatActivity(t *testing.T, box *boxProcess, programRoot st
 }
 
 // verifyBrokenCandidates 提供损坏摘要、损坏 ZIP、缺少身份文件、身份不一致和越界路径样例。
-func verifyBrokenCandidates(t *testing.T, box *boxProcess, programRoot string, server *stage04Server) {
+func verifyBrokenCandidates(t *testing.T, box *boxProcess, programRoot string, server *toolPluginUpdateServer) {
 	t.Helper()
 	identity := types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "web_search"}
 	versions := []string{"0.1.1", "0.1.2", "0.1.3", "0.1.4"}
@@ -1358,17 +1358,17 @@ func findReleaseResults(t *testing.T, payload []byte) map[string]map[string]any 
 	return result
 }
 
-// TestStage04Experience 体验模式：一次安装动作和一次更新动作的最小链路。
-func TestStage04Experience(t *testing.T) {
-	runRoot := os.Getenv("EUCLI_STAGE04_RUN_ROOT")
-	boxPath := os.Getenv("EUCLI_STAGE04_BOX")
+// TestToolPluginUpdateExperience 体验模式：一次安装动作和一次更新动作的最小链路。
+func TestToolPluginUpdateExperience(t *testing.T) {
+	runRoot := os.Getenv("eucli_tool_plugin_update_RUN_ROOT")
+	boxPath := os.Getenv("eucli_tool_plugin_update_BOX")
 	if runRoot == "" || boxPath == "" {
-		t.Fatal("阶段四体验验证缺少运行目录或业务端可执行文件")
+		t.Fatal("工具插件更新体验验证缺少运行目录或业务端可执行文件")
 	}
 	envDir := filepath.Join(runRoot, "environment")
 	boxData := filepath.Join(envDir, "box-data")
 
-	server := newStage04Server(t)
+	server := newToolPluginUpdateServer(t)
 	makeToolCandidate(t, server, "context7", "0.1.0", false, false)
 
 	box := startBox(t, boxPath, envDir, server.url())
@@ -1404,5 +1404,5 @@ func TestStage04Experience(t *testing.T) {
 	// 脚本自动确认：只有一次确认动作、无第二次确认、工具长期数据未改变。
 	dataAfter := snapshotDir(filepath.Join(boxData, "tool-data", "context7"))
 	compareDirSnapshots(t, "体验模式工具长期数据", dataBefore, dataAfter)
-	t.Log("阶段四体验验证完成：一次安装 + 一次更新，无第二次确认，长期数据未改变")
+	t.Log("工具插件更新体验验证完成：一次安装 + 一次更新，无第二次确认，长期数据未改变")
 }

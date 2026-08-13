@@ -9,13 +9,16 @@ import (
 )
 
 func (s *system) handleEventsWebSocket(w http.ResponseWriter, r *http.Request) {
-	if err := s.validateRequestKey(r); err != nil {
-		writeError(w, err)
-		return
-	}
-	if err := s.validateClientCompatibility(r); err != nil {
-		writeError(w, err)
-		return
+	longTermKeyID := longTermKeyIDFromContext(r)
+	if longTermKeyID == "" {
+		if err := s.validateRequestKey(r); err != nil {
+			writeError(w, err)
+			return
+		}
+		if err := s.validateClientCompatibility(r); err != nil {
+			writeError(w, err)
+			return
+		}
 	}
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -25,8 +28,14 @@ func (s *system) handleEventsWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.addConnection(conn)
 	defer func() {
 		s.removeConnection(conn)
+		if longTermKeyID != "" && s.access != nil {
+			s.access.UnregisterConnection(longTermKeyID, conn)
+		}
 		_ = conn.Close()
 	}()
+	if longTermKeyID != "" && s.access != nil {
+		s.access.RegisterConnection(longTermKeyID, conn)
+	}
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	events, unsubscribe, err := s.runtime.Subscribe(ctx)

@@ -23,3 +23,7 @@ func gatewayWebSocketFailed(message string, cause error) error {
 func gatewayClientIncompatible(message string, details any) error {
 	return apperrors.NewWithDetails(systemName, "gateway.incompatible_client", message, details)
 }
+
+func gatewayForbidden(message string, cause error) error {
+	return apperrors.Wrap(systemName, "gateway.forbidden", message, cause)
+}

@@ -1,16 +1,9 @@
-Set-StrictMode -Version Latest
+﻿Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $script:DisposableDirectories = @("inputs", "workspace", "environment", "work", "temp", "cache")
 $script:AllowedRunEntries = @("evidence") + $script:DisposableDirectories
 $script:ToolRuntimeRelative = ".dev-workspace\.dev-tools-runtime"
-$script:ToolNameByStage = @{
-    "01"  = "verify-release-build"
-    "02"  = "verify-release-publish"
-    "03"  = "verify-client-install"
-    "04"  = "verify-tool-plugin-update"
-    "dev" = "verify-dev-box"
-}
 
 function Get-NormalizedPath {
     param([Parameter(Mandatory = $true)][string]$Path)
@@ -313,13 +306,13 @@ function Complete-VerificationRun {
     param(
         [Parameter(Mandatory = $true)][string]$RepositoryRoot,
         [Parameter(Mandatory = $true)][string]$RunRoot,
-        [Parameter(Mandatory = $true)][ValidateSet("01", "02", "03", "04", "dev")][string]$Stage,
+        [Parameter(Mandatory = $true)][string]$Tool,
         [Parameter(Mandatory = $true)][string]$Mode
     )
 
     $repositoryRoot = Get-NormalizedPath -Path $RepositoryRoot
     $runRoot = Get-NormalizedPath -Path $RunRoot
-    $toolName = $script:ToolNameByStage[$Stage]
+    $toolName = $Tool
     $expectedParent = Get-NormalizedPath -Path (Join-Path $repositoryRoot (Join-Path $script:ToolRuntimeRelative $toolName))
     $actualParent = Get-NormalizedPath -Path (Split-Path -Parent $runRoot)
     $runName = Split-Path -Leaf $runRoot
@@ -349,7 +342,7 @@ function Complete-VerificationRun {
         throw "Verification report must not be a reparse point."
     }
     $report = Get-Content -LiteralPath $reportPath -Raw -Encoding UTF8 | ConvertFrom-Json
-    if ($report.stage -ne $Stage -or $report.mode -ne $Mode -or -not (Test-SamePath -Left $report.runRoot -Right $runRoot)) {
+    if ($report.tool -ne $Tool -or $report.mode -ne $Mode -or -not (Test-SamePath -Left $report.runRoot -Right $runRoot)) {
         throw "Verification report identity does not match the requested run."
     }
     if ($report.status -ne "cleanup_pending" -or $report.cleanup.status -ne "pending") {

@@ -64,10 +64,6 @@ try {
 finally {
     Pop-Location
 }
-}
-finally {
-    Pop-Location
-}
 
 if (-not (Test-Path -LiteralPath $resultFile -PathType Leaf)) {
     throw "当前源码成品制作结果缺失。"

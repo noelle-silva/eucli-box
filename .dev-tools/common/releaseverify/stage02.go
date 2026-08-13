@@ -15,17 +15,17 @@ import (
 	"eucli-box/pkg/releasecatalog"
 )
 
-func Stage02(ctx context.Context, repositoryRoot string, runRoot string, mode string) error {
-	paths, err := prepareRun(repositoryRoot, runRoot, "02")
+func VerifyReleasePublish(ctx context.Context, repositoryRoot string, runRoot string, mode string) error {
+	paths, err := prepareRun(repositoryRoot, runRoot, "verify-release-publish")
 	if err != nil {
 		return err
 	}
 	mode = strings.TrimSpace(mode)
 	if mode != "preflight" && mode != "remote" {
-		return fmt.Errorf("阶段二模式必须是 preflight 或 remote")
+		return fmt.Errorf("发布复核模式必须是 preflight 或 remote")
 	}
-	recorder := newRecorder("02", mode, paths.root)
-	fmt.Printf("阶段二 %s 验证目录：%s\n", mode, paths.root)
+	recorder := newRecorder("verify-release-publish", mode, paths.root)
+	fmt.Printf("发布复核 %s 验证目录：%s\n", mode, paths.root)
 
 	dataBefore, dataErr := directorySnapshot(filepath.Join(repositoryRoot, "data"))
 	gitBefore, gitErr := gitSnapshot(repositoryRoot)
@@ -37,9 +37,9 @@ func Stage02(ctx context.Context, repositoryRoot string, runRoot string, mode st
 	}
 
 	if mode == "preflight" {
-		runStage02Preflight(ctx, repositoryRoot, paths, recorder)
+		runReleasePublishPreflight(ctx, repositoryRoot, paths, recorder)
 	} else {
-		runStage02Remote(ctx, repositoryRoot, paths, recorder)
+		runReleasePublishRemote(ctx, repositoryRoot, paths, recorder)
 	}
 
 	if dataErr == nil {
@@ -59,13 +59,13 @@ func Stage02(ctx context.Context, repositoryRoot string, runRoot string, mode st
 		} else if err := compareSnapshots("源码工作区", gitBefore, gitAfter); err != nil {
 			recorder.fail("确认源码未被验证改写", err)
 		} else {
-			recorder.pass("确认源码未被验证改写", "阶段二只在本次隔离目录产生运行内容")
+			recorder.pass("确认源码未被验证改写", "发布复核只在本次隔离目录产生运行内容")
 		}
 	}
 	return recorder.finish(paths)
 }
 
-func runStage02Preflight(ctx context.Context, root string, paths runPaths, recorder *recorder) {
+func runReleasePublishPreflight(ctx context.Context, root string, paths runPaths, recorder *recorder) {
 	commands := []struct {
 		name    string
 		workdir string
@@ -106,7 +106,7 @@ func runStage02Preflight(ctx context.Context, root string, paths runPaths, recor
 	}
 }
 
-func runStage02Remote(ctx context.Context, root string, paths runPaths, recorder *recorder) {
+func runReleasePublishRemote(ctx context.Context, root string, paths runPaths, recorder *recorder) {
 	if err := runCommand(ctx, paths, "新版、无新版、来源失败和不下载成品", root, "go", "test", "./pkg/releasecheck", "-count=1"); err != nil {
 		recorder.fail("新版、无新版、来源失败和不下载成品", err)
 	} else {

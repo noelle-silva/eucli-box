@@ -95,6 +95,7 @@ import { createEntityEditors } from './entityEditors'
 import { createChatOperations } from './chatOperations'
 import { createPersistence } from './persistence'
 import { createWorkspaceManager } from './workspaceManager'
+import { createAccessSettingsController } from './accessSettingsController'
 import { updateGroupSessionTitle, updateRoleSessionTitle } from './ebRoleSession'
 import { getRunState, isTerminalRunStatus, listActiveRoleRuns, pollRunUntilTerminal, type EbRunState } from './ebRoleRun'
 import { createEbRunEventConsumer } from './ebRunEvents'
@@ -1226,6 +1227,13 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   })
   const { refreshModelRequestConfig, setModelRequestConfigDraft, resetModelRequestConfigDraftToDefaults, saveModelRequestConfig } = modelRequestConfigController
 
+  const accessSettingsController = createAccessSettingsController({
+    getState: () => state,
+    netRequest: capabilities.net?.request || ((() => Promise.resolve({})) as any),
+    emit,
+    showToast: api.ui?.showToast,
+  })
+
   // ============================================================
   // 12. FAVORITES OPERATIONS
   // ============================================================
@@ -2118,6 +2126,19 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     setModelRequestConfigDraft: (key: any, value: any) => setModelRequestConfigDraft(key, value),
     resetModelRequestConfigDraftToDefaults: () => resetModelRequestConfigDraftToDefaults(),
     saveModelRequestConfig: () => saveModelRequestConfig(),
+    refreshAccessPorts: (force: any) => accessSettingsController.refreshPorts(),
+    addAccessPort: (name: any, port: any) => accessSettingsController.addPort(String(name || ''), Number(port)),
+    enableAccessPort: (id: any) => accessSettingsController.enablePort(String(id || '')),
+    disableAccessPort: (id: any) => accessSettingsController.disablePort(String(id || '')),
+    deleteAccessPort: (id: any) => accessSettingsController.deletePort(String(id || '')),
+    refreshAccessKeys: (force: any) => accessSettingsController.refreshKeys(),
+    addAccessKey: (name: any, expiresAt: any) => accessSettingsController.addKey(String(name || ''), expiresAt === null ? null : String(expiresAt || '') || null),
+    revealAccessKey: (id: any) => accessSettingsController.revealKey(String(id || '')),
+    setAccessKeyEnabled: (id: any, enabled: any) => accessSettingsController.setKeyEnabled(String(id || ''), enabled === true),
+    setAccessKeyExpiration: (id: any, expiresAt: any) => accessSettingsController.setKeyExpiration(String(id || ''), expiresAt === null ? null : String(expiresAt || '') || null),
+    deleteAccessKey: (id: any) => accessSettingsController.deleteKey(String(id || '')),
+    loadBoxInfo: () => accessSettingsController.loadBoxInfo(),
+    requestBoxShutdown: (confirm: any) => accessSettingsController.requestBoxShutdown(confirm === true),
     refreshModelGroups: (force: any) => refreshModelGroups(!!force),
     saveModelGroups: () => saveModelGroups(),
     createModelGroup: () => createModelGroup(),

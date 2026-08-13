@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -69,8 +70,25 @@ func (s *service) dispatch(ctx context.Context, method string, params json.RawMe
 		return s.localBoxStatus(ctx)
 	case "localBox.install":
 		return s.localBoxInstall(ctx)
+	case "localBox.start":
+		return s.localBoxStart(ctx)
+	case "localBox.restart":
+		return s.localBoxRestart(ctx)
+	case "localBox.stop":
+		return s.localBoxStop(ctx)
 	case "localBox.exit":
 		return s.localBoxExit(ctx)
+	case "clientSettings.get":
+		return s.config.getSettings()
+	case "clientSettings.set":
+		var settingReq struct {
+			Name  string `json:"name"`
+			Value any    `json:"value"`
+		}
+		if err := json.Unmarshal(paramsOrEmpty(params), &settingReq); err != nil {
+			return nil, err
+		}
+		return s.config.updateSetting(settingReq.Name, settingReq.Value)
 	case "releaseChecks.refresh":
 		var refreshReq struct {
 			Kind string `json:"kind"`
@@ -176,6 +194,20 @@ func (s *service) localBoxExit(ctx context.Context) (localBoxState, error) {
 		state.Status = localBoxStatusStopped
 		return state, nil
 	}
+	cfg, err := s.config.load()
+	if err != nil {
+		return s.localBox.currentState(), err
+	}
+	if cfg.KeepBoxRunningOnExit {
+		s.localBox.detach(ctx)
+		s.requestShutdown()
+		state := s.localBox.currentState()
+		// 后台运行模式下客户端退出时，业务端继续运行；
+		// 对客户端而言连接关系已结束，返回 stopped 让窗口正常关闭。
+		state.Status = localBoxStatusStopped
+		state.Connected = false
+		return state, nil
+	}
 	state, err := s.localBox.stop(ctx)
 	if err == nil && state.Status == localBoxStatusStopped {
 		s.requestShutdown()
@@ -183,10 +215,43 @@ func (s *service) localBoxExit(ctx context.Context) (localBoxState, error) {
 	return state, err
 }
 
+// localBoxStart 启动当前已安装业务端；已在运行时直接返回当前状态。
+func (s *service) localBoxStart(ctx context.Context) (localBoxState, error) {
+	if s.localBox == nil {
+		return initialLocalBoxState(), newError("LOCAL_BOX_INSTALL_FAILED", "本机业务端职责未初始化")
+	}
+	return s.localBox.start(ctx)
+}
+
+// localBoxRestart 先让业务端正常退出并等待真实结束，再启动新业务端。
+func (s *service) localBoxRestart(ctx context.Context) (localBoxState, error) {
+	if s.localBox == nil {
+		return initialLocalBoxState(), newError("LOCAL_BOX_INSTALL_FAILED", "本机业务端职责未初始化")
+	}
+	if err := s.localBox.restart(ctx); err != nil {
+		return s.localBox.currentState(), err
+	}
+	return s.localBox.status(ctx)
+}
+
+// localBoxStop 停止当前业务端并等待真实结束。
+func (s *service) localBoxStop(ctx context.Context) (localBoxState, error) {
+	if s.localBox == nil {
+		return initialLocalBoxState(), nil
+	}
+	return s.localBox.stop(ctx)
+}
+
 func (s *service) setLocalBoxConnection(connection *boxConnection) {
 	s.connectionMu.Lock()
 	s.businessConnection = connection
 	s.connectionMu.Unlock()
+	// 已经通过本机受托连接成功连接，清理客户端设置中保存的旧地址和旧 Key 副本。
+	if connection != nil && connection.Source == boxConnectionSourceLocal {
+		if err := s.config.clearLegacyConnection(); err != nil {
+			log.Printf("eucli-studio: 清理旧连接副本失败（不影响本次连接）：%v", err)
+		}
+	}
 	s.signalConnectionChanged()
 }
 

@@ -26,7 +26,7 @@ type Cleanup struct {
 }
 
 type Report struct {
-	Stage            string     `json:"stage"`
+	Tool             string     `json:"tool"`
 	Mode             string     `json:"mode"`
 	RunRoot          string     `json:"runRoot"`
 	StartedAt        time.Time  `json:"startedAt"`
@@ -43,9 +43,9 @@ type recorder struct {
 	errors []error
 }
 
-func newRecorder(stage string, mode string, runRoot string) *recorder {
+func newRecorder(tool string, mode string, runRoot string) *recorder {
 	return &recorder{report: Report{
-		Stage:     stage,
+		Tool:      tool,
 		Mode:      mode,
 		RunRoot:   runRoot,
 		StartedAt: time.Now().UTC(),

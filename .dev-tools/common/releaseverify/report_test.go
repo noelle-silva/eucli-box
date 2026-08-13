@@ -12,8 +12,8 @@ import (
 
 func TestWriteReportReplacesExistingReport(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "report.json")
-	first := Report{Stage: "01", Mode: "full", Status: "running", Checks: []Check{}, Cleanup: newCleanup("not_started", nil, nil)}
-	second := Report{Stage: "02", Mode: "preflight", Status: "cleanup_pending", Checks: []Check{{Name: "check", Status: "passed"}}, Cleanup: newCleanup("pending", nil, disposableDirectories())}
+	first := Report{Tool: "verify-release-build", Mode: "full", Status: "running", Checks: []Check{}, Cleanup: newCleanup("not_started", nil, nil)}
+	second := Report{Tool: "verify-release-publish", Mode: "preflight", Status: "cleanup_pending", Checks: []Check{{Name: "check", Status: "passed"}}, Cleanup: newCleanup("pending", nil, disposableDirectories())}
 
 	if err := writeReport(path, first); err != nil {
 		t.Fatalf("write first report: %v", err)
@@ -23,7 +23,7 @@ func TestWriteReportReplacesExistingReport(t *testing.T) {
 	}
 
 	report := readReportForTest(t, path)
-	if report.Stage != second.Stage || report.Mode != second.Mode || report.Status != second.Status {
+	if report.Tool != second.Tool || report.Mode != second.Mode || report.Status != second.Status {
 		t.Fatalf("unexpected report after replacement: %#v", report)
 	}
 	if _, err := os.Stat(path + ".temporary"); !errors.Is(err, os.ErrNotExist) {
@@ -39,7 +39,7 @@ func TestRecorderFinishHandsAllCleanupToCaller(t *testing.T) {
 		}
 	}
 
-	recorder := newRecorder("01", "full", paths.root)
+	recorder := newRecorder("verify-release-build", "full", paths.root)
 	recorder.pass("sample", "passed")
 	if err := recorder.finish(paths); err != nil {
 		t.Fatalf("finish verification: %v", err)
@@ -65,7 +65,7 @@ func TestRecorderFinishHandsAllCleanupToCaller(t *testing.T) {
 
 func TestRecorderFinishRetainsFailedVerification(t *testing.T) {
 	paths := newRunPathsForTest(t)
-	recorder := newRecorder("02", "preflight", paths.root)
+	recorder := newRecorder("verify-release-publish", "preflight", paths.root)
 	recorder.fail("sample", errors.New("sample failure"))
 	if err := recorder.finish(paths); err == nil {
 		t.Fatal("expected verification failure")
@@ -89,7 +89,7 @@ func newRunPathsForTest(t *testing.T) runPaths {
 	t.Helper()
 	repositoryRoot := t.TempDir()
 	runRoot := filepath.Join(workspace.VerificationStageRoot(repositoryRoot, "01"), "run-test")
-	paths, err := prepareRun(repositoryRoot, runRoot, "01")
+	paths, err := prepareRun(repositoryRoot, runRoot, "verify-release-build")
 	if err != nil {
 		t.Fatalf("prepare run: %v", err)
 	}

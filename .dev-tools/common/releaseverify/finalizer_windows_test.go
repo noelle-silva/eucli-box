@@ -30,7 +30,7 @@ func TestFinalizerCleansBootstrapDirectoriesAndCompletesReport(t *testing.T) {
 		}
 	}
 	report := Report{
-		Stage:   "02",
+		Tool:   "verify-release-publish",
 		Mode:    "preflight",
 		RunRoot: runRoot,
 		Status:  "cleanup_pending",
@@ -40,7 +40,7 @@ func TestFinalizerCleansBootstrapDirectoriesAndCompletesReport(t *testing.T) {
 	if err := writeReport(filepath.Join(evidence, "report.json"), report); err != nil {
 		t.Fatalf("write finalizer fixture: %v", err)
 	}
-	if output, err := runFinalizerForTest(repositoryRoot, runRoot, "02", "preflight"); err != nil {
+	if output, err := runFinalizerForTest(repositoryRoot, runRoot, "verify-release-publish", "preflight"); err != nil {
 		t.Fatalf("run finalizer: %v\n%s", err, output)
 	}
 
@@ -99,7 +99,7 @@ func TestFinalizerPassesChecksAndReportsManualCleanupWhenDeleteFails(t *testing.
 	}
 	t.Cleanup(func() { _ = syscall.CloseHandle(lockedHandle) })
 	report := Report{
-		Stage:   "02",
+		Tool:   "verify-release-publish",
 		Mode:    "preflight",
 		RunRoot: runRoot,
 		Status:  "cleanup_pending",
@@ -110,7 +110,7 @@ func TestFinalizerPassesChecksAndReportsManualCleanupWhenDeleteFails(t *testing.
 		t.Fatalf("write finalizer fixture: %v", err)
 	}
 
-	if output, err := runFinalizerForTest(repositoryRoot, runRoot, "02", "preflight"); err != nil {
+	if output, err := runFinalizerForTest(repositoryRoot, runRoot, "verify-release-publish", "preflight"); err != nil {
 		t.Fatalf("run finalizer: %v\n%s", err, output)
 	}
 	actual := readReportForTest(t, filepath.Join(evidence, "report.json"))
@@ -151,7 +151,7 @@ func TestFinalizerCleansLongPathTree(t *testing.T) {
 		t.Fatalf("write long path fixture: %v", err)
 	}
 	report := Report{
-		Stage:   "02",
+		Tool:   "verify-release-publish",
 		Mode:    "preflight",
 		RunRoot: runRoot,
 		Status:  "cleanup_pending",
@@ -162,7 +162,7 @@ func TestFinalizerCleansLongPathTree(t *testing.T) {
 		t.Fatalf("write finalizer fixture: %v", err)
 	}
 
-	if output, err := runFinalizerForTest(repositoryRoot, runRoot, "02", "preflight"); err != nil {
+	if output, err := runFinalizerForTest(repositoryRoot, runRoot, "verify-release-publish", "preflight"); err != nil {
 		t.Fatalf("run finalizer: %v\n%s", err, output)
 	}
 	if _, err := os.Stat(filepath.Join(runRoot, "workspace")); !os.IsNotExist(err) {
@@ -174,7 +174,7 @@ func TestFinalizerCleansLongPathTree(t *testing.T) {
 	}
 }
 
-func TestFinalizerRejectsMismatchedStageWithoutCleaning(t *testing.T) {
+func TestFinalizerRejectsMismatchedToolWithoutCleaning(t *testing.T) {
 	repositoryRoot := repositoryRootForTest(t)
 	runRoot := filepath.Join(
 		workspace.VerificationStageRoot(repositoryRoot, "02"),
@@ -189,7 +189,7 @@ func TestFinalizerRejectsMismatchedStageWithoutCleaning(t *testing.T) {
 		}
 	}
 	report := Report{
-		Stage:   "02",
+		Tool:   "verify-release-publish",
 		Mode:    "preflight",
 		RunRoot: runRoot,
 		Status:  "cleanup_pending",
@@ -200,8 +200,8 @@ func TestFinalizerRejectsMismatchedStageWithoutCleaning(t *testing.T) {
 		t.Fatalf("write finalizer fixture: %v", err)
 	}
 
-	if output, err := runFinalizerForTest(repositoryRoot, runRoot, "01", "preflight"); err == nil {
-		t.Fatalf("expected stage mismatch rejection\n%s", output)
+	if output, err := runFinalizerForTest(repositoryRoot, runRoot, "verify-release-build", "preflight"); err == nil {
+		t.Fatalf("expected tool mismatch rejection\n%s", output)
 	}
 	for _, path := range disposablePaths(runRoot) {
 		if _, err := os.Stat(path); err != nil {
@@ -240,7 +240,7 @@ func TestFinalizerRejectsReparsePointWithoutCleaning(t *testing.T) {
 		t.Fatalf("create junction fixture: %v\n%s", err, output)
 	}
 	report := Report{
-		Stage:   "02",
+		Tool:   "verify-release-publish",
 		Mode:    "preflight",
 		RunRoot: runRoot,
 		Status:  "cleanup_pending",
@@ -251,7 +251,7 @@ func TestFinalizerRejectsReparsePointWithoutCleaning(t *testing.T) {
 		t.Fatalf("write finalizer fixture: %v", err)
 	}
 
-	if output, err := runFinalizerForTest(repositoryRoot, runRoot, "02", "preflight"); err == nil {
+	if output, err := runFinalizerForTest(repositoryRoot, runRoot, "verify-release-publish", "preflight"); err == nil {
 		t.Fatalf("expected reparse point rejection\n%s", output)
 	}
 	for _, path := range disposablePaths(runRoot) {
@@ -268,7 +268,7 @@ func TestFinalizerRejectsReparsePointWithoutCleaning(t *testing.T) {
 	}
 }
 
-func runFinalizerForTest(repositoryRoot string, runRoot string, stage string, mode string) ([]byte, error) {
+func runFinalizerForTest(repositoryRoot string, runRoot string, tool string, mode string) ([]byte, error) {
 	script := filepath.Join(repositoryRoot, "scripts", "release", "finalize-verification.ps1")
 	command := exec.Command(
 		"powershell.exe",
@@ -283,8 +283,8 @@ func runFinalizerForTest(repositoryRoot string, runRoot string, stage string, mo
 		repositoryRoot,
 		"-RunRoot",
 		runRoot,
-		"-Stage",
-		stage,
+		"-Tool",
+		tool,
 		"-Mode",
 		mode,
 	)

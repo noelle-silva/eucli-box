@@ -58,10 +58,21 @@ func run() error {
 	serverErr := newDirectServer(token, svc, hub).listenAndServe(ctx)
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	if shutdownErr := svc.shutdownLocalBox(shutdownCtx); shutdownErr != nil && serverErr == nil {
-		return shutdownErr
+	if keepBoxRunning, loadErr := keepBoxRunningOnExit(store); loadErr == nil && !keepBoxRunning {
+		if shutdownErr := svc.shutdownLocalBox(shutdownCtx); shutdownErr != nil && serverErr == nil {
+			return shutdownErr
+		}
 	}
 	return serverErr
+}
+
+// keepBoxRunningOnExit 读取客户端设置中的后台运行开关；读取失败时按默认关闭处理。
+func keepBoxRunningOnExit(store *configStore) (bool, error) {
+	cfg, err := store.load()
+	if err != nil {
+		return false, err
+	}
+	return cfg.KeepBoxRunningOnExit, nil
 }
 
 // resolveLocalBoxSource 根据开发体验入口的环境变量显式建立成品来源。

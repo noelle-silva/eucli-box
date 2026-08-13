@@ -1,5 +1,31 @@
 package gateway
 
+// registerAccessRoutes 注册访问设置管理路由：
+// 只接受受托本机连接；长期 Key 无权管理访问设置。
+func (s *system) registerAccessRoutes() {
+	if s.access == nil {
+		return
+	}
+	s.mux.HandleFunc("GET /api/access/persistent-ports", s.requireTrustedConnection(s.handleListPersistentPorts))
+	s.mux.HandleFunc("POST /api/access/persistent-ports", s.requireTrustedConnection(s.handleAddPersistentPort))
+	s.mux.HandleFunc("PUT /api/access/persistent-ports/{id}/enable", s.requireTrustedConnection(s.handleEnablePersistentPort))
+	s.mux.HandleFunc("PUT /api/access/persistent-ports/{id}/disable", s.requireTrustedConnection(s.handleDisablePersistentPort))
+	s.mux.HandleFunc("DELETE /api/access/persistent-ports/{id}", s.requireTrustedConnection(s.handleDeletePersistentPort))
+	s.mux.HandleFunc("GET /api/access/persistent-keys", s.requireTrustedConnection(s.handleListPersistentKeys))
+	s.mux.HandleFunc("POST /api/access/persistent-keys", s.requireTrustedConnection(s.handleAddPersistentKey))
+	s.mux.HandleFunc("GET /api/access/persistent-keys/{id}/reveal", s.requireTrustedConnection(s.handleRevealPersistentKey))
+	s.mux.HandleFunc("PUT /api/access/persistent-keys/{id}/enable", s.requireTrustedConnection(s.handleEnablePersistentKey))
+	s.mux.HandleFunc("PUT /api/access/persistent-keys/{id}/disable", s.requireTrustedConnection(s.handleDisablePersistentKey))
+	s.mux.HandleFunc("PUT /api/access/persistent-keys/{id}/expiration", s.requireTrustedConnection(s.handleSetPersistentKeyExpiration))
+	s.mux.HandleFunc("DELETE /api/access/persistent-keys/{id}", s.requireTrustedConnection(s.handleDeletePersistentKey))
+}
+
+// registerBoxRoutes 注册业务端信息与生命周期控制路由。
+func (s *system) registerBoxRoutes() {
+	s.mux.HandleFunc("GET /api/box/info", s.authWrap(s.handleBoxInfo))
+	s.mux.HandleFunc("POST /api/box/shutdown", s.requireTrustedConnection(s.handleBoxShutdown))
+}
+
 func (s *system) registerRoutes() {
 	if s.config.LocalRun {
 		s.mux.HandleFunc("GET /api/local-run", s.localAuthWrap(s.handleLocalRun))
@@ -8,6 +34,10 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("GET /api/release", s.authWrap(s.handleRelease))
 	s.mux.HandleFunc("GET /api/release-checks", s.authWrap(s.handleReleaseChecks))
 	s.mux.HandleFunc("POST /api/release-checks/refresh", s.authWrap(s.handleRefreshReleaseChecks))
+
+	s.registerAccessRoutes()
+	s.registerBoxRoutes()
+
 	s.mux.HandleFunc("POST /api/runs", s.authWrap(s.handleStartRun))
 	s.mux.HandleFunc("GET /api/runs", s.authWrap(s.handleListActiveRuns))
 	s.mux.HandleFunc("GET /api/runs/{runID}", s.authWrap(s.handleGetRun))

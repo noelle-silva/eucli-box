@@ -8,10 +8,12 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -21,6 +23,7 @@ import (
 	"eucli-box/pkg/release"
 	"eucli-box/pkg/releasecheck"
 	"eucli-box/pkg/types"
+	accesssystem "eucli-box/src/access-system"
 	agentruntime "eucli-box/src/agent-runtime-system"
 	aiassist "eucli-box/src/ai-assist-system"
 	datastorage "eucli-box/src/data-storage-system"
@@ -184,11 +187,20 @@ func run() error {
 	}
 	log.Printf("[12/13] release-check-system    ✓")
 
+	accessSystem, err := accesssystem.NewSystem(dataDir)
+	if err != nil {
+		return fmt.Errorf("start access system: %w", err)
+	}
+	if err := accesssystem.MigrateLegacyConfig(ctx, accessSystem, dataDir); err != nil {
+		return fmt.Errorf("migrate legacy access config: %w", err)
+	}
+	log.Printf("[12.5/13] access-system            ✓")
+
 	busyKey := ""
 	if !localConfig.Enabled && readBoxKey(dataDir) != "" {
 		busyKey = " (key: active)"
 	}
-	gatewayConfig := gateway.Config{Addr: envOrDefault("EUCLI_BOX_ADDR", "127.0.0.1:8765"), Key: readBoxKey(dataDir), BoxVersion: boxRelease.Version}
+	gatewayConfig := gateway.Config{Addr: envOrDefault("EUCLI_BOX_ADDR", "127.0.0.1:8765"), Key: readBoxKey(dataDir), BoxVersion: boxRelease.Version, Access: accessSystem}
 	if localConfig.Enabled {
 		gatewayConfig = gateway.Config{
 			Addr:              localConfig.Address,
@@ -201,6 +213,7 @@ func run() error {
 			LocalProcessID:    os.Getpid(),
 			LocalProcessStart: processStartedAt,
 			LocalStop:         stop,
+			Access:            accessSystem,
 		}
 	}
 	gatewaySystem, err := gateway.NewSystem(gatewayConfig, runtimeSystem, roleSystem, storageSystem, storageSystem, providerSystem, toolSystem, storageSystem, storageSystem, storageSystem, placeholderSystem, systemPluginSystem, assistSystem, releaseCheckSystem)
@@ -211,12 +224,14 @@ func run() error {
 
 	log.Printf("eucli-box v%s is starting on %s ...", boxRelease.Version, gatewayConfig.Addr)
 	endpoint := "http://" + gatewayConfig.Addr
+	accessSystem.SetHandler(gatewaySystem.LongTermHandler())
 	if localConfig.Enabled {
 		started, startErr := gatewaySystem.StartLocal(ctx)
 		if startErr != nil {
 			return fmt.Errorf("start local gateway listener: %w", startErr)
 		}
 		endpoint = started.Endpoint
+		accessSystem.SetLocalEntrypointPort(entrypointPort(endpoint))
 		registration := localrun.Registration{
 			SchemaVersion:     localrun.RegistrationSchemaVersion,
 			InstallIdentity:   localConfig.InstallIdentity,
@@ -245,11 +260,13 @@ func run() error {
 	} else if err := gatewaySystem.Start(ctx); err != nil {
 		return fmt.Errorf("start gateway listener: %w", err)
 	}
+	accessSystem.Start(ctx)
 	log.Printf("eucli-box v%s is ready — listening on %s", boxRelease.Version, endpoint)
 
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	accessSystem.Shutdown(shutdownCtx)
 	if err := gatewaySystem.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("shutdown gateway system: %w", err)
 	}
@@ -342,6 +359,19 @@ func envOrDefault(key string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+// entrypointPort 从受托本机入口地址解析真实端口，用于长期端口冲突检查。
+func entrypointPort(endpoint string) int {
+	parsed, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil {
+		return 0
+	}
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil {
+		return 0
+	}
+	return port
 }
 
 func readBoxKey(dataDir string) string {

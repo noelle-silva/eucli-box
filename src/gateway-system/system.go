@@ -19,6 +19,9 @@ type System interface {
 	StartLocal(ctx context.Context) (LocalStartResult, error)
 	Shutdown(ctx context.Context) error
 	Handler() http.Handler
+	// LongTermHandler 返回长期端口使用的统一鉴权与业务处理入口：
+	// 请求先经过长期 Key 核对，再进入正常业务路由；访问设置路由仍要求受托凭证。
+	LongTermHandler() http.Handler
 }
 
 type LocalStartResult struct {
@@ -182,6 +185,27 @@ type ReleaseCheckSystem interface {
 	Refresh(ctx context.Context, kind string) types.ReleaseCheckSnapshot
 }
 
+// AccessSystem 是业务端长期访问能力的网关视图：
+// 长期端口与长期 Key 的 CRUD 以及长期 Key 核对。
+type AccessSystem interface {
+	ListPorts(ctx context.Context) ([]types.PersistentPort, error)
+	AddPort(ctx context.Context, name string, port int) (types.PersistentPort, error)
+	EnablePort(ctx context.Context, id string) (types.PersistentPort, error)
+	DisablePort(ctx context.Context, id string) (types.PersistentPort, error)
+	DeletePort(ctx context.Context, id string) error
+
+	ListKeys(ctx context.Context) ([]types.PersistentKeyView, error)
+	CreateKey(ctx context.Context, name string, expiresAt *string) (types.PersistentKeyCreated, error)
+	RevealKey(ctx context.Context, id string) (string, error)
+	SetKeyEnabled(ctx context.Context, id string, enabled bool) error
+	SetKeyExpiration(ctx context.Context, id string, expiresAt *string) error
+	DeleteKey(ctx context.Context, id string) error
+
+	VerifyKey(ctx context.Context, providedKey string) types.PersistentKeyVerifyResult
+	RegisterConnection(keyID string, closer interface{ Close() error })
+	UnregisterConnection(keyID string, closer interface{ Close() error })
+}
+
 type Config struct {
 	Addr              string
 	Key               string
@@ -196,6 +220,7 @@ type Config struct {
 	LocalProcessID    int
 	LocalProcessStart time.Time
 	LocalStop         func()
+	Access            AccessSystem
 }
 
 type system struct {
@@ -214,6 +239,7 @@ type system struct {
 	systemPlugins SystemPluginSystem
 	assist        AIAssistSystem
 	releaseChecks ReleaseCheckSystem
+	access        AccessSystem
 	mux           *http.ServeMux
 	server        *http.Server
 	upgrader      websocket.Upgrader
@@ -322,6 +348,7 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups Ch
 		releaseChecks: releaseChecks,
 		placeholders:  placeholders,
 		systemPlugins: systemPlugins,
+		access:        config.Access,
 		mux:           http.NewServeMux(),
 		upgrader:      websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
 		connections:   map[*websocket.Conn]struct{}{},
@@ -341,4 +368,15 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups Ch
 
 func (s *system) Handler() http.Handler {
 	return s.mux
+}
+
+// LongTermHandler 供长期端口连接转发使用。它使用长期 Key 鉴权包装，并排除受托专用路由。
+func (s *system) LongTermHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/local-run" || strings.HasPrefix(r.URL.Path, "/api/local-run/") {
+			writeError(w, gatewayNotAuthorized("long-term route is unavailable", nil))
+			return
+		}
+		s.longTermAuthWrap(s.mux.ServeHTTP)(w, r)
+	})
 }

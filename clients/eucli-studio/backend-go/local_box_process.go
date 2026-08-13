@@ -29,6 +29,7 @@ type localBoxProcess struct {
 	connection   *boxConnection
 	registration localrun.Registration
 	tempDir      string
+	reconnected  bool
 }
 
 type localBoxReady struct {
@@ -198,8 +199,49 @@ func preparePreviousRegistration(path string) error {
 	return nil
 }
 
-func (process *localBoxProcess) requestStop(ctx context.Context) error {
-	payload, _ := json.Marshal(map[string]string{"runIdentity": process.registration.RunIdentity})
+// reconnectBackgroundBox 尝试精准重连后台运行中的同一业务端：
+// 只接受登记中安装身份、数据身份、运行身份全部与本次安装记录一致的运行；
+// 通过 /api/local-run 真实核对后才复用连接，不猜测端口或进程。
+func reconnectBackgroundBox(ctx context.Context, record localBoxInstallRecord, paths localBoxPaths) (*localBoxProcess, error) {
+	registration, err := localrun.ReadRegistration(paths.registrationPath)
+	if err != nil {
+		return nil, err
+	}
+	if registration.Status != localrun.RegistrationStatusRunning {
+		return nil, errors.New("LOCAL_BOX_REGISTRATION_INVALID: 登记不是运行状态")
+	}
+	if registration.InstallIdentity != record.InstallIdentity || registration.DataIdentity != record.DataIdentity {
+		return nil, errors.New("LOCAL_BOX_REGISTRATION_INVALID: 登记安装身份不一致")
+	}
+	matches, err := localrun.ProcessMatches(registration.ProcessID, registration.ProcessStartedAt)
+	if err != nil {
+		return nil, fmt.Errorf("LOCAL_BOX_REGISTRATION_INVALID: 无法核对后台业务端进程：%w", err)
+	}
+	if !matches {
+		return nil, errors.New("LOCAL_BOX_REGISTRATION_INVALID: 后台业务端进程已不存在")
+	}
+	if err := validateLocalEndpoint(registration.Endpoint); err != nil {
+		return nil, errors.New("LOCAL_BOX_REGISTRATION_INVALID: 登记地址无效")
+	}
+	connection := &boxConnection{Source: boxConnectionSourceLocal, BaseURL: registration.Endpoint, Credential: registration.SessionCredential}
+	facts := localrun.RegistrationFacts{
+		InstallIdentity: record.InstallIdentity, DataIdentity: record.DataIdentity, RunIdentity: registration.RunIdentity,
+		Endpoint: registration.Endpoint, SessionCredential: registration.SessionCredential, ProcessID: registration.ProcessID,
+		ProcessStartedAt: registration.ProcessStartedAt, BoxVersion: registration.BoxVersion,
+	}
+	if err := verifyLocalRunFacts(ctx, connection, facts); err != nil {
+		return nil, err
+	}
+	process := &localBoxProcess{
+		done:         make(chan struct{}),
+		connection:   connection,
+		registration: registration,
+		reconnected:  true,
+	}
+	return process, nil
+}
+
+func (process *localBoxProcess) requestStop(ctx context.Context) error {	payload, _ := json.Marshal(map[string]string{"runIdentity": process.registration.RunIdentity})
 	target, err := url.Parse(strings.TrimRight(process.connection.BaseURL, "/") + "/api/local-run/stop")
 	if err != nil {
 		return err

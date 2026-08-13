@@ -1,4 +1,4 @@
-//go:build windows && eucli_stage03
+//go:build windows && eucli_client_install
 
 package main
 
@@ -22,11 +22,11 @@ import (
 	"eucli-box/pkg/types"
 )
 
-type stage03CandidateChecker struct {
+type clientInstallCandidateChecker struct {
 	candidate *releasecheck.ReleaseCandidate
 }
 
-type stage03Fixture struct {
+type clientInstallFixture struct {
 	manifest     types.ReleaseManifest
 	manifestData []byte
 	archiveData  []byte
@@ -34,23 +34,23 @@ type stage03Fixture struct {
 	manifestName string
 }
 
-func (checker stage03CandidateChecker) Kind() localBoxSourceKind {
+func (checker clientInstallCandidateChecker) Kind() localBoxSourceKind {
 	return localBoxSourceOfficial
 }
 
-func (checker stage03CandidateChecker) LatestCandidate(context.Context, types.ReleaseArtifactIdentity) (*releasecheck.ReleaseCandidate, error) {
+func (checker clientInstallCandidateChecker) LatestCandidate(context.Context, types.ReleaseArtifactIdentity) (*releasecheck.ReleaseCandidate, error) {
 	return checker.candidate, nil
 }
 
-func (checker stage03CandidateChecker) AcquireArtifacts(ctx context.Context, candidate *releasecheck.ReleaseCandidate, downloadDir string, onProgress func(localBoxProgress)) (types.ReleaseManifest, error) {
+func (checker clientInstallCandidateChecker) AcquireArtifacts(ctx context.Context, candidate *releasecheck.ReleaseCandidate, downloadDir string, onProgress func(localBoxProgress)) (types.ReleaseManifest, error) {
 	return acquireOfficialArtifacts(ctx, candidate, downloadDir, onProgress)
 }
 
-func TestStage03LocalBoxLifecycle(t *testing.T) {
-	fixture := loadStage03Fixture(t)
-	clientDataDir := os.Getenv("EUCLI_STAGE03_CLIENT_DATA_DIR")
+func TestClientInstallLocalBoxLifecycle(t *testing.T) {
+	fixture := loadClientInstallFixture(t)
+	clientDataDir := os.Getenv("EUCLI_CLIENT_INSTALL_CLIENT_DATA_DIR")
 	if clientDataDir == "" {
-		t.Fatal("阶段三测试缺少隔离成品或数据目录资料")
+		t.Fatal("客户端安装验证缺少隔离成品或数据目录资料")
 	}
 	server := fixture.server(http.StatusOK, fixture.archiveData)
 	defer server.Close()
@@ -119,9 +119,9 @@ func TestStage03LocalBoxLifecycle(t *testing.T) {
 	}
 }
 
-func TestStage03DownloadFailureLeavesNoInstalledState(t *testing.T) {
-	fixture := loadStage03Fixture(t)
-	paths := stage03TestPaths(t)
+func TestClientInstallDownloadFailureLeavesNoInstalledState(t *testing.T) {
+	fixture := loadClientInstallFixture(t)
+	paths := clientInstallTestPaths(t)
 	server := fixture.server(http.StatusServiceUnavailable, nil)
 	defer server.Close()
 	state, err := fixture.manager(paths, server.URL, nil).install(context.Background())
@@ -134,9 +134,9 @@ func TestStage03DownloadFailureLeavesNoInstalledState(t *testing.T) {
 	assertNoInstallRecord(t, paths)
 }
 
-func TestStage03DigestMismatchLeavesNoInstalledState(t *testing.T) {
-	fixture := loadStage03Fixture(t)
-	paths := stage03TestPaths(t)
+func TestClientInstallDigestMismatchLeavesNoInstalledState(t *testing.T) {
+	fixture := loadClientInstallFixture(t)
+	paths := clientInstallTestPaths(t)
 	tampered := append([]byte(nil), fixture.archiveData...)
 	tampered[len(tampered)-1] ^= 0xff
 	server := fixture.server(http.StatusOK, tampered)
@@ -151,9 +151,9 @@ func TestStage03DigestMismatchLeavesNoInstalledState(t *testing.T) {
 	assertNoInstallRecord(t, paths)
 }
 
-func TestStage03InvalidPackageLeavesNoInstalledState(t *testing.T) {
-	fixture := loadStage03Fixture(t)
-	paths := stage03TestPaths(t)
+func TestClientInstallInvalidPackageLeavesNoInstalledState(t *testing.T) {
+	fixture := loadClientInstallFixture(t)
+	paths := clientInstallTestPaths(t)
 	invalidArchive := archiveWithoutRequiredFile(t, fixture.archiveData, "README.md")
 	invalidManifest := fixture.manifest
 	invalidManifest.Archive.Size = int64(len(invalidArchive))
@@ -178,8 +178,8 @@ func TestStage03InvalidPackageLeavesNoInstalledState(t *testing.T) {
 	assertNoInstallRecord(t, paths)
 }
 
-func TestStage03CorruptRegistrationIsRejected(t *testing.T) {
-	paths := stage03TestPaths(t)
+func TestClientInstallCorruptRegistrationIsRejected(t *testing.T) {
+	paths := clientInstallTestPaths(t)
 	if err := os.MkdirAll(paths.runtimeDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -191,12 +191,12 @@ func TestStage03CorruptRegistrationIsRejected(t *testing.T) {
 	}
 }
 
-func loadStage03Fixture(t *testing.T) stage03Fixture {
+func loadClientInstallFixture(t *testing.T) clientInstallFixture {
 	t.Helper()
-	archivePath := os.Getenv("EUCLI_STAGE03_ARCHIVE")
-	manifestPath := os.Getenv("EUCLI_STAGE03_MANIFEST")
+	archivePath := os.Getenv("EUCLI_CLIENT_INSTALL_ARCHIVE")
+	manifestPath := os.Getenv("EUCLI_CLIENT_INSTALL_MANIFEST")
 	if archivePath == "" || manifestPath == "" {
-		t.Fatal("阶段三测试缺少隔离成品资料")
+		t.Fatal("客户端安装验证缺少隔离成品资料")
 	}
 	manifestData, err := os.ReadFile(manifestPath)
 	if err != nil {
@@ -210,14 +210,14 @@ func loadStage03Fixture(t *testing.T) stage03Fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return stage03Fixture{manifest: manifest, manifestData: manifestData, archiveData: archiveData, archiveName: filepath.Base(archivePath), manifestName: filepath.Base(manifestPath)}
+	return clientInstallFixture{manifest: manifest, manifestData: manifestData, archiveData: archiveData, archiveName: filepath.Base(archivePath), manifestName: filepath.Base(manifestPath)}
 }
 
-func stage03TestPaths(t *testing.T) localBoxPaths {
+func clientInstallTestPaths(t *testing.T) localBoxPaths {
 	t.Helper()
-	base := os.Getenv("EUCLI_STAGE03_CLIENT_DATA_DIR")
+	base := os.Getenv("EUCLI_CLIENT_INSTALL_CLIENT_DATA_DIR")
 	if base == "" {
-		t.Fatal("阶段三测试缺少隔离客户端数据目录")
+		t.Fatal("客户端安装验证缺少隔离客户端数据目录")
 	}
 	name := strings.NewReplacer("/", "-", "\\", "-", " ", "-").Replace(t.Name())
 	paths, err := newLocalBoxPaths(filepath.Join(filepath.Dir(base), name))
@@ -227,7 +227,7 @@ func stage03TestPaths(t *testing.T) localBoxPaths {
 	return paths
 }
 
-func (fixture stage03Fixture) server(archiveStatus int, archivePayload []byte) *httptest.Server {
+func (fixture clientInstallFixture) server(archiveStatus int, archivePayload []byte) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		switch filepath.Base(request.URL.Path) {
 		case fixture.manifestName:
@@ -244,13 +244,13 @@ func (fixture stage03Fixture) server(archiveStatus int, archivePayload []byte) *
 	}))
 }
 
-func (fixture stage03Fixture) manager(paths localBoxPaths, serverURL string, onState func(localBoxState)) *localBoxManager {
+func (fixture clientInstallFixture) manager(paths localBoxPaths, serverURL string, onState func(localBoxState)) *localBoxManager {
 	candidate := &releasecheck.ReleaseCandidate{
 		Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindBox, ID: types.ReleaseArtifactKindBox},
 		Manifest: fixture.manifest, ManifestURL: serverURL + "/" + fixture.manifestName, ManifestSize: int64(len(fixture.manifestData)),
 		ArchiveURL: serverURL + "/" + fixture.archiveName,
 	}
-	return newLocalBoxManager(paths, stage03CandidateChecker{candidate: candidate}, onState, nil, nil)
+	return newLocalBoxManager(paths, clientInstallCandidateChecker{candidate: candidate}, onState, nil, nil)
 }
 
 func assertNoInstallRecord(t *testing.T, paths localBoxPaths) {

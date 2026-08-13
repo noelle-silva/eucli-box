@@ -2,7 +2,7 @@ import * as React from 'react'
 import { Box, Button, Paper, Stack, Typography } from '@mui/material'
 import { CustomScrollArea } from '../components/CustomScrollArea'
 
-export type SettingsTabValue = 'appearance' | 'attachments' | 'data' | 'groups' | 'roles' | 'workspaces' | 'providers' | 'modelGroups' | 'services' | 'tools' | 'stickers' | 'hookPrompts' | 'placeholders' | 'systemPlugins' | 'eb'
+export type SettingsTabValue = 'appearance' | 'attachments' | 'data' | 'groups' | 'roles' | 'workspaces' | 'providers' | 'modelGroups' | 'services' | 'tools' | 'stickers' | 'hookPrompts' | 'placeholders' | 'systemPlugins' | 'eb' | 'access'
 
 type SettingsNavigationItem = {
   value: SettingsTabValue
@@ -20,6 +20,7 @@ const SETTINGS_NAVIGATION_ITEMS: SettingsNavigationItem[] = [
   { value: 'modelGroups', label: '模型组' },
   { value: 'services', label: 'AI 微服务' },
   { value: 'eb', label: 'e-b' },
+  { value: 'access', label: '业务端访问' },
   { value: 'tools', label: 'AI 工具' },
   { value: 'stickers', label: '表情包' },
   { value: 'hookPrompts', label: 'hook 提示词' },

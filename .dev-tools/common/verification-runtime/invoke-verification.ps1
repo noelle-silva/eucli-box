@@ -1,7 +1,6 @@
-param(
+﻿param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("01", "02", "03", "04", "dev")]
-    [string]$Stage,
+    [string]$Tool,
 
     [string]$Mode = ""
 )
@@ -36,34 +35,27 @@ function Restore-ProcessEnvironment {
     }
 }
 
-if ($Stage -eq "01") {
-    if (-not [string]::IsNullOrWhiteSpace($Mode)) {
-        throw "Stage 01 does not accept a mode."
+# 每个验证工具自己声明允许的模式；工具名必须是描述性命名（verify-<对象>-<动作>）。
+$modeRules = @{
+    "verify-release-build"        = @{ AllowNoMode = $true;  Modes = @();             DefaultMode = "full" }
+    "verify-release-publish"      = @{ AllowNoMode = $false; Modes = @("preflight", "remote"); DefaultMode = "" }
+    "verify-client-install"       = @{ AllowNoMode = $true;  Modes = @("experience"); DefaultMode = "default" }
+    "verify-tool-plugin-update"   = @{ AllowNoMode = $true;  Modes = @("experience"); DefaultMode = "default" }
+    "verify-background-access"    = @{ AllowNoMode = $true;  Modes = @("experience"); DefaultMode = "default" }
+    "verify-dev-box"              = @{ AllowNoMode = $true;  Modes = @();             DefaultMode = "default" }
+}
+
+if (-not $modeRules.ContainsKey($Tool)) {
+    throw "Unknown verification tool: $Tool"
+}
+$rule = $modeRules[$Tool]
+if ([string]::IsNullOrWhiteSpace($Mode)) {
+    if (-not $rule.AllowNoMode) {
+        throw "Usage: $Tool.cmd <" + ($rule.Modes -join "|") + ">"
     }
-    $Mode = "full"
-} elseif ($Stage -eq "02") {
-    if ($Mode -ne "preflight" -and $Mode -ne "remote") {
-        throw "Usage: verify-stage-02.cmd <preflight|remote>"
-    }
-} elseif ($Stage -eq "03") {
-    if ([string]::IsNullOrWhiteSpace($Mode)) {
-        $Mode = "default"
-    } elseif ($Mode -ne "default" -and $Mode -ne "experience") {
-        throw "Usage: verify-stage-03.cmd [experience]"
-    }
-} elseif ($Stage -eq "04") {
-    if ([string]::IsNullOrWhiteSpace($Mode)) {
-        $Mode = "default"
-    } elseif ($Mode -ne "default" -and $Mode -ne "experience") {
-        throw "Usage: verify-stage-04.cmd [experience]"
-    }
-} elseif ($Stage -eq "dev") {
-    if (-not [string]::IsNullOrWhiteSpace($Mode) -and $Mode -ne "default") {
-        throw "Usage: verify-dev-box.cmd"
-    }
-    $Mode = "default"
-} else {
-    throw "Usage: verify-stage-02.cmd <preflight|remote>"
+    $Mode = $rule.DefaultMode
+} elseif ($Mode -ne $rule.DefaultMode -and $rule.Modes -notcontains $Mode) {
+    throw "Usage: $Tool.cmd [" + ($rule.Modes -join "|") + "]"
 }
 
 $repositoryRoot = Get-FullPath (Join-Path $PSScriptRoot "..\..\..")
@@ -71,17 +63,10 @@ if (-not (Test-Path -LiteralPath (Join-Path $repositoryRoot "go.mod") -PathType 
     throw "Cannot locate the repository root."
 }
 
-$toolPaths = @{
-    "01"  = "devtools/general-verification-tools/verify-release-build"
-    "02"  = "devtools/general-verification-tools/verify-release-publish"
-    "03"  = "devtools/general-verification-tools/verify-client-install"
-    "04"  = "devtools/general-verification-tools/verify-tool-plugin-update"
-    "dev" = "devtools/general-verification-tools/verify-dev-box"
-}
+$toolModule = "devtools/general-verification-tools/$Tool"
 
 $runId = [DateTime]::UtcNow.ToString("yyyyMMddTHHmmssfffffffZ", [Globalization.CultureInfo]::InvariantCulture)
-$toolDirName = $toolPaths[$Stage].Split("/")[-1]
-$runRoot = Join-Path $repositoryRoot ".dev-workspace\.dev-tools-runtime\$toolDirName\run-$runId"
+$runRoot = Join-Path $repositoryRoot ".dev-workspace\.dev-tools-runtime\$Tool\run-$runId"
 if (Test-Path -LiteralPath $runRoot) {
     throw "Verification run already exists: $runRoot"
 }
@@ -109,13 +94,13 @@ try {
         [System.IO.Directory]::CreateDirectory($directory) | Out-Null
     }
 
-    Write-Host "Stage $Stage $Mode verification root: $runRoot"
+    Write-Host "$Tool $Mode verification root: $runRoot"
     $workDir = Join-Path $runRoot "work"
     [System.IO.Directory]::CreateDirectory($workDir) | Out-Null
     Push-Location $workDir
     try {
-        $arguments = @("run", $toolPaths[$Stage], "-root", $repositoryRoot, "-run-root", $runRoot)
-        if ($Stage -eq "02" -or $Stage -eq "03" -or $Stage -eq "04" -or $Stage -eq "dev") {
+        $arguments = @("run", $toolModule, "-root", $repositoryRoot, "-run-root", $runRoot)
+        if ($rule.AllowNoMode -or $rule.Modes.Count -gt 0) {
             $arguments += @("-mode", $Mode)
         }
         & go @arguments
@@ -127,7 +112,7 @@ try {
         & (Join-Path $PSScriptRoot "finalize-verification.ps1") `
             -RepositoryRoot $repositoryRoot `
             -RunRoot $runRoot `
-            -Stage $Stage `
+            -Tool $Tool `
             -Mode $Mode
         $finalReportPath = Join-Path $runRoot "evidence\report.json"
         $finalReport = Get-Content -LiteralPath $finalReportPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -141,18 +126,18 @@ try {
 }
 
 if ($verificationExitCode -ne 0) {
-    Write-Host "[FAIL] Stage $Stage $Mode verification failed. Evidence retained at $runRoot"
+    Write-Host "[FAIL] $Tool $Mode verification failed. Evidence retained at $runRoot"
     exit $verificationExitCode
 }
 if (-not $finalizationSucceeded) {
-    Write-Host "[FAIL] Stage $Stage $Mode finalization failed. Remaining evidence retained at $runRoot"
+    Write-Host "[FAIL] $Tool $Mode finalization failed. Remaining evidence retained at $runRoot"
     exit 1
 }
 if ($manualCleanupRequired) {
-    Write-Host "[PASS] Stage $Stage $Mode verification checks passed. Manual cleanup required: $runRoot"
+    Write-Host "[PASS] $Tool $Mode verification checks passed. Manual cleanup required: $runRoot"
     Write-Host "Report: $runRoot\evidence\report.json"
     exit 0
 }
 
-Write-Host "[PASS] Stage $Stage $Mode verification passed. Report: $runRoot\evidence\report.json"
+Write-Host "[PASS] $Tool $Mode verification passed. Report: $runRoot\evidence\report.json"
 exit 0

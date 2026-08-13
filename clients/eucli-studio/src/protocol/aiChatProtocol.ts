@@ -23,7 +23,12 @@ export const AI_CHAT_DIRECT_METHOD = {
   imagePick: 'aiChat.imagePick',
   localBoxStatus: 'localBox.status',
   localBoxInstall: 'localBox.install',
+  localBoxStart: 'localBox.start',
+  localBoxRestart: 'localBox.restart',
+  localBoxStop: 'localBox.stop',
   localBoxExit: 'localBox.exit',
+  clientSettingsGet: 'clientSettings.get',
+  clientSettingsSet: 'clientSettings.set',
 } as const
 
 export const AI_CHAT_DIRECT_EVENT = {

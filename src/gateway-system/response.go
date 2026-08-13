@@ -72,6 +72,10 @@ func statusForCode(code string) int {
 		return http.StatusNotFound
 	case hasSuffix(code, "incompatible_client"):
 		return http.StatusConflict
+	case hasSuffix(code, "forbidden"):
+		return http.StatusForbidden
+	case hasSuffix(code, "unauthorized"):
+		return http.StatusUnauthorized
 	default:
 		return http.StatusInternalServerError
 	}

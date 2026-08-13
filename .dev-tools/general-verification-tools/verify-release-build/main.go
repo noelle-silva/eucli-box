@@ -32,5 +32,5 @@ func run(ctx context.Context, args []string) error {
 	if strings.TrimSpace(*runRoot) == "" {
 		return fmt.Errorf("必须指定 -run-root")
 	}
-	return releaseverify.Stage01(ctx, root, *runRoot)
+	return releaseverify.VerifyReleaseBuild(ctx, root, *runRoot)
 }

@@ -1,4 +1,4 @@
 @echo off
 setlocal EnableExtensions
-powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0..\..\common\verification-runtime\invoke-verification.ps1" -Stage "02" -Mode "%~1"
+powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0..\..\common\verification-runtime\invoke-verification.ps1" -Tool "verify-release-publish" -Mode "%~1"
 exit /b %ERRORLEVEL%

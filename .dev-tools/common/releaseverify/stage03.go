@@ -11,8 +11,8 @@ import (
 	"eucli-box/pkg/workspace"
 )
 
-func Stage03(ctx context.Context, repositoryRoot string, runRoot string, mode string) error {
-	paths, err := prepareRun(repositoryRoot, runRoot, "03")
+func VerifyClientInstall(ctx context.Context, repositoryRoot string, runRoot string, mode string) error {
+	paths, err := prepareRun(repositoryRoot, runRoot, "verify-client-install")
 	if err != nil {
 		return err
 	}
@@ -21,10 +21,10 @@ func Stage03(ctx context.Context, repositoryRoot string, runRoot string, mode st
 		mode = "default"
 	}
 	if mode != "default" && mode != "experience" {
-		return fmt.Errorf("阶段三模式必须是 default 或 experience")
+		return fmt.Errorf("客户端安装模式必须是 default 或 experience")
 	}
-	recorder := newRecorder("03", mode, paths.root)
-	fmt.Printf("阶段三 %s 验证目录：%s\n", mode, paths.root)
+	recorder := newRecorder("verify-client-install", mode, paths.root)
+	fmt.Printf("客户端安装 %s 验证目录：%s\n", mode, paths.root)
 
 	dataBefore, dataErr := directorySnapshot(filepath.Join(repositoryRoot, "data"))
 	gitBefore, gitErr := gitSnapshot(repositoryRoot)
@@ -40,9 +40,9 @@ func Stage03(ctx context.Context, repositoryRoot string, runRoot string, mode st
 	}
 
 	if mode == "experience" {
-		runStage03Experience(ctx, repositoryRoot, paths, recorder)
+		runClientInstallExperience(ctx, repositoryRoot, paths, recorder)
 	} else {
-		runStage03Default(ctx, repositoryRoot, paths, recorder)
+		runClientInstallDefault(ctx, repositoryRoot, paths, recorder)
 	}
 
 	if dataErr == nil {
@@ -52,7 +52,7 @@ func Stage03(ctx context.Context, repositoryRoot string, runRoot string, mode st
 		} else if err := compareSnapshots("真实 data 目录", dataBefore, dataAfter); err != nil {
 			recorder.fail("确认真实数据未改变", err)
 		} else {
-			recorder.pass("确认真实数据未改变", "阶段三验证未写入真实 data 目录")
+			recorder.pass("确认真实数据未改变", "客户端安装验证未写入真实 data 目录")
 		}
 	}
 	if gitErr == nil {
@@ -62,14 +62,14 @@ func Stage03(ctx context.Context, repositoryRoot string, runRoot string, mode st
 		} else if err := compareSnapshots("源码工作区", gitBefore, gitAfter); err != nil {
 			recorder.fail("确认源码未被验证改写", err)
 		} else {
-			recorder.pass("确认源码未被验证改写", "阶段三验证只在本次隔离目录产生运行内容")
+			recorder.pass("确认源码未被验证改写", "客户端安装验证只在本次隔离目录产生运行内容")
 		}
 	}
 	return recorder.finish(paths)
 }
 
-func runStage03Default(ctx context.Context, root string, paths runPaths, recorder *recorder) {
-	archivePath, manifestPath, err := prepareStage03Box(ctx, root, paths, recorder)
+func runClientInstallDefault(ctx context.Context, root string, paths runPaths, recorder *recorder) {
+	archivePath, manifestPath, err := prepareClientInstallBox(ctx, root, paths, recorder)
 	if err != nil {
 		return
 	}
@@ -82,7 +82,7 @@ func runStage03Default(ctx context.Context, root string, paths runPaths, recorde
 	}{
 		{name: "公共发行候选、下载与包核对", workdir: root, command: "go", args: []string{"test", "./pkg/release", "./pkg/releasecatalog", "./pkg/releasecheck", "devtools/common/releaseartifact", "devtools/common/releasepublish", "-count=1"}},
 		{name: "本机运行事实、受托启动与网关路由", workdir: root, command: "go", args: []string{"test", "./pkg/localrun", "./src/gateway-system", "./cmd/eucli-box", "-count=1"}},
-		{name: "客户端本地后台安装、连接和故障场景", workdir: filepath.Join(root, "clients", "eucli-studio", "backend-go"), command: "go", args: []string{"test", "-tags", "eucli_stage03", "-run", "^TestStage03", "-count=1"}, env: stage03LifecycleEnvironment(paths, archivePath, manifestPath)},
+		{name: "客户端本地后台安装、连接和故障场景", workdir: filepath.Join(root, "clients", "eucli-studio", "backend-go"), command: "go", args: []string{"test", "-tags", "eucli_client_install", "-run", "^TestClientInstall", "-count=1"}, env: clientInstallLifecycleEnvironment(paths, archivePath, manifestPath)},
 		{name: "客户端后台其他测试", workdir: filepath.Join(root, "clients", "eucli-studio", "backend-go"), command: "go", args: []string{"test", "./...", "-count=1"}},
 		{name: "客户端协议和界面类型", workdir: filepath.Join(root, "clients", "eucli-studio"), command: "pnpm", args: []string{"exec", "tsc", "--noEmit"}},
 		{name: "客户端界面构建", workdir: filepath.Join(root, "clients", "eucli-studio"), command: "pnpm", args: []string{"build:ui"}},
@@ -96,8 +96,8 @@ func runStage03Default(ctx context.Context, root string, paths runPaths, recorde
 	}
 }
 
-func runStage03Experience(ctx context.Context, root string, paths runPaths, recorder *recorder) {
-	archivePath, manifestPath, err := prepareStage03Box(ctx, root, paths, recorder)
+func runClientInstallExperience(ctx context.Context, root string, paths runPaths, recorder *recorder) {
+	archivePath, manifestPath, err := prepareClientInstallBox(ctx, root, paths, recorder)
 	if err != nil {
 		return
 	}
@@ -108,7 +108,7 @@ func runStage03Experience(ctx context.Context, root string, paths runPaths, reco
 		args    []string
 		env     map[string]string
 	}{
-		{name: "体验模式隔离安装、自动连接和退出准备", workdir: filepath.Join(root, "clients", "eucli-studio", "backend-go"), command: "go", args: []string{"test", "-tags", "eucli_stage03", "-run", "^TestStage03LocalBoxLifecycle$", "-count=1"}, env: stage03LifecycleEnvironment(paths, archivePath, manifestPath)},
+		{name: "体验模式隔离安装、自动连接和退出准备", workdir: filepath.Join(root, "clients", "eucli-studio", "backend-go"), command: "go", args: []string{"test", "-tags", "eucli_client_install", "-run", "^TestClientInstallLocalBoxLifecycle$", "-count=1"}, env: clientInstallLifecycleEnvironment(paths, archivePath, manifestPath)},
 		{name: "体验模式界面构建", workdir: filepath.Join(root, "clients", "eucli-studio"), command: "pnpm", args: []string{"build:ui"}},
 	}
 	for _, command := range commands {
@@ -120,8 +120,8 @@ func runStage03Experience(ctx context.Context, root string, paths runPaths, reco
 	}
 }
 
-func prepareStage03Box(ctx context.Context, root string, paths runPaths, recorder *recorder) (string, string, error) {
-	return prepareVerificationBox(ctx, root, paths, "阶段三隔离业务端成品", filepath.Join(paths.environment, "box-release"), recorder)
+func prepareClientInstallBox(ctx context.Context, root string, paths runPaths, recorder *recorder) (string, string, error) {
+	return prepareVerificationBox(ctx, root, paths, "客户端安装隔离业务端成品", filepath.Join(paths.environment, "box-release"), recorder)
 }
 
 // prepareVerificationBox 使用当前源码制作 Windows x64 业务端验证成品并输出到指定目录，
@@ -161,10 +161,10 @@ func prepareVerificationBox(ctx context.Context, root string, paths runPaths, na
 	return result.ArchivePath, result.ManifestPath, nil
 }
 
-func stage03LifecycleEnvironment(paths runPaths, archivePath string, manifestPath string) map[string]string {
+func clientInstallLifecycleEnvironment(paths runPaths, archivePath string, manifestPath string) map[string]string {
 	return map[string]string{
-		"EUCLI_STAGE03_ARCHIVE":         archivePath,
-		"EUCLI_STAGE03_MANIFEST":        manifestPath,
-		"EUCLI_STAGE03_CLIENT_DATA_DIR": filepath.Join(paths.environment, "client-data"),
+		"EUCLI_CLIENT_INSTALL_ARCHIVE":         archivePath,
+		"EUCLI_CLIENT_INSTALL_MANIFEST":        manifestPath,
+		"EUCLI_CLIENT_INSTALL_CLIENT_DATA_DIR": filepath.Join(paths.environment, "client-data"),
 	}
 }

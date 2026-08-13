@@ -116,6 +116,43 @@ func (m *localBoxManager) sourceKind() localBoxSourceKind {
 	return m.source.Kind().normalize()
 }
 
+// detach 客户端真正退出但业务端选择后台继续运行时调用：
+// 只清理客户端连接状态，不请求业务端停止、不等待进程结束、不清理登记。
+func (m *localBoxManager) detach(ctx context.Context) {
+	m.mu.Lock()
+	process := m.process
+	m.process = nil
+	m.connection = nil
+	onDisconnect := m.onDisconnect
+	m.mu.Unlock()
+	if onDisconnect != nil {
+		onDisconnect()
+	}
+	if process != nil && !process.reconnected {
+		process.cleanup()
+	}
+}
+
+// restart 重新启动业务端：先让当前业务端正常退出并等待真实结束，再启动新业务端。
+func (m *localBoxManager) restart(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	state, err := m.stop(ctx)
+	if err != nil && state.Status != localBoxStatusStopped {
+		return err
+	}
+	record, err := m.readInstall()
+	if err != nil {
+		return err
+	}
+	if record == nil {
+		return newError("LOCAL_BOX_NOT_INSTALLED", "业务端尚未安装")
+	}
+	_, err = m.start(ctx)
+	return err
+}
+
 func (m *localBoxManager) currentState() localBoxState {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -461,7 +498,25 @@ func (m *localBoxManager) startLocked(ctx context.Context, record *localBoxInsta
 	state.Status = localBoxStatusStarting
 	state.Connected = false
 	m.publishState(state)
-	process, err := startLocalBoxProcess(ctx, m.paths, *record)
+	// 先尝试精准重连后台运行中的同一业务端；任何失败都回退到完整启动流程，
+	// 由 preparePreviousRegistration 完成数据占用、旧登记和进程身份的安全判断。
+	process, err := reconnectBackgroundBox(ctx, *record, m.paths)
+	if err == nil {
+		m.mu.Lock()
+		m.process = process
+		m.connection = process.connection
+		onConnect := m.onConnect
+		m.mu.Unlock()
+		if onConnect != nil {
+			onConnect(process.connection)
+		}
+		state.Status = localBoxStatusConnected
+		state.Connected = true
+		m.publishState(state)
+		go m.monitor(process, record.Version)
+		return state, nil
+	}
+	process, err = startLocalBoxProcess(ctx, m.paths, *record)
 	if err != nil {
 		return m.installFailure(state, localBoxErrorCode(err, "LOCAL_BOX_START_FAILED"), err.Error(), localBoxStatusStarting)
 	}
@@ -485,7 +540,36 @@ func localBoxErrorCode(err error, fallback string) string {
 }
 
 func (m *localBoxManager) monitor(process *localBoxProcess, version string) {
+	if process.reconnected {
+		m.monitorReconnected(process, version)
+		return
+	}
 	<-process.done
+	m.finishProcess(process, version)
+	process.cleanup()
+}
+
+// monitorReconnected 轮询后台业务端进程是否真实结束：
+// 登记中的进程身份不再匹配时视为业务端已结束，清理客户端连接状态。
+func (m *localBoxManager) monitorReconnected(process *localBoxProcess, version string) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-process.done:
+			m.finishProcess(process, version)
+			return
+		case <-ticker.C:
+			matches, err := localrun.ProcessMatches(process.registration.ProcessID, process.registration.ProcessStartedAt)
+			if err == nil && !matches {
+				m.finishProcess(process, version)
+				return
+			}
+		}
+	}
+}
+
+func (m *localBoxManager) finishProcess(process *localBoxProcess, version string) {
 	m.mu.Lock()
 	if m.process != process {
 		m.mu.Unlock()
@@ -504,7 +588,6 @@ func (m *localBoxManager) monitor(process *localBoxProcess, version string) {
 		onDisconnect()
 	}
 	m.publishState(state)
-	process.cleanup()
 }
 
 func (m *localBoxManager) stop(ctx context.Context) (localBoxState, error) {
@@ -525,7 +608,11 @@ func (m *localBoxManager) stop(ctx context.Context) (localBoxState, error) {
 	if err := process.requestStop(ctx); err != nil {
 		return m.installFailure(state, "LOCAL_BOX_STOP_FAILED", err.Error(), localBoxStatusStopping)
 	}
-	if err := process.wait(ctx); err != nil {
+	if process.reconnected {
+		if err := waitBackgroundProcessExit(ctx, process.registration); err != nil {
+			return m.installFailure(state, "LOCAL_BOX_NOT_STOPPED", err.Error(), localBoxStatusStopping)
+		}
+	} else if err := process.wait(ctx); err != nil {
 		return m.installFailure(state, "LOCAL_BOX_NOT_STOPPED", err.Error(), localBoxStatusStopping)
 	}
 	m.mu.Lock()
@@ -538,11 +625,34 @@ func (m *localBoxManager) stop(ctx context.Context) (localBoxState, error) {
 	if onDisconnect != nil {
 		onDisconnect()
 	}
-	process.cleanup()
+	if !process.reconnected {
+		process.cleanup()
+	}
 	state.Status = localBoxStatusStopped
 	state.Installed = true
 	m.publishState(state)
 	return state, nil
+}
+
+// waitBackgroundProcessExit 等待后台业务端进程真实结束；
+// 登记中的进程身份不再匹配时视为已经退出。
+func waitBackgroundProcessExit(ctx context.Context, registration localrun.Registration) error {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			matches, err := localrun.ProcessMatches(registration.ProcessID, registration.ProcessStartedAt)
+			if err != nil {
+				return fmt.Errorf("核对后台业务端进程失败：%w", err)
+			}
+			if !matches {
+				return nil
+			}
+		}
+	}
 }
 
 func (m *localBoxManager) currentProcess() *localBoxProcess {

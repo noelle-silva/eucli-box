@@ -11,13 +11,13 @@ import (
 	"eucli-box/pkg/workspace"
 )
 
-func Stage01(ctx context.Context, repositoryRoot string, runRoot string) error {
-	paths, err := prepareRun(repositoryRoot, runRoot, "01")
+func VerifyReleaseBuild(ctx context.Context, repositoryRoot string, runRoot string) error {
+	paths, err := prepareRun(repositoryRoot, runRoot, "verify-release-build")
 	if err != nil {
 		return err
 	}
-	recorder := newRecorder("01", "full", paths.root)
-	fmt.Printf("阶段一验证目录：%s\n", paths.root)
+	recorder := newRecorder("verify-release-build", "full", paths.root)
+	fmt.Printf("发布成品制作验证目录：%s\n", paths.root)
 
 	dataBefore, dataErr := directorySnapshot(filepath.Join(repositoryRoot, "data"))
 	if dataErr != nil {

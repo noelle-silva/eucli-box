@@ -34,7 +34,7 @@ func TestPrepareRunRejectsReparsePointRunRoot(t *testing.T) {
 		_ = os.RemoveAll(externalRoot)
 	})
 
-	if _, err := prepareRun(repositoryRoot, runRoot, "01"); err == nil {
+	if _, err := prepareRun(repositoryRoot, runRoot, "verify-release-build"); err == nil {
 		t.Fatal("expected reparse point run root rejection")
 	}
 	if payload, err := os.ReadFile(marker); err != nil || string(payload) != "must-remain" {
@@ -55,7 +55,7 @@ func TestPrepareRunRejectsReparsePointInRunPath(t *testing.T) {
 	t.Cleanup(func() { _ = os.Remove(workspaceRoot) })
 
 	runRoot := filepath.Join(workspace.VerificationStageRoot(repositoryRoot, "01"), "run-parent-reparse")
-	if _, err := prepareRun(repositoryRoot, runRoot, "01"); err == nil {
+	if _, err := prepareRun(repositoryRoot, runRoot, "verify-release-build"); err == nil {
 		t.Fatal("expected reparse point run path rejection")
 	}
 	marker := filepath.Join(externalRoot, "marker.txt")

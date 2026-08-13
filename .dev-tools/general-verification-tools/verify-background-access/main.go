@@ -19,7 +19,7 @@ func main() {
 }
 
 func run(ctx context.Context, args []string) error {
-	flags := flag.NewFlagSet("verify-client-install", flag.ContinueOnError)
+	flags := flag.NewFlagSet("verify-background-access", flag.ContinueOnError)
 	rootValue := flags.String("root", ".", "repository root")
 	runRoot := flags.String("run-root", "", "isolated verification run root")
 	mode := flags.String("mode", "", "stage mode")
@@ -33,5 +33,5 @@ func run(ctx context.Context, args []string) error {
 	if strings.TrimSpace(*runRoot) == "" {
 		return fmt.Errorf("必须指定 -run-root")
 	}
-	return releaseverify.VerifyClientInstall(ctx, root, *runRoot, *mode)
+	return releaseverify.BackgroundAccess(ctx, root, *runRoot, *mode)
 }

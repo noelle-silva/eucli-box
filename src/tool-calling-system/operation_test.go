@@ -75,6 +75,10 @@ type toolOperationFixture struct {
 func newToolOperationFixture(t *testing.T) *toolOperationFixture {
 	t.Helper()
 	dataRoot := t.TempDir()
+	now := time.Now().UTC()
+	if err := datastorage.WriteStorageVersion(context.Background(), dataRoot, datastorage.StorageVersion{Version: "1.0.0", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("WriteStorageVersion() error = %v", err)
+	}
 	programRoot := filepath.Join(t.TempDir(), "program", "tools")
 	storage, err := datastorage.NewSystem(datastorage.Config{RootDir: dataRoot, ToolBodiesRoot: programRoot})
 	if err != nil {

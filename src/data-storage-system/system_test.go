@@ -762,7 +762,12 @@ func TestRejectsUnsafeIDs(t *testing.T) {
 
 func newTestSystem(t *testing.T) *system {
 	t.Helper()
-	created, err := NewSystem(Config{RootDir: t.TempDir()})
+	root := t.TempDir()
+	now := time.Now().UTC()
+	if err := WriteStorageVersion(context.Background(), root, StorageVersion{Version: "1.0.0", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("WriteStorageVersion() error = %v", err)
+	}
+	created, err := NewSystem(Config{RootDir: root})
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}

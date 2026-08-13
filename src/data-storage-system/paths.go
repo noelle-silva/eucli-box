@@ -55,8 +55,6 @@ func (p paths) stickersRoot() string   { return filepath.Join(p.root, "stickers"
 func (p paths) recycleRoot() string    { return filepath.Join(p.root, "recycle") }
 func (p paths) metaRoot() string       { return filepath.Join(p.root, "meta") }
 
-func (p paths) metaVersionFile() string { return filepath.Join(p.metaRoot(), "version.json") }
-
 func (p paths) sessionFavoritesFile() string {
 	return filepath.Join(p.sessionsRoot(), "favorites.json")
 }

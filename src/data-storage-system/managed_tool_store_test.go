@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"eucli-box/pkg/release"
 	"eucli-box/pkg/types"
@@ -15,6 +16,10 @@ import (
 func newManagedTestSystem(t *testing.T) (*system, string) {
 	t.Helper()
 	root := t.TempDir()
+	now := time.Now().UTC()
+	if err := WriteStorageVersion(context.Background(), root, StorageVersion{Version: "1.0.0", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("WriteStorageVersion() error = %v", err)
+	}
 	programRoot := filepath.Join(t.TempDir(), "program", "tools")
 	created, err := NewSystem(Config{RootDir: root, ToolBodiesRoot: programRoot})
 	if err != nil {

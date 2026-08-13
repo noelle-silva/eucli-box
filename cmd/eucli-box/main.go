@@ -26,6 +26,7 @@ import (
 	accesssystem "eucli-box/src/access-system"
 	agentruntime "eucli-box/src/agent-runtime-system"
 	aiassist "eucli-box/src/ai-assist-system"
+	datamigration "eucli-box/src/data-migration-system"
 	datastorage "eucli-box/src/data-storage-system"
 	gateway "eucli-box/src/gateway-system"
 	modelprovider "eucli-box/src/model-provider-system"
@@ -110,6 +111,23 @@ func run() error {
 			return err
 		}
 	}
+	migrationSession, err := datamigration.Prepare(ctx, dataDir, boxRelease.DataVersion)
+	if err != nil {
+		return fmt.Errorf("数据迁移准备失败：%w", err)
+	}
+	if err := migrationSession.Run(ctx); err != nil {
+		return fmt.Errorf("数据迁移执行失败：%w", err)
+	}
+	outcome := migrationSession.Outcome()
+	log.Printf("数据迁移结果：%s（数据版本 %s → %s）", outcome.State, outcome.From, outcome.To)
+	migrationCompleted := false
+	defer func() {
+		if !migrationCompleted {
+			if recoverErr := migrationSession.Recover(context.Background()); recoverErr != nil {
+				log.Printf("数据恢复失败：%v（现场保留在迁移工作区，需要人工处理）", recoverErr)
+			}
+		}
+	}()
 	toolBodiesRoot := ""
 	toolProgramRoot := ""
 	if programRoot != "" {
@@ -257,8 +275,18 @@ func run() error {
 			_ = gatewaySystem.Shutdown(context.Background())
 			return err
 		}
-	} else if err := gatewaySystem.Start(ctx); err != nil {
-		return fmt.Errorf("start gateway listener: %w", err)
+		if err := migrationSession.Complete(ctx); err != nil {
+			return fmt.Errorf("数据迁移收尾失败：%w", err)
+		}
+		migrationCompleted = true
+	} else {
+		if err := gatewaySystem.Start(ctx); err != nil {
+			return fmt.Errorf("start gateway listener: %w", err)
+		}
+		if err := migrationSession.Complete(ctx); err != nil {
+			return fmt.Errorf("数据迁移收尾失败：%w", err)
+		}
+		migrationCompleted = true
 	}
 	accessSystem.Start(ctx)
 	log.Printf("eucli-box v%s is ready — listening on %s", boxRelease.Version, endpoint)

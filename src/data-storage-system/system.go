@@ -2,11 +2,10 @@ package datastorage
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
-	"time"
 
-	"eucli-box/internal/boxrelease"
 	"eucli-box/pkg/types"
 )
 
@@ -135,31 +134,13 @@ func (s *system) Initialize(ctx context.Context) error {
 	if err := ensureDirs(s.paths.baseDirs()...); err != nil {
 		return storageInitFailed("failed to create data directories", err)
 	}
-	releaseInfo, err := boxrelease.Load()
-	if err != nil {
-		return storageInitFailed("failed to read target data version", err)
-	}
-	now := time.Now().UTC()
-	version := storageVersion{Version: releaseInfo.DataVersion, CreatedAt: now, UpdatedAt: now}
-	if dataFileExists(s.paths.metaVersionFile()) {
-		current, err := readJSON[storageVersion](ctx, s.paths.metaVersionFile())
-		if err != nil {
-			return storageInitFailed("failed to read storage version", err)
-		}
-		current.UpdatedAt = now
-		version = current
-	}
-	if err := writeJSON(ctx, s.paths.metaVersionFile(), version); err != nil {
-		return storageInitFailed("failed to write storage version", err)
+	if _, exists, err := ReadStorageVersion(ctx, s.paths.root); err != nil {
+		return storageInitFailed("data version fact is missing or invalid", err)
+	} else if !exists {
+		return storageInitFailed("data version fact is missing or invalid", errors.New("meta/version.json does not exist"))
 	}
 	if err := s.ensureSessionFavoritesFile(ctx); err != nil {
 		return err
 	}
 	return s.RebuildIndexes(ctx)
-}
-
-type storageVersion struct {
-	Version   string    `json:"version"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
 }

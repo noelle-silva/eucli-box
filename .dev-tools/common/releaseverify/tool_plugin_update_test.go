@@ -13,7 +13,7 @@ import (
 
 func TestToolPluginUpdateRejectsInvalidMode(t *testing.T) {
 	repositoryRoot := t.TempDir()
-	runRoot := filepath.Join(workspace.VerificationStageRoot(repositoryRoot, "04"), "run-mode")
+	runRoot := filepath.Join(workspace.VerificationToolRoot(repositoryRoot, "verify-tool-plugin-update"), "run-mode")
 	if err := os.MkdirAll(runRoot, 0o755); err != nil {
 		t.Fatalf("create run root: %v", err)
 	}
@@ -32,7 +32,7 @@ func TestToolPluginUpdateRejectsOutsideDirectory(t *testing.T) {
 
 func TestToolPluginUpdateRecordsReportForFailedBuild(t *testing.T) {
 	repositoryRoot := t.TempDir()
-	runRoot := filepath.Join(workspace.VerificationStageRoot(repositoryRoot, "04"), "run-fail")
+	runRoot := filepath.Join(workspace.VerificationToolRoot(repositoryRoot, "verify-tool-plugin-update"), "run-fail")
 	if err := os.MkdirAll(runRoot, 0o755); err != nil {
 		t.Fatalf("create run root: %v", err)
 	}

@@ -18,7 +18,7 @@ import (
 func TestFinalizerCleansBootstrapDirectoriesAndCompletesReport(t *testing.T) {
 	repositoryRoot := repositoryRootForTest(t)
 	runRoot := filepath.Join(
-		workspace.VerificationStageRoot(repositoryRoot, "02"),
+		workspace.VerificationToolRoot(repositoryRoot, "verify-release-publish"),
 		fmt.Sprintf("run-finalizer-test-%d", time.Now().UnixNano()),
 	)
 	t.Cleanup(func() { _ = os.RemoveAll(runRoot) })
@@ -69,7 +69,7 @@ func TestFinalizerCleansBootstrapDirectoriesAndCompletesReport(t *testing.T) {
 func TestFinalizerPassesChecksAndReportsManualCleanupWhenDeleteFails(t *testing.T) {
 	repositoryRoot := repositoryRootForTest(t)
 	runRoot := filepath.Join(
-		workspace.VerificationStageRoot(repositoryRoot, "02"),
+		workspace.VerificationToolRoot(repositoryRoot, "verify-release-publish"),
 		fmt.Sprintf("run-finalizer-manual-%d", time.Now().UnixNano()),
 	)
 	t.Cleanup(func() { _ = os.RemoveAll(runRoot) })
@@ -125,7 +125,7 @@ func TestFinalizerPassesChecksAndReportsManualCleanupWhenDeleteFails(t *testing.
 func TestFinalizerCleansLongPathTree(t *testing.T) {
 	repositoryRoot := repositoryRootForTest(t)
 	runRoot := filepath.Join(
-		workspace.VerificationStageRoot(repositoryRoot, "02"),
+		workspace.VerificationToolRoot(repositoryRoot, "verify-release-publish"),
 		fmt.Sprintf("run-finalizer-long-path-%d", time.Now().UnixNano()),
 	)
 	t.Cleanup(func() { _ = os.RemoveAll(runRoot) })
@@ -177,7 +177,7 @@ func TestFinalizerCleansLongPathTree(t *testing.T) {
 func TestFinalizerRejectsMismatchedToolWithoutCleaning(t *testing.T) {
 	repositoryRoot := repositoryRootForTest(t)
 	runRoot := filepath.Join(
-		workspace.VerificationStageRoot(repositoryRoot, "02"),
+		workspace.VerificationToolRoot(repositoryRoot, "verify-release-publish"),
 		fmt.Sprintf("run-finalizer-mismatch-%d", time.Now().UnixNano()),
 	)
 	t.Cleanup(func() { _ = os.RemoveAll(runRoot) })
@@ -214,7 +214,7 @@ func TestFinalizerRejectsReparsePointWithoutCleaning(t *testing.T) {
 	repositoryRoot := repositoryRootForTest(t)
 	verificationRoot := workspace.VerificationRoot(repositoryRoot)
 	identifier := time.Now().UnixNano()
-	runRoot := filepath.Join(verificationRoot, "stage-02", fmt.Sprintf("run-finalizer-reparse-%d", identifier))
+	runRoot := filepath.Join(verificationRoot, "verify-release-publish", fmt.Sprintf("run-finalizer-reparse-%d", identifier))
 	externalRoot := filepath.Join(verificationRoot, fmt.Sprintf("finalizer-external-%d", identifier))
 	junction := filepath.Join(runRoot, "workspace", "external-link")
 	t.Cleanup(func() {

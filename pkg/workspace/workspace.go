@@ -50,14 +50,14 @@ func LogsRoot(repositoryRoot string) string {
 	return filepath.Join(ReleaseRoot(repositoryRoot), "logs")
 }
 
-// VerificationRoot 返回阶段自动验证根。
+// VerificationRoot 返回发布验证根。
 func VerificationRoot(repositoryRoot string) string {
 	return filepath.Join(ReleaseRoot(repositoryRoot), "verification")
 }
 
-// VerificationStageRoot 返回指定阶段的验证隔离根。
-func VerificationStageRoot(repositoryRoot string, stage string) string {
-	return filepath.Join(VerificationRoot(repositoryRoot), "stage-"+stage)
+// VerificationToolRoot 返回指定验证工具的验证隔离根。
+func VerificationToolRoot(repositoryRoot string, tool string) string {
+	return filepath.Join(VerificationRoot(repositoryRoot), tool)
 }
 
 // VerificationCacheRoot 返回验证区公共缓存根。

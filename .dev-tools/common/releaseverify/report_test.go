@@ -88,7 +88,7 @@ func TestRecorderFinishRetainsFailedVerification(t *testing.T) {
 func newRunPathsForTest(t *testing.T) runPaths {
 	t.Helper()
 	repositoryRoot := t.TempDir()
-	runRoot := filepath.Join(workspace.VerificationStageRoot(repositoryRoot, "01"), "run-test")
+	runRoot := filepath.Join(workspace.VerificationToolRoot(repositoryRoot, "verify-release-build"), "run-test")
 	paths, err := prepareRun(repositoryRoot, runRoot, "verify-release-build")
 	if err != nil {
 		t.Fatalf("prepare run: %v", err)

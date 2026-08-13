@@ -13,8 +13,8 @@ import (
 
 func TestPrepareRunRejectsReparsePointRunRoot(t *testing.T) {
 	repositoryRoot := t.TempDir()
-	stageRoot := workspace.VerificationStageRoot(repositoryRoot, "01")
-	runRoot := filepath.Join(stageRoot, "run-reparse")
+	toolRoot := workspace.VerificationToolRoot(repositoryRoot, "verify-release-build")
+	runRoot := filepath.Join(toolRoot, "run-reparse")
 	externalRoot := filepath.Join(repositoryRoot, "outside")
 	if err := os.MkdirAll(externalRoot, 0o755); err != nil {
 		t.Fatalf("create external root: %v", err)
@@ -23,8 +23,8 @@ func TestPrepareRunRejectsReparsePointRunRoot(t *testing.T) {
 	if err := os.WriteFile(marker, []byte("must-remain"), 0o644); err != nil {
 		t.Fatalf("write marker: %v", err)
 	}
-	if err := os.MkdirAll(stageRoot, 0o755); err != nil {
-		t.Fatalf("create stage root: %v", err)
+	if err := os.MkdirAll(toolRoot, 0o755); err != nil {
+		t.Fatalf("create tool root: %v", err)
 	}
 	if output, err := exec.Command("cmd.exe", "/d", "/c", "mklink", "/J", runRoot, externalRoot).CombinedOutput(); err != nil {
 		t.Fatalf("create junction: %v\n%s", err, output)
@@ -54,7 +54,7 @@ func TestPrepareRunRejectsReparsePointInRunPath(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Remove(workspaceRoot) })
 
-	runRoot := filepath.Join(workspace.VerificationStageRoot(repositoryRoot, "01"), "run-parent-reparse")
+	runRoot := filepath.Join(workspace.VerificationToolRoot(repositoryRoot, "verify-release-build"), "run-parent-reparse")
 	if _, err := prepareRun(repositoryRoot, runRoot, "verify-release-build"); err == nil {
 		t.Fatal("expected reparse point run path rejection")
 	}

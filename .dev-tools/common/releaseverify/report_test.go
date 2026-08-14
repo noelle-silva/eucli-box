@@ -93,6 +93,10 @@ func newRunPathsForTest(t *testing.T) runPaths {
 	if err != nil {
 		t.Fatalf("prepare run: %v", err)
 	}
+	// work 目录由正式入口（invoke-verification.ps1）预建；测试夹具模拟入口行为。
+	if err := os.MkdirAll(paths.work, 0o755); err != nil {
+		t.Fatalf("create work directory: %v", err)
+	}
 	return paths
 }
 

@@ -55,9 +55,9 @@ func VerificationRoot(repositoryRoot string) string {
 	return filepath.Join(ReleaseRoot(repositoryRoot), "verification")
 }
 
-// VerificationToolRoot 返回指定验证工具的验证隔离根。
+// VerificationToolRoot 返回指定验证工具的运行隔离根（开发工具迁移后的新布局）。
 func VerificationToolRoot(repositoryRoot string, tool string) string {
-	return filepath.Join(VerificationRoot(repositoryRoot), tool)
+	return filepath.Join(repositoryRoot, ".dev-workspace", ".dev-tools-runtime", tool)
 }
 
 // VerificationCacheRoot 返回验证区公共缓存根。

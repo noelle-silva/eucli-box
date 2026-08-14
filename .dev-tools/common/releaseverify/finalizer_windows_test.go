@@ -30,7 +30,7 @@ func TestFinalizerCleansBootstrapDirectoriesAndCompletesReport(t *testing.T) {
 		}
 	}
 	report := Report{
-		Tool:   "verify-release-publish",
+		Tool:    "verify-release-publish",
 		Mode:    "preflight",
 		RunRoot: runRoot,
 		Status:  "cleanup_pending",
@@ -99,7 +99,7 @@ func TestFinalizerPassesChecksAndReportsManualCleanupWhenDeleteFails(t *testing.
 	}
 	t.Cleanup(func() { _ = syscall.CloseHandle(lockedHandle) })
 	report := Report{
-		Tool:   "verify-release-publish",
+		Tool:    "verify-release-publish",
 		Mode:    "preflight",
 		RunRoot: runRoot,
 		Status:  "cleanup_pending",
@@ -151,7 +151,7 @@ func TestFinalizerCleansLongPathTree(t *testing.T) {
 		t.Fatalf("write long path fixture: %v", err)
 	}
 	report := Report{
-		Tool:   "verify-release-publish",
+		Tool:    "verify-release-publish",
 		Mode:    "preflight",
 		RunRoot: runRoot,
 		Status:  "cleanup_pending",
@@ -189,7 +189,7 @@ func TestFinalizerRejectsMismatchedToolWithoutCleaning(t *testing.T) {
 		}
 	}
 	report := Report{
-		Tool:   "verify-release-publish",
+		Tool:    "verify-release-publish",
 		Mode:    "preflight",
 		RunRoot: runRoot,
 		Status:  "cleanup_pending",
@@ -212,10 +212,9 @@ func TestFinalizerRejectsMismatchedToolWithoutCleaning(t *testing.T) {
 
 func TestFinalizerRejectsReparsePointWithoutCleaning(t *testing.T) {
 	repositoryRoot := repositoryRootForTest(t)
-	verificationRoot := workspace.VerificationRoot(repositoryRoot)
 	identifier := time.Now().UnixNano()
-	runRoot := filepath.Join(verificationRoot, "verify-release-publish", fmt.Sprintf("run-finalizer-reparse-%d", identifier))
-	externalRoot := filepath.Join(verificationRoot, fmt.Sprintf("finalizer-external-%d", identifier))
+	runRoot := filepath.Join(workspace.VerificationToolRoot(repositoryRoot, "verify-release-publish"), fmt.Sprintf("run-finalizer-reparse-%d", identifier))
+	externalRoot := t.TempDir()
 	junction := filepath.Join(runRoot, "workspace", "external-link")
 	t.Cleanup(func() {
 		_ = os.Remove(junction)
@@ -240,7 +239,7 @@ func TestFinalizerRejectsReparsePointWithoutCleaning(t *testing.T) {
 		t.Fatalf("create junction fixture: %v\n%s", err, output)
 	}
 	report := Report{
-		Tool:   "verify-release-publish",
+		Tool:    "verify-release-publish",
 		Mode:    "preflight",
 		RunRoot: runRoot,
 		Status:  "cleanup_pending",
@@ -269,7 +268,7 @@ func TestFinalizerRejectsReparsePointWithoutCleaning(t *testing.T) {
 }
 
 func runFinalizerForTest(repositoryRoot string, runRoot string, tool string, mode string) ([]byte, error) {
-	script := filepath.Join(repositoryRoot, "scripts", "release", "finalize-verification.ps1")
+	script := filepath.Join(repositoryRoot, ".dev-tools", "common", "verification-runtime", "finalize-verification.ps1")
 	command := exec.Command(
 		"powershell.exe",
 		"-NoLogo",
@@ -305,12 +304,21 @@ func repositoryRootForTest(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("get working directory: %v", err)
 	}
-	repositoryRoot, err := filepath.Abs(filepath.Join(workingDirectory, "..", ".."))
+	current, err := filepath.Abs(workingDirectory)
 	if err != nil {
-		t.Fatalf("resolve repository root: %v", err)
+		t.Fatalf("resolve working directory: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(repositoryRoot, "go.mod")); err != nil {
-		t.Fatalf("repository root is invalid: %v", err)
+	// 主仓库根特征：同时具备 go.mod 与 .dev-tools；开发工具模块自身的 go.mod 不是主仓库根。
+	for {
+		if _, err := os.Stat(filepath.Join(current, "go.mod")); err == nil {
+			if _, err := os.Stat(filepath.Join(current, ".dev-tools")); err == nil {
+				return current
+			}
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			t.Fatalf("repository root not found from %s", workingDirectory)
+		}
+		current = parent
 	}
-	return repositoryRoot
 }

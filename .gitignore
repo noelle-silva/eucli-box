@@ -52,3 +52,4 @@ Thumbs.db
 
 .worktrees/
 .dev-management/
+.backup/

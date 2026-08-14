@@ -90,13 +90,15 @@ func runDevLocalBoxDefault(ctx context.Context, root string, paths runPaths, rec
 }
 
 // devLocalBoxTestEnvironment 为开发业务端测试提供隔离的开发资料布局，
-// 与开发体验入口 .dev-workspace/.dev-runtime/ 的目录语义一致。
+// 与开发体验入口 .dev-workspace/.dev-runtime/ 的目录语义一致，
+// 环境变量名与真实入口 start-dev-box.ps1 和客户端读取方 local_box_source.go 完全对齐。
 func devLocalBoxTestEnvironment(paths runPaths, archivePath string, manifestPath string) map[string]string {
 	devRuntime := filepath.Join(paths.environment, "dev-runtime")
 	return map[string]string{
-		"EUCLI_DEVBOX_ARCHIVE":         archivePath,
-		"EUCLI_DEVBOX_MANIFEST":        manifestPath,
-		"EUCLI_DEVBOX_BOX_ROOT":        filepath.Join(devRuntime, "eucli-box"),
-		"EUCLI_DEVBOX_CLIENT_DATA_DIR": filepath.Join(devRuntime, "client", "data"),
+		"EUCLI_DEV_BOX_SOURCE":   "1",
+		"EUCLI_DEV_BOX_MANIFEST": manifestPath,
+		"EUCLI_DEV_BOX_ARCHIVE":  archivePath,
+		"EUCLI_DEV_BOX_BOX_ROOT": filepath.Join(devRuntime, "eucli-box"),
+		"FW_APP_DATA_DIR":        filepath.Join(devRuntime, "client", "data"),
 	}
 }

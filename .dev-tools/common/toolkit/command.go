@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // RunCommand 在显式工作目录执行命令，输出写入产物格的证据日志。
@@ -35,6 +36,7 @@ func RunCommand(ctx context.Context, name string, workdir string, evidenceDir st
 
 // RunCommandCapture 执行命令、写证据日志并返回标准输出。
 func RunCommandCapture(ctx context.Context, name string, workdir string, evidenceDir string, tempDir string, extraEnv map[string]string, command string, args ...string) (string, error) {
+	started := time.Now()
 	fmt.Printf("[工具] 开始：%s\n", name)
 	if err := os.MkdirAll(filepath.Join(tempDir, "go"), 0o755); err != nil {
 		return "", fmt.Errorf("建立临时 Go 工作目录失败：%w", err)
@@ -60,10 +62,10 @@ func RunCommandCapture(ctx context.Context, name string, workdir string, evidenc
 		return stdout.String(), writeErr
 	}
 	if err != nil {
-		fmt.Printf("[工具] 失败：%s\n", name)
+		fmt.Printf("[工具] 失败：%s（%s）\n", name, FormatElapsed(time.Since(started)))
 		return stdout.String(), fmt.Errorf("%w：%s", err, strings.TrimSpace(stderr.String()))
 	}
-	fmt.Printf("[工具] 完成：%s\n", name)
+	fmt.Printf("[工具] 完成：%s（%s）\n", name, FormatElapsed(time.Since(started)))
 	return stdout.String(), nil
 }
 

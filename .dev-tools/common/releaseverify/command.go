@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 func runCommand(ctx context.Context, paths runPaths, name string, workdir string, command string, args ...string) error {
@@ -17,6 +18,7 @@ func runCommand(ctx context.Context, paths runPaths, name string, workdir string
 }
 
 func runCommandWithEnvironment(ctx context.Context, paths runPaths, name string, workdir string, command string, extra map[string]string, args ...string) error {
+	started := time.Now()
 	fmt.Printf("[验证] 开始：%s\n", name)
 	cmd := exec.CommandContext(ctx, command, args...)
 	cmd.Dir = workdir
@@ -34,14 +36,14 @@ func runCommandWithEnvironment(ctx context.Context, paths runPaths, name string,
 	payload = append(payload, []byte("\nstderr:\n")...)
 	payload = append(payload, stderr.Bytes()...)
 	if writeErr := os.WriteFile(logPath, payload, 0o644); writeErr != nil {
-		fmt.Printf("[验证] 失败：%s（证据写入失败）\n", name)
+		fmt.Printf("[验证] 失败：%s（证据写入失败，%s）\n", name, formatElapsed(time.Since(started)))
 		return writeErr
 	}
 	if err != nil {
-		fmt.Printf("[验证] 失败：%s\n", name)
+		fmt.Printf("[验证] 失败：%s（%s）\n", name, formatElapsed(time.Since(started)))
 		return fmt.Errorf("%w：%s", err, strings.TrimSpace(stderr.String()))
 	}
-	fmt.Printf("[验证] 完成：%s\n", name)
+	fmt.Printf("[验证] 完成：%s（%s）\n", name, formatElapsed(time.Since(started)))
 	return nil
 }
 

@@ -43,8 +43,9 @@ type VerificationReport struct {
 
 // VerificationRecorder 记录逐项检查并生成与收尾脚本协议一致的总报告。
 type VerificationRecorder struct {
-	report VerificationReport
-	errors []error
+	report    VerificationReport
+	errors    []error
+	lastCheck time.Time
 }
 
 // NewVerificationRecorder 为一次运行建立报告器。
@@ -59,12 +60,22 @@ func NewVerificationRecorder(tool string, mode string, runRoot string) *Verifica
 			Checks:    []VerificationCheck{},
 			Cleanup:   newVerificationCleanup("not_started", nil, nil),
 		},
+		lastCheck: time.Now(),
 	}
+}
+
+// elapsedSinceLast 返回距上一次检查记录的耗时，并刷新计时基准。
+func (r *VerificationRecorder) elapsedSinceLast() time.Duration {
+	now := time.Now()
+	elapsed := now.Sub(r.lastCheck)
+	r.lastCheck = now
+	return elapsed
 }
 
 // Pass 记录一项通过。
 func (r *VerificationRecorder) Pass(name string, summary string) {
 	r.report.Checks = append(r.report.Checks, VerificationCheck{Name: name, Status: "passed", Summary: strings.TrimSpace(summary)})
+	fmt.Printf("[检查] 通过：%s（%s）\n", name, FormatElapsed(r.elapsedSinceLast()))
 }
 
 // Fail 记录一项失败。
@@ -74,6 +85,16 @@ func (r *VerificationRecorder) Fail(name string, err error) {
 	}
 	r.report.Checks = append(r.report.Checks, VerificationCheck{Name: name, Status: "failed", Summary: err.Error()})
 	r.errors = append(r.errors, fmt.Errorf("%s：%w", name, err))
+	fmt.Printf("[检查] 失败：%s（%s）\n", name, FormatElapsed(r.elapsedSinceLast()))
+}
+
+// FormatElapsed 输出人类可读的耗时文本。
+func FormatElapsed(value time.Duration) string {
+	rounded := value.Round(time.Millisecond)
+	if rounded < time.Second {
+		return fmt.Sprintf("%d 毫秒", rounded.Milliseconds())
+	}
+	return fmt.Sprintf("%.1f 秒", rounded.Seconds())
 }
 
 // Finish 写 evidence/report.json 并返回检查是否全部通过。

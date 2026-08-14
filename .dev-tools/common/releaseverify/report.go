@@ -39,8 +39,9 @@ type Report struct {
 }
 
 type recorder struct {
-	report Report
-	errors []error
+	report    Report
+	errors    []error
+	lastCheck time.Time
 }
 
 func newRecorder(tool string, mode string, runRoot string) *recorder {
@@ -52,11 +53,20 @@ func newRecorder(tool string, mode string, runRoot string) *recorder {
 		Status:    "running",
 		Checks:    []Check{},
 		Cleanup:   newCleanup("not_started", nil, nil),
-	}}
+	}, lastCheck: time.Now()}
+}
+
+// elapsedSinceLast 返回距上一次检查记录的耗时，并刷新计时基准。
+func (r *recorder) elapsedSinceLast() time.Duration {
+	now := time.Now()
+	elapsed := now.Sub(r.lastCheck)
+	r.lastCheck = now
+	return elapsed
 }
 
 func (r *recorder) pass(name string, summary string) {
 	r.report.Checks = append(r.report.Checks, Check{Name: name, Status: "passed", Summary: strings.TrimSpace(summary)})
+	fmt.Printf("[检查] 通过：%s（%s）\n", name, formatElapsed(r.elapsedSinceLast()))
 }
 
 func (r *recorder) fail(name string, err error) {
@@ -65,6 +75,16 @@ func (r *recorder) fail(name string, err error) {
 	}
 	r.report.Checks = append(r.report.Checks, Check{Name: name, Status: "failed", Summary: err.Error()})
 	r.errors = append(r.errors, fmt.Errorf("%s：%w", name, err))
+	fmt.Printf("[检查] 失败：%s（%s）\n", name, formatElapsed(r.elapsedSinceLast()))
+}
+
+// formatElapsed 输出人类可读的耗时文本。
+func formatElapsed(value time.Duration) string {
+	rounded := value.Round(time.Millisecond)
+	if rounded < time.Second {
+		return fmt.Sprintf("%d 毫秒", rounded.Milliseconds())
+	}
+	return fmt.Sprintf("%.1f 秒", rounded.Seconds())
 }
 
 func (r *recorder) finish(paths runPaths) error {

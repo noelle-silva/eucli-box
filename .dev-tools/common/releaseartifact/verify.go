@@ -146,25 +146,29 @@ func verifyWorkspace(workspaceValue string) (string, string, string, string, err
 	if err := os.MkdirAll(workspace, 0o755); err != nil {
 		return "", "", "", "", fmt.Errorf("建立验收工作区失败：%w", err)
 	}
+	// 解包内容直接落在工作区根，因此工作区根必须先保持为空；
+	// evidence/environment/temp 三个辅助子目录在解包完成后建立。
 	evidenceDir := filepath.Join(workspace, "evidence")
 	environmentDir := filepath.Join(workspace, "environment")
 	tempDir := filepath.Join(workspace, "temp")
-	for _, directory := range []string{evidenceDir, environmentDir, tempDir} {
-		if err := os.MkdirAll(directory, 0o755); err != nil {
-			return "", "", "", "", err
-		}
-	}
 	return workspace, evidenceDir, environmentDir, tempDir, nil
 }
 
 // verifyProductContent 完成解包、包内核对、真实启动验收并写下验收证据。
 func verifyProductContent(ctx context.Context, archivePath string, product types.ReleaseProductRecord, evidenceDir string, environmentDir string, tempDir string, timeout time.Duration) (string, error) {
-	extracted := filepath.Join(filepath.Dir(evidenceDir), "extracted")
+	// 解包目标直接是验收工作区根，避免深嵌套使 Windows 路径超过 260 字符限制
+	// （scipy 等深层依赖在超长路径下无法访问，导致导入竞态）。
+	extracted := filepath.Dir(evidenceDir)
 	if err := os.MkdirAll(extracted, 0o755); err != nil {
 		return "", err
 	}
 	if err := release.ExtractArchive(release.ExtractArchiveOptions{ArchivePath: archivePath, TargetDir: extracted}); err != nil {
 		return "", err
+	}
+	for _, directory := range []string{evidenceDir, environmentDir, tempDir} {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			return "", err
+		}
 	}
 	if _, err := release.ValidateExtractedPackage(release.ValidateExtractedPackageOptions{Directory: extracted, Product: product}); err != nil {
 		return "", fmt.Errorf("解包后的成品边界无效：%w", err)
@@ -305,7 +309,13 @@ func launchTool(ctx context.Context, directory string, environment string, temp 
 			return err
 		}
 	}
-	cmd.Env = replaceEnvironment(os.Environ(), map[string]string{"TEMP": temp, "TMP": temp})
+	cmd.Env = replaceEnvironment(os.Environ(), map[string]string{
+		"TEMP": temp, "TMP": temp,
+		// 验收环境关闭 Python 字节码缓存：全新解包目录首次导入时并发生成 .pyc
+		// 会触发 scipy 等库的导入竞态（部分初始化循环导入），纯源码导入保持稳定。
+		"PYTHONDONTWRITEBYTECODE": "1",
+		"PYTHONPYCACHEPREFIX":     temp,
+	})
 	cmd.Stdin = strings.NewReader(`{"actionId":"release-verification","toolName":"` + definition.ID + `","arguments":` + arguments + `,"userConfig":{},"defaultConfig":{},"toolBodyDirectory":"` + escapeJSON(directory) + `","toolDataDirectory":"` + escapeJSON(toolDataDir) + `","hostWorkingDirectory":"` + escapeJSON(directory) + `"}`)
 	return captureJSONProcess(cmd, filepath.Join(evidence, "tool.stdout.json"), filepath.Join(evidence, "tool.stderr.log"), requireSuccess)
 }

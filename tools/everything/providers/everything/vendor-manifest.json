@@ -17,8 +17,8 @@
     },
     {
       "name": "License.txt",
-      "size": 2699,
-      "sha256": "c13d19adcbfd5d07e9512de9df99956a3423399ed1fadc5fd33186697ad8df2f"
+      "size": 2648,
+      "sha256": "0a2412bbd98a2ed4a26a4eee05f6119847a28211f8084cd306cadd2d4cbd979e"
     },
     {
       "name": "THIRD_PARTY_NOTICES.md",
@@ -31,5 +31,5 @@
       "sha256": "9a9b851f9da14a29626126d9b5f8ef71b569b3cf7e3e70bfbf57f4f00a9b9383"
     }
   ],
-  "treeSha256": "0fac39cb12f4cd36e58d9eede4635a54120d5264d8cb0549b1174f4739c68cb0"
+  "treeSha256": "513244c27e835c672e6b34682a29cbaf01846c433052e5d648f0babe1978ea6a"
 }

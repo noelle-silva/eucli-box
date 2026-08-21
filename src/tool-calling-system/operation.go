@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -276,24 +275,26 @@ func (s *system) probeTool(ctx context.Context, prepared release.PreparedProgram
 	if err != nil {
 		return toolExecutionInvalid("failed to encode probe input", err)
 	}
-	probeCtx, cancel := context.WithTimeout(ctx, s.config.ToolTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(probeCtx, executable)
-	cmd.Dir = prepared.Directory
-	cmd.Stdin = bytes.NewReader(input)
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		message := err.Error()
-		if stderr.Len() > 0 {
-			message = message + ": " + stderr.String()
+	outcome := s.executeToolProcess(ctx, executable, prepared.Directory, input, definition.ControlCapabilities)
+	if outcome.FailureKind != "" {
+		message := "tool probe failed: " + outcome.FailureKind
+		if outcome.FailureError != nil {
+			message += ": " + outcome.FailureError.Error()
 		}
-		return toolExecutionInvalid("tool probe failed: "+message, err)
+		return toolExecutionInvalid(message, outcome.FailureError)
+	}
+	if outcome.ExitError != nil {
+		message := outcome.ExitError.Error()
+		if stderr := strings.TrimSpace(string(outcome.Stderr)); stderr != "" {
+			message += ": " + stderr
+		}
+		return toolExecutionInvalid("tool probe failed: "+message, outcome.ExitError)
+	}
+	if outcome.FailureError != nil {
+		return toolExecutionInvalid("tool probe failed: "+outcome.FailureError.Error(), outcome.FailureError)
 	}
 	var output types.ToolExecutionOutput
-	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &output); err != nil {
+	if err := json.Unmarshal(bytes.TrimSpace(outcome.Stdout), &output); err != nil {
 		return toolExecutionInvalid("tool probe output is not valid json", err)
 	}
 	return nil

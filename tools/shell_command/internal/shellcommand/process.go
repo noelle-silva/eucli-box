@@ -25,8 +25,12 @@ type processResult struct {
 	StderrUTF8ReplacementCount   int
 	CombinedInvalidUTF8          bool
 	CombinedUTF8ReplacementCount int
+	FailureKind                  string
+	TerminationError             string
 	Error                        string
 }
+
+const providerTerminationWait = 5 * time.Second
 
 func runProviderCommand(ctx context.Context, provider selectedProvider, request commandRequest, workdir string) processResult {
 	startedAt := time.Now()
@@ -37,8 +41,8 @@ func runProviderCommand(ctx context.Context, provider selectedProvider, request 
 	if err != nil {
 		return processResult{ExitCode: -1, DurationMs: elapsedMs(startedAt), Error: err.Error()}
 	}
-	processCtx, cancel := context.WithTimeout(ctx, time.Duration(request.TimeoutMs)*time.Millisecond)
-	defer cancel()
+	commandTimeout := time.NewTimer(time.Duration(request.TimeoutMs) * time.Millisecond)
+	defer commandTimeout.Stop()
 	cmd := exec.Command(provider.Executable, args...)
 	cmd.Dir = workdir
 	cmd.Env = providerEnv(provider.Config, os.Environ())
@@ -52,17 +56,53 @@ func runProviderCommand(ctx context.Context, provider selectedProvider, request 
 	go func() { waitCh <- cmd.Wait() }()
 	var waitErr error
 	timedOut := false
+	failureKind := ""
+	terminationError := ""
 	select {
 	case waitErr = <-waitCh:
-	case <-processCtx.Done():
-		timedOut = errors.Is(processCtx.Err(), context.DeadlineExceeded)
+	case <-commandTimeout.C:
+		if ctx.Err() != nil {
+			if cmd.Process != nil {
+				if err := terminateProcessTree(cmd.Process.Pid); err != nil {
+					terminationError = err.Error()
+				}
+			}
+			select {
+			case waitErr = <-waitCh:
+			case <-time.After(providerTerminationWait):
+				if terminationError == "" {
+					terminationError = "process did not exit after termination"
+				}
+				waitErr = fmt.Errorf("%s", terminationError)
+			}
+			break
+		}
+		timedOut = true
+		failureKind = "command_timeout"
 		if cmd.Process != nil {
-			_ = terminateProcessTree(cmd.Process.Pid)
+			if err := terminateProcessTree(cmd.Process.Pid); err != nil {
+				terminationError = err.Error()
+			}
 		}
 		select {
 		case waitErr = <-waitCh:
-		case <-time.After(5 * time.Second):
-			waitErr = fmt.Errorf("process did not exit after termination")
+		case <-time.After(providerTerminationWait):
+			terminationError = "process did not exit after termination"
+			waitErr = fmt.Errorf("%s", terminationError)
+		}
+	case <-ctx.Done():
+		if cmd.Process != nil {
+			if err := terminateProcessTree(cmd.Process.Pid); err != nil {
+				terminationError = err.Error()
+			}
+		}
+		select {
+		case waitErr = <-waitCh:
+		case <-time.After(providerTerminationWait):
+			if terminationError == "" {
+				terminationError = "process did not exit after termination"
+			}
+			waitErr = fmt.Errorf("%s", terminationError)
 		}
 	}
 	exitCode := 0
@@ -72,6 +112,9 @@ func runProviderCommand(ctx context.Context, provider selectedProvider, request 
 		if errors.As(waitErr, &exitErr) {
 			exitCode = exitErr.ExitCode()
 		}
+	}
+	if timedOut {
+		exitCode = 124
 	}
 	stdoutText := stdout.Snapshot()
 	stderrText := stderr.Snapshot()
@@ -100,6 +143,8 @@ func runProviderCommand(ctx context.Context, provider selectedProvider, request 
 		StderrUTF8ReplacementCount:   stderrText.ReplacementCount,
 		CombinedInvalidUTF8:          combinedText.InvalidUTF8,
 		CombinedUTF8ReplacementCount: combinedText.ReplacementCount,
+		FailureKind:                  failureKind,
+		TerminationError:             terminationError,
 		Error:                        errorMessage,
 	}
 }

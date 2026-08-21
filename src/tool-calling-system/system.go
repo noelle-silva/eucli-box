@@ -46,11 +46,13 @@ type StorageSystem interface {
 }
 
 type Config struct {
-	ToolTimeout time.Duration
-	BoxVersion  string
-	ProgramRoot string
-	Candidates  releasecheck.CandidateReader
-	HTTPClient  release.HTTPDoer
+	LegacyToolTimeout        time.Duration
+	ToolWatchdogTimeout      time.Duration
+	ToolWatchdogPingInterval time.Duration
+	BoxVersion               string
+	ProgramRoot              string
+	Candidates               releasecheck.CandidateReader
+	HTTPClient               release.HTTPDoer
 }
 
 type system struct {
@@ -70,11 +72,17 @@ func NewSystem(config Config, permission PermissionSystem, storage StorageSystem
 	if storage == nil {
 		return nil, toolInvalid("storage system dependency is required", nil)
 	}
-	if config.ToolTimeout < 0 {
-		return nil, toolInvalid("tool timeout cannot be negative", nil)
+	if config.LegacyToolTimeout <= 0 {
+		config.LegacyToolTimeout = 120 * time.Second
 	}
-	if config.ToolTimeout == 0 {
-		config.ToolTimeout = 120 * time.Second
+	if config.ToolWatchdogTimeout <= 0 {
+		config.ToolWatchdogTimeout = 60 * time.Second
+	}
+	if config.ToolWatchdogPingInterval <= 0 {
+		config.ToolWatchdogPingInterval = 10 * time.Second
+	}
+	if config.ToolWatchdogPingInterval >= config.ToolWatchdogTimeout {
+		return nil, toolInvalid("tool watchdog ping interval must be less than watchdog timeout", nil)
 	}
 	boxVersion := strings.TrimSpace(config.BoxVersion)
 	if boxVersion == "" {

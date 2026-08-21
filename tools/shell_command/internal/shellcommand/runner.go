@@ -50,6 +50,12 @@ func Execute(ctx context.Context, input types.ToolExecutionInput) types.ToolExec
 		"combinedInvalidUTF8":          result.CombinedInvalidUTF8,
 		"combinedUTF8ReplacementCount": result.CombinedUTF8ReplacementCount,
 	}
+	if result.FailureKind != "" {
+		metadata["failureKind"] = result.FailureKind
+	}
+	if result.TerminationError != "" {
+		metadata["terminationError"] = result.TerminationError
+	}
 	if strings.TrimSpace(request.Description) != "" {
 		metadata["description"] = request.Description
 	}

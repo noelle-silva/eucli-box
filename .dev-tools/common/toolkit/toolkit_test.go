@@ -90,6 +90,39 @@ func TestVerificationRecorderPassProtocol(t *testing.T) {
 	}
 }
 
+func TestVerificationRecorderFinishTaskWritesCompletedReport(t *testing.T) {
+	runRoot := t.TempDir()
+	evidenceDir := filepath.Join(runRoot, "evidence")
+	disposable := make([]string, 0, len(verificationDisposableNames()))
+	for _, name := range verificationDisposableNames() {
+		dir := filepath.Join(runRoot, name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		disposable = append(disposable, dir)
+	}
+	recorder := NewVerificationRecorder("verify-task", "default", runRoot)
+	recorder.Pass("检查一", "通过")
+	if err := recorder.FinishTask(evidenceDir, disposable); err != nil {
+		t.Fatalf("FinishTask() error = %v", err)
+	}
+	payload, err := os.ReadFile(filepath.Join(evidenceDir, "report.json"))
+	if err != nil {
+		t.Fatalf("read report: %v", err)
+	}
+	var report map[string]any
+	if err := json.Unmarshal(payload, &report); err != nil {
+		t.Fatalf("unmarshal report: %v", err)
+	}
+	if report["status"] != "passed" {
+		t.Fatalf("status = %#v", report["status"])
+	}
+	cleanup := report["cleanup"].(map[string]any)
+	if cleanup["status"] != "manual_required" {
+		t.Fatalf("cleanup status = %#v", cleanup["status"])
+	}
+}
+
 func TestVerificationRecorderFailureRetainsScene(t *testing.T) {
 	runRoot := t.TempDir()
 	evidenceDir := filepath.Join(runRoot, "evidence")

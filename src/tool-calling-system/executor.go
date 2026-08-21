@@ -4,9 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"os"
-	"os/exec"
+	"strings"
 	"time"
 
 	"eucli-box/pkg/types"
@@ -53,27 +52,31 @@ func (s *system) Execute(ctx context.Context, plan types.ToolRunPlan) (types.Too
 	if err != nil {
 		return types.ToolResult{}, toolExecutionInvalid("failed to encode tool input", err)
 	}
-	toolCtx, cancel := context.WithTimeout(ctx, s.config.ToolTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(toolCtx, plan.Executable)
-	cmd.Dir = plan.Tool.BodyDirectory
-	cmd.Stdin = bytes.NewReader(input)
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err = cmd.Run()
-	if errors.Is(toolCtx.Err(), context.DeadlineExceeded) {
-		return failedResult(plan, "tool execution timed out"), nil
+	outcome := s.executeToolProcess(ctx, plan.Executable, plan.Tool.BodyDirectory, input, plan.Tool.ControlCapabilities)
+	switch outcome.FailureKind {
+	case "user_cancelled":
+		return toolCancelledResult(plan, "tool execution cancelled", outcome.FailureError), nil
+	case "tool_unresponsive":
+		return toolFailureResult(plan, "tool execution became unresponsive", outcome.FailureKind, outcome.FailureError), nil
+	case "tool_protocol_failed":
+		return toolFailureResult(plan, "tool control protocol failed", outcome.FailureKind, outcome.FailureError), nil
+	case "legacy_tool_timeout":
+		return toolFailureResult(plan, "tool execution timed out", outcome.FailureKind, outcome.FailureError), nil
 	}
-	if err != nil {
-		message := err.Error()
-		if stderr.Len() > 0 {
-			message = message + ": " + stderr.String()
+	if outcome.ExitError != nil {
+		message := outcome.ExitError.Error()
+		if stderr := strings.TrimSpace(string(outcome.Stderr)); stderr != "" {
+			message += ": " + stderr
+		}
+		if outcome.FailureError != nil {
+			message += ": " + outcome.FailureError.Error()
 		}
 		return failedResult(plan, message), nil
 	}
-	return parseToolOutput(plan, stdout.Bytes()), nil
+	if outcome.FailureError != nil {
+		return failedResult(plan, "tool process failed: "+outcome.FailureError.Error()), nil
+	}
+	return parseToolOutput(plan, outcome.Stdout), nil
 }
 
 func validatePlan(plan types.ToolRunPlan) error {

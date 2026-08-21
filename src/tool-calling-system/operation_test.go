@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	datastorage "eucli-box/src/data-storage-system"
 	"eucli-box/pkg/release"
 	"eucli-box/pkg/releasecheck"
 	"eucli-box/pkg/types"
+	datastorage "eucli-box/src/data-storage-system"
 )
 
 const probeToolSource = `
@@ -91,11 +91,11 @@ func newToolOperationFixture(t *testing.T) *toolOperationFixture {
 	fixture.server = httptest.NewServer(http.HandlerFunc(fixture.servePackage))
 	t.Cleanup(fixture.server.Close)
 	fixture.system, err = NewSystem(Config{
-		ToolTimeout: 15 * time.Second,
-		BoxVersion:  "0.1.0",
-		ProgramRoot: programRoot,
-		Candidates:  fixture.candidates,
-		HTTPClient:  fixture.server.Client(),
+		LegacyToolTimeout: 15 * time.Second,
+		BoxVersion:        "0.1.0",
+		ProgramRoot:       programRoot,
+		Candidates:        fixture.candidates,
+		HTTPClient:        fixture.server.Client(),
 	}, &fakePermission{}, storage)
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)

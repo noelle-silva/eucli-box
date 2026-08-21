@@ -121,6 +121,34 @@ func (r *VerificationRecorder) Finish(evidenceDir string, disposableDirs []strin
 	return writeVerificationReport(reportPath, r.report)
 }
 
+// FinishTask writes a completed task-local report without invoking the long-lived
+// verification cleanup workflow. The task run keeps its disposable directories
+// as evidence and the task archive owns their later removal.
+func (r *VerificationRecorder) FinishTask(evidenceDir string, disposableDirs []string) error {
+	checksFinishedAt := time.Now().UTC()
+	r.report.ChecksFinishedAt = &checksFinishedAt
+	if err := os.MkdirAll(evidenceDir, 0o755); err != nil {
+		return r.finishFailure(evidenceDir, disposableDirs, "retained", fmt.Errorf("建立证据目录失败：%w", err))
+	}
+	if checkErr := errors.Join(r.errors...); checkErr != nil {
+		return r.finishFailure(evidenceDir, disposableDirs, "retained", checkErr)
+	}
+	completed, pending, stateErr := verificationCleanupState(disposableDirs)
+	if stateErr != nil {
+		return r.finishFailure(evidenceDir, disposableDirs, "retained", fmt.Errorf("确认任务验证现场状态失败：%w", stateErr))
+	}
+	if len(completed) != 0 || !sameStringSequence(pending, verificationDisposableNames()) {
+		return r.finishFailure(evidenceDir, disposableDirs, "retained", fmt.Errorf("任务验证现场不符合固定目录约定"))
+	}
+	finishedAt := time.Now().UTC()
+	r.report.Status = "passed"
+	r.report.FinishedAt = &finishedAt
+	r.report.Cleanup = newVerificationCleanup("manual_required", completed, pending)
+	r.report.Cleanup.FinishedAt = &finishedAt
+	r.report.Cleanup.Message = "任务专用验证现场随任务保留，按任务归档规则处理。"
+	return writeVerificationReport(filepath.Join(evidenceDir, "report.json"), r.report)
+}
+
 func (r *VerificationRecorder) finishFailure(evidenceDir string, disposableDirs []string, cleanupStatus string, cause error) error {
 	finishedAt := time.Now().UTC()
 	completed, pending, stateErr := verificationCleanupState(disposableDirs)

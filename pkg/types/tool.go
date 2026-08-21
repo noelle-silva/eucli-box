@@ -11,27 +11,32 @@ const (
 )
 
 type ToolDefinition struct {
-	ID                        string                `json:"id"`
-	Name                      string                `json:"name"`
-	Description               string                `json:"description"`
-	Version                   string                `json:"version"`
-	EucliBoxCompatibility     EucliBoxCompatibility `json:"eucliBoxCompatibility"`
-	Compatibility             CompatibilityStatus   `json:"compatibility"`
-	Status                    string                `json:"status,omitempty"`
-	StatusMessage             string                `json:"statusMessage,omitempty"`
-	PromptDescription         string                `json:"promptDescription,omitempty"`
-	PromptDescriptionOverride string                `json:"promptDescriptionOverride,omitempty"`
-	DefaultInvocationMode     ToolInvocationMode    `json:"defaultInvocationMode,omitempty"`
-	Type                      string                `json:"type"`
-	InputSchema               map[string]any        `json:"inputSchema,omitempty"`
-	UserConfigSchema          map[string]any        `json:"userConfigSchema,omitempty"`
-	UserConfig                map[string]any        `json:"userConfig,omitempty"`
-	DefaultConfig             map[string]any        `json:"defaultConfig,omitempty"`
-	BodyDirectory             string                `json:"bodyDirectory,omitempty"`
-	DataDirectory             string                `json:"dataDirectory,omitempty"`
-	Binaries                  []ToolBinary          `json:"binaries,omitempty"`
-	CreatedAt                 time.Time             `json:"createdAt"`
-	UpdatedAt                 time.Time             `json:"updatedAt"`
+	ID                        string                  `json:"id"`
+	Name                      string                  `json:"name"`
+	Description               string                  `json:"description"`
+	Version                   string                  `json:"version"`
+	EucliBoxCompatibility     EucliBoxCompatibility   `json:"eucliBoxCompatibility"`
+	Compatibility             CompatibilityStatus     `json:"compatibility"`
+	Status                    string                  `json:"status,omitempty"`
+	StatusMessage             string                  `json:"statusMessage,omitempty"`
+	PromptDescription         string                  `json:"promptDescription,omitempty"`
+	PromptDescriptionOverride string                  `json:"promptDescriptionOverride,omitempty"`
+	DefaultInvocationMode     ToolInvocationMode      `json:"defaultInvocationMode,omitempty"`
+	Type                      string                  `json:"type"`
+	InputSchema               map[string]any          `json:"inputSchema,omitempty"`
+	UserConfigSchema          map[string]any          `json:"userConfigSchema,omitempty"`
+	UserConfig                map[string]any          `json:"userConfig,omitempty"`
+	DefaultConfig             map[string]any          `json:"defaultConfig,omitempty"`
+	ControlCapabilities       ToolControlCapabilities `json:"controlCapabilities,omitempty"`
+	BodyDirectory             string                  `json:"bodyDirectory,omitempty"`
+	DataDirectory             string                  `json:"dataDirectory,omitempty"`
+	Binaries                  []ToolBinary            `json:"binaries,omitempty"`
+	CreatedAt                 time.Time               `json:"createdAt"`
+	UpdatedAt                 time.Time               `json:"updatedAt"`
+}
+
+type ToolControlCapabilities struct {
+	Heartbeat bool `json:"heartbeat,omitempty"`
 }
 
 type ToolUserSettings struct {

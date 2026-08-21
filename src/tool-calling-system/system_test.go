@@ -282,7 +282,7 @@ import "time"
 func main() { time.Sleep(2 * time.Second) }
 `)
 	tool := testTool(t, executable)
-	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{ToolTimeout: 10 * time.Millisecond})
+	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{LegacyToolTimeout: 10 * time.Millisecond})
 	result, err := system.Execute(context.Background(), allowedPlan(tool, executable))
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)

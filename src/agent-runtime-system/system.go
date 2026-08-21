@@ -3,7 +3,6 @@ package agentruntime
 import (
 	"context"
 	"sync"
-	"time"
 
 	"eucli-box/pkg/types"
 )
@@ -64,7 +63,6 @@ type ToolSystem interface {
 }
 
 type Config struct {
-	ToolTimeout      time.Duration
 	MaxParallelTools int
 }
 
@@ -136,12 +134,6 @@ func NewSystem(config Config, storage StorageSystem, roles RoleSystem, providers
 	}
 	if placeholders == nil {
 		return nil, runtimeInvalid("placeholder system dependency is required", nil)
-	}
-	if config.ToolTimeout < 0 {
-		return nil, runtimeInvalid("tool timeout cannot be negative", nil)
-	}
-	if config.ToolTimeout == 0 {
-		config.ToolTimeout = 120 * time.Second
 	}
 	if config.MaxParallelTools < 0 {
 		return nil, runtimeInvalid("max parallel tools cannot be negative", nil)

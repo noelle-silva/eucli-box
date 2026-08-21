@@ -192,10 +192,8 @@ func (s *system) executeReadyTools(ctx context.Context, entries []toolRunEntry, 
 				resultCh <- toolExecutionResult{Entry: entry, Err: cancellationErr}
 				return
 			}
-			toolCtx, cancel := context.WithTimeout(ctx, s.config.ToolTimeout)
-			defer cancel()
-			result, err := s.tools.Execute(toolCtx, entry.Plan)
-			if cancellationErr, ok := toolExecutionCancelled(ctx, toolCtx, err); ok {
+			result, err := s.tools.Execute(ctx, entry.Plan)
+			if cancellationErr, ok := toolExecutionCancelled(ctx, nil, err); ok {
 				resultCh <- toolExecutionResult{Entry: entry, Err: cancellationErr}
 				return
 			}

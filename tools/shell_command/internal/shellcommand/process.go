@@ -17,6 +17,12 @@ type processResult struct {
 	TimedOut                     bool
 	DurationMs                   int64
 	Truncated                    bool
+	StdoutBytes                  int64
+	StderrBytes                  int64
+	CombinedBytes                int64
+	StdoutLines                  int64
+	StderrLines                  int64
+	CombinedLines                int64
 	InvalidUTF8                  bool
 	UTF8ReplacementCount         int
 	StdoutInvalidUTF8            bool
@@ -32,7 +38,7 @@ type processResult struct {
 
 const providerTerminationWait = 5 * time.Second
 
-func runProviderCommand(ctx context.Context, provider selectedProvider, request commandRequest, workdir string) processResult {
+func runProviderCommand(ctx context.Context, provider selectedProvider, request commandRequest, workdir string, onChunk func(payload []byte)) processResult {
 	startedAt := time.Now()
 	stdout := newLimitedBuffer(request.MaxOutputChars)
 	stderr := newLimitedBuffer(request.MaxOutputChars)
@@ -46,8 +52,8 @@ func runProviderCommand(ctx context.Context, provider selectedProvider, request 
 	cmd := exec.Command(provider.Executable, args...)
 	cmd.Dir = workdir
 	cmd.Env = providerEnv(provider.Config, os.Environ())
-	cmd.Stdout = streamCapture{stream: stdout, combined: combined}
-	cmd.Stderr = streamCapture{stream: stderr, combined: combined}
+	cmd.Stdout = streamCapture{stream: stdout, combined: combined, onChunk: onChunk}
+	cmd.Stderr = streamCapture{stream: stderr, combined: combined, onChunk: onChunk}
 	configureProcess(cmd)
 	if err := cmd.Start(); err != nil {
 		return processResult{ExitCode: -1, DurationMs: elapsedMs(startedAt), Error: fmt.Sprintf("start command: %v", err)}
@@ -62,48 +68,14 @@ func runProviderCommand(ctx context.Context, provider selectedProvider, request 
 	case waitErr = <-waitCh:
 	case <-commandTimeout.C:
 		if ctx.Err() != nil {
-			if cmd.Process != nil {
-				if err := terminateProcessTree(cmd.Process.Pid); err != nil {
-					terminationError = err.Error()
-				}
-			}
-			select {
-			case waitErr = <-waitCh:
-			case <-time.After(providerTerminationWait):
-				if terminationError == "" {
-					terminationError = "process did not exit after termination"
-				}
-				waitErr = fmt.Errorf("%s", terminationError)
-			}
+			waitErr, terminationError = terminateAndWait(cmd, waitCh)
 			break
 		}
 		timedOut = true
 		failureKind = "command_timeout"
-		if cmd.Process != nil {
-			if err := terminateProcessTree(cmd.Process.Pid); err != nil {
-				terminationError = err.Error()
-			}
-		}
-		select {
-		case waitErr = <-waitCh:
-		case <-time.After(providerTerminationWait):
-			terminationError = "process did not exit after termination"
-			waitErr = fmt.Errorf("%s", terminationError)
-		}
+		waitErr, terminationError = terminateAndWait(cmd, waitCh)
 	case <-ctx.Done():
-		if cmd.Process != nil {
-			if err := terminateProcessTree(cmd.Process.Pid); err != nil {
-				terminationError = err.Error()
-			}
-		}
-		select {
-		case waitErr = <-waitCh:
-		case <-time.After(providerTerminationWait):
-			if terminationError == "" {
-				terminationError = "process did not exit after termination"
-			}
-			waitErr = fmt.Errorf("%s", terminationError)
-		}
+		waitErr, terminationError = terminateAndWait(cmd, waitCh)
 	}
 	exitCode := 0
 	if waitErr != nil {
@@ -135,6 +107,12 @@ func runProviderCommand(ctx context.Context, provider selectedProvider, request 
 		TimedOut:                     timedOut,
 		DurationMs:                   elapsedMs(startedAt),
 		Truncated:                    stdoutText.Truncated || stderrText.Truncated || combinedText.Truncated,
+		StdoutBytes:                  stdoutText.OriginalBytes,
+		StderrBytes:                  stderrText.OriginalBytes,
+		CombinedBytes:                combinedText.OriginalBytes,
+		StdoutLines:                  stdoutText.TotalLines,
+		StderrLines:                  stderrText.TotalLines,
+		CombinedLines:                combinedText.TotalLines,
 		InvalidUTF8:                  invalidUTF8,
 		UTF8ReplacementCount:         utf8ReplacementCount,
 		StdoutInvalidUTF8:            stdoutText.InvalidUTF8,
@@ -146,6 +124,26 @@ func runProviderCommand(ctx context.Context, provider selectedProvider, request 
 		FailureKind:                  failureKind,
 		TerminationError:             terminationError,
 		Error:                        errorMessage,
+	}
+}
+
+// terminateAndWait kills the provider process tree and waits for its exit.
+// Both timeout and external cancellation share this single exit.
+func terminateAndWait(cmd *exec.Cmd, waitCh <-chan error) (error, string) {
+	terminationError := ""
+	if cmd.Process != nil {
+		if err := terminateProcessTree(cmd.Process.Pid); err != nil {
+			terminationError = err.Error()
+		}
+	}
+	select {
+	case waitErr := <-waitCh:
+		return waitErr, ""
+	case <-time.After(providerTerminationWait):
+		if terminationError == "" {
+			terminationError = "process did not exit after termination"
+		}
+		return fmt.Errorf("%s", terminationError), terminationError
 	}
 }
 

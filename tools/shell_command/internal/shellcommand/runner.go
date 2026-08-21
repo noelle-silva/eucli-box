@@ -9,6 +9,14 @@ import (
 )
 
 func Execute(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
+	return ExecuteWithOutputHook(ctx, input, nil)
+}
+
+// ExecuteWithOutputHook runs the command and streams raw output chunks (stdout
+// and stderr, as written) to hook. The hook is optional: it must not block the
+// command execution and may be called concurrently by the two stream copy
+// goroutines.
+func ExecuteWithOutputHook(ctx context.Context, input types.ToolExecutionInput, hook func(payload []byte)) types.ToolExecutionOutput {
 	config, err := loadConfig(input.ToolBodyDirectory)
 	if err != nil {
 		return failure("load shell_command config", err, nil)
@@ -28,7 +36,7 @@ func Execute(ctx context.Context, input types.ToolExecutionInput) types.ToolExec
 	if err != nil {
 		return failure("resolve shell_command workdir", err, map[string]any{"provider": provider.Config.ID})
 	}
-	result := runProviderCommand(ctx, provider, request, workdir)
+	result := runProviderCommand(ctx, provider, request, workdir, hook)
 	metadata := map[string]any{
 		"stdout":                       result.Stdout,
 		"stderr":                       result.Stderr,
@@ -41,6 +49,10 @@ func Execute(ctx context.Context, input types.ToolExecutionInput) types.ToolExec
 		"truncated":                    result.Truncated,
 		"maxOutputChars":               request.MaxOutputChars,
 		"encoding":                     provider.Config.Encoding,
+		"outputBytesTotal":             result.CombinedBytes,
+		"outputBytesStdout":            result.StdoutBytes,
+		"outputBytesStderr":            result.StderrBytes,
+		"outputLines":                  result.CombinedLines,
 		"invalidUTF8":                  result.InvalidUTF8,
 		"utf8ReplacementCount":         result.UTF8ReplacementCount,
 		"stdoutInvalidUTF8":            result.StdoutInvalidUTF8,

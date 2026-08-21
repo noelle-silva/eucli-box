@@ -68,8 +68,13 @@ func TestExecuteTruncatesCapturedOutput(t *testing.T) {
 	if result.Status != types.ToolStatusSuccess || result.Metadata["truncated"] != true {
 		t.Fatalf("result = %#v", result)
 	}
-	if result.Content != "89ABCDEFGHIJ" || result.Metadata["stdout"] != "89ABCDEFGHIJ" || result.Metadata["combinedOutput"] != "89ABCDEFGHIJ" {
-		t.Fatalf("tail output mismatch: content = %q, metadata = %#v", result.Content, result.Metadata)
+	// head+tail elision: 20 chars against charLimit 12 keeps first 6 and last 6.
+	expected := "012345…8 chars truncated…EFGHIJ"
+	if result.Content != expected || result.Metadata["stdout"] != expected || result.Metadata["combinedOutput"] != expected {
+		t.Fatalf("elided output mismatch: content = %q, metadata = %#v", result.Content, result.Metadata)
+	}
+	if result.Metadata["outputBytesTotal"] != int64(20) || result.Metadata["outputLines"] != int64(0) {
+		t.Fatalf("output facts = %#v", result.Metadata)
 	}
 	if result.Metadata["invalidUTF8"] != false || result.Metadata["utf8ReplacementCount"] != 0 {
 		t.Fatalf("encoding metadata = %#v", result.Metadata)
@@ -119,11 +124,11 @@ func TestExecuteDoesNotMarkByteTruncationAsInvalidUTF8(t *testing.T) {
 	if result.Status != types.ToolStatusSuccess || result.Metadata["truncated"] != true {
 		t.Fatalf("result = %#v", result)
 	}
-	if result.Content != "界" {
-		t.Fatalf("content = %q", result.Content)
-	}
 	if result.Metadata["invalidUTF8"] != false || result.Metadata["utf8ReplacementCount"] != 0 {
 		t.Fatalf("encoding metadata = %#v", result.Metadata)
+	}
+	if !strings.Contains(result.Content, "chars truncated") {
+		t.Fatalf("content should show elision marker: %q", result.Content)
 	}
 }
 
@@ -156,8 +161,10 @@ func TestExecuteUsesUserConfigDefaults(t *testing.T) {
 	if result.Status != types.ToolStatusSuccess || result.Metadata["description"] != "configured run" || result.Metadata["maxOutputChars"] != 8 {
 		t.Fatalf("result = %#v", result)
 	}
-	if len([]rune(result.Content)) != 8 {
-		t.Fatalf("content length = %d, content = %q", len([]rune(result.Content)), result.Content)
+	// 30 runes against charLimit 8: elided to first 4 and last 4 plus marker.
+	content := result.Content
+	if !strings.HasPrefix(content, "界界界界…") || !strings.HasSuffix(content, "…界界界界") {
+		t.Fatalf("content = %q", content)
 	}
 }
 

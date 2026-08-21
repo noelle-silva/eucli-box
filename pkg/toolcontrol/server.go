@@ -29,12 +29,13 @@ type Server struct {
 	config   Config
 	token    string
 
-	mu        sync.Mutex
-	conn      net.Conn
-	decoder   *json.Decoder
-	encoder   *json.Encoder
-	writeMu   sync.Mutex
-	closeOnce sync.Once
+	mu            sync.Mutex
+	conn          net.Conn
+	decoder       *json.Decoder
+	encoder       *json.Encoder
+	writeMu       sync.Mutex
+	closeOnce     sync.Once
+	outputUpdates uint64
 }
 
 func NewServer(config Config) (*Server, error) {
@@ -173,6 +174,18 @@ func (s *Server) Watch(ctx context.Context) <-chan FailureKind {
 					fail(FailureProtocol)
 					return
 				}
+				if message.message.Type == MessageOutputUpdate {
+					if err := validateOutputUpdate(message.message, s.token); err != nil {
+						fail(FailureProtocol)
+						return
+					}
+					s.mu.Lock()
+					if s.outputUpdates < MaxOutputUpdates {
+						s.outputUpdates++
+					}
+					s.mu.Unlock()
+					continue
+				}
 				if err := validatePong(message.message, s.token, pendingSequence); err != nil || pendingSequence == 0 {
 					fail(FailureProtocol)
 					return
@@ -206,6 +219,16 @@ func (s *Server) Close() error {
 		}
 	})
 	return err
+}
+
+// OutputUpdateCount returns how many output updates the host has accepted.
+func (s *Server) OutputUpdateCount() uint64 {
+	if s == nil {
+		return 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.outputUpdates
 }
 
 func (s *Server) write(message Message) error {

@@ -74,6 +74,24 @@ func (c *Client) Serve(ctx context.Context) error {
 	}
 }
 
+// SendOutputUpdate relays one output update to the host with a short write
+// deadline so a congested connection can never stall the command output for
+// long. Best-effort: callers must not block their command execution on it.
+func (c *Client) SendOutputUpdate(sequence uint64, update OutputUpdate) error {
+	if c == nil || c.conn == nil || c.encoder == nil {
+		return errors.New("tool control client is closed")
+	}
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	if err := c.conn.SetWriteDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		return err
+	}
+	if err := c.encoder.Encode(Message{Version: ProtocolVersion, Type: MessageOutputUpdate, Token: c.token, Sequence: sequence, Update: &update}); err != nil {
+		return err
+	}
+	return c.conn.SetWriteDeadline(time.Time{})
+}
+
 func (c *Client) Close() error {
 	if c == nil {
 		return nil

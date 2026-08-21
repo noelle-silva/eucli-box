@@ -1025,6 +1025,55 @@ func TestRunPreservesPureTextToolRequestAsAssistantContent(t *testing.T) {
 	}
 }
 
+func TestRunPublishesToolOutputUpdateEvents(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{
+		{ID: "m1", Content: "checking\n\n<<<TOOL_REQUEST>>>\n[tool]: file-reader\n[path]: README.md\n<<<END_TOOL_REQUEST>>>"},
+		{ID: "m2", Content: "final"},
+	}
+	fakes.tool.parsedIntents = []types.ToolIntent{{ID: "intent-out-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}, Source: types.ToolCallSourceTextProtocol, Raw: "<<<TOOL_REQUEST>>>\n[tool]: file-reader\n[path]: README.md\n<<<END_TOOL_REQUEST>>>"}}
+	fakes.tool.outputUpdates = []types.ToolOutputUpdate{
+		{CallID: "intent-out-1", ToolName: "file-reader", Bytes: 1024, Preview: "progress-first"},
+		{CallID: "intent-out-1", ToolName: "file-reader", Bytes: 2048, Preview: "progress-second"},
+	}
+	system := newTestRuntime(t, fakes, Config{})
+	events, unsubscribe, err := system.Subscribe(context.Background())
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	defer unsubscribe()
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "checking"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	got := []types.ToolOutputUpdateEventPayload{}
+	deadline := time.After(4 * time.Second)
+	for len(got) < 2 {
+		select {
+		case event := <-events:
+			if event.Type != "tool_output_update" {
+				continue
+			}
+			payload, ok := event.Payload.(types.ToolOutputUpdateEventPayload)
+			if !ok {
+				t.Fatalf("payload = %#v", event.Payload)
+			}
+			got = append(got, payload)
+		case <-deadline:
+			t.Fatalf("tool output updates = %#v", got)
+		}
+	}
+	if got[0].Preview != "progress-first" || got[0].Bytes != 1024 || got[0].CallID != "intent-out-1" || got[0].ToolName != "file-reader" {
+		t.Fatalf("first update = %#v", got[0])
+	}
+	if got[1].Preview != "progress-second" || got[1].Bytes != 2048 {
+		t.Fatalf("second update = %#v", got[1])
+	}
+	if got[0].RunID != state.ID || got[0].SessionID == "" || got[0].MessageID == "" {
+		t.Fatalf("update context = %#v", got[0])
+	}
+}
+
 func TestRunTextProtocolToolUsesUnifiedConfirmationState(t *testing.T) {
 	fakes := newRuntimeFakes()
 	rawRequest := "<<<TOOL_REQUEST>>>\n[tool]: file-reader\n[path]: README.md\n<<<END_TOOL_REQUEST>>>"
@@ -2671,6 +2720,7 @@ type fakeRuntimeTools struct {
 	executeResult       types.ToolResult
 	executeCancelResult types.ToolResult
 	executeErr          error
+	outputUpdates       []types.ToolOutputUpdate
 	toolSummaries       []types.ToolSummary
 	parsedIntents       []types.ToolIntent
 	parseErr            error
@@ -2737,8 +2787,30 @@ func (f *fakeRuntimeTools) ApplyConfirmation(ctx context.Context, plan types.Too
 }
 
 func (f *fakeRuntimeTools) Execute(ctx context.Context, plan types.ToolRunPlan) (types.ToolResult, error) {
+	return f.executeWith(ctx, plan, nil)
+}
+
+func (f *fakeRuntimeTools) ExecuteWithOutputUpdate(ctx context.Context, plan types.ToolRunPlan, onUpdate func(update types.ToolOutputUpdate)) (types.ToolResult, error) {
+	return f.executeWith(ctx, plan, onUpdate)
+}
+
+func (f *fakeRuntimeTools) executeWith(ctx context.Context, plan types.ToolRunPlan, onUpdate func(update types.ToolOutputUpdate)) (types.ToolResult, error) {
 	f.mu.Lock()
 	f.executeCount++
+	if onUpdate != nil && len(f.outputUpdates) > 0 {
+		updates := append([]types.ToolOutputUpdate(nil), f.outputUpdates...)
+		f.mu.Unlock()
+		for _, update := range updates {
+			onUpdate(update)
+		}
+		return f.finishExecute(ctx, plan)
+	}
+	f.mu.Unlock()
+	return f.finishExecute(ctx, plan)
+}
+
+func (f *fakeRuntimeTools) finishExecute(ctx context.Context, plan types.ToolRunPlan) (types.ToolResult, error) {
+	f.mu.Lock()
 	f.activeExecutions++
 	if f.activeExecutions > f.maxActiveExecutions {
 		f.maxActiveExecutions = f.activeExecutions

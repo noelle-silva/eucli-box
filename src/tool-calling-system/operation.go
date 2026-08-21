@@ -275,7 +275,7 @@ func (s *system) probeTool(ctx context.Context, prepared release.PreparedProgram
 	if err != nil {
 		return toolExecutionInvalid("failed to encode probe input", err)
 	}
-	outcome := s.executeToolProcess(ctx, executable, prepared.Directory, input, definition.ControlCapabilities)
+	outcome := s.executeToolProcess(ctx, executable, prepared.Directory, input, definition.ControlCapabilities, nil)
 	if outcome.FailureKind != "" {
 		message := "tool probe failed: " + outcome.FailureKind
 		if outcome.FailureError != nil {

@@ -161,10 +161,32 @@ export function renderAssistantToolInvocationHtml(part: any) {
     chip(source),
     chip(toolPartStateText(state), stateTone(state)),
     '</div>',
+    liveOutputBlock(part),
     isTextProtocol ? preBlock('原始 TOOL_REQUEST', rawText, 'fw-tool-pre-raw') : '',
     preBlock('输入参数', inputText),
     decisionLine(part),
     '</section>',
+  ].join('')
+}
+
+// liveOutputBlock 渲染命令运行中的实时输出预览；仅在没有最终结果且仍在运行时出现。
+function liveOutputBlock(part: any) {
+  const live = part?.runtimeOutput && typeof part.runtimeOutput === 'object' ? part.runtimeOutput : null
+  if (!live) return ''
+  const state = String(part?.state || '').trim()
+  if (state !== 'running' && state !== 'requested') return ''
+  if (part?.result && typeof part.result === 'object') return ''
+  const preview = String(live.preview || '').trim()
+  const bytes = Math.max(0, Math.floor(Number(live.bytes || 0)))
+  const suffix = bytes > 0 ? `（已捕获 ${bytes} 字节）` : ''
+  const previewHtml = preview
+    ? `<pre class="fw-tool-pre fw-tool-pre-live">${esc(preview)}</pre>`
+    : ''
+  return [
+    '<div class="fw-tool-field">',
+    `<div class="fw-tool-field-label">实时输出${esc(suffix)}</div>`,
+    previewHtml,
+    '</div>',
   ].join('')
 }
 

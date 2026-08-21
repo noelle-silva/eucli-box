@@ -39,6 +39,15 @@ type ToolControlCapabilities struct {
 	Heartbeat bool `json:"heartbeat,omitempty"`
 }
 
+// ToolOutputUpdate is a live output progress for one tool call, relayed by the
+// tool over the control channel during execution.
+type ToolOutputUpdate struct {
+	CallID  string `json:"callId"`
+	ToolName string `json:"toolName,omitempty"`
+	Bytes   uint64 `json:"bytes"`
+	Preview string `json:"preview"`
+}
+
 type ToolUserSettings struct {
 	UserConfig                map[string]any `json:"userConfig"`
 	PromptDescriptionOverride string         `json:"promptDescriptionOverride,omitempty"`

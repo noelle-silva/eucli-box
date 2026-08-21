@@ -59,6 +59,27 @@ func (s *system) publishRunMessageUpdate(record *runRecord, eventType string, me
 	s.publish(record.runID, eventType, types.RunAssistantMessageUpdate{RunID: record.runID, RoleID: record.roleID, GroupID: record.groupID, WorkspaceID: record.workspaceID, SessionID: record.session.ID, Stream: record.stream, Status: state.Status, Reason: state.Reason, Retry: cloneRunRetryInfo(state.Retry), Error: cloneErrorPayload(state.Error), Message: cloneRunMessageSnapshot(message), CreatedAt: now})
 }
 
+// publishToolOutputUpdate 向订阅者广播工具运行中的实时输出进展。
+func (s *system) publishToolOutputUpdate(record *runRecord, entry toolRunEntry, update types.ToolOutputUpdate) {
+	if record == nil {
+		return
+	}
+	payload := types.ToolOutputUpdateEventPayload{
+		RunID:       record.runID,
+		RoleID:      record.roleID,
+		GroupID:     record.groupID,
+		WorkspaceID: record.workspaceID,
+		SessionID:   record.session.ID,
+		MessageID:   strings.TrimSpace(record.activeAssistantID),
+		CallID:      update.CallID,
+		ToolName:    update.ToolName,
+		Bytes:       update.Bytes,
+		Preview:     update.Preview,
+		CreatedAt:   time.Now().UTC(),
+	}
+	s.publish(record.runID, "tool_output_update", payload)
+}
+
 func currentRunAssistantMessage(record *runRecord) (types.Message, bool) {
 	messageID := strings.TrimSpace(record.activeAssistantID)
 	if messageID == "" && record.messageParent.Type == "assistant" {

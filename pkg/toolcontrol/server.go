@@ -15,6 +15,8 @@ import (
 type Config struct {
 	Timeout      time.Duration
 	PingInterval time.Duration
+	// OnOutputUpdate relays accepted output updates to the host when set.
+	OnOutputUpdate func(update OutputUpdate)
 }
 
 type FailureKind string
@@ -29,13 +31,15 @@ type Server struct {
 	config   Config
 	token    string
 
-	mu            sync.Mutex
-	conn          net.Conn
-	decoder       *json.Decoder
-	encoder       *json.Encoder
-	writeMu       sync.Mutex
-	closeOnce     sync.Once
-	outputUpdates uint64
+	mu              sync.Mutex
+	conn            net.Conn
+	decoder         *json.Decoder
+	encoder         *json.Encoder
+	writeMu         sync.Mutex
+	closeOnce       sync.Once
+	outputUpdates   uint64
+	outputUpdateC   chan OutputUpdate
+	outputUpdateStop chan struct{}
 }
 
 func NewServer(config Config) (*Server, error) {
@@ -56,7 +60,13 @@ func NewServer(config Config) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listen for tool control: %w", err)
 	}
-	return &Server{listener: listener, config: config, token: token}, nil
+	return &Server{
+		listener:        listener,
+		config:          config,
+		token:           token,
+		outputUpdateC:   make(chan OutputUpdate, 64),
+		outputUpdateStop: make(chan struct{}),
+	}, nil
 }
 
 func (s *Server) Address() string {
@@ -125,6 +135,18 @@ func (s *Server) Watch(ctx context.Context) <-chan FailureKind {
 		close(result)
 		return result
 	}
+	if s.config.OnOutputUpdate != nil {
+		go func() {
+			for {
+				select {
+				case update := <-s.outputUpdateC:
+					s.config.OnOutputUpdate(update)
+				case <-s.outputUpdateStop:
+					return
+				}
+			}
+		}()
+	}
 	go func() {
 		defer close(result)
 		defer conn.Close()
@@ -174,18 +196,24 @@ func (s *Server) Watch(ctx context.Context) <-chan FailureKind {
 					fail(FailureProtocol)
 					return
 				}
-				if message.message.Type == MessageOutputUpdate {
-					if err := validateOutputUpdate(message.message, s.token); err != nil {
-						fail(FailureProtocol)
-						return
-					}
-					s.mu.Lock()
-					if s.outputUpdates < MaxOutputUpdates {
-						s.outputUpdates++
-					}
-					s.mu.Unlock()
-					continue
+			if message.message.Type == MessageOutputUpdate {
+				if err := validateOutputUpdate(message.message, s.token); err != nil {
+					fail(FailureProtocol)
+					return
 				}
+				s.mu.Lock()
+				if s.outputUpdates < MaxOutputUpdates {
+					s.outputUpdates++
+				}
+				s.mu.Unlock()
+				if s.config.OnOutputUpdate != nil && message.message.Update != nil {
+					select {
+					case s.outputUpdateC <- *message.message.Update:
+					default:
+					}
+				}
+				continue
+			}
 				if err := validatePong(message.message, s.token, pendingSequence); err != nil || pendingSequence == 0 {
 					fail(FailureProtocol)
 					return
@@ -209,6 +237,7 @@ func (s *Server) Close() error {
 		if s.listener != nil {
 			err = s.listener.Close()
 		}
+		close(s.outputUpdateStop)
 		s.mu.Lock()
 		conn := s.conn
 		s.mu.Unlock()

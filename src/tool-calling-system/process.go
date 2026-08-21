@@ -111,11 +111,17 @@ func (p *toolProcess) terminateTree() error {
 	return terminateToolProcessTree(p.cmd.Process.Pid)
 }
 
-func (s *system) executeToolProcess(ctx context.Context, executable string, workdir string, input []byte, capabilities types.ToolControlCapabilities) toolProcessOutcome {
+func (s *system) executeToolProcess(ctx context.Context, executable string, workdir string, input []byte, capabilities types.ToolControlCapabilities, onToolUpdate func(update types.ToolOutputUpdate)) toolProcessOutcome {
 	var control *toolcontrol.Server
 	if capabilities.Heartbeat {
+		serverConfig := toolcontrol.Config{Timeout: s.config.ToolWatchdogTimeout, PingInterval: s.config.ToolWatchdogPingInterval}
+		if onToolUpdate != nil {
+			serverConfig.OnOutputUpdate = func(update toolcontrol.OutputUpdate) {
+				onToolUpdate(types.ToolOutputUpdate{Bytes: update.Bytes, Preview: update.Preview})
+			}
+		}
 		var err error
-		control, err = toolcontrol.NewServer(toolcontrol.Config{Timeout: s.config.ToolWatchdogTimeout, PingInterval: s.config.ToolWatchdogPingInterval})
+		control, err = toolcontrol.NewServer(serverConfig)
 		if err != nil {
 			return toolProcessOutcome{FailureError: err}
 		}

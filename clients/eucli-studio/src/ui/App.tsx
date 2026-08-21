@@ -4166,6 +4166,10 @@ export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap;
             '.prose .fw-tool-pre-raw': {
               background: 'rgba(88,28,135,.08)',
             },
+            '.prose .fw-tool-pre-live': {
+              background: 'rgba(2,132,199,.07)',
+              color: 'rgba(12,74,110,.95)',
+            },
             '.fw-tool-meta-line': {
               marginTop: 8,
               fontSize: 12,

@@ -337,3 +337,18 @@ type RunEvent struct {
 	Payload     any       `json:"payload,omitempty"`
 	CreatedAt   time.Time `json:"createdAt"`
 }
+
+// ToolOutputUpdateEventPayload carries live tool output progress to clients.
+type ToolOutputUpdateEventPayload struct {
+	RunID       string    `json:"runId"`
+	RoleID      string    `json:"roleId,omitempty"`
+	GroupID     string    `json:"groupId,omitempty"`
+	WorkspaceID string    `json:"workspaceId,omitempty"`
+	SessionID   string    `json:"sessionId"`
+	MessageID   string    `json:"messageId,omitempty"`
+	CallID      string    `json:"callId"`
+	ToolName    string    `json:"toolName,omitempty"`
+	Bytes       uint64    `json:"bytes"`
+	Preview     string    `json:"preview"`
+	CreatedAt   time.Time `json:"createdAt"`
+}

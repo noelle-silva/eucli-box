@@ -12,6 +12,10 @@ import (
 )
 
 func (s *system) Execute(ctx context.Context, plan types.ToolRunPlan) (types.ToolResult, error) {
+	return s.ExecuteWithOutputUpdate(ctx, plan, nil)
+}
+
+func (s *system) ExecuteWithOutputUpdate(ctx context.Context, plan types.ToolRunPlan, onUpdate func(update types.ToolOutputUpdate)) (types.ToolResult, error) {
 	if plan.PlanStatus == types.ToolPlanStatusDenied {
 		return deniedResult(plan, plan.Decision.Reason), nil
 	}
@@ -52,7 +56,16 @@ func (s *system) Execute(ctx context.Context, plan types.ToolRunPlan) (types.Too
 	if err != nil {
 		return types.ToolResult{}, toolExecutionInvalid("failed to encode tool input", err)
 	}
-	outcome := s.executeToolProcess(ctx, plan.Executable, plan.Tool.BodyDirectory, input, plan.Tool.ControlCapabilities)
+	outcome := s.executeToolProcess(ctx, plan.Executable, plan.Tool.BodyDirectory, input, plan.Tool.ControlCapabilities, func(update types.ToolOutputUpdate) {
+		var relayed types.ToolOutputUpdate
+		relayed.CallID = plan.Action.ID
+		relayed.ToolName = plan.Action.ToolName
+		relayed.Bytes = update.Bytes
+		relayed.Preview = update.Preview
+		if onUpdate != nil {
+			onUpdate(relayed)
+		}
+	})
 	switch outcome.FailureKind {
 	case "user_cancelled":
 		return toolCancelledResult(plan, "tool execution cancelled", outcome.FailureError), nil

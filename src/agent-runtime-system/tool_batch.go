@@ -77,7 +77,7 @@ func (s *system) handleToolIntents(ctx context.Context, record *runRecord, inten
 		return nil, err
 	}
 	s.publishAssistantMessageUpdate(record)
-	executed, updateErr := s.executeReadyTools(ctx, ready, func(result toolExecutionResult) error {
+	executed, updateErr := s.executeReadyTools(ctx, record, ready, func(result toolExecutionResult) error {
 		upsertRunToolPart(record, result.Entry.Action, toolResultPartState(result), &result.Entry.Plan.Decision, &result.Result)
 		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
 			return err
@@ -166,7 +166,7 @@ func (s *system) applyPreparedToolPlan(record *runRecord, entry *toolRunEntry) {
 	}
 }
 
-func (s *system) executeReadyTools(ctx context.Context, entries []toolRunEntry, onResult func(toolExecutionResult) error) ([]toolExecutionResult, error) {
+func (s *system) executeReadyTools(ctx context.Context, record *runRecord, entries []toolRunEntry, onResult func(toolExecutionResult) error) ([]toolExecutionResult, error) {
 	if len(entries) == 0 {
 		return nil, nil
 	}
@@ -192,7 +192,9 @@ func (s *system) executeReadyTools(ctx context.Context, entries []toolRunEntry, 
 				resultCh <- toolExecutionResult{Entry: entry, Err: cancellationErr}
 				return
 			}
-			result, err := s.tools.Execute(ctx, entry.Plan)
+			result, err := s.tools.ExecuteWithOutputUpdate(ctx, entry.Plan, func(update types.ToolOutputUpdate) {
+				s.publishToolOutputUpdate(record, entry, update)
+			})
 			if cancellationErr, ok := toolExecutionCancelled(ctx, nil, err); ok {
 				resultCh <- toolExecutionResult{Entry: entry, Err: cancellationErr}
 				return

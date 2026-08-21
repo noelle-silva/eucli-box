@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Stack, Typography } from '@mui/material'
+import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, IconButton, InputLabel, MenuItem, Select, Stack, Typography } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
 import StorefrontIcon from '@mui/icons-material/Storefront'
 import RefreshIcon from '@mui/icons-material/Refresh'
@@ -18,10 +18,13 @@ type ArtifactStoreDialogProps = {
   actionBusy: boolean
   onAction: (artifact: ReleaseArtifactIdentity, action: 'install' | 'update') => Promise<void> | void
   onRefresh: () => Promise<void> | void
+  devBoxSourceEnabled?: boolean
+  boxSourceKind?: string
+  onChangeBoxSourceKind?: (value: string) => Promise<void> | void
 }
 
 export function ArtifactStoreDialog(props: ArtifactStoreDialogProps) {
-  const { open, onClose, kind, title, results, installState, actionBusy, onAction, onRefresh } = props
+  const { open, onClose, kind, title, results, installState, actionBusy, onAction, onRefresh, devBoxSourceEnabled, boxSourceKind, onChangeBoxSourceKind } = props
   const [refreshing, setRefreshing] = React.useState(false)
   const items = Array.isArray(results)
     ? results
@@ -44,6 +47,20 @@ export function ArtifactStoreDialog(props: ArtifactStoreDialogProps) {
         <StorefrontIcon fontSize="small" />
         {title}
         <Box sx={{ flex: 1 }} />
+        {devBoxSourceEnabled ? (
+          <FormControl size="small" sx={{ minWidth: 140 }}>
+            <InputLabel id="store-install-source-label">安装来源</InputLabel>
+            <Select
+              labelId="store-install-source-label"
+              label="安装来源"
+              value={boxSourceKind === 'development' ? 'development' : 'official'}
+              onChange={(event) => onChangeBoxSourceKind?.(event.target.value)}
+            >
+              <MenuItem value="official">官方发行</MenuItem>
+              <MenuItem value="development">本地开发版</MenuItem>
+            </Select>
+          </FormControl>
+        ) : null}
         <Button startIcon={<RefreshIcon />} size="small" variant="text" onClick={refresh} disabled={refreshing}>
           {refreshing ? '刷新中…' : '刷新'}
         </Button>

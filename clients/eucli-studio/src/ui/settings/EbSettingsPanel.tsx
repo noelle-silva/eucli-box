@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Box, Button, FormControl, InputAdornment, InputLabel, MenuItem, Select, Stack, TextField, Typography } from '@mui/material'
+import { Box, Button, InputAdornment, Stack, TextField, Typography } from '@mui/material'
 import CableIcon from '@mui/icons-material/Cable'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import RestartAltIcon from '@mui/icons-material/RestartAlt'
@@ -19,13 +19,10 @@ type EbSettingsPanelProps = {
   releaseCheckBusy?: boolean
   onRefreshReleaseChecks?: (kind?: string) => Promise<void> | void
   onUpdateLocalBox?: () => Promise<void> | void
-  devBoxSourceEnabled?: boolean
-  boxSourceKind?: string
-  onChangeBoxSourceKind?: (value: string) => Promise<void> | void
 }
 
 export function EbSettingsPanel(props: EbSettingsPanelProps) {
-  const { controller, loading, modelRequestConfig, bootstrap, releaseCheckBusy, onRefreshReleaseChecks, onUpdateLocalBox, devBoxSourceEnabled, boxSourceKind, onChangeBoxSourceKind } = props
+  const { controller, loading, modelRequestConfig, bootstrap, releaseCheckBusy, onRefreshReleaseChecks, onUpdateLocalBox } = props
   const box = modelRequestConfig && typeof modelRequestConfig === 'object' ? modelRequestConfig : {}
   const draft = box.draft && typeof box.draft === 'object' ? box.draft : {}
   const value = box.value && typeof box.value === 'object' ? box.value : {}
@@ -101,36 +98,6 @@ export function EbSettingsPanel(props: EbSettingsPanelProps) {
           {bootstrap ? (
             <SettingsSection tone="muted">
               <LocalBoxUpdatePanel state={bootstrap.localBox} check={boxCheck} busy={false} onUpdate={() => onUpdateLocalBox?.()} />
-            </SettingsSection>
-          ) : null}
-
-          {devBoxSourceEnabled ? (
-            <SettingsSection tone="muted">
-              <Stack spacing={1.25}>
-                <Stack direction="row" spacing={0.75} alignItems="center" sx={{ flexWrap: 'wrap' }}>
-                  <Typography sx={{ fontWeight: 900 }}>安装来源</Typography>
-                  <SettingsPill tone="info">仅开发模式</SettingsPill>
-                </Stack>
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25} alignItems={{ xs: 'stretch', sm: 'center' }}>
-                  <Box sx={{ minWidth: 0, flex: 1 }}>
-                    <Typography variant="body2" color="text.secondary">
-                      统一控制业务端进程、AI 工具与系统插件的安装来源。本地开发版读取当前源码制作的成品；官方发行读取线上发布仓库。
-                    </Typography>
-                  </Box>
-                  <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 200 } }}>
-                    <InputLabel id="install-source-label">来源</InputLabel>
-                    <Select
-                      labelId="install-source-label"
-                      label="来源"
-                      value={boxSourceKind === 'development' ? 'development' : 'official'}
-                      onChange={(event) => onChangeBoxSourceKind?.(event.target.value)}
-                    >
-                      <MenuItem value="official">官方发行</MenuItem>
-                      <MenuItem value="development">本地开发版</MenuItem>
-                    </Select>
-                  </FormControl>
-                </Stack>
-              </Stack>
             </SettingsSection>
           ) : null}
 

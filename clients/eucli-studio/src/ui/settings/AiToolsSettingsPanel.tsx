@@ -31,6 +31,9 @@ type AiToolsSettingsPanelProps = {
   releaseChecks?: ReleaseCheckSnapshot | null
   releaseCheckBusy?: boolean
   onRefreshReleaseChecks?: (kind?: string) => Promise<void> | void
+  devBoxSourceEnabled?: boolean
+  boxSourceKind?: string
+  onChangeBoxSourceKind?: (value: string) => Promise<void> | void
 }
 
 type ToolSummary = {
@@ -47,7 +50,7 @@ type ToolSummary = {
 }
 
 export function AiToolsSettingsPanel(props: AiToolsSettingsPanelProps) {
-  const { controller, loading, tools, releaseChecks, releaseCheckBusy, onRefreshReleaseChecks } = props
+  const { controller, loading, tools, releaseChecks, releaseCheckBusy, onRefreshReleaseChecks, devBoxSourceEnabled, boxSourceKind, onChangeBoxSourceKind } = props
   const [filter, setFilter] = React.useState('')
   const [storeOpen, setStoreOpen] = React.useState(false)
 
@@ -143,6 +146,9 @@ export function AiToolsSettingsPanel(props: AiToolsSettingsPanelProps) {
         actionBusy={tools?.installLoading === true || releaseCheckBusy === true}
         onAction={handleStoreAction}
         onRefresh={() => onRefreshReleaseChecks?.('tool')}
+        devBoxSourceEnabled={devBoxSourceEnabled}
+        boxSourceKind={boxSourceKind}
+        onChangeBoxSourceKind={onChangeBoxSourceKind}
       />
     </>
   )

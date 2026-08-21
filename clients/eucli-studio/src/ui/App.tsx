@@ -7991,7 +7991,7 @@ function PluginSettingsPage(props: {
   }
 
   if (tab === 'tools') {
-    return wrapSettingsPanel(<AiToolsSettingsPanel controller={controller} loading={loading} tools={tools} releaseChecks={bootstrap?.releaseChecks} releaseCheckBusy={releaseCheckBusy} onRefreshReleaseChecks={onRefreshReleaseChecks} />)
+    return wrapSettingsPanel(<AiToolsSettingsPanel controller={controller} loading={loading} tools={tools} releaseChecks={bootstrap?.releaseChecks} releaseCheckBusy={releaseCheckBusy} onRefreshReleaseChecks={onRefreshReleaseChecks} devBoxSourceEnabled={devBoxSourceEnabled} boxSourceKind={boxSourceKind} onChangeBoxSourceKind={onChangeBoxSourceKind} />)
   }
 
   if (tab === 'hookPrompts') {
@@ -8007,7 +8007,7 @@ function PluginSettingsPage(props: {
   }
 
   if (tab === 'eb') {
-    return wrapSettingsPanel(<EbSettingsPanel controller={controller} loading={loading} modelRequestConfig={modelRequestConfig} bootstrap={bootstrap} releaseCheckBusy={releaseCheckBusy} onRefreshReleaseChecks={onRefreshReleaseChecks} onUpdateLocalBox={onUpdateLocalBox} devBoxSourceEnabled={devBoxSourceEnabled} boxSourceKind={boxSourceKind} onChangeBoxSourceKind={onChangeBoxSourceKind} />)
+    return wrapSettingsPanel(<EbSettingsPanel controller={controller} loading={loading} modelRequestConfig={modelRequestConfig} bootstrap={bootstrap} releaseCheckBusy={releaseCheckBusy} onRefreshReleaseChecks={onRefreshReleaseChecks} onUpdateLocalBox={onUpdateLocalBox} />)
   }
 
   if (tab === 'access') {

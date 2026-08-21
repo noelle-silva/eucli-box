@@ -2,7 +2,7 @@
   "id": "shell_command",
   "name": "shell_command",
   "description": "Run one non-interactive shell command through an enabled bundled shell provider and return stdout, stderr, exit code, timeout state, and execution metadata.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "eucliBoxCompatibility": {
     "minimumVersion": "0.1.0",
     "maximumVersionExclusive": "0.2.0"

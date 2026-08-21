@@ -93,7 +93,10 @@ func (s *service) dispatch(ctx context.Context, method string, params json.RawMe
 		if settingReq.Name == "boxSourceKind" {
 			return s.setBoxSourceKind(ctx, settingReq.Value)
 		}
-		return s.config.updateSetting(settingReq.Name, settingReq.Value)
+		if _, err := s.config.updateSetting(settingReq.Name, settingReq.Value); err != nil {
+			return nil, err
+		}
+		return s.config.getSettings()
 	case "releaseChecks.refresh":
 		var refreshReq struct {
 			Kind string `json:"kind"`
@@ -649,5 +652,8 @@ func (s *service) setBoxSourceKind(ctx context.Context, value any) (map[string]a
 		return nil, fmt.Errorf("同步业务端安装来源失败：%w", err)
 	}
 	_ = raw
-	return s.config.updateSetting("boxSourceKind", kind)
+	if _, err := s.config.updateSetting("boxSourceKind", kind); err != nil {
+		return nil, err
+	}
+	return s.config.getSettings()
 }

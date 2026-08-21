@@ -21,10 +21,11 @@ type ArtifactStoreDialogProps = {
   devBoxSourceEnabled?: boolean
   boxSourceKind?: string
   onChangeBoxSourceKind?: (value: string) => Promise<void> | void
+  devSource?: boolean
 }
 
 export function ArtifactStoreDialog(props: ArtifactStoreDialogProps) {
-  const { open, onClose, kind, title, results, installState, actionBusy, onAction, onRefresh, devBoxSourceEnabled, boxSourceKind, onChangeBoxSourceKind } = props
+  const { open, onClose, kind, title, results, installState, actionBusy, onAction, onRefresh, devBoxSourceEnabled, boxSourceKind, onChangeBoxSourceKind, devSource } = props
   const [refreshing, setRefreshing] = React.useState(false)
   const items = Array.isArray(results)
     ? results
@@ -72,7 +73,7 @@ export function ArtifactStoreDialog(props: ArtifactStoreDialogProps) {
         <Stack spacing={1}>
           {items.length ? (
             items.map((result) => (
-              <StoreItem key={`${result.artifact.kind}:${result.artifact.id}`} result={result} installState={installState} actionBusy={actionBusy} onAction={onAction} />
+              <StoreItem key={`${result.artifact.kind}:${result.artifact.id}`} result={result} installState={installState} actionBusy={actionBusy} onAction={onAction} devSource={devSource} />
             ))
           ) : (
             <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
@@ -91,14 +92,16 @@ export function ArtifactStoreDialog(props: ArtifactStoreDialogProps) {
   )
 }
 
-function StoreItem(props: { result: ReleaseCheckResult; installState: any; actionBusy: boolean; onAction: (artifact: ReleaseArtifactIdentity, action: 'install' | 'update') => Promise<void> | void }) {
-  const { result, installState, actionBusy, onAction } = props
+function StoreItem(props: { result: ReleaseCheckResult; installState: any; actionBusy: boolean; onAction: (artifact: ReleaseArtifactIdentity, action: 'install' | 'update') => Promise<void> | void; devSource?: boolean }) {
+  const { result, installState, actionBusy, onAction, devSource } = props
   const artifact = result.artifact
   const id = String(artifact?.id || '')
   const compatibility = result.compatibility
   const failed = result.status === 'failed'
   const installed = result.installed === true
-  const canInstall = !installed && !!result.latestVersion && !failed
+  // 开发源下没有"官方最新版本"事实，但当前来源的成品是否可装由安装动作本身决定；
+  // 未安装就给出安装入口（没有成品时安装会如实报错），官方源维持原语义。
+  const canInstall = !installed && !failed && (devSource === true || !!result.latestVersion)
   const canUpdate = installed && result.updateAvailable === true && !failed
   const stateForItem = installState && typeof installState === 'object' && String(installState.artifact?.id || '') === id ? installState : null
   const stateStatus = String(stateForItem?.status || '')
@@ -131,9 +134,15 @@ function StoreItem(props: { result: ReleaseCheckResult; installState: any; actio
           <Typography variant="caption" color="text.secondary">
             当前：<Box component="span" sx={{ color: 'text.primary', fontWeight: 800 }}>{installed ? result.currentVersion || '版本资料无效' : '未安装'}</Box>
           </Typography>
-          <Typography variant="caption" color="text.secondary">
-            官方：<Box component="span" sx={{ color: 'text.primary', fontWeight: 800 }}>{result.latestVersion || '暂无正式发行'}</Box>
-          </Typography>
+          {devSource === true ? (
+            <Typography variant="caption" color="text.secondary">
+              来源：<Box component="span" sx={{ color: 'text.primary', fontWeight: 800 }}>本地开发版</Box>
+            </Typography>
+          ) : (
+            <Typography variant="caption" color="text.secondary">
+              官方：<Box component="span" sx={{ color: 'text.primary', fontWeight: 800 }}>{result.latestVersion || '暂无正式发行'}</Box>
+            </Typography>
+          )}
           {result.downloadSize > 0 ? (
             <Typography variant="caption" color="text.secondary">
               大小：<Box component="span" sx={{ color: 'text.primary', fontWeight: 800 }}>{formatBytes(result.downloadSize)}</Box>

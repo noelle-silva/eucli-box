@@ -43,6 +43,7 @@ export type ReleaseCheckResult = {
 
 export type ReleaseCheckSnapshot = {
   status: 'not_checked' | 'checking' | 'completed' | 'failed' | string
+  source?: string
   startedAt: string
   checkedAt: string
   results: ReleaseCheckResult[]
@@ -186,6 +187,7 @@ export function normalizeReleaseCheckSnapshot(value: unknown): ReleaseCheckSnaps
   const source = objectValue(value)
   return {
     status: text(source.status) || 'not_checked',
+    source: text(source.source),
     startedAt: text(source.startedAt),
     checkedAt: text(source.checkedAt),
     results: Array.isArray(source.results) ? source.results.map(normalizeReleaseCheckResult) : [],

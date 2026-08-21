@@ -149,6 +149,7 @@ export function AiToolsSettingsPanel(props: AiToolsSettingsPanelProps) {
         devBoxSourceEnabled={devBoxSourceEnabled}
         boxSourceKind={boxSourceKind}
         onChangeBoxSourceKind={onChangeBoxSourceKind}
+        devSource={releaseChecks?.source === 'development'}
       />
     </>
   )

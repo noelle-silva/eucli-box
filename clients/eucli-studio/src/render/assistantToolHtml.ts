@@ -177,14 +177,12 @@ function liveOutputBlock(part: any) {
   if (state !== 'running' && state !== 'requested') return ''
   if (part?.result && typeof part.result === 'object') return ''
   const preview = String(live.preview || '').trim()
-  const bytes = Math.max(0, Math.floor(Number(live.bytes || 0)))
-  const suffix = bytes > 0 ? `（已捕获 ${bytes} 字节）` : ''
   const previewHtml = preview
     ? `<pre class="fw-tool-pre fw-tool-pre-live">${esc(preview)}</pre>`
     : ''
   return [
     '<div class="fw-tool-field">',
-    `<div class="fw-tool-field-label">实时输出${esc(suffix)}</div>`,
+    '<div class="fw-tool-field-label">实时输出</div>',
     previewHtml,
     '</div>',
   ].join('')

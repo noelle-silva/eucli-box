@@ -66,6 +66,12 @@ $env:EUCLI_DEV_BOX_ARCHIVE = $package.ArchivePath
 $env:EUCLI_DEV_BOX_BOX_ROOT = $boxRoot
 $env:FW_APP_DATA_DIR = $clientDataDir
 
+# 工具开发源：业务端安装 AI 工具时读取本地开发版工具成品，不访问线上发行仓库。
+# 成品目录按 <kind>-<id>/<version>/ 组织，由 prepare-dev-box 之后运行 build-tools 产出。
+$devToolPackageRoot = Get-FullPath (Join-Path $boxRoot "package")
+$env:EUCLI_DEV_TOOL_SOURCE = "1"
+$env:EUCLI_DEV_TOOL_PACKAGE_ROOT = $devToolPackageRoot
+
 Write-Host "启动开发客户端，使用业务端版本：$($package.Version)"
 Write-Host "开发客户端数据目录：$clientDataDir"
 Push-Location $clientDirectory

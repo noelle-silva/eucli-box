@@ -35,6 +35,10 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("GET /api/release", s.authWrap(s.handleRelease))
 	s.mux.HandleFunc("GET /api/release-checks", s.authWrap(s.handleReleaseChecks))
 	s.mux.HandleFunc("POST /api/release-checks/refresh", s.authWrap(s.handleRefreshReleaseChecks))
+	if s.config.InstallSource != nil {
+		s.mux.HandleFunc("GET /api/install-source", s.authWrap(s.handleInstallSource))
+		s.mux.HandleFunc("PUT /api/install-source", s.authWrap(s.handleSetInstallSource))
+	}
 
 	s.registerAccessRoutes()
 	s.registerBoxRoutes()

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"eucli-box/pkg/installsource"
 	"eucli-box/pkg/release"
 	"eucli-box/pkg/releasecatalog"
 	"eucli-box/pkg/releasecheck"
@@ -35,10 +36,11 @@ type PluginSystem interface {
 }
 
 type Config struct {
-	BoxVersion string
-	APIBaseURL string
-	IndexBase  string
-	Now        func() time.Time
+	BoxVersion    string
+	APIBaseURL    string
+	IndexBase     string
+	Now           func() time.Time
+	CurrentSource func() installsource.Kind
 }
 
 type checkRunner interface {
@@ -52,6 +54,8 @@ type system struct {
 	catalog    releasecatalog.Catalog
 	tools      ToolSystem
 	plugins    PluginSystem
+	// currentSource 是安装来源状态读取函数；nil 表示永远使用官方源（正式模式）。
+	currentSource func() installsource.Kind
 
 	mu       sync.RWMutex
 	snapshot types.ReleaseCheckSnapshot
@@ -105,13 +109,14 @@ func NewSystemWithChecker(config Config, checker checkRunner, tools ToolSystem, 
 
 func newSystem(config Config, checker checkRunner, catalog releasecatalog.Catalog, tools ToolSystem, plugins PluginSystem, boxVersion string) *system {
 	return &system{
-		boxVersion: boxVersion,
-		now:        config.Now,
-		checker:    checker,
-		catalog:    catalog,
-		tools:      tools,
-		plugins:    plugins,
-		snapshot:   releasecheck.PendingSnapshot(),
+		boxVersion:    boxVersion,
+		now:           config.Now,
+		checker:       checker,
+		catalog:       catalog,
+		tools:         tools,
+		plugins:       plugins,
+		currentSource: config.CurrentSource,
+		snapshot:      releasecheck.PendingSnapshot(),
 	}
 }
 
@@ -143,9 +148,19 @@ func (s *system) Refresh(ctx context.Context, kind string) types.ReleaseCheckSna
 
 	requested := s.requestedArtifacts(kind)
 	installed, localFailures := s.installedArtifacts(ctx)
-	snapshot := s.checker.CheckOnly(ctx, installed, s.boxVersion, requested)
-	applyLocalFailures(&snapshot, localFailures)
-	snapshot = mergeKindSnapshot(previous, snapshot, kind)
+	var snapshot types.ReleaseCheckSnapshot
+	if s.developmentMode() {
+		// 开发来源状态：快照只描述「当前开发版事实」，与分类无关，全量替换。
+		// 不读取官方索引，不产生官方新版本更新提示。
+		snapshot = s.developmentSnapshot(installed, s.requestedArtifacts(""))
+	} else {
+		snapshot = s.checker.CheckOnly(ctx, installed, s.boxVersion, requested)
+		if snapshot.Status == types.ReleaseCheckStatusCompleted || snapshot.Status == types.ReleaseCheckStatusFailed {
+			snapshot.SourceKind = string(installsource.KindOfficial)
+		}
+		applyLocalFailures(&snapshot, localFailures)
+		snapshot = mergeKindSnapshot(previous, snapshot, kind)
+	}
 
 	s.mu.Lock()
 	s.snapshot = cloneSnapshot(snapshot)
@@ -157,6 +172,51 @@ func (s *system) Snapshot() types.ReleaseCheckSnapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return cloneSnapshot(s.snapshot)
+}
+
+func (s *system) developmentMode() bool {
+	return s.currentSource != nil && s.currentSource() == installsource.KindDevelopment
+}
+
+// developmentSnapshot 在开发来源状态下构造版本检查事实：不读取官方索引，
+// 不产生任何官方新版本更新提示；快照整体标记来源为开发版。
+func (s *system) developmentSnapshot(installed []releasecheck.InstalledArtifact, requested []types.ReleaseArtifactIdentity) types.ReleaseCheckSnapshot {
+	installedByIdentity := make(map[string]releasecheck.InstalledArtifact, len(installed))
+	for _, item := range installed {
+		installedByIdentity[item.Artifact.Kind+":"+item.Artifact.ID] = item
+	}
+	checkedAt := s.now()
+	results := make([]types.ReleaseCheckResult, 0, len(requested))
+	for _, artifact := range requested {
+		installedArtifact, isInstalled := installedByIdentity[artifact.Kind+":"+artifact.ID]
+		result := types.ReleaseCheckResult{
+			Artifact:       artifact,
+			Installed:      isInstalled,
+			Status:         types.ReleaseCheckStatusCompleted,
+			CheckedAt:      checkedAt,
+			UpdateAvailable: false,
+		}
+		if source, err := s.catalog.SourceFor(artifact.Kind); err == nil {
+			result.Source = source
+		}
+		if isInstalled {
+			result.CurrentVersion = installedArtifact.Version
+		}
+		results = append(results, result)
+	}
+	sort.Slice(results, func(i int, j int) bool {
+		if results[i].Artifact.Kind != results[j].Artifact.Kind {
+			return results[i].Artifact.Kind < results[j].Artifact.Kind
+		}
+		return results[i].Artifact.ID < results[j].Artifact.ID
+	})
+	return types.ReleaseCheckSnapshot{
+		Status:    types.ReleaseCheckStatusCompleted,
+		SourceKind: string(installsource.KindDevelopment),
+		StartedAt:  checkedAt,
+		CheckedAt:  checkedAt,
+		Results:    results,
+	}
 }
 
 // requestedArtifacts 按刷新分类筛选正式白名单中的发布物。

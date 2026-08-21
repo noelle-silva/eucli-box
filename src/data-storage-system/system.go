@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"eucli-box/pkg/installsource"
 	"eucli-box/pkg/types"
 )
 
@@ -97,6 +98,8 @@ type System interface {
 	SaveChatTitleNamingConfig(ctx context.Context, config types.ChatTitleNamingConfig) (types.ChatTitleNamingConfig, error)
 	LoadContextCompressionConfig(ctx context.Context) (types.ContextCompressionConfig, error)
 	SaveContextCompressionConfig(ctx context.Context, config types.ContextCompressionConfig) (types.ContextCompressionConfig, error)
+	LoadInstallSource(ctx context.Context) (installsource.Kind, error)
+	SaveInstallSource(ctx context.Context, kind installsource.Kind) error
 	LoadModelRequestConfig(ctx context.Context) (types.ModelRequestConfig, error)
 	SaveModelRequestConfig(ctx context.Context, config types.ModelRequestConfig) (types.ModelRequestConfig, error)
 	LoadModelGroups(ctx context.Context) ([]types.ModelGroup, error)

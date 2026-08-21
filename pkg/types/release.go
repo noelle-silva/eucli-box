@@ -122,6 +122,7 @@ type ReleaseCheckResult struct {
 
 type ReleaseCheckSnapshot struct {
 	Status        string               `json:"status"`
+	SourceKind    string               `json:"source,omitempty"`
 	StartedAt     time.Time            `json:"startedAt,omitempty"`
 	CheckedAt     time.Time            `json:"checkedAt,omitempty"`
 	Results       []ReleaseCheckResult `json:"results"`

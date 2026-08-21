@@ -63,6 +63,8 @@ func (p paths) stickerNamingConfigFile() string {
 	return filepath.Join(p.metaRoot(), "sticker-naming.json")
 }
 
+func (p paths) installSourceFile() string { return filepath.Join(p.metaRoot(), "install-source.json") }
+
 func (p paths) mermaidFixConfigFile() string { return filepath.Join(p.metaRoot(), "mermaid-fix.json") }
 
 func (p paths) chatTitleNamingConfigFile() string {

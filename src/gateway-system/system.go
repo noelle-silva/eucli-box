@@ -10,6 +10,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"eucli-box/internal/boxrelease"
+	"eucli-box/pkg/installsource"
 	"eucli-box/pkg/release"
 	"eucli-box/pkg/types"
 )
@@ -185,6 +186,12 @@ type ReleaseCheckSystem interface {
 	Refresh(ctx context.Context, kind string) types.ReleaseCheckSnapshot
 }
 
+// InstallSourceSystem 是安装来源状态的网关视图：只读当前值、切换来源。
+type InstallSourceSystem interface {
+	Current() installsource.Kind
+	Set(ctx context.Context, kind installsource.Kind) (installsource.Kind, error)
+}
+
 // AccessSystem 是业务端长期访问能力的网关视图：
 // 长期端口与长期 Key 的 CRUD 以及长期 Key 核对。
 type AccessSystem interface {
@@ -221,6 +228,7 @@ type Config struct {
 	LocalProcessStart time.Time
 	LocalStop         func()
 	Access            AccessSystem
+	InstallSource     InstallSourceSystem
 }
 
 type system struct {

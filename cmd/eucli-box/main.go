@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -19,6 +20,7 @@ import (
 	"time"
 
 	"eucli-box/internal/boxrelease"
+	"eucli-box/pkg/installsource"
 	"eucli-box/pkg/localrun"
 	"eucli-box/pkg/release"
 	"eucli-box/pkg/releasecheck"
@@ -89,15 +91,6 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("create official candidate checker: %w", err)
 	}
-	var toolCandidates releasecheck.CandidateReader = officialChecker
-	if devToolChecker, devErr := releasecheck.NewDevelopmentSourceReader(os.Getenv("EUCLI_DEV_TOOL_SOURCE"), os.Getenv("EUCLI_DEV_TOOL_PACKAGE_ROOT")); devErr != nil {
-		return devErr
-	} else if devToolChecker != nil {
-		toolCandidates = devToolChecker
-		log.Printf("[2/13] tool candidate reader %s", programStatusLabel(programRoot)+" (development source)")
-	} else {
-		log.Printf("[2/13] official candidate reader %s", programStatusLabel(programRoot))
-	}
 
 	dataDir := envOrDefault("EUCLI_BOX_DATA_DIR", "data")
 	if localConfig.Enabled {
@@ -156,6 +149,37 @@ func run() error {
 	}
 	log.Printf("[3/13] data-storage-system     ✓  (%s)", dataDir)
 
+	devToolSourceEnabled := os.Getenv("EUCLI_DEV_TOOL_SOURCE") == "1"
+	var devCandidateReader *releasecheck.DevelopmentSourceReader
+	if devToolSourceEnabled {
+		reader, devErr := releasecheck.NewDevelopmentSourceReader("1", os.Getenv("EUCLI_DEV_TOOL_PACKAGE_ROOT"))
+		if devErr != nil {
+			return devErr
+		}
+		devCandidateReader = reader
+	}
+	initialSource := installsource.KindOfficial
+	if devToolSourceEnabled {
+		loaded, loadErr := storageSystem.LoadInstallSource(ctx)
+		if loadErr != nil {
+			if !errors.Is(loadErr, os.ErrNotExist) {
+				return fmt.Errorf("读取安装来源配置失败：%w", loadErr)
+			}
+			initialSource = installsource.KindDevelopment
+		} else {
+			initialSource = loaded
+		}
+	}
+	sourceState, err := installsource.NewState(initialSource, devToolSourceEnabled, storageSystem)
+	if err != nil {
+		return err
+	}
+	toolCandidates, err := installsource.NewCandidateSelector(sourceState.Current, officialChecker, devCandidateReader)
+	if err != nil {
+		return err
+	}
+	log.Printf("[2.6/13] candidate reader %s (install-source: %s)", programStatusLabel(programRoot), sourceState.Current())
+
 	providerSystem, err := modelprovider.NewSystem(modelprovider.Config{}, networkSystem, storageSystem)
 	if err != nil {
 		return fmt.Errorf("start model provider system: %w", err)
@@ -185,7 +209,7 @@ func run() error {
 	if programRoot != "" {
 		pluginSourceDir = filepath.Join(programRoot, "system-plugins")
 	}
-	systemPluginSystem, err := systemplugin.NewSystem(systemplugin.Config{SourceDir: pluginSourceDir, DataDir: pluginDataDir, BoxVersion: boxRelease.Version, ProgramRoot: programRoot, Candidates: officialChecker, HTTPClient: officialDoer})
+	systemPluginSystem, err := systemplugin.NewSystem(systemplugin.Config{SourceDir: pluginSourceDir, DataDir: pluginDataDir, BoxVersion: boxRelease.Version, ProgramRoot: programRoot, Candidates: toolCandidates, HTTPClient: officialDoer})
 	if err != nil {
 		return fmt.Errorf("start system plugin system: %w", err)
 	}
@@ -212,7 +236,7 @@ func run() error {
 	}
 	log.Printf("[11/13] ai-assist-system        ✓")
 
-	releaseCheckSystem, err := releasechecksystem.NewSystemWithChecker(releasechecksystem.Config{BoxVersion: boxRelease.Version}, officialChecker, toolSystem, systemPluginSystem, boxRelease.Version)
+	releaseCheckSystem, err := releasechecksystem.NewSystemWithChecker(releasechecksystem.Config{BoxVersion: boxRelease.Version, CurrentSource: sourceState.Current}, officialChecker, toolSystem, systemPluginSystem, boxRelease.Version)
 	if err != nil {
 		return fmt.Errorf("start release check system: %w", err)
 	}
@@ -231,7 +255,7 @@ func run() error {
 	if !localConfig.Enabled && readBoxKey(dataDir) != "" {
 		busyKey = " (key: active)"
 	}
-	gatewayConfig := gateway.Config{Addr: envOrDefault("EUCLI_BOX_ADDR", "127.0.0.1:8765"), Key: readBoxKey(dataDir), BoxVersion: boxRelease.Version, Access: accessSystem}
+	gatewayConfig := gateway.Config{Addr: envOrDefault("EUCLI_BOX_ADDR", "127.0.0.1:8765"), Key: readBoxKey(dataDir), BoxVersion: boxRelease.Version, Access: accessSystem, InstallSource: sourceState}
 	if localConfig.Enabled {
 		gatewayConfig = gateway.Config{
 			Addr:              localConfig.Address,
@@ -245,6 +269,7 @@ func run() error {
 			LocalProcessStart: processStartedAt,
 			LocalStop:         stop,
 			Access:            accessSystem,
+			InstallSource:     sourceState,
 		}
 	}
 	gatewaySystem, err := gateway.NewSystem(gatewayConfig, runtimeSystem, roleSystem, storageSystem, storageSystem, providerSystem, toolSystem, storageSystem, storageSystem, storageSystem, placeholderSystem, systemPluginSystem, assistSystem, releaseCheckSystem)

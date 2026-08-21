@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"eucli-box/internal/boxrelease"
+	"eucli-box/pkg/installsource"
 	"eucli-box/pkg/types"
 	"eucli-box/pkg/workspaceprompt"
 )
@@ -585,7 +586,11 @@ func TestWebSocketRejectsIncompatibleClient(t *testing.T) {
 
 func newTestGateway(t *testing.T, fakes *gatewayFakes) System {
 	t.Helper()
-	system, err := NewSystem(Config{}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseChecks)
+	var source InstallSourceSystem
+	if fakes.installSource != nil {
+		source = fakes.installSource
+	}
+	system, err := NewSystem(Config{InstallSource: source}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseChecks)
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -606,11 +611,39 @@ type gatewayFakes struct {
 	systemPlugins *fakeGatewaySystemPlugins
 	assist        *fakeGatewayAssist
 	releaseChecks *fakeGatewayReleaseChecks
+	installSource *fakeGatewayInstallSource
 }
 
 func newGatewayFakes() *gatewayFakes {
 	stickers := newFakeGatewayStickers()
-	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), groups: newFakeGatewayGroups(), workspaces: newFakeGatewayWorkspaces(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, hooks: &fakeGatewayHooks{}, placeholders: &fakeGatewayPlaceholders{}, systemPlugins: &fakeGatewaySystemPlugins{}, assist: &fakeGatewayAssist{stickers: stickers}, releaseChecks: &fakeGatewayReleaseChecks{snapshot: types.ReleaseCheckSnapshot{Status: types.ReleaseCheckStatusNotChecked, Results: []types.ReleaseCheckResult{}}}}
+	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), groups: newFakeGatewayGroups(), workspaces: newFakeGatewayWorkspaces(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, hooks: &fakeGatewayHooks{}, placeholders: &fakeGatewayPlaceholders{}, systemPlugins: &fakeGatewaySystemPlugins{}, assist: &fakeGatewayAssist{stickers: stickers}, releaseChecks: &fakeGatewayReleaseChecks{snapshot: types.ReleaseCheckSnapshot{Status: types.ReleaseCheckStatusNotChecked, Results: []types.ReleaseCheckResult{}}}, installSource: newFakeGatewayInstallSource()}
+}
+
+type fakeGatewayInstallSource struct {
+	current installsource.Kind
+	mutable bool
+	setErr  error
+	sets    []installsource.Kind
+}
+
+func newFakeGatewayInstallSource() *fakeGatewayInstallSource {
+	return &fakeGatewayInstallSource{current: installsource.KindOfficial, mutable: true}
+}
+
+func (f *fakeGatewayInstallSource) Current() installsource.Kind {
+	return f.current
+}
+
+func (f *fakeGatewayInstallSource) Set(_ context.Context, kind installsource.Kind) (installsource.Kind, error) {
+	if f.setErr != nil {
+		return f.current, f.setErr
+	}
+	if !f.mutable {
+		return f.current, errors.New("正式模式不允许切换安装来源")
+	}
+	f.sets = append(f.sets, kind)
+	f.current = kind
+	return kind, nil
 }
 
 type fakeGatewayReleaseChecks struct {

@@ -89,7 +89,15 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("create official candidate checker: %w", err)
 	}
-	log.Printf("[2/13] official candidate reader %s", programStatusLabel(programRoot))
+	var toolCandidates releasecheck.CandidateReader = officialChecker
+	if devToolChecker, devErr := releasecheck.NewDevelopmentSourceReader(os.Getenv("EUCLI_DEV_TOOL_SOURCE"), os.Getenv("EUCLI_DEV_TOOL_PACKAGE_ROOT")); devErr != nil {
+		return devErr
+	} else if devToolChecker != nil {
+		toolCandidates = devToolChecker
+		log.Printf("[2/13] tool candidate reader %s", programStatusLabel(programRoot)+" (development source)")
+	} else {
+		log.Printf("[2/13] official candidate reader %s", programStatusLabel(programRoot))
+	}
 
 	dataDir := envOrDefault("EUCLI_BOX_DATA_DIR", "data")
 	if localConfig.Enabled {
@@ -166,7 +174,7 @@ func run() error {
 	}
 	log.Printf("[6/13] permission-system       ✓")
 
-	toolSystem, err := toolcalling.NewSystem(toolcalling.Config{BoxVersion: boxRelease.Version, ProgramRoot: toolProgramRoot, Candidates: officialChecker, HTTPClient: officialDoer}, permissionSystem, storageSystem)
+	toolSystem, err := toolcalling.NewSystem(toolcalling.Config{BoxVersion: boxRelease.Version, ProgramRoot: toolProgramRoot, Candidates: toolCandidates, HTTPClient: officialDoer}, permissionSystem, storageSystem)
 	if err != nil {
 		return fmt.Errorf("start tool calling system: %w", err)
 	}

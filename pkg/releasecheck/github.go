@@ -28,6 +28,8 @@ type ReleaseCandidate struct {
 	ArchiveURL       string
 	SizeBytes        int64
 	SHA256           string
+	// Development 标记候选来自显式开发来源（本地成品）。
+	Development bool
 }
 
 // CandidateReader 是业务端系统读取官方候选的只读接口；工具和插件安装共用同一份。

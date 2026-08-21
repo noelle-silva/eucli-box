@@ -115,7 +115,7 @@ func validateCatalog(catalog Catalog) error {
 			return fmt.Errorf("外部随包配方必须按名称排序")
 		}
 		switch recipe.Kind {
-		case "existing", "git-bash", "python-science":
+		case "existing", "git-bash", "python-science", "powershell", "nushell":
 		default:
 			return fmt.Errorf("外部随包配方 %s 的类别无效", recipe.Name)
 		}

@@ -30,6 +30,7 @@ type options struct {
 	migrateLayout      bool
 	buildTime          time.Time
 	assetRoots         assetRootFlags
+	assetRootDir       string
 	requiredAssetRoots requiredAssetRootFlags
 }
 
@@ -83,9 +84,15 @@ func run(ctx context.Context, args []string) error {
 	flags.BoolVar(&opts.migrateLayout, "migrate-layout", false, "move existing tool bodies and tool data into the current layout")
 	buildTimeValue := flags.String("build-time", "", "stable RFC3339 build time; defaults to the current time")
 	flags.Var(&opts.assetRoots, "asset-root", "tool asset root in name=path form; repeatable")
+	flags.StringVar(&opts.assetRootDir, "asset-root-dir", "", "directory of prepared asset roots, each subdirectory keyed by asset name")
 	flags.Var(&opts.requiredAssetRoots, "require-asset-root", "asset root name that must be provided when declared by a matched tool; repeatable")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	if strings.TrimSpace(opts.assetRootDir) != "" {
+		if err := collectAssetRoots(opts.assetRootDir, &opts.assetRoots); err != nil {
+			return err
+		}
 	}
 	repoRoot, err := findRepoRoot()
 	if err != nil {
@@ -182,7 +189,7 @@ func buildTool(ctx context.Context, repoRoot string, dataDir string, source tool
 		return err
 	}
 	if hasToolpack {
-		if err := copyDeclaredAssetRoots(stagingDir, toolpack, opts.assetRoots, opts.requiredAssetRoots); err != nil {
+		if err := copyDeclaredAssetRoots(stagingDir, toolpack, opts.assetRoots, opts.requiredAssetRoots, strings.TrimSpace(opts.assetRootDir) != ""); err != nil {
 			return err
 		}
 		updatedDefinition, err := writeRuntimeConfig(source.Dir, stagingDir, definition, toolpack)
@@ -266,7 +273,7 @@ func readToolpack(sourceDir string) (toolpackSpec, bool, error) {
 	return spec, true, nil
 }
 
-func copyDeclaredAssetRoots(targetDir string, toolpack toolpackSpec, roots assetRootFlags, requiredRoots requiredAssetRootFlags) error {
+func copyDeclaredAssetRoots(targetDir string, toolpack toolpackSpec, roots assetRootFlags, requiredRoots requiredAssetRootFlags, includeDeclaredAsRequired bool) error {
 	for _, asset := range toolpack.AssetRoots {
 		requiredFiles, err := validateAssetRootSpec(asset)
 		if err != nil {
@@ -274,7 +281,7 @@ func copyDeclaredAssetRoots(targetDir string, toolpack toolpackSpec, roots asset
 		}
 		rootInput := strings.TrimSpace(roots[asset.Name])
 		if rootInput == "" {
-			if asset.Required || assetRootRequired(requiredRoots, asset.Name) {
+			if asset.Required || assetRootRequired(requiredRoots, asset.Name) || includeDeclaredAsRequired {
 				return fmt.Errorf("required asset root %q was not provided", asset.Name)
 			}
 			continue
@@ -310,6 +317,38 @@ func assetRootRequired(requiredRoots requiredAssetRootFlags, name string) bool {
 	}
 	_, ok := requiredRoots[name]
 	return ok
+}
+
+// collectAssetRoots 从 prepared 资产目录收集 name=path 映射，目录内每个子目录按名称成为一个资产根。
+func collectAssetRoots(dir string, roots *assetRootFlags) error {
+	if roots == nil {
+		return fmt.Errorf("asset root collection target is missing")
+	}
+	root, err := filepath.Abs(strings.TrimSpace(dir))
+	if err != nil {
+		return fmt.Errorf("resolve prepared asset directory: %w", err)
+	}
+	info, err := os.Stat(root)
+	if err != nil {
+		return fmt.Errorf("stat prepared asset directory: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("prepared asset directory is not a directory")
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return fmt.Errorf("read prepared asset directory: %w", err)
+	}
+	if *roots == nil {
+		*roots = assetRootFlags{}
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		(*roots)[entry.Name()] = filepath.Join(root, entry.Name())
+	}
+	return nil
 }
 
 func validateAssetRootSpec(asset assetRootSpec) ([]string, error) {

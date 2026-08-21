@@ -65,6 +65,56 @@
       ]
     },
     {
+      "name": "nushell-root",
+      "kind": "nushell",
+      "version": "Nushell 0.115.0",
+      "source": "https://github.com/nushell/nushell/releases/tag/0.115.0",
+      "sources": [
+        "https://github.com/nushell/nushell/releases/download/0.115.0/nu-0.115.0-x86_64-pc-windows-msvc.zip"
+      ],
+      "artifacts": ["tool:shell_command"],
+      "inputs": [
+        {
+          "name": "nu-0.115.0-x86_64-pc-windows-msvc.zip",
+          "url": "https://github.com/nushell/nushell/releases/download/0.115.0/nu-0.115.0-x86_64-pc-windows-msvc.zip",
+          "size": 59765605,
+          "sha256": "4f6a0bcbbc2975cf46f3ff93aecc7093c91fa59aca28020e4294906db13ace23"
+        }
+      ],
+      "requiredFiles": [
+        {
+          "path": "nu.exe",
+          "size": 52591104,
+          "sha256": "67145e43de320dd274d4eabf97d326861fdf6e71c6087c04607f5e028e96b654"
+        }
+      ]
+    },
+    {
+      "name": "powershell-root",
+      "kind": "powershell",
+      "version": "PowerShell 7.6.5",
+      "source": "https://github.com/PowerShell/PowerShell/releases/tag/v7.6.5",
+      "sources": [
+        "https://github.com/PowerShell/PowerShell/releases/download/v7.6.5/PowerShell-7.6.5-win-x64.zip"
+      ],
+      "artifacts": ["tool:shell_command"],
+      "inputs": [
+        {
+          "name": "PowerShell-7.6.5-win-x64.zip",
+          "url": "https://github.com/PowerShell/PowerShell/releases/download/v7.6.5/PowerShell-7.6.5-win-x64.zip",
+          "size": 106319290,
+          "sha256": "32eb8f6cdce08f86e987d625a2733e54ac3e289ae7e1621b14c0b5bcec2434ea"
+        }
+      ],
+      "requiredFiles": [
+        {
+          "path": "pwsh.exe",
+          "size": 301368,
+          "sha256": "362a356ce7f0940ec74f73a8fc2c990a2cc24a38a11c90bbd8eca947110ad139"
+        }
+      ]
+    },
+    {
       "name": "sci-calculator-python-runtime",
       "kind": "python-science",
       "version": "Python 3.11.5; NumPy 1.24.3; SciPy 1.11.1; SymPy 1.11.1; mpmath 1.3.0",

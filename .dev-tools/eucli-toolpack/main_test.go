@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"context"
@@ -123,7 +123,7 @@ func TestCopyDeclaredAssetRootsAcceptsRequiredFiles(t *testing.T) {
 		Name:          "everything-root",
 		Target:        "providers/everything",
 		RequiredFiles: []string{"Everything.exe", "es.exe"},
-	}}}, assetRootFlags{"everything-root": assetRoot}, nil)
+	}}}, assetRootFlags{"everything-root": assetRoot}, nil, false)
 	if err != nil {
 		t.Fatalf("copyDeclaredAssetRoots() error = %v", err)
 	}
@@ -140,7 +140,7 @@ func TestCopyDeclaredAssetRootsRejectsMissingRequiredFile(t *testing.T) {
 		Name:          "everything-root",
 		Target:        "providers/everything",
 		RequiredFiles: []string{"Everything.exe", "es.exe"},
-	}}}, assetRootFlags{"everything-root": assetRoot}, nil)
+	}}}, assetRootFlags{"everything-root": assetRoot}, nil, false)
 	if err == nil || !strings.Contains(err.Error(), "es.exe") {
 		t.Fatalf("copyDeclaredAssetRoots() error = %v, want missing es.exe error", err)
 	}
@@ -155,7 +155,7 @@ func TestCopyDeclaredAssetRootsAcceptsLegacyRequiredFile(t *testing.T) {
 		Name:         "python-runtime",
 		Target:       "runtime/python",
 		RequiredFile: "python.exe",
-	}}}, assetRootFlags{"python-runtime": assetRoot}, nil)
+	}}}, assetRootFlags{"python-runtime": assetRoot}, nil, false)
 	if err != nil {
 		t.Fatalf("copyDeclaredAssetRoots() error = %v", err)
 	}
@@ -171,7 +171,7 @@ func TestCopyDeclaredAssetRootsAcceptsExistingPackagedTarget(t *testing.T) {
 		Name:          "everything-root",
 		Target:        "providers/everything",
 		RequiredFiles: []string{"Everything.exe", "es.exe"},
-	}}}, nil, nil)
+	}}}, nil, nil, false)
 	if err != nil {
 		t.Fatalf("copyDeclaredAssetRoots() error = %v", err)
 	}
@@ -185,7 +185,7 @@ func TestCopyDeclaredAssetRootsRejectsIncompletePackagedTarget(t *testing.T) {
 		Name:          "everything-root",
 		Target:        "providers/everything",
 		RequiredFiles: []string{"Everything.exe", "es.exe"},
-	}}}, nil, nil)
+	}}}, nil, nil, false)
 	if err == nil || !strings.Contains(err.Error(), "es.exe") {
 		t.Fatalf("copyDeclaredAssetRoots() error = %v, want missing packaged es.exe error", err)
 	}
@@ -199,7 +199,7 @@ func TestCopyDeclaredAssetRootsRejectsMissingRequiredPackagedTarget(t *testing.T
 		Target:            "providers/everything",
 		RequiredFiles:     []string{"Everything.exe", "es.exe"},
 		RequiredInPackage: true,
-	}}}, nil, nil)
+	}}}, nil, nil, false)
 	if err == nil || !strings.Contains(err.Error(), "was not produced") {
 		t.Fatalf("copyDeclaredAssetRoots() error = %v, want missing required packaged target error", err)
 	}
@@ -212,7 +212,7 @@ func TestCopyDeclaredAssetRootsAcceptsMissingOptionalPackagedTarget(t *testing.T
 		Name:         "python-runtime",
 		Target:       "runtime/python",
 		RequiredFile: "python.exe",
-	}}}, nil, nil)
+	}}}, nil, nil, false)
 	if err != nil {
 		t.Fatalf("copyDeclaredAssetRoots() error = %v", err)
 	}
@@ -227,7 +227,7 @@ func TestCopyDeclaredAssetRootsRejectsEscapingRequiredFile(t *testing.T) {
 		Name:          "asset-root",
 		Target:        "runtime",
 		RequiredFiles: []string{"../outside.exe"},
-	}}}, assetRootFlags{"asset-root": assetRoot}, nil)
+	}}}, assetRootFlags{"asset-root": assetRoot}, nil, false)
 	if err == nil || !strings.Contains(err.Error(), "paths must be relative") {
 		t.Fatalf("copyDeclaredAssetRoots() error = %v, want relative path error", err)
 	}

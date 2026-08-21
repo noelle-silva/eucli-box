@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -20,6 +22,9 @@ type ArtifactPackageSource struct {
 	ArchiveURL string
 	SizeBytes  int64
 	SHA256     string
+	// Development 标记该来源来自显式开发来源（本地成品），
+	// 校验时放行仅供验证的开发标记，但其余核对保持完整。
+	Development bool
 }
 
 // AcquirePackageOptions 固定一次用户动作的取包范围。
@@ -51,7 +56,11 @@ func AcquireAndValidatePackage(ctx context.Context, options AcquirePackageOption
 	}
 
 	archiveTarget := filepath.Join(options.DownloadDir, ArchiveFileName(options.Source.Artifact, options.Source.Product.Version))
-	if _, err := DownloadFile(ctx, DownloadFileOptions{
+	if options.Source.Development {
+		if err := CopyPlainFile(ctx, options.Source.ArchiveURL, archiveTarget); err != nil {
+			return ValidatedPackage{}, fmt.Errorf("复制开发压缩包失败：%w", err)
+		}
+	} else if _, err := DownloadFile(ctx, DownloadFileOptions{
 		Client:         options.Client,
 		URL:            options.Source.ArchiveURL,
 		TargetPath:     archiveTarget,
@@ -88,7 +97,9 @@ func ValidateArtifactPackageSource(source ArtifactPackageSource) error {
 		return err
 	}
 	if source.Product.VerificationOnly || !source.Product.Source.Recorded {
-		return fmt.Errorf("候选使用了仅供验证或未记录来源的成品")
+		if !source.Development {
+			return fmt.Errorf("候选使用了仅供验证或未记录来源的成品")
+		}
 	}
 	if strings.TrimSpace(source.ArchiveURL) == "" {
 		return fmt.Errorf("候选压缩包下载地址不能为空")
@@ -112,4 +123,29 @@ func ArchiveFileName(identity types.ReleaseArtifactIdentity, version string) str
 		name += "-" + identity.ID
 	}
 	return fmt.Sprintf("%s_%s_%s.zip", name, version, types.ReleasePlatformWindowsX64)
+}
+
+// CopyPlainFile 把本地开发成品压包复制到目标路径，并核对大小与 SHA-256。
+func CopyPlainFile(ctx context.Context, sourcePath string, targetPath string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	source, err := os.Open(sourcePath)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+		return err
+	}
+	target, err := os.OpenFile(targetPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(target, source)
+	closeErr := target.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	return closeErr
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"eucli-box/pkg/release"
+	"eucli-box/pkg/releasecheck"
 	"eucli-box/pkg/types"
 	"eucli-box/pkg/utils"
 )
@@ -26,6 +27,14 @@ func cleanToolID(toolID string) (string, error) {
 
 func (s *system) toolProgramRoot(toolID string) string {
 	return filepath.Join(s.config.ProgramRoot, toolID)
+}
+
+// toolPackageSource 从候选构造取包来源；开发候选走开发来源打包事实。
+func (s *system) toolPackageSource(candidate *releasecheck.ReleaseCandidate) (release.ArtifactPackageSource, error) {
+	if candidate != nil && candidate.Development {
+		return releasecheck.DevelopmentSource(candidate)
+	}
+	return candidate.PackageSource()
 }
 
 func (s *system) toolOperationFile(toolID string) string {
@@ -106,7 +115,7 @@ func (s *system) runToolOperation(ctx context.Context, toolID string, action str
 	if candidate.Artifact != identity {
 		return s.operationState(identity, currentVersion, "", types.ArtifactStatusFailed, types.ArtifactPhaseCandidate, types.ArtifactErrorCandidateMismatch, "候选身份与目标工具不一致")
 	}
-	source, err := candidate.PackageSource()
+	source, err := s.toolPackageSource(candidate)
 	if err != nil {
 		return s.operationState(identity, currentVersion, "", types.ArtifactStatusFailed, types.ArtifactPhaseCandidate, types.ArtifactErrorCandidateMismatch, "候选取包来源无效："+err.Error())
 	}

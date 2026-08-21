@@ -21,6 +21,12 @@ var gitBashNotice []byte
 //go:embed notices/python-science.md
 var pythonScienceNotice []byte
 
+//go:embed notices/powershell.md
+var powershellNotice []byte
+
+//go:embed notices/nushell.md
+var nushellNotice []byte
+
 type PrepareOptions struct {
 	RepositoryRoot string
 	Artifact       types.ReleaseArtifactIdentity
@@ -99,6 +105,10 @@ func PrepareRequired(ctx context.Context, options PrepareOptions) (map[string]st
 			err = prepareGitBash(ctx, recipe, inputs, staging, tempRoot)
 		case "python-science":
 			err = preparePythonScience(recipe, inputs, staging)
+		case "powershell":
+			err = prepareSingleZip(recipe, inputs, staging, powershellNotice)
+		case "nushell":
+			err = prepareSingleZip(recipe, inputs, staging, nushellNotice)
 		default:
 			err = fmt.Errorf("外部随包配方 %s 不能自动准备", recipe.Name)
 		}
@@ -266,6 +276,24 @@ func preparePythonScience(recipe Recipe, inputs map[string]string, target string
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(target, "THIRD_PARTY_NOTICES.md"), pythonScienceNotice, 0o644); err != nil {
+		return err
+	}
+	return validatePinnedFiles(target, recipe.RequiredFiles)
+}
+
+// prepareSingleZip 将单一 zip 输入原样解开到目标目录，并附带书面通告。
+func prepareSingleZip(recipe Recipe, inputs map[string]string, target string, notice []byte) error {
+	if len(recipe.Inputs) != 1 {
+		return fmt.Errorf("外部随包配方 %s 要求恰好一个压缩包输入", recipe.Name)
+	}
+	archive, ok := inputs[recipe.Inputs[0].Name]
+	if !ok || archive == "" {
+		return fmt.Errorf("外部随包配方 %s 固定输入缺失", recipe.Name)
+	}
+	if err := extractZip(archive, target); err != nil {
+		return fmt.Errorf("解开 %s 失败：%w", recipe.Name, err)
+	}
+	if err := os.WriteFile(filepath.Join(target, "THIRD_PARTY_NOTICES.md"), notice, 0o644); err != nil {
 		return err
 	}
 	return validatePinnedFiles(target, recipe.RequiredFiles)

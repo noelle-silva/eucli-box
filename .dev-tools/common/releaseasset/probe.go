@@ -44,6 +44,26 @@ func probe(ctx context.Context, root string, recipe Recipe) error {
 			return fmt.Errorf("科学计算 Python 固定能力核对失败：%w：%s", err, strings.TrimSpace(string(output)))
 		}
 		return nil
+	case "powershell":
+		cmd := exec.CommandContext(ctx, filepath.Join(root, "pwsh.exe"), "-NoLogo", "-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()")
+		cmd.Dir = root
+		cmd.Env = replaceEnvironment(os.Environ(), map[string]string{"PATH": `C:\Windows\System32`})
+		hideProcessWindow(cmd)
+		output, err := cmd.CombinedOutput()
+		if err != nil || !strings.Contains(strings.TrimSpace(string(output)), "7.6.5") {
+			return fmt.Errorf("PowerShell 运行核对失败：%w：%s", err, strings.TrimSpace(string(output)))
+		}
+		return nil
+	case "nushell":
+		cmd := exec.CommandContext(ctx, filepath.Join(root, "nu.exe"), "--version")
+		cmd.Dir = root
+		cmd.Env = replaceEnvironment(os.Environ(), map[string]string{"PATH": `C:\Windows\System32`})
+		hideProcessWindow(cmd)
+		output, err := cmd.CombinedOutput()
+		if err != nil || !strings.Contains(strings.TrimSpace(string(output)), "0.115.0") {
+			return fmt.Errorf("Nushell 运行核对失败：%w：%s", err, strings.TrimSpace(string(output)))
+		}
+		return nil
 	default:
 		return fmt.Errorf("没有为外部随包类别 %s 定义运行核对", recipe.Kind)
 	}

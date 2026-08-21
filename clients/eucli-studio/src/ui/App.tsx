@@ -1062,8 +1062,8 @@ function ComposerInputControls(props: {
   )
 }
 
-export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap; dataDirectory?: AiChatDataDirectory; windowControls?: AiChatWindowControls; releaseCheckBusy?: boolean; onRefreshReleaseChecks?: (kind?: string) => Promise<void> | void; keepBoxRunningOnExit?: boolean; onKeepBoxRunningOnExitChange?: (value: boolean) => Promise<void> | void; onStartBox?: () => Promise<void> | void; onRestartBox?: () => Promise<void> | void; onStopBox?: () => Promise<void> | void; onUpdateLocalBox?: () => Promise<void> | void }) {
-  const { controller, bootstrap, dataDirectory, windowControls, releaseCheckBusy, onRefreshReleaseChecks, keepBoxRunningOnExit, onKeepBoxRunningOnExitChange, onStartBox, onRestartBox, onStopBox, onUpdateLocalBox } = props
+export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap; dataDirectory?: AiChatDataDirectory; windowControls?: AiChatWindowControls; releaseCheckBusy?: boolean; onRefreshReleaseChecks?: (kind?: string) => Promise<void> | void; keepBoxRunningOnExit?: boolean; onKeepBoxRunningOnExitChange?: (value: boolean) => Promise<void> | void; devBoxSourceEnabled?: boolean; boxSourceKind?: string; onChangeBoxSourceKind?: (value: string) => Promise<void> | void; onStartBox?: () => Promise<void> | void; onRestartBox?: () => Promise<void> | void; onStopBox?: () => Promise<void> | void; onUpdateLocalBox?: () => Promise<void> | void }) {
+  const { controller, bootstrap, dataDirectory, windowControls, releaseCheckBusy, onRefreshReleaseChecks, keepBoxRunningOnExit, onKeepBoxRunningOnExitChange, devBoxSourceEnabled, boxSourceKind, onChangeBoxSourceKind, onStartBox, onRestartBox, onStopBox, onUpdateLocalBox } = props
   const s = useAiChatState(controller)
   const data = s.data
   const colorThemePreset = resolveColorThemePreset(data?.settings?.colorTheme)
@@ -6971,6 +6971,9 @@ export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap;
             accessSettings={(s as any)?.accessSettings}
             keepBoxRunningOnExit={keepBoxRunningOnExit}
             onKeepBoxRunningOnExitChange={onKeepBoxRunningOnExitChange}
+            devBoxSourceEnabled={devBoxSourceEnabled}
+            boxSourceKind={boxSourceKind}
+            onChangeBoxSourceKind={onChangeBoxSourceKind}
             onStartBox={onStartBox}
             onRestartBox={onRestartBox}
             onStopBox={onStopBox}
@@ -7379,6 +7382,9 @@ function PluginSettingsPage(props: {
   accessSettings?: any
   keepBoxRunningOnExit?: boolean
   onKeepBoxRunningOnExitChange?: (value: boolean) => Promise<void> | void
+  devBoxSourceEnabled?: boolean
+  boxSourceKind?: string
+  onChangeBoxSourceKind?: (value: string) => Promise<void> | void
   onStartBox?: () => Promise<void> | void
   onRestartBox?: () => Promise<void> | void
   onStopBox?: () => Promise<void> | void
@@ -7394,7 +7400,7 @@ function PluginSettingsPage(props: {
   onTabChange: (tab: SettingsTab) => void
   dataDirectory?: AiChatDataDirectory
 }) {
-  const { controller, loading, data, roles, groups, workspaces, providers, modelGroups, models, tools, modelRequestConfig, bootstrap, releaseCheckBusy, onRefreshReleaseChecks, accessSettings, keepBoxRunningOnExit, onKeepBoxRunningOnExitChange, onStartBox, onRestartBox, onStopBox, onUpdateLocalBox, hookPrompts, placeholders, systemPlugins, draft, activeRoleId, activeWorkspaceId, activeTargetKind, tab, onTabChange, dataDirectory } = props
+  const { controller, loading, data, roles, groups, workspaces, providers, modelGroups, models, tools, modelRequestConfig, bootstrap, releaseCheckBusy, onRefreshReleaseChecks, accessSettings, keepBoxRunningOnExit, onKeepBoxRunningOnExitChange, devBoxSourceEnabled, boxSourceKind, onChangeBoxSourceKind, onStartBox, onRestartBox, onStopBox, onUpdateLocalBox, hookPrompts, placeholders, systemPlugins, draft, activeRoleId, activeWorkspaceId, activeTargetKind, tab, onTabChange, dataDirectory } = props
   const [treeHotkeyRecording, setTreeHotkeyRecording] = React.useState(false)
 
   React.useEffect(() => {
@@ -8001,7 +8007,7 @@ function PluginSettingsPage(props: {
   }
 
   if (tab === 'eb') {
-    return wrapSettingsPanel(<EbSettingsPanel controller={controller} loading={loading} modelRequestConfig={modelRequestConfig} bootstrap={bootstrap} releaseCheckBusy={releaseCheckBusy} onRefreshReleaseChecks={onRefreshReleaseChecks} onUpdateLocalBox={onUpdateLocalBox} />)
+    return wrapSettingsPanel(<EbSettingsPanel controller={controller} loading={loading} modelRequestConfig={modelRequestConfig} bootstrap={bootstrap} releaseCheckBusy={releaseCheckBusy} onRefreshReleaseChecks={onRefreshReleaseChecks} onUpdateLocalBox={onUpdateLocalBox} devBoxSourceEnabled={devBoxSourceEnabled} boxSourceKind={boxSourceKind} onChangeBoxSourceKind={onChangeBoxSourceKind} />)
   }
 
   if (tab === 'access') {

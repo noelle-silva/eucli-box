@@ -78,7 +78,7 @@ export function App() {
   const [runtimeBootstrap, setRuntimeBootstrap] = React.useState<StudioBootstrap | null>(null)
   const [releaseCheckBusy, setReleaseCheckBusy] = React.useState(false)
   const [localBoxBusy, setLocalBoxBusy] = React.useState(false)
-  const [clientSettings, setClientSettings] = React.useState<ClientSettings>({ keepBoxRunningOnExit: false })
+  const [clientSettings, setClientSettings] = React.useState<ClientSettings>({ keepBoxRunningOnExit: false, devBoxSourceEnabled: false, boxSourceKind: 'official' })
   const runtimeRef = React.useRef<AiChatAppRuntime | null>(null)
   const runtimeVersionRef = React.useRef(0)
   const mountedRef = React.useRef(false)
@@ -360,6 +360,18 @@ export function App() {
     }
   }, [showToast])
 
+  const changeBoxSourceKind = React.useCallback(async (value: string) => {
+    const runtime = runtimeRef.current
+    if (!runtime) return
+    try {
+      const settings = await runtime.setClientSetting('boxSourceKind', value)
+      setClientSettings(settings)
+      showToast(settings.boxSourceKind === 'development' ? '已切换为本地开发版来源' : '已切换为官方发行来源', { kind: 'success' })
+    } catch (error: any) {
+      showToast(String(error?.message || error || '保存安装来源设置失败'), { kind: 'error' })
+    }
+  }, [showToast])
+
   const startLocalBox = React.useCallback(async () => {
     const runtime = runtimeRef.current
     if (!runtime || localBoxBusyRef.current) return
@@ -481,6 +493,9 @@ export function App() {
              onRefreshReleaseChecks={refreshReleaseChecks}
              keepBoxRunningOnExit={clientSettings.keepBoxRunningOnExit}
              onKeepBoxRunningOnExitChange={changeKeepBoxRunningOnExit}
+             devBoxSourceEnabled={clientSettings.devBoxSourceEnabled}
+             boxSourceKind={clientSettings.boxSourceKind}
+             onChangeBoxSourceKind={changeBoxSourceKind}
              onStartBox={startLocalBox}
              onRestartBox={restartLocalBox}
              onStopBox={stopLocalBox}

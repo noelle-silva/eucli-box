@@ -37,6 +37,8 @@ export type AiChatAppRuntime = {
 
 export type ClientSettings = {
   keepBoxRunningOnExit: boolean
+  devBoxSourceEnabled: boolean
+  boxSourceKind: string
 }
 
 export type EucliBoxConfig = {
@@ -105,6 +107,8 @@ export function normalizeClientSettings(value: unknown): ClientSettings {
   const source = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : {}
   return {
     keepBoxRunningOnExit: source.keepBoxRunningOnExit === true,
+    devBoxSourceEnabled: source.devBoxSourceEnabled === true,
+    boxSourceKind: typeof source.boxSourceKind === 'string' && source.boxSourceKind ? String(source.boxSourceKind) : 'official',
   }
 }
 

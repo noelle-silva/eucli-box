@@ -12,10 +12,11 @@ import (
 const configFileName = "eucli-studio-client-config.json"
 
 type clientConfig struct {
-	EucliBoxURL           string           `json:"eucliBoxUrl"`
-	EucliBoxKey           string           `json:"eucliBoxKey"`
-	KeepBoxRunningOnExit  bool             `json:"keepBoxRunningOnExit,omitempty"`
-	Projection            projectionConfig `json:"projection"`
+	EucliBoxURL          string           `json:"eucliBoxUrl"`
+	EucliBoxKey          string           `json:"eucliBoxKey"`
+	KeepBoxRunningOnExit bool             `json:"keepBoxRunningOnExit,omitempty"`
+	BoxSourceKind       string           `json:"boxSourceKind,omitempty"`
+	Projection           projectionConfig `json:"projection"`
 }
 
 type projectionConfig struct {
@@ -81,6 +82,7 @@ func (s *configStore) save(next clientConfig) (clientConfig, error) {
 		EucliBoxURL:          normalizeBaseURL(next.EucliBoxURL),
 		EucliBoxKey:          strings.TrimSpace(next.EucliBoxKey),
 		KeepBoxRunningOnExit: next.KeepBoxRunningOnExit,
+		BoxSourceKind:        strings.TrimSpace(next.BoxSourceKind),
 		Projection:           projection,
 	}
 	payload, err := json.MarshalIndent(cfg, "", "  ")
@@ -115,39 +117,94 @@ func (s *configStore) updateProjection(fn func(*projectionConfig)) (projectionCo
 	return cfg.Projection, nil
 }
 
-// getSettings 读取客户端设置：当前只有退出后继续运行业务端开关。
+// getSettings 读取客户端设置；开发模式时附带安装来源与开发标记。
 func (s *configStore) getSettings() (map[string]any, error) {
 	cfg, err := s.load()
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"keepBoxRunningOnExit": cfg.KeepBoxRunningOnExit}, nil
+	return map[string]any{
+		"keepBoxRunningOnExit": cfg.KeepBoxRunningOnExit,
+		"devBoxSourceEnabled":  devBoxSourceEnabled(),
+		"boxSourceKind":        cfg.BoxSourceKind,
+	}, nil
 }
 
-// updateSetting 保存单个客户端设置字段；当前只支持退出后继续运行业务端开关。
+// updateSetting 保存单个客户端设置字段。
 func (s *configStore) updateSetting(name string, value any) (map[string]any, error) {
-	if name != "keepBoxRunningOnExit" {
+	switch name {
+	case "keepBoxRunningOnExit":
+		enabled, ok := value.(bool)
+		if !ok {
+			return nil, newError("BAD_REQUEST", "keepBoxRunningOnExit 必须是布尔值")
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		cfg, err := s.loadLocked()
+		if err != nil {
+			return nil, err
+		}
+		cfg.KeepBoxRunningOnExit = enabled
+		if err := s.writeLocked(cfg); err != nil {
+			return nil, err
+		}
+		return map[string]any{"keepBoxRunningOnExit": enabled}, nil
+	case "boxSourceKind":
+		if !devBoxSourceEnabled() {
+			return nil, newError("FORBIDDEN", "正式模式不允许切换业务端安装来源")
+		}
+		kind, ok := value.(string)
+		if !ok {
+			return nil, newError("BAD_REQUEST", "boxSourceKind 必须是来源类别")
+		}
+		kind = strings.TrimSpace(kind)
+		if kind != string(localBoxSourceOfficial) && kind != string(localBoxSourceDevelopment) {
+			return nil, newError("BAD_REQUEST", "boxSourceKind 只能是 official 或 development")
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		cfg, err := s.loadLocked()
+		if err != nil {
+			return nil, err
+		}
+		cfg.BoxSourceKind = kind
+		if err := s.writeLocked(cfg); err != nil {
+			return nil, err
+		}
+		return map[string]any{"boxSourceKind": kind}, nil
+	default:
 		return nil, newError("BAD_REQUEST", "不支持的客户端设置："+name)
 	}
-	enabled, ok := value.(bool)
-	if !ok {
-		return nil, newError("BAD_REQUEST", "keepBoxRunningOnExit 必须是布尔值")
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	cfg, err := s.loadLocked()
-	if err != nil {
-		return nil, err
-	}
-	cfg.KeepBoxRunningOnExit = enabled
+}
+
+func (s *configStore) writeLocked(cfg clientConfig) error {
 	payload, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if err := os.WriteFile(s.path, append(payload, '\n'), 0o600); err != nil {
-		return nil, err
+	return os.WriteFile(s.path, append(payload, '\n'), 0o600)
+}
+
+// boxSourceKindEffective 返回业务端进程应使用的安装来源；配置为空时按开发模式默认值。
+func (s *configStore) boxSourceKindEffective() localBoxSourceKind {
+	cfg, err := s.load()
+	if err != nil {
+		return localBoxSourceOfficial
 	}
-	return map[string]any{"keepBoxRunningOnExit": enabled}, nil
+	if cfg.BoxSourceKind == string(localBoxSourceDevelopment) {
+		return localBoxSourceDevelopment
+	}
+	if cfg.BoxSourceKind == string(localBoxSourceOfficial) {
+		return localBoxSourceOfficial
+	}
+	if devBoxSourceEnabled() {
+		return localBoxSourceDevelopment
+	}
+	return localBoxSourceOfficial
+}
+
+func devBoxSourceEnabled() bool {
+	return strings.TrimSpace(os.Getenv(devSourceEnvironment)) == devSourceEnabled
 }
 
 // clearLegacyConnection 清理客户端设置中保存的旧地址和旧 Key 副本；

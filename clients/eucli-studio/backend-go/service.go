@@ -90,6 +90,9 @@ func (s *service) dispatch(ctx context.Context, method string, params json.RawMe
 		if err := json.Unmarshal(paramsOrEmpty(params), &settingReq); err != nil {
 			return nil, err
 		}
+		if settingReq.Name == "boxSourceKind" {
+			return s.setBoxSourceKind(ctx, settingReq.Value)
+		}
 		return s.config.updateSetting(settingReq.Name, settingReq.Value)
 	case "releaseChecks.refresh":
 		var refreshReq struct {
@@ -625,4 +628,26 @@ func paramsOrEmpty(params json.RawMessage) json.RawMessage {
 		return json.RawMessage(`{}`)
 	}
 	return params
+}
+
+// setBoxSourceKind 切换业务端安装来源：先同步业务端 /api/install-source，
+// 成功后再持久化客户端配置，保证三层来源一致（不做静默不一致残留）。
+func (s *service) setBoxSourceKind(ctx context.Context, value any) (map[string]any, error) {
+	kind, ok := value.(string)
+	if !ok {
+		return nil, newError("BAD_REQUEST", "boxSourceKind 必须是来源类别")
+	}
+	kind = strings.TrimSpace(kind)
+	if kind != string(localBoxSourceOfficial) && kind != string(localBoxSourceDevelopment) {
+		return nil, newError("BAD_REQUEST", "boxSourceKind 只能是 official 或 development")
+	}
+	if !devBoxSourceEnabled() {
+		return nil, newError("FORBIDDEN", "正式模式不允许切换业务端安装来源")
+	}
+	raw, err := s.eb.request(ctx, ebRequest{Method: "PUT", Path: "/api/install-source", Body: mustJSON(map[string]any{"kind": kind}), Timeout: 15000})
+	if err != nil {
+		return nil, fmt.Errorf("同步业务端安装来源失败：%w", err)
+	}
+	_ = raw
+	return s.config.updateSetting("boxSourceKind", kind)
 }

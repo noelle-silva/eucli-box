@@ -36,17 +36,18 @@ func run() error {
 		return err
 	}
 	hub := newEventHub()
-	source, checker, devBoxRoot, err := resolveLocalBoxSource()
+	source, devBoxRoot, err := resolveLocalBoxSource(store)
 	if err != nil {
 		return err
 	}
+	var checker releaseChecker
 	if source == nil {
 		officialChecker, err := releasecheck.New(releasecheck.Config{})
 		if err != nil {
 			return err
 		}
-		checker = officialChecker
 		source = &officialArtifactSource{checker: officialChecker}
+		checker = officialChecker
 	}
 	svc, err := newService(store, release, hub, source, checker, devBoxRoot)
 	if err != nil {
@@ -75,13 +76,17 @@ func keepBoxRunningOnExit(store *configStore) (bool, error) {
 	return cfg.KeepBoxRunningOnExit, nil
 }
 
-// resolveLocalBoxSource 根据开发体验入口的环境变量显式建立成品来源。
-// 没有开发来源标记时返回 nil，由调用方建立官方来源；
+// resolveLocalBoxSource 根据开发模式标记与客户端配置决定业务端成品来源。
+// 正式模式（无开发标记）返回 nil，由调用方建立官方来源（现状不变）；
+// 开发模式按客户端配置选择：development 读取本地成品，official 由调用方建立官方源。
 // 有开发来源标记时即使资料缺失也返回开发来源，让客户端直接报告开发成品不可用，
 // 绝不回退到读取官方旧正式版。
-func resolveLocalBoxSource() (localBoxArtifactSource, releaseChecker, string, error) {
-	if strings.TrimSpace(os.Getenv(devSourceEnvironment)) != devSourceEnabled {
-		return nil, nil, "", nil
+func resolveLocalBoxSource(store *configStore) (localBoxArtifactSource, string, error) {
+	if !devBoxSourceEnabled() {
+		return nil, "", nil
 	}
-	return newDevelopmentArtifactSource(os.Getenv(devManifestEnvironment), os.Getenv(devArchiveEnvironment)), nil, strings.TrimSpace(os.Getenv(devBoxRootEnvironment)), nil
+	if store.boxSourceKindEffective() == localBoxSourceDevelopment {
+		return newDevelopmentArtifactSource(os.Getenv(devManifestEnvironment), os.Getenv(devArchiveEnvironment)), strings.TrimSpace(os.Getenv(devBoxRootEnvironment)), nil
+	}
+	return nil, strings.TrimSpace(os.Getenv(devBoxRootEnvironment)), nil
 }

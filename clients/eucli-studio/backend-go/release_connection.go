@@ -13,7 +13,6 @@ import (
 type runtimeBootstrap struct {
 	ClientVersion               string                      `json:"clientVersion"`
 	ClientEucliBoxCompatibility types.EucliBoxCompatibility `json:"clientEucliBoxCompatibility"`
-	LocalBox                    localBoxState               `json:"localBox"`
 	EucliBoxConfigured          bool                        `json:"eucliBoxConfigured"`
 	EucliBoxReachable           bool                        `json:"eucliBoxReachable"`
 	EucliBoxURL                 string                      `json:"eucliBoxUrl"`
@@ -32,28 +31,11 @@ func (s *service) bootstrap(ctx context.Context) (runtimeBootstrap, error) {
 	info := runtimeBootstrap{
 		ClientVersion:               s.release.Version,
 		ClientEucliBoxCompatibility: s.release.EucliBoxCompatibility,
-		LocalBox:                    initialLocalBoxState(),
 		EucliBoxURL:                 cfg.EucliBoxURL,
 		ReleaseChecks:               s.releaseCheckSnapshot(),
 	}
-	if s.localBox != nil {
-		localState, _ := s.localBox.status(ctx)
-		info.LocalBox = localState
-		if localState.Connected {
-			return s.bootstrapConnected(ctx, info)
-		}
-		if localState.Error.Code != "" {
-			info.EucliBoxIssue = localState.Error.Code + ": " + localState.Error.Message
-		} else if !localState.Installed {
-			info.EucliBoxIssue = "LOCAL_BOX_NOT_INSTALLED: 请先安装本机业务端"
-		} else {
-			info.EucliBoxIssue = "LOCAL_BOX_START_FAILED: 本机业务端尚未建立受托连接"
-		}
-		info.EucliBoxConfigured = strings.TrimSpace(cfg.EucliBoxURL) != ""
-		s.setConnectionState(info)
-		return info, nil
-	}
 	if strings.TrimSpace(cfg.EucliBoxURL) == "" {
+		info.EucliBoxIssue = "EUCLI_BOX_NOT_CONFIGURED: 请先配置业务端地址与访问 Key"
 		s.setConnectionState(info)
 		return info, nil
 	}

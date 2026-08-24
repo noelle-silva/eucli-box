@@ -29,7 +29,7 @@ type PersistentPortManager struct {
 	handlerMu sync.RWMutex
 	handler   http.Handler
 
-	entrypointMu sync.RWMutex
+	entrypointMu   sync.RWMutex
 	entrypointPort int
 
 	mu      sync.Mutex
@@ -110,23 +110,6 @@ func (m *PersistentPortManager) AddPort(ctx context.Context, name string, port i
 		return types.PersistentPort{}, err
 	}
 	return record, nil
-}
-
-// SavePort 写入一条已经完整构造的端口记录，供旧配置转换使用。
-func (m *PersistentPortManager) SavePort(ctx context.Context, record types.PersistentPort) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	for index := range m.ports {
-		if m.ports[index].ID == record.ID {
-			m.ports[index] = record
-			return m.saveLocked(ctx)
-		}
-	}
-	m.ports = append(m.ports, record)
-	return m.saveLocked(ctx)
 }
 
 // EnablePort 启用长期端口：必须存在有效长期 Key；改期望状态后尝试开放监听。

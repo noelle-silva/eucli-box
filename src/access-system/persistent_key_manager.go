@@ -129,41 +129,6 @@ func (m *PersistentKeyManager) Reveal(ctx context.Context, id string) (string, e
 	return plain, nil
 }
 
-// SaveKey 保存一条已经给出明文的 Key 记录（旧配置转换专用）：
-// 使用系统保护加密明文后保存，转换失败时保留原调用方资料。
-func (m *PersistentKeyManager) SaveKey(ctx context.Context, name string, plainKey string, enabled bool, expiresAt *string) (types.PersistentKeyCreated, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return types.PersistentKeyCreated{}, fmt.Errorf("长期 Key 名称不能为空")
-	}
-	if strings.TrimSpace(plainKey) == "" {
-		return types.PersistentKeyCreated{}, fmt.Errorf("待保存的长期 Key 不能为空")
-	}
-	if err := validateExpiresAt(expiresAt); err != nil {
-		return types.PersistentKeyCreated{}, err
-	}
-	encrypted, err := m.protect.Protect(ctx, plainKey)
-	if err != nil {
-		return types.PersistentKeyCreated{}, fmt.Errorf("保护长期 Key 失败：%w", err)
-	}
-	now := m.now()
-	record := types.PersistentKey{
-		ID:           utils.NewID("key"),
-		Name:         name,
-		EncryptedKey: encrypted,
-		Enabled:      enabled,
-		ExpiresAt:    normalizeExpiresAt(expiresAt),
-		CreatedAt:    now.Format(time.RFC3339Nano),
-		LastUsedAt:   nil,
-	}
-	if err := m.updateLocked(ctx, nil, func(records *[]types.PersistentKey) {
-		*records = append(*records, record)
-	}); err != nil {
-		return types.PersistentKeyCreated{}, err
-	}
-	return types.PersistentKeyCreated{ID: record.ID, Name: record.Name, PlainKey: plainKey, ExpiresAt: record.ExpiresAt, CreatedAt: record.CreatedAt}, nil
-}
-
 // SetEnabled 修改长期 Key 启用状态；停用时立即结束使用该 Key 的所有持续连接。
 func (m *PersistentKeyManager) SetEnabled(ctx context.Context, id string, enabled bool) error {
 	return m.updateLocked(ctx, &id, func(records *[]types.PersistentKey) {

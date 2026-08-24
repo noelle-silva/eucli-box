@@ -36,12 +36,6 @@ export type BoxInfo = {
   } | null
 }
 
-export type BoxShutdownResult = {
-  requiresConfirmation: boolean
-  activeWork: Array<{ id: string; status: string; roleId: string; sessionId: string; createdAt: string }>
-  status?: string
-}
-
 export function normalizePersistentPort(value: unknown): PersistentPort {
   const source = objectValue(value)
   return {
@@ -94,22 +88,6 @@ export function normalizeBoxInfo(value: unknown): BoxInfo {
           },
         }
       : null,
-  }
-}
-
-export function normalizeBoxShutdownResult(value: unknown): BoxShutdownResult {
-  const source = objectValue(value)
-  const activeWork = Array.isArray(source.activeWork) ? source.activeWork.map((item: any) => ({
-    id: text(item?.id),
-    status: text(item?.status),
-    roleId: text(item?.roleId),
-    sessionId: text(item?.sessionId),
-    createdAt: text(item?.createdAt),
-  })) : []
-  return {
-    requiresConfirmation: source.requiresConfirmation === true,
-    activeWork,
-    status: text(source.status) || undefined,
   }
 }
 

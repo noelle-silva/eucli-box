@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"eucli-box/pkg/releasecheck"
 	"eucli-box/pkg/types"
 )
 
@@ -98,7 +97,7 @@ func TestBootstrapRequiresCompatibleEucliBox(t *testing.T) {
 				_ = json.NewEncoder(w).Encode(map[string]any{"data": test.response})
 			}))
 			defer server.Close()
-			svc, err := newService(configuredTestStore(t, server.URL), testClientRelease(), nil, nil, fakeClientReleaseChecker{}, "")
+			svc, err := newService(configuredTestStore(t, server.URL), testClientRelease(), nil)
 			if err != nil {
 				t.Fatalf("newService() error = %v", err)
 			}
@@ -116,12 +115,33 @@ func TestBootstrapRequiresCompatibleEucliBox(t *testing.T) {
 	}
 }
 
+func TestBootstrapManualConfigChain(t *testing.T) {
+	store, err := newConfigStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("newConfigStore() error = %v", err)
+	}
+	svc, err := newService(store, testClientRelease(), nil)
+	if err != nil {
+		t.Fatalf("newService() error = %v", err)
+	}
+	info, err := svc.bootstrap(context.Background())
+	if err != nil {
+		t.Fatalf("bootstrap() error = %v", err)
+	}
+	if info.EucliBoxConfigured || info.EucliBoxReachable {
+		t.Fatalf("unconfigured bootstrap = %#v", info)
+	}
+	if info.EucliBoxIssue == "" {
+		t.Fatal("unconfigured bootstrap should carry an issue")
+	}
+}
+
 func TestBusinessMethodsRequireSuccessfulBootstrap(t *testing.T) {
 	store, err := newConfigStore(t.TempDir())
 	if err != nil {
 		t.Fatalf("newConfigStore() error = %v", err)
 	}
-	svc, err := newService(store, testClientRelease(), nil, nil, fakeClientReleaseChecker{}, "")
+	svc, err := newService(store, testClientRelease(), nil)
 	if err != nil {
 		t.Fatalf("newService() error = %v", err)
 	}
@@ -138,58 +158,16 @@ func TestBusinessMethodsRequireSuccessfulBootstrap(t *testing.T) {
 	}
 }
 
-func TestReleaseCheckRefreshDoesNotRunConcurrently(t *testing.T) {
-	started := make(chan struct{})
-	continueCheck := make(chan struct{})
-	checker := &blockingClientReleaseChecker{started: started, continueCheck: continueCheck}
-	store, err := newConfigStore(t.TempDir())
-	if err != nil {
-		t.Fatalf("newConfigStore() error = %v", err)
-	}
-	svc, err := newService(store, testClientRelease(), nil, nil, checker, "")
-	if err != nil {
-		t.Fatalf("newService() error = %v", err)
-	}
-
-	first := make(chan types.ReleaseCheckSnapshot, 1)
-	go func() {
-		snapshot, _ := svc.refreshReleaseChecks(context.Background(), "")
-		first <- snapshot
-	}()
-	<-started
-
-	second, err := svc.refreshReleaseChecks(context.Background(), "")
-	if err != nil {
-		t.Fatalf("second refresh error = %v", err)
-	}
-	if second.Status != types.ReleaseCheckStatusChecking {
-		t.Fatalf("second snapshot status = %q", second.Status)
-	}
-	close(continueCheck)
-	if snapshot := <-first; snapshot.Status != types.ReleaseCheckStatusCompleted {
-		t.Fatalf("first snapshot status = %q", snapshot.Status)
-	}
-	if checker.calls() != 1 {
-		t.Fatalf("checker calls = %d", checker.calls())
-	}
-}
-
 func TestReleaseCheckRefreshKeepsPreviousResultsOnTotalFailure(t *testing.T) {
-	checker := fakeClientReleaseChecker{snapshot: types.ReleaseCheckSnapshot{
-		Status: types.ReleaseCheckStatusFailed,
-		Results: []types.ReleaseCheckResult{{
-			Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindBox, ID: types.ReleaseArtifactKindBox},
-			Status:   types.ReleaseCheckStatusFailed,
-		}},
-	}}
-	store, err := newConfigStore(t.TempDir())
-	if err != nil {
-		t.Fatalf("newConfigStore() error = %v", err)
-	}
-	svc, err := newService(store, testClientRelease(), nil, nil, checker, "")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	svc, err := newService(configuredTestStore(t, server.URL), testClientRelease(), nil)
 	if err != nil {
 		t.Fatalf("newService() error = %v", err)
 	}
+	svc.setConnectionState(runtimeBootstrap{EucliBoxReachable: true})
 	svc.storeReleaseCheckSnapshot(types.ReleaseCheckSnapshot{
 		Status: types.ReleaseCheckStatusCompleted,
 		Results: []types.ReleaseCheckResult{{
@@ -208,7 +186,7 @@ func TestReleaseCheckRefreshKeepsPreviousResultsOnTotalFailure(t *testing.T) {
 	}
 }
 
-func TestReleaseCheckRefreshUsesConnectedBusinessBackendWithoutLocalChecker(t *testing.T) {
+func TestReleaseCheckRefreshUsesConnectedBusinessBackend(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/api/release-checks/refresh" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
@@ -224,7 +202,7 @@ func TestReleaseCheckRefreshUsesConnectedBusinessBackendWithoutLocalChecker(t *t
 	}))
 	defer server.Close()
 
-	svc, err := newService(configuredTestStore(t, server.URL), testClientRelease(), nil, nil, nil, "")
+	svc, err := newService(configuredTestStore(t, server.URL), testClientRelease(), nil)
 	if err != nil {
 		t.Fatalf("newService() error = %v", err)
 	}
@@ -239,30 +217,70 @@ func TestReleaseCheckRefreshUsesConnectedBusinessBackendWithoutLocalChecker(t *t
 	}
 }
 
-type blockingClientReleaseChecker struct {
-	started       chan struct{}
-	continueCheck chan struct{}
-	mu            sync.Mutex
-	n             int
+func TestReleaseCheckRefreshWithoutConnectionFails(t *testing.T) {
+	store, err := newConfigStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("newConfigStore() error = %v", err)
+	}
+	svc, err := newService(store, testClientRelease(), nil)
+	if err != nil {
+		t.Fatalf("newService() error = %v", err)
+	}
+	snapshot, err := svc.refreshReleaseChecks(context.Background(), "")
+	if err != nil {
+		t.Fatalf("refresh error = %v", err)
+	}
+	if snapshot.Status != types.ReleaseCheckStatusFailed {
+		t.Fatalf("snapshot = %#v", snapshot)
+	}
 }
 
-func (f *blockingClientReleaseChecker) CheckOnly(context.Context, []releasecheck.InstalledArtifact, string, []types.ReleaseArtifactIdentity) types.ReleaseCheckSnapshot {
-	f.mu.Lock()
-	f.n++
-	f.mu.Unlock()
-	close(f.started)
-	<-f.continueCheck
-	return types.ReleaseCheckSnapshot{Status: types.ReleaseCheckStatusCompleted, Results: []types.ReleaseCheckResult{}, CheckedAt: time.Now().UTC()}
-}
+func TestReleaseCheckRefreshDoesNotRunConcurrently(t *testing.T) {
+	started := make(chan struct{})
+	firstDone := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-started:
+		default:
+			close(started)
+		}
+		<-firstDone
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": types.ReleaseCheckSnapshot{
+			Status:  types.ReleaseCheckStatusCompleted,
+			Results: []types.ReleaseCheckResult{},
+		}})
+	}))
+	defer server.Close()
 
-func (f *blockingClientReleaseChecker) LatestCandidate(context.Context, types.ReleaseArtifactIdentity) (*releasecheck.ReleaseCandidate, error) {
-	return nil, nil
-}
+	svc, err := newService(configuredTestStore(t, server.URL), testClientRelease(), nil)
+	if err != nil {
+		t.Fatalf("newService() error = %v", err)
+	}
+	svc.setConnectionState(runtimeBootstrap{EucliBoxReachable: true})
 
-func (f *blockingClientReleaseChecker) calls() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.n
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, _ = svc.refreshReleaseChecks(context.Background(), "")
+	}()
+	<-started
+
+	second := make(chan types.ReleaseCheckSnapshot, 1)
+	go func() {
+		snapshot, _ := svc.refreshReleaseChecks(context.Background(), "")
+		second <- snapshot
+	}()
+	select {
+	case snapshot := <-second:
+		if snapshot.Status != types.ReleaseCheckStatusChecking {
+			t.Fatalf("second snapshot status = %q", snapshot.Status)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("second refresh did not return while first is running")
+	}
+	close(firstDone)
+	wg.Wait()
 }
 
 func configuredTestStore(t *testing.T, url string) *configStore {

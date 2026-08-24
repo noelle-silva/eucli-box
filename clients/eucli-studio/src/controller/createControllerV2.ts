@@ -2138,7 +2138,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     setAccessKeyExpiration: (id: any, expiresAt: any) => accessSettingsController.setKeyExpiration(String(id || ''), expiresAt === null ? null : String(expiresAt || '') || null),
     deleteAccessKey: (id: any) => accessSettingsController.deleteKey(String(id || '')),
     loadBoxInfo: () => accessSettingsController.loadBoxInfo(),
-    requestBoxShutdown: (confirm: any) => accessSettingsController.requestBoxShutdown(confirm === true),
     refreshModelGroups: (force: any) => refreshModelGroups(!!force),
     saveModelGroups: () => saveModelGroups(),
     createModelGroup: () => createModelGroup(),

@@ -2,12 +2,10 @@ import { now } from '../core/utils'
 import type { AiChatShowToast } from '../gateway/capabilities'
 import {
   normalizeBoxInfo,
-  normalizeBoxShutdownResult,
   normalizePersistentKeyCreated,
   normalizePersistentKeyView,
   normalizePersistentPort,
   type BoxInfo,
-  type BoxShutdownResult,
   type PersistentKeyCreated,
   type PersistentKeyView,
   type PersistentPort,
@@ -272,31 +270,6 @@ export function createAccessSettingsController(deps: {
     }
   }
 
-  async function requestBoxShutdown(confirm: boolean): Promise<BoxShutdownResult> {
-    patchSection({ boxShutdownLoading: true, boxShutdownError: '' })
-    deps.emit()
-    try {
-      const response = await deps.netRequest({ method: 'POST', path: '/api/box/shutdown', body: { confirm }, timeoutMs: 15000 })
-      const status = Number(response?.status || 0)
-      if (status === 409) {
-        const result = normalizeBoxShutdownResult(response?.body)
-        patchSection({ boxShutdownLoading: false, boxShutdownError: '', boxShutdown: result })
-        return result
-      }
-      if (status < 200 || status >= 300) throw new Error(`HTTP ${status}`)
-      const result = normalizeBoxShutdownResult(response?.body)
-      patchSection({ boxShutdownLoading: false, boxShutdownError: '', boxShutdown: result })
-      return result
-    } catch (e: any) {
-      const error = String(e?.message || e || '请求停止业务端失败')
-      patchSection({ boxShutdownLoading: false, boxShutdownError: error })
-      deps.showToast?.(error, { kind: 'error' })
-      return { requiresConfirmation: false, activeWork: [] }
-    } finally {
-      deps.emit()
-    }
-  }
-
   return {
     refreshPorts,
     addPort,
@@ -310,7 +283,6 @@ export function createAccessSettingsController(deps: {
     setKeyExpiration,
     deleteKey,
     loadBoxInfo,
-    requestBoxShutdown,
   }
 }
 
@@ -327,9 +299,6 @@ export function defaultAccessSettingsState() {
     boxInfo: null as BoxInfo | null,
     boxInfoLoading: false,
     boxInfoError: '',
-    boxShutdown: null as BoxShutdownResult | null,
-    boxShutdownLoading: false,
-    boxShutdownError: '',
     refreshedAt: 0,
   }
 }

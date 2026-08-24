@@ -6,9 +6,7 @@ import { createDirectCapabilitiesAdapter } from '../direct/createDirectCapabilit
 import { createAiChatCapabilitiesFromHostApi, type AiChatShowToast } from '../gateway/capabilities'
 import { AI_CHAT_DIRECT_PROTOCOL_VERSION } from '../protocol/aiChatProtocol'
 import { AI_STUDIO_APP_ID, AI_STUDIO_CONTROLLER_KEY } from '../runtime/aiStudioGlobals'
-import { normalizeLocalBoxState, type LocalBoxState } from '../domain/localBox'
 import { normalizeReleaseCheckSnapshot, normalizeStudioBootstrap, type ReleaseCheckSnapshot, type StudioBootstrap } from '../domain/release'
-import { AI_CHAT_DIRECT_METHOD } from '../protocol/aiChatProtocol'
 
 type BackendEndpoint = {
   url: string
@@ -22,23 +20,7 @@ export type AiChatAppRuntime = {
   setEucliBoxConfig: (config: EucliBoxConfigInput) => Promise<EucliBoxConfig>
   getBootstrap: () => Promise<StudioBootstrap>
   refreshReleaseChecks: (kind?: string) => Promise<ReleaseCheckSnapshot>
-  getLocalBoxStatus: () => Promise<LocalBoxState>
-  installLocalBox: () => Promise<LocalBoxState>
-  updateLocalBox: () => Promise<LocalBoxState>
-  startLocalBox: () => Promise<LocalBoxState>
-  restartLocalBox: () => Promise<LocalBoxState>
-  stopLocalBox: () => Promise<LocalBoxState>
-  exitLocalBox: () => Promise<LocalBoxState>
-  getClientSettings: () => Promise<ClientSettings>
-  setClientSetting: (name: string, value: unknown) => Promise<ClientSettings>
-  subscribeLocalBoxState: (listener: (state: LocalBoxState) => void) => () => void
   dispose: () => void
-}
-
-export type ClientSettings = {
-  keepBoxRunningOnExit: boolean
-  devBoxSourceEnabled: boolean
-  boxSourceKind: string
 }
 
 export type EucliBoxConfig = {
@@ -60,7 +42,7 @@ export async function createAiChatAppRuntime(options: AiChatAppHostOptions): Pro
   const baseApi = createAiStudioHostApi(options)
   const { api, directClient } = await createDirectCapabilitiesAdapter(baseApi)
   const bootstrap = normalizeStudioBootstrap(await directClient.invoke('studio.bootstrap'))
-  const created = bootstrap.businessAvailable && bootstrap.localBox.connected
+  const created = bootstrap.businessAvailable
     ? createAiChatControllerV2({ capabilities: createAiChatCapabilitiesFromHostApi(api, AI_STUDIO_APP_ID) })
     : null
   const controller = created?.controller || null
@@ -77,19 +59,6 @@ export async function createAiChatAppRuntime(options: AiChatAppHostOptions): Pro
     setEucliBoxConfig: (config) => directClient.invoke<EucliBoxConfig>('eucli.config.set', config),
     getBootstrap: async () => normalizeStudioBootstrap(await directClient.invoke('studio.bootstrap')),
     refreshReleaseChecks: async (kind?: string) => normalizeReleaseCheckSnapshot(await directClient.invoke('releaseChecks.refresh', kind ? { kind } : {})),
-    getLocalBoxStatus: async () => normalizeLocalBoxState(await directClient.invoke(AI_CHAT_DIRECT_METHOD.localBoxStatus)),
-    installLocalBox: async () => normalizeLocalBoxState(await directClient.invoke(AI_CHAT_DIRECT_METHOD.localBoxInstall, {}, { timeoutMs: 10 * 60 * 1000 })),
-    updateLocalBox: async () => normalizeLocalBoxState(await directClient.invoke(AI_CHAT_DIRECT_METHOD.localBoxUpdate, {}, { timeoutMs: 10 * 60 * 1000 })),
-    startLocalBox: async () => normalizeLocalBoxState(await directClient.invoke(AI_CHAT_DIRECT_METHOD.localBoxStart, {}, { timeoutMs: 45_000 })),
-    restartLocalBox: async () => normalizeLocalBoxState(await directClient.invoke(AI_CHAT_DIRECT_METHOD.localBoxRestart, {}, { timeoutMs: 45_000 })),
-    stopLocalBox: async () => normalizeLocalBoxState(await directClient.invoke(AI_CHAT_DIRECT_METHOD.localBoxStop, {}, { timeoutMs: 45_000 })),
-    exitLocalBox: async () => normalizeLocalBoxState(await directClient.invoke(AI_CHAT_DIRECT_METHOD.localBoxExit, {}, { timeoutMs: 45_000 })),
-    getClientSettings: async () => normalizeClientSettings(await directClient.invoke(AI_CHAT_DIRECT_METHOD.clientSettingsGet)),
-    setClientSetting: async (name, value) => normalizeClientSettings(await directClient.invoke(AI_CHAT_DIRECT_METHOD.clientSettingsSet, { name, value })),
-    subscribeLocalBoxState: listener => directClient.subscribe(event => {
-      if (event.name !== 'localBox.state') return
-      listener(normalizeLocalBoxState(event.payload))
-    }),
     dispose() {
       try {
         if (controller && (window as any)[AI_STUDIO_CONTROLLER_KEY] === controller) {
@@ -100,15 +69,6 @@ export async function createAiChatAppRuntime(options: AiChatAppHostOptions): Pro
         directClient.close()
       }
     },
-  }
-}
-
-export function normalizeClientSettings(value: unknown): ClientSettings {
-  const source = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : {}
-  return {
-    keepBoxRunningOnExit: source.keepBoxRunningOnExit === true,
-    devBoxSourceEnabled: source.devBoxSourceEnabled === true,
-    boxSourceKind: typeof source.boxSourceKind === 'string' && source.boxSourceKind ? String(source.boxSourceKind) : 'official',
   }
 }
 
@@ -208,6 +168,7 @@ async function writeText(text: unknown): Promise<void> {
   textarea.setAttribute('readonly', 'true')
   textarea.style.position = 'fixed'
   textarea.style.left = '-10000px'
+  textarea.style.top = '-10000px'
   document.body.appendChild(textarea)
   try {
     textarea.select()

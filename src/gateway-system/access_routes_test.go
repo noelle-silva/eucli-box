@@ -12,8 +12,8 @@ import (
 
 // fakeGatewayAccess 是访问系统的测试替身。
 type fakeGatewayAccess struct {
-	ports []types.PersistentPort
-	keys  []types.PersistentKeyView
+	ports        []types.PersistentPort
+	keys         []types.PersistentKeyView
 	verifyResult types.PersistentKeyVerifyResult
 }
 
@@ -107,22 +107,25 @@ func (f *fakeGatewayAccess) DeleteKey(ctx context.Context, id string) error {
 }
 
 func (f *fakeGatewayAccess) VerifyKey(ctx context.Context, providedKey string) types.PersistentKeyVerifyResult {
+	if strings.TrimSpace(providedKey) == "" {
+		return types.PersistentKeyVerifyResult{Valid: false}
+	}
 	if f.verifyResult.Valid && f.verifyResult.KeyID != "" {
 		return f.verifyResult
 	}
 	return types.PersistentKeyVerifyResult{Valid: false}
 }
 
-func (f *fakeGatewayAccess) RegisterConnection(keyID string, closer interface{ Close() error }) {}
+func (f *fakeGatewayAccess) RegisterConnection(keyID string, closer interface{ Close() error })   {}
 func (f *fakeGatewayAccess) UnregisterConnection(keyID string, closer interface{ Close() error }) {}
 
 type accessNotFoundError struct{}
 
 func (e *accessNotFoundError) Error() string { return "not found" }
 
-func newLocalAccessTestGateway(t *testing.T, fakes *gatewayFakes, access AccessSystem) System {
+func newAccessTestGateway(t *testing.T, fakes *gatewayFakes, access AccessSystem) System {
 	t.Helper()
-	system, err := NewSystem(Config{LocalRun: true, LocalCredential: "session-credential-0000000000000000000000000000000000000000000000000000000000000000", LocalStop: func() {}, Access: access}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseChecks)
+	system, err := NewSystem(Config{Addr: "127.0.0.1:0", Key: "session-credential-0000000000000000000000000000000000000000000000000000000000000000", Access: access}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseChecks)
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -147,29 +150,26 @@ func accessRequestWithBody(method string, path string, credential string, body s
 	return req
 }
 
-func TestAccessRoutesRequireTrustedConnection(t *testing.T) {
+func TestAccessRoutesRequireGatewayKey(t *testing.T) {
 	fakes := newGatewayFakes()
 	access := &fakeGatewayAccess{verifyResult: types.PersistentKeyVerifyResult{Valid: true, KeyID: "key-1"}}
-	system := newLocalAccessTestGateway(t, fakes, access)
+	system := newAccessTestGateway(t, fakes, access)
 	for _, path := range []string{
 		"/api/access/persistent-ports",
 		"/api/access/persistent-keys",
 	} {
 		rec := httptest.NewRecorder()
-		system.Handler().ServeHTTP(rec, accessRequest(http.MethodGet, path, "long-term-key"))
-		if rec.Code != http.StatusForbidden {
-			t.Fatalf("GET %s 长期 Key status = %d body=%s", path, rec.Code, rec.Body.String())
-		}
-		if !strings.Contains(rec.Body.String(), "长期 Key 无权管理访问设置") {
-			t.Fatalf("GET %s 错误信息不明确：%s", path, rec.Body.String())
+		system.Handler().ServeHTTP(rec, accessRequest(http.MethodGet, path, ""))
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("GET %s 无 Key status = %d body=%s", path, rec.Code, rec.Body.String())
 		}
 	}
 }
 
-func TestAccessRoutesAllowSessionCredential(t *testing.T) {
+func TestAccessRoutesAllowGatewayKey(t *testing.T) {
 	fakes := newGatewayFakes()
 	access := &fakeGatewayAccess{}
-	system := newLocalAccessTestGateway(t, fakes, access)
+	system := newAccessTestGateway(t, fakes, access)
 	rec := httptest.NewRecorder()
 	system.Handler().ServeHTTP(rec, accessRequest(http.MethodGet, "/api/access/persistent-ports", "session-credential-0000000000000000000000000000000000000000000000000000000000000000"))
 	if rec.Code != http.StatusOK {
@@ -180,7 +180,7 @@ func TestAccessRoutesAllowSessionCredential(t *testing.T) {
 func TestAccessRoutesAddPortValidatesRange(t *testing.T) {
 	fakes := newGatewayFakes()
 	access := &fakeGatewayAccess{}
-	system := newLocalAccessTestGateway(t, fakes, access)
+	system := newAccessTestGateway(t, fakes, access)
 	credential := "session-credential-0000000000000000000000000000000000000000000000000000000000000000"
 	for _, body := range []string{`{"name":"a","port":0}`, `{"name":"a","port":65536}`, `{"name":"","port":8080}`} {
 		req := accessRequestWithBody(http.MethodPost, "/api/access/persistent-ports", credential, body)
@@ -195,7 +195,7 @@ func TestAccessRoutesAddPortValidatesRange(t *testing.T) {
 func TestAccessRoutesKeyRevealAndExpiration(t *testing.T) {
 	fakes := newGatewayFakes()
 	access := &fakeGatewayAccess{}
-	system := newLocalAccessTestGateway(t, fakes, access)
+	system := newAccessTestGateway(t, fakes, access)
 	credential := "session-credential-0000000000000000000000000000000000000000000000000000000000000000"
 
 	// 先创建 Key
@@ -219,31 +219,20 @@ func TestAccessRoutesKeyRevealAndExpiration(t *testing.T) {
 	}
 }
 
-func TestBoxInfoAndShutdownRoutes(t *testing.T) {
+func TestBoxInfoRoute(t *testing.T) {
 	fakes := newGatewayFakes()
-	system := newLocalAccessTestGateway(t, fakes, nil)
-
+	system := newAccessTestGateway(t, fakes, nil)
 	rec := httptest.NewRecorder()
 	system.Handler().ServeHTTP(rec, accessRequest(http.MethodGet, "/api/box/info", "session-credential-0000000000000000000000000000000000000000000000000000000000000000"))
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "version") {
 		t.Fatalf("GET /api/box/info status = %d body=%s", rec.Code, rec.Body.String())
-	}
-
-	// 停止路由要求受托凭证：长期 Key 有效时明确返回 403
-	rec = httptest.NewRecorder()
-	fakes2 := newGatewayFakes()
-	access2 := &fakeGatewayAccess{verifyResult: types.PersistentKeyVerifyResult{Valid: true, KeyID: "key-1"}}
-	system2 := newLocalAccessTestGateway(t, fakes2, access2)
-	system2.Handler().ServeHTTP(rec, accessRequest(http.MethodPost, "/api/box/shutdown", "long-term-key"))
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("POST /api/box/shutdown 长期 Key status = %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
 func TestLongTermHandlerRejectsWithoutKey(t *testing.T) {
 	fakes := newGatewayFakes()
 	access := &fakeGatewayAccess{}
-	system := newLocalAccessTestGateway(t, fakes, access)
+	system := newAccessTestGateway(t, fakes, access)
 	rec := httptest.NewRecorder()
 	system.LongTermHandler().ServeHTTP(rec, accessRequest(http.MethodGet, "/api/release", ""))
 	if rec.Code != http.StatusUnauthorized {
@@ -251,14 +240,62 @@ func TestLongTermHandlerRejectsWithoutKey(t *testing.T) {
 	}
 }
 
-func TestLongTermHandlerRejectsLocalRunPath(t *testing.T) {
+// 长期端口入口是纯业务访问身份：长期 Key 即使有效，也不能管理访问设置。
+func TestLongTermHandlerCannotManageAccessSettings(t *testing.T) {
 	fakes := newGatewayFakes()
 	access := &fakeGatewayAccess{verifyResult: types.PersistentKeyVerifyResult{Valid: true, KeyID: "key-1"}}
-	system := newLocalAccessTestGateway(t, fakes, access)
-	req := accessRequest(http.MethodGet, "/api/local-run", "valid-long-term-key")
+	system := newAccessTestGateway(t, fakes, access)
+	for _, path := range []string{
+		"/api/access/persistent-ports",
+		"/api/access/persistent-keys",
+		"/api/access/persistent-keys/key-1/reveal",
+	} {
+		rec := httptest.NewRecorder()
+		system.LongTermHandler().ServeHTTP(rec, accessRequest(http.MethodGet, path, "some-long-term-key"))
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("LongTermHandler() %s status = %d body=%s", path, rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "长期 Key 无权管理访问设置") {
+			t.Fatalf("LongTermHandler() %s body = %s", path, rec.Body.String())
+		}
+	}
+}
+
+// 网关直连入口接受有效长期 Key 作为身份（客户端以"地址+长期 Key"直连网关）。
+func TestDirectGatewayAcceptsLongTermKey(t *testing.T) {
+	fakes := newGatewayFakes()
+	access := &fakeGatewayAccess{verifyResult: types.PersistentKeyVerifyResult{Valid: true, KeyID: "key-1"}}
+	system := newAccessTestGateway(t, fakes, access)
 	rec := httptest.NewRecorder()
-	system.LongTermHandler().ServeHTTP(rec, req)
+	system.Handler().ServeHTTP(rec, accessRequest(http.MethodGet, "/api/box/info", "some-long-term-key"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("直连长期 Key status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, accessRequest(http.MethodGet, "/api/access/persistent-keys", "some-long-term-key"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("直连长期 Key 管理访问设置 status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// 网关未配置固定 Key 且访问系统没有任何长期 Key 记录时：
+// 允许无凭证访问（首次建立连接，客户端尚未配置任何身份），但已配置了长期 Key 记录后必须验证身份。
+func TestDirectGatewayRequiresIdentityOnceAnyKeyExists(t *testing.T) {
+	fakes := newGatewayFakes()
+	access := &fakeGatewayAccess{}
+	system, err := NewSystem(Config{Addr: "127.0.0.1:0", Access: access}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseChecks)
+	if err != nil {
+		t.Fatalf("NewSystem() error = %v", err)
+	}
+	rec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, accessRequest(http.MethodGet, "/api/box/info", ""))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("无身份状态 status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	access.keys = []types.PersistentKeyView{{ID: "key-1", Name: "测试 Key", Enabled: true}}
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, accessRequest(http.MethodGet, "/api/box/info", ""))
 	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("LongTermHandler() local-run status = %d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("已配置身份后无 Key status = %d body=%s", rec.Code, rec.Body.String())
 	}
 }

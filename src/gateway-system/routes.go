@@ -1,37 +1,32 @@
 package gateway
 
 // registerAccessRoutes 注册访问设置管理路由：
-// 只接受受托本机连接；长期 Key 无权管理访问设置。
+// 只接受网关直连入口身份（直连固定 Key 或有效长期 Key）；
+// 长期端口入口是纯业务访问身份，无权管理访问设置。
 func (s *system) registerAccessRoutes() {
 	if s.access == nil {
 		return
 	}
-	s.mux.HandleFunc("GET /api/access/persistent-ports", s.requireTrustedConnection(s.handleListPersistentPorts))
-	s.mux.HandleFunc("POST /api/access/persistent-ports", s.requireTrustedConnection(s.handleAddPersistentPort))
-	s.mux.HandleFunc("PUT /api/access/persistent-ports/{id}/enable", s.requireTrustedConnection(s.handleEnablePersistentPort))
-	s.mux.HandleFunc("PUT /api/access/persistent-ports/{id}/disable", s.requireTrustedConnection(s.handleDisablePersistentPort))
-	s.mux.HandleFunc("DELETE /api/access/persistent-ports/{id}", s.requireTrustedConnection(s.handleDeletePersistentPort))
-	s.mux.HandleFunc("GET /api/access/persistent-keys", s.requireTrustedConnection(s.handleListPersistentKeys))
-	s.mux.HandleFunc("POST /api/access/persistent-keys", s.requireTrustedConnection(s.handleAddPersistentKey))
-	s.mux.HandleFunc("GET /api/access/persistent-keys/{id}/reveal", s.requireTrustedConnection(s.handleRevealPersistentKey))
-	s.mux.HandleFunc("PUT /api/access/persistent-keys/{id}/enable", s.requireTrustedConnection(s.handleEnablePersistentKey))
-	s.mux.HandleFunc("PUT /api/access/persistent-keys/{id}/disable", s.requireTrustedConnection(s.handleDisablePersistentKey))
-	s.mux.HandleFunc("PUT /api/access/persistent-keys/{id}/expiration", s.requireTrustedConnection(s.handleSetPersistentKeyExpiration))
-	s.mux.HandleFunc("DELETE /api/access/persistent-keys/{id}", s.requireTrustedConnection(s.handleDeletePersistentKey))
+	s.mux.HandleFunc("GET /api/access/persistent-ports", s.requireDirectAccess(s.authWrap(s.handleListPersistentPorts)))
+	s.mux.HandleFunc("POST /api/access/persistent-ports", s.requireDirectAccess(s.authWrap(s.handleAddPersistentPort)))
+	s.mux.HandleFunc("PUT /api/access/persistent-ports/{id}/enable", s.requireDirectAccess(s.authWrap(s.handleEnablePersistentPort)))
+	s.mux.HandleFunc("PUT /api/access/persistent-ports/{id}/disable", s.requireDirectAccess(s.authWrap(s.handleDisablePersistentPort)))
+	s.mux.HandleFunc("DELETE /api/access/persistent-ports/{id}", s.requireDirectAccess(s.authWrap(s.handleDeletePersistentPort)))
+	s.mux.HandleFunc("GET /api/access/persistent-keys", s.requireDirectAccess(s.authWrap(s.handleListPersistentKeys)))
+	s.mux.HandleFunc("POST /api/access/persistent-keys", s.requireDirectAccess(s.authWrap(s.handleAddPersistentKey)))
+	s.mux.HandleFunc("GET /api/access/persistent-keys/{id}/reveal", s.requireDirectAccess(s.authWrap(s.handleRevealPersistentKey)))
+	s.mux.HandleFunc("PUT /api/access/persistent-keys/{id}/enable", s.requireDirectAccess(s.authWrap(s.handleEnablePersistentKey)))
+	s.mux.HandleFunc("PUT /api/access/persistent-keys/{id}/disable", s.requireDirectAccess(s.authWrap(s.handleDisablePersistentKey)))
+	s.mux.HandleFunc("PUT /api/access/persistent-keys/{id}/expiration", s.requireDirectAccess(s.authWrap(s.handleSetPersistentKeyExpiration)))
+	s.mux.HandleFunc("DELETE /api/access/persistent-keys/{id}", s.requireDirectAccess(s.authWrap(s.handleDeletePersistentKey)))
 }
 
-// registerBoxRoutes 注册业务端信息与生命周期控制路由。
+// registerBoxRoutes 注册业务端信息展示路由。
 func (s *system) registerBoxRoutes() {
 	s.mux.HandleFunc("GET /api/box/info", s.authWrap(s.handleBoxInfo))
-	s.mux.HandleFunc("GET /api/box/active-work", s.requireTrustedConnection(s.handleBoxActiveWork))
-	s.mux.HandleFunc("POST /api/box/shutdown", s.requireTrustedConnection(s.handleBoxShutdown))
 }
 
 func (s *system) registerRoutes() {
-	if s.config.LocalRun {
-		s.mux.HandleFunc("GET /api/local-run", s.localAuthWrap(s.handleLocalRun))
-		s.mux.HandleFunc("POST /api/local-run/stop", s.localAuthWrap(s.handleLocalRunStop))
-	}
 	s.mux.HandleFunc("GET /api/release", s.authWrap(s.handleRelease))
 	s.mux.HandleFunc("GET /api/release-checks", s.authWrap(s.handleReleaseChecks))
 	s.mux.HandleFunc("POST /api/release-checks/refresh", s.authWrap(s.handleRefreshReleaseChecks))

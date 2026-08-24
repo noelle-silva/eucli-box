@@ -8,6 +8,15 @@ import (
 	"sync"
 )
 
+// DataLockPath 计算数据目录锁文件路径：锁文件放数据目录的上一级，避免锁文件进入数据目录本身。
+func DataLockPath(dataDir string) (string, error) {
+	absolute, err := filepath.Abs(strings.TrimSpace(dataDir))
+	if err != nil || strings.TrimSpace(dataDir) == "" {
+		return "", fmt.Errorf("数据目录无效")
+	}
+	return filepath.Join(filepath.Dir(filepath.Clean(absolute)), "data.lock"), nil
+}
+
 type DataLock struct {
 	path    string
 	release func() error

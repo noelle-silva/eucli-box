@@ -14,7 +14,6 @@ import (
 const (
 	persistentPortsFileName = "persistent-ports.json"
 	persistentKeysFileName  = "persistent-keys.json"
-	migrationCompletedFlag  = "migration-completed.flag"
 )
 
 func accessRoot(dataDir string) string {
@@ -27,10 +26,6 @@ func persistentPortsPath(dataDir string) string {
 
 func persistentKeysPath(dataDir string) string {
 	return filepath.Join(accessRoot(dataDir), persistentKeysFileName)
-}
-
-func migrationCompletedPath(dataDir string) string {
-	return filepath.Join(accessRoot(dataDir), migrationCompletedFlag)
 }
 
 // readPersistentPorts 读取全部长期端口记录。文件不存在时返回空容器，不视为错误。
@@ -196,24 +191,6 @@ func validatePersistentKey(key types.PersistentKey) error {
 	}
 	if strings.TrimSpace(key.CreatedAt) == "" {
 		return fmt.Errorf("长期 Key 记录缺少创建时间")
-	}
-	return nil
-}
-
-// isMigrationCompleted 判断旧固定设置转换是否已经完成。
-func isMigrationCompleted(dataDir string) bool {
-	info, err := os.Stat(migrationCompletedPath(dataDir))
-	return err == nil && !info.IsDir()
-}
-
-// markMigrationCompleted 写入转换完成标记文件。
-func markMigrationCompleted(dataDir string) error {
-	target := migrationCompletedPath(dataDir)
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		return fmt.Errorf("建立访问设置目录失败：%w", err)
-	}
-	if err := os.WriteFile(target, []byte("completed\n"), 0o644); err != nil {
-		return fmt.Errorf("写入转换完成标记失败：%w", err)
 	}
 	return nil
 }

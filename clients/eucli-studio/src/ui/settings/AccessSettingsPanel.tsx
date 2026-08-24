@@ -1,31 +1,22 @@
 import * as React from 'react'
-import { Box, Button, Dialog, DialogContent, DialogTitle, InputAdornment, Stack, Switch, TextField, Typography } from '@mui/material'
+import { Box, Button, Dialog, DialogContent, DialogTitle, InputAdornment, Stack, TextField, Typography } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import LockOpenIcon from '@mui/icons-material/LockOpen'
 import LockOutlineIcon from '@mui/icons-material/LockOutline'
-import PlayArrowIcon from '@mui/icons-material/PlayArrow'
-import RestartAltIcon from '@mui/icons-material/RestartAlt'
-import StopIcon from '@mui/icons-material/Stop'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
-import { persistentPortStateLabel, type BoxShutdownResult, type PersistentKeyCreated } from '../../domain/accessSettings'
+import { persistentPortStateLabel, type PersistentKeyCreated } from '../../domain/accessSettings'
 import { useEvent } from '../hooks/useEvent'
 import { SettingsListItem, SettingsPill, SettingsSection, SettingsSurface } from './SettingsSurfaces'
 
 type AccessSettingsPanelProps = {
   controller: any
   section: any
-  localBoxState: any
-  keepBoxRunningOnExit: boolean
-  onKeepBoxRunningOnExitChange: (value: boolean) => Promise<void> | void
-  onStartBox?: () => Promise<void> | void
-  onRestartBox?: () => Promise<void> | void
-  onStopBox?: () => Promise<void> | void
 }
 
 export function AccessSettingsPanel(props: AccessSettingsPanelProps) {
-  const { controller, section: accessSection, localBoxState, keepBoxRunningOnExit, onKeepBoxRunningOnExitChange, onStartBox, onRestartBox, onStopBox } = props
+  const { controller, section: accessSection } = props
   const section = accessSection && typeof accessSection === 'object' ? accessSection : {}
   const [portDialog, setPortDialog] = React.useState(false)
   const [portName, setPortName] = React.useState('')
@@ -36,8 +27,7 @@ export function AccessSettingsPanel(props: AccessSettingsPanelProps) {
   const [keyExpiryValue, setKeyExpiryValue] = React.useState('')
   const [revealed, setRevealed] = React.useState<{ id: string; plainKey: string } | null>(null)
   const [created, setCreated] = React.useState<PersistentKeyCreated | null>(null)
-  const [shutdownConfirm, setShutdownConfirm] = React.useState<BoxShutdownResult | null>(null)
-  const busy = section.portsSaving || section.keysSaving || section.boxShutdownLoading
+  const busy = section.portsSaving || section.keysSaving
 
   React.useEffect(() => {
     controller?.actions?.refreshAccessPorts?.(true)
@@ -97,44 +87,7 @@ export function AccessSettingsPanel(props: AccessSettingsPanelProps) {
     }
   })
 
-  const handleStart = useEvent(async () => {
-    if (onStartBox) await onStartBox()
-  })
-
-  const handleRestart = useEvent(async () => {
-    shutdownConfirmActionRef.current = 'restart'
-    const result = await controller?.actions?.requestBoxShutdown?.(false)
-    if (result?.requiresConfirmation) {
-      setShutdownConfirm(result)
-      return
-    }
-    if (onRestartBox) await onRestartBox()
-  })
-
-  const handleStop = useEvent(async () => {
-    shutdownConfirmActionRef.current = 'stop'
-    const result = await controller?.actions?.requestBoxShutdown?.(false)
-    if (result?.requiresConfirmation) {
-      setShutdownConfirm(result)
-      return
-    }
-    if (onStopBox) await onStopBox()
-  })
-
-  const confirmShutdown = useEvent(async () => {
-    const result = await controller?.actions?.requestBoxShutdown?.(true)
-    const action = shutdownConfirmActionRef.current
-    setShutdownConfirm(null)
-    if (result?.status === 'shutdown_requested') {
-      if (action === 'restart' && onRestartBox) await onRestartBox()
-      else if (action === 'stop' && onStopBox) await onStopBox()
-    }
-  })
-
-  const shutdownConfirmActionRef = React.useRef<'restart' | 'stop'>('stop')
-
-  const running = !!localBoxState?.connected
-  const boxVersion = String(section.boxInfo?.version || localBoxState?.currentVersion || '')
+  const boxVersion = String(section.boxInfo?.version || '')
   const ports = Array.isArray(section.ports) ? section.ports : []
   const keys = Array.isArray(section.keys) ? section.keys : []
 
@@ -145,41 +98,13 @@ export function AccessSettingsPanel(props: AccessSettingsPanelProps) {
           <Box sx={{ minWidth: 0, flex: 1 }}>
             <Stack direction="row" spacing={0.75} alignItems="center" sx={{ flexWrap: 'wrap' }}>
               <Typography sx={{ fontWeight: 900 }}>业务端访问设置</Typography>
-              <SettingsPill tone={running ? 'selected' : 'muted'}>{running ? '运行中' : '已停止'}</SettingsPill>
               {boxVersion ? <SettingsPill tone="info">v{boxVersion}</SettingsPill> : null}
             </Stack>
             <Typography variant="body2" color="text.secondary">
-              管理长期端口与长期 Key，以及业务端的运行方式。
+              管理业务端的长期端口与长期 Key。
             </Typography>
           </Box>
-          <Stack direction="row" spacing={1}>
-            <Button startIcon={<PlayArrowIcon />} variant="contained" size="small" onClick={handleStart} disabled={busy || running}>
-              启动业务端
-            </Button>
-            <Button startIcon={<RestartAltIcon />} variant="text" size="small" onClick={handleRestart} disabled={busy || !running}>
-              重新启动
-            </Button>
-            <Button startIcon={<StopIcon />} variant="text" size="small" color="error" onClick={handleStop} disabled={busy || !running}>
-              停止
-            </Button>
-          </Stack>
         </Stack>
-
-        <SettingsSection tone="muted">
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between">
-            <Box sx={{ minWidth: 0, flex: 1 }}>
-              <Typography sx={{ fontWeight: 900 }}>退出后继续运行业务端</Typography>
-              <Typography variant="body2" color="text.secondary">
-                开启后，关闭客户端时业务端将继续在后台运行
-              </Typography>
-            </Box>
-            <Switch
-              size="small"
-              checked={keepBoxRunningOnExit}
-              onChange={(event) => onKeepBoxRunningOnExitChange?.(event.target.checked)}
-            />
-          </Stack>
-        </SettingsSection>
 
         <SettingsSection>
           <Stack spacing={1.25}>
@@ -302,7 +227,7 @@ export function AccessSettingsPanel(props: AccessSettingsPanelProps) {
           </Stack>
         </SettingsSection>
 
-        <Button variant="text" size="small" onClick={refreshAll} disabled={section.portsLoading || section.keysLoading || section.boxInfoLoading}>
+        <Button variant="text" size="small" onClick={refreshAll} disabled={section.portsLoading || section.keysLoading}>
           刷新
         </Button>
       </Stack>
@@ -398,27 +323,6 @@ export function AccessSettingsPanel(props: AccessSettingsPanelProps) {
             <Button startIcon={<ContentCopyIcon />} variant="contained" onClick={() => created && copyText(created.plainKey)}>
               复制
             </Button>
-          </Stack>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={!!shutdownConfirm} onClose={() => setShutdownConfirm(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>存在未结束的真实工作</DialogTitle>
-        <DialogContent>
-          <Stack spacing={1.25} sx={{ pt: 1 }}>
-            <Typography variant="body2" color="text.secondary">
-              以下工作仍在进行，停止业务端会中断它们：
-            </Typography>
-            {(shutdownConfirm?.activeWork || []).map((work: any) => (
-              <SettingsListItem key={String(work.id || '')}>
-                <Typography variant="body2" sx={{ fontWeight: 700 }}>{String(work.roleId || work.id || '未知工作')}</Typography>
-                <Typography variant="caption" color="text.secondary">{String(work.status || '')}</Typography>
-              </SettingsListItem>
-            ))}
-            <Stack direction="row" spacing={1} justifyContent="flex-end">
-              <Button variant="text" onClick={() => setShutdownConfirm(null)}>取消</Button>
-              <Button variant="contained" color="error" onClick={confirmShutdown}>确认停止</Button>
-            </Stack>
           </Stack>
         </DialogContent>
       </Dialog>

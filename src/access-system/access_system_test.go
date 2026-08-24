@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -286,62 +285,6 @@ func TestPortManagerDeleteStopsListening(t *testing.T) {
 	ports, err := manager.List(ctx)
 	if err != nil || len(ports) != 0 {
 		t.Fatalf("DeletePort() 后 List() = %#v, err=%v", ports, err)
-	}
-}
-
-func TestMigrationConvertsLegacyBoxKey(t *testing.T) {
-	ctx := context.Background()
-	dir := t.TempDir()
-	metaDir := filepath.Join(dir, "meta")
-	if err := os.MkdirAll(metaDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	legacyKey := "legacy-fixed-key-value"
-	if err := os.WriteFile(filepath.Join(metaDir, "box.key"), []byte(legacyKey+"\n"), 0o644); err != nil {
-		t.Fatalf("write box.key: %v", err)
-	}
-	keys := newTestKeyManager(t, dir)
-	ports := newTestPortManager(t, dir, keys)
-	if err := migrateLegacyAccessConfig(ctx, dir, keys, ports); err != nil {
-		t.Fatalf("migrateLegacyAccessConfig() error = %v", err)
-	}
-	keyViews, err := keys.List(ctx)
-	if err != nil {
-		t.Fatalf("List() keys error = %v", err)
-	}
-	if len(keyViews) != 1 || keyViews[0].Name != legacyConvertedKeyName {
-		t.Fatalf("转换后 Key 记录 = %#v", keyViews)
-	}
-	plain, err := keys.Reveal(ctx, keyViews[0].ID)
-	if err != nil || plain != legacyKey {
-		t.Fatalf("转换后 Key 解密 = %q, err=%v", plain, err)
-	}
-	portList, err := ports.List(ctx)
-	if err != nil {
-		t.Fatalf("List() ports error = %v", err)
-	}
-	if len(portList) != 1 || portList[0].Port != legacyFixedPort || portList[0].DesiredState != types.PersistentPortDesiredEnabled {
-		t.Fatalf("转换后端口记录 = %#v", portList)
-	}
-	if _, err := os.Stat(filepath.Join(metaDir, "box.key")); !os.IsNotExist(err) {
-		t.Fatalf("旧 box.key 未删除")
-	}
-	if !isMigrationCompleted(dir) {
-		t.Fatalf("转换完成标记未写入")
-	}
-}
-
-func TestMigrationSkipsWithoutLegacyFile(t *testing.T) {
-	ctx := context.Background()
-	dir := t.TempDir()
-	keys := newTestKeyManager(t, dir)
-	ports := newTestPortManager(t, dir, keys)
-	if err := migrateLegacyAccessConfig(ctx, dir, keys, ports); err != nil {
-		t.Fatalf("migrateLegacyAccessConfig() error = %v", err)
-	}
-	keyViews, _ := keys.List(ctx)
-	if len(keyViews) != 0 {
-		t.Fatalf("无旧文件时不应产生 Key 记录：%#v", keyViews)
 	}
 }
 

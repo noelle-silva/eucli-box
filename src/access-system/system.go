@@ -67,21 +67,6 @@ func NewSystemWithProtector(dataDir string, protector secretProtector) (System, 
 	return &accessSystem{keys: keys, ports: ports}, nil
 }
 
-// MigrateLegacyConfig 执行旧固定设置一次性转换。
-func MigrateLegacyConfig(ctx context.Context, system System, dataDir string) error {
-	internal, ok := system.(*accessSystem)
-	if !ok {
-		return &migrationUnsupportedError{}
-	}
-	return migrateLegacyAccessConfig(ctx, dataDir, internal.keys, internal.ports)
-}
-
-type migrationUnsupportedError struct{}
-
-func (e *migrationUnsupportedError) Error() string {
-	return "访问系统不支持旧配置转换"
-}
-
 func (s *accessSystem) ListPorts(ctx context.Context) ([]types.PersistentPort, error) {
 	return s.ports.List(ctx)
 }

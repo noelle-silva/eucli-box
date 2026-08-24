@@ -83,9 +83,6 @@ func (s *directServer) handleConnection(conn *directConnection) {
 			continue
 		}
 		_ = conn.writeJSON(okResponse(frame.ID, result))
-		if frame.Method == "localBox.exit" {
-			s.service.requestShutdown()
-		}
 	}
 }
 

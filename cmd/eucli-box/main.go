@@ -3,17 +3,15 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -50,20 +48,13 @@ func main() {
 func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	localConfig, err := loadLocalRunConfig()
-	if err != nil {
-		return err
-	}
-	if localConfig.Enabled && (runtime.GOOS != "windows" || runtime.GOARCH != "amd64") {
-		return localrun.ErrWindowsOnly
-	}
 	boxRelease, err := boxrelease.Load()
 	if err != nil {
 		return fmt.Errorf("load eucli-box release metadata: %w", err)
 	}
 	log.Printf("eucli-box v%s", boxRelease.Version)
 
-	networkSystem, err := networkrequest.NewSystem(networkrequest.Config{MaxTimeout: time.Duration(types.ModelRequestCompletionTimeoutMaxMs) * time.Millisecond})
+	networkSystem, err := networkrequest.NewSystem(networkrequest.Config{MaxTimeout: time.Millisecond * time.Duration(types.ModelRequestCompletionTimeoutMaxMs)})
 	if err != nil {
 		return fmt.Errorf("start network request system: %w", err)
 	}
@@ -93,30 +84,12 @@ func run() error {
 	}
 
 	dataDir := envOrDefault("EUCLI_BOX_DATA_DIR", "data")
-	if localConfig.Enabled {
-		dataDir = localConfig.DataDir
-	}
 	dataLock, err := localrun.AcquireDataLock(dataDir)
 	if err != nil {
 		return err
 	}
 	defer dataLock.Release()
 
-	var dataIdentity localrun.DataIdentityRecord
-	var processStartedAt time.Time
-	if localConfig.Enabled {
-		dataIdentity, err = localrun.EnsureDataIdentity(dataDir)
-		if err != nil {
-			return err
-		}
-		if dataIdentity.DataIdentity != localConfig.DataIdentity {
-			return fmt.Errorf("LOCAL_BOX_DATA_IDENTITY_MISMATCH")
-		}
-		processStartedAt, err = localrun.ProcessStartedAt(os.Getpid())
-		if err != nil {
-			return err
-		}
-	}
 	migrationSession, err := datamigration.Prepare(ctx, dataDir, boxRelease.DataVersion)
 	if err != nil {
 		return fmt.Errorf("数据迁移准备失败：%w", err)
@@ -246,88 +219,32 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("start access system: %w", err)
 	}
-	if err := accesssystem.MigrateLegacyConfig(ctx, accessSystem, dataDir); err != nil {
-		return fmt.Errorf("migrate legacy access config: %w", err)
-	}
 	log.Printf("[12.5/13] access-system            ✓")
 
 	busyKey := ""
-	if !localConfig.Enabled && readBoxKey(dataDir) != "" {
+	if readBoxKey(dataDir) != "" {
 		busyKey = " (key: active)"
 	}
 	gatewayConfig := gateway.Config{Addr: envOrDefault("EUCLI_BOX_ADDR", "127.0.0.1:8765"), Key: readBoxKey(dataDir), BoxVersion: boxRelease.Version, Access: accessSystem, InstallSource: sourceState}
-	if localConfig.Enabled {
-		gatewayConfig = gateway.Config{
-			Addr:              localConfig.Address,
-			BoxVersion:        boxRelease.Version,
-			LocalRun:          true,
-			LocalInstallID:    localConfig.InstallIdentity,
-			LocalDataID:       localConfig.DataIdentity,
-			LocalRunID:        localConfig.RunIdentity,
-			LocalCredential:   localConfig.SessionCredential,
-			LocalProcessID:    os.Getpid(),
-			LocalProcessStart: processStartedAt,
-			LocalStop:         stop,
-			Access:            accessSystem,
-			InstallSource:     sourceState,
-		}
-	}
 	gatewaySystem, err := gateway.NewSystem(gatewayConfig, runtimeSystem, roleSystem, storageSystem, storageSystem, providerSystem, toolSystem, storageSystem, storageSystem, storageSystem, placeholderSystem, systemPluginSystem, assistSystem, releaseCheckSystem)
 	if err != nil {
 		return fmt.Errorf("start gateway system: %w", err)
 	}
+	accessSystem.SetHandler(gatewaySystem.LongTermHandler())
 	log.Printf("[13/13] gateway-system         ✓%s", busyKey)
 
-	log.Printf("eucli-box v%s is starting on %s ...", boxRelease.Version, gatewayConfig.Addr)
-	endpoint := "http://" + gatewayConfig.Addr
-	accessSystem.SetHandler(gatewaySystem.LongTermHandler())
-	if localConfig.Enabled {
-		started, startErr := gatewaySystem.StartLocal(ctx)
-		if startErr != nil {
-			return fmt.Errorf("start local gateway listener: %w", startErr)
-		}
-		endpoint = started.Endpoint
-		accessSystem.SetLocalEntrypointPort(entrypointPort(endpoint))
-		registration := localrun.Registration{
-			SchemaVersion:     localrun.RegistrationSchemaVersion,
-			InstallIdentity:   localConfig.InstallIdentity,
-			DataIdentity:      dataIdentity.DataIdentity,
-			RunIdentity:       localConfig.RunIdentity,
-			Endpoint:          endpoint,
-			SessionCredential: localConfig.SessionCredential,
-			ProcessID:         os.Getpid(),
-			ProcessStartedAt:  processStartedAt,
-			BoxVersion:        boxRelease.Version,
-			Status:            localrun.RegistrationStatusRunning,
-		}
-		if err := localrun.WriteRegistration(localConfig.RegistrationPath, registration); err != nil {
-			_ = gatewaySystem.Shutdown(context.Background())
-			return fmt.Errorf("write local runtime registration: %w", err)
-		}
-		defer func() {
-			if err := localrun.DeleteRegistration(localConfig.RegistrationPath); err != nil {
-				_ = localrun.MarkRegistrationStale(localConfig.RegistrationPath)
-			}
-		}()
-		if err := writeLocalReady(boxRelease.Version, endpoint, localConfig); err != nil {
-			_ = gatewaySystem.Shutdown(context.Background())
-			return err
-		}
-		if err := migrationSession.Complete(ctx); err != nil {
-			return fmt.Errorf("数据迁移收尾失败：%w", err)
-		}
-		migrationCompleted = true
-	} else {
-		if err := gatewaySystem.Start(ctx); err != nil {
-			return fmt.Errorf("start gateway listener: %w", err)
-		}
-		if err := migrationSession.Complete(ctx); err != nil {
-			return fmt.Errorf("数据迁移收尾失败：%w", err)
-		}
-		migrationCompleted = true
+	if err := gatewaySystem.Start(ctx); err != nil {
+		return fmt.Errorf("start gateway listener: %w", err)
 	}
+	if entrypoint := entrypointPortFromAddr(gatewayConfig.Addr); entrypoint > 0 {
+		accessSystem.SetLocalEntrypointPort(entrypoint)
+	}
+	if err := migrationSession.Complete(ctx); err != nil {
+		return fmt.Errorf("数据迁移收尾失败：%w", err)
+	}
+	migrationCompleted = true
 	accessSystem.Start(ctx)
-	log.Printf("eucli-box v%s is ready — listening on %s", boxRelease.Version, endpoint)
+	log.Printf("eucli-box v%s is ready — listening on %s", boxRelease.Version, gatewaySystem.Endpoint())
 
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -342,83 +259,6 @@ func run() error {
 	return nil
 }
 
-type localRunConfig struct {
-	Enabled           bool
-	InstallIdentity   string
-	DataIdentity      string
-	RunIdentity       string
-	SessionCredential string
-	DataDir           string
-	RegistrationPath  string
-	Address           string
-	TempDir           string
-}
-
-func loadLocalRunConfig() (localRunConfig, error) {
-	if os.Getenv("EUCLI_BOX_LOCAL_RUN") != "1" {
-		return localRunConfig{}, nil
-	}
-	value := localRunConfig{
-		Enabled:           true,
-		InstallIdentity:   strings.TrimSpace(os.Getenv("EUCLI_BOX_INSTALL_ID")),
-		DataIdentity:      strings.TrimSpace(os.Getenv("EUCLI_BOX_DATA_ID")),
-		RunIdentity:       strings.TrimSpace(os.Getenv("EUCLI_BOX_RUN_ID")),
-		SessionCredential: strings.TrimSpace(os.Getenv("EUCLI_BOX_SESSION_CREDENTIAL")),
-		DataDir:           strings.TrimSpace(os.Getenv("EUCLI_BOX_DATA_DIR")),
-		RegistrationPath:  strings.TrimSpace(os.Getenv("EUCLI_BOX_REGISTRATION_PATH")),
-		Address:           strings.TrimSpace(os.Getenv("EUCLI_BOX_ADDR")),
-		TempDir:           strings.TrimSpace(os.Getenv("TEMP")),
-	}
-	for _, item := range []struct {
-		value string
-		name  string
-	}{{value.InstallIdentity, "EUCLI_BOX_INSTALL_ID"}, {value.DataIdentity, "EUCLI_BOX_DATA_ID"}, {value.RunIdentity, "EUCLI_BOX_RUN_ID"}, {value.SessionCredential, "EUCLI_BOX_SESSION_CREDENTIAL"}, {value.DataDir, "EUCLI_BOX_DATA_DIR"}, {value.RegistrationPath, "EUCLI_BOX_REGISTRATION_PATH"}, {value.Address, "EUCLI_BOX_ADDR"}, {value.TempDir, "TEMP"}} {
-		if item.value == "" {
-			return localRunConfig{}, fmt.Errorf("受托启动资料缺少 %s", item.name)
-		}
-	}
-	if strings.TrimSpace(os.Getenv("TMP")) == "" {
-		return localRunConfig{}, fmt.Errorf("受托启动资料缺少 TMP")
-	}
-	if value.Address != "127.0.0.1:0" {
-		return localRunConfig{}, fmt.Errorf("受托模式地址必须为 127.0.0.1:0")
-	}
-	if !filepath.IsAbs(value.DataDir) || !filepath.IsAbs(value.RegistrationPath) {
-		return localRunConfig{}, fmt.Errorf("受托启动目录必须使用绝对路径")
-	}
-	if err := localrun.ValidateIdentity(value.InstallIdentity, localrun.IdentityKindInstall); err != nil {
-		return localRunConfig{}, err
-	}
-	if err := localrun.ValidateIdentity(value.DataIdentity, localrun.IdentityKindData); err != nil {
-		return localRunConfig{}, err
-	}
-	if err := localrun.ValidateIdentity(value.RunIdentity, localrun.IdentityKindRun); err != nil {
-		return localRunConfig{}, err
-	}
-	if err := localrun.ValidateIdentity(value.SessionCredential, localrun.IdentityKindSession); err != nil {
-		return localRunConfig{}, err
-	}
-	return value, nil
-}
-
-func writeLocalReady(version string, endpoint string, config localRunConfig) error {
-	payload, err := json.Marshal(map[string]string{
-		"type":            "local-box-ready",
-		"endpoint":        endpoint,
-		"installIdentity": config.InstallIdentity,
-		"dataIdentity":    config.DataIdentity,
-		"runIdentity":     config.RunIdentity,
-		"version":         version,
-	})
-	if err != nil {
-		return fmt.Errorf("生成受托 ready 资料失败：%w", err)
-	}
-	if _, err := fmt.Fprintln(os.Stdout, string(payload)); err != nil {
-		return fmt.Errorf("输出受托 ready 资料失败：%w", err)
-	}
-	return nil
-}
-
 func envOrDefault(key string, fallback string) string {
 	value := os.Getenv(key)
 	if value == "" {
@@ -427,26 +267,29 @@ func envOrDefault(key string, fallback string) string {
 	return value
 }
 
-// entrypointPort 从受托本机入口地址解析真实端口，用于长期端口冲突检查。
-func entrypointPort(endpoint string) int {
-	parsed, err := url.Parse(strings.TrimSpace(endpoint))
-	if err != nil {
-		return 0
-	}
-	port, err := strconv.Atoi(parsed.Port())
-	if err != nil {
-		return 0
-	}
-	return port
-}
-
 func readBoxKey(dataDir string) string {
+	if envKey := strings.TrimSpace(os.Getenv("EUCLI_BOX_KEY")); envKey != "" {
+		return envKey
+	}
 	keyFile := filepath.Join(dataDir, "meta", "box.key")
 	payload, err := os.ReadFile(keyFile)
 	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(payload))
+}
+
+// entrypointPortFromAddr 解析网关监听地址的真实端口；随机端口（0）返回 0。
+func entrypointPortFromAddr(addr string) int {
+	_, portValue, err := net.SplitHostPort(strings.TrimSpace(addr))
+	if err != nil {
+		return 0
+	}
+	port, err := strconv.Atoi(portValue)
+	if err != nil || port < 1 {
+		return 0
+	}
+	return port
 }
 
 func programStatusLabel(programRoot string) string {

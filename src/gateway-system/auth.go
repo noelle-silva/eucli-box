@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"net"
 	"net/http"
 	"strings"
 
@@ -20,31 +19,19 @@ const (
 type gatewayContextKey string
 
 // contextKeyAuthenticatedKeyID 在请求上下文中携带已通过长期 Key 核对的 Key ID。
-// 只有长期端口入口会设置；受托本机入口和普通入口不携带。
+// 只有长期端口入口会设置；网关直连入口不携带。
 const contextKeyAuthenticatedKeyID gatewayContextKey = "access-system-authenticated-key-id"
 
-// requireTrustedConnection 是访问设置管理路由的身份边界：
-// 只有本次受托启动交接凭证可以管理访问设置；长期 Key 被明确拒绝。
-func (s *system) requireTrustedConnection(next http.HandlerFunc) http.HandlerFunc {
+// requireDirectAccess 是访问设置管理路由的身份边界：
+// 只有网关直连入口（通过直连固定 Key 或有效长期 Key 鉴权）可以管理访问设置；
+// 长期端口入口是纯业务访问身份，被明确拒绝。
+func (s *system) requireDirectAccess(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !s.config.LocalRun {
-			writeError(w, gatewayForbidden("访问设置只允许受托本机连接管理", nil))
-			return
-		}
-		if !requestFromLoopback(r) {
-			writeError(w, gatewayForbidden("访问设置只接受本机回环连接", nil))
-			return
-		}
-		provided := strings.TrimSpace(extractAuthorizationBearer(r))
-		if provided == strings.TrimSpace(s.config.LocalCredential) {
-			next(w, r)
-			return
-		}
-		if s.access != nil && s.access.VerifyKey(r.Context(), provided).Valid {
+		if longTermKeyIDFromContext(r) != "" {
 			writeError(w, gatewayForbidden("长期 Key 无权管理访问设置", nil))
 			return
 		}
-		writeError(w, gatewayNotAuthorized("受托本机凭证不匹配", nil))
+		next(w, r)
 	}
 }
 
@@ -133,27 +120,39 @@ func (s *system) validateRequestKey(r *http.Request) error {
 	if longTermKeyIDFromContext(r) != "" {
 		return nil
 	}
-	if s.config.LocalRun {
-		if !requestFromLoopback(r) {
-			return gatewayNotAuthorized("local gateway only accepts loopback requests", nil)
-		}
-		if r.URL.Query().Get("token") != "" {
-			return gatewayNotAuthorized("local gateway does not accept query credentials", nil)
-		}
-		if extractAuthorizationBearer(r) != strings.TrimSpace(s.config.LocalCredential) {
-			return gatewayNotAuthorized("local session credential mismatch", nil)
-		}
-		return nil
-	}
-	key := strings.TrimSpace(s.config.Key)
-	if key == "" {
-		return nil
-	}
+	// 网关直连入口同时接受两种身份：
+	// 1. 直连固定 Key（正式配钥、EUCLI_BOX_KEY 注入的网关身份）；
+	// 2. 有效长期 Key（客户端以长期 Key 直连网关的身份）。
+	// 两者都未配置时，网关处于未安装身份状态，不做鉴权。
 	requestKey := extractRequestKey(r)
-	if requestKey == key {
+	if fixedKey := strings.TrimSpace(s.config.Key); fixedKey != "" {
+		if requestKey == fixedKey {
+			return nil
+		}
+	}
+	if s.access != nil && s.access.VerifyKey(r.Context(), requestKey).Valid {
+		return nil
+	}
+	if strings.TrimSpace(s.config.Key) == "" && s.access == nil {
+		return nil
+	}
+	if strings.TrimSpace(s.config.Key) == "" && !s.accessHasAnyIdentity(r.Context()) {
 		return nil
 	}
 	return gatewayNotAuthorized("eucli-box key mismatch", nil)
+}
+
+// accessHasAnyIdentity 判断访问系统是否已配置了任何长期 Key 记录；
+// 未配置任何身份时网关入口保持"未安装身份"状态，允许首次建立连接。
+func (s *system) accessHasAnyIdentity(ctx context.Context) bool {
+	if s.access == nil {
+		return false
+	}
+	keys, err := s.access.ListKeys(ctx)
+	if err != nil {
+		return true
+	}
+	return len(keys) > 0
 }
 
 func extractRequestKey(r *http.Request) string {
@@ -169,15 +168,6 @@ func extractAuthorizationBearer(r *http.Request) string {
 		return ""
 	}
 	return strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
-}
-
-func requestFromLoopback(r *http.Request) bool {
-	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
-	if err != nil {
-		host = strings.TrimSpace(r.RemoteAddr)
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
 }
 
 func gatewayNotAuthorized(message string, cause error) error {

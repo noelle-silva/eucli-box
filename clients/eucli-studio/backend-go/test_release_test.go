@@ -1,9 +1,6 @@
 package main
 
 import (
-	"context"
-
-	"eucli-box/pkg/releasecheck"
 	"eucli-box/pkg/types"
 )
 
@@ -18,25 +15,10 @@ func testClientRelease() clientRelease {
 }
 
 func newBusinessReadyTestService(config *configStore, hub *eventHub) *service {
-	svc, err := newService(config, testClientRelease(), hub, nil, fakeClientReleaseChecker{}, "")
+	svc, err := newService(config, testClientRelease(), hub)
 	if err != nil {
 		panic(err)
 	}
 	svc.setConnectionState(runtimeBootstrap{BusinessAvailable: true})
 	return svc
-}
-
-type fakeClientReleaseChecker struct {
-	snapshot types.ReleaseCheckSnapshot
-}
-
-func (f fakeClientReleaseChecker) CheckOnly(context.Context, []releasecheck.InstalledArtifact, string, []types.ReleaseArtifactIdentity) types.ReleaseCheckSnapshot {
-	if f.snapshot.Status == "" {
-		return releasecheck.PendingSnapshot()
-	}
-	return f.snapshot
-}
-
-func (f fakeClientReleaseChecker) LatestCandidate(context.Context, types.ReleaseArtifactIdentity) (*releasecheck.ReleaseCandidate, error) {
-	return nil, nil
 }

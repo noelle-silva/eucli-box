@@ -18,7 +18,7 @@ import (
 	"time"
 )
 
-// ---------- 业务端进程（受托模式） ----------
+// ---------- 业务端进程（普通模式） ----------
 
 type boxProcess struct {
 	t          *testing.T
@@ -30,46 +30,28 @@ type boxProcess struct {
 	logFile    *os.File
 }
 
-func startTrustedBox(t *testing.T, boxPath string, envDir string) *boxProcess {
+func startRegularBox(t *testing.T, boxPath string, envDir string) *boxProcess {
 	t.Helper()
 	unique := time.Now().UTC().Format("20060102T150405.000000000Z")
 	boxData := filepath.Join(envDir, "box-data-"+unique)
 	programRoot := filepath.Join(envDir, "program-root-"+unique)
-	tempDir := filepath.Join(envDir, "temp-"+unique)
-	for _, dir := range []string{boxData, programRoot, tempDir} {
+	for _, dir := range []string{boxData, programRoot} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", dir, err)
 		}
 	}
 	port := freePort(t)
-	installID := "install-" + strings.Repeat("a", 64)
-	dataID := "data-" + strings.Repeat("b", 64)
-	runID := "run-" + strings.Repeat("c", 64)
-	sessionCredential := "session-" + strings.Repeat("d", 64)
-	registrationPath := filepath.Join(envDir, "runtime-"+unique, "registration.json")
-	if err := os.MkdirAll(filepath.Dir(registrationPath), 0o755); err != nil {
-		t.Fatalf("mkdir runtime: %v", err)
-	}
-	// 受托启动前必须建立与预设身份一致的数据身份文件：
-	// 真实客户端在安装流程中完成这一步，验证脚本需要自行准备。
-	writeDataIdentity(t, boxData, dataID)
 	logFile, err := os.Create(filepath.Join(envDir, "box-"+unique+".log"))
 	if err != nil {
 		t.Fatalf("create box log: %v", err)
 	}
+	const fixedKey = "background-access-fixed-key"
 	cmd := exec.Command(boxPath)
 	cmd.Env = append(os.Environ(),
-		"EUCLI_BOX_LOCAL_RUN=1",
-		"EUCLI_BOX_INSTALL_ID="+installID,
-		"EUCLI_BOX_DATA_ID="+dataID,
-		"EUCLI_BOX_RUN_ID="+runID,
-		"EUCLI_BOX_SESSION_CREDENTIAL="+sessionCredential,
 		"EUCLI_BOX_DATA_DIR="+boxData,
 		"EUCLI_BOX_PROGRAM_ROOT="+programRoot,
-		"EUCLI_BOX_REGISTRATION_PATH="+registrationPath,
-		"EUCLI_BOX_ADDR=127.0.0.1:0",
-		"TEMP="+tempDir,
-		"TMP="+tempDir,
+		"EUCLI_BOX_ADDR=127.0.0.1:"+port,
+		"EUCLI_BOX_KEY="+fixedKey,
 	)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
@@ -77,7 +59,7 @@ func startTrustedBox(t *testing.T, boxPath string, envDir string) *boxProcess {
 		t.Fatalf("start box: %v", err)
 	}
 	box := &boxProcess{
-		t: t, cmd: cmd, baseURL: "http://127.0.0.1:" + port, credential: sessionCredential, runID: runID,
+		t: t, cmd: cmd, baseURL: "http://127.0.0.1:" + port, credential: fixedKey,
 		client: &http.Client{Timeout: 30 * time.Second}, logFile: logFile,
 	}
 	t.Cleanup(func() { box.stop() })
@@ -96,63 +78,16 @@ func freePort(t *testing.T) string {
 	return fmt.Sprintf("%d", port)
 }
 
-// writeDataIdentity 在全新数据目录中写入与受托启动预设身份一致的数据身份文件，
-// 格式与业务端 localrun.EnsureDataIdentity 一致。
-func writeDataIdentity(t *testing.T, boxData string, dataID string) {
-	t.Helper()
-	metaDir := filepath.Join(boxData, "meta")
-	if err := os.MkdirAll(metaDir, 0o755); err != nil {
-		t.Fatalf("mkdir meta: %v", err)
-	}
-	record := map[string]any{
-		"schemaVersion": 1,
-		"dataIdentity":  dataID,
-		"createdBy":     "eucli-studio",
-		"createdAt":     time.Now().UTC().Format(time.RFC3339Nano),
-	}
-	payload, err := json.MarshalIndent(record, "", "  ")
-	if err != nil {
-		t.Fatalf("marshal data identity: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(metaDir, "local-identity.json"), append(payload, '\n'), 0o644); err != nil {
-		t.Fatalf("write local-identity.json: %v", err)
-	}
-}
-
 func (b *boxProcess) waitReady(t *testing.T) {
 	t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
-		if endpoint := b.readyEndpoint(); endpoint != "" {
-			b.baseURL = endpoint
-			if status, _ := b.trustedCall(http.MethodGet, "/api/local-run", ""); status == http.StatusOK {
-				return
-			}
+		if status, _ := b.call(http.MethodGet, "/api/release", "", b.credential); status == http.StatusOK {
+			return
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
 	t.Fatalf("业务端未在期限内就绪，日志：\n%s", b.logText())
-}
-
-// readyEndpoint 从业务端日志中解析受托 ready 行携带的真实监听地址。
-func (b *boxProcess) readyEndpoint() string {
-	if b.logFile == nil {
-		return ""
-	}
-	payload, err := os.ReadFile(b.logFile.Name())
-	if err != nil {
-		return ""
-	}
-	for _, line := range strings.Split(string(payload), "\n") {
-		var ready struct {
-			Type     string `json:"type"`
-			Endpoint string `json:"endpoint"`
-		}
-		if json.Unmarshal([]byte(line), &ready) == nil && ready.Type == "local-box-ready" && ready.Endpoint != "" {
-			return ready.Endpoint
-		}
-	}
-	return ""
 }
 
 func (b *boxProcess) stop() {
@@ -227,7 +162,7 @@ func (b *boxProcess) dataJSON(status int, payload []byte) map[string]any {
 }
 
 // longTermCall 通过长期端口发起请求（使用长期 Key 鉴权），
-// 与自动本机入口的受托凭证鉴权完全隔离。
+// 与网关直连入口的身份鉴权完全隔离。
 func (b *boxProcess) longTermCall(method string, port int, path string, body string, key string) (int, []byte) {
 	var reader io.Reader
 	if body != "" {
@@ -268,7 +203,7 @@ func TestBackgroundAccess(t *testing.T) {
 	if err := os.MkdirAll(envDir, 0o755); err != nil {
 		t.Fatalf("mkdir env: %v", err)
 	}
-	box := startTrustedBox(t, boxPath, envDir)
+	box := startRegularBox(t, boxPath, envDir)
 
 	t.Run("长期端口列表初始为空", func(t *testing.T) {
 		status, payload := box.trustedCall(http.MethodGet, "/api/access/persistent-ports", "")
@@ -423,10 +358,10 @@ func TestBackgroundAccess(t *testing.T) {
 		}
 	})
 
-	t.Run("关闭接口要求受托凭证", func(t *testing.T) {
-		status, _ := box.call(http.MethodPost, "/api/box/shutdown", `{}`, "wrong-key")
-		if status != http.StatusForbidden && status != http.StatusUnauthorized {
-			t.Fatalf("关闭接口 status = %d，期望 403/401", status)
+	t.Run("业务端关闭接口已随客户端解耦移除", func(t *testing.T) {
+		status, _ := box.trustedCall(http.MethodPost, "/api/box/shutdown", `{}`)
+		if status != http.StatusNotFound {
+			t.Fatalf("关闭接口 status = %d，期望 404", status)
 		}
 	})
 }
@@ -442,7 +377,7 @@ func TestBackgroundAccessExperience(t *testing.T) {
 	if err := os.MkdirAll(envDir, 0o755); err != nil {
 		t.Fatalf("mkdir env: %v", err)
 	}
-	box := startTrustedBox(t, boxPath, envDir)
+	box := startRegularBox(t, boxPath, envDir)
 
 	t.Run("创建 Key 并查看", func(t *testing.T) {
 		status, payload := box.trustedCall(http.MethodPost, "/api/access/persistent-keys", `{"name":"体验 Key","expiresAt":null}`)

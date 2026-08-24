@@ -95,7 +95,7 @@ func runBackgroundAccessVerification(ctx context.Context, root string, paths run
 		args    []string
 		env     map[string]string
 	}{
-		name:    "后台运行、长期端口、长期 Key、权限边界与旧配置转换",
+		name:    "后台运行、长期端口、长期 Key 与权限边界",
 		workdir: root,
 		command: "go",
 		args:    []string{"test", "-tags", "eucli_background_access", "-run", runTest, "-count=1", "devtools/general-verification-tools/verify-background-access/backgroundaccessverify"},

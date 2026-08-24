@@ -747,18 +747,23 @@ func executableName(toolID string) string {
 	return toolID
 }
 
+// findRepoRoot walks upward for the primary repository root: the product tool
+// source area (tools/) and the development assets area (.dev-tools/go.mod)
+// must both be present. A .dev-tools own go.mod never satisfies this.
 func findRepoRoot() (string, error) {
 	current, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("get working directory: %w", err)
 	}
 	for {
-		if _, err := os.Stat(filepath.Join(current, "go.mod")); err == nil {
-			return current, nil
+		if _, err := os.Stat(filepath.Join(current, "tools")); err == nil {
+			if _, statErr := os.Stat(filepath.Join(current, ".dev-tools", "go.mod")); statErr == nil {
+				return current, nil
+			}
 		}
 		parent := filepath.Dir(current)
 		if parent == current {
-			return "", fmt.Errorf("go.mod was not found")
+			return "", fmt.Errorf("repository root was not found")
 		}
 		current = parent
 	}

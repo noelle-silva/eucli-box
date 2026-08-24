@@ -13,5 +13,5 @@
 已入住：
 
 - `general-verification-tools/`：长期验证工具专区（当前为空）
-- `dev-box/`：开发盒子（当前源码业务端开发成品制作与开发客户端启动）
+- `dev-box/`：开发盒子（当前源码业务端编译、普通模式启动与连接信息输出）
 - `worktree-overlay/`：worktree 覆盖工具

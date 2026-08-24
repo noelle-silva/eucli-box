@@ -39,11 +39,10 @@ function Restore-ProcessEnvironment {
 $modeRules = @{
     "verify-release-build"        = @{ AllowNoMode = $true;  Modes = @();             DefaultMode = "full" }
     "verify-release-publish"      = @{ AllowNoMode = $false; Modes = @("preflight", "remote"); DefaultMode = "" }
-    "verify-client-install"       = @{ AllowNoMode = $true;  Modes = @("experience"); DefaultMode = "default" }
+    "verify-client-install"       = @{ AllowNoMode = $true;  Modes = @();             DefaultMode = "default" }
     "verify-tool-plugin-update"   = @{ AllowNoMode = $true;  Modes = @("experience"); DefaultMode = "default" }
     "verify-background-access"    = @{ AllowNoMode = $true;  Modes = @("experience"); DefaultMode = "default" }
     "verify-data-migration"       = @{ AllowNoMode = $true;  Modes = @();             DefaultMode = "default" }
-    "verify-box-update"           = @{ AllowNoMode = $true;  Modes = @("experience"); DefaultMode = "default" }
     "verify-dev-box"              = @{ AllowNoMode = $true;  Modes = @();             DefaultMode = "default" }
 }
 

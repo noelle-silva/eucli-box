@@ -3,13 +3,14 @@ package releaseverify
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
 
-// DevLocalBox 验证开发体验入口和开发来源安装链：
-// 开发模式必须使用当前源码本地成品安装业务端，缺失或损坏时明确失败且不回退官方来源；
-// 开发客户端和业务端资料只进入 .dev-runtime 边界；正式来源语义保持不变。
+// DevLocalBox 验证开发态链路：
+// 当前源码编译产物直接以普通模式启动业务端（无安装概念），
+// 固定 Key 鉴权、工具开发源标记生效；验证只在隔离目录产生运行内容。
 func DevLocalBox(ctx context.Context, repositoryRoot string, runRoot string, mode string) error {
 	paths, err := prepareRun(repositoryRoot, runRoot, "verify-dev-box")
 	if err != nil {
@@ -64,8 +65,9 @@ func DevLocalBox(ctx context.Context, repositoryRoot string, runRoot string, mod
 }
 
 func runDevLocalBoxDefault(ctx context.Context, root string, paths runPaths, recorder *recorder) {
-	archivePath, manifestPath, err := prepareVerificationBox(ctx, root, paths, "开发体验业务端成品", filepath.Join(paths.environment, "dev-runtime", "eucli-box", "package"), recorder)
+	boxPath, err := buildDevBox(ctx, root, paths, recorder)
 	if err != nil {
+		recorder.fail("编译隔离业务端", err)
 		return
 	}
 	commands := []struct {
@@ -75,8 +77,8 @@ func runDevLocalBoxDefault(ctx context.Context, root string, paths runPaths, rec
 		args    []string
 		env     map[string]string
 	}{
-		{name: "开发来源安装、失败和重装场景", workdir: filepath.Join(root, "clients", "eucli-studio", "backend-go"), command: "go", args: []string{"test", "-tags", "eucli_devbox", "-run", "^TestDevBox", "-count=1"}, env: devLocalBoxTestEnvironment(paths, archivePath, manifestPath)},
-		{name: "客户端本地后台整体测试（含正式来源回归）", workdir: filepath.Join(root, "clients", "eucli-studio", "backend-go"), command: "go", args: []string{"test", "./...", "-count=1"}},
+		{name: "开发态普通模式启动、鉴权与工具开发源标记", workdir: root, command: "go", args: []string{"test", "-tags", "eucli_devbox", "-run", "^TestDevBox", "-count=1", "devtools/general-verification-tools/verify-dev-box/devboxverify"}, env: devBoxTestEnvironment(paths, boxPath)},
+		{name: "客户端后台整体测试", workdir: filepath.Join(root, "clients", "eucli-studio", "backend-go"), command: "go", args: []string{"test", "./...", "-count=1"}},
 		{name: "客户端协议和界面类型", workdir: filepath.Join(root, "clients", "eucli-studio"), command: "pnpm", args: []string{"exec", "tsc", "--noEmit"}},
 		{name: "客户端界面构建", workdir: filepath.Join(root, "clients", "eucli-studio"), command: "pnpm", args: []string{"build:ui"}},
 	}
@@ -89,16 +91,30 @@ func runDevLocalBoxDefault(ctx context.Context, root string, paths runPaths, rec
 	}
 }
 
-// devLocalBoxTestEnvironment 为开发业务端测试提供隔离的开发资料布局，
-// 与开发体验入口 .dev-workspace/.dev-runtime/ 的目录语义一致，
-// 环境变量名与真实入口 start-dev-box.ps1 和客户端读取方 local_box_source.go 完全对齐。
-func devLocalBoxTestEnvironment(paths runPaths, archivePath string, manifestPath string) map[string]string {
-	devRuntime := filepath.Join(paths.environment, "dev-runtime")
+// buildDevBox 编译当前源码业务端可执行文件供验证子进程使用。
+func buildDevBox(ctx context.Context, root string, paths runPaths, recorder *recorder) (string, error) {
+	boxPath := filepath.Join(paths.environment, "runtime", "eucli-box.exe")
+	if err := os.MkdirAll(filepath.Dir(boxPath), 0o755); err != nil {
+		recorder.fail("建立隔离业务端目录", err)
+		return "", err
+	}
+	if err := runCommand(ctx, paths, "编译当前源码业务端", root, "go", "build", "-o", boxPath, "./cmd/eucli-box"); err != nil {
+		return "", err
+	}
+	if info, err := os.Stat(boxPath); err != nil || info.IsDir() {
+		if err == nil {
+			err = fmt.Errorf("业务端可执行文件不是普通文件")
+		}
+		return "", err
+	}
+	recorder.pass("编译当前源码业务端", "当前源码已编译为隔离可执行文件")
+	return boxPath, nil
+}
+
+// devBoxTestEnvironment 为开发态测试提供隔离的运行环境变量。
+func devBoxTestEnvironment(paths runPaths, boxPath string) map[string]string {
 	return map[string]string{
-		"EUCLI_DEV_BOX_SOURCE":   "1",
-		"EUCLI_DEV_BOX_MANIFEST": manifestPath,
-		"EUCLI_DEV_BOX_ARCHIVE":  archivePath,
-		"EUCLI_DEV_BOX_BOX_ROOT": filepath.Join(devRuntime, "eucli-box"),
-		"FW_APP_DATA_DIR":        filepath.Join(devRuntime, "client", "data"),
+		"EUCLI_DEV_BOX_BOX":      boxPath,
+		"EUCLI_DEV_BOX_RUN_ROOT": paths.root,
 	}
 }

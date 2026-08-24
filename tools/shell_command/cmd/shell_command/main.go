@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"bytes"
@@ -45,10 +45,10 @@ func run() (types.ToolExecutionOutput, *toolcontrol.Client, context.CancelFunc, 
 		return failedOutput("failed to decode tool input", err), nil, noopCancel, nil
 	}
 	executionCtx, executionCancel := context.WithCancel(context.Background())
-	client, err := connectToolControl(executionCtx)
+	client, err := toolcontrol.AdoptControl(executionCtx)
 	if err != nil {
 		executionCancel()
-		return failedControlOutput(err), client, noopCancel, nil
+		return toolcontrol.ControlFailedOutput(err), client, noopCancel, nil
 	}
 	if client == nil {
 		return shellcommand.Execute(executionCtx, input), client, executionCancel, nil
@@ -72,7 +72,7 @@ func run() (types.ToolExecutionOutput, *toolcontrol.Client, context.CancelFunc, 
 	relay.stop()
 	select {
 	case controlErr := <-controlErrorCh:
-		output = failedControlOutput(controlErr)
+		output = toolcontrol.ControlFailedOutput(controlErr)
 	default:
 	}
 	return output, client, executionCancel, serveDone
@@ -152,22 +152,6 @@ func safePreview(data []byte) string {
 		end += size
 	}
 	return string(trimmed)
-}
-
-func failedControlOutput(err error) types.ToolExecutionOutput {
-	message := "shell_command control protocol failed"
-	if err != nil {
-		message += ": " + err.Error()
-	}
-	return types.ToolExecutionOutput{
-		Status:  types.ToolStatusFailed,
-		Content: message,
-		Error:   message,
-		Metadata: map[string]any{
-			"error":       message,
-			"failureKind": "tool_protocol_failed",
-		},
-	}
 }
 
 func failedOutput(message string, err error) types.ToolExecutionOutput {

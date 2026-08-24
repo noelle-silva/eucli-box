@@ -187,7 +187,7 @@ func newHostSystem(config toolcalling.Config, storage *fakeToolStorage) (toolcal
 	return toolcalling.NewSystem(config, &fakePermissionSystem{}, storage)
 }
 
-func executeHost(ctx context.Context, system toolcalling.System, fixture fixture, heartbeat bool, args map[string]any) (types.ToolResult, error) {
+func executeHost(ctx context.Context, system toolcalling.System, fixture fixture, args map[string]any) (types.ToolResult, error) {
 	definition := types.ToolDefinition{
 		ID:                    "shell_command",
 		Name:                  "shell_command",
@@ -197,7 +197,6 @@ func executeHost(ctx context.Context, system toolcalling.System, fixture fixture
 		Type:                  "local",
 		BodyDirectory:         fixture.root,
 		Binaries:              []types.ToolBinary{{GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Path: filepath.Base(fixture.shellExe)}},
-		ControlCapabilities:   types.ToolControlCapabilities{Heartbeat: heartbeat},
 	}
 	plan := types.ToolRunPlan{
 		ID:             "plan-verify",

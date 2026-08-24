@@ -1299,6 +1299,10 @@ func (f *fakeGatewayTools) ToolActivity(ctx context.Context, toolID string) (typ
 	return types.ArtifactActivityState{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: toolID}}, nil
 }
 
+func (f *fakeGatewayTools) StopToolExecution(ctx context.Context, toolID string) (types.ToolStopResult, error) {
+	return types.ToolStopResult{Terminated: 1}, nil
+}
+
 type fakeGatewayStickers struct {
 	categories        map[string]map[string]types.StickerItem
 	images            map[string]string

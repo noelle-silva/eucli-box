@@ -85,6 +85,30 @@ func (s *system) ToolActivity(ctx context.Context, toolID string) (types.Artifac
 	return state, nil
 }
 
+// StopToolExecution stops the currently executing instances of one tool.
+// Each affected run is cancelled by the user-facing stop action and reports
+// the cancelled outcome through the normal execution flow.
+func (s *system) StopToolExecution(ctx context.Context, toolID string) (types.ToolStopResult, error) {
+	toolID, err := cleanToolID(toolID)
+	if err != nil {
+		return types.ToolStopResult{}, err
+	}
+	s.mu.Lock()
+	set := s.activeExecutions[toolID]
+	runs := make([]*toolRunContext, 0, len(set))
+	for runCtx := range set {
+		runs = append(runs, runCtx)
+	}
+	s.mu.Unlock()
+	if len(runs) == 0 {
+		return types.ToolStopResult{Terminated: 0}, nil
+	}
+	for _, runCtx := range runs {
+		runCtx.cancel()
+	}
+	return types.ToolStopResult{Terminated: len(runs)}, nil
+}
+
 func (s *system) runToolOperation(ctx context.Context, toolID string, action string) (types.ArtifactInstallState, error) {
 	if s.config.ProgramRoot == "" {
 		return types.ArtifactInstallState{}, toolInvalid("managed tool programs are not configured", nil)
@@ -133,7 +157,7 @@ func (s *system) runToolOperation(ctx context.Context, toolID string, action str
 
 	activity := s.activityFor(toolID)
 	operationID := utils.NewID("tool-operation")
-	if blocked := activity.beginUpdate(operationID, s.updateWaitTimeout); blocked != "" {
+	if blocked := activity.beginUpdate(operationID); blocked != "" {
 		if blocked == types.ArtifactErrorUpdateInProgress {
 			return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusBlocked, types.ArtifactPhaseActivity, types.ArtifactErrorUpdateInProgress, "同一工具已有操作正在进行")
 		}
@@ -284,7 +308,7 @@ func (s *system) probeTool(ctx context.Context, prepared release.PreparedProgram
 	if err != nil {
 		return toolExecutionInvalid("failed to encode probe input", err)
 	}
-	outcome := s.executeToolProcess(ctx, executable, prepared.Directory, input, definition.ControlCapabilities, nil)
+	outcome := s.executeToolProcess(ctx, definition.ID, executable, prepared.Directory, input, nil)
 	if outcome.FailureKind != "" {
 		message := "tool probe failed: " + outcome.FailureKind
 		if outcome.FailureError != nil {

@@ -276,18 +276,20 @@ func main() { fmt.Print("not-json") }
 	}
 }
 
-func TestExecuteNormalizesTimeout(t *testing.T) {
-	executable := buildTool(t, `package main
+// TestExecuteFailsWhenToolIgnoresControlProtocol 验证标配控制通道：
+// 任何不实现控制协议的二进制都按协议失败归类，不存在旧总时限兜底。
+func TestExecuteFailsWhenToolIgnoresControlProtocol(t *testing.T) {
+	executable := buildRawTool(t, `package main
 import "time"
 func main() { time.Sleep(2 * time.Second) }
 `)
 	tool := testTool(t, executable)
-	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{LegacyToolTimeout: 10 * time.Millisecond})
+	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{ToolWatchdogTimeout: 300 * time.Millisecond, ToolWatchdogPingInterval: 100 * time.Millisecond})
 	result, err := system.Execute(context.Background(), allowedPlan(tool, executable))
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if result.Status != types.ToolStatusFailed || result.Error != "tool execution timed out" {
+	if result.Status != types.ToolStatusFailed || result.Metadata["failureKind"] != "tool_protocol_failed" {
 		t.Fatalf("result = %#v", result)
 	}
 }
@@ -330,8 +332,51 @@ func main() { fmt.Print(`+"`"+`{"status":"success","content":"ok","metadata":{}}
 	}
 }
 
-func TestWorkspaceFenceRequiresConfirmationForOutsidePath(t *testing.T) {
-	hostDir := t.TempDir()
+// TestStopToolExecutionStopsRunningTool 验证 035：面向用户的停止动作取消具体
+// 执行实例，该执行按用户取消归类，工具活动计数归零。
+func TestStopToolExecutionStopsRunningTool(t *testing.T) {
+	executable := buildTool(t, `package main
+import "time"
+func main() { time.Sleep(30 * time.Second) }
+`)
+	tool := testTool(t, executable)
+	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{})
+	done := make(chan types.ToolResult, 1)
+	go func() {
+		result, _ := system.Execute(context.Background(), allowedPlan(tool, executable))
+		done <- result
+	}()
+	time.Sleep(800 * time.Millisecond)
+	activity, err := system.ToolActivity(context.Background(), tool.ID)
+	if err != nil || !activity.Active {
+		t.Fatalf("activity before stop = %#v, err = %v", activity, err)
+	}
+	stopResult, err := system.StopToolExecution(context.Background(), tool.ID)
+	if err != nil {
+		t.Fatalf("StopToolExecution() error = %v", err)
+	}
+	if stopResult.Terminated != 1 {
+		t.Fatalf("stop result = %#v", stopResult)
+	}
+	select {
+	case result := <-done:
+		if result.Status != types.ToolStatusCancelled || result.Metadata["failureKind"] != "user_cancelled" {
+			t.Fatalf("stopped result = %#v", result)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("stopped tool did not finish")
+	}
+	activity, err = system.ToolActivity(context.Background(), tool.ID)
+	if err != nil || activity.Active {
+		t.Fatalf("activity after stop = %#v, err = %v", activity, err)
+	}
+	stopResult, err = system.StopToolExecution(context.Background(), tool.ID)
+	if err != nil || stopResult.Terminated != 0 {
+		t.Fatalf("stop idle result = %#v, err = %v", stopResult, err)
+	}
+}
+
+func TestWorkspaceFenceRequiresConfirmationForOutsidePath(t *testing.T) {	hostDir := t.TempDir()
 	outsideDir := t.TempDir()
 	t.Chdir(hostDir)
 	tool := testTool(t, buildTool(t, `package main
@@ -454,23 +499,85 @@ func allowedPlan(tool types.ToolDefinition, executable string) types.ToolRunPlan
 	}
 }
 
+// buildTool compiles a controlled helper tool: the user source becomes run(),
+// wrapped by the standard tool runtime (control channel + heartbeat) so all
+// helper tools behave like real platform tools.
 func buildTool(t *testing.T, source string) string {
 	t.Helper()
+	return buildHelperTool(t, source, true)
+}
+
+// buildRawTool compiles a bare helper tool without control support; such a tool
+// is exactly what the platform classifies as a protocol failure.
+func buildRawTool(t *testing.T, source string) string {
+	t.Helper()
+	return buildHelperTool(t, source, false)
+}
+
+// buildHelperTool compiles the helper in a self-contained module so the build
+// never depends on the current working directory or the repository go.work.
+func buildHelperTool(t *testing.T, source string, controlled bool) string {
+	t.Helper()
 	dir := t.TempDir()
-	sourceFile := filepath.Join(dir, "main.go")
-	if err := os.WriteFile(sourceFile, []byte(source), 0o644); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(helperModuleGoMod(t)), 0o644); err != nil {
+		t.Fatalf("WriteFile(go.mod) error = %v", err)
+	}
+	if controlled {
+		body := strings.Replace(source, "func main() {", "func run() {", 1)
+		mainSource := `package main
+
+import (
+	"context"
+	"time"
+
+	"eucli-box/pkg/toolcontrol"
+)
+
+func main() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	client, err := toolcontrol.AdoptControl(ctx)
+	if err == nil && client != nil {
+		defer client.Close()
+		go func() { _ = client.Serve(ctx) }()
+	}
+	run()
+}
+`
+		if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(mainSource), 0o644); err != nil {
+			t.Fatalf("WriteFile(main) error = %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "body.go"), []byte(body), 0o644); err != nil {
+			t.Fatalf("WriteFile(body) error = %v", err)
+		}
+	} else {
+		if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(source), 0o644); err != nil {
+			t.Fatalf("WriteFile(main) error = %v", err)
+		}
 	}
 	exe := filepath.Join(dir, "tool")
 	if runtime.GOOS == "windows" {
 		exe += ".exe"
 	}
-	cmd := exec.Command("go", "build", "-o", exe, sourceFile)
+	cmd := exec.Command("go", "build", "-o", exe, ".")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GOWORK=off")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("go build helper failed: %v\n%s", err, output)
 	}
 	return exe
+}
+
+// helperModuleGoMod renders a self-contained module pointing at the repository.
+func helperModuleGoMod(t *testing.T) string {
+	t.Helper()
+	_, callerFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatalf("runtime.Caller failed")
+	}
+	repoRoot := filepath.Dir(filepath.Dir(filepath.Dir(callerFile)))
+	return fmt.Sprintf("module ebbchelper\n\ngo 1.23\n\nrequire eucli-box v0.0.0\n\nreplace eucli-box => %s\n", filepath.ToSlash(repoRoot))
 }
 
 type fakePermission struct {

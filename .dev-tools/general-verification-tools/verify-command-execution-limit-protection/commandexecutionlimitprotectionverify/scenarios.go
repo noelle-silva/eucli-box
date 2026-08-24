@@ -21,7 +21,7 @@ func scenarioElidedOutput(ctx context.Context, fixture fixture) error {
 	if err != nil {
 		return err
 	}
-	result, err := executeHost(ctx, system, fixture, true, map[string]any{"command": "flood 1048576", "workdir": ".", "timeoutMs": 60000, "maxOutputChars": 4000})
+	result, err := executeHost(ctx, system, fixture, map[string]any{"command": "flood 1048576", "workdir": ".", "timeoutMs": 60000, "maxOutputChars": 4000})
 	if err != nil {
 		return err
 	}
@@ -56,7 +56,7 @@ func scenarioUpdateFlood(ctx context.Context, fixture fixture) error {
 	if err != nil {
 		return err
 	}
-	result, err := executeHost(ctx, system, fixture, true, map[string]any{"command": "spam 12000", "workdir": ".", "timeoutMs": 60000})
+	result, err := executeHost(ctx, system, fixture, map[string]any{"command": "spam 12000", "workdir": ".", "timeoutMs": 60000})
 	if err != nil {
 		return err
 	}
@@ -82,7 +82,7 @@ func scenarioTreeTermination(ctx context.Context, fixture fixture) error {
 	if err := os.MkdirAll(pidDir, 0o755); err != nil {
 		return err
 	}
-	result, err := executeHost(ctx, system, fixture, true, map[string]any{"command": "spawn-sleep", "workdir": pidDir, "timeoutMs": 300})
+	result, err := executeHost(ctx, system, fixture, map[string]any{"command": "spawn-sleep", "workdir": pidDir, "timeoutMs": 300})
 	if err != nil {
 		return err
 	}

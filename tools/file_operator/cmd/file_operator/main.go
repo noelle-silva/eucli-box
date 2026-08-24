@@ -7,9 +7,15 @@ import (
 	"io"
 	"os"
 
+	"eucli-box/pkg/toolcontrol"
 	"eucli-box/pkg/types"
 	fileoperator "eucli-box/tools/file_operator/internal/fileoperator"
 )
+
+// defaultToolBudgetMs is the tool's own default execution budget; a
+// caller-specified budget overrides it, and both are clamped by the unified
+// platform cap.
+const defaultToolBudgetMs = 60_000
 
 func main() {
 	output := run()
@@ -30,7 +36,18 @@ func run() types.ToolExecutionOutput {
 	if err := decoder.Decode(&input); err != nil {
 		return failedOutput("failed to decode tool input", err)
 	}
-	return fileoperator.Execute(context.Background(), input)
+	budget := toolcontrol.ClampToolBudget(input.TimeoutMs, defaultToolBudgetMs)
+	executionCtx, cancel := context.WithTimeout(context.Background(), budget)
+	defer cancel()
+	client, err := toolcontrol.AdoptControl(executionCtx)
+	if err != nil {
+		return toolcontrol.ControlFailedOutput(err)
+	}
+	if client != nil {
+		defer client.Close()
+		go func() { _ = client.Serve(executionCtx) }()
+	}
+	return fileoperator.Execute(executionCtx, input)
 }
 
 func failedOutput(message string, err error) types.ToolExecutionOutput {

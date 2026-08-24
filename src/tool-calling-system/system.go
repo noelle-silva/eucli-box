@@ -31,6 +31,7 @@ type System interface {
 	UpdateTool(ctx context.Context, toolID string) (types.ArtifactInstallState, error)
 	ToolInstallState(ctx context.Context, toolID string) (types.ArtifactInstallState, error)
 	ToolActivity(ctx context.Context, toolID string) (types.ArtifactActivityState, error)
+	StopToolExecution(ctx context.Context, toolID string) (types.ToolStopResult, error)
 }
 
 type PermissionSystem interface {
@@ -47,7 +48,6 @@ type StorageSystem interface {
 }
 
 type Config struct {
-	LegacyToolTimeout        time.Duration
 	ToolWatchdogTimeout      time.Duration
 	ToolWatchdogPingInterval time.Duration
 	BoxVersion               string
@@ -62,8 +62,13 @@ type system struct {
 	permission        PermissionSystem
 	storage           StorageSystem
 	activities        map[string]*toolActivity
-	updateWaitTimeout time.Duration
+	activeExecutions  map[string]map[*toolRunContext]struct{}
 	mu                sync.Mutex
+}
+
+// toolRunContext cancels one tool execution from a user-facing stop action.
+type toolRunContext struct {
+	cancel context.CancelFunc
 }
 
 func NewSystem(config Config, permission PermissionSystem, storage StorageSystem) (System, error) {
@@ -72,9 +77,6 @@ func NewSystem(config Config, permission PermissionSystem, storage StorageSystem
 	}
 	if storage == nil {
 		return nil, toolInvalid("storage system dependency is required", nil)
-	}
-	if config.LegacyToolTimeout <= 0 {
-		config.LegacyToolTimeout = 120 * time.Second
 	}
 	if config.ToolWatchdogTimeout <= 0 {
 		config.ToolWatchdogTimeout = 60 * time.Second
@@ -110,5 +112,5 @@ func NewSystem(config Config, permission PermissionSystem, storage StorageSystem
 		}
 		config.ProgramRoot = absolute
 	}
-	return &system{config: config, boxVersion: boxVersion, permission: permission, storage: storage, activities: map[string]*toolActivity{}, updateWaitTimeout: defaultUpdateWaitTimeout}, nil
+	return &system{config: config, boxVersion: boxVersion, permission: permission, storage: storage, activities: map[string]*toolActivity{}, activeExecutions: map[string]map[*toolRunContext]struct{}{}}, nil
 }

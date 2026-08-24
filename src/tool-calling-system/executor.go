@@ -52,11 +52,12 @@ func (s *system) ExecuteWithOutputUpdate(ctx context.Context, plan types.ToolRun
 	if err != nil {
 		return types.ToolResult{}, toolExecutionInvalid("failed to resolve host working directory", err)
 	}
-	input, err := json.Marshal(types.ToolExecutionInput{ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Arguments: plan.Action.Arguments, UserConfig: plan.Tool.UserConfig, DefaultConfig: plan.Tool.DefaultConfig, ToolBodyDirectory: plan.Tool.BodyDirectory, ToolDataDirectory: plan.Tool.DataDirectory, HostWorkingDirectory: hostWorkingDirectory})
+	timeoutMs := requestedTimeoutMs(plan.Action.Arguments)
+	input, err := json.Marshal(types.ToolExecutionInput{ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Arguments: plan.Action.Arguments, UserConfig: plan.Tool.UserConfig, DefaultConfig: plan.Tool.DefaultConfig, ToolBodyDirectory: plan.Tool.BodyDirectory, ToolDataDirectory: plan.Tool.DataDirectory, HostWorkingDirectory: hostWorkingDirectory, TimeoutMs: timeoutMs})
 	if err != nil {
 		return types.ToolResult{}, toolExecutionInvalid("failed to encode tool input", err)
 	}
-	outcome := s.executeToolProcess(ctx, plan.Executable, plan.Tool.BodyDirectory, input, plan.Tool.ControlCapabilities, func(update types.ToolOutputUpdate) {
+	outcome := s.executeToolProcess(ctx, plan.Tool.ID, plan.Executable, plan.Tool.BodyDirectory, input, func(update types.ToolOutputUpdate) {
 		var relayed types.ToolOutputUpdate
 		relayed.CallID = plan.Action.ID
 		relayed.ToolName = plan.Action.ToolName
@@ -73,8 +74,6 @@ func (s *system) ExecuteWithOutputUpdate(ctx context.Context, plan types.ToolRun
 		return toolFailureResult(plan, "tool execution became unresponsive", outcome.FailureKind, outcome.FailureError), nil
 	case "tool_protocol_failed":
 		return toolFailureResult(plan, "tool control protocol failed", outcome.FailureKind, outcome.FailureError), nil
-	case "legacy_tool_timeout":
-		return toolFailureResult(plan, "tool execution timed out", outcome.FailureKind, outcome.FailureError), nil
 	}
 	if outcome.ExitError != nil {
 		message := outcome.ExitError.Error()
@@ -92,8 +91,34 @@ func (s *system) ExecuteWithOutputUpdate(ctx context.Context, plan types.ToolRun
 	return parseToolOutput(plan, outcome.Stdout), nil
 }
 
-func validatePlan(plan types.ToolRunPlan) error {
-	if plan.Tool.ID == "" {
+// requestedTimeoutMs extracts the caller-specified tool budget from the action
+// arguments when present; zero means the caller did not specify one.
+func requestedTimeoutMs(arguments map[string]any) int64 {
+	if arguments == nil {
+		return 0
+	}
+	switch value := arguments["timeoutMs"].(type) {
+	case float64:
+		if value <= 0 {
+			return 0
+		}
+		return int64(value)
+	case int:
+		if value <= 0 {
+			return 0
+		}
+		return int64(value)
+	case int64:
+		if value <= 0 {
+			return 0
+		}
+		return value
+	default:
+		return 0
+	}
+}
+
+func validatePlan(plan types.ToolRunPlan) error {	if plan.Tool.ID == "" {
 		return toolExecutionInvalid("tool plan is missing tool definition", nil)
 	}
 	if plan.Action.ID == "" || plan.Action.ToolName == "" {

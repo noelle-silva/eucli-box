@@ -21,22 +21,17 @@ type ToolDefinition struct {
 	StatusMessage             string                  `json:"statusMessage,omitempty"`
 	PromptDescription         string                  `json:"promptDescription,omitempty"`
 	PromptDescriptionOverride string                  `json:"promptDescriptionOverride,omitempty"`
-	DefaultInvocationMode     ToolInvocationMode      `json:"defaultInvocationMode,omitempty"`
-	Type                      string                  `json:"type"`
-	InputSchema               map[string]any          `json:"inputSchema,omitempty"`
-	UserConfigSchema          map[string]any          `json:"userConfigSchema,omitempty"`
-	UserConfig                map[string]any          `json:"userConfig,omitempty"`
-	DefaultConfig             map[string]any          `json:"defaultConfig,omitempty"`
-	ControlCapabilities       ToolControlCapabilities `json:"controlCapabilities,omitempty"`
-	BodyDirectory             string                  `json:"bodyDirectory,omitempty"`
-	DataDirectory             string                  `json:"dataDirectory,omitempty"`
-	Binaries                  []ToolBinary            `json:"binaries,omitempty"`
-	CreatedAt                 time.Time               `json:"createdAt"`
-	UpdatedAt                 time.Time               `json:"updatedAt"`
-}
-
-type ToolControlCapabilities struct {
-	Heartbeat bool `json:"heartbeat,omitempty"`
+	DefaultInvocationMode     ToolInvocationMode `json:"defaultInvocationMode,omitempty"`
+	Type                      string             `json:"type"`
+	InputSchema               map[string]any     `json:"inputSchema,omitempty"`
+	UserConfigSchema          map[string]any     `json:"userConfigSchema,omitempty"`
+	UserConfig                map[string]any     `json:"userConfig,omitempty"`
+	DefaultConfig             map[string]any     `json:"defaultConfig,omitempty"`
+	BodyDirectory             string             `json:"bodyDirectory,omitempty"`
+	DataDirectory             string             `json:"dataDirectory,omitempty"`
+	Binaries                  []ToolBinary       `json:"binaries,omitempty"`
+	CreatedAt                 time.Time          `json:"createdAt"`
+	UpdatedAt                 time.Time          `json:"updatedAt"`
 }
 
 // ToolOutputUpdate is a live output progress for one tool call, relayed by the
@@ -77,8 +72,9 @@ type ToolExecutionInput struct {
 	UserConfig           map[string]any `json:"userConfig"`
 	DefaultConfig        map[string]any `json:"defaultConfig"`
 	ToolBodyDirectory    string         `json:"toolBodyDirectory"`
-	ToolDataDirectory    string         `json:"toolDataDirectory"`
-	HostWorkingDirectory string         `json:"hostWorkingDirectory"`
+	ToolDataDirectory        string         `json:"toolDataDirectory"`
+	HostWorkingDirectory     string         `json:"hostWorkingDirectory"`
+	TimeoutMs                int64          `json:"timeoutMs,omitempty"`
 }
 
 type ToolExecutionOutput struct {
@@ -101,8 +97,12 @@ type ToolSummary struct {
 	UpdatedAt             time.Time             `json:"updatedAt"`
 }
 
-type ToolIntent struct {
-	ID             string             `json:"id"`
+// ToolStopResult reports how many active executions of one tool were stopped.
+type ToolStopResult struct {
+	Terminated int `json:"terminated"`
+}
+
+type ToolIntent struct {	ID             string             `json:"id"`
 	ToolName       string             `json:"toolName"`
 	Arguments      map[string]any     `json:"arguments,omitempty"`
 	InvocationMode ToolInvocationMode `json:"invocationMode,omitempty"`

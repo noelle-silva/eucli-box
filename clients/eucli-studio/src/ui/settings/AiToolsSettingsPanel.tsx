@@ -95,6 +95,8 @@ export function AiToolsSettingsPanel(props: AiToolsSettingsPanelProps) {
             </Stack>
           </Stack>
 
+          <ToolBusyPromptDialog controller={controller} tools={tools} />
+
           <TextField
             size="small"
             label="搜索工具"
@@ -148,8 +150,38 @@ export function AiToolsSettingsPanel(props: AiToolsSettingsPanelProps) {
   )
 }
 
-function ToolCard(props: { controller: any; tool: ToolSummary; loading: boolean; installState: any }) {
-  const { controller, tool, loading, installState } = props
+// ToolBusyPromptDialog 展示工具占用交互：用户选择停止该工具的执行，
+// 或取消当前更新请求。业务端只提供占用事实与停止动作。
+function ToolBusyPromptDialog(props: { controller: any; tools: any }) {
+  const { controller, tools } = props
+  const prompt = tools?.busyPrompt && typeof tools.busyPrompt === 'object' ? tools.busyPrompt : null
+  const stopping = tools?.stopping === true
+  const toolNameText = prompt?.toolId ? String(prompt.toolId || '') : ''
+  const actionText = prompt?.action === 'install' ? '安装' : '更新'
+  return (
+    <Dialog open={!!prompt} fullWidth maxWidth="xs">
+      <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <BuildIcon fontSize="small" />
+        工具正在使用中
+      </DialogTitle>
+      <DialogContent>
+        <Typography variant="body2" color="text.secondary">
+          无法{actionText}「{toolNameText}」：该工具当前仍有正在执行的调用。你可以停止当前执行后继续，或取消本次请求。
+        </Typography>
+      </DialogContent>
+      <DialogActions>
+        <Button color="inherit" onClick={() => controller.actions.dismissBusyPrompt?.()} disabled={stopping}>
+          取消
+        </Button>
+        <Button variant="contained" color="error" onClick={() => controller.actions.confirmStopAndContinue?.()} disabled={stopping}>
+          {stopping ? '停止中…' : '停止该工具并继续'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  )
+}
+
+function ToolCard(props: { controller: any; tool: ToolSummary; loading: boolean; installState: any }) {  const { controller, tool, loading, installState } = props
   const id = toolId(tool)
   const name = toolName(tool)
   const description = toolDescription(tool)

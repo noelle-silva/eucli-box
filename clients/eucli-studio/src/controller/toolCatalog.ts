@@ -159,6 +159,48 @@ export function createToolCatalog(deps: {
     return runToolOperation(toolIdRaw, 'update')
   }
 
+  async function stopTool(toolIdRaw: any) {
+    const toolId = String(toolIdRaw || '').trim()
+    if (!toolId) return null
+    const response = await deps.netRequest({ method: 'POST', path: `/api/tools/${encodeURIComponent(toolId)}/stop`, body: {}, timeoutMs: 15000 })
+    const status = Number(response?.status || 0)
+    if (status < 200 || status >= 300) throw new Error(`HTTP ${status}`)
+    return response?.body
+  }
+
+  function askBusyReplacement(toolIdRaw: any, action: 'install' | 'update') {
+    const toolId = String(toolIdRaw || '').trim()
+    if (!toolId) return
+    patchCatalog({ busyPrompt: { toolId, action } })
+    deps.emit()
+  }
+
+  function dismissBusyPrompt() {
+    patchCatalog({ busyPrompt: null })
+    deps.emit()
+  }
+
+  async function confirmStopAndContinue() {
+    const { catalog } = currentCatalog()
+    const pending = catalog.busyPrompt as { toolId?: string; action?: 'install' | 'update' } | null
+    const toolId = String(pending?.toolId || '').trim()
+    const action = pending?.action === 'install' ? 'install' : 'update'
+    patchCatalog({ busyPrompt: null, stopping: true })
+    deps.emit()
+    try {
+      await stopTool(toolId)
+      await runToolOperation(toolId, action)
+    } catch (e: any) {
+      const error = String(e?.message || e || '停止工具失败')
+      patchCatalog({ stopping: false })
+      deps.showToast?.(error, { kind: 'error' })
+      deps.emit()
+    } finally {
+      patchCatalog({ stopping: false })
+      deps.emit()
+    }
+  }
+
   async function runToolOperation(toolIdRaw: any, action: 'install' | 'update') {
     const toolId = String(toolIdRaw || '').trim()
     if (!toolId) return null
@@ -169,6 +211,11 @@ export function createToolCatalog(deps: {
       const status = Number(response?.status || 0)
       if (status < 200 || status >= 300) throw new Error(`HTTP ${status}`)
       const state = normalizeArtifactInstallState(response?.body)
+      if (action === 'update' && state.status === 'blocked' && (state.error.code === 'TOOL_ACTIVE' || state.error.code === 'ARTIFACT_UPDATE_IN_PROGRESS')) {
+        patchCatalog({ installLoading: false, installError: '' })
+        askBusyReplacement(toolId, action)
+        return state
+      }
       patchCatalog({ installLoading: false, installError: '', installState: state })
       await refreshTools(true)
       return state
@@ -182,7 +229,7 @@ export function createToolCatalog(deps: {
     }
   }
 
-  return { refreshTools, openToolConfig, closeToolConfig, setToolConfigValue, removeToolConfigValue, setToolPromptDescriptionDraft, resetToolPromptDescriptionDraftToDefault, saveSelectedToolConfig, loadToolInstallState, installTool, updateTool }
+  return { refreshTools, openToolConfig, closeToolConfig, setToolConfigValue, removeToolConfigValue, setToolPromptDescriptionDraft, resetToolPromptDescriptionDraftToDefault, saveSelectedToolConfig, loadToolInstallState, installTool, updateTool, stopTool, confirmStopAndContinue, dismissBusyPrompt }
 }
 
 function defaultToolCatalogState() {
@@ -202,6 +249,8 @@ function defaultToolCatalogState() {
     installLoading: false,
     installError: '',
     installState: null as ArtifactInstallState | null,
+    busyPrompt: null as { toolId: string; action: 'install' | 'update' } | null,
+    stopping: false,
   }
 }
 

@@ -86,6 +86,7 @@ type ToolSystem interface {
 	UpdateTool(ctx context.Context, toolID string) (types.ArtifactInstallState, error)
 	ToolInstallState(ctx context.Context, toolID string) (types.ArtifactInstallState, error)
 	ToolActivity(ctx context.Context, toolID string) (types.ArtifactActivityState, error)
+	StopToolExecution(ctx context.Context, toolID string) (types.ToolStopResult, error)
 }
 
 type SessionSystem interface {

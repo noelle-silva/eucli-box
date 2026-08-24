@@ -46,9 +46,10 @@ const (
 	toolEventParentCancelled = "parent_cancelled"
 	toolEventWatchdogFailed  = "watchdog_failed"
 	toolEventProcessExited   = "process_exited"
-	toolEventLegacyTimeout   = "legacy_timeout"
 )
 
+// startToolProcess launches the tool binary; a non-nil control server injects
+// the control channel environment variables into the child.
 func startToolProcess(executable string, workdir string, input []byte, control *toolcontrol.Server) (*toolProcess, error) {
 	cmd := exec.Command(executable)
 	cmd.Dir = workdir
@@ -111,42 +112,37 @@ func (p *toolProcess) terminateTree() error {
 	return terminateToolProcessTree(p.cmd.Process.Pid)
 }
 
-func (s *system) executeToolProcess(ctx context.Context, executable string, workdir string, input []byte, capabilities types.ToolControlCapabilities, onToolUpdate func(update types.ToolOutputUpdate)) toolProcessOutcome {
-	var control *toolcontrol.Server
-	if capabilities.Heartbeat {
-		serverConfig := toolcontrol.Config{Timeout: s.config.ToolWatchdogTimeout, PingInterval: s.config.ToolWatchdogPingInterval}
-		if onToolUpdate != nil {
-			serverConfig.OnOutputUpdate = func(update toolcontrol.OutputUpdate) {
-				onToolUpdate(types.ToolOutputUpdate{Bytes: update.Bytes, Preview: update.Preview})
-			}
+func (s *system) executeToolProcess(ctx context.Context, toolID string, executable string, workdir string, input []byte, onToolUpdate func(update types.ToolOutputUpdate)) toolProcessOutcome {
+	execCtx, execCancel := context.WithCancel(ctx)
+	runCtx := &toolRunContext{cancel: execCancel}
+	s.registerExecution(toolID, runCtx)
+	defer s.unregisterExecution(toolID, runCtx)
+
+	serverConfig := toolcontrol.Config{Timeout: s.config.ToolWatchdogTimeout, PingInterval: s.config.ToolWatchdogPingInterval}
+	if onToolUpdate != nil {
+		serverConfig.OnOutputUpdate = func(update toolcontrol.OutputUpdate) {
+			onToolUpdate(types.ToolOutputUpdate{Bytes: update.Bytes, Preview: update.Preview})
 		}
-		var err error
-		control, err = toolcontrol.NewServer(serverConfig)
-		if err != nil {
-			return toolProcessOutcome{FailureError: err}
-		}
+	}
+	control, err := toolcontrol.NewServer(serverConfig)
+	if err != nil {
+		return toolProcessOutcome{FailureError: err}
 	}
 	process, err := startToolProcess(executable, workdir, input, control)
 	if err != nil {
-		if control != nil {
-			_ = control.Close()
-		}
+		_ = control.Close()
 		return toolProcessOutcome{FailureError: fmt.Errorf("start tool process: %w", err)}
 	}
 	waitCh := make(chan error, 1)
 	go func() { waitCh <- process.wait() }()
 
-	handshakeCompleted := control == nil
-	if control != nil {
-		handshakeCtx, handshakeCancel := context.WithTimeout(ctx, s.config.ToolWatchdogTimeout)
-		handshakeCh := make(chan error, 1)
-		go func() { handshakeCh <- control.AcceptAndHandshake(handshakeCtx) }()
-		event, handshakeOK := waitForHandshake(ctx, waitCh, handshakeCh)
-		handshakeCancel()
-		if !handshakeOK {
-			return s.finishToolProcess(control, process, event, event.Kind != toolEventProcessExited, false)
-		}
-		handshakeCompleted = true
+	handshakeCtx, handshakeCancel := context.WithTimeout(execCtx, s.config.ToolWatchdogTimeout)
+	handshakeCh := make(chan error, 1)
+	go func() { handshakeCh <- control.AcceptAndHandshake(handshakeCtx) }()
+	event, handshakeOK := waitForHandshake(execCtx, waitCh, handshakeCh)
+	handshakeCancel()
+	if !handshakeOK {
+		return s.finishToolProcess(control, process, event, event.Kind != toolEventProcessExited, false)
 	}
 
 	eventCtx, stopEvents := context.WithCancel(context.Background())
@@ -164,35 +160,23 @@ func (s *system) executeToolProcess(ctx context.Context, executable string, work
 	}()
 	go func() {
 		select {
-		case <-ctx.Done():
-			sendEvent(toolProcessEvent{Kind: toolEventParentCancelled, FailureKind: "user_cancelled", Err: ctx.Err(), ObservedAt: time.Now()})
+		case <-execCtx.Done():
+			sendEvent(toolProcessEvent{Kind: toolEventParentCancelled, FailureKind: "user_cancelled", Err: execCtx.Err(), ObservedAt: time.Now()})
 		case <-eventCtx.Done():
 		}
 	}()
-	if control != nil {
-		go func() {
-			failure, ok := <-control.Watch(ctx)
-			if ok {
-				sendEvent(toolProcessEvent{Kind: toolEventWatchdogFailed, FailureKind: string(failure), ObservedAt: time.Now()})
-			}
-			select {
-			case <-process.waitDone():
-			case <-time.After(100 * time.Millisecond):
-				sendEvent(toolProcessEvent{Kind: toolEventWatchdogFailed, FailureKind: "tool_protocol_failed", ObservedAt: time.Now()})
-			case <-eventCtx.Done():
-			}
-		}()
-	} else {
-		go func() {
-			timer := time.NewTimer(s.config.LegacyToolTimeout)
-			defer timer.Stop()
-			select {
-			case <-timer.C:
-				sendEvent(toolProcessEvent{Kind: toolEventLegacyTimeout, FailureKind: "legacy_tool_timeout", Err: context.DeadlineExceeded, ObservedAt: time.Now()})
-			case <-eventCtx.Done():
-			}
-		}()
-	}
+	go func() {
+		failure, ok := <-control.Watch(execCtx)
+		if ok {
+			sendEvent(toolProcessEvent{Kind: toolEventWatchdogFailed, FailureKind: string(failure), ObservedAt: time.Now()})
+		}
+		select {
+		case <-process.waitDone():
+		case <-time.After(100 * time.Millisecond):
+			sendEvent(toolProcessEvent{Kind: toolEventWatchdogFailed, FailureKind: "tool_protocol_failed", ObservedAt: time.Now()})
+		case <-eventCtx.Done():
+		}
+	}()
 	for {
 		event := <-events
 		candidates := []toolProcessEvent{event}
@@ -203,9 +187,33 @@ func (s *system) executeToolProcess(ctx context.Context, executable string, work
 			default:
 				event = chooseToolProcessEvent(candidates)
 				terminate := event.Kind != toolEventProcessExited
-				return s.finishToolProcess(control, process, event, terminate, handshakeCompleted)
+				return s.finishToolProcess(control, process, event, terminate, true)
 			}
 		}
+	}
+}
+
+func (s *system) registerExecution(toolID string, runCtx *toolRunContext) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	set := s.activeExecutions[toolID]
+	if set == nil {
+		set = map[*toolRunContext]struct{}{}
+		s.activeExecutions[toolID] = set
+	}
+	set[runCtx] = struct{}{}
+}
+
+func (s *system) unregisterExecution(toolID string, runCtx *toolRunContext) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	set := s.activeExecutions[toolID]
+	if set == nil {
+		return
+	}
+	delete(set, runCtx)
+	if len(set) == 0 {
+		delete(s.activeExecutions, toolID)
 	}
 }
 
@@ -293,8 +301,6 @@ func eventPriority(kind string) int {
 		return 4
 	case toolEventWatchdogFailed:
 		return 3
-	case toolEventLegacyTimeout:
-		return 2
 	case toolEventProcessExited:
 		return 1
 	default:

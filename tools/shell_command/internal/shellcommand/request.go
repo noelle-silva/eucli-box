@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"eucli-box/pkg/toolcontrol"
 	"eucli-box/pkg/types"
 )
 
@@ -69,6 +70,9 @@ func parseRequest(input types.ToolExecutionInput, config Config) (commandRequest
 	}
 	if timeoutMs > config.Limits.MaxTimeoutMs {
 		timeoutMs = config.Limits.MaxTimeoutMs
+	}
+	if int64(timeoutMs) > toolcontrol.BudgetMaxMs {
+		timeoutMs = int(toolcontrol.BudgetMaxMs)
 	}
 	defaultMaxOutputChars, err := intArgument(input.UserConfig, "maxOutputChars", config.Limits.MaxOutputChars)
 	if err != nil {

@@ -92,17 +92,15 @@ func newToolOperationFixture(t *testing.T) *toolOperationFixture {
 	fixture.server = httptest.NewServer(http.HandlerFunc(fixture.servePackage))
 	t.Cleanup(fixture.server.Close)
 	fixture.system, err = NewSystem(Config{
-		LegacyToolTimeout: 15 * time.Second,
-		BoxVersion:        "0.1.0",
-		ProgramRoot:       programRoot,
-		Candidates:        fixture.candidates,
-		HTTPClient:        fixture.server.Client(),
+		BoxVersion:  "0.1.0",
+		ProgramRoot: programRoot,
+		Candidates:  fixture.candidates,
+		HTTPClient:  fixture.server.Client(),
 	}, &fakePermission{}, storage)
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
 	fixture.realSystem = fixture.system.(*system)
-	fixture.realSystem.updateWaitTimeout = 500 * time.Millisecond
 	return fixture
 }
 
@@ -240,11 +238,10 @@ func TestInstallToolFromDevelopmentSource(t *testing.T) {
 		t.Fatalf("NewDevelopmentSourceReader() error = %v", err)
 	}
 	devSystem, err := NewSystem(Config{
-		LegacyToolTimeout: 15 * time.Second,
-		BoxVersion:        "0.1.0",
-		ProgramRoot:       fixture.programRoot,
-		Candidates:        reader,
-		HTTPClient:        http.DefaultClient,
+		BoxVersion:  "0.1.0",
+		ProgramRoot: fixture.programRoot,
+		Candidates:  reader,
+		HTTPClient:  http.DefaultClient,
 	}, &fakePermission{}, fixture.realSystem.storage)
 	if err != nil {
 		t.Fatalf("NewSystem(dev) error = %v", err)
@@ -415,21 +412,25 @@ func (f *toolOperationFixture) waitForMarker(t *testing.T, toolID string) {
 	t.Fatalf("tool execution did not start within deadline")
 }
 
-func TestActivityBeginUpdateTimesOutWhileExecuting(t *testing.T) {
+// TestActivityBeginUpdateReportsOccupancyImmediately 验证 035：有真实执行时
+// 更新闸门立即报告占用，不等待、不自动排队。
+func TestActivityBeginUpdateReportsOccupancyImmediately(t *testing.T) {
 	activity := &toolActivity{}
 	activity.acquire()
 	started := time.Now()
-	code := activity.beginUpdate("op-1", 200*time.Millisecond)
+	code := activity.beginUpdate("op-1")
 	if code != types.ArtifactErrorToolActive {
 		t.Fatalf("code = %s", code)
 	}
-	if time.Since(started) < 150*time.Millisecond {
-		t.Fatalf("returned too early: %s", time.Since(started))
+	if time.Since(started) > time.Second {
+		t.Fatalf("returned too slowly: %s", time.Since(started))
 	}
 	activity.release()
-	if activity.state().Updating {
-		t.Fatal("update gate still open after timeout")
+	updatingCode := activity.beginUpdate("op-2")
+	if updatingCode != "" {
+		t.Fatalf("update after release code = %s", updatingCode)
 	}
+	activity.endUpdate()
 }
 
 func TestUpdateToolRestoresPreviousVersionOnProbeFailure(t *testing.T) {

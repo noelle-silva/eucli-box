@@ -3,12 +3,9 @@ package toolcalling
 import (
 	"context"
 	"sync"
-	"time"
 
 	"eucli-box/pkg/types"
 )
-
-const defaultUpdateWaitTimeout = 30 * time.Second
 
 // toolActivity 维护单个工具的执行租约和更新闸门；
 // 只依据真实执行计数判断活动，不依赖 UI 状态或运行日志。
@@ -59,39 +56,24 @@ func (a *toolActivity) release() {
 	a.notifyChanged()
 }
 
-// beginUpdate 设置更新闸门并等待已开始的执行全部结束；
-// 超过等待时间时清除闸门并返回 TOOL_ACTIVE。
-func (a *toolActivity) beginUpdate(operationID string, waitTimeout time.Duration) string {
+// beginUpdate 设置更新闸门并立即判定占用：
+// 有真实执行、或已有更新闸门时不等待，直接返回占用码。
+func (a *toolActivity) beginUpdate(operationID string) string {
 	a.mu.Lock()
+	defer a.mu.Unlock()
 	if a.updating {
-		a.mu.Unlock()
-		return types.ArtifactErrorUpdateInProgress
+		if a.operationID != "" {
+			return types.ArtifactErrorUpdateInProgress
+		}
+		return types.ArtifactErrorToolActive
+	}
+	if a.activeRequests > 0 {
+		return types.ArtifactErrorToolActive
 	}
 	a.updating = true
 	a.operationID = operationID
-	changed := a.changed
-	a.mu.Unlock()
-
-	deadline := time.Now().Add(waitTimeout)
-	for {
-		a.mu.Lock()
-		running := a.activeRequests
-		a.mu.Unlock()
-		if running == 0 {
-			return ""
-		}
-		remaining := time.Until(deadline)
-		if remaining <= 0 {
-			a.endUpdate()
-			return types.ArtifactErrorToolActive
-		}
-		select {
-		case <-changed:
-		case <-time.After(remaining):
-			a.endUpdate()
-			return types.ArtifactErrorToolActive
-		}
-	}
+	a.notifyChanged()
+	return ""
 }
 
 // endUpdate 清除更新闸门。

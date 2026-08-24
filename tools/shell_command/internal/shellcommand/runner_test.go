@@ -58,6 +58,28 @@ func TestExecuteTimesOutCommand(t *testing.T) {
 	}
 }
 
+// TestExecuteTimeoutKeepsTailOutput 验证板块三：超时终止后，管道残余输出仍被排水回收，
+// 关键错误信息不因进程结束而丢失。
+func TestExecuteTimeoutKeepsTailOutput(t *testing.T) {
+	fixture := newShellCommandFixture(t)
+	result := Execute(context.Background(), types.ToolExecutionInput{
+		Arguments:            map[string]any{"command": "tail-drop", "timeoutMs": 200},
+		ToolBodyDirectory:    fixture.toolDir,
+		HostWorkingDirectory: fixture.hostDir,
+	})
+	if result.Status != types.ToolStatusFailed || result.Metadata["timedOut"] != true || result.Metadata["exitCode"] != int(124) {
+		t.Fatalf("result = %#v", result)
+	}
+	stdout, _ := result.Metadata["stdout"].(string)
+	stderr, _ := result.Metadata["stderr"].(string)
+	if !strings.Contains(stdout, "drain-line-1") || !strings.Contains(stdout, "drain-line-2") {
+		t.Fatalf("stdout lost tail output: %q", stdout)
+	}
+	if !strings.Contains(stderr, "drain-tail-error") {
+		t.Fatalf("stderr lost tail output: %q", stderr)
+	}
+}
+
 func TestExecuteTruncatesCapturedOutput(t *testing.T) {
 	fixture := newShellCommandFixture(t)
 	result := Execute(context.Background(), types.ToolExecutionInput{
@@ -285,6 +307,11 @@ func main() {
 		os.Exit(7)
 	case "sleep":
 		time.Sleep(200 * time.Millisecond)
+	case "tail-drop":
+		fmt.Fprintln(os.Stdout, "drain-line-1")
+		fmt.Fprintln(os.Stdout, "drain-line-2")
+		fmt.Fprintln(os.Stderr, "drain-tail-error")
+		time.Sleep(30 * time.Second)
 	case "large":
 		fmt.Print(strings.Repeat("界", 30))
 	case "ordered-large":

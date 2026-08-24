@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"time"
@@ -38,6 +39,11 @@ type processResult struct {
 
 const providerTerminationWait = 5 * time.Second
 
+// outputDrainTimeout bounds how long termination waits for leftover pipe data
+// (Codex IO_DRAIN_TIMEOUT_MS). Child processes can hold the pipe write end
+// after the provider exits; without this bound the tool would block forever.
+const outputDrainTimeout = 2 * time.Second
+
 func runProviderCommand(ctx context.Context, provider selectedProvider, request commandRequest, workdir string, onChunk func(payload []byte)) processResult {
 	startedAt := time.Now()
 	stdout := newLimitedBuffer(request.MaxOutputChars)
@@ -52,12 +58,28 @@ func runProviderCommand(ctx context.Context, provider selectedProvider, request 
 	cmd := exec.Command(provider.Executable, args...)
 	cmd.Dir = workdir
 	cmd.Env = providerEnv(provider.Config, os.Environ())
-	cmd.Stdout = streamCapture{stream: stdout, combined: combined, onChunk: onChunk}
-	cmd.Stderr = streamCapture{stream: stderr, combined: combined, onChunk: onChunk}
 	configureProcess(cmd)
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return processResult{ExitCode: -1, DurationMs: elapsedMs(startedAt), Error: fmt.Sprintf("stdout pipe: %v", err)}
+	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return processResult{ExitCode: -1, DurationMs: elapsedMs(startedAt), Error: fmt.Sprintf("stderr pipe: %v", err)}
+	}
 	if err := cmd.Start(); err != nil {
 		return processResult{ExitCode: -1, DurationMs: elapsedMs(startedAt), Error: fmt.Sprintf("start command: %v", err)}
 	}
+	stdoutDone := make(chan struct{})
+	stderrDone := make(chan struct{})
+	go func() {
+		defer close(stdoutDone)
+		_, _ = io.Copy(streamCapture{stream: stdout, combined: combined, onChunk: onChunk}, stdoutPipe)
+	}()
+	go func() {
+		defer close(stderrDone)
+		_, _ = io.Copy(streamCapture{stream: stderr, combined: combined, onChunk: onChunk}, stderrPipe)
+	}()
 	waitCh := make(chan error, 1)
 	go func() { waitCh <- cmd.Wait() }()
 	var waitErr error
@@ -77,6 +99,7 @@ func runProviderCommand(ctx context.Context, provider selectedProvider, request 
 	case <-ctx.Done():
 		waitErr, terminationError = terminateAndWait(cmd, waitCh)
 	}
+	_ = waitPipeDrained(stdoutDone, stderrDone, outputDrainTimeout)
 	exitCode := 0
 	if waitErr != nil {
 		exitCode = -1
@@ -149,4 +172,23 @@ func terminateAndWait(cmd *exec.Cmd, waitCh <-chan error) (error, string) {
 
 func elapsedMs(startedAt time.Time) int64 {
 	return time.Since(startedAt).Milliseconds()
+}
+
+// waitPipeDrained waits until both stream readers hit EOF, or until timeout.
+// A natural EOF ends the drain early; an open pipe (a descendant still holds
+// the write end) gives up after outputDrainTimeout instead of hanging the tool.
+func waitPipeDrained(stdoutDone chan struct{}, stderrDone chan struct{}, timeout time.Duration) bool {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-stdoutDone:
+	case <-timer.C:
+		return false
+	}
+	select {
+	case <-stderrDone:
+		return true
+	case <-timer.C:
+		return false
+	}
 }

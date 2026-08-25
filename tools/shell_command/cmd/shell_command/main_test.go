@@ -87,7 +87,46 @@ func newExecutableFixture(t *testing.T) executableFixture {
 	}
 	buildFakeProviderExecutable(t, providerExe)
 	writeToolConfig(t, toolDir, providerRel)
+	installFixtureAnalyzer(t, toolDir)
 	return executableFixture{executable: executable, toolDir: toolDir, hostDir: hostDir}
+}
+
+// installFixtureAnalyzer copies the command analyzer binary into the fixture
+// tool body. The analyzer lives in the development runtime slot
+// (.dev-workspace/.dev-tools-runtime/shell-command-analyzer/<version>), built
+// by tools/shell_command/analyzer/build.cmd, so its absence fails the test.
+func installFixtureAnalyzer(t *testing.T, toolDir string) {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatalf("runtime.Caller(0) failed")
+	}
+	repoRoot := filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(thisFile)))))
+	source := filepath.Join(
+		repoRoot,
+		filepath.FromSlash(analyzerRuntimeDir),
+		analyzerRuntimeVersion,
+		executableName("command-analyzer"),
+	)
+	info, err := os.Stat(source)
+	if err != nil {
+		t.Fatalf("command analyzer binary is missing at %s; build it with tools/shell_command/analyzer/build.cmd: %v", source, err)
+	}
+	if info.IsDir() {
+		t.Fatalf("command analyzer path is a directory: %s", source)
+	}
+	targetDir := filepath.Join(toolDir, "analyzer")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(analyzer) error = %v", err)
+	}
+	target := filepath.Join(targetDir, executableName("command-analyzer"))
+	payload, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatalf("ReadFile(analyzer) error = %v", err)
+	}
+	if err := os.WriteFile(target, payload, 0o755); err != nil {
+		t.Fatalf("WriteFile(analyzer) error = %v", err)
+	}
 }
 
 func (f executableFixture) run(t *testing.T, arguments map[string]any) types.ToolExecutionOutput {

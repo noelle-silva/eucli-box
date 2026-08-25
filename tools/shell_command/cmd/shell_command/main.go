@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"unicode/utf8"
 
@@ -45,13 +46,22 @@ func run() (types.ToolExecutionOutput, *toolcontrol.Client, context.CancelFunc, 
 		return failedOutput("failed to decode tool input", err), nil, noopCancel, nil
 	}
 	executionCtx, executionCancel := context.WithCancel(context.Background())
+
+	analysis, err := analyzeRequestedCommand(input)
+	if err != nil {
+		executionCancel()
+		return failedOutput("command analysis failed", err), nil, noopCancel, nil
+	}
+
 	client, err := toolcontrol.AdoptControl(executionCtx)
 	if err != nil {
 		executionCancel()
 		return toolcontrol.ControlFailedOutput(err), client, noopCancel, nil
 	}
 	if client == nil {
-		return shellcommand.Execute(executionCtx, input), client, executionCancel, nil
+		output := shellcommand.Execute(executionCtx, input)
+		attachAnalysis(output, analysis)
+		return output, client, executionCancel, nil
 	}
 	controlErrorCh := make(chan error, 1)
 	serveDone := make(chan struct{})
@@ -75,7 +85,48 @@ func run() (types.ToolExecutionOutput, *toolcontrol.Client, context.CancelFunc, 
 		output = toolcontrol.ControlFailedOutput(controlErr)
 	default:
 	}
+	attachAnalysis(output, analysis)
 	return output, client, executionCancel, serveDone
+}
+
+// analyzeRequestedCommand runs the unified command analyzer over the requested
+// command. The analyzer is a shipped component of the tool: any failure stops
+// the tool rather than running the command without analysis.
+func analyzeRequestedCommand(input types.ToolExecutionInput) (map[string]any, error) {
+	command, ok := input.Arguments["command"].(string)
+	if !ok || command == "" {
+		return nil, nil
+	}
+	analyzer, err := newCommandAnalyzer(input.ToolBodyDirectory)
+	if err != nil {
+		return nil, err
+	}
+	provider := ""
+	if value, ok := input.Arguments["provider"].(string); ok {
+		provider = value
+	}
+	if strings.TrimSpace(provider) == "" {
+		if defaultProvider, ok := shellcommand.DefaultProviderFor(input.ToolBodyDirectory); ok {
+			provider = defaultProvider
+		}
+	}
+	workdir := ""
+	if value, ok := input.Arguments["workdir"].(string); ok {
+		workdir = value
+	}
+	return analyzer.analyze(context.Background(), command, provider, workdir)
+}
+
+// attachAnalysis merges the analysis report into the tool result metadata.
+func attachAnalysis(output types.ToolExecutionOutput, analysis map[string]any) types.ToolExecutionOutput {
+	if analysis == nil {
+		return output
+	}
+	if output.Metadata == nil {
+		output.Metadata = map[string]any{}
+	}
+	output.Metadata["commandAnalysis"] = analysis
+	return output
 }
 
 // outputUpdateRelay streams raw command output chunks to the host over the

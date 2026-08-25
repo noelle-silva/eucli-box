@@ -158,6 +158,18 @@ func resolveBundledExecutable(toolDirectory string, provider ProviderConfig) (st
 	return "", fmt.Errorf("provider %q has no executable for %s/%s", provider.ID, runtime.GOOS, runtime.GOARCH)
 }
 
+// DefaultProviderFor reads only the config default provider id, used by the
+// command analyzer when the request did not select a provider explicitly.
+// The single source of truth remains config.json; validation is the same
+// loadConfig path.
+func DefaultProviderFor(toolDirectory string) (string, bool) {
+	config, err := loadConfig(toolDirectory)
+	if err != nil {
+		return "", false
+	}
+	return strings.TrimSpace(config.DefaultProvider), config.DefaultProvider != ""
+}
+
 func pathWithin(base string, child string) bool {
 	rel, err := filepath.Rel(filepath.Clean(base), filepath.Clean(child))
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))

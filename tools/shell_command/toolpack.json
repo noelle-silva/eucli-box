@@ -14,6 +14,11 @@
       "name": "nushell-root",
       "target": "providers/nushell",
       "requiredFile": "nu.exe"
+    },
+    {
+      "name": "command-analyzer-root",
+      "target": "analyzer",
+      "requiredFile": "command-analyzer.exe"
     }
   ],
   "runtimeConfig": {

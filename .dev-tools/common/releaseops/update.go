@@ -118,7 +118,7 @@ func prepareVersionChanges(artifact Artifact, nextVersion string, message string
 			selector tomlVersionSelector
 		}{
 			{path: paths.cargoTOML, selector: packageVersion},
-			{path: paths.cargoLock, selector: aiStudioLockVersion},
+			{path: paths.cargoLock, selector: eucliStudioLockVersion},
 		} {
 			change, err := replaceTOMLVersionFile(source.path, source.selector, artifact.Version, nextVersion)
 			if err != nil {
@@ -261,7 +261,7 @@ func replaceTOMLVersion(source string, selector tomlVersionSelector, previous st
 				insidePackage = trimmed == "[package]"
 				continue
 			}
-		case aiStudioLockVersion:
+		case eucliStudioLockVersion:
 			if trimmed == "[[package]]" {
 				insidePackage = true
 				matchedName = false
@@ -269,12 +269,12 @@ func replaceTOMLVersion(source string, selector tomlVersionSelector, previous st
 			}
 			if insidePackage {
 				if name, ok := parseTOMLStringAssignment(trimmed, "name"); ok {
-					matchedName = name == "ai-studio-app"
+					matchedName = name == "eucli-studio-app"
 					continue
 				}
 			}
 		}
-		eligible := selector == packageVersion && insidePackage || selector == aiStudioLockVersion && insidePackage && matchedName
+		eligible := selector == packageVersion && insidePackage || selector == eucliStudioLockVersion && insidePackage && matchedName
 		if !eligible {
 			continue
 		}

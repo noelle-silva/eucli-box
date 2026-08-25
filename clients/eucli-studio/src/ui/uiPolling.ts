@@ -1,4 +1,4 @@
-// AI Studio UI 刷新同步模块
+// eucli-studio UI 刷新同步模块
 // 由 V2 controller 组装使用。
 //
 // 刷新秩序规范：真实数据变化必须优先由底层主动发声，UI 只同步对应

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "AI Studio Dev",
+  "productName": "eucli-studio Dev",
   "version": "0.1.9",
-  "identifier": "com.fastwindow.aistudio.dev",
+  "identifier": "com.fastwindow.euclistudio.dev",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://127.0.0.1:1431",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "AI Studio Dev",
+        "title": "eucli-studio Dev",
         "width": 980,
         "height": 680,
         "decorations": false,

@@ -1,5 +1,5 @@
 [package]
-name = "ai-studio-app"
+name = "eucli-studio-app"
 version = "0.1.9"
 edition = "2021"
 

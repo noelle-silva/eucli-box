@@ -8,8 +8,8 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 
-const CONFIG_FILE: &str = "ai-studio-settings.json";
-const WRITE_TEST_FILE: &str = ".fw-ai-studio-write-test";
+const CONFIG_FILE: &str = "eucli-studio-settings.json";
+const WRITE_TEST_FILE: &str = ".fw-eucli-studio-write-test";
 const BACKEND_BINARY_BASE: &str = "eucli-studio-backend";
 
 #[derive(Clone, Serialize)]
@@ -152,7 +152,7 @@ fn pick_data_dir(
         }
     }
     let folder = rfd::FileDialog::new()
-        .set_title("选择 AI Studio 数据目录")
+        .set_title("选择 eucli-studio 数据目录")
         .pick_folder();
 
     let Some(path) = folder else {
@@ -377,5 +377,5 @@ fn main() {
             }
         })
         .run(context)
-        .expect("error while running AI Studio app");
+        .expect("error while running eucli-studio app");
 }

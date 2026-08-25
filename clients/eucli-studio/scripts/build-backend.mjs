@@ -20,7 +20,7 @@ const result = spawnSync('go', ['build', '-trimpath', '-o', outputPath, '.'], {
 })
 
 if (result.status !== 0) {
-  console.error('[eucli-studio] backend build failed. Close any running AI Studio window and retry if the exe is locked.')
+  console.error('[eucli-studio] backend build failed. Close any running eucli-studio window and retry if the exe is locked.')
   process.exit(result.status || 1)
 }
 

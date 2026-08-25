@@ -6,7 +6,7 @@ import { AiChatApp } from '../ui/App'
 import { StandaloneWindowControls, type WindowControlActions } from '../ui/components/StandaloneWindowControls'
 import type { AiChatController } from '../controller/types'
 import type { AiChatToastKind, AiChatToastOptions } from '../gateway/capabilities'
-import { AI_STUDIO_CHAT_ROOT_ID } from '../runtime/aiStudioGlobals'
+import { EUCLI_STUDIO_CHAT_ROOT_ID } from '../runtime/eucliStudioGlobals'
 import { createAiChatAppRuntime, type AiChatAppRuntime } from './aiChatAppHost'
 import { compatibilityRangeText, type ReleaseCheckSnapshot, type StudioBootstrap } from '../domain/release'
 import { ReleaseChecksPanel } from '../ui/release/ReleaseChecksPanel'
@@ -56,7 +56,7 @@ function commandLabel(command: string | null | undefined) {
 
 const COMMAND_LABELS: Record<string, string> = {
   'new-chat': '新建对话',
-  'open-studio': '打开 AI Studio',
+  'open-studio': '打开 eucli-studio',
   'provider-settings': '模型提供商设置',
   'open-settings': '打开设置',
 }
@@ -184,7 +184,7 @@ export function App() {
       } catch (error: any) {
         if (disposed) return
         setBootStatus('error')
-        setBootError(String(error?.message || error || 'AI Studio 启动失败'))
+        setBootError(String(error?.message || error || 'eucli-studio 启动失败'))
         await refreshDataDirStatus(() => disposed)
         await invoke('app_ready').catch(() => {})
       }
@@ -294,7 +294,7 @@ export function App() {
   return (
     <div className="appShell">
       {canRenderChatApp ? (
-        <div id={AI_STUDIO_CHAT_ROOT_ID} className="chatHost">
+        <div id={EUCLI_STUDIO_CHAT_ROOT_ID} className="chatHost">
           <AiChatApp
             controller={controller}
             bootstrap={runtimeBootstrap}
@@ -405,7 +405,7 @@ function EucliBoxConfigScreen(props: {
   return (
     <main className="bootFallback" role="main" aria-live="polite">
       <header className="bootFallbackTopbar" onPointerDown={onTopbarPointerDown}>
-        <div className="bootFallbackBrand">AI Studio</div>
+        <div className="bootFallbackBrand">eucli-studio</div>
         {standalone ? <StandaloneWindowControls actions={windowControlActions} /> : null}
       </header>
       <section className="bootFallbackCard eucliConfigCard">
@@ -444,7 +444,7 @@ function BootFallback(props: {
   onPickDataDir: () => void
 }) {
   const { status, issue, pendingCommand, standalone, windowControlActions, onPickDataDir } = props
-  const title = issue ? 'AI Studio 启动遇到问题' : 'AI Studio 正在启动'
+  const title = issue ? 'eucli-studio 启动遇到问题' : 'eucli-studio 正在启动'
   const onTopbarPointerDown = React.useCallback((event: React.PointerEvent<HTMLElement>) => {
     if (event.button !== 0) return
     const target = event.target
@@ -456,7 +456,7 @@ function BootFallback(props: {
   return (
     <main className="bootFallback" role={issue ? 'alert' : 'status'} aria-live="polite">
       <header className="bootFallbackTopbar" onPointerDown={onTopbarPointerDown}>
-        <div className="bootFallbackBrand">AI Studio</div>
+        <div className="bootFallbackBrand">eucli-studio</div>
         {standalone ? <StandaloneWindowControls actions={windowControlActions} /> : null}
       </header>
       <section className="bootFallbackCard">

@@ -5,7 +5,7 @@ import type { AiChatController } from '../controller/types'
 import { createDirectCapabilitiesAdapter } from '../direct/createDirectCapabilitiesAdapter'
 import { createAiChatCapabilitiesFromHostApi, type AiChatShowToast } from '../gateway/capabilities'
 import { AI_CHAT_DIRECT_PROTOCOL_VERSION } from '../protocol/aiChatProtocol'
-import { AI_STUDIO_APP_ID, AI_STUDIO_CONTROLLER_KEY } from '../runtime/aiStudioGlobals'
+import { EUCLI_STUDIO_APP_ID, EUCLI_STUDIO_CONTROLLER_KEY } from '../runtime/eucliStudioGlobals'
 import { normalizeReleaseCheckSnapshot, normalizeStudioBootstrap, type ReleaseCheckSnapshot, type StudioBootstrap } from '../domain/release'
 
 type BackendEndpoint = {
@@ -39,17 +39,17 @@ export type AiChatAppHostOptions = {
 }
 
 export async function createAiChatAppRuntime(options: AiChatAppHostOptions): Promise<AiChatAppRuntime> {
-  const baseApi = createAiStudioHostApi(options)
+  const baseApi = createEucliStudioHostApi(options)
   const { api, directClient } = await createDirectCapabilitiesAdapter(baseApi)
   const bootstrap = normalizeStudioBootstrap(await directClient.invoke('studio.bootstrap'))
   const created = bootstrap.businessAvailable
-    ? createAiChatControllerV2({ capabilities: createAiChatCapabilitiesFromHostApi(api, AI_STUDIO_APP_ID) })
+    ? createAiChatControllerV2({ capabilities: createAiChatCapabilitiesFromHostApi(api, EUCLI_STUDIO_APP_ID) })
     : null
   const controller = created?.controller || null
 
   if (created && controller) {
     await created.init()
-    ;(window as any)[AI_STUDIO_CONTROLLER_KEY] = controller
+    ;(window as any)[EUCLI_STUDIO_CONTROLLER_KEY] = controller
   }
 
   return {
@@ -61,8 +61,8 @@ export async function createAiChatAppRuntime(options: AiChatAppHostOptions): Pro
     refreshReleaseChecks: async (kind?: string) => normalizeReleaseCheckSnapshot(await directClient.invoke('releaseChecks.refresh', kind ? { kind } : {})),
     dispose() {
       try {
-        if (controller && (window as any)[AI_STUDIO_CONTROLLER_KEY] === controller) {
-          delete (window as any)[AI_STUDIO_CONTROLLER_KEY]
+        if (controller && (window as any)[EUCLI_STUDIO_CONTROLLER_KEY] === controller) {
+          delete (window as any)[EUCLI_STUDIO_CONTROLLER_KEY]
         }
         controller?.dispose()
       } finally {
@@ -72,8 +72,8 @@ export async function createAiChatAppRuntime(options: AiChatAppHostOptions): Pro
   }
 }
 
-function createAiStudioHostApi(options: AiChatAppHostOptions) {  return {
-    __meta: { runtime: 'ui', appId: AI_STUDIO_APP_ID },
+function createEucliStudioHostApi(options: AiChatAppHostOptions) {  return {
+    __meta: { runtime: 'ui', appId: EUCLI_STUDIO_APP_ID },
     background: {
       endpoint: createBackendEndpoint,
     },

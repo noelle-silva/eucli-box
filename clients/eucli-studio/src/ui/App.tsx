@@ -95,7 +95,7 @@ import { HookPromptsSettingsPanel } from './settings/HookPromptsSettingsPanel'
 import { PlaceholderSettingsPanel } from './settings/PlaceholderSettingsPanel'
 import { SystemPluginSettingsPanel } from './settings/SystemPluginSettingsPanel'
 import { HookPromptSelector } from './components/HookPromptSelector'
-import { AI_STUDIO_CHAT_ROOT_ID } from '../runtime/aiStudioGlobals'
+import { EUCLI_STUDIO_CHAT_ROOT_ID } from '../runtime/eucliStudioGlobals'
 import { ASSISTANT_RUNNING_CONTENT, assistantRunGenerationId, isAssistantGenerating } from '../domain/assistantRunState'
 import { activeRunCardForAssistantMessage, isStaleAssistantPlaceholder, messageVisibleText } from '../domain/chatMessageDisplay'
 import { formatModelRefDisplayText } from '../domain/modelRefUtils'
@@ -3758,7 +3758,7 @@ export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap;
              color: 'var(--studio-text-primary)',
              background: transparentChatBg ? colorMixVar('--studio-canvas', Math.max(1, bgAlpha * 100)) : 'var(--studio-app-background)',
            },
-          [`#${AI_STUDIO_CHAT_ROOT_ID}`]: {
+          [`#${EUCLI_STUDIO_CHAT_ROOT_ID}`]: {
             height: '100%',
             overflow: 'hidden',
             background: transparentChatBg ? colorMixVar('--studio-canvas', Math.max(1, bgAlpha * 100)) : 'var(--studio-app-background)',
@@ -8569,7 +8569,7 @@ function DataSettingsPanel(props: { dataDirectory?: AiChatDataDirectory; loading
             <Box sx={{ minWidth: 0, flex: 1 }}>
               <Typography sx={{ fontWeight: 900 }}>数据</Typography>
               <Typography variant="caption" color="text.secondary">
-                AI Studio 的聊天、角色、图片和运行状态都会保存在这个目录里。
+                eucli-studio 的聊天、角色、图片和运行状态都会保存在这个目录里。
               </Typography>
             </Box>
             {status ? <SettingsPill tone={status.writable ? 'selected' : 'danger'}>{status.writable ? '可写' : '不可写'}</SettingsPill> : <SettingsPill>读取中</SettingsPill>}
@@ -8617,7 +8617,7 @@ function DataSettingsPanel(props: { dataDirectory?: AiChatDataDirectory; loading
           </Stack>
 
           <Typography variant="caption" color="text.secondary">
-            切换目录会重启 AI Studio 自己的本机后台，然后重新载入新目录中的数据。
+             切换目录会重启 eucli-studio 自己的本机后台，然后重新载入新目录中的数据。
           </Typography>
         </Stack>
     </SettingsSurface>

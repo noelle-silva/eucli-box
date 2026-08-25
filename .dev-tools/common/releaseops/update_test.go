@@ -20,7 +20,7 @@ func TestReplaceTopLevelJSONVersionOnlyChangesTopLevelValue(t *testing.T) {
 }
 
 func TestReplaceTOMLVersionTargetsRequestedPackage(t *testing.T) {
-	cargoTOML := "[package]\nname = \"ai-studio-app\"\nversion = \"0.1.9\"\n\n[dependencies]\nexample = \"0.1.9\"\n"
+	cargoTOML := "[package]\nname = \"eucli-studio-app\"\nversion = \"0.1.9\"\n\n[dependencies]\nexample = \"0.1.9\"\n"
 	updated, err := replaceTOMLVersion(cargoTOML, packageVersion, "0.1.9", "0.1.10")
 	if err != nil {
 		t.Fatalf("replaceTOMLVersion() error = %v", err)
@@ -29,8 +29,8 @@ func TestReplaceTOMLVersionTargetsRequestedPackage(t *testing.T) {
 		t.Fatalf("updated Cargo.toml = %s", updated)
 	}
 
-	cargoLock := "[[package]]\nname = \"ai-studio-app\"\nversion = \"0.1.9\"\n\n[[package]]\nname = \"other\"\nversion = \"0.1.9\"\n"
-	updated, err = replaceTOMLVersion(cargoLock, aiStudioLockVersion, "0.1.9", "0.1.10")
+	cargoLock := "[[package]]\nname = \"eucli-studio-app\"\nversion = \"0.1.9\"\n\n[[package]]\nname = \"other\"\nversion = \"0.1.9\"\n"
+	updated, err = replaceTOMLVersion(cargoLock, eucliStudioLockVersion, "0.1.9", "0.1.10")
 	if err != nil {
 		t.Fatalf("replaceTOMLVersion() error = %v", err)
 	}
@@ -116,8 +116,8 @@ func TestSetVersionKeepsClientPackageVersionsInSync(t *testing.T) {
 	writeTestFile(t, filepath.Join(directory, "package.json"), "{\n  \"name\": \"client\",\n  \"version\": \"0.1.9\"\n}\n")
 	writeTestFile(t, filepath.Join(tauriDirectory, "tauri.conf.json"), "{\n  \"version\": \"0.1.9\"\n}\n")
 	writeTestFile(t, filepath.Join(tauriDirectory, "tauri.conf.dev.json"), "{\n  \"version\": \"0.1.9\"\n}\n")
-	writeTestFile(t, filepath.Join(tauriDirectory, "Cargo.toml"), "[package]\nname = \"ai-studio-app\"\nversion = \"0.1.9\"\n")
-	writeTestFile(t, filepath.Join(tauriDirectory, "Cargo.lock"), "version = 4\n\n[[package]]\nname = \"ai-studio-app\"\nversion = \"0.1.9\"\n")
+	writeTestFile(t, filepath.Join(tauriDirectory, "Cargo.toml"), "[package]\nname = \"eucli-studio-app\"\nversion = \"0.1.9\"\n")
+	writeTestFile(t, filepath.Join(tauriDirectory, "Cargo.lock"), "version = 4\n\n[[package]]\nname = \"eucli-studio-app\"\nversion = \"0.1.9\"\n")
 
 	result, err := SetVersion(root, "eucli-studio", "0.1.10", "验证客户端版本同步")
 	if err != nil {

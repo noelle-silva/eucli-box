@@ -1,4 +1,4 @@
-// AI Studio V2 controller: DI assembled from extracted modules.
+// eucli-studio V2 controller: DI assembled from extracted modules.
 import { now, uid, esc, trimSlash, isHttpBaseUrl, clampTemp, normImagePaths, clamp } from '../core/utils'
 import { extractOpenAiDelta } from '../core/sse'
 import { createDefaultAssistantRenderEngine } from '../render/assistantEngineDefault'

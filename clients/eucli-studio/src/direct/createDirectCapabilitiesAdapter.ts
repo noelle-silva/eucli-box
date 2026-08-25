@@ -1,6 +1,6 @@
 import { createAiChatDirectClient, type AiChatDirectClient } from './createAiChatDirectClient'
 import { AI_CHAT_DIRECT_METHOD } from '../protocol/aiChatProtocol'
-import { AI_STUDIO_APP_ID } from '../runtime/aiStudioGlobals'
+import { EUCLI_STUDIO_APP_ID } from '../runtime/eucliStudioGlobals'
 
 export type DirectCapabilitiesAdapter = {
   api: Record<string, any>
@@ -12,7 +12,7 @@ export async function createDirectCapabilitiesAdapter(baseApi: unknown): Promise
   const host = (baseApi as any)?.host
 
   const api = {
-    __meta: { runtime: 'ui', appId: AI_STUDIO_APP_ID },
+    __meta: { runtime: 'ui', appId: EUCLI_STUDIO_APP_ID },
 
     storage: {
       get: async (key: string) => directClient.invoke(AI_CHAT_DIRECT_METHOD.storageGet, { key }),

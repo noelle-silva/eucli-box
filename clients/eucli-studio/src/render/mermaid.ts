@@ -5,7 +5,7 @@ import { exportSvgElementToPngDataUrl } from './mermaidExport'
 import { sanitizeSvg } from './sanitize'
 import type { BoolRef, RenderSafetyPolicy } from './types'
 import type { AiChatCapabilities } from '../gateway/capabilities'
-import { AI_STUDIO_CONTROLLER_KEY } from '../runtime/aiStudioGlobals'
+import { EUCLI_STUDIO_CONTROLLER_KEY } from '../runtime/eucliStudioGlobals'
 
 export function createMermaidSupport(opts: { mermaidInited: BoolRef; mermaidSvgCache: Map<string, string>; capabilities: AiChatCapabilities }) {
   const { mermaidInited, mermaidSvgCache, capabilities } = opts
@@ -228,10 +228,10 @@ export function createMermaidSupport(opts: { mermaidInited: BoolRef; mermaidSvgC
       const midEl = btn.closest('[data-mid]')
       const messageId = midEl instanceof HTMLElement ? String(midEl.getAttribute('data-mid') || '') : ''
 
-      const controller = (window as any)[AI_STUDIO_CONTROLLER_KEY]
+      const controller = (window as any)[EUCLI_STUDIO_CONTROLLER_KEY]
       const fn = controller?.actions?.aiFixMermaid
       if (typeof fn !== 'function') {
-        capabilities.ui.showToast?.('未找到 aiFixMermaid 接口（请更新 AI Studio）', { kind: 'error' })
+        capabilities.ui.showToast?.('未找到 aiFixMermaid 接口（请更新 eucli-studio）', { kind: 'error' })
           return
       }
 

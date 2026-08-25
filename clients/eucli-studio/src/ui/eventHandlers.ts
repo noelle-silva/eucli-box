@@ -1,4 +1,4 @@
-// AI Studio UI 事件处理器
+// eucli-studio UI 事件处理器
 // 由 V2 controller 组装使用
 // 职责：click / wheel / mousedown / input / change / keydown / paste 事件委托与分发
 

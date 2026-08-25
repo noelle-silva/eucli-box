@@ -100,7 +100,7 @@ func checkClientPackageVersions(artifact Artifact) error {
 		name     string
 	}{
 		{path: paths.cargoTOML, selector: packageVersion, name: "Cargo.toml"},
-		{path: paths.cargoLock, selector: aiStudioLockVersion, name: "Cargo.lock"},
+		{path: paths.cargoLock, selector: eucliStudioLockVersion, name: "Cargo.lock"},
 	} {
 		payload, err := os.ReadFile(source.path)
 		if err != nil {
@@ -139,7 +139,7 @@ type tomlVersionSelector int
 
 const (
 	packageVersion tomlVersionSelector = iota
-	aiStudioLockVersion
+	eucliStudioLockVersion
 )
 
 func readTOMLVersion(source string, selector tomlVersionSelector) (string, error) {
@@ -160,7 +160,7 @@ func readTOMLVersion(source string, selector tomlVersionSelector) (string, error
 			}
 		}
 		return "", fmt.Errorf("[package] 中缺少 version")
-	case aiStudioLockVersion:
+	case eucliStudioLockVersion:
 		insidePackage := false
 		matchedName := false
 		for _, line := range lines {
@@ -174,7 +174,7 @@ func readTOMLVersion(source string, selector tomlVersionSelector) (string, error
 				continue
 			}
 			if name, ok := parseTOMLStringAssignment(trimmed, "name"); ok {
-				matchedName = name == "ai-studio-app"
+				matchedName = name == "eucli-studio-app"
 				continue
 			}
 			if matchedName {
@@ -183,7 +183,7 @@ func readTOMLVersion(source string, selector tomlVersionSelector) (string, error
 				}
 			}
 		}
-		return "", fmt.Errorf("缺少 ai-studio-app 包版本")
+		return "", fmt.Errorf("缺少 eucli-studio-app 包版本")
 	default:
 		return "", fmt.Errorf("未知 TOML 版本位置")
 	}

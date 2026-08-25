@@ -136,6 +136,34 @@ func TestExecuteDeniesHardlineCommandBeforeWorkdirResolution(t *testing.T) {
 	}
 }
 
+func TestExecuteDeniesAddedHardlineCommandsBeforeProviderSelection(t *testing.T) {
+	fixture := newShellCommandFixture(t)
+	commands := []string{
+		"Remove-Item -Path 'C:\\Windows' -Recurse -Force",
+		"sudo rm -rf /etc",
+		"systemctl poweroff",
+		"init 0",
+		"shred /dev/sda",
+		"wipefs --all /dev/sda",
+		"parted --script /dev/sda mklabel gpt",
+	}
+	for _, command := range commands {
+		t.Run(command, func(t *testing.T) {
+			result := Execute(context.Background(), types.ToolExecutionInput{
+				Arguments:            map[string]any{"command": command, "provider": "missing-provider"},
+				ToolBodyDirectory:    fixture.toolDir,
+				HostWorkingDirectory: fixture.hostDir,
+			})
+			if result.Status != types.ToolStatusDenied || result.Metadata["hardlineBlocked"] != true {
+				t.Fatalf("result = %#v", result)
+			}
+			if strings.Contains(result.Error, "missing-provider") {
+				t.Fatalf("provider selection happened before hardline denial: %q", result.Error)
+			}
+		})
+	}
+}
+
 func TestExecuteDoesNotMarkByteTruncationAsInvalidUTF8(t *testing.T) {
 	fixture := newShellCommandFixture(t)
 	result := Execute(context.Background(), types.ToolExecutionInput{

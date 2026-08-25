@@ -17,12 +17,14 @@ type hardlineRule struct {
 	name     string
 	reason   string
 	patterns []*regexp.Regexp
+	matcher  func(string) bool
 }
 
 var hardlineRules = []hardlineRule{
 	{
-		name:   "recursive-delete-critical-path",
-		reason: "the command recursively deletes a critical system, root, or home directory",
+		name:    "recursive-delete-critical-path",
+		reason:  "the command recursively deletes a critical system, root, or home directory",
+		matcher: matchesCriticalRecursiveDelete,
 		patterns: []*regexp.Regexp{
 			regexp.MustCompile(`(?:^|[;&|]\s*)rm\s+-[^\s]*r[^\s]*\s+(?:--\s+)?(?:/|/(?:etc|bin|sbin|usr|var|home|root)(?:\s|/|$)|~(?:\s|/|$)|\$home(?:\s|/|$)|[a-z]:[\\/](?:\s|$)|[a-z]:[\\/](?:windows|users)(?:[\\/\s]|$))`),
 			regexp.MustCompile(`(?:^|[;&|]\s*)(?:rd|rmdir)\s+/(?:s|q)\s+/(?:s|q)\s+(?:[a-z]:\\(?:\s|$)|[a-z]:\\(?:windows|users)(?:\\|\s|$)|%systemroot%|%windir%)`),
@@ -59,11 +61,27 @@ var hardlineRules = []hardlineRule{
 		},
 	},
 	{
-		name:   "shutdown-or-reboot",
-		reason: "the command shuts down, restarts, or powers off the machine",
+		name:    "shutdown-or-reboot",
+		reason:  "the command shuts down, restarts, or powers off the machine",
+		matcher: matchesSystemShutdownCommand,
 		patterns: []*regexp.Regexp{
 			regexp.MustCompile(`(?:^|[;&|]\s*)(?:shutdown|reboot|poweroff|halt|restart-computer|stop-computer)(?:\s|$)`),
 		},
+	},
+	{
+		name:    "device-data-destruction",
+		reason:  "the command irreversibly overwrites a disk device",
+		matcher: matchesShredDevice,
+	},
+	{
+		name:    "filesystem-signature-destruction",
+		reason:  "the command removes all filesystem signatures from a disk device",
+		matcher: matchesWipefsDevice,
+	},
+	{
+		name:    "partition-table-destruction",
+		reason:  "the command recreates a disk partition table",
+		matcher: matchesPartedMklabel,
 	},
 }
 
@@ -73,7 +91,7 @@ func checkHardlineCommand(command string) (hardlineBlock, bool) {
 		return hardlineBlock{}, false
 	}
 	for _, rule := range hardlineRules {
-		if matchesAnyHardlinePattern(normalized, rule.patterns) {
+		if (rule.matcher != nil && rule.matcher(normalized)) || matchesAnyHardlinePattern(normalized, rule.patterns) {
 			return hardlineBlock{Rule: rule.name, Reason: rule.reason}, true
 		}
 	}

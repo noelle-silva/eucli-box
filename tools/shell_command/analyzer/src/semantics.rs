@@ -1,3 +1,4 @@
+#![allow(dead_code)] // Ported-from-reference interfaces, some not yet wired into the protocol; kept for later stages.
 //! Post-argv semantic checks ported from Claude Code `utils/bash/ast.ts`
 //! (checkSemantics). Runs after parsing to catch commands that tokenize fine
 //! but are dangerous by name or argument content. Returns the first failure.
@@ -24,9 +25,10 @@ fn zsh_dangerous_builtins() -> &'static [&'static str] {
 }
 
 fn shell_keywords() -> &'static [&'static str] {
+    // Exact set from Claude Code bashParser.ts SHELL_KEYWORDS.
     &[
-        "if", "then", "else", "elif", "fi", "for", "while", "until", "do", "done", "case",
-        "esac", "in", "function", "select", "time", "coproc", "!", "{", "}", "[[", "]]",
+        "if", "then", "elif", "else", "fi", "while", "until", "for", "in", "do", "done", "case",
+        "esac", "function", "select",
     ]
 }
 

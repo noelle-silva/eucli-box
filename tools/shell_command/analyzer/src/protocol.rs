@@ -1,3 +1,4 @@
+#![allow(dead_code)] // Ported-from-reference interfaces, some not yet wired into the protocol; kept for later stages.
 pub const PROTOCOL_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -58,6 +59,11 @@ pub struct CommandStructure {
     pub commands: Vec<CommandNode>,
     pub operators: Vec<String>,
     pub parse_error: bool,
+    /// OpenCode BashArity: the "human-understandable command" prefix of the
+    /// first command (e.g. `git checkout` for `git checkout main`), used by
+    /// the permission layer as the memorable allow-prefix.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub arity_prefix: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]

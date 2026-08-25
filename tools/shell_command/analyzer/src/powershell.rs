@@ -1,3 +1,4 @@
+#![allow(dead_code)] // Ported-from-reference interfaces, some not yet wired into the protocol; kept for later stages.
 //! PowerShell invocation extraction ported from Codex
 //! `shell-command/src/powershell.rs` (the parts used by the analyzer).
 

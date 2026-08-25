@@ -1,3 +1,4 @@
+#![allow(dead_code)] // Ported-from-reference interfaces, some not yet wired into the protocol; kept for later stages.
 //! Bash parsing helpers ported from Codex `shell-command/src/bash.rs`.
 //! Uses tree-sitter-bash for parsing. Two extraction modes:
 //! - [`parse_shell_script_into_commands`]: word-only plain-command sequence

@@ -1,3 +1,4 @@
+#![allow(dead_code)] // Ported-from-reference interfaces, some not yet wired into the protocol; kept for later stages.
 //! AST-based walker ported from Claude Code `utils/bash/ast.ts`
 //! (parseForSecurityFromAst / walkProgram / collectCommands / walkCommand /
 //! walkArgument / walkString / redirect walkers / variable tracking).
@@ -45,11 +46,6 @@ static ZSH_TILDE_BRACKET_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"~\[").unwra
 static ZSH_EQUALS_EXPANSION_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?:^|[\s;&|])=[a-zA-Z_]").unwrap());
 static BRACE_WITH_QUOTE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"\{[^}]*['\"]"#).unwrap());
-static BARE_VAR_UNSAFE_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"[ \t\n*?[]").unwrap());
-static STDBUF_SHORT_SEP_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^-[ioe]$").unwrap());
-static STDBUF_SHORT_FUSED_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^-[ioe].").unwrap());
-static STDBUF_LONG_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^--(input|output|error)=").unwrap());
 static PROC_ENVIRON_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"/proc/.*/environ").unwrap());
 static NEWLINE_HASH_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\n[ \t]*#").unwrap());
 static PS4_SAFE_CHARSET_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[A-Za-z0-9 _+:./=\[\]-]*$").unwrap());
@@ -218,6 +214,10 @@ fn collect_commands(
         "redirected_statement" => walk_redirected_statement(node, commands, var_scope, src),
         "comment" => Ok(()),
         kind if is_structural(kind) => {
+            // Claude's scope discipline: `&&`/`;` chains share state; `||`,
+            // `|`, `|&`, `&` reset to the entry snapshot; pipeline stages all
+            // start from an entry copy so vars set in a stage never leak to
+            // the caller or another stage.
             let is_pipeline = node.kind() == "pipeline";
             let mut needs_snapshot = false;
             if !is_pipeline {
@@ -234,19 +234,23 @@ fn collect_commands(
             } else {
                 None
             };
+            let mut working = var_scope.clone_scope();
             let mut cursor = node.walk();
             let child_nodes: Vec<Node> = node.children(&mut cursor).collect();
             for child in child_nodes {
                 if is_separator(child.kind()) {
                     if matches!(child.kind(), "||" | "|" | "|&" | "&") {
-                        *var_scope = snapshot
+                        working = snapshot
                             .as_ref()
                             .map(|s| s.clone_scope())
                             .unwrap_or_else(|| var_scope.clone_scope());
                     }
                     continue;
                 }
-                collect_commands(child, commands, var_scope, src)?;
+                collect_commands(child, commands, &mut working, src)?;
+            }
+            if !is_pipeline {
+                *var_scope = working;
             }
             Ok(())
         }
@@ -1114,7 +1118,7 @@ fn resolve_simple_expansion(
                     "Bare argument is empty expansion (word-splitting differential)",
                 ));
             }
-            if BARE_VAR_UNSAFE_RE.is_match(&tracked_value) {
+            if bare_var_unsafe(&tracked_value) {
                 return Err(WalkError::with_reason(
                     "Bare argument value contains IFS/glob characters",
                 ));
@@ -1204,6 +1208,12 @@ fn extract_safe_cat_heredoc(sub_node: Node, src: &str) -> Option<String> {
         return Some("DANGEROUS".to_string());
     }
     Some(body)
+}
+
+fn bare_var_unsafe(value: &str) -> bool {
+    value
+        .chars()
+        .any(|c| matches!(c, ' ' | '\t' | '\n' | '*' | '?' | '['))
 }
 
 fn child_text(node: Node, src: &str) -> String {

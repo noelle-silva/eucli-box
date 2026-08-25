@@ -1,3 +1,4 @@
+#![allow(dead_code)] // Ported-from-reference interfaces, some not yet wired into the protocol; kept for later stages.
 //! Impact analysis ported from two sources into one module:
 //! - Claude Code `tools/BashTool/pathValidation.ts`: PATH_EXTRACTORS +
 //!   filterOutFlags + checkDangerousRemovalPaths.

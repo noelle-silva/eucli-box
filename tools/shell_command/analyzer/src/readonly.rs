@@ -1216,7 +1216,7 @@ fn validate_flags(
 
         if token == "--" {
             if config.respects_double_dash {
-                i += 1;
+                // Everything after -- is positional arguments.
                 break;
             }
             i += 1;

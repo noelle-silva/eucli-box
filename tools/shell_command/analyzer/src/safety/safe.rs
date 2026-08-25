@@ -1,3 +1,4 @@
+#![allow(dead_code)] // Ported-from-reference interfaces, some not yet wired into the protocol; kept for later stages.
 //! Safe-command whitelist ported from Codex
 //! `command_safety/is_safe_command.rs`.
 

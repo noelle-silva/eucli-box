@@ -80,7 +80,7 @@ pub fn analyze_bash(command: &str, workdir: &str) -> AnalyzeResponse {
     }
 
     // Structure extraction (fail-closed for argv, not for classification).
-    let mut structure = CommandStructure { commands: Vec::new(), operators: Vec::new(), parse_error: false };
+    let mut structure = CommandStructure { commands: Vec::new(), operators: Vec::new(), parse_error: false, arity_prefix: String::new() };
     let mut parsed_commands: Vec<InternalCommand> = Vec::new();
     let mut walker_ok = false;
     match bash_walk::parse_for_security(&tree, command) {
@@ -92,6 +92,13 @@ pub fn analyze_bash(command: &str, workdir: &str) -> AnalyzeResponse {
             }).collect(), &mut structure);
             parsed_commands = cmds;
             walker_ok = true;
+            // OpenCode BashArity prefix of the first command (permission
+            // layer memorable-prefix input).
+            if let Some(first) = parsed_commands.first() {
+                if !first.argv.is_empty() {
+                    structure.arity_prefix = impact::bash_arity_prefix(&first.argv).join(" ");
+                }
+            }
         }
         Err(e) => {
             structure.parse_error = tree.root_node().has_error();
@@ -282,9 +289,8 @@ fn structured(nodes: Vec<CommandNode>, structure: &mut CommandStructure) {
 }
 
 pub fn analyze_powershell(command: &str, workdir: &str) -> AnalyzeResponse {
-    let mut reasons: Vec<String> = Vec::new();
+    let reasons: Vec<String> = Vec::new();
     let mut classification_reasons: Vec<String> = Vec::new();
-    let mut reliability = Reliability::High;
     let structure = CommandStructure::default();
 
     // Tokenize the command as an invocation: [exe, args...].

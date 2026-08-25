@@ -1,3 +1,4 @@
+#![allow(dead_code)] // Ported-from-reference interfaces, some not yet wired into the protocol; kept for later stages.
 //! Shell type detection ported from Codex `shell-command/src/shell_detect.rs`
 //! (the type-mapping subset; the executable-lookup parts are unused by the
 //! analyzer so they are not ported).

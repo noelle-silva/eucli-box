@@ -1,0 +1,249 @@
+// eucli-store-sync 是本地商店的一键铺货入口：查询本地货架当前最大开发尾号，
+// 取尾号加 1 生成新开发版本（未显式指定时），构建成品并复制入架。
+package main
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
+	"devtools/common/releaseartifact"
+	"devtools/common/releaseops"
+	"eucli-box/pkg/release"
+	"eucli-box/pkg/types"
+)
+
+func main() {
+	if err := run(context.Background(), os.Args[1:]); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+type options struct {
+	target      string
+	version     string
+	repoRoot    string
+	workRoot    string
+	outputRoot  string
+	localStore  string
+	skipCopy    bool
+}
+
+func run(ctx context.Context, args []string) error {
+	var opts options
+	flags := flag.NewFlagSet("eucli-store-sync", flag.ContinueOnError)
+	flags.StringVar(&opts.target, "target", "", "artifact target (tool:<id> or plugin:<id>)")
+	flags.StringVar(&opts.version, "version", "", "explicit development version (three or four segments)")
+	flags.StringVar(&opts.repoRoot, "repo-root", "", "repository root")
+	flags.StringVar(&opts.workRoot, "work-root", "", "build work root")
+	flags.StringVar(&opts.outputRoot, "output-root", "", "build output root")
+	flags.StringVar(&opts.localStore, "local-store", "", "local-store shelf root")
+	flags.BoolVar(&opts.skipCopy, "build-only", false, "only build, do not copy to the shelf")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	root, err := resolveRepositoryRoot(opts.repoRoot)
+	if err != nil {
+		return err
+	}
+	identity, err := parseTarget(opts.target)
+	if err != nil {
+		return err
+	}
+	artifact, err := releaseops.Resolve(root, string(releaseops.Kind(identity.Kind))+":"+identity.ID)
+	if err != nil {
+		return err
+	}
+	storeRoot, err := shelfRoot(root, opts.localStore)
+	if err != nil {
+		return err
+	}
+	buildVersion, err := resolveBuildVersion(storeRoot, identity, artifact.Version, opts.version)
+	if err != nil {
+		return err
+	}
+	workRoot, outputRoot, err := resolveRoots(root, opts)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("eucli-store-sync: %s -> %s\n", opts.target, buildVersion)
+	result, err := releaseartifact.Build(ctx, releaseartifact.BuildOptions{
+		Root:            root,
+		Target:          string(releaseops.Kind(identity.Kind)) + ":" + identity.ID,
+		WorkRoot:        workRoot,
+		OutputRoot:      outputRoot,
+		VersionOverride: buildVersion,
+	})
+	if err != nil {
+		return fmt.Errorf("构建失败：%w", err)
+	}
+	fmt.Printf("eucli-store-sync: built %s\n", result.Manifest.Archive.Name)
+	if opts.skipCopy {
+		return nil
+	}
+	return runStoreCopy(ctx, root, outputRoot, storeRoot, opts.target)
+}
+
+// resolveRepositoryRoot 解析仓库根：显式 -repo-root 优先，否则从工作目录向上找 go.mod。
+func resolveRepositoryRoot(explicit string) (string, error) {
+	if trimmed := strings.TrimSpace(explicit); trimmed != "" {
+		absolute, err := filepath.Abs(trimmed)
+		if err != nil {
+			return "", fmt.Errorf("仓库根目录无效：%w", err)
+		}
+		if info, statErr := os.Stat(absolute); statErr != nil || !info.IsDir() {
+			return "", fmt.Errorf("仓库根目录无效：%s", absolute)
+		}
+		return absolute, nil
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("无法确定仓库根目录：%w", err)
+	}
+	current := cwd
+	for {
+		if isRepositoryRoot(current) {
+			return current, nil
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", fmt.Errorf("无法确定仓库根目录（未找到主仓库标志）")
+		}
+		current = parent
+	}
+}
+
+// isRepositoryRoot 判定主仓库根：同时存在 tools 源码区与开发工具区 go.mod。
+func isRepositoryRoot(candidate string) bool {
+	if info, err := os.Stat(filepath.Join(candidate, "tools")); err != nil || !info.IsDir() {
+		return false
+	}
+	if info, err := os.Stat(filepath.Join(candidate, ".dev-tools", "go.mod")); err != nil || info.IsDir() {
+		return false
+	}
+	return true
+}
+
+func parseTarget(target string) (types.ReleaseArtifactIdentity, error) {	kind, id, ok := strings.Cut(strings.TrimSpace(target), ":")
+	id = strings.TrimSpace(id)
+	if !ok || id == "" || filepath.Base(id) != id {
+		return types.ReleaseArtifactIdentity{}, errors.New("必须指定 tool:<id> 或 plugin:<id>")
+	}
+	kind = strings.TrimSpace(kind)
+	switch kind {
+	case types.ReleaseArtifactKindTool, types.ReleaseArtifactKindPlugin:
+	default:
+		return types.ReleaseArtifactIdentity{}, fmt.Errorf("本地商店不支持发布物类别 %q（本体候选不上架）", kind)
+	}
+	return types.ReleaseArtifactIdentity{Kind: kind, ID: id}, nil
+}
+
+func shelfRoot(root string, explicit string) (string, error) {
+	if strings.TrimSpace(explicit) != "" {
+		absolute, err := filepath.Abs(strings.TrimSpace(explicit))
+		if err != nil {
+			return "", fmt.Errorf("货架根无效：%w", err)
+		}
+		return absolute, nil
+	}
+	return filepath.Join(root, ".dev-workspace", ".dev-runtime", "eucli-box", "programs", "local-store"), nil
+}
+
+func resolveRoots(root string, opts options) (string, string, error) {
+	workRoot := strings.TrimSpace(opts.workRoot)
+	if workRoot == "" {
+		workRoot = filepath.Join(root, ".dev-workspace", ".dev-tools-runtime", "eucli-store-sync", "work")
+	}
+	outputRoot := strings.TrimSpace(opts.outputRoot)
+	if outputRoot == "" {
+		outputRoot = filepath.Join(root, ".dev-workspace", ".dev-tools-runtime", "eucli-store-sync", "output")
+	}
+	if err := os.MkdirAll(workRoot, 0o755); err != nil {
+		return "", "", fmt.Errorf("建立构建工作区失败：%w", err)
+	}
+	if err := os.MkdirAll(outputRoot, 0o755); err != nil {
+		return "", "", fmt.Errorf("建立构建输出区失败：%w", err)
+	}
+	return workRoot, outputRoot, nil
+}
+
+// resolveBuildVersion 决定本次铺货版本：显式指定直接用；
+// 否则查货架该货品当前最大开发尾号，取尾号加 1（无货时从源码版本加 .1 起步）。
+func resolveBuildVersion(storeRoot string, identity types.ReleaseArtifactIdentity, sourceVersion string, explicit string) (string, error) {
+	if strings.TrimSpace(explicit) != "" {
+		if err := release.ValidateVersion(strings.TrimSpace(explicit)); err != nil {
+			return "", fmt.Errorf("指定版本无效：%w", err)
+		}
+		return strings.TrimSpace(explicit), nil
+	}
+	if err := release.ValidateFormalVersion(sourceVersion); err != nil {
+		return "", fmt.Errorf("源码版本无效：%w", err)
+	}
+	maxTail, err := maxDevelopmentTail(storeRoot, identity, sourceVersion)
+	if err != nil {
+		return "", err
+	}
+	return sourceVersion + "." + fmt.Sprint(maxTail+1), nil
+}
+
+// maxDevelopmentTail 读取货架上该货品全部四段开发版本，返回最大尾号；没有则 0。
+func maxDevelopmentTail(storeRoot string, identity types.ReleaseArtifactIdentity, sourceVersion string) (int, error) {
+	kindDir := "ai-tools"
+	if identity.Kind == types.ReleaseArtifactKindPlugin {
+		kindDir = "system-plugins"
+	}
+	entries, err := os.ReadDir(filepath.Join(storeRoot, kindDir, identity.ID))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	maxTail := 0
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		version := entry.Name()
+		if !strings.HasPrefix(version, sourceVersion+".") {
+			continue
+		}
+		fourth := strings.TrimPrefix(version, sourceVersion+".")
+		if fourth == "" || strings.Contains(fourth, ".") {
+			continue
+		}
+		tail := 0
+		parsed := true
+		for _, digit := range fourth {
+			if digit < '0' || digit > '9' {
+				parsed = false
+				break
+			}
+			tail = tail*10 + int(digit-'0')
+		}
+		if !parsed {
+			continue
+		}
+		if tail > maxTail {
+			maxTail = tail
+		}
+	}
+	return maxTail, nil
+}
+
+func runStoreCopy(ctx context.Context, root string, outputRoot string, storeRoot string, target string) error {
+	command := exec.CommandContext(ctx, "go", "run", "devtools/eucli-store-copy", "-from", outputRoot, "-to", storeRoot, "-target", target)
+	command.Dir = root
+	command.Stdout = os.Stdout
+	command.Stderr = os.Stderr
+	if err := command.Run(); err != nil {
+		return fmt.Errorf("复制入架失败：%w", err)
+	}
+	return nil
+}

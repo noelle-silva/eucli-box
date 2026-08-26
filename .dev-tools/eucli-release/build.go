@@ -18,7 +18,7 @@ func runBuild(ctx context.Context, args []string) error {
 	outputRoot := flags.String("output-root", "", "artifact output root")
 	evidenceRoot := flags.String("evidence-root", "", "verification evidence root")
 	assetRoot := flags.String("asset-root", "", "verified external asset root")
-	verificationOnly := flags.Bool("verification-only", false, "mark output as verification only")
+	versionOverride := flags.String("version-override", "", "development build version (three or four segments)")
 	resultFile := flags.String("result-file", "", "write result JSON")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -34,13 +34,13 @@ func runBuild(ctx context.Context, args []string) error {
 		*assetRoot = workspace.AssetRoot(root)
 	}
 	result, err := releaseartifact.Build(ctx, releaseartifact.BuildOptions{
-		Root:             root,
-		Target:           *target,
-		WorkRoot:         *workRoot,
-		OutputRoot:       *outputRoot,
-		EvidenceRoot:     *evidenceRoot,
-		VerificationOnly: *verificationOnly,
-		AssetRoot:        *assetRoot,
+		Root:            root,
+		Target:          *target,
+		WorkRoot:        *workRoot,
+		OutputRoot:      *outputRoot,
+		EvidenceRoot:    *evidenceRoot,
+		VersionOverride: *versionOverride,
+		AssetRoot:       *assetRoot,
 	})
 	if err != nil {
 		return err

@@ -621,13 +621,12 @@ func newGatewayFakes() *gatewayFakes {
 
 type fakeGatewayInstallSource struct {
 	current installsource.Kind
-	mutable bool
 	setErr  error
 	sets    []installsource.Kind
 }
 
 func newFakeGatewayInstallSource() *fakeGatewayInstallSource {
-	return &fakeGatewayInstallSource{current: installsource.KindOfficial, mutable: true}
+	return &fakeGatewayInstallSource{current: installsource.KindOfficial}
 }
 
 func (f *fakeGatewayInstallSource) Current() installsource.Kind {
@@ -637,9 +636,6 @@ func (f *fakeGatewayInstallSource) Current() installsource.Kind {
 func (f *fakeGatewayInstallSource) Set(_ context.Context, kind installsource.Kind) (installsource.Kind, error) {
 	if f.setErr != nil {
 		return f.current, f.setErr
-	}
-	if !f.mutable {
-		return f.current, errors.New("正式模式不允许切换安装来源")
 	}
 	f.sets = append(f.sets, kind)
 	f.current = kind

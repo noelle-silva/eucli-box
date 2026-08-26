@@ -29,10 +29,10 @@ func (s *system) toolProgramRoot(toolID string) string {
 	return filepath.Join(s.config.ProgramRoot, toolID)
 }
 
-// toolPackageSource 从候选构造取包来源；开发候选走开发来源打包事实。
+// toolPackageSource 从候选构造取包来源；本地候选走本地货架打包事实。
 func (s *system) toolPackageSource(candidate *releasecheck.ReleaseCandidate) (release.ArtifactPackageSource, error) {
-	if candidate != nil && candidate.Development {
-		return releasecheck.DevelopmentSource(candidate)
+	if candidate != nil && candidate.Local {
+		return releasecheck.LocalSource(candidate)
 	}
 	return candidate.PackageSource()
 }

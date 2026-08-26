@@ -138,8 +138,8 @@ func validateIndexVersions(artifact IndexArtifact) error {
 		version.Version = strings.TrimSpace(version.Version)
 		version.SourceRevision = strings.TrimSpace(version.SourceRevision)
 		version.DataVersion = strings.TrimSpace(version.DataVersion)
-		if err := release.ValidateVersion(version.Version); err != nil {
-			return fmt.Errorf("版本 %q 无效：%w", version.Version, err)
+		if err := release.ValidateFormalVersion(version.Version); err != nil {
+			return fmt.Errorf("版本 %q 必须是三段正式版本：%w", version.Version, err)
 		}
 		if _, exists := versions[version.Version]; exists {
 			return fmt.Errorf("同一发布物不能包含重复版本 %s", version.Version)

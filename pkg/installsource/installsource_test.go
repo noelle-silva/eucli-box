@@ -36,12 +36,12 @@ func (s *fakeStore) SaveInstallSource(_ context.Context, kind Kind) error {
 
 func TestParseKind(t *testing.T) {
 	cases := []struct {
-		input    string
-		want     Kind
-		wantErr  bool
+		input   string
+		want    Kind
+		wantErr bool
 	}{
 		{input: "official", want: KindOfficial},
-		{input: "development", want: KindDevelopment},
+		{input: "local", want: KindLocal},
 		{input: "  official  ", want: KindOfficial},
 		{input: "", wantErr: true},
 		{input: "internal", wantErr: true},
@@ -65,34 +65,34 @@ func TestParseKind(t *testing.T) {
 }
 
 func TestNewStateInvalidInitial(t *testing.T) {
-	if _, err := NewState(Kind("whatever"), true, nil); err == nil {
+	if _, err := NewState(Kind("whatever"), nil); err == nil {
 		t.Fatal("NewState() error = nil, want invalid initial error")
 	}
 }
 
 func TestStateSetPersistsAndUpdatesMemory(t *testing.T) {
 	store := &fakeStore{current: KindOfficial}
-	state, err := NewState(KindOfficial, true, store)
+	state, err := NewState(KindOfficial, store)
 	if err != nil {
 		t.Fatalf("NewState() error = %v", err)
 	}
-	next, err := state.Set(context.Background(), KindDevelopment)
+	next, err := state.Set(context.Background(), KindLocal)
 	if err != nil {
 		t.Fatalf("Set() error = %v", err)
 	}
-	if next != KindDevelopment {
-		t.Fatalf("Set() = %q, want %q", next, KindDevelopment)
+	if next != KindLocal {
+		t.Fatalf("Set() = %q, want %q", next, KindLocal)
 	}
-	if store.saveCall != 1 || store.saved != KindDevelopment {
-		t.Fatalf("store save = %v/%q, want 1 call of %q", store.saveCall, store.saved, KindDevelopment)
+	if store.saveCall != 1 || store.saved != KindLocal {
+		t.Fatalf("store save = %v/%q, want 1 call of %q", store.saveCall, store.saved, KindLocal)
 	}
-	if state.Current() != KindDevelopment {
-		t.Fatalf("Current() = %q, want %q", state.Current(), KindDevelopment)
+	if state.Current() != KindLocal {
+		t.Fatalf("Current() = %q, want %q", state.Current(), KindLocal)
 	}
 }
 
 func TestStateSetInvalidKind(t *testing.T) {
-	state, err := NewState(KindOfficial, true, &fakeStore{})
+	state, err := NewState(KindOfficial, &fakeStore{})
 	if err != nil {
 		t.Fatalf("NewState() error = %v", err)
 	}
@@ -104,28 +104,13 @@ func TestStateSetInvalidKind(t *testing.T) {
 	}
 }
 
-func TestStateSetImmutableRejects(t *testing.T) {
-	store := &fakeStore{}
-	state, err := NewState(KindOfficial, false, store)
-	if err != nil {
-		t.Fatalf("NewState() error = %v", err)
-	}
-	_, err = state.Set(context.Background(), KindDevelopment)
-	if err == nil {
-		t.Fatal("Set() error = nil, want immutable rejection")
-	}
-	if store.saveCall != 0 {
-		t.Fatalf("store save called %d times, want 0", store.saveCall)
-	}
-}
-
 func TestStateSetPersistFailureKeepsCurrent(t *testing.T) {
 	store := &fakeStore{saveErr: errors.New("disk full")}
-	state, err := NewState(KindOfficial, true, store)
+	state, err := NewState(KindOfficial, store)
 	if err != nil {
 		t.Fatalf("NewState() error = %v", err)
 	}
-	if _, err := state.Set(context.Background(), KindDevelopment); err == nil {
+	if _, err := state.Set(context.Background(), KindLocal); err == nil {
 		t.Fatal("Set() error = nil, want persist failure")
 	}
 	if state.Current() != KindOfficial {
@@ -134,10 +119,10 @@ func TestStateSetPersistFailureKeepsCurrent(t *testing.T) {
 }
 
 type stubCandidate struct {
-	kind     string
-	called   int
+	kind      string
+	called    int
 	candidate *releasecheck.ReleaseCandidate
-	err      error
+	err       error
 }
 
 func (s *stubCandidate) LatestCandidate(context.Context, types.ReleaseArtifactIdentity) (*releasecheck.ReleaseCandidate, error) {
@@ -150,9 +135,9 @@ func (s *stubCandidate) LatestCandidate(context.Context, types.ReleaseArtifactId
 
 func TestCandidateSelectorForwardsByCurrentState(t *testing.T) {
 	official := &stubCandidate{kind: "official"}
-	dev := &stubCandidate{kind: "dev"}
+	local := &stubCandidate{kind: "local"}
 	current := KindOfficial
-	selector, err := NewCandidateSelector(func() Kind { return current }, official, dev)
+	selector, err := NewCandidateSelector(func() Kind { return current }, official, local)
 	if err != nil {
 		t.Fatalf("NewCandidateSelector() error = %v", err)
 	}
@@ -160,27 +145,27 @@ func TestCandidateSelectorForwardsByCurrentState(t *testing.T) {
 	if _, err := selector.LatestCandidate(context.Background(), identity); err != nil {
 		t.Fatalf("official LatestCandidate() error = %v", err)
 	}
-	if official.called != 1 || dev.called != 0 {
-		t.Fatalf("called official=%d dev=%d, want 1/0", official.called, dev.called)
+	if official.called != 1 || local.called != 0 {
+		t.Fatalf("called official=%d local=%d, want 1/0", official.called, local.called)
 	}
-	current = KindDevelopment
+	current = KindLocal
 	if _, err := selector.LatestCandidate(context.Background(), identity); err != nil {
-		t.Fatalf("development LatestCandidate() error = %v", err)
+		t.Fatalf("local LatestCandidate() error = %v", err)
 	}
-	if official.called != 1 || dev.called != 1 {
-		t.Fatalf("called official=%d dev=%d, want 1/1", official.called, dev.called)
+	if official.called != 1 || local.called != 1 {
+		t.Fatalf("called official=%d local=%d, want 1/1", official.called, local.called)
 	}
 }
 
-func TestCandidateSelectorDevelopmentMissingReaderFailsFast(t *testing.T) {
+func TestCandidateSelectorLocalMissingReaderFailsFast(t *testing.T) {
 	official := &stubCandidate{}
-	selector, err := NewCandidateSelector(func() Kind { return KindDevelopment }, official, nil)
+	selector, err := NewCandidateSelector(func() Kind { return KindLocal }, official, nil)
 	if err != nil {
 		t.Fatalf("NewCandidateSelector() error = %v", err)
 	}
 	_, err = selector.LatestCandidate(context.Background(), types.ReleaseArtifactIdentity{Kind: "plugin", ID: "weather"})
 	if err == nil {
-		t.Fatal("LatestCandidate() error = nil, want development missing error")
+		t.Fatal("LatestCandidate() error = nil, want local missing error")
 	}
 	if official.called != 0 {
 		t.Fatalf("official reader called %d times, want 0 (no fallback)", official.called)
@@ -210,7 +195,7 @@ func TestNewCandidateSelectorValidation(t *testing.T) {
 }
 
 func TestStateView(t *testing.T) {
-	state, err := NewState(KindOfficial, false, nil)
+	state, err := NewState(KindOfficial, nil)
 	if err != nil {
 		t.Fatalf("NewState() error = %v", err)
 	}

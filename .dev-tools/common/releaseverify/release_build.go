@@ -119,13 +119,12 @@ func buildArtifactsConcurrently(ctx context.Context, root string, artifacts []ty
 			fmt.Printf("[验证] 开始：制作并验收 %s（第 %d/%d 个）\n", target, index+1, len(artifacts))
 			evidenceRoot := filepath.Join(paths.evidence, "artifacts", strings.ReplaceAll(target, ":", "-"))
 			result, buildErr := releaseartifact.Build(ctx, releaseartifact.BuildOptions{
-				Root:             root,
-				Target:           target,
-				WorkRoot:         filepath.Join(paths.workspace, "build"),
-				OutputRoot:       filepath.Join(paths.workspace, "output"),
-				EvidenceRoot:     evidenceRoot,
-				VerificationOnly: true,
-				AssetRoot:        workspace.VerificationAssetRoot(root),
+				Root:         root,
+				Target:       target,
+				WorkRoot:     filepath.Join(paths.workspace, "build"),
+				OutputRoot:   filepath.Join(paths.workspace, "output"),
+				EvidenceRoot: evidenceRoot,
+				AssetRoot:    workspace.VerificationAssetRoot(root),
 			})
 			elapsed := time.Since(started)
 			if buildErr != nil {
@@ -133,9 +132,9 @@ func buildArtifactsConcurrently(ctx context.Context, root string, artifacts []ty
 				fmt.Printf("[验证] 失败：制作并验收 %s（%s，%s）\n", target, buildErr.Error(), formatElapsed(elapsed))
 				return
 			}
-			if result.Manifest.Artifact != identity || !result.Manifest.VerificationOnly || result.Manifest.Platform != "windows-x64" {
-				results[index] = artifactResult{target: target, err: fmt.Errorf("成品身份、平台或验证标记不一致"), elapsed: elapsed}
-				fmt.Printf("[验证] 失败：制作并验收 %s（身份、平台或验证标记不一致，%s）\n", target, formatElapsed(elapsed))
+			if result.Manifest.Artifact != identity || result.Manifest.Platform != "windows-x64" {
+				results[index] = artifactResult{target: target, err: fmt.Errorf("成品身份或平台不一致"), elapsed: elapsed}
+				fmt.Printf("[验证] 失败：制作并验收 %s（身份或平台不一致，%s）\n", target, formatElapsed(elapsed))
 				return
 			}
 			results[index] = artifactResult{target: target, ok: true, manifest: result.Manifest, elapsed: elapsed}

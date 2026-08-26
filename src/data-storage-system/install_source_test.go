@@ -14,15 +14,15 @@ func TestInstallSourceRoundTrip(t *testing.T) {
 	if _, err := system.LoadInstallSource(context.Background()); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("LoadInstallSource() error = %v, want ErrNotExist", err)
 	}
-	if err := system.SaveInstallSource(context.Background(), installsource.KindDevelopment); err != nil {
+	if err := system.SaveInstallSource(context.Background(), installsource.KindLocal); err != nil {
 		t.Fatalf("SaveInstallSource() error = %v", err)
 	}
 	loaded, err := system.LoadInstallSource(context.Background())
 	if err != nil {
 		t.Fatalf("LoadInstallSource() error = %v", err)
 	}
-	if loaded != installsource.KindDevelopment {
-		t.Fatalf("LoadInstallSource() = %q, want %q", loaded, installsource.KindDevelopment)
+	if loaded != installsource.KindLocal {
+		t.Fatalf("LoadInstallSource() = %q, want %q", loaded, installsource.KindLocal)
 	}
 	if len(system.paths.installSourceFile()) == 0 {
 		t.Fatalf("install source file path is empty")

@@ -105,8 +105,7 @@ func newToolOperationFixture(t *testing.T) *toolOperationFixture {
 }
 
 // makeToolCandidate 构造工具成品并注册为官方候选；binary 为空字符串时写入损坏二进制。
-// verificationOnly 控制包内身份资料是否带开发/验证标记（开发候选使用）。
-func (f *toolOperationFixture) makeToolCandidate(id string, version string, brokenBinary bool, verificationOnly bool) {
+func (f *toolOperationFixture) makeToolCandidate(id string, version string, brokenBinary bool) {
 	f.t.Helper()
 	exe := buildTool(f.t, probeToolSource)
 	binaryPayload, err := os.ReadFile(exe)
@@ -156,7 +155,6 @@ func (f *toolOperationFixture) makeToolCandidate(id string, version string, brok
 		OfficialSource:   "https://github.com/noelle-silva/eucli-box-ai-tools",
 		Compatibility:    &types.EucliBoxCompatibility{MinimumVersion: "0.1.0", MaximumVersionExclusive: "0.2.0"},
 		Source:           types.ReleaseSourceRecord{Repository: "https://github.com/noelle-silva/eucli-box", Commit: "0123456789abcdef0123456789abcdef01234567", Recorded: true},
-		VerificationOnly: verificationOnly,
 	}
 	productPayload, err := json.MarshalIndent(product, "", "  ")
 	if err != nil {
@@ -190,13 +188,13 @@ func (f *toolOperationFixture) servePackage(w http.ResponseWriter, r *http.Reque
 	}
 }
 
-// TestInstallToolFromDevelopmentSource 验证开发源候选读取器驱动的完整安装：
-// 本地成品 zip 经 AcquireAndValidatePackage（Development 放行）入程序区并激活。
-func TestInstallToolFromDevelopmentSource(t *testing.T) {
+// TestInstallToolFromLocalStore 验证本地商店候选读取器驱动的完整安装：
+// 本地货架成品 zip 经 AcquireAndValidatePackage（Local 放行）入程序区并激活。
+func TestInstallToolFromLocalStore(t *testing.T) {
 	fixture := newToolOperationFixture(t)
-	fixture.makeToolCandidate("dev-demo", "0.1.1", false, true)
-	packageRoot := filepath.Join(t.TempDir(), "dev-packages")
-	versionDir := filepath.Join(packageRoot, "tool-dev-demo", "0.1.1")
+	fixture.makeToolCandidate("dev-demo", "0.1.1", false)
+	storeRoot := filepath.Join(t.TempDir(), "local-store")
+	versionDir := filepath.Join(storeRoot, "ai-tools", "dev-demo", "0.1.1")
 	if err := os.MkdirAll(versionDir, 0o755); err != nil {
 		t.Fatalf("mkdir version dir: %v", err)
 	}
@@ -213,17 +211,16 @@ func TestInstallToolFromDevelopmentSource(t *testing.T) {
 		t.Fatalf("collect file records: %v", err)
 	}
 	manifest := types.ReleaseManifest{
-		SchemaVersion:    release.ReleaseManifestSchemaVersion,
-		Artifact:         types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "dev-demo"},
-		Version:          "0.1.1",
-		Platform:         types.ReleasePlatformWindowsX64,
-		OfficialSource:   "https://github.com/noelle-silva/eucli-box-ai-tools",
-		Compatibility:    &types.EucliBoxCompatibility{MinimumVersion: "0.1.0", MaximumVersionExclusive: "0.2.0"},
-		Source:           types.ReleaseSourceRecord{Repository: "https://github.com/noelle-silva/eucli-box", Commit: "0123456789abcdef0123456789abcdef01234567", Recorded: true},
-		VerificationOnly: true,
-		TagName:          "v0.1.1",
-		Archive:          types.ReleaseFileRecord{Name: archiveName, Size: size, SHA256: sha256},
-		Files:            fileRecords,
+		SchemaVersion:  release.ReleaseManifestSchemaVersion,
+		Artifact:       types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "dev-demo"},
+		Version:        "0.1.1",
+		Platform:       types.ReleasePlatformWindowsX64,
+		OfficialSource: "https://github.com/noelle-silva/eucli-box-ai-tools",
+		Compatibility:  &types.EucliBoxCompatibility{MinimumVersion: "0.1.0", MaximumVersionExclusive: "0.2.0"},
+		Source:         types.ReleaseSourceRecord{Repository: "https://github.com/noelle-silva/eucli-box", Commit: "0123456789abcdef0123456789abcdef01234567", Recorded: true},
+		TagName:        "v0.1.1",
+		Archive:        types.ReleaseFileRecord{Name: archiveName, Size: size, SHA256: sha256},
+		Files:          fileRecords,
 	}
 	manifestPayload, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -233,9 +230,9 @@ func TestInstallToolFromDevelopmentSource(t *testing.T) {
 		t.Fatalf("write manifest: %v", err)
 	}
 
-	reader, err := releasecheck.NewDevelopmentSourceReader("1", packageRoot)
+	reader, err := releasecheck.NewLocalSourceReader(storeRoot)
 	if err != nil {
-		t.Fatalf("NewDevelopmentSourceReader() error = %v", err)
+		t.Fatalf("NewLocalSourceReader() error = %v", err)
 	}
 	devSystem, err := NewSystem(Config{
 		BoxVersion:  "0.1.0",
@@ -337,7 +334,7 @@ func (f *toolOperationFixture) runTool(t *testing.T, toolID string, sleep bool) 
 
 func TestInstallToolCompletesAndBecomesActive(t *testing.T) {
 	fixture := newToolOperationFixture(t)
-	fixture.makeToolCandidate("demo", "0.1.0", false, false)
+	fixture.makeToolCandidate("demo", "0.1.0", false)
 	state, err := fixture.system.InstallTool(context.Background(), "demo")
 	if err != nil {
 		t.Fatalf("InstallTool() error = %v", err)
@@ -359,7 +356,7 @@ func TestInstallToolCompletesAndBecomesActive(t *testing.T) {
 
 func TestInstallToolRejectsIncompatibleCandidateBeforeDownload(t *testing.T) {
 	fixture := newToolOperationFixture(t)
-	fixture.makeToolCandidate("demo", "0.1.0", false, false)
+	fixture.makeToolCandidate("demo", "0.1.0", false)
 	compatibility := types.EucliBoxCompatibility{MinimumVersion: "0.5.0", MaximumVersionExclusive: "0.6.0"}
 	fixture.candidates.candidates["demo"].Compatibility = &compatibility
 	state, err := fixture.system.InstallTool(context.Background(), "demo")
@@ -376,11 +373,11 @@ func TestInstallToolRejectsIncompatibleCandidateBeforeDownload(t *testing.T) {
 
 func TestUpdateToolBlockedByActiveExecution(t *testing.T) {
 	fixture := newToolOperationFixture(t)
-	fixture.makeToolCandidate("demo", "0.1.0", false, false)
+	fixture.makeToolCandidate("demo", "0.1.0", false)
 	if _, err := fixture.system.InstallTool(context.Background(), "demo"); err != nil {
 		t.Fatalf("InstallTool() error = %v", err)
 	}
-	fixture.makeToolCandidate("demo", "0.1.1", false, false)
+	fixture.makeToolCandidate("demo", "0.1.1", false)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -435,11 +432,11 @@ func TestActivityBeginUpdateReportsOccupancyImmediately(t *testing.T) {
 
 func TestUpdateToolRestoresPreviousVersionOnProbeFailure(t *testing.T) {
 	fixture := newToolOperationFixture(t)
-	fixture.makeToolCandidate("demo", "0.1.0", false, false)
+	fixture.makeToolCandidate("demo", "0.1.0", false)
 	if _, err := fixture.system.InstallTool(context.Background(), "demo"); err != nil {
 		t.Fatalf("InstallTool() error = %v", err)
 	}
-	fixture.makeToolCandidate("demo", "0.1.1", true, false)
+	fixture.makeToolCandidate("demo", "0.1.1", true)
 	state, err := fixture.system.UpdateTool(context.Background(), "demo")
 	if err != nil {
 		t.Fatalf("UpdateTool() error = %v", err)
@@ -461,7 +458,7 @@ func TestUpdateToolRestoresPreviousVersionOnProbeFailure(t *testing.T) {
 
 func TestToolInstallStateRecoversInterruptedSwitch(t *testing.T) {
 	fixture := newToolOperationFixture(t)
-	fixture.makeToolCandidate("demo", "0.1.0", false, false)
+	fixture.makeToolCandidate("demo", "0.1.0", false)
 	if _, err := fixture.system.InstallTool(context.Background(), "demo"); err != nil {
 		t.Fatalf("InstallTool() error = %v", err)
 	}
@@ -488,7 +485,7 @@ func TestToolInstallStateRecoversInterruptedSwitch(t *testing.T) {
 
 func TestToolActivityStateReportsExecution(t *testing.T) {
 	fixture := newToolOperationFixture(t)
-	fixture.makeToolCandidate("demo", "0.1.0", false, false)
+	fixture.makeToolCandidate("demo", "0.1.0", false)
 	if _, err := fixture.system.InstallTool(context.Background(), "demo"); err != nil {
 		t.Fatalf("InstallTool() error = %v", err)
 	}

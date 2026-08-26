@@ -157,6 +157,8 @@ export function SystemPluginSettingsPanel(props: SystemPluginSettingsPanelProps)
         actionBusy={systemPlugins?.installLoading === true || releaseCheckBusy === true}
         onAction={handleStoreAction}
         onRefresh={() => onRefreshReleaseChecks?.('plugin')}
+        getInstallSource={() => controller.actions.getInstallSource?.()}
+        setInstallSource={(kind) => controller.actions.setInstallSource?.(kind)}
       />
     </SettingsSurface>
   )

@@ -21,13 +21,15 @@ import (
 )
 
 type BuildOptions struct {
-	Root             string
-	Target           string
-	WorkRoot         string
-	OutputRoot       string
-	EvidenceRoot     string
-	VerificationOnly bool
-	AssetRoot        string
+	Root           string
+	Target         string
+	WorkRoot       string
+	OutputRoot     string
+	EvidenceRoot   string
+	AssetRoot      string
+	// VersionOverride 非空表示开发构建：按给定版本号（四段开发版本或三段版本）
+	// 制作成品，允许源码未完全记录，同版本再次构建直接覆盖旧成品。
+	VersionOverride string
 }
 
 type BuildResult struct {
@@ -65,7 +67,18 @@ func Build(ctx context.Context, options BuildOptions) (BuildResult, error) {
 	if artifact.Kind == releaseops.KindClient {
 		return BuildResult{}, fmt.Errorf("客户端不属于任务 026 的正式成品")
 	}
-	if err := releaseops.Check(artifact); err != nil {
+	devBuild := strings.TrimSpace(options.VersionOverride) != ""
+	artifactVersion := strings.TrimSpace(options.VersionOverride)
+	if artifactVersion == "" {
+		artifactVersion = artifact.Version
+	} else if err := release.ValidateVersion(artifactVersion); err != nil {
+		return BuildResult{}, fmt.Errorf("开发构建版本无效：%w", err)
+	}
+	if devBuild {
+		if err := releaseops.CheckDevelopment(artifact); err != nil {
+			return BuildResult{}, fmt.Errorf("发布物开发构建检查失败：%w", err)
+		}
+	} else if err := releaseops.Check(artifact); err != nil {
 		return BuildResult{}, fmt.Errorf("发布物完整检查失败：%w", err)
 	}
 	officialSource, err := catalog.SourceFor(identity.Kind)
@@ -76,15 +89,15 @@ func Build(ctx context.Context, options BuildOptions) (BuildResult, error) {
 	if err != nil {
 		return BuildResult{}, err
 	}
-	sourceState, err := readSourceState(ctx, root, sourceRepository.Repository, options.VerificationOnly)
+	sourceState, err := readSourceState(ctx, root, sourceRepository.Repository, devBuild)
 	if err != nil {
 		return BuildResult{}, err
 	}
-	tagName, err := releasecatalog.TagName(identity, artifact.Version)
+	tagName, err := releasecatalog.TagName(identity, artifactVersion)
 	if err != nil {
 		return BuildResult{}, err
 	}
-	archiveName, err := releasecatalog.ArchiveName(identity, artifact.Version)
+	archiveName, err := releasecatalog.ArchiveName(identity, artifactVersion)
 	if err != nil {
 		return BuildResult{}, err
 	}
@@ -139,16 +152,15 @@ func Build(ctx context.Context, options BuildOptions) (BuildResult, error) {
 		return result, err
 	}
 	product := types.ReleaseProductRecord{
-		SchemaVersion:    release.ReleaseManifestSchemaVersion,
-		Artifact:         identity,
-		Version:          artifact.Version,
-		Platform:         types.ReleasePlatformWindowsX64,
-		OfficialSource:   officialSource.Repository,
-		Compatibility:    cloneCompatibility(artifact.Compatibility),
-		Source:           sourceState.Record,
-		DataVersion:      artifact.DataVersion,
-		ExternalAssets:   externalAssets,
-		VerificationOnly: options.VerificationOnly,
+		SchemaVersion:  release.ReleaseManifestSchemaVersion,
+		Artifact:       identity,
+		Version:        artifactVersion,
+		Platform:       types.ReleasePlatformWindowsX64,
+		OfficialSource: officialSource.Repository,
+		Compatibility:  cloneCompatibility(artifact.Compatibility),
+		Source:         sourceState.Record,
+		DataVersion:    artifact.DataVersion,
+		ExternalAssets: externalAssets,
 	}
 	if err := release.ValidateReleaseProductRecord(product); err != nil {
 		return result, err
@@ -178,19 +190,18 @@ func Build(ctx context.Context, options BuildOptions) (BuildResult, error) {
 		return result, err
 	}
 	manifest := types.ReleaseManifest{
-		SchemaVersion:    release.ReleaseManifestSchemaVersion,
-		Artifact:         identity,
-		Version:          artifact.Version,
-		Platform:         types.ReleasePlatformWindowsX64,
-		TagName:          tagName,
-		OfficialSource:   officialSource.Repository,
-		Compatibility:    cloneCompatibility(artifact.Compatibility),
-		Source:           sourceState.Record,
-		DataVersion:      artifact.DataVersion,
-		ExternalAssets:   externalAssets,
-		VerificationOnly: options.VerificationOnly,
-		Archive:          archiveRecord,
-		Files:            fileRecords,
+		SchemaVersion:  release.ReleaseManifestSchemaVersion,
+		Artifact:       identity,
+		Version:        artifactVersion,
+		Platform:       types.ReleasePlatformWindowsX64,
+		TagName:        tagName,
+		OfficialSource: officialSource.Repository,
+		Compatibility:  cloneCompatibility(artifact.Compatibility),
+		Source:         sourceState.Record,
+		DataVersion:    artifact.DataVersion,
+		ExternalAssets: externalAssets,
+		Archive:        archiveRecord,
+		Files:          fileRecords,
 	}
 	if err := release.ValidateReleaseManifest(manifest); err != nil {
 		return result, err
@@ -200,7 +211,7 @@ func Build(ctx context.Context, options BuildOptions) (BuildResult, error) {
 	if err := writeJSON(manifestPath, manifest); err != nil {
 		return result, err
 	}
-	notes, err := releaseNotes(artifact.ChangelogPath, artifact.Version)
+	notes, err := releaseNotes(artifact.ChangelogPath, artifactVersion, devBuild)
 	if err != nil {
 		return result, err
 	}
@@ -220,9 +231,17 @@ func Build(ctx context.Context, options BuildOptions) (BuildResult, error) {
 			return result, fmt.Errorf("保存成品验收证据失败：%w", err)
 		}
 	}
-	outputDir := filepath.Join(outputRoot, outputDirectoryName(identity), artifact.Version)
-	if _, err := os.Stat(outputDir); err == nil {
-		return result, fmt.Errorf("本地成品目录已经存在，不能覆盖：%s", outputDir)
+	outputDir := filepath.Join(outputRoot, outputDirectoryName(identity), artifactVersion)
+	if info, err := os.Stat(outputDir); err == nil {
+		if !devBuild {
+			return result, fmt.Errorf("本地成品目录已经存在，不能覆盖：%s", outputDir)
+		}
+		if !info.IsDir() {
+			return result, fmt.Errorf("本地成品路径不是目录：%s", outputDir)
+		}
+		if err := os.RemoveAll(outputDir); err != nil {
+			return result, fmt.Errorf("覆盖旧开发成品失败：%w", err)
+		}
 	} else if !os.IsNotExist(err) {
 		return result, err
 	}
@@ -370,7 +389,7 @@ func resolveRoots(root string, options BuildOptions) (string, string, error) {
 	return workRoot, outputRoot, nil
 }
 
-func releaseNotes(path string, version string) (string, error) {
+func releaseNotes(path string, version string, allowMissing bool) (string, error) {
 	payload, err := os.ReadFile(path)
 	if err != nil {
 		return "", fmt.Errorf("读取更新说明失败：%w", err)
@@ -384,6 +403,9 @@ func releaseNotes(path string, version string) (string, error) {
 		}
 	}
 	if start < 0 {
+		if allowMissing {
+			return fmt.Sprintf("开发构建 %s：无独立发行说明。\n", version), nil
+		}
 		return "", fmt.Errorf("更新记录缺少版本 %s", version)
 	}
 	end := len(lines)

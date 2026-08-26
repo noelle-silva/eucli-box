@@ -3,6 +3,7 @@ package releasechecksystem
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -201,12 +202,57 @@ func findKindResult(t *testing.T, snapshot types.ReleaseCheckSnapshot, kind stri
 	return types.ReleaseCheckResult{}
 }
 
-func TestDevelopmentModeDoesNotRunOfficialCheck(t *testing.T) {
+type fakeLocalShelf struct {
+	items []releasecheck.LocalShelfItem
+	err   error
+}
+
+func (f *fakeLocalShelf) LatestCandidate(ctx context.Context, identity types.ReleaseArtifactIdentity) (*releasecheck.ReleaseCandidate, error) {
+	for _, item := range f.items {
+		if item.Artifact == identity {
+			return item.Candidate, nil
+		}
+	}
+	return nil, fmt.Errorf("货架没有 %s", identity.ID)
+}
+
+func (f *fakeLocalShelf) List(context.Context) ([]releasecheck.LocalShelfItem, error) {
+	return f.items, f.err
+}
+
+func localToolCandidate(version string) *releasecheck.ReleaseCandidate {
+	return &releasecheck.ReleaseCandidate{
+		Artifact:         types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "context7"},
+		Version:          version,
+		SourceRevision:   "0123456789abcdef0123456789abcdef01234567",
+		SourceRepository: "https://github.com/noelle-silva/eucli-box",
+		Compatibility:    &types.EucliBoxCompatibility{MinimumVersion: "0.1.0", MaximumVersionExclusive: "0.2.0"},
+		OfficialSource:   "https://github.com/noelle-silva/eucli-box-ai-tools",
+		Local:            true,
+	}
+}
+
+func localPluginCandidate(version string) *releasecheck.ReleaseCandidate {
+	return &releasecheck.ReleaseCandidate{
+		Artifact:         types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: "time-plugin"},
+		Version:          version,
+		SourceRevision:   "0123456789abcdef0123456789abcdef01234567",
+		SourceRepository: "https://github.com/noelle-silva/eucli-box",
+		Compatibility:    &types.EucliBoxCompatibility{MinimumVersion: "0.1.0", MaximumVersionExclusive: "0.2.0"},
+		OfficialSource:   "https://github.com/noelle-silva/eucli-box-system-plugins",
+		Local:            true,
+	}
+}
+
+func TestLocalModeDoesNotRunOfficialCheck(t *testing.T) {
 	runner := &fakeRunner{run: func(installed []releasecheck.InstalledArtifact) types.ReleaseCheckSnapshot {
-		t.Fatal("official checker must not run in development mode")
+		t.Fatal("official checker must not run in local mode")
 		return types.ReleaseCheckSnapshot{}
 	}}
-	system, err := NewSystemWithChecker(Config{Now: time.Now, CurrentSource: func() installsource.Kind { return installsource.KindDevelopment }}, runner, fakeTools{}, fakePlugins{}, "0.1.0")
+	system, err := NewSystemWithChecker(Config{Now: time.Now, CurrentSource: func() installsource.Kind { return installsource.KindLocal }, LocalSource: &fakeLocalShelf{items: []releasecheck.LocalShelfItem{
+		{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "context7"}, Candidate: localToolCandidate("0.1.0")},
+		{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: "time-plugin"}, Candidate: localPluginCandidate("0.1.0")},
+	}}}, runner, fakeTools{}, fakePlugins{}, "0.1.0")
 	if err != nil {
 		t.Fatalf("NewSystemWithChecker error = %v", err)
 	}
@@ -214,23 +260,19 @@ func TestDevelopmentModeDoesNotRunOfficialCheck(t *testing.T) {
 	if snapshot.Status != types.ReleaseCheckStatusCompleted {
 		t.Fatalf("snapshot = %#v", snapshot)
 	}
-	if snapshot.SourceKind != string(installsource.KindDevelopment) {
-		t.Fatalf("SourceKind = %q, want %q", snapshot.SourceKind, installsource.KindDevelopment)
+	if snapshot.SourceKind != string(installsource.KindLocal) {
+		t.Fatalf("SourceKind = %q, want %q", snapshot.SourceKind, installsource.KindLocal)
 	}
-	// 开发快照覆盖全部正式白名单发布物（box + 已安装 tool/plugin），且均无官方更新提示。
-	if len(snapshot.Results) == 0 {
-		t.Fatalf("results = %#v, want box result at least", snapshot.Results)
-	}
-	box := findKindResult(t, snapshot, types.ReleaseArtifactKindBox, types.ReleaseArtifactKindBox)
-	if box.CurrentVersion != "0.1.0" || !box.Installed || box.UpdateAvailable {
-		t.Fatalf("box result = %#v", box)
+	// 本地快照只描述本地商店货架事实；本体候选不上架，不出现 box 结果。
+	if len(snapshot.Results) != 2 {
+		t.Fatalf("results = %#v, want context7/time-plugin only", snapshot.Results)
 	}
 	tool := findKindResult(t, snapshot, "tool", "context7")
-	if tool.CurrentVersion != "0.1.0" || !tool.Installed || tool.UpdateAvailable || tool.LatestVersion != "" || tool.Status != types.ReleaseCheckStatusCompleted {
+	if tool.CurrentVersion != "0.1.0" || !tool.Installed || tool.UpdateAvailable || tool.LatestVersion != "0.1.0" {
 		t.Fatalf("tool result = %#v", tool)
 	}
 	plugin := findKindResult(t, snapshot, "plugin", "time-plugin")
-	if plugin.CurrentVersion != "0.1.0" || !plugin.Installed || plugin.UpdateAvailable {
+	if plugin.CurrentVersion != "0.1.0" || !plugin.Installed || plugin.UpdateAvailable || plugin.LatestVersion != "0.1.0" {
 		t.Fatalf("plugin result = %#v", plugin)
 	}
 	if runner.calls() != 0 {
@@ -238,28 +280,40 @@ func TestDevelopmentModeDoesNotRunOfficialCheck(t *testing.T) {
 	}
 }
 
-func TestDevelopmentModePartialRefreshReplacesWholeSnapshot(t *testing.T) {
+func TestLocalModeListsShelfCandidates(t *testing.T) {
 	runner := &fakeRunner{run: func(installed []releasecheck.InstalledArtifact) types.ReleaseCheckSnapshot {
 		return types.ReleaseCheckSnapshot{Status: types.ReleaseCheckStatusCompleted, Results: []types.ReleaseCheckResult{
 			{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "context7"}, Status: types.ReleaseCheckStatusCompleted, LatestVersion: "9.9.9"},
 		}}
 	}}
 	current := installsource.KindOfficial
-	system, err := NewSystemWithChecker(Config{Now: time.Now, CurrentSource: func() installsource.Kind { return current }}, runner, fakeTools{}, fakePlugins{}, "0.1.0")
+	checked, err := NewSystemWithChecker(Config{Now: time.Now, CurrentSource: func() installsource.Kind { return current }, LocalSource: &fakeLocalShelf{items: []releasecheck.LocalShelfItem{
+		{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "context7"}, Candidate: localToolCandidate("0.1.0")},
+	}}}, runner, fakeTools{}, fakePlugins{}, "0.1.0")
 	if err != nil {
 		t.Fatalf("NewSystemWithChecker error = %v", err)
 	}
-	// 官方态刷新一次（此时才会调用官方检查器），随后切回开发态并分类刷新。
-	_ = system.Refresh(context.Background(), "")
-	current = installsource.KindDevelopment
-	snapshot := system.Refresh(context.Background(), types.ReleaseArtifactKindTool)
-	if snapshot.SourceKind != string(installsource.KindDevelopment) {
-		t.Fatalf("SourceKind = %q, want development", snapshot.SourceKind)
+	current = installsource.KindLocal
+	snapshot := checked.Refresh(context.Background(), types.ReleaseArtifactKindTool)
+	if snapshot.SourceKind != string(installsource.KindLocal) {
+		t.Fatalf("SourceKind = %q, want local", snapshot.SourceKind)
 	}
-	for _, result := range snapshot.Results {
-		if result.UpdateAvailable {
-			t.Fatalf("result %s has official update hint: %#v", result.Artifact.ID, result)
-		}
+	if len(snapshot.Results) != 1 || snapshot.Results[0].LatestVersion != "0.1.0" {
+		t.Fatalf("snapshot = %#v", snapshot)
+	}
+}
+
+func TestLocalModeShelfFailureMarksFailed(t *testing.T) {
+	runner := &fakeRunner{run: func(installed []releasecheck.InstalledArtifact) types.ReleaseCheckSnapshot {
+		return types.ReleaseCheckSnapshot{}
+	}}
+	system, err := NewSystemWithChecker(Config{Now: time.Now, CurrentSource: func() installsource.Kind { return installsource.KindLocal }, LocalSource: &fakeLocalShelf{err: errors.New("shelf unreadable")}}, runner, fakeTools{}, fakePlugins{}, "0.1.0")
+	if err != nil {
+		t.Fatalf("NewSystemWithChecker error = %v", err)
+	}
+	snapshot := system.Refresh(context.Background(), "")
+	if snapshot.Status != types.ReleaseCheckStatusFailed || len(snapshot.Results) != 0 {
+		t.Fatalf("snapshot = %#v", snapshot)
 	}
 }
 
@@ -271,23 +325,5 @@ func TestOfficialModeSnapshotIsMarkedOfficial(t *testing.T) {
 	snapshot := system.Refresh(context.Background(), "")
 	if snapshot.SourceKind != string(installsource.KindOfficial) {
 		t.Fatalf("SourceKind = %q, want %q", snapshot.SourceKind, installsource.KindOfficial)
-	}
-}
-
-func TestDevelopmentModeUsesDeveloperEnabledToolsOnly(t *testing.T) {
-	runner := &fakeRunner{run: func(installed []releasecheck.InstalledArtifact) types.ReleaseCheckSnapshot {
-		return types.ReleaseCheckSnapshot{}
-	}}
-	system, err := NewSystemWithChecker(Config{Now: time.Now, CurrentSource: func() installsource.Kind { return installsource.KindDevelopment }}, runner, fakeTools{}, fakePlugins{}, "0.1.0")
-	if err != nil {
-		t.Fatalf("NewSystemWithChecker error = %v", err)
-	}
-	snapshot := system.Refresh(context.Background(), "")
-	if snapshot.Status != types.ReleaseCheckStatusCompleted {
-		t.Fatalf("snapshot = %#v", snapshot)
-	}
-	// 开发状态下的结果应与安装事实一致：已安装 tool/plugin 有 CurrentVersion，未安装的为未安装且无更新提示。
-	if len(snapshot.Results) < 3 {
-		t.Fatalf("results = %#v, want box/tool/plugin records", snapshot.Results)
 	}
 }

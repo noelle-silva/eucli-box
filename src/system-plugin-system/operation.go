@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"eucli-box/pkg/release"
+	"eucli-box/pkg/releasecheck"
 	"eucli-box/pkg/types"
 	"eucli-box/pkg/utils"
 )
@@ -27,6 +28,14 @@ func cleanPluginID(pluginID string) (string, error) {
 
 func (s *system) pluginProgramRoot(pluginID string) string {
 	return filepath.Join(s.sourceDir, pluginID)
+}
+
+// pluginPackageSource 从候选构造取包来源；本地候选走本地货架打包事实。
+func (s *system) pluginPackageSource(candidate *releasecheck.ReleaseCandidate) (release.ArtifactPackageSource, error) {
+	if candidate != nil && candidate.Local {
+		return releasecheck.LocalSource(candidate)
+	}
+	return candidate.PackageSource()
 }
 
 func (s *system) pluginOperationFile(pluginID string) string {
@@ -122,7 +131,7 @@ func (s *system) runPluginOperation(ctx context.Context, pluginID string, action
 	if candidate.Artifact != identity {
 		return s.operationState(identity, currentVersion, "", types.ArtifactStatusFailed, types.ArtifactPhaseCandidate, types.ArtifactErrorCandidateMismatch, "候选身份与目标插件不一致")
 	}
-	source, err := candidate.PackageSource()
+	source, err := s.pluginPackageSource(candidate)
 	if err != nil {
 		return s.operationState(identity, currentVersion, "", types.ArtifactStatusFailed, types.ArtifactPhaseCandidate, types.ArtifactErrorCandidateMismatch, "候选取包来源无效："+err.Error())
 	}

@@ -67,13 +67,12 @@ func runPublish(ctx context.Context, args []string) error {
 		}
 	}()
 	buildResult, err := releaseartifact.Build(ctx, releaseartifact.BuildOptions{
-		Root:             root,
-		Target:           *target,
-		WorkRoot:         filepath.Join(runRoot, "build"),
-		OutputRoot:       filepath.Join(runRoot, "output"),
-		EvidenceRoot:     filepath.Join(runRoot, "evidence"),
-		VerificationOnly: false,
-		AssetRoot:        workspace.AssetRoot(root),
+		Root:         root,
+		Target:       *target,
+		WorkRoot:     filepath.Join(runRoot, "build"),
+		OutputRoot:   filepath.Join(runRoot, "output"),
+		EvidenceRoot: filepath.Join(runRoot, "evidence"),
+		AssetRoot:    workspace.AssetRoot(root),
 	})
 	if err != nil {
 		return fmt.Errorf("正式发布制作失败，现场保留在 %s：%w", runRoot, err)

@@ -13,7 +13,7 @@ import (
 	"eucli-box/pkg/types"
 )
 
-// ArtifactPackageSource 是已经核对过的官方候选的可下载事实；
+// ArtifactPackageSource 是已经核对过的候选的可下载事实；
 // 转换只能由 releasecheck 一侧从候选完成。它只携带压缩包事实，
 // 不携带任何 Release 附属清单信息。
 type ArtifactPackageSource struct {
@@ -22,9 +22,9 @@ type ArtifactPackageSource struct {
 	ArchiveURL string
 	SizeBytes  int64
 	SHA256     string
-	// Development 标记该来源来自显式开发来源（本地成品），
-	// 校验时放行仅供验证的开发标记，但其余核对保持完整。
-	Development bool
+	// Local 标记来源来自本地商店货架（本地源），取货使用本地文件复制，
+	// 其余核对保持完整。
+	Local bool
 }
 
 // AcquirePackageOptions 固定一次用户动作的取包范围。
@@ -56,9 +56,9 @@ func AcquireAndValidatePackage(ctx context.Context, options AcquirePackageOption
 	}
 
 	archiveTarget := filepath.Join(options.DownloadDir, ArchiveFileName(options.Source.Artifact, options.Source.Product.Version))
-	if options.Source.Development {
+	if options.Source.Local {
 		if err := CopyPlainFile(ctx, options.Source.ArchiveURL, archiveTarget); err != nil {
-			return ValidatedPackage{}, fmt.Errorf("复制开发压缩包失败：%w", err)
+			return ValidatedPackage{}, fmt.Errorf("复制本地压缩包失败：%w", err)
 		}
 	} else if _, err := DownloadFile(ctx, DownloadFileOptions{
 		Client:         options.Client,
@@ -95,11 +95,6 @@ func ValidateArtifactPackageSource(source ArtifactPackageSource) error {
 	}
 	if err := ValidateReleaseProductRecord(source.Product); err != nil {
 		return err
-	}
-	if source.Product.VerificationOnly || !source.Product.Source.Recorded {
-		if !source.Development {
-			return fmt.Errorf("候选使用了仅供验证或未记录来源的成品")
-		}
 	}
 	if strings.TrimSpace(source.ArchiveURL) == "" {
 		return fmt.Errorf("候选压缩包下载地址不能为空")

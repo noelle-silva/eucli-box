@@ -165,8 +165,11 @@ func (p *Publisher) prepareInput(input PublishInput) (preparedInput, error) {
 	if err != nil {
 		return preparedInput{}, err
 	}
-	if manifest.VerificationOnly || !manifest.Source.Recorded {
-		return preparedInput{}, fmt.Errorf("仅供验证或未进入源码记录的成品不能正式发布")
+	if err := release.ValidateFormalVersion(manifest.Version); err != nil {
+		return preparedInput{}, fmt.Errorf("仅允许发布三段式正式版本：%w", err)
+	}
+	if !manifest.Source.Recorded {
+		return preparedInput{}, fmt.Errorf("未进入源码记录的成品不能正式发布")
 	}
 	if !p.catalog.Contains(manifest.Artifact) {
 		return preparedInput{}, fmt.Errorf("发布物不在正式白名单中")

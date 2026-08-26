@@ -89,16 +89,15 @@ func Verify(ctx context.Context, options VerifyOptions) (VerifyResult, error) {
 		return VerifyResult{}, fmt.Errorf("压缩包资料缺失")
 	}
 	product := types.ReleaseProductRecord{
-		SchemaVersion:    manifest.SchemaVersion,
-		Artifact:         manifest.Artifact,
-		Version:          manifest.Version,
-		Platform:         manifest.Platform,
-		OfficialSource:   manifest.OfficialSource,
-		Compatibility:    manifest.Compatibility,
-		Source:           manifest.Source,
-		DataVersion:      manifest.DataVersion,
-		ExternalAssets:   manifest.ExternalAssets,
-		VerificationOnly: manifest.VerificationOnly,
+		SchemaVersion:  manifest.SchemaVersion,
+		Artifact:       manifest.Artifact,
+		Version:        manifest.Version,
+		Platform:       manifest.Platform,
+		OfficialSource: manifest.OfficialSource,
+		Compatibility:  manifest.Compatibility,
+		Source:         manifest.Source,
+		DataVersion:    manifest.DataVersion,
+		ExternalAssets: manifest.ExternalAssets,
 	}
 	evidence, err := verifyProductContent(ctx, archivePath, product, evidenceDir, environmentDir, tempDir, options.Timeout)
 	if err != nil {

@@ -18,17 +18,35 @@ type ArtifactStoreDialogProps = {
   actionBusy: boolean
   onAction: (artifact: ReleaseArtifactIdentity, action: 'install' | 'update') => Promise<void> | void
   onRefresh: () => Promise<void> | void
-  devSource?: boolean
+  getInstallSource?: () => Promise<string | null>
+  setInstallSource?: (kind: 'official' | 'local') => Promise<{ ok: boolean; error?: string }>
 }
 
 export function ArtifactStoreDialog(props: ArtifactStoreDialogProps) {
-  const { open, onClose, kind, title, results, installState, actionBusy, onAction, onRefresh, devSource } = props
+  const { open, onClose, kind, title, results, installState, actionBusy, onAction, onRefresh, getInstallSource, setInstallSource } = props
   const [refreshing, setRefreshing] = React.useState(false)
+  const [sourceKind, setSourceKind] = React.useState<'official' | 'local'>('official')
+  const [sourceBusy, setSourceBusy] = React.useState(false)
+  const [sourceError, setSourceError] = React.useState('')
   const items = Array.isArray(results)
     ? results
         .filter((result) => String(result.artifact?.kind || '') === kind)
         .sort((a, b) => String(a.artifact?.id || '').localeCompare(String(b.artifact?.id || '')))
     : []
+
+  React.useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    setSourceError('')
+    Promise.resolve(getInstallSource?.())
+      .then((kind) => {
+        if (!cancelled && (kind === 'official' || kind === 'local')) setSourceKind(kind)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [open, getInstallSource])
 
   const refresh = async () => {
     setRefreshing(true)
@@ -39,12 +57,37 @@ export function ArtifactStoreDialog(props: ArtifactStoreDialogProps) {
     }
   }
 
+  const switchSource = async (next: 'official' | 'local') => {
+    if (next === sourceKind || sourceBusy) return
+    setSourceBusy(true)
+    setSourceError('')
+    try {
+      const outcome = await Promise.resolve(setInstallSource?.(next))
+      if (!outcome || !outcome.ok) {
+        setSourceError(outcome?.error || '切换商店源失败')
+        return
+      }
+      setSourceKind(next)
+      await refresh()
+    } finally {
+      setSourceBusy(false)
+    }
+  }
+
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
       <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <StorefrontIcon fontSize="small" />
         {title}
         <Box sx={{ flex: 1 }} />
+        <Stack direction="row" spacing={0.5}>
+          <Button size="small" variant={sourceKind === 'official' ? 'contained' : 'outlined'} disabled={sourceBusy} onClick={() => void switchSource('official')}>
+            官方源
+          </Button>
+          <Button size="small" variant={sourceKind === 'local' ? 'contained' : 'outlined'} disabled={sourceBusy} onClick={() => void switchSource('local')}>
+            本地源
+          </Button>
+        </Stack>
         <Button startIcon={<RefreshIcon />} size="small" variant="text" onClick={refresh} disabled={refreshing}>
           {refreshing ? '刷新中…' : '刷新'}
         </Button>
@@ -54,13 +97,21 @@ export function ArtifactStoreDialog(props: ArtifactStoreDialogProps) {
       </DialogTitle>
       <DialogContent sx={{ bgcolor: 'grey.50' }}>
         <Stack spacing={1}>
+          <Typography variant="caption" color="text.secondary">
+            当前商店源：{sourceKind === 'local' ? '本地源（programs/local-store 货架）' : '官方源（线上正式发行）'}
+          </Typography>
+          {sourceError ? (
+            <Typography variant="caption" color="error">
+              {sourceError}
+            </Typography>
+          ) : null}
           {items.length ? (
             items.map((result) => (
-              <StoreItem key={`${result.artifact.kind}:${result.artifact.id}`} result={result} installState={installState} actionBusy={actionBusy} onAction={onAction} devSource={devSource} />
+              <StoreItem key={`${result.artifact.kind}:${result.artifact.id}`} result={result} installState={installState} actionBusy={actionBusy} onAction={onAction} sourceKind={sourceKind} />
             ))
           ) : (
             <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
-              当前没有可显示的{itemTitle(kind)}。请先刷新官方发行记录。
+              当前没有可显示的{itemTitle(kind)}。请先刷新商店清单。
             </Typography>
           )}
         </Stack>
@@ -75,16 +126,14 @@ export function ArtifactStoreDialog(props: ArtifactStoreDialogProps) {
   )
 }
 
-function StoreItem(props: { result: ReleaseCheckResult; installState: any; actionBusy: boolean; onAction: (artifact: ReleaseArtifactIdentity, action: 'install' | 'update') => Promise<void> | void; devSource?: boolean }) {
-  const { result, installState, actionBusy, onAction, devSource } = props
+function StoreItem(props: { result: ReleaseCheckResult; installState: any; actionBusy: boolean; onAction: (artifact: ReleaseArtifactIdentity, action: 'install' | 'update') => Promise<void> | void; sourceKind: 'official' | 'local' }) {
+  const { result, installState, actionBusy, onAction, sourceKind } = props
   const artifact = result.artifact
   const id = String(artifact?.id || '')
   const compatibility = result.compatibility
   const failed = result.status === 'failed'
   const installed = result.installed === true
-  // 开发源下没有"官方最新版本"事实，但当前来源的成品是否可装由安装动作本身决定；
-  // 未安装就给出安装入口（没有成品时安装会如实报错），官方源维持原语义。
-  const canInstall = !installed && !failed && (devSource === true || !!result.latestVersion)
+  const canInstall = !installed && !failed && !!result.latestVersion
   const canUpdate = installed && result.updateAvailable === true && !failed
   const stateForItem = installState && typeof installState === 'object' && String(installState.artifact?.id || '') === id ? installState : null
   const stateStatus = String(stateForItem?.status || '')
@@ -117,15 +166,9 @@ function StoreItem(props: { result: ReleaseCheckResult; installState: any; actio
           <Typography variant="caption" color="text.secondary">
             当前：<Box component="span" sx={{ color: 'text.primary', fontWeight: 800 }}>{installed ? result.currentVersion || '版本资料无效' : '未安装'}</Box>
           </Typography>
-          {devSource === true ? (
-            <Typography variant="caption" color="text.secondary">
-              来源：<Box component="span" sx={{ color: 'text.primary', fontWeight: 800 }}>本地开发版</Box>
-            </Typography>
-          ) : (
-            <Typography variant="caption" color="text.secondary">
-              官方：<Box component="span" sx={{ color: 'text.primary', fontWeight: 800 }}>{result.latestVersion || '暂无正式发行'}</Box>
-            </Typography>
-          )}
+          <Typography variant="caption" color="text.secondary">
+            {sourceKind === 'local' ? '货架' : '官方'}：<Box component="span" sx={{ color: 'text.primary', fontWeight: 800 }}>{result.latestVersion || '暂无'}</Box>
+          </Typography>
           {result.downloadSize > 0 ? (
             <Typography variant="caption" color="text.secondary">
               大小：<Box component="span" sx={{ color: 'text.primary', fontWeight: 800 }}>{formatBytes(result.downloadSize)}</Box>

@@ -174,11 +174,8 @@ func validateExpectedProduct(expected types.ReleaseProductRecord, actual types.R
 	if actual.Source.Commit != expected.Source.Commit || actual.Source.Repository != expected.Source.Repository {
 		return fmt.Errorf("包内来源记录与官方候选不一致")
 	}
-	if !expected.VerificationOnly && !actual.Source.Recorded {
-		return fmt.Errorf("正式成品来源必须已经完整记录")
-	}
-	if actual.VerificationOnly != expected.VerificationOnly {
-		return fmt.Errorf("包内验证标记与官方候选不一致")
+	if expected.Source.Recorded && !actual.Source.Recorded {
+		return fmt.Errorf("包内来源必须与官方候选的记录状态一致")
 	}
 	return nil
 }

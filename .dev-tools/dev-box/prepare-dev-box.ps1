@@ -17,12 +17,11 @@ function Get-RepositoryRoot {
 $repositoryRoot = Get-RepositoryRoot
 $devRuntimeRoot = Get-FullPath (Join-Path $repositoryRoot ".dev-workspace\.dev-runtime")
 $boxRoot = Get-FullPath (Join-Path $devRuntimeRoot "eucli-box")
-$binDir = Get-FullPath (Join-Path $boxRoot "bin")
 $toolRuntimeRoot = Get-FullPath (Join-Path $repositoryRoot ".dev-workspace\.dev-tools-runtime\dev-box")
 $toolWorkRoot = Get-FullPath (Join-Path $toolRuntimeRoot "work")
 $toolTempRoot = Get-FullPath (Join-Path $toolRuntimeRoot "temp")
 
-foreach ($directory in @($devRuntimeRoot, $boxRoot, $binDir, $toolWorkRoot, $toolTempRoot)) {
+foreach ($directory in @($devRuntimeRoot, $boxRoot, $toolWorkRoot, $toolTempRoot)) {
     [System.IO.Directory]::CreateDirectory($directory) | Out-Null
 }
 
@@ -31,7 +30,8 @@ $env:TMP = $toolTempRoot
 $env:GOTMPDIR = Join-Path $toolTempRoot "go"
 [System.IO.Directory]::CreateDirectory($env:GOTMPDIR) | Out-Null
 
-$boxExe = Join-Path $binDir "eucli-box.exe"
+# 本体自治：编译产物直接放到实例根（本体与 data\、programs\ 等平级），零传递定位信息。
+$boxExe = Join-Path $boxRoot "eucli-box.exe"
 Write-Host "Building current source eucli-box -> $boxExe"
 Push-Location $repositoryRoot
 try {

@@ -53,7 +53,7 @@ func SetVersion(root string, target string, nextVersion string, message string) 
 		return UpdateResult{}, fmt.Errorf("调整前完整检查失败：%w", err)
 	}
 	nextVersion = strings.TrimSpace(nextVersion)
-	if err := release.ValidateVersion(nextVersion); err != nil {
+	if err := release.ValidateFormalVersion(nextVersion); err != nil {
 		return UpdateResult{}, fmt.Errorf("新版本无效：%w", err)
 	}
 	order, err := release.CompareVersions(nextVersion, artifact.Version)

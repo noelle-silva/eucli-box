@@ -100,6 +100,7 @@ import { updateGroupSessionTitle, updateRoleSessionTitle } from './ebRoleSession
 import { getRunState, isTerminalRunStatus, listActiveRoleRuns, pollRunUntilTerminal, type EbRunState } from './ebRoleRun'
 import { createEbRunEventConsumer } from './ebRunEvents'
 import { createToolCatalog } from './toolCatalog'
+import { createInstallSourceClient } from './installSourceClient'
 import { createModelRequestConfigController, defaultModelRequestConfigState } from './modelRequestConfig'
 import { parseWorkspaceRoleTargetId, workspaceRoleTargetId } from '../domain/workspaceRoleTarget'
 import { HOOK_PROMPT_SESSION_METADATA_KEY, HOOK_PROMPT_SESSION_METADATA_MODE_KEY, normalizeHookPromptLibrary, normalizeHookPromptSelection, normalizeHookPromptSelectionMode, type HookPromptLibrary, type HookPromptSelectionMode } from '../domain/hookPrompt'
@@ -1219,6 +1220,11 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   })
   const { refreshTools, openToolConfig, closeToolConfig, setToolConfigValue, removeToolConfigValue, setToolPromptDescriptionDraft, resetToolPromptDescriptionDraftToDefault, saveSelectedToolConfig, loadToolInstallState, installTool, updateTool } = toolCatalog
 
+  const installSourceClient = createInstallSourceClient({
+    netRequest: capabilities.net?.request || ((() => Promise.resolve({})) as any),
+  })
+  const { get: getInstallSource, set: setInstallSource } = installSourceClient
+
   const modelRequestConfigController = createModelRequestConfigController({
     getState: () => state,
     netRequest: capabilities.net?.request || ((() => Promise.resolve({})) as any),
@@ -2122,6 +2128,8 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     loadToolInstallState: (toolId: any) => loadToolInstallState(toolId),
     installTool: (toolId: any) => installTool(toolId),
     updateTool: (toolId: any) => updateTool(toolId),
+    getInstallSource: () => getInstallSource(),
+    setInstallSource: (kind: 'official' | 'local') => setInstallSource(kind),
     refreshModelRequestConfig: (force: any) => refreshModelRequestConfig(!!force),
     setModelRequestConfigDraft: (key: any, value: any) => setModelRequestConfigDraft(key, value),
     resetModelRequestConfigDraftToDefaults: () => resetModelRequestConfigDraftToDefaults(),

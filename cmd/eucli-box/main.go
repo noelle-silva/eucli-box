@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -60,13 +62,21 @@ func run() error {
 	}
 	log.Printf("[1/13] network-request-system ✓")
 
-	programRoot := strings.TrimSpace(os.Getenv("EUCLI_BOX_PROGRAM_ROOT"))
-	if programRoot != "" {
-		programRoot, err = filepath.Abs(programRoot)
-		if err != nil {
-			return fmt.Errorf("program root is invalid: %w", err)
+	// 本体自治：实例根就是本体可执行文件所在目录，全部资产按本体同级相对位置生成；
+	// 取消任何外部定位参数（EUCLI_BOX_PROGRAM_ROOT 已退役）。
+	executablePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("locate eucli-box executable: %w", err)
+	}
+	instanceRoot := filepath.Dir(filepath.Clean(executablePath))
+	programsRoot := filepath.Join(instanceRoot, "programs")
+	toolBodiesRoot := filepath.Join(programsRoot, "ai-tools")
+	pluginSourceDir := filepath.Join(programsRoot, "system-plugins")
+	programsDirs := []string{programsRoot, toolBodiesRoot, pluginSourceDir, filepath.Join(programsRoot, "local-store")}
+	for _, directory := range programsDirs {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			return fmt.Errorf("建立程序区 %s 失败：%w", directory, err)
 		}
-		programRoot = filepath.Clean(programRoot)
 	}
 	officialDoer := boxOfficialHTTPDoer{network: networkSystem}
 	apiBaseURL := strings.TrimSpace(os.Getenv("EUCLI_BOX_RELEASE_API_BASE"))
@@ -83,7 +93,7 @@ func run() error {
 		return fmt.Errorf("create official candidate checker: %w", err)
 	}
 
-	dataDir := envOrDefault("EUCLI_BOX_DATA_DIR", "data")
+	dataDir := envOrDefault("EUCLI_BOX_DATA_DIR", filepath.Join(instanceRoot, "data"))
 	dataLock, err := localrun.AcquireDataLock(dataDir)
 	if err != nil {
 		return err
@@ -107,12 +117,7 @@ func run() error {
 			}
 		}
 	}()
-	toolBodiesRoot := ""
-	toolProgramRoot := ""
-	if programRoot != "" {
-		toolBodiesRoot = filepath.Join(programRoot, "tools")
-		toolProgramRoot = toolBodiesRoot
-	}
+	toolProgramRoot := toolBodiesRoot
 	storageSystem, err := datastorage.NewSystem(datastorage.Config{RootDir: dataDir, ToolBodiesRoot: toolBodiesRoot})
 	if err != nil {
 		return fmt.Errorf("start data storage system: %w", err)
@@ -122,36 +127,29 @@ func run() error {
 	}
 	log.Printf("[3/13] data-storage-system     ✓  (%s)", dataDir)
 
-	devToolSourceEnabled := os.Getenv("EUCLI_DEV_TOOL_SOURCE") == "1"
-	var devCandidateReader *releasecheck.DevelopmentSourceReader
-	if devToolSourceEnabled {
-		reader, devErr := releasecheck.NewDevelopmentSourceReader("1", os.Getenv("EUCLI_DEV_TOOL_PACKAGE_ROOT"))
-		if devErr != nil {
-			return devErr
-		}
-		devCandidateReader = reader
+	localStoreDir := envOrDefault("EUCLI_BOX_LOCAL_STORE", filepath.Join(programsRoot, "local-store"))
+	localCandidateReader, err := releasecheck.NewLocalSourceReader(localStoreDir)
+	if err != nil {
+		return fmt.Errorf("本地商店读取器不可用：%w", err)
 	}
 	initialSource := installsource.KindOfficial
-	if devToolSourceEnabled {
-		loaded, loadErr := storageSystem.LoadInstallSource(ctx)
-		if loadErr != nil {
-			if !errors.Is(loadErr, os.ErrNotExist) {
-				return fmt.Errorf("读取安装来源配置失败：%w", loadErr)
-			}
-			initialSource = installsource.KindDevelopment
-		} else {
-			initialSource = loaded
+	loaded, loadErr := storageSystem.LoadInstallSource(ctx)
+	if loadErr != nil {
+		if !errors.Is(loadErr, os.ErrNotExist) {
+			return fmt.Errorf("读取安装来源配置失败：%w", loadErr)
 		}
+	} else {
+		initialSource = loaded
 	}
-	sourceState, err := installsource.NewState(initialSource, devToolSourceEnabled, storageSystem)
+	sourceState, err := installsource.NewState(initialSource, storageSystem)
 	if err != nil {
 		return err
 	}
-	toolCandidates, err := installsource.NewCandidateSelector(sourceState.Current, officialChecker, devCandidateReader)
+	toolCandidates, err := installsource.NewCandidateSelector(sourceState.Current, officialChecker, localCandidateReader)
 	if err != nil {
 		return err
 	}
-	log.Printf("[2.6/13] candidate reader %s (install-source: %s)", programStatusLabel(programRoot), sourceState.Current())
+	log.Printf("[2.6/13] candidate reader %s (install-source: %s)", programStatusLabel(programsRoot), sourceState.Current())
 
 	providerSystem, err := modelprovider.NewSystem(modelprovider.Config{}, networkSystem, storageSystem)
 	if err != nil {
@@ -177,12 +175,8 @@ func run() error {
 	}
 	log.Printf("[7/13] tool-calling-system     ✓")
 
-	pluginSourceDir := ""
 	pluginDataDir := filepath.Join(dataDir, "system-plugins")
-	if programRoot != "" {
-		pluginSourceDir = filepath.Join(programRoot, "system-plugins")
-	}
-	systemPluginSystem, err := systemplugin.NewSystem(systemplugin.Config{SourceDir: pluginSourceDir, DataDir: pluginDataDir, BoxVersion: boxRelease.Version, ProgramRoot: programRoot, Candidates: toolCandidates, HTTPClient: officialDoer})
+	systemPluginSystem, err := systemplugin.NewSystem(systemplugin.Config{SourceDir: pluginSourceDir, DataDir: pluginDataDir, BoxVersion: boxRelease.Version, ProgramRoot: pluginSourceDir, Candidates: toolCandidates, HTTPClient: officialDoer})
 	if err != nil {
 		return fmt.Errorf("start system plugin system: %w", err)
 	}
@@ -209,7 +203,7 @@ func run() error {
 	}
 	log.Printf("[11/13] ai-assist-system        ✓")
 
-	releaseCheckSystem, err := releasechecksystem.NewSystemWithChecker(releasechecksystem.Config{BoxVersion: boxRelease.Version, CurrentSource: sourceState.Current}, officialChecker, toolSystem, systemPluginSystem, boxRelease.Version)
+	releaseCheckSystem, err := releasechecksystem.NewSystemWithChecker(releasechecksystem.Config{BoxVersion: boxRelease.Version, CurrentSource: sourceState.Current, LocalSource: localCandidateReader}, officialChecker, toolSystem, systemPluginSystem, boxRelease.Version)
 	if err != nil {
 		return fmt.Errorf("start release check system: %w", err)
 	}
@@ -222,10 +216,11 @@ func run() error {
 	log.Printf("[12.5/13] access-system            ✓")
 
 	busyKey := ""
-	if readBoxKey(dataDir) != "" {
+	boxKey := ensureBoxKey(dataDir)
+	if boxKey != "" {
 		busyKey = " (key: active)"
 	}
-	gatewayConfig := gateway.Config{Addr: envOrDefault("EUCLI_BOX_ADDR", "127.0.0.1:8765"), Key: readBoxKey(dataDir), BoxVersion: boxRelease.Version, Access: accessSystem, InstallSource: sourceState}
+	gatewayConfig := gateway.Config{Addr: envOrDefault("EUCLI_BOX_ADDR", "127.0.0.1:8765"), Key: boxKey, BoxVersion: boxRelease.Version, Access: accessSystem, InstallSource: sourceState}
 	gatewaySystem, err := gateway.NewSystem(gatewayConfig, runtimeSystem, roleSystem, storageSystem, storageSystem, providerSystem, toolSystem, storageSystem, storageSystem, storageSystem, placeholderSystem, systemPluginSystem, assistSystem, releaseCheckSystem)
 	if err != nil {
 		return fmt.Errorf("start gateway system: %w", err)
@@ -279,6 +274,31 @@ func readBoxKey(dataDir string) string {
 	return strings.TrimSpace(string(payload))
 }
 
+// ensureBoxKey 保证数据房存有访问钥匙：首次启动时自行生成并记录，以后复用；
+// 不依赖任何外部注入。
+func ensureBoxKey(dataDir string) string {
+	existing := readBoxKey(dataDir)
+	if existing != "" {
+		return existing
+	}
+	buffer := make([]byte, 32)
+	if _, err := io.ReadFull(rand.Reader, buffer); err != nil {
+		log.Printf("生成访问钥匙失败：%v", err)
+		return ""
+	}
+	key := hex.EncodeToString(buffer)
+	metaDir := filepath.Join(dataDir, "meta")
+	if err := os.MkdirAll(metaDir, 0o700); err != nil {
+		log.Printf("生成访问钥匙失败：%v", err)
+		return ""
+	}
+	if err := os.WriteFile(filepath.Join(metaDir, "box.key"), []byte(key+"\n"), 0o600); err != nil {
+		log.Printf("生成访问钥匙失败：%v", err)
+		return ""
+	}
+	return key
+}
+
 // entrypointPortFromAddr 解析网关监听地址的真实端口；随机端口（0）返回 0。
 func entrypointPortFromAddr(addr string) int {
 	_, portValue, err := net.SplitHostPort(strings.TrimSpace(addr))
@@ -292,11 +312,11 @@ func entrypointPortFromAddr(addr string) int {
 	return port
 }
 
-func programStatusLabel(programRoot string) string {
-	if programRoot == "" {
-		return "(development path)"
+func programStatusLabel(programsRoot string) string {
+	if programsRoot == "" {
+		return "(instance root missing)"
 	}
-	return "✓  (" + programRoot + ")"
+	return "✓  (" + programsRoot + ")"
 }
 
 // boxOfficialHTTPDoer 是业务端网络系统对官方发行检查的只读适配器；

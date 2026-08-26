@@ -145,6 +145,8 @@ export function AiToolsSettingsPanel(props: AiToolsSettingsPanelProps) {
         actionBusy={tools?.installLoading === true || releaseCheckBusy === true}
         onAction={handleStoreAction}
         onRefresh={() => onRefreshReleaseChecks?.('tool')}
+        getInstallSource={() => controller.actions.getInstallSource?.()}
+        setInstallSource={(kind) => controller.actions.setInstallSource?.(kind)}
       />
     </>
   )

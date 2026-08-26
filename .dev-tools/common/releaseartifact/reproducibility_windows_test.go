@@ -14,13 +14,13 @@ func TestBuildProducesSameArtifactFromSameSource(t *testing.T) {
 	for index := 0; index < 2; index++ {
 		root := t.TempDir()
 		result, err := Build(context.Background(), BuildOptions{
-			Root:             repositoryRoot,
-			Target:           "tool:context7",
-			WorkRoot:         root + "\\work",
-			OutputRoot:       root + "\\output",
-			EvidenceRoot:     root + "\\evidence",
-			VerificationOnly: true,
-			AssetRoot:        root + "\\assets",
+			Root:            repositoryRoot,
+			Target:          "tool:context7",
+			WorkRoot:        root + "\\work",
+			OutputRoot:      root + "\\output",
+			EvidenceRoot:    root + "\\evidence",
+			VersionOverride: "0.1.9.1",
+			AssetRoot:       root + "\\assets",
 		})
 		if err != nil {
 			t.Fatalf("build artifact %d: %v", index+1, err)

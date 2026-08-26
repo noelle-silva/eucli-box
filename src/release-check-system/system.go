@@ -41,6 +41,7 @@ type Config struct {
 	IndexBase     string
 	Now           func() time.Time
 	CurrentSource func() installsource.Kind
+	LocalSource   releasecheck.LocalShelf
 }
 
 type checkRunner interface {
@@ -56,6 +57,7 @@ type system struct {
 	plugins    PluginSystem
 	// currentSource 是安装来源状态读取函数；nil 表示永远使用官方源（正式模式）。
 	currentSource func() installsource.Kind
+	localSource   releasecheck.LocalShelf
 
 	mu       sync.RWMutex
 	snapshot types.ReleaseCheckSnapshot
@@ -116,6 +118,7 @@ func newSystem(config Config, checker checkRunner, catalog releasecatalog.Catalo
 		tools:         tools,
 		plugins:       plugins,
 		currentSource: config.CurrentSource,
+		localSource:   config.LocalSource,
 		snapshot:      releasecheck.PendingSnapshot(),
 	}
 }
@@ -149,10 +152,10 @@ func (s *system) Refresh(ctx context.Context, kind string) types.ReleaseCheckSna
 	requested := s.requestedArtifacts(kind)
 	installed, localFailures := s.installedArtifacts(ctx)
 	var snapshot types.ReleaseCheckSnapshot
-	if s.developmentMode() {
-		// 开发来源状态：快照只描述「当前开发版事实」，与分类无关，全量替换。
+	if s.localMode() {
+		// 本地来源状态：快照描述本地商店货架与已装事实，与分类无关，全量替换。
 		// 不读取官方索引，不产生官方新版本更新提示。
-		snapshot = s.developmentSnapshot(installed, s.requestedArtifacts(""))
+		snapshot = s.localSnapshot(ctx, installed)
 	} else {
 		snapshot = s.checker.CheckOnly(ctx, installed, s.boxVersion, requested)
 		if snapshot.Status == types.ReleaseCheckStatusCompleted || snapshot.Status == types.ReleaseCheckStatusFailed {
@@ -174,33 +177,57 @@ func (s *system) Snapshot() types.ReleaseCheckSnapshot {
 	return cloneSnapshot(s.snapshot)
 }
 
-func (s *system) developmentMode() bool {
-	return s.currentSource != nil && s.currentSource() == installsource.KindDevelopment
+func (s *system) localMode() bool {
+	return s.currentSource != nil && s.currentSource() == installsource.KindLocal
 }
 
-// developmentSnapshot 在开发来源状态下构造版本检查事实：不读取官方索引，
-// 不产生任何官方新版本更新提示；快照整体标记来源为开发版。
-func (s *system) developmentSnapshot(installed []releasecheck.InstalledArtifact, requested []types.ReleaseArtifactIdentity) types.ReleaseCheckSnapshot {
+// localSnapshot 在本地来源状态下构造版本检查事实：可安装列表从本地商店货架读取，
+// 不读取官方索引，不产生任何官方新版本更新提示；快照整体标记来源为本地源。
+func (s *system) localSnapshot(ctx context.Context, installed []releasecheck.InstalledArtifact) types.ReleaseCheckSnapshot {
+	checkedAt := s.now()
 	installedByIdentity := make(map[string]releasecheck.InstalledArtifact, len(installed))
 	for _, item := range installed {
 		installedByIdentity[item.Artifact.Kind+":"+item.Artifact.ID] = item
 	}
-	checkedAt := s.now()
-	results := make([]types.ReleaseCheckResult, 0, len(requested))
-	for _, artifact := range requested {
-		installedArtifact, isInstalled := installedByIdentity[artifact.Kind+":"+artifact.ID]
-		result := types.ReleaseCheckResult{
-			Artifact:       artifact,
-			Installed:      isInstalled,
-			Status:         types.ReleaseCheckStatusCompleted,
-			CheckedAt:      checkedAt,
-			UpdateAvailable: false,
+	var items []releasecheck.LocalShelfItem
+	status := types.ReleaseCheckStatusCompleted
+	failureReason := ""
+	if s.localSource == nil {
+		status = types.ReleaseCheckStatusFailed
+		failureReason = "本地商店未激活"
+	} else {
+		listed, err := s.localSource.List(ctx)
+		if err != nil {
+			status = types.ReleaseCheckStatusFailed
+			failureReason = "读取本地商店货架失败：" + err.Error()
 		}
-		if source, err := s.catalog.SourceFor(artifact.Kind); err == nil {
+		items = listed
+	}
+	results := make([]types.ReleaseCheckResult, 0, len(items))
+	for _, item := range items {
+		installedArtifact, isInstalled := installedByIdentity[item.Artifact.Kind+":"+item.Artifact.ID]
+		result := types.ReleaseCheckResult{
+			Artifact:      item.Artifact,
+			Installed:     isInstalled,
+			Status:        types.ReleaseCheckStatusCompleted,
+			CheckedAt:     checkedAt,
+			LatestVersion: item.Candidate.Version,
+			DownloadSize:  item.Candidate.SizeBytes,
+		}
+		if source, err := s.catalog.SourceFor(item.Artifact.Kind); err == nil {
 			result.Source = source
 		}
 		if isInstalled {
 			result.CurrentVersion = installedArtifact.Version
+			order, compareErr := release.CompareVersions(item.Candidate.Version, installedArtifact.Version)
+			if compareErr != nil {
+				result.Status = types.ReleaseCheckStatusFailed
+				result.FailureReason = compareErr.Error()
+			} else {
+				result.UpdateAvailable = order > 0
+			}
+		} else {
+			result.UpdateAvailable = true
 		}
 		results = append(results, result)
 	}
@@ -211,11 +238,12 @@ func (s *system) developmentSnapshot(installed []releasecheck.InstalledArtifact,
 		return results[i].Artifact.ID < results[j].Artifact.ID
 	})
 	return types.ReleaseCheckSnapshot{
-		Status:    types.ReleaseCheckStatusCompleted,
-		SourceKind: string(installsource.KindDevelopment),
-		StartedAt:  checkedAt,
-		CheckedAt:  checkedAt,
-		Results:    results,
+		Status:        status,
+		SourceKind:    string(installsource.KindLocal),
+		StartedAt:     checkedAt,
+		CheckedAt:     checkedAt,
+		Results:       results,
+		FailureReason: failureReason,
 	}
 }
 

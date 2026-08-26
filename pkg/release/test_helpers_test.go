@@ -162,6 +162,5 @@ func productFromManifest(manifest types.ReleaseManifest) types.ReleaseProductRec
 		Source:           manifest.Source,
 		DataVersion:      manifest.DataVersion,
 		ExternalAssets:   manifest.ExternalAssets,
-		VerificationOnly: manifest.VerificationOnly,
 	}
 }

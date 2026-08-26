@@ -170,11 +170,11 @@ func loadMetadata(artifact *Artifact) error {
 		artifact.Version = strings.TrimSpace(info.Version)
 		artifact.Compatibility = &info.EucliBoxCompatibility
 	}
-	if err := release.ValidateVersion(artifact.Version); err != nil {
+	if err := release.ValidateFormalVersion(artifact.Version); err != nil {
 		return fmt.Errorf("%s 版本无效：%w", artifact.Target(), err)
 	}
 	if artifact.Kind == KindBox {
-		if err := release.ValidateVersion(artifact.DataVersion); err != nil {
+		if err := release.ValidateFormalVersion(artifact.DataVersion); err != nil {
 			return fmt.Errorf("%s 数据版本无效：%w", artifact.Target(), err)
 		}
 	}

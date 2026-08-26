@@ -37,18 +37,37 @@ func Check(artifact Artifact) error {
 	if err := checkChineseDocument(artifact.ChangelogPath, "CHANGELOG"); err != nil {
 		return fmt.Errorf("%s：%w", artifact.Target(), err)
 	}
-	payload, err := os.ReadFile(artifact.ChangelogPath)
-	if err != nil {
-		return fmt.Errorf("%s：读取 CHANGELOG 失败：%w", artifact.Target(), err)
-	}
-	heading := regexp.MustCompile(`(?m)^##\s+` + regexp.QuoteMeta(artifact.Version) + `(?:\s|$)`)
-	if !heading.Match(payload) {
-		return fmt.Errorf("%s：CHANGELOG 缺少当前版本 %s 的记录", artifact.Target(), artifact.Version)
+	if err := checkChangelogEntry(artifact); err != nil {
+		return fmt.Errorf("%s：%w", artifact.Target(), err)
 	}
 	if artifact.Kind == KindClient {
 		if err := checkClientPackageVersions(artifact); err != nil {
 			return fmt.Errorf("%s：%w", artifact.Target(), err)
 		}
+	}
+	return nil
+}
+
+// CheckDevelopment 是开发构建使用的发布物检查：保留文档与版本事实检查，
+// 但不要求 CHANGELOG 存在当前开发版本条目（开发版本不在源码记录中撰写）。
+func CheckDevelopment(artifact Artifact) error {
+	if err := checkChineseDocument(artifact.READMEPath, "README"); err != nil {
+		return fmt.Errorf("%s：%w", artifact.Target(), err)
+	}
+	if err := checkChineseDocument(artifact.ChangelogPath, "CHANGELOG"); err != nil {
+		return fmt.Errorf("%s：%w", artifact.Target(), err)
+	}
+	return nil
+}
+
+func checkChangelogEntry(artifact Artifact) error {
+	payload, err := os.ReadFile(artifact.ChangelogPath)
+	if err != nil {
+		return fmt.Errorf("读取 CHANGELOG 失败：%w", err)
+	}
+	heading := regexp.MustCompile(`(?m)^##\s+` + regexp.QuoteMeta(artifact.Version) + `(?:\s|$)`)
+	if !heading.Match(payload) {
+		return fmt.Errorf("CHANGELOG 缺少当前版本 %s 的记录", artifact.Version)
 	}
 	return nil
 }

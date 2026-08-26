@@ -82,7 +82,6 @@ type ReleaseProductRecord struct {
 	Source           ReleaseSourceRecord     `json:"source"`
 	DataVersion      string                  `json:"dataVersion,omitempty"`
 	ExternalAssets   []ReleaseExternalAsset  `json:"externalAssets,omitempty"`
-	VerificationOnly bool                    `json:"verificationOnly,omitempty"`
 }
 
 type ReleaseManifest struct {
@@ -96,7 +95,6 @@ type ReleaseManifest struct {
 	Source           ReleaseSourceRecord     `json:"source"`
 	DataVersion      string                  `json:"dataVersion,omitempty"`
 	ExternalAssets   []ReleaseExternalAsset  `json:"externalAssets,omitempty"`
-	VerificationOnly bool                    `json:"verificationOnly,omitempty"`
 	Archive          ReleaseFileRecord       `json:"archive"`
 	Files            []ReleaseFileRecord     `json:"files"`
 }

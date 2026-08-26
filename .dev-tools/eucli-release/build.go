@@ -4,9 +4,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"devtools/common/releaseartifact"
+	"devtools/common/toolruntime"
 	"eucli-box/pkg/workspace"
 )
 
@@ -30,19 +32,44 @@ func runBuild(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := toolruntime.ValidateWorkLocation(root, *workRoot, *outputRoot, *evidenceRoot); err != nil {
+		return err
+	}
+	runtimeRoot := toolruntime.Root(root, "eucli-release")
+	resolvedWorkRoot := strings.TrimSpace(*workRoot)
+	if resolvedWorkRoot == "" {
+		resolvedWorkRoot, err = toolruntime.PrepareRunDir(runtimeRoot, "work", "build")
+		if err != nil {
+			return err
+		}
+	}
+	resolvedOutputRoot := filepath.Join(runtimeRoot, "output")
+	if strings.TrimSpace(*outputRoot) != "" {
+		resolvedOutputRoot = strings.TrimSpace(*outputRoot)
+	}
+	resolvedEvidenceRoot := strings.TrimSpace(*evidenceRoot)
+	if resolvedEvidenceRoot == "" {
+		resolvedEvidenceRoot, err = toolruntime.PrepareRunDir(runtimeRoot, "evidence", "build")
+		if err != nil {
+			return err
+		}
+	}
 	if strings.TrimSpace(*assetRoot) == "" {
 		*assetRoot = workspace.AssetRoot(root)
 	}
 	result, err := releaseartifact.Build(ctx, releaseartifact.BuildOptions{
 		Root:            root,
 		Target:          *target,
-		WorkRoot:        *workRoot,
-		OutputRoot:      *outputRoot,
-		EvidenceRoot:    *evidenceRoot,
+		WorkRoot:        resolvedWorkRoot,
+		OutputRoot:      resolvedOutputRoot,
+		EvidenceRoot:    resolvedEvidenceRoot,
 		VersionOverride: *versionOverride,
 		AssetRoot:       *assetRoot,
 	})
 	if err != nil {
+		return err
+	}
+	if err := toolruntime.WriteScorecard(runtimeRoot, "build", result); err != nil {
 		return err
 	}
 	if path := strings.TrimSpace(*resultFile); path != "" {

@@ -11,14 +11,14 @@ import (
 	"devtools/common/releaseartifact"
 	"devtools/common/releaseops"
 	"devtools/common/releasepublish"
+	"devtools/common/toolruntime"
 	"eucli-box/pkg/releasecatalog"
 	"eucli-box/pkg/types"
-	"eucli-box/pkg/workspace"
 )
 
 type remoteReport struct {
-	ReleaseURL string                           `json:"releaseUrl"`
-	Product    types.ReleaseProductRecord       `json:"product"`
+	ReleaseURL string                              `json:"releaseUrl"`
+	Product    types.ReleaseProductRecord          `json:"product"`
 	Verified   releaseartifact.VerifyProductResult `json:"verified"`
 }
 
@@ -50,13 +50,12 @@ func runRemote(ctx context.Context, args []string) error {
 		}
 		*version = artifact.Version
 	}
+	if err := toolruntime.ValidateWorkLocation(root, *workspaceValue); err != nil {
+		return err
+	}
 	workRoot := strings.TrimSpace(*workspaceValue)
 	if workRoot == "" {
-		parent := workspace.WorkRoot(root)
-		if err := os.MkdirAll(parent, 0o755); err != nil {
-			return err
-		}
-		workRoot, err = os.MkdirTemp(parent, "remote-")
+		workRoot, err = toolruntime.PrepareRunDir(toolruntime.Root(root, "eucli-release"), "work", "remote")
 		if err != nil {
 			return err
 		}

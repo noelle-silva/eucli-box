@@ -12,6 +12,8 @@ const (
 	ReleaseDirectory = ".release"
 	// RuntimeDirectory 是工作区内手动开发体验资料的目录名。
 	RuntimeDirectory = ".dev-runtime"
+	// ToolRuntimeDirectory 是工作区内开发工具运行资料的目录名。
+	ToolRuntimeDirectory = ".dev-tools-runtime"
 )
 
 // RelativeReleaseRoot 是发布根相对项目根的路径，用于报错展示等场景。
@@ -35,21 +37,6 @@ func RuntimeRoot(repositoryRoot string) string {
 	return filepath.Join(Root(repositoryRoot), RuntimeDirectory)
 }
 
-// WorkRoot 返回发布临时现场根。
-func WorkRoot(repositoryRoot string) string {
-	return filepath.Join(ReleaseRoot(repositoryRoot), "work")
-}
-
-// OutputRoot 返回已核对本地成品根。
-func OutputRoot(repositoryRoot string) string {
-	return filepath.Join(ReleaseRoot(repositoryRoot), "output")
-}
-
-// LogsRoot 返回脱敏发布日志根。
-func LogsRoot(repositoryRoot string) string {
-	return filepath.Join(ReleaseRoot(repositoryRoot), "logs")
-}
-
 // VerificationRoot 返回发布验证根。
 func VerificationRoot(repositoryRoot string) string {
 	return filepath.Join(ReleaseRoot(repositoryRoot), "verification")
@@ -57,7 +44,13 @@ func VerificationRoot(repositoryRoot string) string {
 
 // VerificationToolRoot 返回指定验证工具的运行隔离根（开发工具迁移后的新布局）。
 func VerificationToolRoot(repositoryRoot string, tool string) string {
-	return filepath.Join(repositoryRoot, ".dev-workspace", ".dev-tools-runtime", tool)
+	return ToolRuntimeRoot(repositoryRoot, tool)
+}
+
+// ToolRuntimeRoot 返回指定开发工具自身运行区根。
+// 工具的本体、开工、产物、临时与缓存全部落于该区，工具零参数启动即天然对位。
+func ToolRuntimeRoot(repositoryRoot string, tool string) string {
+	return filepath.Join(repositoryRoot, WorkspaceDirectory, ToolRuntimeDirectory, tool)
 }
 
 // VerificationCacheRoot 返回验证区公共缓存根。
@@ -67,9 +60,10 @@ func VerificationCacheRoot(repositoryRoot string) string {
 }
 
 // AssetRoot 返回发布与构建的已验证资产根。
+// 资产是资产准备工具（eucli-release-assets）的产物与共享素材，随工具落位于其自身运行区；
 // 内含 prepared（准备产物）、cache（输入文件）与 temp（解压临时）三兄弟目录。
 func AssetRoot(repositoryRoot string) string {
-	return filepath.Join(ReleaseRoot(repositoryRoot), "assets")
+	return filepath.Join(ToolRuntimeRoot(repositoryRoot, "eucli-release-assets"))
 }
 
 // VerificationAssetRoot 返回验证的已验证资产根。

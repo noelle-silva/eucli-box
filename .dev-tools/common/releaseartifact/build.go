@@ -368,11 +368,11 @@ func buildEnvironment(base []string, root string) []string {
 func resolveRoots(root string, options BuildOptions) (string, string, error) {
 	workRoot := strings.TrimSpace(options.WorkRoot)
 	if workRoot == "" {
-		workRoot = workspace.WorkRoot(root)
+		return "", "", fmt.Errorf("制作工作根不能为空：必须显式传入本轮工作现场（工具运行区 work\\build-<轮>）")
 	}
 	outputRoot := strings.TrimSpace(options.OutputRoot)
 	if outputRoot == "" {
-		outputRoot = workspace.OutputRoot(root)
+		return "", "", fmt.Errorf("成品输出根不能为空：必须显式传入工具运行区 output")
 	}
 	var err error
 	workRoot, err = filepath.Abs(workRoot)

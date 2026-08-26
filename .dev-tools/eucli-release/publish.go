@@ -11,6 +11,7 @@ import (
 
 	"devtools/common/releaseartifact"
 	"devtools/common/releasepublish"
+	"devtools/common/toolruntime"
 	"eucli-box/pkg/releasecatalog"
 	"eucli-box/pkg/types"
 	"eucli-box/pkg/workspace"
@@ -52,11 +53,12 @@ func runPublish(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("读取正式发布凭据失败：%w", err)
 	}
-	workParent := workspace.WorkRoot(root)
-	if err := os.MkdirAll(workParent, 0o755); err != nil {
+	workParent := toolruntime.Root(root, "eucli-release")
+	runRoot, err := toolruntime.PrepareRunDir(workParent, "work", "publish")
+	if err != nil {
 		return err
 	}
-	runRoot, err := os.MkdirTemp(workParent, "publish-")
+	evidenceRoot, err := toolruntime.PrepareRunDir(workParent, "evidence", "publish")
 	if err != nil {
 		return err
 	}
@@ -71,7 +73,7 @@ func runPublish(ctx context.Context, args []string) error {
 		Target:       *target,
 		WorkRoot:     filepath.Join(runRoot, "build"),
 		OutputRoot:   filepath.Join(runRoot, "output"),
-		EvidenceRoot: filepath.Join(runRoot, "evidence"),
+		EvidenceRoot: evidenceRoot,
 		AssetRoot:    workspace.AssetRoot(root),
 	})
 	if err != nil {
@@ -112,7 +114,7 @@ func runPublish(ctx context.Context, args []string) error {
 	if err := publisher.UpdateIndex(ctx, source, indexUpdate); err != nil {
 		return fmt.Errorf("正式发布已公开但索引登记失败，现场保留在 %s：%w", runRoot, err)
 	}
-	finalRoot := workspace.OutputRoot(root)
+	finalRoot := filepath.Join(toolruntime.Root(root, "eucli-release"), "output")
 	finalDir := filepath.Join(finalRoot, releaseOutputName(identity), buildResult.Manifest.Version)
 	if _, err := os.Stat(finalDir); err == nil {
 		return fmt.Errorf("远端已经公开，但本地正式成品目录已存在，现场保留在 %s：%s", runRoot, finalDir)
@@ -130,9 +132,8 @@ func runPublish(ctx context.Context, args []string) error {
 	buildResult.ManifestPath = filepath.Join(finalDir, filepath.Base(buildResult.ManifestPath))
 	buildResult.NotesPath = filepath.Join(finalDir, filepath.Base(buildResult.NotesPath))
 	report := publishReport{Build: buildResult, Publish: publishResult, IndexPush: true}
-	logPath := filepath.Join(workspace.LogsRoot(root), runLabel("publish")+".json")
-	if err := writeJSONFile(logPath, report); err != nil {
-		return fmt.Errorf("远端已经公开且本地成品已保存，但写入脱敏记录失败：%w", err)
+	if err := toolruntime.WriteScorecard(workParent, "publish", report); err != nil {
+		return fmt.Errorf("远端已经公开且本地成品已保存，但写入本轮成绩单失败：%w", err)
 	}
 	completed = true
 	return printJSON(report)

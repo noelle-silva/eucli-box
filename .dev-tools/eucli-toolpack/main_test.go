@@ -1,4 +1,4 @@
-﻿package main
+package main
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"devtools/common/toolruntime"
 	"eucli-box/pkg/types"
 )
 
@@ -36,9 +37,9 @@ func TestRunBuildsShellCommandIntoAbsoluteDataDir(t *testing.T) {
 	if tool.ID != "shell_command" || tool.BodyDirectory != "." || tool.DefaultInvocationMode != types.ToolInvocationModeSync {
 		t.Fatalf("tool definition = %#v", tool)
 	}
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := toolruntime.FindRepositoryRoot()
 	if err != nil {
-		t.Fatalf("findRepoRoot() error = %v", err)
+		t.Fatalf("FindRepositoryRoot() error = %v", err)
 	}
 	sourceTool, err := readToolDefinition(toolSource{ID: "shell_command", Dir: filepath.Join(repoRoot, "tools", "shell_command")})
 	if err != nil {

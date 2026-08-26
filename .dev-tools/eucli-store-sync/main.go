@@ -14,6 +14,7 @@ import (
 
 	"devtools/common/releaseartifact"
 	"devtools/common/releaseops"
+	"devtools/common/toolruntime"
 	"eucli-box/pkg/release"
 	"eucli-box/pkg/types"
 )
@@ -26,13 +27,13 @@ func main() {
 }
 
 type options struct {
-	target      string
-	version     string
-	repoRoot    string
-	workRoot    string
-	outputRoot  string
-	localStore  string
-	skipCopy    bool
+	target     string
+	version    string
+	repoRoot   string
+	workRoot   string
+	outputRoot string
+	localStore string
+	skipCopy   bool
 }
 
 func run(ctx context.Context, args []string) error {
@@ -48,7 +49,7 @@ func run(ctx context.Context, args []string) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	root, err := resolveRepositoryRoot(opts.repoRoot)
+	root, err := toolruntime.ValidateRepositoryRoot(opts.repoRoot)
 	if err != nil {
 		return err
 	}
@@ -68,7 +69,10 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	workRoot, outputRoot, err := resolveRoots(root, opts)
+	if err := toolruntime.ValidateWorkLocation(root, opts.workRoot, opts.outputRoot); err != nil {
+		return err
+	}
+	workRoot, outputRoot, evidenceRoot, err := resolveRoots(root, opts)
 	if err != nil {
 		return err
 	}
@@ -78,10 +82,14 @@ func run(ctx context.Context, args []string) error {
 		Target:          string(releaseops.Kind(identity.Kind)) + ":" + identity.ID,
 		WorkRoot:        workRoot,
 		OutputRoot:      outputRoot,
+		EvidenceRoot:    evidenceRoot,
 		VersionOverride: buildVersion,
 	})
 	if err != nil {
 		return fmt.Errorf("构建失败：%w", err)
+	}
+	if err := toolruntime.WriteScorecard(toolruntime.Root(root, "eucli-store-sync"), "build", result); err != nil {
+		return fmt.Errorf("写入本轮成绩单失败：%w", err)
 	}
 	fmt.Printf("eucli-store-sync: built %s\n", result.Manifest.Archive.Name)
 	if opts.skipCopy {
@@ -90,47 +98,8 @@ func run(ctx context.Context, args []string) error {
 	return runStoreCopy(ctx, root, outputRoot, storeRoot, opts.target)
 }
 
-// resolveRepositoryRoot 解析仓库根：显式 -repo-root 优先，否则从工作目录向上找 go.mod。
-func resolveRepositoryRoot(explicit string) (string, error) {
-	if trimmed := strings.TrimSpace(explicit); trimmed != "" {
-		absolute, err := filepath.Abs(trimmed)
-		if err != nil {
-			return "", fmt.Errorf("仓库根目录无效：%w", err)
-		}
-		if info, statErr := os.Stat(absolute); statErr != nil || !info.IsDir() {
-			return "", fmt.Errorf("仓库根目录无效：%s", absolute)
-		}
-		return absolute, nil
-	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("无法确定仓库根目录：%w", err)
-	}
-	current := cwd
-	for {
-		if isRepositoryRoot(current) {
-			return current, nil
-		}
-		parent := filepath.Dir(current)
-		if parent == current {
-			return "", fmt.Errorf("无法确定仓库根目录（未找到主仓库标志）")
-		}
-		current = parent
-	}
-}
-
-// isRepositoryRoot 判定主仓库根：同时存在 tools 源码区与开发工具区 go.mod。
-func isRepositoryRoot(candidate string) bool {
-	if info, err := os.Stat(filepath.Join(candidate, "tools")); err != nil || !info.IsDir() {
-		return false
-	}
-	if info, err := os.Stat(filepath.Join(candidate, ".dev-tools", "go.mod")); err != nil || info.IsDir() {
-		return false
-	}
-	return true
-}
-
-func parseTarget(target string) (types.ReleaseArtifactIdentity, error) {	kind, id, ok := strings.Cut(strings.TrimSpace(target), ":")
+func parseTarget(target string) (types.ReleaseArtifactIdentity, error) {
+	kind, id, ok := strings.Cut(strings.TrimSpace(target), ":")
 	id = strings.TrimSpace(id)
 	if !ok || id == "" || filepath.Base(id) != id {
 		return types.ReleaseArtifactIdentity{}, errors.New("必须指定 tool:<id> 或 plugin:<id>")
@@ -155,22 +124,25 @@ func shelfRoot(root string, explicit string) (string, error) {
 	return filepath.Join(root, ".dev-workspace", ".dev-runtime", "eucli-box", "programs", "local-store"), nil
 }
 
-func resolveRoots(root string, opts options) (string, string, error) {
+func resolveRoots(root string, opts options) (string, string, string, error) {
+	runtimeRoot := toolruntime.Root(root, "eucli-store-sync")
 	workRoot := strings.TrimSpace(opts.workRoot)
 	if workRoot == "" {
-		workRoot = filepath.Join(root, ".dev-workspace", ".dev-tools-runtime", "eucli-store-sync", "work")
+		prepared, err := toolruntime.PrepareRunDir(runtimeRoot, "work", "build")
+		if err != nil {
+			return "", "", "", fmt.Errorf("建立本轮构建现场失败：%w", err)
+		}
+		workRoot = prepared
 	}
 	outputRoot := strings.TrimSpace(opts.outputRoot)
 	if outputRoot == "" {
-		outputRoot = filepath.Join(root, ".dev-workspace", ".dev-tools-runtime", "eucli-store-sync", "output")
+		outputRoot = filepath.Join(runtimeRoot, "output")
 	}
-	if err := os.MkdirAll(workRoot, 0o755); err != nil {
-		return "", "", fmt.Errorf("建立构建工作区失败：%w", err)
+	evidenceRoot, err := toolruntime.PrepareRunDir(runtimeRoot, "evidence", "build")
+	if err != nil {
+		return "", "", "", fmt.Errorf("建立本轮证据现场失败：%w", err)
 	}
-	if err := os.MkdirAll(outputRoot, 0o755); err != nil {
-		return "", "", fmt.Errorf("建立构建输出区失败：%w", err)
-	}
-	return workRoot, outputRoot, nil
+	return workRoot, outputRoot, evidenceRoot, nil
 }
 
 // resolveBuildVersion 决定本次铺货版本：显式指定直接用；

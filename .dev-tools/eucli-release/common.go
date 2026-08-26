@@ -5,34 +5,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
-	"time"
 
 	"devtools/common/releasecredentials"
+	"devtools/common/toolruntime"
 	"eucli-box/pkg/releasecatalog"
 	"eucli-box/pkg/types"
 )
 
 func repositoryRoot(value string) (string, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		value = "."
-	}
-	absolute, err := filepath.Abs(value)
-	if err != nil {
-		return "", err
-	}
-	info, err := os.Stat(absolute)
-	if err != nil {
-		return "", err
-	}
-	if !info.IsDir() {
-		return "", fmt.Errorf("仓库根目录无效")
-	}
-	if _, err := os.Stat(filepath.Join(absolute, "go.mod")); err != nil {
-		return "", fmt.Errorf("仓库根目录缺少 go.mod")
-	}
-	return filepath.Clean(absolute), nil
+	return toolruntime.ValidateRepositoryRoot(value)
 }
 
 func resolveTarget(value string) (releasecatalog.Catalog, types.ReleaseArtifactIdentity, error) {
@@ -74,10 +55,6 @@ func printJSON(value any) error {
 	}
 	fmt.Println(string(payload))
 	return nil
-}
-
-func runLabel(prefix string) string {
-	return prefix + "-" + time.Now().UTC().Format("20060102T150405.000000000Z")
 }
 
 func githubToken(root string, kind string) (string, error) {

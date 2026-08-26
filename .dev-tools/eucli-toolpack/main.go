@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"devtools/common/toolruntime"
 	"eucli-box/pkg/release"
 	"eucli-box/pkg/types"
 )
@@ -80,7 +81,7 @@ func run(ctx context.Context, args []string) error {
 	var opts options
 	flags := flag.NewFlagSet("build-tools", flag.ContinueOnError)
 	flags.StringVar(&opts.tool, "tool", "all", "tool id to build, or all")
-	flags.StringVar(&opts.dataDir, "data-dir", "data", "runtime data directory")
+	flags.StringVar(&opts.dataDir, "data-dir", "", "runtime data directory; defaults to the tool runtime root")
 	flags.BoolVar(&opts.migrateLayout, "migrate-layout", false, "move existing tool bodies and tool data into the current layout")
 	buildTimeValue := flags.String("build-time", "", "stable RFC3339 build time; defaults to the current time")
 	flags.Var(&opts.assetRoots, "asset-root", "tool asset root in name=path form; repeatable")
@@ -94,7 +95,7 @@ func run(ctx context.Context, args []string) error {
 			return err
 		}
 	}
-	repoRoot, err := findRepoRoot()
+	repoRoot, err := toolruntime.ValidateRepositoryRoot("")
 	if err != nil {
 		return err
 	}
@@ -105,9 +106,15 @@ func run(ctx context.Context, args []string) error {
 	if len(tools) == 0 {
 		return fmt.Errorf("no tools matched %q", opts.tool)
 	}
-	dataDirInput := opts.dataDir
+	dataDirInput := strings.TrimSpace(opts.dataDir)
+	if dataDirInput == "" {
+		dataDirInput = toolruntime.Root(repoRoot, "eucli-toolpack")
+	}
 	if !filepath.IsAbs(dataDirInput) {
 		dataDirInput = filepath.Join(repoRoot, dataDirInput)
+	}
+	if err := toolruntime.ValidateWorkLocation(repoRoot, dataDirInput); err != nil {
+		return err
 	}
 	dataDir, err := filepath.Abs(dataDirInput)
 	if err != nil {
@@ -745,28 +752,6 @@ func executableName(toolID string) string {
 		return toolID + ".exe"
 	}
 	return toolID
-}
-
-// findRepoRoot walks upward for the primary repository root: the product tool
-// source area (tools/) and the development assets area (.dev-tools/go.mod)
-// must both be present. A .dev-tools own go.mod never satisfies this.
-func findRepoRoot() (string, error) {
-	current, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("get working directory: %w", err)
-	}
-	for {
-		if _, err := os.Stat(filepath.Join(current, "tools")); err == nil {
-			if _, statErr := os.Stat(filepath.Join(current, ".dev-tools", "go.mod")); statErr == nil {
-				return current, nil
-			}
-		}
-		parent := filepath.Dir(current)
-		if parent == current {
-			return "", fmt.Errorf("repository root was not found")
-		}
-		current = parent
-	}
 }
 
 func pathWithin(base string, child string) bool {

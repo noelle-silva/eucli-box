@@ -1314,10 +1314,20 @@ func toUIChat(session map[string]any) map[string]any {
 	if effort := normalizeReasoningEffort(stringField(metadata, "reasoningEffort")); effort != "" {
 		chat["reasoningEffort"] = effort
 	}
+	if stringField(metadata, "streamEnabled") == "false" {
+		chat["streamEnabled"] = false
+	}
 	if modelOverride := modelOverrideFromMetadata(metadata); stringField(modelOverride, "modelId") != "" {
 		chat["modelOverride"] = modelOverride
 	}
 	return chat
+}
+
+func boolText(value bool) string {
+	if value {
+		return "true"
+	}
+	return "false"
 }
 
 func deriveUIBranching(messages []map[string]any, createdAt int64, updatedAt int64) map[string]any {
@@ -1408,6 +1418,67 @@ func fromUIChat(value any, roleID string) map[string]any {
 	return fromUIChatSession(value, "role", roleID)
 }
 
+// normalizeUIParts 将 UI 消息部件转换为业务端 Session 合法形态：
+// 白名单字段 + 时间统一为 RFC3339 文本（业务端 MessagePart 时间字段为 time.Time，不接受毫秒数字）。
+func normalizeUIParts(parts []map[string]any) []any {
+	out := make([]any, 0, len(parts))
+	for _, part := range parts {
+		id := stringField(part, "id")
+		partType := stringField(part, "type")
+		if id == "" || partType == "" {
+			continue
+		}
+		next := map[string]any{"id": id, "type": partType}
+		switch partType {
+		case "text":
+			next["text"] = stringField(part, "text")
+		case "reasoning":
+			next["text"] = stringField(part, "text")
+			next["source"] = stringField(part, "source")
+			next["signature"] = stringField(part, "signature")
+			next["data"] = stringField(part, "data")
+		case "tool":
+			next["source"] = stringField(part, "source")
+			next["raw"] = stringField(part, "raw")
+			next["callId"] = stringField(part, "callId")
+			next["toolName"] = stringField(part, "toolName")
+			next["input"] = objectMap(part["input"])
+			next["state"] = stringField(part, "state")
+			if display := objectMap(part["display"]); len(display) > 0 {
+				next["display"] = display
+			}
+			if decision := objectMap(part["decision"]); len(decision) > 0 {
+				next["decision"] = map[string]any{
+					"id":        stringField(decision, "id"),
+					"actionId":  stringField(decision, "actionId"),
+					"toolName":  stringField(decision, "toolName"),
+					"status":    stringField(decision, "status"),
+					"reason":    stringField(decision, "reason"),
+					"createdAt": timeFromMillis(decision["createdAt"]),
+				}
+			}
+			if result := objectMap(part["result"]); len(result) > 0 {
+				next["result"] = map[string]any{
+					"id":        stringField(result, "id"),
+					"actionId":  stringField(result, "actionId"),
+					"toolName":  stringField(result, "toolName"),
+					"status":    stringField(result, "status"),
+					"content":   stringField(result, "content"),
+					"metadata":  objectMap(result["metadata"]),
+					"error":     stringField(result, "error"),
+					"createdAt": timeFromMillis(result["createdAt"]),
+				}
+			}
+		default:
+			continue
+		}
+		next["createdAt"] = timeFromMillis(part["createdAt"])
+		next["updatedAt"] = timeFromMillis(part["updatedAt"])
+		out = append(out, next)
+	}
+	return out
+}
+
 func fromUIGroupChat(value any, groupID string) map[string]any {
 	return fromUIChatSession(value, "group", groupID)
 }
@@ -1430,7 +1501,7 @@ func fromUIChatSession(value any, targetKind string, targetID string) map[string
 			message["error"] = errBox
 		}
 		if parts := objectList(msg["parts"]); len(parts) > 0 {
-			message["parts"] = anyList(parts)
+			message["parts"] = normalizeUIParts(parts)
 		}
 		attachments := fromUIMessageAttachments(objectList(msg["attachments"]), stringSlice(msg["images"]))
 		if len(attachments) > 0 {
@@ -1452,6 +1523,9 @@ func fromUIChatSession(value any, targetKind string, targetID string) map[string
 	metadata := map[string]any{}
 	if effort := normalizeReasoningEffort(stringField(chat, "reasoningEffort")); effort != "" {
 		metadata["reasoningEffort"] = effort
+	}
+	if streamEnabled, ok := chat["streamEnabled"].(bool); ok {
+		metadata["streamEnabled"] = boolText(streamEnabled)
 	}
 	if modelOverride := normalizeUIModelRef(chat["modelOverride"]); stringField(modelOverride, "modelId") != "" {
 		metadata["modelOverride.kind"] = stringField(modelOverride, "kind")

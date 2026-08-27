@@ -113,6 +113,7 @@ import { StickerInlineImage } from './components/MessageMedia'
 import { workspaceRoleTargetId } from '../domain/workspaceRoleTarget'
 import type { AiChatToastOptions } from '../gateway/capabilities'
 import { REASONING_EFFORT_OPTIONS, chatReasoningEffort, effectiveReasoningEffort, modelReasoningProfileFromModelRef, reasoningEffortLabel } from '../domain/reasoning'
+import { chatStreamEnabled } from '../domain/chatStream'
 import {
   DEFAULT_CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES,
   CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MIN,
@@ -2370,6 +2371,7 @@ export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap;
   const hasChatReasoningOverride = !!activeChatReasoningEffort
   const activeHookPromptMode = String((activeChat as any)?.hookPromptMode || '').trim() === 'none' ? 'none' : String((activeChat as any)?.hookPromptMode || '').trim() === 'preset' ? 'preset' : 'inherit'
   const activeHookPromptPresetId = String((activeChat as any)?.hookPromptPresetId || '').trim()
+  const activeStreamOn = chatStreamEnabled(activeChat)
   const roleDefaultHookPromptPresetId = String((activeRole as any)?.hookPromptPresetId || '').trim()
   const hookPromptSelectorDisabled = s.loading || !activeChat
   const hookPromptSelectorDisabledReason = !activeChat ? '请先创建或选择会话' : ''
@@ -4286,20 +4288,6 @@ export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap;
                   </Button>
                 ) : null}
 
-                <Tooltip title="流式输出">
-                  <Stack direction="row" alignItems="center" spacing={1} sx={{ mr: 1 }}>
-                    <Switch
-                      size="small"
-                      checked={!!data?.settings?.streamEnabled}
-                      onChange={() => controller.actions.toggleStream()}
-                      disabled={!data}
-                    />
-                    <Typography variant="body2" color="text.secondary">
-                      流式
-                    </Typography>
-                  </Stack>
-                </Tooltip>
-
                 <Box sx={{ flex: 1 }} />
 
                 <Tooltip title={chatNav.lockedReason || (chatNav.olderId ? '切换到较旧会话' : '没有更旧的会话')}>
@@ -5530,6 +5518,21 @@ export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap;
                             sx={composerToolTextButtonSx}
                           >
                             异步 {activeAsyncToolTaskRunningCount}
+                          </Button>
+                        </span>
+                      </Tooltip>
+
+                      <Tooltip title={activeStreamOn ? '流式输出：已开启（本会话）' : '非流式：已关闭（本会话）'}>
+                        <span>
+                          <Button
+                            aria-label="切换会话流式输出"
+                            onClick={() => controller.actions.toggleChatStreamEnabled?.()}
+                            disabled={s.loading || !roleSessionControlsEnabled || !activeChat}
+                            size="small"
+                            variant="text"
+                            sx={{ ...composerToolTextButtonSx, color: activeStreamOn ? 'primary.main' : 'text.secondary' }}
+                          >
+                            {activeStreamOn ? '流' : '非流'}
                           </Button>
                         </span>
                       </Tooltip>

@@ -100,15 +100,6 @@ export function createEventHandlers(deps: {
       return
     }
 
-    if (act === 'toggle-stream') {
-      const state = deps.getState()
-      if (!state.data) return
-      state.data.settings.streamEnabled = !state.data.settings.streamEnabled
-      deps.actions.save().catch(() => {})
-      deps.actions.renderTop()
-      return
-    }
-
     if (act === 'open-providers') return deps.actions.openProvidersEditor()
     if (act === 'new-role') return deps.actions.createRole()
     if (act === 'new-chat') return deps.actions.createChatForActiveTarget()

@@ -201,6 +201,7 @@ export function workspaceSessionToChat(raw: unknown) {
   }
   const reasoningEffort = normalizeReasoningEffort(metadata.reasoningEffort)
   if (reasoningEffort) chat.reasoningEffort = reasoningEffort
+  if (text(metadata.streamEnabled) === 'false') chat.streamEnabled = false
   const modelOverride = modelOverrideFromMetadata(metadata)
   if (modelOverride) chat.modelOverride = modelOverride
   const hookPromptSelection = hookPromptSelectionFromMetadata(metadata)
@@ -262,6 +263,7 @@ function workspaceChatToWire(chatRaw: unknown, workspaceIdRaw: unknown, roleIdRa
   const metadata: Record<string, any> = {}
   const reasoningEffort = normalizeReasoningEffort(chat.reasoningEffort)
   if (reasoningEffort) metadata.reasoningEffort = reasoningEffort
+  if (typeof (chat as any).streamEnabled === 'boolean') metadata.streamEnabled = (chat as any).streamEnabled ? 'true' : 'false'
   const hookPromptSelection = normalizeHookPromptSelection(chat)
   if (hookPromptSelection.mode === 'none') {
     metadata[HOOK_PROMPT_SESSION_METADATA_MODE_KEY] = 'none'

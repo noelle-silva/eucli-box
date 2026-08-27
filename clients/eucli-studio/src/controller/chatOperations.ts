@@ -22,6 +22,7 @@ import type { DraftFileItem } from '../domain/draftFileUtils'
 import { normalizeChatModelOverride, normalizeModelRef, type ModelRef } from '../domain/modelRefUtils'
 import { normalizeHookPromptSelection } from '../domain/hookPrompt'
 import { chatReasoningEffort } from '../domain/reasoning'
+import { chatStreamEnabled } from '../domain/chatStream'
 import { createStateAccessors } from '../state/stateAccessors'
 import {
   activeEbRoleRunCards,
@@ -557,7 +558,7 @@ export function createChatOperations(deps: {
       const reasoningEffort = chatReasoningEffort(sa.activeChatFromData())
       const modelOverride = currentRoleChatModelOverride()
       const hookSelection = chatHookPromptSelection(sa.activeChatFromData())
-      await runRoleMessageViaEb({ roleId: input.roleId, workspaceId: input.workspaceId, sessionId: input.sessionId, userMessageId, reasoningEffort, modelOverride, hookPromptMode: hookSelection.mode, hookPromptPresetId: hookSelection.presetId, stream: !!state.data?.settings?.streamEnabled }, (run) => {
+      await runRoleMessageViaEb({ roleId: input.roleId, workspaceId: input.workspaceId, sessionId: input.sessionId, userMessageId, reasoningEffort, modelOverride, hookPromptMode: hookSelection.mode, hookPromptPresetId: hookSelection.presetId, stream: chatStreamEnabled(sa.activeChatFromData()) }, (run) => {
         acceptedRunId = String(run?.id || '').trim()
         syncEbRoleRunCard(run, { roleId: input.roleId, workspaceId: input.workspaceId, sessionId: input.sessionId, anchorMessageId: userMessageId })
         renderComposer()
@@ -588,7 +589,7 @@ export function createChatOperations(deps: {
       const reasoningEffort = chatReasoningEffort(sa.activeChatFromData())
       const modelOverride = currentRoleChatModelOverride()
       const hookSelection = chatHookPromptSelection(sa.activeChatFromData())
-      await runRoleMessageViaEb({ roleId: input.roleId, workspaceId: input.workspaceId, sessionId: input.sessionId, contextMessageId, reasoningEffort, modelOverride, hookPromptMode: hookSelection.mode, hookPromptPresetId: hookSelection.presetId, stream: !!state.data?.settings?.streamEnabled }, (run) => {
+      await runRoleMessageViaEb({ roleId: input.roleId, workspaceId: input.workspaceId, sessionId: input.sessionId, contextMessageId, reasoningEffort, modelOverride, hookPromptMode: hookSelection.mode, hookPromptPresetId: hookSelection.presetId, stream: chatStreamEnabled(sa.activeChatFromData()) }, (run) => {
         acceptedRunId = String(run?.id || '').trim()
         syncEbRoleRunCard(run, { roleId: input.roleId, workspaceId: input.workspaceId, sessionId: input.sessionId, anchorMessageId: contextMessageId })
         renderComposer()
@@ -636,7 +637,7 @@ export function createChatOperations(deps: {
           sessionId,
           hookPromptMode: String(input.hookPromptMode || '').trim(),
           hookPromptPresetId: String(input.hookPromptPresetId || '').trim(),
-          stream: !!state.data?.settings?.streamEnabled,
+          stream: chatStreamEnabled(chatBeforeRun),
         }
         if (isFirstMessageRun) {
           runInput.message = String(input.message || '').trim()
@@ -1001,7 +1002,7 @@ export function createChatOperations(deps: {
     try {
       renderComposer()
       const reasoningEffort = chatReasoningEffort(pendingChat || currentChat)
-      await runRoleMessageViaEb({ roleId: rid, workspaceId, sessionId, message: input, attachments, parentMessageId, reasoningEffort, modelOverride, hookPromptMode: hookSelection.mode, hookPromptPresetId: hookSelection.presetId, stream: !!state.data?.settings?.streamEnabled }, (run) => {
+      await runRoleMessageViaEb({ roleId: rid, workspaceId, sessionId, message: input, attachments, parentMessageId, reasoningEffort, modelOverride, hookPromptMode: hookSelection.mode, hookPromptPresetId: hookSelection.presetId, stream: chatStreamEnabled(pendingChat || currentChat) }, (run) => {
         acceptedRunId = String(run?.id || '').trim()
         syncEbRoleRunCard(run, { roleId: rid, workspaceId, sessionId, anchorMessageId: parentMessageId })
         clearComposerDraftByKey(state, draftKey)

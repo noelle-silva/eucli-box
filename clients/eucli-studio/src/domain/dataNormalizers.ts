@@ -153,7 +153,6 @@ export function normalizeData(raw: any) {
   const d = d0
 
   if (!d.settings || typeof d.settings !== 'object') d.settings = {}
-  if (typeof d.settings.streamEnabled !== 'boolean') d.settings.streamEnabled = true
   if (typeof d.settings.transparentChatBg !== 'boolean') d.settings.transparentChatBg = false
   if (typeof d.settings.chatBgOpacity !== 'number' || !isFinite(d.settings.chatBgOpacity)) d.settings.chatBgOpacity = 0
   if (typeof d.settings.chatBgBlur !== 'number' || !isFinite(d.settings.chatBgBlur)) d.settings.chatBgBlur = 0
@@ -378,6 +377,7 @@ export function normalizeData(raw: any) {
 		const hookPromptSelection = normalizeChatHookPromptSelection(cc)
 		if (hookPromptSelection.mode !== 'inherit') out.hookPromptMode = hookPromptSelection.mode
 		if (hookPromptSelection.mode === 'preset') out.hookPromptPresetId = hookPromptSelection.presetId
+		if (typeof cc.streamEnabled === 'boolean') out.streamEnabled = cc.streamEnabled
 
 		const branches0 = Array.isArray(out.branching?.branches) ? out.branching.branches : []
         const idSet = new Set<string>()
@@ -503,6 +503,7 @@ export function normalizeData(raw: any) {
 		const hookPromptSelection = normalizeChatHookPromptSelection(cc)
 		if (hookPromptSelection.mode !== 'inherit') out.hookPromptMode = hookPromptSelection.mode
 		if (hookPromptSelection.mode === 'preset') out.hookPromptPresetId = hookPromptSelection.presetId
+		if (typeof cc.streamEnabled === 'boolean') out.streamEnabled = cc.streamEnabled
 
 		const branches0 = Array.isArray(out.branching?.branches) ? out.branching.branches : []
         const idSet = new Set<string>()
@@ -610,11 +611,12 @@ export function normalizeData(raw: any) {
 		const hookPromptSelection = normalizeChatHookPromptSelection(cc)
 		if (hookPromptSelection.mode !== 'inherit') out.hookPromptMode = hookPromptSelection.mode
 		if (hookPromptSelection.mode === 'preset') out.hookPromptPresetId = hookPromptSelection.presetId
+		if (typeof cc.streamEnabled === 'boolean') out.streamEnabled = cc.streamEnabled
 
 		const branches0 = Array.isArray(out.branching?.branches) ? out.branching.branches : []
         const idSet = new Set<string>()
-        for (const branch of branches0) {
-          const id = normalizeBranchId((branch as any)?.id)
+        for (const b of branches0) {
+          const id = normalizeBranchId((b as any)?.id)
           if (id) idSet.add(id)
           if (idSet.size >= 2) break
         }
@@ -627,10 +629,10 @@ export function normalizeData(raw: any) {
         }
         try {
           const branches = Array.isArray(out.branching?.branches) ? out.branching.branches : []
-          const branch = branches.find((item: any) => String(item?.id || '') === String(out.branching?.activeBranchId || '')) || null
-          if (branch) {
-            branch.headMid = headMid
-            branch.updatedAt = updatedAt
+          const b = branches.find((x: any) => String(x?.id || '') === String(out.branching?.activeBranchId || '')) || null
+          if (b) {
+            b.headMid = headMid
+            b.updatedAt = updatedAt
           }
         } catch (_) {}
 

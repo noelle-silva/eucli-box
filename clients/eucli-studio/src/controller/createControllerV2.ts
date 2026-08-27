@@ -40,6 +40,7 @@ import { normalizeBranchId } from '../domain/branching'
 import { normalizeMessageAttachments, normalizeMessageGroup } from '../domain/message'
 import { validateFavoriteFolderName } from '../domain/favoriteValidator'
 import { normalizeReasoningEffort } from '../domain/reasoning'
+import { chatStreamEnabled } from '../domain/chatStream'
 import { moveListItemById, type ListMovePosition } from '../domain/listOrdering'
 import { detectDraftFileKind, addDraftFilePlaceholder, removeDraftFile, removeDraftImage as removeDraftImageFromList, fileExtLower } from '../domain/draftFileUtils'
 import type { DraftFileKind, DraftFileItem, DraftImageItem } from '../domain/draftFileUtils'
@@ -1687,12 +1688,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       state.branchDraft = null
       Promise.resolve(pickChatForActiveTarget(String(chatId || ''))).catch(() => {})
     },
-    toggleStream: () => {
-      if (!state.data) return
-      state.data.settings.streamEnabled = !state.data.settings.streamEnabled
-      saveMeta().catch(() => {})
-      emit()
-    },
     toggleTransparentChatBg: () => {
       if (!state.data) return
       state.data.settings.transparentChatBg = !state.data.settings.transparentChatBg
@@ -2728,6 +2723,30 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
           emit()
         }
         return api.ui?.showToast?.(String((e as any)?.message || e || '当前会话思考等级保存失败'), { kind: 'error' })
+      }
+    },
+    toggleChatStreamEnabled: async () => {
+      if (!state.data) return
+      const target = await activeRoleChatSettingsTarget()
+      if (!target) return
+      const chat = target.chat
+      const previous = typeof (chat as any).streamEnabled === 'boolean' ? (chat as any).streamEnabled : undefined
+      const wasOn = previous !== false
+      if (wasOn) (chat as any).streamEnabled = false
+      else delete (chat as any).streamEnabled
+      chat.updatedAt = now()
+      emit()
+      try {
+        await trackChatSettingsSave(async () => {
+          await saveRoleChatSettingsTarget(target)
+        })
+      } catch (e) {
+        if (!wasOn === chatStreamEnabled(chat)) {
+          if (typeof previous === 'boolean') (chat as any).streamEnabled = previous
+          else delete (chat as any).streamEnabled
+          emit()
+        }
+        return api.ui?.showToast?.(String((e as any)?.message || e || '当前会话流式输出保存失败'), { kind: 'error' })
       }
     },
     deleteMessage: (messageId: any) => deleteMessage(String(messageId || '')),

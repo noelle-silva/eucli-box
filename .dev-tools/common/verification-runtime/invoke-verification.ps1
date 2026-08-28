@@ -37,14 +37,15 @@ function Restore-ProcessEnvironment {
 
 # 每个验证工具自己声明允许的模式；工具名必须是描述性命名（verify-<对象>-<动作>）。
 $modeRules = @{
-    "verify-release-build"        = @{ AllowNoMode = $true;  Modes = @();             DefaultMode = "full" }
-    "verify-release-publish"      = @{ AllowNoMode = $false; Modes = @("preflight", "remote"); DefaultMode = "" }
-    "verify-client-install"       = @{ AllowNoMode = $true;  Modes = @();             DefaultMode = "default" }
-    "verify-tool-plugin-update"   = @{ AllowNoMode = $true;  Modes = @("experience"); DefaultMode = "default" }
-    "verify-background-access"    = @{ AllowNoMode = $true;  Modes = @("experience"); DefaultMode = "default" }
-    "verify-data-migration"       = @{ AllowNoMode = $true;  Modes = @();             DefaultMode = "default" }
-    "verify-dev-box"              = @{ AllowNoMode = $true;  Modes = @();             DefaultMode = "default" }
-    "verify-command-execution-limit-protection" = @{ AllowNoMode = $true;  Modes = @(); DefaultMode = "default" }
+	"verify-release-build"        = @{ AllowNoMode = $true;  Modes = @();             DefaultMode = "full" }
+	"verify-release-publish"      = @{ AllowNoMode = $false; Modes = @("preflight", "remote"); DefaultMode = "" }
+	"verify-client-install"       = @{ AllowNoMode = $true;  Modes = @();             DefaultMode = "default" }
+	"verify-tool-plugin-update"   = @{ AllowNoMode = $true;  Modes = @("experience"); DefaultMode = "default" }
+	"verify-background-access"    = @{ AllowNoMode = $true;  Modes = @("experience"); DefaultMode = "default" }
+	"verify-data-migration"       = @{ AllowNoMode = $true;  Modes = @();             DefaultMode = "default" }
+	"verify-dev-box"              = @{ AllowNoMode = $true;  Modes = @();             DefaultMode = "default" }
+	"verify-command-execution-limit-protection" = @{ AllowNoMode = $true;  Modes = @(); DefaultMode = "default" }
+	"verify-session-facts-regression" = @{ AllowNoMode = $true;  Modes = @(); DefaultMode = "default" }
 }
 
 if (-not $modeRules.ContainsKey($Tool)) {
@@ -65,7 +66,11 @@ if (-not (Test-Path -LiteralPath (Join-Path $repositoryRoot "go.mod") -PathType 
     throw "Cannot locate the repository root."
 }
 
-$toolModule = "devtools/general-verification-tools/$Tool"
+$toolModuleRoot = Join-Path $repositoryRoot ".dev-tools"
+if (-not (Test-Path -LiteralPath (Join-Path $toolModuleRoot "go.mod") -PathType Leaf)) {
+    throw "Cannot locate the development tools Go module."
+}
+$toolModule = "./general-verification-tools/$Tool"
 
 $runId = [DateTime]::UtcNow.ToString("yyyyMMddTHHmmssfffffffZ", [Globalization.CultureInfo]::InvariantCulture)
 $runRoot = Join-Path $repositoryRoot ".dev-workspace\.dev-tools-runtime\$Tool\run-$runId"
@@ -101,7 +106,7 @@ try {
     [System.IO.Directory]::CreateDirectory($workDir) | Out-Null
     Push-Location $workDir
     try {
-        $arguments = @("run", $toolModule, "-root", $repositoryRoot, "-run-root", $runRoot)
+        $arguments = @("-C", $toolModuleRoot, "run", $toolModule, "-root", $repositoryRoot, "-run-root", $runRoot)
         if ($rule.AllowNoMode -or $rule.Modes.Count -gt 0) {
             $arguments += @("-mode", $Mode)
         }

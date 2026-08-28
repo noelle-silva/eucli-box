@@ -44,6 +44,37 @@ func TestDirectorySnapshotAbsentAndStable(t *testing.T) {
 	}
 }
 
+func TestPrepareVerificationRunUsesStandardBoundary(t *testing.T) {
+	repositoryRoot := t.TempDir()
+	runRoot := filepath.Join(repositoryRoot, ".dev-workspace", ".dev-tools-runtime", "verify-demo", "run-20260828T000000Z")
+	if err := os.MkdirAll(filepath.Join(runRoot, "temp"), 0o755); err != nil {
+		t.Fatalf("mkdir temp: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(runRoot, "cache"), 0o755); err != nil {
+		t.Fatalf("mkdir cache: %v", err)
+	}
+	run, err := PrepareVerificationRun(repositoryRoot, runRoot, "verify-demo")
+	if err != nil {
+		t.Fatalf("PrepareVerificationRun() error = %v", err)
+	}
+	for _, directory := range append(run.DisposableDirectories(), run.Evidence) {
+		if _, err := os.Stat(directory); err != nil {
+			t.Fatalf("prepared directory %q: %v", directory, err)
+		}
+	}
+}
+
+func TestPrepareVerificationRunRejectsUnexpectedExistingEntry(t *testing.T) {
+	repositoryRoot := t.TempDir()
+	runRoot := filepath.Join(repositoryRoot, ".dev-workspace", ".dev-tools-runtime", "verify-demo", "run-20260828T000000Z")
+	if err := os.MkdirAll(filepath.Join(runRoot, "unexpected"), 0o755); err != nil {
+		t.Fatalf("mkdir unexpected: %v", err)
+	}
+	if _, err := PrepareVerificationRun(repositoryRoot, runRoot, "verify-demo"); err == nil {
+		t.Fatal("PrepareVerificationRun() error = nil, want unexpected entry error")
+	}
+}
+
 func TestVerificationRecorderPassProtocol(t *testing.T) {
 	runRoot := t.TempDir()
 	evidenceDir := filepath.Join(runRoot, "evidence")

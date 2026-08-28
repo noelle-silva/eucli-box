@@ -6,8 +6,10 @@
 
 - 源码：本目录下 `<工具>/`
 - 本体：`.dev-workspace/.dev-tools-runtime/`（三段式版本号，按版本分子目录）
-- 开工：工作目录指向主仓库（运行时指向）
+- 开工：工具进程与子命令工作目录指向各自运行现场，访问主仓库使用显式路径
 - 产物：`.dev-workspace/.dev-tools-runtime/`
 - 共享件：`.dev-tools/common/`
 
-当前为空，等待长期验证工具进入。
+当前工具：
+
+- `verify-session-facts-regression`：客户端会话事实、设置动作与业务端路由回归。

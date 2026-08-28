@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -28,6 +29,84 @@ type Run struct {
 	Cache   string
 
 	repositoryRoot string
+}
+
+// VerificationRun 是统一验证入口准备的一次运行现场。
+type VerificationRun struct {
+	RepositoryRoot string
+	Root           string
+	Inputs         string
+	Workspace      string
+	Environment    string
+	Work           string
+	Temp           string
+	Cache          string
+	Evidence       string
+}
+
+// PrepareVerificationRun 校验统一入口传入的 run-* 目录，并建立验证现场的标准目录。
+// 入口脚本预先建立 work、temp 与 cache；其他目录由本函数统一建立并校验边界。
+func PrepareVerificationRun(repositoryRoot string, runRoot string, toolName string) (*VerificationRun, error) {
+	repositoryRoot, err := ExistingPlainDirectory(repositoryRoot, "仓库根目录")
+	if err != nil {
+		return nil, err
+	}
+	runRoot, err = ExistingPlainDirectory(runRoot, "验证运行目录")
+	if err != nil {
+		return nil, err
+	}
+	if !safeToolName(toolName) {
+		return nil, fmt.Errorf("工具名只能包含字母、数字、连字符与下划线：%q", toolName)
+	}
+	expectedParent := filepath.Join(repositoryRoot, ".dev-workspace", ".dev-tools-runtime", toolName)
+	runName := filepath.Base(runRoot)
+	if !SamePath(filepath.Dir(runRoot), expectedParent) || len(runName) <= len("run-") || !strings.HasPrefix(runName, "run-") {
+		return nil, fmt.Errorf("验证运行目录必须是 %s 下的独立 run-* 目录", expectedParent)
+	}
+
+	entries, err := os.ReadDir(runRoot)
+	if err != nil {
+		return nil, fmt.Errorf("读取验证运行目录失败：%w", err)
+	}
+	for _, entry := range entries {
+		if entry.Name() != "work" && entry.Name() != "temp" && entry.Name() != "cache" {
+			return nil, fmt.Errorf("验证运行目录包含入口之外的已有内容：%s", entry.Name())
+		}
+		if !entry.IsDir() {
+			return nil, fmt.Errorf("验证运行目录中的预备内容必须是目录：%s", entry.Name())
+		}
+	}
+
+	run := &VerificationRun{
+		RepositoryRoot: repositoryRoot,
+		Root:           runRoot,
+		Inputs:         filepath.Join(runRoot, "inputs"),
+		Workspace:      filepath.Join(runRoot, "workspace"),
+		Environment:    filepath.Join(runRoot, "environment"),
+		Work:           filepath.Join(runRoot, "work"),
+		Temp:           filepath.Join(runRoot, "temp"),
+		Cache:          filepath.Join(runRoot, "cache"),
+		Evidence:       filepath.Join(runRoot, "evidence"),
+	}
+	for _, directory := range []string{
+		run.Inputs,
+		run.Workspace,
+		run.Environment,
+		run.Work,
+		run.Temp,
+		run.Cache,
+		run.Evidence,
+	} {
+		if err := EnsurePlainDirectoryPath(repositoryRoot, directory, "验证运行资料目录"); err != nil {
+			return nil, err
+		}
+	}
+	return run, nil
+}
+
+// DisposableDirectories 返回统一入口收尾所需的固定可清理目录顺序。
+func (r *VerificationRun) DisposableDirectories() []string {
+	return []string{r.Inputs, r.Workspace, r.Environment, r.Work, r.Temp, r.Cache}
 }
 
 // PrepareRun 在运行区内建立本次运行目录（run-<时间戳>），返回全部落点。

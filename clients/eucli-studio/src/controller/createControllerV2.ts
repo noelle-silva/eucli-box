@@ -6,10 +6,8 @@ import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import mammoth from 'mammoth/mammoth.browser'
 import { extractPptMarkdown } from '../core/ppt'
 import type { AiChatCapabilities } from '../gateway/capabilities'
-import { UI_CHAT_UPDATED_NOTICE_KEY } from '../runtime/runtimeKeys'
 import { IMAGE_VIEWER_ZOOM_MAX, MERMAID_VIEWER_ZOOM_MAX, VIEWER_ZOOM_MIN } from '../core/viewerZoom'
 import type { AiChatController } from './types'
-import type { ChatSaveIntent } from '../domain/chatSaveIntent'
 
 // ---- domain ----
 import {
@@ -40,7 +38,7 @@ import { normalizeBranchId } from '../domain/branching'
 import { normalizeMessageAttachments, normalizeMessageGroup } from '../domain/message'
 import { validateFavoriteFolderName } from '../domain/favoriteValidator'
 import { normalizeReasoningEffort } from '../domain/reasoning'
-import { chatStreamEnabled } from '../domain/chatStream'
+import { updateGroupSessionSettings, updateRoleSessionSettings, updateWorkspaceSessionSettings, type SessionSettingsPatch } from './sessionSettingsClient'
 import { moveListItemById, type ListMovePosition } from '../domain/listOrdering'
 import { detectDraftFileKind, addDraftFilePlaceholder, removeDraftFile, removeDraftImage as removeDraftImageFromList, fileExtLower } from '../domain/draftFileUtils'
 import type { DraftFileKind, DraftFileItem, DraftImageItem } from '../domain/draftFileUtils'
@@ -69,7 +67,6 @@ import {
 } from '../domain/colorTheme'
 
 // ---- storage ----
-import { createChatWriteLock } from '../storage/chatWriteLock'
 import { createStickerStorage } from '../storage/stickerStorage'
 import { createSplitStorage } from '../storage/splitStorage'
 import { createLazyChatStore } from '../storage/lazyChatStore'
@@ -103,7 +100,7 @@ import { createEbRunEventConsumer } from './ebRunEvents'
 import { createToolCatalog } from './toolCatalog'
 import { createInstallSourceClient } from './installSourceClient'
 import { createModelRequestConfigController, defaultModelRequestConfigState } from './modelRequestConfig'
-import { parseWorkspaceRoleTargetId, workspaceRoleTargetId } from '../domain/workspaceRoleTarget'
+import { workspaceRoleTargetId } from '../domain/workspaceRoleTarget'
 import { HOOK_PROMPT_SESSION_METADATA_KEY, HOOK_PROMPT_SESSION_METADATA_MODE_KEY, normalizeHookPromptLibrary, normalizeHookPromptSelection, normalizeHookPromptSelectionMode, type HookPromptLibrary, type HookPromptSelectionMode } from '../domain/hookPrompt'
 import { loadHookPromptLibrary, saveHookPromptLibrary, updateGroupSessionHookPrompt, updateRoleSessionHookPrompt, updateWorkspaceSessionHookPrompt } from './hookPromptClient'
 import { normalizePlaceholderLibrary, type PlaceholderLibrary } from '../domain/placeholder'
@@ -112,8 +109,10 @@ import { createPlaceholderFromSystemPluginInterface, installSystemPlugin as inst
 import { systemPluginLocatorId } from '../domain/systemPlugin'
 import { addNativeToolsToPolicy, addToolsToPolicy, emptyRoleToolPolicy, removeNativeToolFromPolicy, removeToolFromPolicy, setToolRunMode } from '../domain/toolPolicy'
 import { readActiveEbRunCardsForTarget, removeEbRoleRunCard, upsertEbRoleRunCard } from '../domain/activeRunCards'
-import { loadWorkspaceSession, saveWorkspaceSession, workspaceSessionToChat } from './workspaceBridge'
+import { loadWorkspaceSession, workspaceSessionToChat } from './workspaceBridge'
 import { normalizeStoredChat } from '../storage/normalizeStoredChat'
+import { createChatSessionTarget, chatSettingsTargetKey, type ChatSettingsTarget } from './chatSessionTarget'
+import { createChatSettingsSaveQueue, type ChatSettingsAction } from './chatSettingsSaveQueue'
 
 export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilities }): {
   controller: AiChatController
@@ -143,6 +142,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     systemPlugins: { loading: false, error: '', items: [] as any[], selectedPluginId: '', selectedPlugin: null as any, detailLoading: false, detailError: '', saving: false, saveError: '', availableInterfaces: [] as any[], installLoading: false, installError: '', installState: null as any },
     tools: { loading: false, error: '', items: [] as any[], fetchedAt: 0, detailLoading: false, detailError: '', selectedToolId: '', selectedTool: null as any, configDraft: {} as Record<string, any>, promptDescriptionDraft: '', saving: false, saveError: '', installLoading: false, installError: '', installState: null as any },
     modelRequestConfig: defaultModelRequestConfigState(),
+    chatSettings: { savingByTarget: {} as Record<string, any> },
     pendingChat: null as any,
     pendingGroupChat: null as any,
     pendingWorkspaceChat: null as any,
@@ -431,10 +431,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   // ============================================================
   // 6. STORAGE MODULES
   // ============================================================
-  const { chatWriteLockKey, withChatWriteLock, writeChatUpdatedNotice } = createChatWriteLock({
-    rtStorage: runtimeStorage,
-  })
-
   const stickerStore = createStickerStorage({
     filesImages: api.files?.images as any,
     storage,
@@ -455,9 +451,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
 
   const splitStore = createSplitStorage({
     storage,
-    rtStorage: runtimeStorage,
-    withChatWriteLock,
-    writeChatUpdatedNotice,
     syncRoleAvatarFile,
     syncGroupAvatarFile,
     getState: () => state,
@@ -467,14 +460,10 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   const {
     loadSplitMeta,
     withSplitMetaWrite,
-    touchChatUpdatedAt,
-    touchGroupChatUpdatedAt,
     ensureSplitStoreReady,
-    saveRoleChat,
     setActiveRoleChatSelection,
     removeRoleChatEntry,
     saveRoleOrder,
-    saveGroupChat,
     setActiveGroupChatSelection,
     removeGroupChatEntry,
     saveMetaOnly,
@@ -593,6 +582,33 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     pickChatModelRef,
   } = stateAccessors
 
+  const chatSessionTarget = createChatSessionTarget({
+    getState: () => state,
+    activeTargetKind,
+    activeChat,
+    activeRole,
+    activeGroup,
+    activeWorkspace,
+    pendingChatForTarget,
+    workspaceRoleTargetId,
+  })
+  const { captureChatSettingsTarget, currentChatForSettingsTarget } = chatSessionTarget
+
+  function isActiveChatSettingsTarget(target: ChatSettingsTarget) {
+    const current = captureChatSettingsTarget()
+    return !!current && chatSettingsTargetKey(current) === chatSettingsTargetKey(target)
+  }
+
+  const chatSettingsSaveQueue = createChatSettingsSaveQueue({
+    getSavingByTarget: () => state.chatSettings.savingByTarget as Record<string, unknown>,
+    resetSavingByTarget: () => { state.chatSettings.savingByTarget = {} },
+    captureCurrentTarget: captureChatSettingsTarget,
+    isActiveTarget: isActiveChatSettingsTarget,
+    isDisposed: () => disposed,
+    onStateChanged: () => emit(),
+    onError: (message: string) => { api.ui?.showToast?.(message, { kind: 'error' }) },
+  })
+
   // ============================================================
   // 8. GROUP CHAT SYNC
   // ============================================================
@@ -610,14 +626,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     getState: () => state,
     activeChatFromData,
     saveMetaOnly,
-    saveRoleChat,
-    saveGroupChat,
-    saveWorkspaceChat: async (workspaceId: string, chat: any, intent?: ChatSaveIntent) => {
-      const request = capabilities.net?.request
-      const roleId = String(chat?.roleId || state.draft?.activeRoleId || '').trim()
-      if (typeof request !== 'function') throw new Error('工作区保存通道不可用')
-      await saveWorkspaceSession(request, { workspaceId, roleId, chat })
-    },
   })
   const { saveMeta, saveCurrentChat } = persistence
 
@@ -958,24 +966,58 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     chat.updatedAt = now()
   }
 
-  function applyHookPromptSessionResponse(kind: 'role' | 'group' | 'workspace', targetId: string, session: any) {
-    if (!session || typeof session !== 'object') return null
-    if (kind === 'workspace') {
+  function applyChatSettingsSessionResponse(target: ChatSettingsTarget, session: any) {
+    if (!session || typeof session !== 'object' || String(session.id || '').trim() !== target.sessionId) throw new Error('业务端未返回有效会话')
+    if (target.kind === 'workspace') {
       const chat = workspaceSessionToChat(session)
-      if (!chat) return null
-      return upsertWorkspaceChat(targetId, chat)
+      if (!chat) throw new Error('业务端未返回有效会话')
+      if (!upsertWorkspaceChat(target.workspaceId, chat)) throw new Error('当前会话视窗更新失败')
+      return
     }
-    const chat = normalizeStoredChat(session, kind)
-    if (!chat) return null
-    return upsertLoadedChat(kind, targetId, chat)
+    const chat = normalizeStoredChat(session, target.kind)
+    if (!chat) throw new Error('业务端未返回有效会话')
+    if (!upsertLoadedChat(target.kind, target.targetId, chat)) throw new Error('当前会话视窗更新失败')
+  }
+
+  // 会话级设置只把业务端确认后的完整会话写回视窗。
+  async function applyChatSettingsAction(target: ChatSettingsTarget, action: ChatSettingsAction, patch: SessionSettingsPatch, applyLocal: (chat: any) => void, failText: string): Promise<'saved' | 'draft' | false> {
+    if (!state.data) return false
+    const chat = currentChatForSettingsTarget(target)
+    if (!chat) return false
+    if (chat && (chat as any).clientDraft) {
+      applyLocal(chat)
+      ;(chat as any).updatedAt = now()
+      emit()
+      return 'draft'
+    }
+    const netRequest = capabilities.net?.request
+    if (typeof netRequest !== 'function') {
+      api.ui?.showToast?.('业务端请求通道不可用', { kind: 'error' })
+      return false
+    }
+    return runChatSettingsSave(target, action, patch, async (isCurrent) => {
+      let session: any = null
+      if (target.kind === 'group') {
+        session = await updateGroupSessionSettings(netRequest, { groupId: target.groupId, sessionId: target.sessionId }, patch)
+      } else if (target.kind === 'workspace') {
+        session = await updateWorkspaceSessionSettings(netRequest, { workspaceId: target.workspaceId, roleId: target.roleId, sessionId: target.sessionId }, patch)
+      } else {
+        session = await updateRoleSessionSettings(netRequest, { roleId: target.roleId, sessionId: target.sessionId }, patch)
+      }
+      if (!isCurrent()) return
+      applyChatSettingsSessionResponse(target, session)
+      emit()
+    }, failText)
   }
 
   async function selectHookPromptForActiveChat(modeRaw: any, presetIdRaw?: any) {
     if (!state.data) return
     const selection = normalizeHookPromptSelection({ hookPromptMode: modeRaw, hookPromptPresetId: presetIdRaw })
-    const kind = activeTargetKind()
-    const chat = activeChat()
-    if (!chat) return api.ui?.showToast?.('请先创建或选择会话', { kind: 'error' })
+    const target = captureChatSettingsTarget()
+    if (!target) return api.ui?.showToast?.('请先创建或选择会话', { kind: 'error' })
+    const kind = target.kind
+    const chat = currentChatForSettingsTarget(target)
+    if (!chat) return
     if ((chat as any).clientDraft) {
       writeHookPromptSelectionToChat(chat, selection.mode, selection.presetId)
       emit()
@@ -983,38 +1025,21 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     }
     const netRequest = capabilities.net?.request
     if (typeof netRequest !== 'function') return api.ui?.showToast?.('业务端请求通道不可用', { kind: 'error' })
-    const sessionId = String(chat?.id || '').trim()
-    if (!sessionId) return api.ui?.showToast?.('当前会话无效', { kind: 'error' })
-    const previousSelection = normalizeHookPromptSelection({ hookPromptMode: (chat as any).hookPromptMode, hookPromptPresetId: (chat as any).hookPromptPresetId })
-    writeHookPromptSelectionToChat(chat, selection.mode, selection.presetId)
-    emit()
-    try {
-      await trackChatSettingsSave(async () => {
-        let session: any = null
-        if (kind === 'group') {
-          const groupId = String(activeGroup()?.id || state.draft?.activeGroupId || '').trim()
-          if (!groupId) throw new Error('群组无效')
-          session = await updateGroupSessionHookPrompt(netRequest, { groupId, sessionId, mode: selection.mode, presetId: selection.presetId })
-          applyHookPromptSessionResponse('group', groupId, session)
-        } else if (kind === 'workspace') {
-          const workspaceId = String(activeWorkspace()?.id || (state.draft as any)?.activeWorkspaceId || '').trim()
-          const roleId = String((chat as any)?.roleId || activeRole()?.id || state.draft?.activeRoleId || '').trim()
-          if (!workspaceId || !roleId) throw new Error('工作区会话无效')
-          session = await updateWorkspaceSessionHookPrompt(netRequest, { workspaceId, roleId, sessionId, mode: selection.mode, presetId: selection.presetId })
-          applyHookPromptSessionResponse('workspace', workspaceId, session)
-        } else {
-          const roleId = String(activeRole()?.id || state.draft?.activeRoleId || '').trim()
-          if (!roleId) throw new Error('角色无效')
-          session = await updateRoleSessionHookPrompt(netRequest, { roleId, sessionId, mode: selection.mode, presetId: selection.presetId })
-          applyHookPromptSessionResponse('role', roleId, session)
-        }
-      })
+    const ok = await runChatSettingsSave(target, 'hook', { mode: selection.mode, presetId: selection.presetId }, async (isCurrent) => {
+      let session: any = null
+      if (kind === 'group') {
+        session = await updateGroupSessionHookPrompt(netRequest, { groupId: target.groupId, sessionId: target.sessionId, mode: selection.mode, presetId: selection.presetId })
+      } else if (kind === 'workspace') {
+        session = await updateWorkspaceSessionHookPrompt(netRequest, { workspaceId: target.workspaceId, roleId: target.roleId, sessionId: target.sessionId, mode: selection.mode, presetId: selection.presetId })
+      } else {
+        session = await updateRoleSessionHookPrompt(netRequest, { roleId: target.roleId, sessionId: target.sessionId, mode: selection.mode, presetId: selection.presetId })
+      }
+      if (!isCurrent()) return
+      applyChatSettingsSessionResponse(target, session)
       emit()
+    }, '当前会话 hook 提示词保存失败')
+    if (ok && isActiveChatSettingsTarget(target)) {
       api.ui?.showToast?.(selection.mode === 'preset' ? '当前会话 hook 提示词已保存' : selection.mode === 'none' ? '已关闭当前会话 hook 提示词' : '已恢复跟随角色默认预设', { kind: 'success' })
-    } catch (e) {
-      writeHookPromptSelectionToChat(chat, previousSelection.mode, previousSelection.presetId)
-      emit()
-      api.ui?.showToast?.(String((e as any)?.message || e || '当前会话 hook 提示词保存失败'), { kind: 'error' })
     }
   }
 
@@ -1119,55 +1144,16 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     if (changed) render()
   }
 
-  async function save(intent?: ChatSaveIntent) {
-    await saveCurrentChat(intent)
+  async function save() {
+    await saveCurrentChat()
   }
 
-  let chatSettingsSave: Promise<void> | null = null
-  let chatSettingsSaveTail: Promise<void> = Promise.resolve()
-
-  function trackChatSettingsSave(work: () => Promise<void>) {
-    const run = chatSettingsSaveTail.catch(() => {}).then(work)
-    chatSettingsSaveTail = run
-    chatSettingsSave = run
-    run.finally(() => {
-      if (chatSettingsSave === run) chatSettingsSave = null
-      if (chatSettingsSaveTail === run) chatSettingsSaveTail = Promise.resolve()
-    }).catch(() => {})
-    return run
+  async function runChatSettingsSave(target: ChatSettingsTarget, action: ChatSettingsAction, value: unknown, work: (isCurrent: () => boolean) => Promise<void>, failText: string): Promise<'saved' | false> {
+    return chatSettingsSaveQueue.runSave(target, action, value, work, failText)
   }
 
   async function waitForChatSettingsSave() {
-    const run = chatSettingsSave
-    if (run) await run
-  }
-
-  async function activeRoleChatSettingsTarget() {
-    if (!state.data) return null
-    const kind = activeTargetKind()
-    if (kind !== 'role' && kind !== 'workspace') return null
-    const target = kind === 'workspace' ? activeWorkspace() : activeRole()
-    const targetId = String((target as any)?.id || '').trim()
-    const roleId = String(activeRole()?.id || state.draft?.activeRoleId || state.data?.ui?.activeRoleId || '').trim()
-    if (!targetId) return null
-    const pendingKind = kind === 'workspace' ? 'workspace' : 'role'
-    const pendingChat = pendingChatForTarget(state, pendingKind, kind === 'workspace' ? workspaceRoleTargetId(targetId, roleId) : targetId)
-    if (!pendingChat) await ensureActiveChatLoaded()
-    const chat = pendingChat || activeChatFromData()
-    if (!chat) return null
-    return { targetId, roleId, pendingChat, chat, kind: kind === 'workspace' ? 'workspace' : 'role' as 'workspace' | 'role' }
-  }
-
-  async function saveRoleChatSettingsTarget(target: { targetId: string; roleId?: string; pendingChat: any; chat: any; kind: 'role' | 'workspace' }) {
-    if (target.pendingChat) return
-    if (target.kind === 'workspace') {
-      const request = capabilities.net?.request
-      const roleId = String(target.chat?.roleId || target.roleId || state.draft?.activeRoleId || '').trim()
-      if (typeof request !== 'function') throw new Error('工作区保存通道不可用')
-      await saveWorkspaceSession(request, { workspaceId: target.targetId, roleId, chat: target.chat })
-      return
-    }
-    await saveRoleChat(target.targetId, target.chat)
+    await chatSettingsSaveQueue.waitCurrentTargetSave()
   }
 
   // ============================================================
@@ -1438,24 +1424,8 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     getState: () => state,
     emit,
     subscribeDirectEvents: (capabilities.host as any)?.directEvents?.subscribe,
-    onRuntimeChatChanged: async (targetKind, targetId, chat) => {
-      const sessionId = String(chat?.id || '').trim()
-      if (!sessionId || (chat as any)?.runtimePartial) return
-      if (targetKind === 'group') {
-        await saveGroupChat(targetId, chat)
-        return
-      }
-      if (targetKind === 'workspace') {
-        const parsed = parseWorkspaceRoleTargetId(targetId)
-        const workspaceId = parsed.workspaceId || String((chat as any)?.workspaceId || '').trim()
-        const roleId = parsed.roleId || String((chat as any)?.roleId || state.draft?.activeRoleId || '').trim()
-        const request = capabilities.net?.request
-        if (!workspaceId || !roleId || typeof request !== 'function') return
-        await saveWorkspaceSession(request, { workspaceId, roleId, chat })
-        return
-      }
-      await saveRoleChat(targetId, chat)
-    },
+    // 视窗架构：运行事件只刷新画面，不把 UI 快照整包写回业务端。
+    // 会话事实由业务端运行时持久化，终态由运行完成后的会话重读对账。
   })
 
   const uiPolling = createUiPolling({
@@ -2654,100 +2624,76 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
       const pid = String(providerId || '').trim()
       const mid = String(modelId || '').trim()
       if (!pid || !mid) return api.ui?.showToast?.('供应商/模型 不能为空', { kind: 'error' })
-      const target = await activeRoleChatSettingsTarget()
+      const target = captureChatSettingsTarget()
       if (!target) return api.ui?.showToast?.('请先创建或选择会话', { kind: 'error' })
       const chat = target.chat
-      const previousOverride = (chat as any).modelOverride
       const nextOverride = { kind: 'provider', providerId: pid, groupId: '', modelId: mid }
-      ;(chat as any).modelOverride = nextOverride
-      chat.updatedAt = now()
-      emit()
-      try {
-        await trackChatSettingsSave(async () => {
-          await saveRoleChatSettingsTarget(target)
-        })
-      } catch (e) {
-        if ((chat as any).modelOverride === nextOverride) {
-          if (previousOverride === undefined) delete (chat as any).modelOverride
-          else (chat as any).modelOverride = previousOverride
-          emit()
-        }
-        return api.ui?.showToast?.(String((e as any)?.message || e || '当前会话临时模型保存失败'), { kind: 'error' })
-      }
-      api.ui?.showToast?.('当前会话临时模型已保存', { kind: 'success' })
+      const ok = await applyChatSettingsAction(
+        target,
+        'model',
+        { modelOverride: nextOverride },
+        (current) => {
+          ;(current as any).modelOverride = nextOverride
+        },
+        '当前会话临时模型保存失败',
+      )
+      if (ok === 'saved' && isActiveChatSettingsTarget(target)) api.ui?.showToast?.('当前会话临时模型已保存', { kind: 'success' })
     },
     clearChatModelOverride: async () => {
       if (!state.data) return
-      const target = await activeRoleChatSettingsTarget()
-      if (!target) return
-      const chat = target.chat
-      if (!(chat as any).modelOverride) return
-      const previousOverride = (chat as any).modelOverride
-      try { delete (chat as any).modelOverride } catch (_e) { ;(chat as any).modelOverride = null }
-      chat.updatedAt = now()
-      emit()
-      try {
-        await trackChatSettingsSave(async () => {
-          await saveRoleChatSettingsTarget(target)
-        })
-      } catch (e) {
-        if (!(chat as any).modelOverride) {
-          ;(chat as any).modelOverride = previousOverride
-          emit()
-        }
-        return api.ui?.showToast?.(String((e as any)?.message || e || '当前会话临时模型清除失败'), { kind: 'error' })
-      }
-      api.ui?.showToast?.('已清除当前会话临时模型', { kind: 'success' })
+      const target = captureChatSettingsTarget()
+      if (!target) return api.ui?.showToast?.('请先创建或选择会话', { kind: 'error' })
+      const chat = currentChatForSettingsTarget(target)
+      if (!(chat as any)?.modelOverride && !chatSettingsSaveQueue.isTargetActionPending(target, 'model')) return
+      const ok = await applyChatSettingsAction(
+        target,
+        'model',
+        { modelOverride: null },
+        (current) => {
+          try {
+            delete (current as any).modelOverride
+          } catch (_e) {
+            ;(current as any).modelOverride = null
+          }
+        },
+        '当前会话临时模型清除失败',
+      )
+      if (ok === 'saved' && isActiveChatSettingsTarget(target)) api.ui?.showToast?.('已清除当前会话临时模型', { kind: 'success' })
     },
     setChatReasoningEffort: async (effort: any) => {
       if (!state.data) return
       const next = normalizeReasoningEffort(effort)
-      const target = await activeRoleChatSettingsTarget()
-      if (!target) return
+      const target = captureChatSettingsTarget()
+      if (!target) return api.ui?.showToast?.('请先创建或选择会话', { kind: 'error' })
       const chat = target.chat
-      const previousEffort = (chat as any).reasoningEffort
-      const nextEffort = next
-      if (next) (chat as any).reasoningEffort = next
-      else delete (chat as any).reasoningEffort
-      chat.updatedAt = now()
-      emit()
-      try {
-        await trackChatSettingsSave(async () => {
-          await saveRoleChatSettingsTarget(target)
-        })
-      } catch (e) {
-        const currentEffort = String((chat as any).reasoningEffort || '').trim()
-        if (currentEffort === String(nextEffort || '').trim()) {
-          if (previousEffort === undefined) delete (chat as any).reasoningEffort
-          else (chat as any).reasoningEffort = previousEffort
-          emit()
-        }
-        return api.ui?.showToast?.(String((e as any)?.message || e || '当前会话思考等级保存失败'), { kind: 'error' })
-      }
+      const ok = await applyChatSettingsAction(
+        target,
+        'reasoning',
+        { reasoningEffort: String(next || '') },
+        (current) => {
+          if (next) (current as any).reasoningEffort = next
+          else delete (current as any).reasoningEffort
+        },
+        '当前会话思考等级保存失败',
+      )
+      if (ok === 'saved' && isActiveChatSettingsTarget(target)) api.ui?.showToast?.('当前会话思考等级已保存', { kind: 'success' })
     },
     toggleChatStreamEnabled: async () => {
       if (!state.data) return
-      const target = await activeRoleChatSettingsTarget()
-      if (!target) return
+      const target = captureChatSettingsTarget()
+      if (!target) return api.ui?.showToast?.('请先创建或选择会话', { kind: 'error' })
       const chat = target.chat
-      const previous = typeof (chat as any).streamEnabled === 'boolean' ? (chat as any).streamEnabled : undefined
-      const wasOn = previous !== false
-      if (wasOn) (chat as any).streamEnabled = false
-      else delete (chat as any).streamEnabled
-      chat.updatedAt = now()
-      emit()
-      try {
-        await trackChatSettingsSave(async () => {
-          await saveRoleChatSettingsTarget(target)
-        })
-      } catch (e) {
-        if (!wasOn === chatStreamEnabled(chat)) {
-          if (typeof previous === 'boolean') (chat as any).streamEnabled = previous
-          else delete (chat as any).streamEnabled
-          emit()
-        }
-        return api.ui?.showToast?.(String((e as any)?.message || e || '当前会话流式输出保存失败'), { kind: 'error' })
-      }
+      const nextOn = (chat as any).streamEnabled === false
+      const ok = await applyChatSettingsAction(
+        target,
+        'stream',
+        { streamEnabled: nextOn },
+        (current) => {
+          if (nextOn) delete (current as any).streamEnabled
+          else (current as any).streamEnabled = false
+        },
+        '当前会话流式输出保存失败',
+      )
     },
     deleteMessage: (messageId: any) => deleteMessage(String(messageId || '')),
     deleteMessageSubtree: (messageId: any) => deleteMessageSubtree(String(messageId || '')),
@@ -2811,6 +2757,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
 
   function dispose() {
     disposed = true
+    chatSettingsSaveQueue.abort()
     ebRunEvents.stop()
     stopUiPollers()
     uiCore.dispose()

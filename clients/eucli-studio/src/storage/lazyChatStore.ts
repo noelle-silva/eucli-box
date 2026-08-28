@@ -201,16 +201,6 @@ export function createLazyChatStore(deps: {
     return normalizeStoredChat(raw, kind)
   }
 
-  async function saveChat(kind: LazyChatKind, targetIdRaw: any, chatRaw: any) {
-    const targetId = String(targetIdRaw || '').trim()
-    const chatId = String(chatRaw?.id || '').trim()
-    if (!targetId || !chatId) return
-    const meta = await loadSplitMetaFor(kind, targetId)
-    const folder = folderForTarget(meta, kind, targetId)
-    if (!folder) throw new Error(kind === 'group' ? '群组不存在' : '角色不存在')
-    await storage.set(chatKeyFor(kind, folder, chatId), chatRaw)
-  }
-
   async function removeChat(kind: LazyChatKind, targetIdRaw: any, chatIdRaw: any) {
     const targetId = String(targetIdRaw || '').trim()
     const chatId = String(chatIdRaw || '').trim()
@@ -271,7 +261,6 @@ export function createLazyChatStore(deps: {
   return {
     loadShell,
     loadChat,
-    saveChat,
     removeChat,
     ensureChatLoaded,
     ensureActiveChatLoaded,

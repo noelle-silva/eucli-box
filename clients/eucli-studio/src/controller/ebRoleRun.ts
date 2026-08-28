@@ -45,7 +45,7 @@ export function isTerminalRunStatus(status: unknown) {
   return value === 'completed' || value === 'failed' || value === 'cancelled' || value === 'canceled'
 }
 
-export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: string; groupId?: string; workspaceId?: string; sessionId?: string; message?: string; attachments?: any[]; parentMessageId?: string; userMessageId?: string; contextMessageId?: string; stream?: boolean; reasoningEffort?: string; modelOverride?: any; hookPromptMode?: string; hookPromptPresetId?: string }) {
+export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: string; groupId?: string; workspaceId?: string; sessionId?: string; message?: string; attachments?: any[]; parentMessageId?: string; userMessageId?: string; contextMessageId?: string; reasoningEffort?: string; modelOverride?: any; hookPromptMode?: string; hookPromptPresetId?: string; stream?: boolean }) {
   const body = {
     roleId: String(input.roleId || '').trim(),
     groupId: String(input.groupId || '').trim(),
@@ -60,7 +60,7 @@ export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: st
     reasoningEffort: String(input.reasoningEffort || '').trim(),
     hookPromptMode: String(input.hookPromptMode || '').trim(),
     hookPromptPresetId: String(input.hookPromptPresetId || '').trim(),
-    stream: !!input.stream,
+    stream: input.stream,
   }
   if (!body.roleId) throw new Error('角色无效')
   const hasAttachments = body.attachments.length > 0
@@ -84,6 +84,7 @@ export async function startRoleRun(netRequest: EbNetRequest, input: { roleId: st
   if (!body.reasoningEffort) delete (body as any).reasoningEffort
   if (!body.hookPromptMode) delete (body as any).hookPromptMode
   if (!body.hookPromptPresetId) delete (body as any).hookPromptPresetId
+  if (typeof body.stream !== 'boolean') delete (body as any).stream
   const response = await netRequest({ method: 'POST', path: '/api/runs', body, timeoutMs: 30000 })
   return normalizeRunState(response?.body)
 }

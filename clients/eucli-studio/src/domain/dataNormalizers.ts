@@ -24,10 +24,9 @@ import { hasExplicitMessageParentLinks, normalizeChatMessage } from './message'
 import { normalizeFavorites } from './favorites'
 import { chatMetasFromBox } from './chatMeta'
 import { looksLikeImageDataUrl } from './textProcessing'
-import { normalizeChatModelOverride } from './modelRefUtils'
 import { normalizeRoleToolPolicy } from './toolPolicy'
 import { normalizeReasoningEffort, normalizeReasoningFields } from './reasoning'
-import { hookPromptSelectionFromMetadata, normalizeHookPromptSelection } from './hookPrompt'
+import { normalizeSessionFacts } from './sessionFacts'
 import { parseWorkspaceRoleTargetId } from './workspaceRoleTarget'
 import { COLOR_THEME_SETTING_KEY, normalizeColorThemeSettings } from './colorTheme'
 
@@ -42,12 +41,6 @@ export function normalizeMaxFileSizeMb(v: unknown) {
 	const n = Number(v)
 	if (!isFinite(n)) return DEFAULT_ATTACH_MAX_FILE_MB
 	return clamp(Math.round(n), 0, MAX_ATTACH_MAX_FILE_MB)
-}
-
-function normalizeChatHookPromptSelection(chat: any) {
-  const direct = normalizeHookPromptSelection(chat)
-  if (direct.mode !== 'inherit') return direct
-  return hookPromptSelectionFromMetadata(chat?.metadata)
 }
 
 function normalizeAsyncToolTasks(raw: unknown) {
@@ -358,8 +351,6 @@ export function normalizeData(raw: any) {
         const hasBranching = hasStoredBranching((cc as any).branching)
         const branching = normalizeChatBranching((cc as any).branching, fallbackHeadMid, createdAt, updatedAt)
         const activeBranchId = normalizeBranchId((branching as any).activeBranchId)
-        const modelOverride = normalizeChatModelOverride(cc)
-
         const out: any = {
           id: cid,
           title,
@@ -370,14 +361,7 @@ export function normalizeData(raw: any) {
           messages: messages.filter((m: any) => m && typeof m === 'object').map((m: any) => normalizeChatMessage(m, { activeBranchId, toolMessagesAsAssistant: true })),
         }
 		out.asyncToolTasks = normalizeAsyncToolTasks((cc as any).asyncToolTasks)
-
-		if (modelOverride) out.modelOverride = modelOverride
-		const reasoningEffort = normalizeReasoningEffort((cc as any).reasoningEffort)
-		if (reasoningEffort) out.reasoningEffort = reasoningEffort
-		const hookPromptSelection = normalizeChatHookPromptSelection(cc)
-		if (hookPromptSelection.mode !== 'inherit') out.hookPromptMode = hookPromptSelection.mode
-		if (hookPromptSelection.mode === 'preset') out.hookPromptPresetId = hookPromptSelection.presetId
-		if (typeof cc.streamEnabled === 'boolean') out.streamEnabled = cc.streamEnabled
+		Object.assign(out, normalizeSessionFacts(cc))
 
 		const branches0 = Array.isArray(out.branching?.branches) ? out.branching.branches : []
         const idSet = new Set<string>()
@@ -500,10 +484,7 @@ export function normalizeData(raw: any) {
 			messages: messages.filter((m: any) => m && typeof m === 'object').map((m: any) => normalizeChatMessage(m, { activeBranchId, toolMessagesAsAssistant: false })),
 		}
 		out.asyncToolTasks = normalizeAsyncToolTasks((cc as any).asyncToolTasks)
-		const hookPromptSelection = normalizeChatHookPromptSelection(cc)
-		if (hookPromptSelection.mode !== 'inherit') out.hookPromptMode = hookPromptSelection.mode
-		if (hookPromptSelection.mode === 'preset') out.hookPromptPresetId = hookPromptSelection.presetId
-		if (typeof cc.streamEnabled === 'boolean') out.streamEnabled = cc.streamEnabled
+		Object.assign(out, normalizeSessionFacts(cc))
 
 		const branches0 = Array.isArray(out.branching?.branches) ? out.branching.branches : []
         const idSet = new Set<string>()
@@ -590,9 +571,7 @@ export function normalizeData(raw: any) {
         const hasBranching = hasStoredBranching((cc as any).branching)
         const branching = normalizeChatBranching((cc as any).branching, fallbackHeadMid, createdAt, updatedAt)
         const activeBranchId = normalizeBranchId((branching as any).activeBranchId)
-        const modelOverride = normalizeChatModelOverride(cc)
-
-        const out: any = {
+		const out: any = {
           id: cid,
           roleId: String((cc as any).roleId || '').trim(),
           workspaceId,
@@ -604,14 +583,7 @@ export function normalizeData(raw: any) {
           messages: messages.filter((message: any) => message && typeof message === 'object').map((message: any) => normalizeChatMessage(message, { activeBranchId, toolMessagesAsAssistant: true })),
         }
 		out.asyncToolTasks = normalizeAsyncToolTasks((cc as any).asyncToolTasks)
-
-		if (modelOverride) out.modelOverride = modelOverride
-		const reasoningEffort = normalizeReasoningEffort((cc as any).reasoningEffort)
-		if (reasoningEffort) out.reasoningEffort = reasoningEffort
-		const hookPromptSelection = normalizeChatHookPromptSelection(cc)
-		if (hookPromptSelection.mode !== 'inherit') out.hookPromptMode = hookPromptSelection.mode
-		if (hookPromptSelection.mode === 'preset') out.hookPromptPresetId = hookPromptSelection.presetId
-		if (typeof cc.streamEnabled === 'boolean') out.streamEnabled = cc.streamEnabled
+		Object.assign(out, normalizeSessionFacts(cc))
 
 		const branches0 = Array.isArray(out.branching?.branches) ? out.branching.branches : []
         const idSet = new Set<string>()

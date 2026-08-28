@@ -1,14 +1,9 @@
-import type { ChatSaveIntent } from '../domain/chatSaveIntent'
-
 export function createPersistence(deps: {
   getState: () => any
   activeChatFromData: () => any
   saveMetaOnly: () => Promise<void>
-  saveRoleChat: (roleId: any, chat: any, intent?: ChatSaveIntent) => Promise<void>
-  saveGroupChat: (groupId: any, chat: any, intent?: ChatSaveIntent) => Promise<void>
-  saveWorkspaceChat?: (workspaceId: any, chat: any, intent?: ChatSaveIntent) => Promise<void>
 }) {
-  const { getState, activeChatFromData, saveMetaOnly, saveRoleChat, saveGroupChat, saveWorkspaceChat } = deps
+  const { getState, saveMetaOnly } = deps
 
   function syncDraftUiToData() {
     const state = getState()
@@ -28,19 +23,8 @@ export function createPersistence(deps: {
     await saveMetaOnly()
   }
 
-  async function saveCurrentChat(intent?: ChatSaveIntent) {
-    const state = syncDraftUiToData()
-    if (!state) return
-    await saveMetaOnly()
-
-    const targetKind = String(state.draft?.activeTargetKind || '').trim()
-    const kind = targetKind === 'group' ? 'group' : targetKind === 'workspace' ? 'workspace' : 'role'
-    const targetId = kind === 'group' ? String(state.draft?.activeGroupId || '') : kind === 'workspace' ? String((state.draft as any)?.activeWorkspaceId || '') : String(state.draft?.activeRoleId || '')
-    const chat = activeChatFromData()
-    if (!targetId || !chat) return
-    if (kind === 'group') await saveGroupChat(targetId, chat, intent)
-    else if (kind === 'workspace') await saveWorkspaceChat?.(targetId, chat, intent)
-    else await saveRoleChat(targetId, chat, intent)
+  async function saveCurrentChat() {
+    await saveMeta()
   }
 
   return {

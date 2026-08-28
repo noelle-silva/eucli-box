@@ -1,7 +1,5 @@
 import { normalizeStoredChat } from '../storage/normalizeStoredChat'
-import { normalizeReasoningEffort } from '../domain/reasoning'
 import { workspaceRoleTargetId } from '../domain/workspaceRoleTarget'
-import { HOOK_PROMPT_SESSION_METADATA_KEY, HOOK_PROMPT_SESSION_METADATA_MODE_KEY, hookPromptSelectionFromMetadata, normalizeHookPromptSelection } from '../domain/hookPrompt'
 
 type EbNetRequest = (req: any) => Promise<any>
 
@@ -81,115 +79,14 @@ export function normalizeWorkspace(raw: unknown): UiWorkspace | null {
   }
 }
 
-function normalizeMessageType(raw: unknown) {
-  const value = text(raw)
-  if (value === 'assistant' || value === 'tool' || value === 'tool_request' || value === 'tool_confirmation' || value === 'failure' || value === 'system_control' || value === 'async_tool_result') return value
-  return 'user'
-}
-
-function serializeMessageParts(partsRaw: unknown) {
-  return list(partsRaw)
-    .map((raw) => {
-      const part = object(raw)
-      const id = text(part.id)
-      const type = text(part.type)
-      if (!id || !type) return null
-      const next: any = { id, type }
-      if (type === 'text') {
-        next.text = String(part.text ?? '')
-      } else if (type === 'reasoning') {
-        next.text = String(part.text ?? '')
-        next.source = text(part.source)
-        next.signature = text(part.signature)
-        next.data = String(part.data ?? '')
-      } else if (type === 'tool') {
-        next.source = text(part.source)
-        next.raw = String(part.raw ?? '')
-        next.callId = text(part.callId)
-        next.toolName = text(part.toolName)
-        next.input = object(part.input)
-        next.state = text(part.state)
-        if (Object.keys(object(part.display)).length) next.display = { ...object(part.display) }
-        const decision = object(part.decision)
-        if (Object.keys(decision).length) {
-          next.decision = {
-            id: text(decision.id),
-            actionId: text(decision.actionId),
-            toolName: text(decision.toolName),
-            status: text(decision.status),
-            reason: text(decision.reason),
-            createdAt: decision.createdAt ? timeIso(decision.createdAt) : undefined,
-          }
-        }
-        const result = object(part.result)
-        if (Object.keys(result).length) {
-          next.result = {
-            id: text(result.id),
-            actionId: text(result.actionId),
-            toolName: text(result.toolName),
-            status: text(result.status),
-            content: String(result.content ?? ''),
-            metadata: object(result.metadata),
-            error: text(result.error),
-            createdAt: result.createdAt ? timeIso(result.createdAt) : undefined,
-          }
-        }
-      } else {
-        return null
-      }
-      if (part.createdAt) next.createdAt = timeIso(part.createdAt)
-      if (part.updatedAt) next.updatedAt = timeIso(part.updatedAt)
-      return next
-    })
-    .filter(Boolean)
-}
-
-function serializeMessageAttachments(message: Record<string, any>) {
-  const out: any[] = []
-  for (const image of list(message.images)) {
-    const path = text(image)
-    if (!path) continue
-    out.push({ kind: 'image', name: '图片', path })
-  }
-  for (const raw of list(message.attachments)) {
-    const attachment = object(raw)
-    const textValue = String(attachment.text ?? '')
-    if (!textValue) continue
-    out.push({
-      id: text(attachment.id),
-      kind: text(attachment.kind) || 'txt',
-      name: text(attachment.name) || '文件',
-      lang: text(attachment.lang) || 'text',
-      text: textValue,
-      fullLen: Math.max(0, Math.floor(Number(attachment.fullLen || textValue.length))),
-      sendLen: Math.max(0, Math.floor(Number(attachment.sendLen || textValue.length))),
-      sendPct: Math.max(0, Math.min(100, Math.floor(Number(attachment.sendPct ?? 100)))),
-    })
-  }
-  return out
-}
-
-function modelOverrideFromMetadata(metadataRaw: unknown) {
-  const metadata = object(metadataRaw)
-  const modelId = text(metadata['modelOverride.modelId'])
-  if (!modelId) return null
-  const groupId = text(metadata['modelOverride.groupId'])
-  if (groupId) {
-    return { kind: 'model_group', groupId, providerId: '', modelId }
-  }
-  const providerId = text(metadata['modelOverride.providerId'])
-  if (!providerId) return null
-  return { kind: 'provider', groupId: '', providerId, modelId }
-}
-
 export function workspaceSessionToChat(raw: unknown) {
   const session = object(raw)
   const id = text(session.id)
   if (!id) return null
   const createdAt = timeMs(session.createdAt, Date.now())
   const updatedAt = timeMs(session.updatedAt, timeMs(session.lastActive, createdAt))
-  const metadata = object(session.metadata)
   const chat: any = {
+    ...session,
     id,
     roleId: text(session.roleId),
     workspaceId: text(session.workspaceId),
@@ -199,14 +96,6 @@ export function workspaceSessionToChat(raw: unknown) {
     updatedAt,
     messages: list(session.messages).map((message) => ({ ...object(message) })),
   }
-  const reasoningEffort = normalizeReasoningEffort(metadata.reasoningEffort)
-  if (reasoningEffort) chat.reasoningEffort = reasoningEffort
-  if (text(metadata.streamEnabled) === 'false') chat.streamEnabled = false
-  const modelOverride = modelOverrideFromMetadata(metadata)
-  if (modelOverride) chat.modelOverride = modelOverride
-  const hookPromptSelection = hookPromptSelectionFromMetadata(metadata)
-  if (hookPromptSelection.mode !== 'inherit') chat.hookPromptMode = hookPromptSelection.mode
-  if (hookPromptSelection.mode === 'preset') chat.hookPromptPresetId = hookPromptSelection.presetId
   return normalizeStoredChat(chat, 'workspace')
 }
 
@@ -249,69 +138,6 @@ function workspaceToWire(workspace: UiWorkspace) {
     prompt: text(workspace.prompt),
     createdAt: timeIso(createdAt),
     updatedAt: timeIso(updatedAt),
-  }
-}
-
-function workspaceChatToWire(chatRaw: unknown, workspaceIdRaw: unknown, roleIdRaw?: unknown) {
-  const chat = object(chatRaw)
-  const roleId = text(roleIdRaw) || text(chat.roleId)
-  const workspaceId = text(workspaceIdRaw) || text(chat.workspaceId)
-  if (!roleId) throw new Error('工作区会话缺少角色')
-  if (!workspaceId) throw new Error('工作区会话缺少工作区')
-  const createdAt = timeMs(chat.createdAt, Date.now())
-  const updatedAt = timeMs(chat.updatedAt, createdAt)
-  const metadata: Record<string, any> = {}
-  const reasoningEffort = normalizeReasoningEffort(chat.reasoningEffort)
-  if (reasoningEffort) metadata.reasoningEffort = reasoningEffort
-  if (typeof (chat as any).streamEnabled === 'boolean') metadata.streamEnabled = (chat as any).streamEnabled ? 'true' : 'false'
-  const hookPromptSelection = normalizeHookPromptSelection(chat)
-  if (hookPromptSelection.mode === 'none') {
-    metadata[HOOK_PROMPT_SESSION_METADATA_MODE_KEY] = 'none'
-  } else if (hookPromptSelection.mode === 'preset') {
-    metadata[HOOK_PROMPT_SESSION_METADATA_MODE_KEY] = 'preset'
-    metadata[HOOK_PROMPT_SESSION_METADATA_KEY] = hookPromptSelection.presetId
-  }
-  const modelOverride = object(chat.modelOverride)
-  const modelId = text(modelOverride.modelId)
-  if (modelId) {
-    metadata['modelOverride.kind'] = text(modelOverride.kind)
-    metadata['modelOverride.providerId'] = text(modelOverride.providerId)
-    metadata['modelOverride.groupId'] = text(modelOverride.groupId)
-    metadata['modelOverride.modelId'] = modelId
-  }
-  return {
-    id: text(chat.id),
-    roleId,
-    workspaceId,
-    title: text(chat.title) || '工作区会话',
-    status: text(chat.status) || 'created',
-    createdAt: timeIso(createdAt),
-    updatedAt: timeIso(updatedAt),
-    lastActive: timeIso(updatedAt),
-    metadata,
-    messages: list(chat.messages).map((rawMessage) => {
-      const message = object(rawMessage)
-      const createdAt = timeMs(message.createdAt, Date.now())
-      const updatedAt = timeMs(message.updatedAt, createdAt)
-      const next: any = {
-        id: text(message.id),
-        type: normalizeMessageType(message.type || message.role),
-        content: String(message.content ?? ''),
-        parentMessageId: text(message.parentMid || message.parentMessageId),
-        branchId: text(message.branchId) || 'main',
-        createdAt: timeIso(createdAt),
-        updatedAt: timeIso(updatedAt),
-      }
-      if (text(message.speakerRoleId)) next.speakerRoleId = text(message.speakerRoleId)
-      if (Object.keys(object(message.control)).length) next.control = object(message.control)
-      if (Object.keys(object(message.error)).length) next.error = object(message.error)
-      if (Array.isArray(message.parts) && message.parts.length) next.parts = serializeMessageParts(message.parts)
-      const attachments = serializeMessageAttachments(message)
-      if (attachments.length) next.attachments = attachments
-      const tokenEstimate = Math.max(0, Math.floor(Number(message.tokenEstimate || 0)))
-      if (tokenEstimate > 0) next.tokenEstimate = tokenEstimate
-      return next
-    }),
   }
 }
 
@@ -379,19 +205,6 @@ export async function createWorkspaceSession(netRequest: EbNetRequest, input: { 
     timeoutMs: 15000,
   })
   return workspaceSessionToChat(response?.body)
-}
-
-export async function saveWorkspaceSession(netRequest: EbNetRequest, input: { workspaceId: string; roleId: string; chat: any }) {
-  const workspaceId = text(input.workspaceId)
-  const roleId = text(input.roleId)
-  if (!workspaceId || !roleId) throw new Error('工作区无效')
-  const body = workspaceChatToWire(input.chat, workspaceId, input.roleId)
-  await netRequest({
-    method: 'POST',
-    path: `/api/workspaces/${encodeURIComponent(workspaceId)}/roles/${encodeURIComponent(roleId)}/sessions`,
-    body,
-    timeoutMs: 15000,
-  })
 }
 
 export async function deleteWorkspaceSession(netRequest: EbNetRequest, workspaceId: string, roleId: string, sessionId: string) {

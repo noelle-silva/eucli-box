@@ -167,13 +167,3 @@ export function hookPromptSelectionLabel(library: HookPromptLibrary, modeRaw: un
   if (roleDefaultPresetId) return `跟随角色：${hookPromptPresetName(library, roleDefaultPresetId)}`
   return '跟随角色'
 }
-
-export function hookPromptPresetIdFromMetadata(metadataRaw: unknown) {
-  const metadata = metadataRaw && typeof metadataRaw === 'object' ? metadataRaw as Record<string, unknown> : {}
-  return text(metadata[HOOK_PROMPT_SESSION_METADATA_KEY])
-}
-
-export function hookPromptSelectionFromMetadata(metadataRaw: unknown) {
-  const metadata = metadataRaw && typeof metadataRaw === 'object' ? metadataRaw as Record<string, unknown> : {}
-  return normalizeHookPromptSelection({ mode: metadata[HOOK_PROMPT_SESSION_METADATA_MODE_KEY], presetId: metadata[HOOK_PROMPT_SESSION_METADATA_KEY] })
-}

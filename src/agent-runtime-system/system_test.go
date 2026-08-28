@@ -17,7 +17,7 @@ func TestStartRunCompletesWithoutTool(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -29,6 +29,9 @@ func TestStartRunCompletesWithoutTool(t *testing.T) {
 	if len(session.Messages) != 2 || session.Messages[0].Type != "user" || session.Messages[1].Type != "assistant" {
 		t.Fatalf("messages = %#v", session.Messages)
 	}
+	if session.Metadata[types.SessionMetadataStreamEnabled] != "false" {
+		t.Fatalf("new session stream preference = %#v", session.Metadata)
+	}
 	if session.Messages[1].ParentMessageID != session.Messages[0].ID {
 		t.Fatalf("assistant parent = %q user=%q", session.Messages[1].ParentMessageID, session.Messages[0].ID)
 	}
@@ -39,7 +42,7 @@ func TestStartRunUsesDefaultTitleForNewSession(t *testing.T) {
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
 	system := newTestRuntime(t, fakes, Config{})
 	message := "请帮我分析这个会话标题是否会和正文重复保存"
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: message})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: message})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -94,7 +97,7 @@ func TestStartRunAppliesHookPromptPresetOnlyToModelRequest(t *testing.T) {
 	}}}}
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", Message: "hello"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), SessionID: "session-1", Message: "hello"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -124,7 +127,7 @@ func TestStartRunAppliesPlaceholdersOnlyToModelRequest(t *testing.T) {
 	fakes.placeholders.library = types.PlaceholderLibrary{Placeholders: []types.PlaceholderItem{{Name: "角色", Value: "工程师"}, {Name: "问候", Value: "你好，{{角色}}"}}}
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "{{问候}}"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "{{问候}}"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -148,7 +151,7 @@ func TestStartRunUsesRoleDefaultHookPromptPreset(t *testing.T) {
 	fakes.storage.hookLibrary = types.HookPromptLibrary{Presets: []types.HookPromptPreset{{ID: "preset-role", Name: "Role", Messages: []types.HookPromptMessage{{ID: "h-role", Role: types.HookPromptRoleSystem, Position: types.HookPromptPositionSessionTop, Content: "role default", Order: 0}}}}}
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -169,7 +172,7 @@ func TestStartRunHookPromptPresetOverridesRoleDefault(t *testing.T) {
 	}}
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello", HookPromptMode: types.HookPromptSelectionModePreset, HookPromptPresetID: "preset-session"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello", HookPromptMode: types.HookPromptSelectionModePreset, HookPromptPresetID: "preset-session"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -191,7 +194,7 @@ func TestStartRunHookPromptNoneDisablesRoleDefault(t *testing.T) {
 	fakes.storage.hookLibrary = types.HookPromptLibrary{Presets: []types.HookPromptPreset{{ID: "preset-role", Name: "Role", Messages: []types.HookPromptMessage{{ID: "h-role", Role: types.HookPromptRoleSystem, Position: types.HookPromptPositionSessionTop, Content: "role default", Order: 0}}}}}
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello", HookPromptMode: types.HookPromptSelectionModeNone})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello", HookPromptMode: types.HookPromptSelectionModeNone})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -219,7 +222,7 @@ func TestStartRunDoesNotAutoInjectToolInstructionsOrNativeTools(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -242,7 +245,7 @@ func TestStartRunPassesReasoningEffortToModelAndSessionMetadata(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello", ReasoningEffort: types.ReasoningEffortHigh})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello", ReasoningEffort: types.ReasoningEffortHigh})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -265,7 +268,7 @@ func TestStartRunUsesModelOverrideAndSessionMetadata(t *testing.T) {
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
 	system := newTestRuntime(t, fakes, Config{})
 	override := types.ModelCoordinate{Kind: types.ModelCoordinateKindProvider, ProviderID: "anthropic-main", ModelID: "claude-sonnet-4"}
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello", ModelOverride: &override})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello", ModelOverride: &override})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -289,7 +292,7 @@ func TestStartRunUsesExistingSessionModelOverride(t *testing.T) {
 	fakes.storage.sessions["developer/session-1"] = types.Session{ID: "session-1", RoleID: "developer", Title: "Existing", Metadata: map[string]string{types.SessionMetadataModelOverrideKind: types.ModelCoordinateKindProvider, types.SessionMetadataModelOverrideProviderID: "anthropic-main", types.SessionMetadataModelOverrideModelID: "claude-sonnet-4"}, Messages: []types.Message{{ID: "u1", Type: "user", Content: "hello", BranchID: "main", CreatedAt: now, UpdatedAt: now}}, CreatedAt: now, UpdatedAt: now, LastActive: now}
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "u1"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), SessionID: "session-1", UserMessageID: "u1"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -307,7 +310,7 @@ func TestRunMessageSaveDoesNotOverwriteNewerSessionReasoningEffort(t *testing.T)
 	fakes := newRuntimeFakes()
 	fakes.provider.block = make(chan struct{})
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello", ReasoningEffort: types.ReasoningEffortHigh})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello", ReasoningEffort: types.ReasoningEffortHigh})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -333,7 +336,7 @@ func TestStartRunPersistsNewReasoningEffortForExistingSession(t *testing.T) {
 	fakes.storage.sessions["developer/session-1"] = types.Session{ID: "session-1", RoleID: "developer", Title: "Existing", Metadata: map[string]string{"reasoningEffort": string(types.ReasoningEffortLow)}, Messages: []types.Message{{ID: "u1", Type: "user", Content: "hello", BranchID: "main", CreatedAt: now, UpdatedAt: now}}, CreatedAt: now, UpdatedAt: now, LastActive: now}
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "u1", ReasoningEffort: types.ReasoningEffortHigh})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), SessionID: "session-1", UserMessageID: "u1", ReasoningEffort: types.ReasoningEffortHigh})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -350,7 +353,7 @@ func TestStartRunPersistsNewReasoningEffortForExistingSession(t *testing.T) {
 func TestStartRunRejectsInvalidReasoningEffort(t *testing.T) {
 	fakes := newRuntimeFakes()
 	system := newTestRuntime(t, fakes, Config{})
-	_, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello", ReasoningEffort: "extreme"})
+	_, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello", ReasoningEffort: "extreme"})
 	var appErr *apperrors.AppError
 	if !errors.As(err, &appErr) || appErr.Code != "runtime.invalid_request" {
 		t.Fatalf("error = %#v", err)
@@ -367,7 +370,7 @@ func TestStartRunPassesOnlyNativeToolsToProvider(t *testing.T) {
 	fakes.tool.toolSummaries = []types.ToolSummary{{ID: "file-reader", Name: "file-reader", Description: "Read files", Type: "local"}, {ID: "web-search", Name: "web-search", Description: "Search web", Type: "network"}}
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -388,7 +391,7 @@ func TestStartRunPersistsInputMessageBeforeReturning(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.block = make(chan struct{})
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -421,7 +424,7 @@ func TestStartRunStreamCreatesAssistantAndPublishesDeltas(t *testing.T) {
 		t.Fatalf("Subscribe() error = %v", err)
 	}
 	defer unsubscribe()
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello", Stream: true})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello", Stream: types.BoolPtr(true)})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -484,11 +487,49 @@ func TestStartRunStreamCreatesAssistantAndPublishesDeltas(t *testing.T) {
 	}
 }
 
+func TestStartRunStreamPreferenceComesFromSessionFact(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.streamEvents = []types.ModelStreamEvent{
+		{Type: types.ModelStreamEventContentDelta, ContentDelta: "hi", Content: "hi", CreatedAt: time.Now().UTC()},
+	}
+	fakes.provider.streamResponse = types.ModelResponse{ID: "stream-1", Content: "hi"}
+	now := time.Now().UTC()
+	// 会话事实：显式非流式。
+	fakes.storage.sessions["developer/session-1"] = types.Session{
+		ID: "session-1", RoleID: "developer", Title: "Chat", Status: string(types.RunStatusCreated),
+		Metadata: map[string]string{types.SessionMetadataStreamEnabled: "false"},
+		Messages: []types.Message{}, CreatedAt: now, UpdatedAt: now, LastActive: now,
+	}
+	system := newTestRuntime(t, fakes, Config{})
+
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), SessionID: "session-1", Message: "hello"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	if state.Stream {
+		t.Fatalf("run should follow session fact (non-stream), got stream=true")
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("final = %#v", final)
+	}
+
+	// 请求显式指定优先于会话事实。
+	state, err = system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", Message: "hello again", Stream: types.BoolPtr(true)})
+	if err != nil {
+		t.Fatalf("StartRun() explicit error = %v", err)
+	}
+	if !state.Stream {
+		t.Fatalf("explicit request stream should win, got stream=false")
+	}
+	waitRun(t, system, state.ID)
+}
+
 func TestListActiveRunsReturnsOnlyLiveRuns(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.block = make(chan struct{})
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -523,7 +564,7 @@ func TestModelRetryPublishesFailureAndThenCompletes(t *testing.T) {
 		t.Fatalf("Subscribe() error = %v", err)
 	}
 	defer unsubscribe()
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -551,7 +592,7 @@ func TestModelRetrySkipsPermanentFailure(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.errors = []error{apperrors.New("model-provider-system", "provider.invalid_request", "bad request")}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -574,7 +615,7 @@ func TestModelRetryWaitingCanBeCancelled(t *testing.T) {
 		t.Fatalf("Subscribe() error = %v", err)
 	}
 	defer unsubscribe()
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -612,7 +653,7 @@ func TestStartRunFromUserMessageAppendsAssistantSibling(t *testing.T) {
 	}
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "new answer"}}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "u1"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), SessionID: "session-1", UserMessageID: "u1"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -654,7 +695,7 @@ func TestStartRunFromUserMessageUsesOnlyParentChainContext(t *testing.T) {
 	}
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "reply"}}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "u2"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), SessionID: "session-1", UserMessageID: "u2"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -688,7 +729,7 @@ func TestStartRunFromContextUserMessageAppendsAssistantSibling(t *testing.T) {
 	}
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "regenerated"}}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", ContextMessageID: "u1"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), SessionID: "session-1", ContextMessageID: "u1"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -726,7 +767,7 @@ func TestStartRunFromContextMessageAppendsAssistantSibling(t *testing.T) {
 	}
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "regenerated"}}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", ContextMessageID: "a1"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), SessionID: "session-1", ContextMessageID: "a1"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -767,7 +808,7 @@ func TestStartRunWithParentMessageIDAppendsUserAtSelectedMessage(t *testing.T) {
 	}
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "reply"}}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", Message: "new branch", ParentMessageID: "a1"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), SessionID: "session-1", Message: "new branch", ParentMessageID: "a1"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -814,7 +855,7 @@ func TestStartRunFromNonUserMessageFails(t *testing.T) {
 		UpdatedAt: now.Add(time.Second),
 	}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "a1"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), SessionID: "session-1", UserMessageID: "a1"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -841,7 +882,7 @@ func TestStartRunWithMissingParentMessageDoesNotMutateSession(t *testing.T) {
 		UpdatedAt: now,
 	}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", Message: "new branch", ParentMessageID: "missing"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), SessionID: "session-1", Message: "new branch", ParentMessageID: "missing"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -878,11 +919,11 @@ func TestConcurrentRunsOnDifferentBranchesPreserveMessages(t *testing.T) {
 	}
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "reply one"}, {ID: "m2", Content: "reply two"}}
 	system := newTestRuntime(t, fakes, Config{})
-	run1, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "u2"})
+	run1, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), SessionID: "session-1", UserMessageID: "u2"})
 	if err != nil {
 		t.Fatalf("StartRun(run1) error = %v", err)
 	}
-	run2, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "u3"})
+	run2, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), SessionID: "session-1", UserMessageID: "u3"})
 	if err != nil {
 		t.Fatalf("StartRun(run2) error = %v", err)
 	}
@@ -915,11 +956,11 @@ func TestConcurrentRunsFromSameUserMessageCreateDistinctReplySlots(t *testing.T)
 	fakes.provider.block = make(chan struct{})
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "first"}, {ID: "m2", Content: "second"}}
 	system := newTestRuntime(t, fakes, Config{})
-	run1, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "u1"})
+	run1, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), SessionID: "session-1", UserMessageID: "u1"})
 	if err != nil {
 		t.Fatalf("StartRun(run1) error = %v", err)
 	}
-	run2, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "u1"})
+	run2, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), SessionID: "session-1", UserMessageID: "u1"})
 	if err != nil {
 		t.Fatalf("StartRun(run2) error = %v", err)
 	}
@@ -950,7 +991,7 @@ func TestRunWaitsForToolConfirmationThenCompletes(t *testing.T) {
 	fakes.tool.prepareDecision = types.PermissionDecision{ID: "decision-1", ActionID: "intent-1", ToolName: "file-reader", Status: types.PermissionStatusNeedsConfirmation}
 	fakes.tool.confirmedDecision = types.PermissionDecision{ID: "decision-1", ActionID: "intent-1", ToolName: "file-reader", Status: types.PermissionStatusAllowed}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tool"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use tool"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -976,7 +1017,7 @@ func TestRunParsesTextToolRequestsIntoUnifiedToolFlow(t *testing.T) {
 	rawRequest := "<<<TOOL_REQUEST>>>\n[tool]: file-reader\n[path]: README.md\n<<<END_TOOL_REQUEST>>>"
 	fakes.tool.parsedIntents = []types.ToolIntent{{ID: "text-intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}, Source: types.ToolCallSourceTextProtocol, Raw: rawRequest}}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use text tool"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use text tool"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -1005,7 +1046,7 @@ func TestRunPreservesPureTextToolRequestAsAssistantContent(t *testing.T) {
 	rawRequest := "<<<TOOL_REQUEST>>>\n[tool]: file-reader\n[path]: README.md\n<<<END_TOOL_REQUEST>>>"
 	fakes.tool.parsedIntents = []types.ToolIntent{{ID: "text-intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}, Source: types.ToolCallSourceTextProtocol, Raw: rawRequest}}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use pure text tool"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use pure text tool"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -1042,7 +1083,7 @@ func TestRunPublishesToolOutputUpdateEvents(t *testing.T) {
 		t.Fatalf("Subscribe() error = %v", err)
 	}
 	defer unsubscribe()
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "checking"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "checking"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -1085,7 +1126,7 @@ func TestRunTextProtocolToolUsesUnifiedConfirmationState(t *testing.T) {
 	fakes.tool.prepareDecision = types.PermissionDecision{ID: "decision-1", ActionID: "text-intent-1", ToolName: "file-reader", Status: types.PermissionStatusNeedsConfirmation}
 	fakes.tool.confirmedDecision = types.PermissionDecision{ID: "decision-1", ActionID: "text-intent-1", ToolName: "file-reader", Status: types.PermissionStatusAllowed}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use text tool"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use text tool"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -1119,7 +1160,7 @@ func TestRunExecutesMultipleToolIntentsFromOneModelResponse(t *testing.T) {
 		{ID: "m2", Content: "final"},
 	}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tools"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use tools"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -1149,7 +1190,7 @@ func TestRunPublishesAssistantMessageUpdateWhenEachToolFinishes(t *testing.T) {
 		t.Fatalf("Subscribe() error = %v", err)
 	}
 	defer unsubscribe()
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tools"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use tools"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -1195,7 +1236,7 @@ func TestRunDoesNotPublishEmptyWaitingAssistantAfterToolResults(t *testing.T) {
 		t.Fatalf("Subscribe() error = %v", err)
 	}
 	defer unsubscribe()
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tool", Stream: true})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tool", Stream: types.BoolPtr(true)})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -1243,7 +1284,7 @@ func TestRunPersistsReasoningWhenToolIntentHasNoVisibleAssistantText(t *testing.
 		{ID: "m2", Content: "final"},
 	}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tool"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use tool"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -1272,7 +1313,7 @@ func TestRunExecutesToolBatchWithParallelLimit(t *testing.T) {
 	}
 	fakes.tool.executeDelay = 80 * time.Millisecond
 	system := newTestRuntime(t, fakes, Config{MaxParallelTools: 2})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tools"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use tools"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -1296,7 +1337,7 @@ func TestRunWaitsForMultipleToolConfirmationsThenExecutesBatch(t *testing.T) {
 		"intent-2": {ID: "decision-2", ActionID: "intent-2", ToolName: "file-reader", Status: types.PermissionStatusNeedsConfirmation},
 	}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tools"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use tools"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -1344,7 +1385,7 @@ func TestRunPreservesNonErrorToolResultStates(t *testing.T) {
 	}
 	fakes.tool.executeResult = types.ToolResult{ID: "result-cancelled", ActionID: "intent-1", ToolName: "file-reader", Status: types.ToolStatusCancelled, Error: "cancelled by tool", CreatedAt: time.Now().UTC()}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tool"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use tool"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -1367,7 +1408,7 @@ func TestRunContinuesWhenToolExecutionReturnsError(t *testing.T) {
 	}
 	fakes.tool.executeErr = errors.New("tool process failed")
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tool"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use tool"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -1395,7 +1436,7 @@ func TestAsyncToolAcceptanceDoesNotWaitForExecutionResult(t *testing.T) {
 	fakes.tool.executeBlock = executeBlock
 	system := newTestRuntime(t, fakes, Config{})
 
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use async tool"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use async tool"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -1451,7 +1492,7 @@ func TestReadyAsyncToolResultStartsNextModelRound(t *testing.T) {
 	defer unsubscribe()
 	override := types.ModelCoordinate{Kind: types.ModelCoordinateKindProvider, ProviderID: "anthropic-main", ModelID: "claude-sonnet-4"}
 
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", Message: "use async tool", Stream: true, ReasoningEffort: types.ReasoningEffortHigh, ModelOverride: &override, HookPromptMode: types.HookPromptSelectionModePreset, HookPromptPresetID: "preset-session"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", Message: "use async tool", Stream: types.BoolPtr(true), ReasoningEffort: types.ReasoningEffortHigh, ModelOverride: &override, HookPromptMode: types.HookPromptSelectionModePreset, HookPromptPresetID: "preset-session"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -1498,7 +1539,7 @@ func TestAsyncToolResultFlushesAfterActiveModelOutput(t *testing.T) {
 	fakes.provider.callBlocks = []chan struct{}{nil, modelBlock}
 	system := newTestRuntime(t, fakes, Config{})
 
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use async tool"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use async tool"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -1561,7 +1602,7 @@ func TestListAsyncToolTasksDoesNotRecoverLiveTaskAsFailed(t *testing.T) {
 	fakes.tool.executeDelay = 200 * time.Millisecond
 	system := newTestRuntime(t, fakes, Config{})
 
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use async tool"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use async tool"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -1665,7 +1706,7 @@ func TestRunCancellationDuringToolExecutionDoesNotRecordToolFailure(t *testing.T
 		t.Fatalf("Subscribe() error = %v", err)
 	}
 	defer unsubscribe()
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tool"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use tool"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -1725,7 +1766,7 @@ func TestRunContinuesWhenToolPrepareReturnsError(t *testing.T) {
 	}
 	fakes.tool.prepareErr = errors.New("tool executable missing")
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tool"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use tool"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -1780,7 +1821,7 @@ func TestRunContinuesAcrossManyToolRounds(t *testing.T) {
 	}
 	fakes.provider.responses = append(fakes.provider.responses, types.ModelResponse{ID: "m-final", Content: "final"})
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "use tools"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use tools"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -1797,7 +1838,7 @@ func TestRunFailureStoresAssistantErrorWithoutFailureMessage(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.err = apperrors.WrapWithDetails("model-provider-system", "provider.service_failed", "upstream says no", nil, map[string]any{"body": `{"error":{"message":"upstream says no"}}`})
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -1828,7 +1869,7 @@ func TestRunFailsWhenOwnedInputMessageIsExternallyEdited(t *testing.T) {
 		t.Fatalf("Subscribe() error = %v", err)
 	}
 	defer unsubscribe()
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -1862,7 +1903,7 @@ func TestRunFailsWhenDependencyMessageIsExternallyEdited(t *testing.T) {
 		t.Fatalf("Subscribe() error = %v", err)
 	}
 	defer unsubscribe()
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-1", UserMessageID: "u1"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), SessionID: "session-1", UserMessageID: "u1"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}

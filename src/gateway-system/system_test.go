@@ -151,6 +151,20 @@ func TestStartRunRouteAcceptsParentMessageID(t *testing.T) {
 	}
 }
 
+func TestStartRunRoutePreservesExplicitStreamPreference(t *testing.T) {
+	fakes := newGatewayFakes()
+	system := newTestGateway(t, fakes)
+	req := httptest.NewRequest(http.MethodPost, "/api/runs", strings.NewReader(`{"roleId":"developer","message":"hello","stream":false}`))
+	rec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if fakes.runtime.started.Stream == nil || *fakes.runtime.started.Stream {
+		t.Fatalf("started stream = %#v", fakes.runtime.started.Stream)
+	}
+}
+
 func TestStartRunRouteAcceptsModelOverride(t *testing.T) {
 	fakes := newGatewayFakes()
 	system := newTestGateway(t, fakes)
@@ -388,6 +402,112 @@ func TestSessionHookPromptRoute(t *testing.T) {
 	}
 	if metadata := fakes.sessions.sessions["developer/session-1"].Metadata; len(metadata) != 0 {
 		t.Fatalf("metadata was not reset to inherit: %#v", metadata)
+	}
+}
+
+func TestSessionSettingsRoute(t *testing.T) {
+	fakes := newGatewayFakes()
+	now := time.Now().UTC()
+	fakes.sessions.sessions["developer/session-1"] = types.Session{ID: "session-1", RoleID: "developer", Title: "Chat", Status: string(types.RunStatusCreated), CreatedAt: now, UpdatedAt: now, LastActive: now}
+	system := newTestGateway(t, fakes)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/roles/developer/sessions/session-1/settings", strings.NewReader(`{"streamEnabled":false,"reasoningEffort":"high","modelOverride":{"kind":"provider","providerId":"p1","modelId":"m1"}}`))
+	rec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("set settings status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	metadata := fakes.sessions.sessions["developer/session-1"].Metadata
+	if metadata[types.SessionMetadataStreamEnabled] != "false" {
+		t.Fatalf("metadata streamEnabled = %q", metadata[types.SessionMetadataStreamEnabled])
+	}
+	if metadata[types.SessionMetadataReasoningEffort] != "high" {
+		t.Fatalf("metadata reasoningEffort = %q", metadata[types.SessionMetadataReasoningEffort])
+	}
+	if metadata[types.SessionMetadataModelOverrideModelID] != "m1" || metadata[types.SessionMetadataModelOverrideProviderID] != "p1" {
+		t.Fatalf("metadata modelOverride = %#v", metadata)
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "/api/roles/developer/sessions/session-1/settings", strings.NewReader(`{"streamEnabled":true,"reasoningEffort":"","modelOverride":{"modelId":""}}`))
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("clear settings status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	metadata = fakes.sessions.sessions["developer/session-1"].Metadata
+	if _, ok := metadata[types.SessionMetadataStreamEnabled]; ok {
+		t.Fatalf("streamEnabled was not cleared: %#v", metadata)
+	}
+	if _, ok := metadata[types.SessionMetadataReasoningEffort]; ok {
+		t.Fatalf("reasoningEffort was not cleared: %#v", metadata)
+	}
+	if _, ok := metadata[types.SessionMetadataModelOverrideModelID]; ok {
+		t.Fatalf("modelOverride was not cleared: %#v", metadata)
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "/api/roles/developer/sessions/session-1/settings", strings.NewReader(`{"modelOverride":{"kind":"provider","modelId":"m2"}}`))
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("incomplete model override status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "/api/roles/developer/sessions/session-1/settings", strings.NewReader(`{}`))
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("empty patch status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestGroupAndWorkspaceSessionSettingsRoutes(t *testing.T) {
+	now := time.Now().UTC()
+	for _, test := range []struct {
+		name       string
+		path       string
+		storageKey string
+		session    types.Session
+	}{
+		{
+			name:       "group",
+			path:       "/api/groups/group-1/sessions/session-1/settings",
+			storageKey: "groups/group-1/session-1",
+			session:    types.Session{ID: "session-1", GroupID: "group-1", Title: "Group chat", Status: string(types.RunStatusCreated), Metadata: map[string]string{"custom": "keep"}, CreatedAt: now, UpdatedAt: now, LastActive: now},
+		},
+		{
+			name:       "workspace",
+			path:       "/api/workspaces/workspace-1/roles/role-1/sessions/session-1/settings",
+			storageKey: "workspaces/workspace-1/role-1/session-1",
+			session:    types.Session{ID: "session-1", WorkspaceID: "workspace-1", RoleID: "role-1", Title: "Workspace chat", Status: string(types.RunStatusCreated), Metadata: map[string]string{"custom": "keep"}, CreatedAt: now, UpdatedAt: now, LastActive: now},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fakes := newGatewayFakes()
+			fakes.sessions.sessions[test.storageKey] = test.session
+			system := newTestGateway(t, fakes)
+
+			req := httptest.NewRequest(http.MethodPatch, test.path, strings.NewReader(`{"streamEnabled":false}`))
+			rec := httptest.NewRecorder()
+			system.Handler().ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("set settings status = %d body=%s", rec.Code, rec.Body.String())
+			}
+			updated := decodeResponseData[types.Session](t, rec.Body.String())
+			if updated.ID != "session-1" || updated.Metadata[types.SessionMetadataStreamEnabled] != "false" || updated.Metadata["custom"] != "keep" {
+				t.Fatalf("updated session = %#v", updated)
+			}
+
+			req = httptest.NewRequest(http.MethodPatch, test.path, strings.NewReader(`{"streamEnabled":true}`))
+			rec = httptest.NewRecorder()
+			system.Handler().ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("clear settings status = %d body=%s", rec.Code, rec.Body.String())
+			}
+			updated = decodeResponseData[types.Session](t, rec.Body.String())
+			if _, exists := updated.Metadata[types.SessionMetadataStreamEnabled]; exists || updated.Metadata["custom"] != "keep" {
+				t.Fatalf("cleared session = %#v", updated)
+			}
+		})
 	}
 }
 
@@ -813,11 +933,6 @@ func (f *fakeGatewaySessions) CreateWorkspaceSession(ctx context.Context, worksp
 	return session, nil
 }
 
-func (f *fakeGatewaySessions) SaveSession(ctx context.Context, session types.Session) error {
-	f.sessions[f.sessionKey(session)] = session
-	return nil
-}
-
 func (f *fakeGatewaySessions) LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error) {
 	return f.sessions[roleID+"/"+sessionID], nil
 }
@@ -899,6 +1014,68 @@ func (f *fakeGatewaySessions) UpdateWorkspaceSessionTitle(ctx context.Context, w
 	session.Title = title
 	session.UpdatedAt = time.Now().UTC()
 	f.sessions["workspaces/"+workspaceID+"/"+roleID+"/"+sessionID] = session
+	return session, nil
+}
+
+func (f *fakeGatewaySessions) UpdateSessionSettings(ctx context.Context, roleID string, sessionID string, patch types.SessionSettingsPatch) (types.Session, error) {
+	return f.updateSessionSettingsByKey(roleID+"/"+sessionID, patch)
+}
+
+func (f *fakeGatewaySessions) UpdateGroupSessionSettings(ctx context.Context, groupID string, sessionID string, patch types.SessionSettingsPatch) (types.Session, error) {
+	return f.updateSessionSettingsByKey("groups/"+groupID+"/"+sessionID, patch)
+}
+
+func (f *fakeGatewaySessions) UpdateWorkspaceSessionSettings(ctx context.Context, workspaceID string, roleID string, sessionID string, patch types.SessionSettingsPatch) (types.Session, error) {
+	return f.updateSessionSettingsByKey("workspaces/"+workspaceID+"/"+roleID+"/"+sessionID, patch)
+}
+
+func (f *fakeGatewaySessions) updateSessionSettingsByKey(key string, patch types.SessionSettingsPatch) (types.Session, error) {
+	session := f.sessions[key]
+	if patch.StreamEnabled != nil {
+		session.Metadata = types.PutStreamEnabledSessionMetadata(session.Metadata, *patch.StreamEnabled)
+	}
+	if patch.ReasoningEffort != nil {
+		if session.Metadata == nil {
+			session.Metadata = map[string]string{}
+		}
+		delete(session.Metadata, types.SessionMetadataReasoningEffort)
+		if value := strings.TrimSpace(*patch.ReasoningEffort); value != "" {
+			session.Metadata[types.SessionMetadataReasoningEffort] = value
+		}
+	}
+	if patch.ModelOverride != nil {
+		if strings.TrimSpace(patch.ModelOverride.ModelID) == "" {
+			session.Metadata = types.ClearModelOverrideSessionMetadata(session.Metadata)
+		} else {
+			normalized, ok := types.NormalizeModelOverrideCoordinate(*patch.ModelOverride)
+			if !ok {
+				return types.Session{}, gatewayInvalid("session model override is incomplete", nil)
+			}
+			session.Metadata = types.PutModelOverrideSessionMetadata(session.Metadata, normalized)
+		}
+	}
+	session.UpdatedAt = time.Now().UTC()
+	f.sessions[key] = session
+	return session, nil
+}
+
+func (f *fakeGatewaySessions) UpdateSessionHookPrompt(ctx context.Context, roleID string, sessionID string, selection types.HookPromptSelection) (types.Session, error) {
+	return f.updateSessionHookPromptByKey(roleID+"/"+sessionID, selection)
+}
+
+func (f *fakeGatewaySessions) UpdateGroupSessionHookPrompt(ctx context.Context, groupID string, sessionID string, selection types.HookPromptSelection) (types.Session, error) {
+	return f.updateSessionHookPromptByKey("groups/"+groupID+"/"+sessionID, selection)
+}
+
+func (f *fakeGatewaySessions) UpdateWorkspaceSessionHookPrompt(ctx context.Context, workspaceID string, roleID string, sessionID string, selection types.HookPromptSelection) (types.Session, error) {
+	return f.updateSessionHookPromptByKey("workspaces/"+workspaceID+"/"+roleID+"/"+sessionID, selection)
+}
+
+func (f *fakeGatewaySessions) updateSessionHookPromptByKey(key string, selection types.HookPromptSelection) (types.Session, error) {
+	session := f.sessions[key]
+	session.Metadata = types.PutHookPromptSessionMetadata(session.Metadata, selection)
+	session.UpdatedAt = time.Now().UTC()
+	f.sessions[key] = session
 	return session, nil
 }
 

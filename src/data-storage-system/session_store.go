@@ -232,6 +232,102 @@ func (s *system) SaveSessionMessages(ctx context.Context, save types.SessionMess
 	return s.rebuildAllSessionIndexes(ctx)
 }
 
+func (s *system) UpdateSessionSettings(ctx context.Context, roleID string, sessionID string, patch types.SessionSettingsPatch) (types.Session, error) {
+	return s.updateSessionSettings(ctx, roleSessionScope(roleID), sessionID, patch)
+}
+
+func (s *system) UpdateGroupSessionSettings(ctx context.Context, groupID string, sessionID string, patch types.SessionSettingsPatch) (types.Session, error) {
+	return s.updateSessionSettings(ctx, groupSessionScope(groupID), sessionID, patch)
+}
+
+func (s *system) UpdateWorkspaceSessionSettings(ctx context.Context, workspaceID string, roleID string, sessionID string, patch types.SessionSettingsPatch) (types.Session, error) {
+	return s.updateSessionSettings(ctx, workspaceSessionScope(workspaceID, roleID), sessionID, patch)
+}
+
+func (s *system) updateSessionSettings(ctx context.Context, scope sessionScope, sessionID string, patch types.SessionSettingsPatch) (types.Session, error) {
+	return s.updateSessionAtomically(ctx, scope, sessionID, func(session *types.Session) error {
+		if patch.StreamEnabled != nil {
+			session.Metadata = types.PutStreamEnabledSessionMetadata(session.Metadata, *patch.StreamEnabled)
+		}
+		if patch.ReasoningEffort != nil {
+			effort := types.TrimReasoningEffort(types.ReasoningEffort(*patch.ReasoningEffort))
+			if effort != "" && !types.IsReasoningEffort(effort) {
+				return storageInvalid("reasoning effort is invalid", nil)
+			}
+			if len(session.Metadata) == 0 {
+				session.Metadata = map[string]string{}
+			}
+			delete(session.Metadata, types.SessionMetadataReasoningEffort)
+			if effort != "" {
+				session.Metadata[types.SessionMetadataReasoningEffort] = string(effort)
+			}
+		}
+		if patch.ModelOverride != nil {
+			if strings.TrimSpace(patch.ModelOverride.ModelID) == "" {
+				session.Metadata = types.ClearModelOverrideSessionMetadata(session.Metadata)
+			} else {
+				normalized, ok := types.NormalizeModelOverrideCoordinate(*patch.ModelOverride)
+				if !ok {
+					return storageInvalid("session model override is incomplete", nil)
+				}
+				session.Metadata = types.PutModelOverrideSessionMetadata(session.Metadata, normalized)
+			}
+		}
+		return nil
+	})
+}
+
+func (s *system) UpdateSessionHookPrompt(ctx context.Context, roleID string, sessionID string, selection types.HookPromptSelection) (types.Session, error) {
+	return s.updateSessionHookPrompt(ctx, roleSessionScope(roleID), sessionID, selection)
+}
+
+func (s *system) UpdateGroupSessionHookPrompt(ctx context.Context, groupID string, sessionID string, selection types.HookPromptSelection) (types.Session, error) {
+	return s.updateSessionHookPrompt(ctx, groupSessionScope(groupID), sessionID, selection)
+}
+
+func (s *system) UpdateWorkspaceSessionHookPrompt(ctx context.Context, workspaceID string, roleID string, sessionID string, selection types.HookPromptSelection) (types.Session, error) {
+	return s.updateSessionHookPrompt(ctx, workspaceSessionScope(workspaceID, roleID), sessionID, selection)
+}
+
+func (s *system) updateSessionHookPrompt(ctx context.Context, scope sessionScope, sessionID string, selection types.HookPromptSelection) (types.Session, error) {
+	return s.updateSessionAtomically(ctx, scope, sessionID, func(session *types.Session) error {
+		session.Metadata = types.PutHookPromptSessionMetadata(session.Metadata, selection)
+		return nil
+	})
+}
+
+func (s *system) updateSessionAtomically(ctx context.Context, scope sessionScope, sessionID string, mutate func(*types.Session) error) (types.Session, error) {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
+
+	cleanedScope, err := cleanSessionScope(scope)
+	if err != nil {
+		return types.Session{}, err
+	}
+	session, err := s.loadSession(ctx, cleanedScope, sessionID)
+	if err != nil {
+		return types.Session{}, err
+	}
+	if mutate == nil {
+		return types.Session{}, storageInvalid("session update action is required", nil)
+	}
+	if err := mutate(&session); err != nil {
+		return types.Session{}, err
+	}
+	now := time.Now().UTC()
+	session.UpdatedAt = now
+	if session.LastActive.Before(now) {
+		session.LastActive = now
+	}
+	if _, err := s.writeSessionData(ctx, session, now); err != nil {
+		return types.Session{}, err
+	}
+	if err := s.rebuildSessionIndexesForScope(ctx, cleanedScope); err != nil {
+		return types.Session{}, err
+	}
+	return s.loadSession(ctx, cleanedScope, sessionID)
+}
+
 func (s *system) writeSessionData(ctx context.Context, session types.Session, now time.Time) (types.Session, error) {
 	session = normalizeSessionForStorage(session, now)
 	scope, err := sessionScopeFromSession(session)

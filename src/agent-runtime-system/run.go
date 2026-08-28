@@ -15,12 +15,12 @@ func (s *system) StartRun(ctx context.Context, request types.RunRequest) (types.
 		return types.RunState{}, err
 	}
 	compactRun := isCompactRunRequest(request)
-	stream := request.Stream && !compactRun
+	stream := (request.Stream == nil || *request.Stream) && !compactRun
 	runCtx, cancel := context.WithCancel(context.Background())
 	now := nowUTC()
 	state := types.RunState{ID: utils.NewID("run"), RoleID: request.RoleID, GroupID: strings.TrimSpace(request.GroupID), WorkspaceID: strings.TrimSpace(request.WorkspaceID), SessionID: request.SessionID, Stream: stream, Status: types.RunStatusCreated, CreatedAt: now, UpdatedAt: now}
 	modelOverride, _ := types.NormalizeModelOverrideCoordinate(modelOverrideFromRunRequest(request))
-	record := &runRecord{runID: state.ID, roleID: request.RoleID, groupID: state.GroupID, workspaceID: state.WorkspaceID, state: state, stream: stream, modelOverride: modelOverride, reasoningEffort: types.TrimReasoningEffort(request.ReasoningEffort), hookPromptSelection: types.NormalizeHookPromptSelection(request.HookPromptMode, request.HookPromptPresetID), hookPromptSelectionInput: hasHookPromptSelectionInput(request), cancel: cancel, asyncToolCh: make(chan string, 1)}
+	record := &runRecord{runID: state.ID, roleID: request.RoleID, groupID: state.GroupID, workspaceID: state.WorkspaceID, state: state, stream: stream, streamInput: request.Stream, isCompactRun: compactRun, modelOverride: modelOverride, reasoningEffort: types.TrimReasoningEffort(request.ReasoningEffort), hookPromptSelection: types.NormalizeHookPromptSelection(request.HookPromptMode, request.HookPromptPresetID), hookPromptSelectionInput: hasHookPromptSelectionInput(request), cancel: cancel, asyncToolCh: make(chan string, 1)}
 	if compactRun {
 		record.commandName = compactCommandName
 	}
@@ -121,6 +121,7 @@ func (s *system) startRun(ctx context.Context, record *runRecord, request types.
 	applyRunReasoningEffort(record, &session)
 	applyRunModelOverride(record, &session)
 	applyRunHookPromptPreset(record, &session)
+	applyRunStreamPreference(record, &session)
 	if record.state.SessionID == "" {
 		if err := s.setRunSessionID(record.runID, session.ID); err != nil {
 			return state, types.Session{}, err
@@ -181,6 +182,19 @@ func applyRunHookPromptPreset(record *runRecord, session *types.Session) {
 		record.hookPromptPersistPending = true
 	}
 	session.Metadata = types.PutHookPromptSessionMetadata(session.Metadata, next)
+}
+
+// applyRunStreamPreference 流式缺省归会话事实：请求未显式指定时读取会话的流式标记。
+func applyRunStreamPreference(record *runRecord, session *types.Session) {
+	if record == nil || session == nil || record.streamInput != nil {
+		return
+	}
+	stream := types.StreamEnabledFromSessionMetadata(session.Metadata)
+	if record.isCompactRun {
+		stream = false
+	}
+	record.stream = stream
+	record.state.Stream = stream
 }
 
 func hasHookPromptSelectionInput(request types.RunRequest) bool {

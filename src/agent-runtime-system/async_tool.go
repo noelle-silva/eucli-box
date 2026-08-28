@@ -91,7 +91,7 @@ func asyncToolContinuationFromRun(record *runRecord) types.RunContinuation {
 	if record == nil {
 		return types.RunContinuation{}
 	}
-	continuation := types.RunContinuation{Stream: record.stream, ReasoningEffort: types.TrimReasoningEffort(record.reasoningEffort)}
+	continuation := types.RunContinuation{Stream: &record.stream, ReasoningEffort: types.TrimReasoningEffort(record.reasoningEffort)}
 	if override, ok := types.NormalizeModelOverrideCoordinate(record.modelOverride); ok {
 		continuation.ModelOverride = &override
 	}

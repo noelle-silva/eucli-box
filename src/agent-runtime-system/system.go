@@ -101,6 +101,8 @@ type runRecord struct {
 	forceBranchReply            bool
 	forceNewAssistantReply      bool
 	stream                      bool
+	streamInput                 *bool
+	isCompactRun                bool
 	streamContent               string
 	streamReasoning             string
 	streamReasoningSignature    string

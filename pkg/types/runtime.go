@@ -111,6 +111,12 @@ type SessionMessagePatch struct {
 	Parts   *[]MessagePart `json:"parts,omitempty"`
 }
 
+type SessionSettingsPatch struct {
+	StreamEnabled   *bool            `json:"streamEnabled,omitempty"`
+	ReasoningEffort *string          `json:"reasoningEffort,omitempty"`
+	ModelOverride   *ModelCoordinate `json:"modelOverride,omitempty"`
+}
+
 type SessionMessageSave struct {
 	Session       Session                   `json:"session"`
 	MetadataPatch map[string]string         `json:"metadataPatch,omitempty"`
@@ -206,7 +212,7 @@ const (
 )
 
 type RunContinuation struct {
-	Stream             bool             `json:"stream,omitempty"`
+	Stream             *bool            `json:"stream,omitempty"`
 	ReasoningEffort    ReasoningEffort  `json:"reasoningEffort,omitempty"`
 	ModelOverride      *ModelCoordinate `json:"modelOverride,omitempty"`
 	HookPromptMode     string           `json:"hookPromptMode,omitempty"`
@@ -278,7 +284,7 @@ type RunRequest struct {
 	ReasoningEffort    ReasoningEffort  `json:"reasoningEffort,omitempty"`
 	HookPromptMode     string           `json:"hookPromptMode,omitempty"`
 	HookPromptPresetID string           `json:"hookPromptPresetId,omitempty"`
-	Stream             bool             `json:"stream,omitempty"`
+	Stream             *bool            `json:"stream,omitempty"`
 }
 
 type RunState struct {

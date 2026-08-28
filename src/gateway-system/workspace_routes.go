@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"net/http"
-	"strings"
 
 	"eucli-box/pkg/types"
 	"eucli-box/pkg/workspaceprompt"
@@ -142,40 +141,6 @@ func (s *system) handleCreateWorkspaceSession(w http.ResponseWriter, r *http.Req
 	writeData(w, http.StatusCreated, session)
 }
 
-func (s *system) handleSaveWorkspaceSession(w http.ResponseWriter, r *http.Request) {
-	workspaceID, roleID, err := workspaceRolePathValues(r)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	session, err := decodeJSON[types.Session](r)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	if err := validateWorkspaceSession(workspaceID, session); err != nil {
-		writeError(w, err)
-		return
-	}
-	if strings.TrimSpace(session.RoleID) != roleID {
-		writeError(w, gatewayInvalid("session roleId does not match route roleID", nil))
-		return
-	}
-	if _, err := s.workspaces.LoadWorkspace(r.Context(), workspaceID); err != nil {
-		writeError(w, err)
-		return
-	}
-	if _, err := s.roles.LoadRole(r.Context(), session.RoleID); err != nil {
-		writeError(w, err)
-		return
-	}
-	if err := s.sessions.SaveSession(r.Context(), session); err != nil {
-		writeError(w, err)
-		return
-	}
-	writeNoContent(w)
-}
-
 func (s *system) handleDeleteWorkspaceSession(w http.ResponseWriter, r *http.Request) {
 	workspaceID, roleID, sessionID, ok := workspaceRoleSessionPathValues(w, r)
 	if !ok {
@@ -211,8 +176,18 @@ func (s *system) handleUpdateWorkspaceSessionHookPrompt(w http.ResponseWriter, r
 	if !ok {
 		return
 	}
-	s.updateSessionHookPrompt(w, r, func() (types.Session, error) {
-		return s.sessions.LoadWorkspaceSession(r.Context(), workspaceID, roleID, sessionID)
+	s.updateSessionHookPrompt(w, r, func(selection types.HookPromptSelection) (types.Session, error) {
+		return s.sessions.UpdateWorkspaceSessionHookPrompt(r.Context(), workspaceID, roleID, sessionID, selection)
+	})
+}
+
+func (s *system) handleUpdateWorkspaceSessionSettings(w http.ResponseWriter, r *http.Request) {
+	workspaceID, roleID, sessionID, ok := workspaceRoleSessionPathValues(w, r)
+	if !ok {
+		return
+	}
+	s.updateSessionSettings(w, r, func(patch types.SessionSettingsPatch) (types.Session, error) {
+		return s.sessions.UpdateWorkspaceSessionSettings(r.Context(), workspaceID, roleID, sessionID, patch)
 	})
 }
 

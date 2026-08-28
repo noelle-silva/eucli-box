@@ -36,13 +36,17 @@ func (s *system) loadOrCreateSession(ctx context.Context, request types.RunReque
 		return s.recoverAsyncToolTasks(session), nil
 	}
 	now := time.Now().UTC()
+	metadata := map[string]string{}
+	if request.Stream != nil {
+		metadata = types.PutStreamEnabledSessionMetadata(metadata, *request.Stream)
+	}
 	if groupID != "" {
-		return types.Session{ID: utils.NewID("session"), GroupID: groupID, Title: types.DefaultSessionTitle, Status: string(types.RunStatusCreated), Messages: []types.Message{}, CreatedAt: now, UpdatedAt: now, LastActive: now}, nil
+		return types.Session{ID: utils.NewID("session"), GroupID: groupID, Title: types.DefaultSessionTitle, Status: string(types.RunStatusCreated), Messages: []types.Message{}, Metadata: metadata, CreatedAt: now, UpdatedAt: now, LastActive: now}, nil
 	}
 	if workspaceID != "" {
-		return types.Session{ID: utils.NewID("session"), WorkspaceID: workspaceID, RoleID: request.RoleID, Title: types.DefaultSessionTitle, Status: string(types.RunStatusCreated), Messages: []types.Message{}, CreatedAt: now, UpdatedAt: now, LastActive: now}, nil
+		return types.Session{ID: utils.NewID("session"), WorkspaceID: workspaceID, RoleID: request.RoleID, Title: types.DefaultSessionTitle, Status: string(types.RunStatusCreated), Messages: []types.Message{}, Metadata: metadata, CreatedAt: now, UpdatedAt: now, LastActive: now}, nil
 	}
-	return types.Session{ID: utils.NewID("session"), RoleID: request.RoleID, Title: types.DefaultSessionTitle, Status: string(types.RunStatusCreated), Messages: []types.Message{}, CreatedAt: now, UpdatedAt: now, LastActive: now}, nil
+	return types.Session{ID: utils.NewID("session"), RoleID: request.RoleID, Title: types.DefaultSessionTitle, Status: string(types.RunStatusCreated), Messages: []types.Message{}, Metadata: metadata, CreatedAt: now, UpdatedAt: now, LastActive: now}, nil
 }
 
 func (s *system) recoverAsyncToolTasks(session types.Session) types.Session {

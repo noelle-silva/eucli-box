@@ -52,18 +52,6 @@ func TestChatProjectionPreservesMessageParts(t *testing.T) {
 	if parts := objectList(messages[0]["parts"]); len(parts) != 1 || stringField(parts[0], "source") != "text_protocol" || stringField(parts[0], "raw") == "" || stringField(parts[0], "callId") != "call-1" {
 		t.Fatalf("ui parts = %#v", messages[0]["parts"])
 	}
-
-	back := fromUIChat(ui, "developer")
-	backMessages := objectList(back["messages"])
-	if len(backMessages) != 1 {
-		t.Fatalf("back messages = %#v", back["messages"])
-	}
-	if got := intField(backMessages[0], "tokenEstimate", 0); got != 12 {
-		t.Fatalf("back token estimate = %d, want 12", got)
-	}
-	if parts := objectList(backMessages[0]["parts"]); len(parts) != 1 || stringField(parts[0], "source") != "text_protocol" || stringField(parts[0], "raw") == "" || stringField(parts[0], "toolName") != "shell_command" {
-		t.Fatalf("back parts = %#v", backMessages[0]["parts"])
-	}
 }
 
 func TestChatProjectionPreservesReasoningParts(t *testing.T) {
@@ -98,15 +86,6 @@ func TestChatProjectionPreservesReasoningParts(t *testing.T) {
 	if parts := objectList(messages[0]["parts"]); len(parts) != 1 || stringField(parts[0], "type") != "reasoning" || stringField(parts[0], "text") != "先看上下文，再组织答案" {
 		t.Fatalf("ui reasoning parts = %#v", messages[0]["parts"])
 	}
-
-	back := fromUIChat(ui, "developer")
-	backMessages := objectList(back["messages"])
-	if len(backMessages) != 1 {
-		t.Fatalf("back messages = %#v", back["messages"])
-	}
-	if parts := objectList(backMessages[0]["parts"]); len(parts) != 1 || stringField(parts[0], "type") != "reasoning" || stringField(parts[0], "source") != "model" {
-		t.Fatalf("back reasoning parts = %#v", backMessages[0]["parts"])
-	}
 }
 
 func TestChatProjectionPreservesReasoningEffort(t *testing.T) {
@@ -123,11 +102,6 @@ func TestChatProjectionPreservesReasoningEffort(t *testing.T) {
 	ui := toUIChat(session)
 	if ui["reasoningEffort"] != "high" {
 		t.Fatalf("ui reasoning effort = %#v", ui["reasoningEffort"])
-	}
-	back := fromUIChat(ui, "developer")
-	metadata := objectMap(back["metadata"])
-	if metadata["reasoningEffort"] != "high" {
-		t.Fatalf("back metadata = %#v", metadata)
 	}
 }
 
@@ -150,11 +124,6 @@ func TestChatProjectionPreservesModelOverride(t *testing.T) {
 	modelOverride := objectMap(ui["modelOverride"])
 	if stringField(modelOverride, "providerId") != "openai-main" || stringField(modelOverride, "modelId") != "gpt-4.1-mini" {
 		t.Fatalf("ui model override = %#v", ui["modelOverride"])
-	}
-	back := fromUIChat(ui, "developer")
-	metadata := objectMap(back["metadata"])
-	if metadata["modelOverride.providerId"] != "openai-main" || metadata["modelOverride.modelId"] != "gpt-4.1-mini" {
-		t.Fatalf("back metadata = %#v", metadata)
 	}
 }
 
@@ -193,12 +162,6 @@ func TestAsyncToolResultProjectsAsAssistantSide(t *testing.T) {
 	}
 	if messages[0]["type"] != "async_tool_result" || messages[0]["role"] != "assistant" {
 		t.Fatalf("ui async tool message = %#v", messages[0])
-	}
-
-	back := fromUIChat(ui, "developer")
-	backMessages := objectList(back["messages"])
-	if len(backMessages) != 1 || backMessages[0]["type"] != "async_tool_result" {
-		t.Fatalf("back async tool messages = %#v", back["messages"])
 	}
 }
 
@@ -414,11 +377,6 @@ func TestChatProjectionPreservesAssistantError(t *testing.T) {
 	}
 	if errBox := objectMap(messages[0]["error"]); stringField(errBox, "message") != "upstream says no" || stringField(errBox, "code") != "provider.service_failed" {
 		t.Fatalf("ui error = %#v", messages[0]["error"])
-	}
-	back := fromUIChat(ui, "developer")
-	backMessages := objectList(back["messages"])
-	if errBox := objectMap(backMessages[0]["error"]); stringField(errBox, "message") != "upstream says no" {
-		t.Fatalf("back error = %#v", backMessages[0]["error"])
 	}
 }
 

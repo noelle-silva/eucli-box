@@ -158,6 +158,36 @@ func TestCreateSessionCreatesCanonicalSession(t *testing.T) {
 	assertFile(t, filepath.Join(system.paths.root, "sessions", "roles", "developer", session.ID, "data.json"))
 }
 
+func TestUpdateSessionSettingsChangesOnlySessionMetadata(t *testing.T) {
+	system := newTestSystem(t)
+	now := time.Date(2026, 6, 10, 9, 0, 0, 0, time.UTC)
+	session := types.Session{
+		ID:         "session-settings",
+		RoleID:     "developer",
+		Title:      "Settings",
+		Status:     string(types.RunStatusRunning),
+		Metadata:   map[string]string{"custom": "keep"},
+		Messages:   []types.Message{{ID: "m1", Type: "user", Content: "still here", BranchID: "main", CreatedAt: now, UpdatedAt: now}},
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		LastActive: now,
+	}
+	if err := system.SaveSession(context.Background(), session); err != nil {
+		t.Fatalf("SaveSession() error = %v", err)
+	}
+
+	updated, err := system.UpdateSessionSettings(context.Background(), "developer", session.ID, types.SessionSettingsPatch{StreamEnabled: types.BoolPtr(false), ReasoningEffort: ptrString(string(types.ReasoningEffortHigh))})
+	if err != nil {
+		t.Fatalf("UpdateSessionSettings() error = %v", err)
+	}
+	if len(updated.Messages) != 1 || updated.Messages[0].Content != "still here" {
+		t.Fatalf("messages changed during settings update = %#v", updated.Messages)
+	}
+	if updated.Metadata["custom"] != "keep" || updated.Metadata[types.SessionMetadataStreamEnabled] != "false" || updated.Metadata[types.SessionMetadataReasoningEffort] != string(types.ReasoningEffortHigh) {
+		t.Fatalf("metadata = %#v", updated.Metadata)
+	}
+}
+
 func TestSaveSessionStoresMessageTextOnlyInParts(t *testing.T) {
 	system := newTestSystem(t)
 	now := time.Date(2026, 6, 4, 16, 28, 0, 0, time.UTC)

@@ -97,17 +97,11 @@ func (p *projectionService) set(ctx context.Context, key string, value any) erro
 	if match := modelGroupKeyPattern.FindStringSubmatch(key); match != nil {
 		return p.saveModelGroup(ctx, match[1], value)
 	}
-	if match := chatKeyPattern.FindStringSubmatch(key); match != nil {
-		return p.saveSession(ctx, match[1], value)
-	}
 	if match := roleChatIndexPattern.FindStringSubmatch(key); match != nil {
 		return p.saveRoleChatIndex(ctx, match[1], value)
 	}
 	if match := groupChatIndexPattern.FindStringSubmatch(key); match != nil {
 		return p.saveGroupChatIndex(ctx, match[1], value)
-	}
-	if match := groupChatKeyPattern.FindStringSubmatch(key); match != nil {
-		return p.saveGroupSession(ctx, match[1], value)
 	}
 	if key == "meta/index" {
 		return p.saveMeta(ctx, value)
@@ -878,26 +872,6 @@ func (p *projectionService) saveModelGroup(ctx context.Context, folder string, v
 	return err
 }
 
-func (p *projectionService) saveSession(ctx context.Context, folder string, value any) error {
-	roleID, err := p.roleIDByFolder(ctx, folder)
-	if err != nil {
-		return err
-	}
-	session := fromUIChat(value, roleID)
-	_, err = p.eb.request(ctx, ebRequest{Method: "POST", Path: fmt.Sprintf("/api/roles/%s/sessions", roleID), Body: mustJSON(session)})
-	return err
-}
-
-func (p *projectionService) saveGroupSession(ctx context.Context, folder string, value any) error {
-	groupID, err := p.groupIDByFolder(ctx, folder)
-	if err != nil {
-		return err
-	}
-	session := fromUIGroupChat(value, groupID)
-	_, err = p.eb.request(ctx, ebRequest{Method: "POST", Path: fmt.Sprintf("/api/groups/%s/sessions", groupID), Body: mustJSON(session)})
-	return err
-}
-
 func (p *projectionService) saveRoleChatIndex(ctx context.Context, folder string, value any) error {
 	roleID, err := p.roleIDByFolder(ctx, folder)
 	if err != nil {
@@ -1323,13 +1297,6 @@ func toUIChat(session map[string]any) map[string]any {
 	return chat
 }
 
-func boolText(value bool) string {
-	if value {
-		return "true"
-	}
-	return "false"
-}
-
 func deriveUIBranching(messages []map[string]any, createdAt int64, updatedAt int64) map[string]any {
 	if len(messages) == 0 {
 		return map[string]any{"schemaVersion": 1, "activeBranchId": "main", "branches": []any{map[string]any{"id": "main", "name": "主线", "headMid": "", "createdAt": createdAt, "updatedAt": updatedAt, "forkFromMid": ""}}}
@@ -1414,131 +1381,6 @@ func anyList(items []map[string]any) []any {
 	return out
 }
 
-func fromUIChat(value any, roleID string) map[string]any {
-	return fromUIChatSession(value, "role", roleID)
-}
-
-// normalizeUIParts 将 UI 消息部件转换为业务端 Session 合法形态：
-// 白名单字段 + 时间统一为 RFC3339 文本（业务端 MessagePart 时间字段为 time.Time，不接受毫秒数字）。
-func normalizeUIParts(parts []map[string]any) []any {
-	out := make([]any, 0, len(parts))
-	for _, part := range parts {
-		id := stringField(part, "id")
-		partType := stringField(part, "type")
-		if id == "" || partType == "" {
-			continue
-		}
-		next := map[string]any{"id": id, "type": partType}
-		switch partType {
-		case "text":
-			next["text"] = stringField(part, "text")
-		case "reasoning":
-			next["text"] = stringField(part, "text")
-			next["source"] = stringField(part, "source")
-			next["signature"] = stringField(part, "signature")
-			next["data"] = stringField(part, "data")
-		case "tool":
-			next["source"] = stringField(part, "source")
-			next["raw"] = stringField(part, "raw")
-			next["callId"] = stringField(part, "callId")
-			next["toolName"] = stringField(part, "toolName")
-			next["input"] = objectMap(part["input"])
-			next["state"] = stringField(part, "state")
-			if display := objectMap(part["display"]); len(display) > 0 {
-				next["display"] = display
-			}
-			if decision := objectMap(part["decision"]); len(decision) > 0 {
-				next["decision"] = map[string]any{
-					"id":        stringField(decision, "id"),
-					"actionId":  stringField(decision, "actionId"),
-					"toolName":  stringField(decision, "toolName"),
-					"status":    stringField(decision, "status"),
-					"reason":    stringField(decision, "reason"),
-					"createdAt": timeFromMillis(decision["createdAt"]),
-				}
-			}
-			if result := objectMap(part["result"]); len(result) > 0 {
-				next["result"] = map[string]any{
-					"id":        stringField(result, "id"),
-					"actionId":  stringField(result, "actionId"),
-					"toolName":  stringField(result, "toolName"),
-					"status":    stringField(result, "status"),
-					"content":   stringField(result, "content"),
-					"metadata":  objectMap(result["metadata"]),
-					"error":     stringField(result, "error"),
-					"createdAt": timeFromMillis(result["createdAt"]),
-				}
-			}
-		default:
-			continue
-		}
-		next["createdAt"] = timeFromMillis(part["createdAt"])
-		next["updatedAt"] = timeFromMillis(part["updatedAt"])
-		out = append(out, next)
-	}
-	return out
-}
-
-func fromUIGroupChat(value any, groupID string) map[string]any {
-	return fromUIChatSession(value, "group", groupID)
-}
-
-func fromUIChatSession(value any, targetKind string, targetID string) map[string]any {
-	chat := objectMap(value)
-	messages := []any{}
-	for _, msg := range objectList(chat["messages"]) {
-		message := map[string]any{"id": stringField(msg, "id"), "type": messageStorageType(msg), "content": stringField(msg, "content"), "parentMessageId": stringField(msg, "parentMid"), "branchId": fallback(stringField(msg, "branchId"), "main"), "createdAt": timeFromMillis(msg["createdAt"]), "updatedAt": timeFromMillis(msg["updatedAt"])}
-		if speakerRoleID := stringField(msg, "speakerRoleId"); speakerRoleID != "" {
-			message["speakerRoleId"] = speakerRoleID
-		}
-		if control := objectMap(msg["control"]); stringField(control, "kind") != "" {
-			message["control"] = control
-		}
-		if tokenEstimate := intField(msg, "tokenEstimate", 0); tokenEstimate > 0 {
-			message["tokenEstimate"] = tokenEstimate
-		}
-		if errBox := objectMap(msg["error"]); stringField(errBox, "message") != "" {
-			message["error"] = errBox
-		}
-		if parts := objectList(msg["parts"]); len(parts) > 0 {
-			message["parts"] = normalizeUIParts(parts)
-		}
-		attachments := fromUIMessageAttachments(objectList(msg["attachments"]), stringSlice(msg["images"]))
-		if len(attachments) > 0 {
-			message["attachments"] = attachments
-		}
-		messages = append(messages, message)
-	}
-	updatedAt := timeFromMillis(chat["updatedAt"])
-	titleFallback := "新聊天"
-	if targetKind == "group" {
-		titleFallback = "群聊"
-	}
-	session := map[string]any{"id": stringField(chat, "id"), "title": fallback(stringField(chat, "title"), titleFallback), "status": "created", "messages": messages, "createdAt": timeFromMillis(chat["createdAt"]), "updatedAt": updatedAt, "lastActive": updatedAt}
-	if targetKind == "group" {
-		session["groupId"] = targetID
-	} else {
-		session["roleId"] = targetID
-	}
-	metadata := map[string]any{}
-	if effort := normalizeReasoningEffort(stringField(chat, "reasoningEffort")); effort != "" {
-		metadata["reasoningEffort"] = effort
-	}
-	if streamEnabled, ok := chat["streamEnabled"].(bool); ok {
-		metadata["streamEnabled"] = boolText(streamEnabled)
-	}
-	if modelOverride := normalizeUIModelRef(chat["modelOverride"]); stringField(modelOverride, "modelId") != "" {
-		metadata["modelOverride.kind"] = stringField(modelOverride, "kind")
-		metadata["modelOverride.providerId"] = stringField(modelOverride, "providerId")
-		metadata["modelOverride.groupId"] = stringField(modelOverride, "groupId")
-		metadata["modelOverride.modelId"] = stringField(modelOverride, "modelId")
-	}
-	if len(metadata) > 0 {
-		session["metadata"] = metadata
-	}
-	return session
-}
-
 func modelOverrideFromMetadata(metadata map[string]any) map[string]any {
 	return normalizeUIModelRef(map[string]any{"kind": stringField(metadata, "modelOverride.kind"), "providerId": stringField(metadata, "modelOverride.providerId"), "groupId": stringField(metadata, "modelOverride.groupId"), "modelId": stringField(metadata, "modelOverride.modelId")})
 }
@@ -1586,25 +1428,6 @@ func toUIMessageAttachments(attachments []map[string]any) ([]any, []any) {
 		files = append(files, map[string]any{"id": stringField(attachment, "id"), "name": fallback(stringField(attachment, "name"), "文件"), "kind": fallback(kind, "txt"), "lang": fallback(stringField(attachment, "lang"), "text"), "text": text, "fullLen": fullLen, "sendLen": sendLen, "sendPct": sendPct})
 	}
 	return images, files
-}
-
-func fromUIMessageAttachments(files []map[string]any, images []string) []any {
-	attachments := []any{}
-	for _, imagePath := range images {
-		imagePath = strings.TrimSpace(imagePath)
-		if imagePath == "" {
-			continue
-		}
-		attachments = append(attachments, map[string]any{"kind": "image", "name": "图片", "path": imagePath})
-	}
-	for _, file := range files {
-		text := stringField(file, "text")
-		if text == "" {
-			continue
-		}
-		attachments = append(attachments, map[string]any{"id": stringField(file, "id"), "kind": fallback(stringField(file, "kind"), "txt"), "name": fallback(stringField(file, "name"), "文件"), "lang": fallback(stringField(file, "lang"), "text"), "text": text, "fullLen": int(numberField(file, "fullLen", float64(len([]rune(text))))), "sendLen": int(numberField(file, "sendLen", float64(len([]rune(text))))), "sendPct": int(numberField(file, "sendPct", 100))})
-	}
-	return attachments
 }
 
 func mergeSettings(settings map[string]any, providers []map[string]any, mermaidFix map[string]any, chatTitleNaming map[string]any, stickerNaming map[string]any, contextCompression map[string]any) map[string]any {

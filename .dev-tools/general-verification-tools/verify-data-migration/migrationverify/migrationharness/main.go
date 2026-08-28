@@ -8,10 +8,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
 	datamigration "eucli-box/src/data-migration-system"
+	"eucli-box/pkg/datapaths"
 )
 
 func main() {
@@ -83,7 +85,7 @@ func stepOne(failAt int, verifyFailAt int, crashAt int) datamigration.Step {
 		ID:          "1.0.0-to-1.1.0",
 		FromVersion: "1.0.0",
 		ToVersion:   "1.1.0",
-		Scope:       []string{"meta/counter.json"},
+		Scope:       []string{path.Join(datapaths.RelMetaDir, "counter.json")},
 		Precheck: func(ctx context.Context, dataDir string) error {
 			count, err := readCounter(dataDir)
 			if err != nil {
@@ -127,7 +129,7 @@ func stepTwo(failAt int, verifyFailAt int, crashAt int) datamigration.Step {
 		ID:          "1.1.0-to-1.2.0",
 		FromVersion: "1.1.0",
 		ToVersion:   "1.2.0",
-		Scope:       []string{"meta/counter.json", "meta/stamp.json"},
+		Scope:       []string{path.Join(datapaths.RelMetaDir, "counter.json"), path.Join(datapaths.RelMetaDir, "stamp.json")},
 		Precheck: func(ctx context.Context, dataDir string) error {
 			count, err := readCounter(dataDir)
 			if err != nil {
@@ -194,7 +196,7 @@ func corruptLatestBackup(dataDir string) error {
 }
 
 func readCounter(dataDir string) (int, error) {
-	payload, err := os.ReadFile(filepath.Join(dataDir, "meta", "counter.json"))
+	payload, err := os.ReadFile(filepath.Join(datapaths.MetaDir(dataDir), "counter.json"))
 	if err != nil {
 		return 0, err
 	}
@@ -212,11 +214,11 @@ func writeCounter(dataDir string, count int) error {
 	if err != nil {
 		return err
 	}
-	return writeFile(filepath.Join(dataDir, "meta", "counter.json"), payload)
+	return writeFile(filepath.Join(datapaths.MetaDir(dataDir), "counter.json"), payload)
 }
 
 func readStamp(dataDir string) (string, error) {
-	payload, err := os.ReadFile(filepath.Join(dataDir, "meta", "stamp.json"))
+	payload, err := os.ReadFile(filepath.Join(datapaths.MetaDir(dataDir), "stamp.json"))
 	if err != nil {
 		return "", err
 	}
@@ -234,7 +236,7 @@ func writeStamp(dataDir string, stamp string) error {
 	if err != nil {
 		return err
 	}
-	return writeFile(filepath.Join(dataDir, "meta", "stamp.json"), payload)
+	return writeFile(filepath.Join(datapaths.MetaDir(dataDir), "stamp.json"), payload)
 }
 
 func writeFile(path string, payload []byte) error {

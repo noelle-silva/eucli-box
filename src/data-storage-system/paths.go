@@ -3,6 +3,8 @@ package datastorage
 import (
 	"path/filepath"
 	"strings"
+
+	"eucli-box/pkg/datapaths"
 )
 
 type paths struct {
@@ -20,7 +22,7 @@ func newPaths(root string, toolBodiesRoot string) (paths, error) {
 	}
 	toolRoot := strings.TrimSpace(toolBodiesRoot)
 	if toolRoot == "" {
-		toolRoot = filepath.Join(abs, "tool-bodies")
+		toolRoot = datapaths.ToolBodiesDir(abs)
 	} else {
 		toolRoot, err = filepath.Abs(toolRoot)
 		if err != nil {
@@ -34,57 +36,57 @@ func (p paths) baseDirs() []string {
 	return []string{p.root, p.sessionsRoot(), p.sessionRolesRoot(), p.sessionGroupsRoot(), p.sessionWorkspacesRoot(), p.rolesRoot(), p.groupsRoot(), p.workspacesRoot(), p.providersRoot(), p.toolProgramsRoot(), p.toolDataRoot(), p.stickersRoot(), p.recycleRoot(), p.metaRoot()}
 }
 
-func (p paths) sessionsRoot() string   { return filepath.Join(p.root, "sessions") }
-func (p paths) rolesRoot() string      { return filepath.Join(p.root, "roles") }
-func (p paths) groupsRoot() string     { return filepath.Join(p.root, "groups") }
-func (p paths) workspacesRoot() string { return filepath.Join(p.root, "workspaces") }
-func (p paths) providersRoot() string  { return filepath.Join(p.root, "providers") }
+func (p paths) sessionsRoot() string   { return datapaths.SessionsDir(p.root) }
+func (p paths) rolesRoot() string      { return filepath.Join(p.root, datapaths.RelRolesDir) }
+func (p paths) groupsRoot() string     { return filepath.Join(p.root, datapaths.RelGroupsDir) }
+func (p paths) workspacesRoot() string { return filepath.Join(p.root, datapaths.RelWorkspacesDir) }
+func (p paths) providersRoot() string  { return filepath.Join(p.root, datapaths.RelProvidersDir) }
 func (p paths) toolProgramsRoot() string { return p.toolBodiesRoot }
 
 // managedToolPrograms 表示工具程序由外部程序根目录托管（阶段四受托运行模式）。
 func (p paths) managedToolPrograms() bool {
-	return p.toolBodiesRoot != filepath.Join(p.root, "tool-bodies")
+	return p.toolBodiesRoot != datapaths.ToolBodiesDir(p.root)
 }
 
 // toolProgramRoot 是单个工具的受管理程序根目录。
 func (p paths) toolProgramRoot(toolID string) (string, error) {
 	return p.safeJoin(p.toolBodiesRoot, toolID)
 }
-func (p paths) toolDataRoot() string   { return filepath.Join(p.root, "tool-data") }
-func (p paths) stickersRoot() string   { return filepath.Join(p.root, "stickers") }
-func (p paths) recycleRoot() string    { return filepath.Join(p.root, "recycle") }
-func (p paths) metaRoot() string       { return filepath.Join(p.root, "meta") }
+func (p paths) toolDataRoot() string   { return datapaths.ToolDataDir(p.root) }
+func (p paths) stickersRoot() string   { return filepath.Join(p.root, datapaths.RelStickersDir) }
+func (p paths) recycleRoot() string    { return filepath.Join(p.root, datapaths.RelRecycleDir) }
+func (p paths) metaRoot() string       { return datapaths.MetaDir(p.root) }
 
 func (p paths) sessionFavoritesFile() string {
 	return filepath.Join(p.sessionsRoot(), "favorites.json")
 }
 
 func (p paths) stickerNamingConfigFile() string {
-	return filepath.Join(p.metaRoot(), "sticker-naming.json")
+	return datapaths.StickerNamingFile(p.root)
 }
 
-func (p paths) installSourceFile() string { return filepath.Join(p.metaRoot(), "install-source.json") }
+func (p paths) installSourceFile() string { return datapaths.InstallSourceFile(p.root) }
 
-func (p paths) mermaidFixConfigFile() string { return filepath.Join(p.metaRoot(), "mermaid-fix.json") }
+func (p paths) mermaidFixConfigFile() string { return datapaths.MermaidFixFile(p.root) }
 
 func (p paths) chatTitleNamingConfigFile() string {
-	return filepath.Join(p.metaRoot(), "chat-title-naming.json")
+	return datapaths.ChatTitleNamingFile(p.root)
 }
 
 func (p paths) contextCompressionConfigFile() string {
-	return filepath.Join(p.metaRoot(), "context-compression.json")
+	return datapaths.ContextCompressionFile(p.root)
 }
 
 func (p paths) modelRequestConfigFile() string {
-	return filepath.Join(p.metaRoot(), "model-request.json")
+	return datapaths.ModelRequestFile(p.root)
 }
 
 func (p paths) modelGroupsFile() string {
-	return filepath.Join(p.metaRoot(), "model-groups.json")
+	return datapaths.ModelGroupsFile(p.root)
 }
 
 func (p paths) hookPromptLibraryFile() string {
-	return filepath.Join(p.metaRoot(), "hook-prompts.json")
+	return datapaths.HookPromptsFile(p.root)
 }
 
 func (p paths) roleDir(roleID string) (string, error) {
@@ -128,15 +130,15 @@ func (p paths) sessionRoleDir(roleID string) (string, error) {
 }
 
 func (p paths) sessionRolesRoot() string {
-	return filepath.Join(p.sessionsRoot(), "roles")
+	return datapaths.SessionRolesDir(p.root)
 }
 
 func (p paths) sessionGroupsRoot() string {
-	return filepath.Join(p.sessionsRoot(), "groups")
+	return datapaths.SessionGroupsDir(p.root)
 }
 
 func (p paths) sessionWorkspacesRoot() string {
-	return filepath.Join(p.sessionsRoot(), "workspaces")
+	return datapaths.SessionWorkspacesDir(p.root)
 }
 
 func (p paths) sessionGroupDir(groupID string) (string, error) {

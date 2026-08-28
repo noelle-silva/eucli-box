@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"eucli-box/internal/boxrelease"
+	"eucli-box/pkg/datapaths"
 	"eucli-box/pkg/release"
 	"eucli-box/pkg/releasecheck"
 	"eucli-box/pkg/types"
@@ -69,7 +70,7 @@ func NewSystem(config Config) (System, error) {
 	}
 	dataDir := strings.TrimSpace(config.DataDir)
 	if dataDir == "" {
-		dataDir = filepath.Join("data", "system-plugins")
+		dataDir = datapaths.SystemPluginsDataDir("data")
 	}
 	sourceAbs, err := filepath.Abs(sourceDir)
 	if err != nil {

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"eucli-box/internal/boxrelease"
+	"eucli-box/pkg/datapaths"
 	"eucli-box/pkg/installsource"
 	"eucli-box/pkg/localrun"
 	"eucli-box/pkg/release"
@@ -175,7 +176,7 @@ func run() error {
 	}
 	log.Printf("[7/13] tool-calling-system     ✓")
 
-	pluginDataDir := filepath.Join(dataDir, "system-plugins")
+	pluginDataDir := datapaths.SystemPluginsDataDir(dataDir)
 	systemPluginSystem, err := systemplugin.NewSystem(systemplugin.Config{SourceDir: pluginSourceDir, DataDir: pluginDataDir, BoxVersion: boxRelease.Version, ProgramRoot: pluginSourceDir, Candidates: toolCandidates, HTTPClient: officialDoer})
 	if err != nil {
 		return fmt.Errorf("start system plugin system: %w", err)
@@ -266,7 +267,7 @@ func readBoxKey(dataDir string) string {
 	if envKey := strings.TrimSpace(os.Getenv("EUCLI_BOX_KEY")); envKey != "" {
 		return envKey
 	}
-	keyFile := filepath.Join(dataDir, "meta", "box.key")
+	keyFile := datapaths.BoxKeyFile(dataDir)
 	payload, err := os.ReadFile(keyFile)
 	if err != nil {
 		return ""
@@ -287,7 +288,7 @@ func ensureBoxKey(dataDir string) string {
 		return ""
 	}
 	key := hex.EncodeToString(buffer)
-	metaDir := filepath.Join(dataDir, "meta")
+	metaDir := datapaths.MetaDir(dataDir)
 	if err := os.MkdirAll(metaDir, 0o700); err != nil {
 		log.Printf("生成访问钥匙失败：%v", err)
 		return ""

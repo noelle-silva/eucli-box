@@ -14,7 +14,7 @@ type Handoff struct {
 	Outcome            Outcome // 最近一次写下的四态结果（StatusPresent 为 false 时为零值）
 	Completed          bool    // status.json 的 completed 字段
 	ProcessPending     bool    // process.json 是否存在；存在即有未完成迁移
-	CurrentDataVersion string  // meta/version.json 当前值；文件不存在时为空串
+	CurrentDataVersion string  // 版本事实文件当前值；文件不存在时为空串
 }
 
 // ReadHandoff 读取迁移工作区的持久事实，作为程序更换职责判断数据状态的唯一事实入口。

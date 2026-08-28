@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"eucli-box/pkg/datapaths"
 	"eucli-box/pkg/release"
 	"eucli-box/pkg/releasecatalog"
 	"eucli-box/pkg/releasecheck"
@@ -591,10 +592,12 @@ func buildProbeTool(t *testing.T, kind string) []byte {
 
 import (
 	"encoding/json"
+	"net"
 	"os"
 	"path/filepath"
 	"time"
 )
+%[1]s
 
 type input struct {
 	ActionID          string `+"`json:\"actionId\"`"+`
@@ -602,6 +605,12 @@ type input struct {
 }
 
 func main() {
+	stopControl, err := admitControl()
+	if err != nil {
+		_, _ = os.Stdout.WriteString(`+"`"+`{"status":"failed","content":"control denied"}`+"`"+`)
+		os.Exit(3)
+	}
+	defer stopControl()
 	var in input
 	_ = json.NewDecoder(os.Stdin).Decode(&in)
 	if in.ActionID == "sleep" {
@@ -611,17 +620,25 @@ func main() {
 	}
 	_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"status": "success", "content": "ok"})
 }
-`, sleepSeconds)
+`, probeControlPreamble(), sleepSeconds)
 	case kind == "persistent":
 		source = `package main
 
 import (
 	"encoding/json"
+	"net"
 	"os"
 	"time"
 )
+` + probeControlPreamble() + `
 
 func main() {
+	stopControl, err := admitControl()
+	if err != nil {
+		_, _ = os.Stdout.WriteString(` + "`" + `{"status":"failed","content":"control denied"}` + "`" + `)
+		os.Exit(3)
+	}
+	defer stopControl()
 	decoder := json.NewDecoder(os.Stdin)
 	encoder := json.NewEncoder(os.Stdout)
 	for {
@@ -639,10 +656,12 @@ func main() {
 
 import (
 	"encoding/json"
+	"net"
 	"os"
 	"path/filepath"
 	"time"
 )
+` + probeControlPreamble() + `
 
 type input struct {
 	Action              string            ` + "`json:\"action\"`" + `
@@ -650,6 +669,12 @@ type input struct {
 }
 
 func main() {
+	stopControl, err := admitControl()
+	if err != nil {
+		_, _ = os.Stdout.WriteString(` + "`" + `{"status":"failed","content":"control denied"}` + "`" + `)
+		os.Exit(3)
+	}
+	defer stopControl()
 	var in input
 	_ = json.NewDecoder(os.Stdin).Decode(&in)
 	if _, err := os.Stat(filepath.Join(in.PluginDataDirectory, "sleep-marker.txt")); err == nil {
@@ -677,6 +702,72 @@ func main() {
 	return payload
 }
 
+// probeControlPreamble 是探针程序的控制通道接入片段：解析宿主注入的控制环境后连接、
+// 握手并保持心跳；不满足控制环境时不接入，直接返回空停止函数。
+func probeControlPreamble() string {
+	return `
+// ---------- tool control ----------
+
+const toolControlProtocolVersion = 1
+
+type controlMessage struct {
+	Version  int    ` + "`json:\"version\"`" + `
+	Type     string ` + "`json:\"type\"`" + `
+	Token    string ` + "`json:\"token,omitempty\"`" + `
+	Sequence uint64 ` + "`json:\"sequence,omitempty\"`" + `
+}
+
+func admitControl() (func(), error) {
+	address := os.Getenv("EUCLI_TOOL_CONTROL_ADDR")
+	token := os.Getenv("EUCLI_TOOL_CONTROL_TOKEN")
+	version := os.Getenv("EUCLI_TOOL_CONTROL_VERSION")
+	required := os.Getenv("EUCLI_TOOL_CONTROL_REQUIRED") == "1"
+	if !required && address == "" && token == "" && version == "" {
+		return func() {}, nil
+	}
+	if address == "" || token == "" || version != "1" {
+		return nil, os.ErrInvalid
+	}
+	conn, err := net.Dial("tcp", address)
+	if err != nil {
+		return nil, err
+	}
+	encoder := json.NewEncoder(conn)
+	decoder := json.NewDecoder(conn)
+	if err := encoder.Encode(controlMessage{Version: toolControlProtocolVersion, Type: "hello", Token: token}); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	var ready controlMessage
+	if err := decoder.Decode(&ready); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	if ready.Version != toolControlProtocolVersion || ready.Type != "ready" || ready.Token != token {
+		_ = conn.Close()
+		return nil, os.ErrInvalid
+	}
+	go func() {
+		for {
+			var message controlMessage
+			if err := decoder.Decode(&message); err != nil {
+				return
+			}
+			if message.Type != "ping" {
+				continue
+			}
+			if err := encoder.Encode(controlMessage{Version: toolControlProtocolVersion, Type: "pong", Token: token, Sequence: message.Sequence}); err != nil {
+				return
+			}
+		}
+	}()
+	return func() {
+		_ = conn.Close()
+	}, nil
+}
+`
+}
+
 // ---------- 业务端进程 ----------
 
 type boxProcess struct {
@@ -685,15 +776,16 @@ type boxProcess struct {
 	baseURL string
 	client  *http.Client
 	logFile *os.File
+	boxData string
+	key     string
 }
 
 func startBox(t *testing.T, boxPath string, envDir string, serverURL string) *boxProcess {
 	t.Helper()
 	port := freePort(t)
 	boxData := filepath.Join(envDir, "box-data")
-	programRoot := filepath.Join(envDir, "program-root")
 	tempDir := filepath.Join(envDir, "temp")
-	for _, dir := range []string{boxData, programRoot, tempDir} {
+	for _, dir := range []string{boxData, tempDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", dir, err)
 		}
@@ -705,7 +797,6 @@ func startBox(t *testing.T, boxPath string, envDir string, serverURL string) *bo
 	cmd := exec.Command(boxPath)
 	cmd.Env = append(os.Environ(),
 		"EUCLI_BOX_DATA_DIR="+boxData,
-		"EUCLI_BOX_PROGRAM_ROOT="+programRoot,
 		"EUCLI_BOX_ADDR=127.0.0.1:"+port,
 		"EUCLI_BOX_RELEASE_INDEX_BASE="+serverURL,
 		"EUCLI_BOX_RELEASE_DOWNLOAD_BASE="+serverURL,
@@ -717,7 +808,7 @@ func startBox(t *testing.T, boxPath string, envDir string, serverURL string) *bo
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start box: %v", err)
 	}
-	box := &boxProcess{t: t, cmd: cmd, baseURL: "http://127.0.0.1:" + port, client: &http.Client{Timeout: 60 * time.Second}, logFile: logFile}
+	box := &boxProcess{t: t, cmd: cmd, baseURL: "http://127.0.0.1:" + port, client: &http.Client{Timeout: 60 * time.Second}, logFile: logFile, boxData: boxData}
 	t.Cleanup(func() {
 		box.stop()
 	})
@@ -738,8 +829,11 @@ func freePort(t *testing.T) string {
 
 func (b *boxProcess) waitReady(t *testing.T) {
 	t.Helper()
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
+		if b.key == "" {
+			b.key = readBoxKey(b.boxData)
+		}
 		status, _ := b.call(http.MethodGet, "/api/release", "")
 		if status >= 200 && status < 300 {
 			return
@@ -747,6 +841,15 @@ func (b *boxProcess) waitReady(t *testing.T) {
 		time.Sleep(300 * time.Millisecond)
 	}
 	t.Fatalf("业务端未在期限内就绪，日志：\n%s", b.logText())
+}
+
+// readBoxKey 读取业务端数据目录的访问钥匙文件。
+func readBoxKey(boxData string) string {
+	payload, err := os.ReadFile(datapaths.BoxKeyFile(boxData))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(payload))
 }
 
 func (b *boxProcess) stop() {
@@ -788,6 +891,9 @@ func (b *boxProcess) call(method string, path string, body string) (int, []byte)
 	}
 	if body != "" {
 		request.Header.Set("Content-Type", "application/json")
+	}
+	if b.key != "" {
+		request.Header.Set("Authorization", "Bearer "+b.key)
 	}
 	response, err := b.client.Do(request)
 	if err != nil {
@@ -870,7 +976,7 @@ func (f *fakePermission) ApplyConfirmation(ctx context.Context, decision types.P
 // newComponentToolSystem 构造与业务端共享同一数据目录和程序根目录的工具系统组件。
 func newComponentToolSystem(t *testing.T, envDir string, programRoot string, server *toolPluginUpdateServer) toolcalling.System {
 	t.Helper()
-	toolProgramRoot := filepath.Join(programRoot, "tools")
+	toolProgramRoot := filepath.Join(programRoot, "ai-tools")
 	storage, err := datastorage.NewSystem(datastorage.Config{RootDir: filepath.Join(envDir, "box-data"), ToolBodiesRoot: toolProgramRoot})
 	if err != nil {
 		t.Fatalf("datastorage.NewSystem() error = %v", err)
@@ -943,7 +1049,7 @@ func TestToolPluginUpdate(t *testing.T) {
 			t.Fatalf("工具插件更新运行目录缺少 %s", name)
 		}
 	}
-	programRoot := filepath.Join(envDir, "program-root")
+	programRoot := filepath.Join(envDir, "runtime", "programs")
 	boxData := filepath.Join(envDir, "box-data")
 
 	// 步骤 3：隔离官方来源服务器，准备一个工具和一个插件的正式候选。
@@ -982,10 +1088,10 @@ func TestToolPluginUpdate(t *testing.T) {
 	if count := server.archiveRequestCount(types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "context7"}, "0.1.0"); count != 1 {
 		t.Fatalf("一次用户动作对应压缩包请求 %d 次", count)
 	}
-	if _, err := os.Stat(filepath.Join(programRoot, "tools", "context7", "current.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(programRoot, "ai-tools", "context7", "current.json")); err != nil {
 		t.Fatalf("工具 current.json 缺失：%v", err)
 	}
-	if _, err := os.Stat(filepath.Join(programRoot, "tools", "context7", "versions", "0.1.0", "definition.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(programRoot, "ai-tools", "context7", "versions", "0.1.0", "definition.json")); err != nil {
 		t.Fatalf("工具版本目录缺失：%v", err)
 	}
 
@@ -1006,7 +1112,7 @@ func TestToolPluginUpdate(t *testing.T) {
 	if status != 200 {
 		t.Fatalf("保存插件配置 HTTP %d：%s", status, payload)
 	}
-	if info, err := os.Stat(filepath.Join(boxData, "system-plugins", "time-plugin")); err != nil || !info.IsDir() {
+	if info, err := os.Stat(filepath.Join(datapaths.SystemPluginsDataDir(boxData), "time-plugin")); err != nil || !info.IsDir() {
 		t.Fatalf("插件长期数据目录未独立建立：%v", err)
 	}
 	if _, err := os.Stat(filepath.Join(programRoot, "system-plugins", "time-plugin", "config.json")); err == nil {
@@ -1031,7 +1137,7 @@ func TestToolPluginUpdate(t *testing.T) {
 		t.Fatalf("保存工具用户配置 HTTP %d", status)
 	}
 	toolDataBefore := snapshotDir(filepath.Join(boxData, "tool-data", "context7"))
-	pluginDataBefore := snapshotDir(filepath.Join(boxData, "system-plugins", "time-plugin"))
+	pluginDataBefore := snapshotDir(filepath.Join(datapaths.SystemPluginsDataDir(boxData), "time-plugin"))
 
 	// 步骤 8：同一工具和同一插件的高版本候选，分别执行单项更新；其他发布物版本不变。
 	makeToolCandidate(t, server, "context7", "0.1.1", false, false)
@@ -1065,7 +1171,7 @@ func TestToolPluginUpdate(t *testing.T) {
 	// 步骤 9：更新后长期数据逐字节不变。
 	toolDataAfter := snapshotDir(filepath.Join(boxData, "tool-data", "context7"))
 	compareDirSnapshots(t, "工具长期数据", toolDataBefore, toolDataAfter)
-	pluginDataAfter := snapshotDir(filepath.Join(boxData, "system-plugins", "time-plugin"))
+	pluginDataAfter := snapshotDir(filepath.Join(datapaths.SystemPluginsDataDir(boxData), "time-plugin"))
 	compareDirSnapshots(t, "插件长期数据", pluginDataBefore, pluginDataAfter)
 
 	// 步骤 10：不适用工具和不适用插件在下载前拒绝。
@@ -1086,7 +1192,7 @@ func TestToolPluginUpdate(t *testing.T) {
 	if count := server.archiveRequestCount(types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: "system-info-plugin"}, "0.1.0"); count != 0 {
 		t.Fatalf("不适用插件候选发生 %d 次下载", count)
 	}
-	if _, err := os.Stat(filepath.Join(programRoot, "tools", "sci_calculator", "work")); err == nil {
+	if _, err := os.Stat(filepath.Join(programRoot, "ai-tools", "sci_calculator", "work")); err == nil {
 		t.Fatal("不适用工具产生了下载工作区")
 	}
 
@@ -1149,7 +1255,7 @@ func TestToolPluginUpdate(t *testing.T) {
 	if state["status"] != types.ArtifactStatusActive || state["currentVersion"] != "0.1.1" {
 		t.Fatalf("恢复后工具状态 = %#v", state)
 	}
-	currentPayload, err := os.ReadFile(filepath.Join(programRoot, "tools", "context7", "current.json"))
+	currentPayload, err := os.ReadFile(filepath.Join(programRoot, "ai-tools", "context7", "current.json"))
 	if err != nil {
 		t.Fatalf("读取 current.json：%v", err)
 	}
@@ -1196,7 +1302,7 @@ func TestToolPluginUpdate(t *testing.T) {
 // verifyPluginOnDemandActivity 制造 on-demand 活动并确认活动结束前不下载、不切换。
 func verifyPluginOnDemandActivity(t *testing.T, box *boxProcess, boxData string, server *toolPluginUpdateServer) {
 	t.Helper()
-	marker := filepath.Join(boxData, "system-plugins", "time-plugin", "sleep-marker.txt")
+	marker := filepath.Join(datapaths.SystemPluginsDataDir(boxData), "time-plugin", "sleep-marker.txt")
 	if err := os.WriteFile(marker, []byte("sleep"), 0o644); err != nil {
 		t.Fatalf("写 sleep marker：%v", err)
 	}
@@ -1288,7 +1394,7 @@ func verifyPluginHeartbeatActivity(t *testing.T, box *boxProcess, programRoot st
 	if state["status"] != types.ArtifactStatusActive {
 		t.Fatalf("heartbeat 插件安装状态 = %#v（HTTP %d）", state, status)
 	}
-	marker := filepath.Join(boxData, "system-plugins", "system-info-plugin", "sleep-marker.txt")
+	marker := filepath.Join(datapaths.SystemPluginsDataDir(boxData), "system-info-plugin", "sleep-marker.txt")
 	if err := os.WriteFile(marker, []byte("sleep"), 0o644); err != nil {
 		t.Fatalf("写 heartbeat marker：%v", err)
 	}
@@ -1342,7 +1448,7 @@ func verifyBrokenCandidates(t *testing.T, box *boxProcess, programRoot string, s
 		if state["status"] != types.ArtifactStatusFailed {
 			t.Fatalf("损坏样例 %s 状态 = %#v（HTTP %d）", kinds[index], state, status)
 		}
-		if _, err := os.Stat(filepath.Join(programRoot, "tools", identity.ID, "current.json")); err == nil {
+		if _, err := os.Stat(filepath.Join(programRoot, "ai-tools", identity.ID, "current.json")); err == nil {
 			t.Fatalf("损坏样例 %s 产生了当前版本记录", kinds[index])
 		}
 	}
@@ -1362,7 +1468,7 @@ func verifyInterruptedSwitchRecovery(t *testing.T, boxPath string, envDir string
 		"phase":          "switch",
 		"result":         "running",
 		"currentVersion": "0.1.1",
-		"workDirectory":  filepath.Join(programRoot, "tools", "context7", "work", "interrupted-switch"),
+		"workDirectory":  filepath.Join(programRoot, "ai-tools", "context7", "work", "interrupted-switch"),
 		"startedAt":      time.Now().UTC().Format(time.RFC3339Nano),
 		"updatedAt":      time.Now().UTC().Format(time.RFC3339Nano),
 		"errorCode":      "",
@@ -1372,7 +1478,7 @@ func verifyInterruptedSwitchRecovery(t *testing.T, boxPath string, envDir string
 	if err != nil {
 		t.Fatalf("marshal operation: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(programRoot, "tools", "context7", "operation.json"), recordJSON, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(programRoot, "ai-tools", "context7", "operation.json"), recordJSON, 0o644); err != nil {
 		t.Fatalf("写 operation.json：%v", err)
 	}
 	current := map[string]any{
@@ -1380,14 +1486,14 @@ func verifyInterruptedSwitchRecovery(t *testing.T, boxPath string, envDir string
 		"artifact":         map[string]any{"kind": "tool", "id": "context7"},
 		"version":          "0.1.2",
 		"platform":         "windows-x64",
-		"programDirectory": filepath.Join(programRoot, "tools", "context7", "versions", "0.1.2"),
+		"programDirectory": filepath.Join(programRoot, "ai-tools", "context7", "versions", "0.1.2"),
 		"status":           "active",
 	}
 	currentJSON, err := json.MarshalIndent(current, "", "  ")
 	if err != nil {
 		t.Fatalf("marshal current: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(programRoot, "tools", "context7", "current.json"), currentJSON, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(programRoot, "ai-tools", "context7", "current.json"), currentJSON, 0o644); err != nil {
 		t.Fatalf("写 current.json：%v", err)
 	}
 	// 重启业务端。
@@ -1398,12 +1504,12 @@ func verifyInterruptedSwitchRecovery(t *testing.T, boxPath string, envDir string
 	if state["status"] != types.ArtifactStatusActive || state["currentVersion"] != "0.1.1" {
 		t.Fatalf("中断恢复后状态 = %#v（HTTP %d）", state, status)
 	}
-	if _, err := os.Stat(filepath.Join(programRoot, "tools", "context7", "operation.json")); err == nil {
+	if _, err := os.Stat(filepath.Join(programRoot, "ai-tools", "context7", "operation.json")); err == nil {
 		t.Fatal("恢复后 operation.json 未清除")
 	}
 
 	// 未知当前版本：损坏 current.json 后重启，不启用任何版本。
-	if err := os.WriteFile(filepath.Join(programRoot, "tools", "context7", "current.json"), []byte(`{"broken":true}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(programRoot, "ai-tools", "context7", "current.json"), []byte(`{"broken":true}`), 0o644); err != nil {
 		t.Fatalf("损坏 current.json：%v", err)
 	}
 	box.stop()

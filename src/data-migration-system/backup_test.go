@@ -8,11 +8,19 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
 	"testing"
+
+	"eucli-box/pkg/datapaths"
+)
+
+var (
+	testCounterScope = path.Join(datapaths.RelMetaDir, "counter.json")
+	testStampScope   = path.Join(datapaths.RelMetaDir, "stamp.json")
 )
 
 func writeTestFile(t *testing.T, path string, content string) {
@@ -77,13 +85,13 @@ func snapshotDir(t *testing.T, root string) string {
 
 func TestEstablishBackupCoversScopeAndWritesManifest(t *testing.T) {
 	dataDir := t.TempDir()
-	writeTestFile(t, filepath.Join(dataDir, "meta", "version.json"), `{"version":"1.0.0"}`+"\n")
-	writeTestFile(t, filepath.Join(dataDir, "meta", "counter.json"), `{"count":0}`+"\n")
-	writeTestFile(t, filepath.Join(dataDir, "meta", "stamp.json"), `{"stamp":"old"}`+"\n")
+	writeTestFile(t, datapaths.VersionFile(dataDir), `{"version":"1.0.0"}`+"\n")
+	writeTestFile(t, filepath.Join(datapaths.MetaDir(dataDir), "counter.json"), `{"count":0}`+"\n")
+	writeTestFile(t, filepath.Join(datapaths.MetaDir(dataDir), "stamp.json"), `{"stamp":"old"}`+"\n")
 	writeTestFile(t, filepath.Join(dataDir, "sessions", "keep.json"), `{"keep":true}`+"\n")
 	w := testWorkspace(t, dataDir)
 
-	scope := []string{"meta/counter.json", versionFileScope}
+	scope := []string{testCounterScope, versionFileScope}
 	manifest, err := establishBackup(context.Background(), dataDir, w, "20260813T100000.000000000Z", scope)
 	if err != nil {
 		t.Fatalf("establishBackup() error = %v", err)
@@ -95,13 +103,13 @@ func TestEstablishBackupCoversScopeAndWritesManifest(t *testing.T) {
 	for _, file := range manifest.Files {
 		paths[file.Path] = true
 	}
-	if !paths["meta/version.json"] || !paths["meta/counter.json"] {
+	if !paths[datapaths.RelVersionFile] || !paths[testCounterScope] {
 		t.Fatalf("backup scope mismatch: %#v", paths)
 	}
 	if manifest.SchemaVersion != 1 {
 		t.Fatalf("schemaVersion = %d", manifest.SchemaVersion)
 	}
-	backupCounter := filepath.Join(w.backupDataDir("20260813T100000.000000000Z"), "meta", "counter.json")
+	backupCounter := filepath.Join(w.backupDataDir("20260813T100000.000000000Z"), filepath.FromSlash(testCounterScope))
 	if _, err := os.Stat(backupCounter); err != nil {
 		t.Fatalf("backup copy missing: %v", err)
 	}
@@ -112,20 +120,20 @@ func TestEstablishBackupCoversScopeAndWritesManifest(t *testing.T) {
 
 func TestRestoreFromBackupReturnsDataToOriginal(t *testing.T) {
 	dataDir := t.TempDir()
-	writeTestFile(t, filepath.Join(dataDir, "meta", "version.json"), `{"version":"1.0.0"}`+"\n")
-	writeTestFile(t, filepath.Join(dataDir, "meta", "counter.json"), `{"count":0}`+"\n")
+	writeTestFile(t, datapaths.VersionFile(dataDir), `{"version":"1.0.0"}`+"\n")
+	writeTestFile(t, filepath.Join(datapaths.MetaDir(dataDir), "counter.json"), `{"count":0}`+"\n")
 	writeTestFile(t, filepath.Join(dataDir, "sessions", "keep.json"), `{"keep":true}`+"\n")
 	w := testWorkspace(t, dataDir)
 	before := snapshotDir(t, dataDir)
 
-	scope := []string{"meta"}
+	scope := []string{datapaths.RelMetaDir}
 	if _, err := establishBackup(context.Background(), dataDir, w, "20260813T100000.000000000Z", scope); err != nil {
 		t.Fatalf("establishBackup() error = %v", err)
 	}
 
-	writeTestFile(t, filepath.Join(dataDir, "meta", "counter.json"), `{"count":2}`+"\n")
-	writeTestFile(t, filepath.Join(dataDir, "meta", "stamp.json"), `{"stamp":"1.2.0"}`+"\n")
-	writeTestFile(t, filepath.Join(dataDir, "meta", "extra", "new.json"), `{"new":true}`+"\n")
+	writeTestFile(t, filepath.Join(datapaths.MetaDir(dataDir), "counter.json"), `{"count":2}`+"\n")
+	writeTestFile(t, filepath.Join(datapaths.MetaDir(dataDir), "stamp.json"), `{"stamp":"1.2.0"}`+"\n")
+	writeTestFile(t, filepath.Join(datapaths.MetaDir(dataDir), "extra", "new.json"), `{"new":true}`+"\n")
 
 	if err := restoreFromBackup(context.Background(), dataDir, w, "20260813T100000.000000000Z", scope); err != nil {
 		t.Fatalf("restoreFromBackup() error = %v", err)
@@ -134,27 +142,27 @@ func TestRestoreFromBackupReturnsDataToOriginal(t *testing.T) {
 	if before != after {
 		t.Fatalf("data directory changed after restore:\nbefore=%s\nafter=%s", before, after)
 	}
-	if _, err := os.Stat(filepath.Join(dataDir, "meta", "stamp.json")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(datapaths.MetaDir(dataDir), "stamp.json")); !os.IsNotExist(err) {
 		t.Fatalf("migration-created file still exists")
 	}
-	if _, err := os.Stat(filepath.Join(dataDir, "meta", "extra")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(datapaths.MetaDir(dataDir), "extra")); !os.IsNotExist(err) {
 		t.Fatalf("migration-created directory still exists")
 	}
 }
 
 func TestRestoreFromBackupFailureKeepsScene(t *testing.T) {
 	dataDir := t.TempDir()
-	writeTestFile(t, filepath.Join(dataDir, "meta", "version.json"), `{"version":"1.0.0"}`+"\n")
-	writeTestFile(t, filepath.Join(dataDir, "meta", "counter.json"), `{"count":0}`+"\n")
+	writeTestFile(t, datapaths.VersionFile(dataDir), `{"version":"1.0.0"}`+"\n")
+	writeTestFile(t, filepath.Join(datapaths.MetaDir(dataDir), "counter.json"), `{"count":0}`+"\n")
 	w := testWorkspace(t, dataDir)
 
-	scope := []string{"meta"}
+	scope := []string{datapaths.RelMetaDir}
 	runID := "20260813T100000.000000000Z"
 	if _, err := establishBackup(context.Background(), dataDir, w, runID, scope); err != nil {
 		t.Fatalf("establishBackup() error = %v", err)
 	}
-	writeTestFile(t, filepath.Join(dataDir, "meta", "counter.json"), `{"count":1}`+"\n")
-	if err := os.Remove(filepath.Join(w.backupDataDir(runID), "meta", "counter.json")); err != nil {
+	writeTestFile(t, filepath.Join(datapaths.MetaDir(dataDir), "counter.json"), `{"count":1}`+"\n")
+	if err := os.Remove(filepath.Join(w.backupDataDir(runID), filepath.FromSlash(testCounterScope))); err != nil {
 		t.Fatalf("remove backup file: %v", err)
 	}
 	if err := restoreFromBackup(context.Background(), dataDir, w, runID, scope); err == nil {
@@ -167,14 +175,14 @@ func TestRestoreFromBackupFailureKeepsScene(t *testing.T) {
 
 func TestEstablishBackupRejectsReparsePoint(t *testing.T) {
 	dataDir := t.TempDir()
-	writeTestFile(t, filepath.Join(dataDir, "meta", "version.json"), `{"version":"1.0.0"}`+"\n")
-	writeTestFile(t, filepath.Join(dataDir, "meta", "counter.json"), `{"count":0}`+"\n")
-	link := filepath.Join(dataDir, "meta", "link")
-	if err := os.Symlink(filepath.Join(dataDir, "meta", "counter.json"), link); err != nil {
+	writeTestFile(t, datapaths.VersionFile(dataDir), `{"version":"1.0.0"}`+"\n")
+	writeTestFile(t, filepath.Join(datapaths.MetaDir(dataDir), "counter.json"), `{"count":0}`+"\n")
+	link := filepath.Join(datapaths.MetaDir(dataDir), "link")
+	if err := os.Symlink(filepath.Join(datapaths.MetaDir(dataDir), "counter.json"), link); err != nil {
 		t.Skipf("cannot create symlink on this platform: %v", err)
 	}
 	w := testWorkspace(t, dataDir)
-	_, err := establishBackup(context.Background(), dataDir, w, "20260813T100000.000000000Z", []string{"meta"})
+	_, err := establishBackup(context.Background(), dataDir, w, "20260813T100000.000000000Z", []string{datapaths.RelMetaDir})
 	var appErr interface{ Error() string }
 	_ = appErr
 	if err == nil {
@@ -212,7 +220,7 @@ func TestReadBackupManifestRejectsInvalidDigest(t *testing.T) {
 	manifest := backupManifest{
 		SchemaVersion: 1,
 		Files: []backupManifestFile{{
-			Path:      "meta/version.json",
+			Path:      datapaths.RelVersionFile,
 			SizeBytes: 1,
 			SHA256:    "not-a-digest",
 		}},
@@ -244,10 +252,10 @@ func TestCheckDiskSpaceBehavior(t *testing.T) {
 
 func TestRemoveBackupRunCleansEmptyBackupRoot(t *testing.T) {
 	dataDir := t.TempDir()
-	writeTestFile(t, filepath.Join(dataDir, "meta", "version.json"), `{"version":"1.0.0"}`+"\n")
+	writeTestFile(t, datapaths.VersionFile(dataDir), `{"version":"1.0.0"}`+"\n")
 	w := testWorkspace(t, dataDir)
 	runID := "20260813T100000.000000000Z"
-	if _, err := establishBackup(context.Background(), dataDir, w, runID, []string{"meta"}); err != nil {
+	if _, err := establishBackup(context.Background(), dataDir, w, runID, []string{datapaths.RelMetaDir}); err != nil {
 		t.Fatalf("establishBackup() error = %v", err)
 	}
 	if err := removeBackupRun(w, runID); err != nil {
@@ -270,18 +278,18 @@ func TestWorkspaceDirIsSiblingOfDataDir(t *testing.T) {
 }
 
 func TestScopeMatching(t *testing.T) {
-	scope := []string{"meta/counter.json", "meta/stamps"}
+	scope := []string{testCounterScope, path.Join(datapaths.RelMetaDir, "stamps")}
 	matches := map[string]bool{
-		"meta/counter.json":            true,
-		"meta/counter.json.bak":        false,
-		"meta/stamps/a.json":           true,
-		"meta/stamps/deep/b.json":      true,
-		"meta/stamps-backup/c.json":    false,
-		"meta/version.json":            false,
+		testCounterScope:                              true,
+		testCounterScope + ".bak":                     false,
+		path.Join(datapaths.RelMetaDir, "stamps/a.json"):          true,
+		path.Join(datapaths.RelMetaDir, "stamps/deep/b.json"):     true,
+		path.Join(datapaths.RelMetaDir, "stamps-backup/c.json"):   false,
+		datapaths.RelVersionFile:                      false,
 	}
-	for path, want := range matches {
-		if got := scopeMatches(scope, path); got != want {
-			t.Fatalf("scopeMatches(%q) = %v, want %v", path, got, want)
+	for pathValue, want := range matches {
+		if got := scopeMatches(scope, pathValue); got != want {
+			t.Fatalf("scopeMatches(%q) = %v, want %v", pathValue, got, want)
 		}
 	}
 }
@@ -289,7 +297,7 @@ func TestScopeMatching(t *testing.T) {
 func TestManifestJSONShape(t *testing.T) {
 	manifest := backupManifest{
 		SchemaVersion: 1,
-		Files: []backupManifestFile{{Path: "meta/version.json", SizeBytes: 96, SHA256: strings.Repeat("ab", 32)}},
+		Files: []backupManifestFile{{Path: datapaths.RelVersionFile, SizeBytes: 96, SHA256: strings.Repeat("ab", 32)}},
 		TotalBytes:    96,
 		CreatedAt:     "2026-08-13T10:00:00.000000000Z",
 	}
@@ -309,7 +317,7 @@ func TestManifestJSONShape(t *testing.T) {
 		t.Fatalf("files = %#v", decoded["files"])
 	}
 	first, ok := files[0].(map[string]any)
-	if !ok || first["path"] != "meta/version.json" || first["sizeBytes"] != float64(96) {
+	if !ok || first["path"] != datapaths.RelVersionFile || first["sizeBytes"] != float64(96) {
 		t.Fatalf("first file = %#v", files[0])
 	}
 }

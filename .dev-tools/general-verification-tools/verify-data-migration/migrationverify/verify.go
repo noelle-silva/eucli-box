@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"devtools/common/toolkit"
+	"eucli-box/pkg/datapaths"
 )
 
 const (
@@ -390,13 +391,13 @@ func scenarioInitialInstall(ctx context.Context, paths verifyPaths, boxPath stri
 
 func scenarioNoMigration(ctx context.Context, paths verifyPaths, boxPath string, targetVersion string) error {
 	dataDir := filepath.Join(paths.environment, "case-no-migration", "data")
-	metaDir := filepath.Join(dataDir, "meta")
+	metaDir := datapaths.MetaDir(dataDir)
 	if err := os.MkdirAll(metaDir, 0o755); err != nil {
 		return err
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	versionPayload := fmt.Sprintf("{\n  \"version\": %q,\n  \"createdAt\": %q,\n  \"updatedAt\": %q\n}\n", targetVersion, now, now)
-	if err := os.WriteFile(filepath.Join(metaDir, "version.json"), []byte(versionPayload), 0o644); err != nil {
+	if err := os.WriteFile(datapaths.VersionFile(dataDir), []byte(versionPayload), 0o644); err != nil {
 		return err
 	}
 	sample := filepath.Join(dataDir, "sessions", "keep.json")
@@ -406,7 +407,7 @@ func scenarioNoMigration(ctx context.Context, paths verifyPaths, boxPath string,
 	if err := os.WriteFile(sample, []byte(`{"keep":true}`+"\n"), 0o644); err != nil {
 		return err
 	}
-	versionBefore, err := os.ReadFile(filepath.Join(metaDir, "version.json"))
+	versionBefore, err := os.ReadFile(datapaths.VersionFile(dataDir))
 	if err != nil {
 		return err
 	}
@@ -419,7 +420,7 @@ func scenarioNoMigration(ctx context.Context, paths verifyPaths, boxPath string,
 		return err
 	}
 	process.stop()
-	versionAfter, err := os.ReadFile(filepath.Join(metaDir, "version.json"))
+	versionAfter, err := os.ReadFile(datapaths.VersionFile(dataDir))
 	if err != nil {
 		return err
 	}
@@ -665,13 +666,13 @@ func scenarioRecoveryFailure(ctx context.Context, paths verifyPaths, harnessPath
 
 func scenarioVersionTooHigh(ctx context.Context, paths verifyPaths, boxPath string, targetVersion string) error {
 	dataDir := filepath.Join(paths.environment, "case-too-high", "data")
-	metaDir := filepath.Join(dataDir, "meta")
+	metaDir := datapaths.MetaDir(dataDir)
 	if err := os.MkdirAll(metaDir, 0o755); err != nil {
 		return err
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	versionPayload := fmt.Sprintf("{\n  \"version\": \"2.0.0\",\n  \"createdAt\": %q,\n  \"updatedAt\": %q\n}\n", now, now)
-	if err := os.WriteFile(filepath.Join(metaDir, "version.json"), []byte(versionPayload), 0o644); err != nil {
+	if err := os.WriteFile(datapaths.VersionFile(dataDir), []byte(versionPayload), 0o644); err != nil {
 		return err
 	}
 	process, err := startBox(ctx, paths, boxPath, dataDir, "case-too-high-box.log")
@@ -745,7 +746,7 @@ func readMigrationStatus(dataDir string) (migrationStatusRecord, error) {
 }
 
 func readDataVersion(dataDir string) (string, error) {
-	payload, err := os.ReadFile(filepath.Join(dataDir, "meta", "version.json"))
+	payload, err := os.ReadFile(datapaths.VersionFile(dataDir))
 	if err != nil {
 		return "", fmt.Errorf("读取数据版本失败：%w", err)
 	}
@@ -759,13 +760,13 @@ func readDataVersion(dataDir string) (string, error) {
 }
 
 func seedHarnessData(dataDir string, version string) error {
-	metaDir := filepath.Join(dataDir, "meta")
+	metaDir := datapaths.MetaDir(dataDir)
 	if err := os.MkdirAll(metaDir, 0o755); err != nil {
 		return err
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	versionPayload := fmt.Sprintf("{\n  \"version\": %q,\n  \"createdAt\": %q,\n  \"updatedAt\": %q\n}\n", version, now, now)
-	if err := os.WriteFile(filepath.Join(metaDir, "version.json"), []byte(versionPayload), 0o644); err != nil {
+	if err := os.WriteFile(datapaths.VersionFile(dataDir), []byte(versionPayload), 0o644); err != nil {
 		return err
 	}
 	counterPayload := "{\n  \"count\": 0\n}\n"
@@ -776,7 +777,7 @@ func seedHarnessData(dataDir string, version string) error {
 }
 
 func readCounter(dataDir string) (int, error) {
-	payload, err := os.ReadFile(filepath.Join(dataDir, "meta", "counter.json"))
+	payload, err := os.ReadFile(filepath.Join(datapaths.MetaDir(dataDir), "counter.json"))
 	if err != nil {
 		return 0, err
 	}
@@ -790,7 +791,7 @@ func readCounter(dataDir string) (int, error) {
 }
 
 func readStamp(dataDir string) (string, error) {
-	payload, err := os.ReadFile(filepath.Join(dataDir, "meta", "stamp.json"))
+	payload, err := os.ReadFile(filepath.Join(datapaths.MetaDir(dataDir), "stamp.json"))
 	if err != nil {
 		return "", err
 	}

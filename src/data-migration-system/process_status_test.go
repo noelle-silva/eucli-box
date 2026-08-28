@@ -38,7 +38,7 @@ func TestProcessRecordRoundTrip(t *testing.T) {
 
 func TestProcessRecordAppendVerifiedStep(t *testing.T) {
 	record := newProcessRecord("1.0.0", "1.2.0", []string{"1.0.0-to-1.1.0", "1.1.0-to-1.2.0"}, processBackupInfo{RunID: "20260813T100000.000000000Z", Manifest: "backup/run-20260813T100000.000000000Z/manifest.json", Verified: true})
-	step := Step{ID: "1.0.0-to-1.1.0", FromVersion: "1.0.0", ToVersion: "1.1.0", Scope: []string{"meta/counter.json"}}
+	step := Step{ID: "1.0.0-to-1.1.0", FromVersion: "1.0.0", ToVersion: "1.1.0", Scope: []string{testCounterScope}}
 	record.appendVerifiedStep(step, "2026-08-13T10:00:00.000000000Z")
 	if record.CurrentIndex != 1 || len(record.StepResults) != 1 {
 		t.Fatalf("record = %#v", record)

@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
+	"eucli-box/pkg/datapaths"
 	"eucli-box/pkg/release"
 )
 
-// StorageVersion 是数据存储系统的版本事实，保存在 <rootDir>/meta/version.json。
+// StorageVersion 是数据存储系统的版本事实，保存在数据根目录的 .meta/version.json。
 // 版本文件的写入职责属于数据迁移系统，存储系统只负责读取与校验。
 type StorageVersion struct {
 	Version   string    `json:"version"`
@@ -21,7 +21,7 @@ type StorageVersion struct {
 
 // StorageVersionPath 返回版本事实文件的绝对路径。
 func StorageVersionPath(rootDir string) string {
-	return filepath.Join(rootDir, "meta", "version.json")
+	return datapaths.VersionFile(rootDir)
 }
 
 // ReadStorageVersion 读取数据版本事实。

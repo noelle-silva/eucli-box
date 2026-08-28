@@ -19,7 +19,7 @@ func validStep() Step {
 		ID:          "1.0.0-to-1.1.0",
 		FromVersion: "1.0.0",
 		ToVersion:   "1.1.0",
-		Scope:       []string{"meta/counter.json"},
+		Scope:       []string{testCounterScope},
 		Precheck:    noopFunc,
 		Apply:       noopFunc,
 		Verify:      noopFunc,

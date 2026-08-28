@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"devtools/common/toolkit"
+	"eucli-box/pkg/datapaths"
 )
 
 func TestStatusVocabularyCheck(t *testing.T) {
@@ -60,12 +61,12 @@ func TestReadMigrationStatusParsesRecord(t *testing.T) {
 
 func TestReadDataVersionParsesRecord(t *testing.T) {
 	dataDir := t.TempDir()
-	metaDir := filepath.Join(dataDir, "meta")
+	metaDir := datapaths.MetaDir(dataDir)
 	if err := os.MkdirAll(metaDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	payload := "{\n  \"version\": \"1.2.0\",\n  \"createdAt\": \"2026-08-13T10:00:00Z\",\n  \"updatedAt\": \"2026-08-13T10:00:00Z\"\n}\n"
-	if err := os.WriteFile(filepath.Join(metaDir, "version.json"), []byte(payload), 0o644); err != nil {
+	if err := os.WriteFile(datapaths.VersionFile(dataDir), []byte(payload), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	version, err := readDataVersion(dataDir)

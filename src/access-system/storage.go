@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"eucli-box/pkg/datapaths"
 	"eucli-box/pkg/types"
 )
 
@@ -17,7 +18,7 @@ const (
 )
 
 func accessRoot(dataDir string) string {
-	return filepath.Join(filepath.Clean(dataDir), "access")
+	return datapaths.AccessDir(dataDir)
 }
 
 func persistentPortsPath(dataDir string) string {

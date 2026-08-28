@@ -10,18 +10,19 @@ import (
 	"time"
 
 	apperrors "eucli-box/pkg/errors"
+	"eucli-box/pkg/datapaths"
 	"eucli-box/pkg/types"
 )
 
 func TestInitializeCreatesStorageLayout(t *testing.T) {
 	system := newTestSystem(t)
-	for _, dir := range []string{"sessions", "roles", "providers", "tool-bodies", "tool-data", "stickers", "recycle", "meta"} {
-		assertDir(t, filepath.Join(system.paths.root, dir))
+	for _, dir := range []string{datapaths.RelSessionsDir, datapaths.RelRolesDir, datapaths.RelProvidersDir, datapaths.RelToolBodiesDir, datapaths.RelToolDataDir, datapaths.RelStickersDir, datapaths.RelRecycleDir, datapaths.RelMetaDir} {
+		assertDir(t, filepath.Join(system.paths.root, filepath.FromSlash(dir)))
 	}
-	for _, dir := range []string{"roles", "groups", "workspaces"} {
-		assertDir(t, filepath.Join(system.paths.root, "sessions", dir))
+	for _, dir := range []string{datapaths.RelSessionRolesDir, datapaths.RelSessionGroupsDir, datapaths.RelSessionWorkspacesDir} {
+		assertDir(t, filepath.Join(system.paths.root, filepath.FromSlash(dir)))
 	}
-	assertFile(t, filepath.Join(system.paths.root, "meta", "version.json"))
+	assertFile(t, datapaths.VersionFile(system.paths.root))
 	assertFile(t, filepath.Join(system.paths.root, "sessions", "favorites.json"))
 }
 
@@ -111,7 +112,7 @@ func TestSaveLoadModelRequestConfig(t *testing.T) {
 	if loaded.ListModelsTimeoutMs != saved.ListModelsTimeoutMs || loaded.CompletionTimeoutMs != saved.CompletionTimeoutMs || loaded.StreamIdleTimeoutMs != saved.StreamIdleTimeoutMs {
 		t.Fatalf("loaded config = %#v saved=%#v", loaded, saved)
 	}
-	assertFile(t, filepath.Join(system.paths.root, "meta", "model-request.json"))
+	assertFile(t, datapaths.ModelRequestFile(system.paths.root))
 }
 
 func TestSessionsAreListedByLastActive(t *testing.T) {

@@ -12,11 +12,12 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"eucli-box/pkg/datapaths"
 )
 
 const (
 	backupSchemaVersion = 1
-	versionFileScope    = "meta/version.json"
+	versionFileScope    = datapaths.RelVersionFile
 	spaceReserveBytes   = 1 << 20
 )
 
@@ -34,7 +35,7 @@ type backupManifestFile struct {
 	SHA256    string `json:"sha256"`
 }
 
-// backupScope 返回恢复资料覆盖范围：所有登记步骤 Scope 的并集加上 meta/version.json。
+// backupScope 返回恢复资料覆盖范围：所有登记步骤 Scope 的并集加上版本事实文件。
 func backupScope() []string {
 	scope := []string{versionFileScope}
 	for _, step := range registeredSteps() {
@@ -43,7 +44,7 @@ func backupScope() []string {
 	return scope
 }
 
-// backupScopeFor 返回指定步骤的恢复范围并集加上 meta/version.json。
+// backupScopeFor 返回指定步骤的恢复范围并集加上版本事实文件。
 func backupScopeFor(stepIDs []string) ([]string, error) {
 	byID := make(map[string]Step, len(registry))
 	for _, step := range registeredSteps() {

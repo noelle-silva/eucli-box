@@ -11,12 +11,13 @@ import (
 	"time"
 
 	datastorage "eucli-box/src/data-storage-system"
+	"eucli-box/pkg/datapaths"
 )
 
 const testTargetVersion = "1.2.0"
 
 func readTestCounter(dataDir string) (int, error) {
-	payload, err := os.ReadFile(filepath.Join(dataDir, "meta", "counter.json"))
+	payload, err := os.ReadFile(filepath.Join(datapaths.MetaDir(dataDir), "counter.json"))
 	if err != nil {
 		return 0, err
 	}
@@ -34,11 +35,11 @@ func writeTestCounter(dataDir string, count int) error {
 	if err != nil {
 		return err
 	}
-	return writeTestFileBytes(filepath.Join(dataDir, "meta", "counter.json"), payload)
+	return writeTestFileBytes(filepath.Join(datapaths.MetaDir(dataDir), "counter.json"), payload)
 }
 
 func readTestStamp(dataDir string) (string, error) {
-	payload, err := os.ReadFile(filepath.Join(dataDir, "meta", "stamp.json"))
+	payload, err := os.ReadFile(filepath.Join(datapaths.MetaDir(dataDir), "stamp.json"))
 	if err != nil {
 		return "", err
 	}
@@ -56,7 +57,7 @@ func writeTestStamp(dataDir string, stamp string) error {
 	if err != nil {
 		return err
 	}
-	return writeTestFileBytes(filepath.Join(dataDir, "meta", "stamp.json"), payload)
+	return writeTestFileBytes(filepath.Join(datapaths.MetaDir(dataDir), "stamp.json"), payload)
 }
 
 func writeTestFileBytes(path string, payload []byte) error {
@@ -89,7 +90,7 @@ func registerTestChain(failApply int, failVerify int) {
 		ID:          "1.0.0-to-1.1.0",
 		FromVersion: "1.0.0",
 		ToVersion:   "1.1.0",
-		Scope:       []string{"meta/counter.json"},
+		Scope:       []string{testCounterScope},
 		Precheck: func(ctx context.Context, dataDir string) error {
 			count, err := readTestCounter(dataDir)
 			if err != nil {
@@ -124,7 +125,7 @@ func registerTestChain(failApply int, failVerify int) {
 		ID:          "1.1.0-to-1.2.0",
 		FromVersion: "1.1.0",
 		ToVersion:   "1.2.0",
-		Scope:       []string{"meta/counter.json", "meta/stamp.json"},
+		Scope:       []string{testCounterScope, testStampScope},
 		Precheck: func(ctx context.Context, dataDir string) error {
 			count, err := readTestCounter(dataDir)
 			if err != nil {
@@ -567,7 +568,7 @@ func runCrashHelper() {
 		ID:          "1.0.0-to-1.1.0",
 		FromVersion: "1.0.0",
 		ToVersion:   "1.1.0",
-		Scope:       []string{"meta/counter.json"},
+		Scope:       []string{testCounterScope},
 		Precheck:    func(ctx context.Context, dataDir string) error { return nil },
 		Apply: func(ctx context.Context, dataDir string) error {
 			if err := writeTestCounter(dataDir, 1); err != nil {
@@ -582,7 +583,7 @@ func runCrashHelper() {
 		ID:          "1.1.0-to-1.2.0",
 		FromVersion: "1.1.0",
 		ToVersion:   "1.2.0",
-		Scope:       []string{"meta/counter.json", "meta/stamp.json"},
+		Scope:       []string{testCounterScope, testStampScope},
 		Precheck:    func(ctx context.Context, dataDir string) error { return nil },
 		Apply: func(ctx context.Context, dataDir string) error {
 			return writeTestStamp(dataDir, "1.2.0")

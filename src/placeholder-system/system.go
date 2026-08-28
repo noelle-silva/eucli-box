@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"eucli-box/pkg/datapaths"
 	"eucli-box/pkg/types"
 )
 
@@ -40,7 +41,7 @@ func NewSystem(config Config) (System, error) {
 	if err != nil {
 		return nil, placeholderInvalid("failed to resolve root directory", err)
 	}
-	return &system{libraryFile: filepath.Join(filepath.Clean(abs), "meta", "placeholders.json"), systemPlugins: config.SystemPlugins}, nil
+	return &system{libraryFile: datapaths.PlaceholdersFile(filepath.Clean(abs)), systemPlugins: config.SystemPlugins}, nil
 }
 
 func (s *system) ResolveText(ctx context.Context, text string) (types.PlaceholderResolveResult, error) {

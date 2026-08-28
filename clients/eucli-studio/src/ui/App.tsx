@@ -111,6 +111,7 @@ import { ChatMessageList } from './components/ChatMessageList'
 import { CustomScrollArea } from './components/CustomScrollArea'
 import { StickerInlineImage } from './components/MessageMedia'
 import { workspaceRoleTargetId } from '../domain/workspaceRoleTarget'
+import { chatSettingsTargetKey } from '../controller/chatSessionTarget'
 import type { AiChatToastOptions } from '../gateway/capabilities'
 import { REASONING_EFFORT_OPTIONS, chatReasoningEffort, effectiveReasoningEffort, modelReasoningProfileFromModelRef, reasoningEffortLabel } from '../domain/reasoning'
 import { chatStreamEnabled } from '../domain/chatStream'
@@ -1130,6 +1131,20 @@ export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap;
   const renderChat = chatSwitch.renderChat
   const renderChatId = chatSwitch.renderChatId
   const activeChatId = chatSwitch.activeChatId
+  const chatSettingsSavingByTarget = (s as any)?.chatSettings?.savingByTarget
+  const activeChatSettingsTargetKey = activeChatTargetId && activeChatId
+    ? chatSettingsTargetKey({ kind: activeTargetKind, targetId: activeChatTargetId, sessionId: activeChatId })
+    : ''
+  const chatSettingsSavingStatuses = chatSettingsSavingByTarget && typeof chatSettingsSavingByTarget === 'object'
+    ? Object.values(chatSettingsSavingByTarget).filter((item: any) => (
+        chatSettingsTargetKey({ kind: String(item?.kind || '') as any, targetId: String(item?.targetId || ''), sessionId: String(item?.sessionId || '') }) === activeChatSettingsTargetKey
+      )) as any[]
+    : []
+  const chatSettingsSavingFor = (action: string) => chatSettingsSavingStatuses.find((item: any) => String(item?.action || '') === action) || null
+  const chatSettingsModelSaving = !!chatSettingsSavingFor('model')
+  const chatSettingsReasoningSaving = !!chatSettingsSavingFor('reasoning')
+  const chatSettingsStreamSaving = !!chatSettingsSavingFor('stream')
+  const chatSettingsHookSaving = !!chatSettingsSavingFor('hook')
   const openingChatMeta = (() => {
     if (activeChat || !data) return null
     const targetId = String(activeChatTargetId || '').trim()
@@ -2374,7 +2389,11 @@ export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap;
   const activeStreamOn = chatStreamEnabled(activeChat)
   const roleDefaultHookPromptPresetId = String((activeRole as any)?.hookPromptPresetId || '').trim()
   const hookPromptSelectorDisabled = s.loading || !activeChat
-  const hookPromptSelectorDisabledReason = !activeChat ? '请先创建或选择会话' : ''
+  const hookPromptSelectorDisabledReason = !activeChat
+    ? '请先创建或选择会话'
+    : chatSettingsHookSaving
+      ? 'hook 提示词保存中…'
+      : ''
 
   const uiBusy = !!s.loading
   const messageMutationGuard = React.useMemo(
@@ -5457,24 +5476,26 @@ export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap;
                         selectedMode={activeHookPromptMode as any}
                         selectedPresetId={activeHookPromptPresetId}
                         roleDefaultPresetId={roleDefaultHookPromptPresetId}
-                        disabled={hookPromptSelectorDisabled}
+                        disabled={hookPromptSelectorDisabled || chatSettingsHookSaving}
+                        saving={chatSettingsHookSaving}
                         disabledReason={hookPromptSelectorDisabledReason}
                         onSelect={(mode, presetId) => controller.actions.selectHookPromptForActiveChat?.(mode, presetId)}
                       />
 
                       {roleSessionControlsEnabled ? (
-                        <Tooltip title={hasChatOverride ? `临时模型：${formatModelRefText(chatOverride)}` : `角色模型：${effectiveModelId || '未配置模型'}`}>
+                        <Tooltip title={chatSettingsModelSaving ? '临时模型保存中…' : hasChatOverride ? `临时模型：${formatModelRefText(chatOverride)}` : `角色模型：${effectiveModelId || '未配置模型'}`}>
                           <span>
                             <Button
                               aria-label="临时切换模型"
                               onClick={openTempModelPicker}
-                              disabled={s.loading || !activeRole || !providers.length}
+                              disabled={s.loading || chatSettingsModelSaving || !activeRole || !providers.length}
                               size="small"
                               variant="text"
                               sx={{ ...composerToolTextButtonSx, color: hasChatOverride ? 'primary.main' : 'text.secondary' }}
                             >
+                              {chatSettingsModelSaving ? <CircularProgress size={14} thickness={5} color="inherit" sx={{ mr: 0.5 }} /> : null}
                               <Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {effectiveModelId || '未配置模型'}
+                                {chatSettingsModelSaving ? '保存中…' : effectiveModelId || '未配置模型'}
                               </Box>
                             </Button>
                           </span>
@@ -5482,12 +5503,12 @@ export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap;
                       ) : null}
 
                       {roleSessionControlsEnabled && reasoningProfile.supportsReasoning ? (
-                        <Tooltip title={`思考等级：${activeReasoningLabel || '默认'}`}>
+                        <Tooltip title={chatSettingsReasoningSaving ? '思考等级保存中…' : `思考等级：${activeReasoningLabel || '默认'}`}>
                           <span>
                             <Button
                               aria-label="选择思考等级"
                               onClick={openReasoningPicker}
-                              disabled={s.loading || !activeRole}
+                              disabled={s.loading || chatSettingsReasoningSaving || !activeRole}
                               size="small"
                               variant="text"
                               sx={{ ...composerToolTextButtonSx, color: hasChatReasoningOverride ? 'primary.main' : 'text.secondary' }}
@@ -5527,10 +5548,10 @@ export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap;
                           <Button
                             aria-label="切换会话流式输出"
                             onClick={() => controller.actions.toggleChatStreamEnabled?.()}
-                            disabled={s.loading || !roleSessionControlsEnabled || !activeChat}
+                            disabled={s.loading || chatSettingsStreamSaving || !roleSessionControlsEnabled || !activeChat}
                             size="small"
                             variant="text"
-                            sx={{ ...composerToolTextButtonSx, color: activeStreamOn ? 'primary.main' : 'text.secondary' }}
+                            sx={{ ...composerToolTextButtonSx, width: 88, justifyContent: 'center', color: activeStreamOn ? 'primary.main' : 'text.secondary' }}
                           >
                             {activeStreamOn ? '流' : '非流'}
                           </Button>

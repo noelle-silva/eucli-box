@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Box, Button, Chip, Divider, List, ListItemButton, ListItemText, Popover, Stack, Tooltip, Typography } from '@mui/material'
+import { Box, Button, Chip, CircularProgress, Divider, List, ListItemButton, ListItemText, Popover, Stack, Tooltip, Typography } from '@mui/material'
 import { hookPromptPresetName, hookPromptSelectionLabel, normalizeHookPromptSelectionMode, type HookPromptLibrary, type HookPromptSelectionMode } from '../../domain/hookPrompt'
 
 type HookPromptSelectorProps = {
@@ -8,12 +8,13 @@ type HookPromptSelectorProps = {
   selectedPresetId: string
   roleDefaultPresetId?: string
   disabled?: boolean
+  saving?: boolean
   disabledReason?: string
   onSelect: (mode: HookPromptSelectionMode, presetId: string) => void | Promise<void>
 }
 
 export function HookPromptSelector(props: HookPromptSelectorProps) {
-  const { library, selectedMode, selectedPresetId, roleDefaultPresetId = '', disabled = false, disabledReason = '', onSelect } = props
+  const { library, selectedMode, selectedPresetId, roleDefaultPresetId = '', disabled = false, saving = false, disabledReason = '', onSelect } = props
   const [anchorEl, setAnchorEl] = React.useState<HTMLElement | null>(null)
   const presets = Array.isArray(library?.presets) ? library.presets : []
   const mode = normalizeHookPromptSelectionMode(selectedMode)
@@ -21,14 +22,19 @@ export function HookPromptSelector(props: HookPromptSelectorProps) {
   const open = !!anchorEl
 
   const close = () => setAnchorEl(null)
+  React.useEffect(() => {
+    if (disabled) setAnchorEl(null)
+  }, [disabled])
+
   const select = (nextMode: HookPromptSelectionMode, presetId: string) => {
+    if (disabled) return
     close()
     onSelect(nextMode, String(presetId || '').trim())
   }
 
   return (
     <>
-      <Tooltip title={disabled ? disabledReason || '当前不可选择 hook 提示词' : `hook 提示词：${label}`}>
+      <Tooltip title={disabled ? disabledReason || '当前不可选择 hook 提示词' : saving ? 'hook 提示词保存中…' : `hook 提示词：${label}`}>
         <span>
           <Button
             aria-label="选择 hook 提示词"
@@ -47,8 +53,9 @@ export function HookPromptSelector(props: HookPromptSelectorProps) {
               fontWeight: 900,
             }}
           >
+            {saving ? <CircularProgress size={14} thickness={5} color="inherit" sx={{ mr: 0.5 }} /> : null}
             <Box component="span" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {label}
+              {saving ? '保存中…' : label}
             </Box>
           </Button>
         </span>
@@ -71,17 +78,17 @@ export function HookPromptSelector(props: HookPromptSelectorProps) {
             <Typography variant="caption" color="text.secondary">跟随角色默认、临时指定，或明确关闭当前会话预设。</Typography>
             <Divider />
             <List dense sx={{ py: 0 }}>
-              <ListItemButton selected={mode === 'inherit'} onClick={() => select('inherit', '')} sx={{ borderRadius: 2 }}>
+              <ListItemButton disabled={disabled} selected={mode === 'inherit'} onClick={() => select('inherit', '')} sx={{ borderRadius: 2 }}>
                 <ListItemText primary="跟随角色" secondary={roleDefaultPresetId ? `使用角色默认：${hookPromptPresetName(library, roleDefaultPresetId)}` : '角色未设置默认预设'} primaryTypographyProps={{ fontWeight: 900 }} />
               </ListItemButton>
-              <ListItemButton selected={mode === 'none'} onClick={() => select('none', '')} sx={{ borderRadius: 2 }}>
+              <ListItemButton disabled={disabled} selected={mode === 'none'} onClick={() => select('none', '')} sx={{ borderRadius: 2 }}>
                 <ListItemText primary="无预设" secondary="本会话明确不使用 hook 提示词" primaryTypographyProps={{ fontWeight: 900 }} />
               </ListItemButton>
               {presets.map((preset) => {
                 const id = String(preset?.id || '')
                 if (!id) return null
                 return (
-                  <ListItemButton key={id} selected={mode === 'preset' && id === selectedPresetId} onClick={() => select('preset', id)} sx={{ borderRadius: 2 }}>
+                  <ListItemButton key={id} disabled={disabled} selected={mode === 'preset' && id === selectedPresetId} onClick={() => select('preset', id)} sx={{ borderRadius: 2 }}>
                     <ListItemText
                       primary={String(preset?.name || '未命名预设')}
                       secondary={`${Array.isArray(preset?.messages) ? preset.messages.length : 0} 条提示内容`}

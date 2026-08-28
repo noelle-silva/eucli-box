@@ -1,5 +1,6 @@
 import { now, uid } from '../core/utils'
 import { chatMetaFromChat, removeChatMeta, upsertChatMeta } from '../domain/chatMeta'
+import { mergeChatFromStorage } from '../domain/chatStorageSync'
 import { NEW_WORKSPACE_ID } from '../domain/constants'
 import { activeEbRunCardsForTarget } from '../domain/activeRunCards'
 import { clearPendingChatForTarget, createPendingChatEntry, pendingChatForTarget } from '../domain/pendingChat'
@@ -189,6 +190,7 @@ export function createWorkspaceManager(deps: {
     return workspaces
   }
 
+  // 业务端会话是事实源；这里仅更新客户端视窗缓存，并保留运行事件已展示的本地增量。
   function upsertWorkspaceChat(workspaceIdRaw: unknown, chatRaw: any) {
     const state = getState()
     if (!state?.data || !chatRaw || typeof chatRaw !== 'object') return null
@@ -198,11 +200,12 @@ export function createWorkspaceManager(deps: {
     const box = ensureWorkspaceBox(state, activeRole, workspaceId, chatRaw?.roleId)
     if (!box) return null
     const index = (Array.isArray(box.chats) ? box.chats : []).findIndex((chat: any) => text(chat?.id) === chatId)
-    if (index >= 0) box.chats[index] = chatRaw
-    else box.chats.unshift(chatRaw)
-    box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(chatRaw, '工作区会话'), '工作区会话')
+    const nextChat = mergeChatFromStorage(chatRaw, index >= 0 ? box.chats[index] : null)
+    if (index >= 0) box.chats[index] = nextChat
+    else box.chats.unshift(nextChat)
+    box.chatMetas = upsertChatMeta(box.chatMetas, chatMetaFromChat(nextChat, '工作区会话'), '工作区会话')
     if (!box.activeChatId) box.activeChatId = chatId
-    return chatRaw
+    return nextChat
   }
 
   async function refreshActiveWorkspaceChats(workspaceIdRaw?: unknown) {

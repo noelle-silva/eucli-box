@@ -30,9 +30,7 @@ type ProviderConfig struct {
 }
 
 type LimitsConfig struct {
-	DefaultTimeoutMs int `json:"defaultTimeoutMs"`
-	MaxTimeoutMs     int `json:"maxTimeoutMs"`
-	MaxOutputChars   int `json:"maxOutputChars"`
+	MaxOutputChars int `json:"maxOutputChars"`
 }
 
 type selectedProvider struct {
@@ -64,12 +62,6 @@ func validateConfig(config Config) error {
 	defaultProvider := strings.TrimSpace(config.DefaultProvider)
 	if defaultProvider == "" {
 		return fmt.Errorf("defaultProvider is required")
-	}
-	if config.Limits.DefaultTimeoutMs <= 0 {
-		return fmt.Errorf("limits.defaultTimeoutMs must be greater than zero")
-	}
-	if config.Limits.MaxTimeoutMs < config.Limits.DefaultTimeoutMs {
-		return fmt.Errorf("limits.maxTimeoutMs must be greater than or equal to limits.defaultTimeoutMs")
 	}
 	if config.Limits.MaxOutputChars <= 0 {
 		return fmt.Errorf("limits.maxOutputChars must be greater than zero")

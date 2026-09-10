@@ -102,7 +102,7 @@ func newContext7Fixture(t *testing.T, searchEndpoint string, contextEndpoint str
 		APIKeyEnv:        "CONTEXT7_API_KEY",
 		APIKeyUserConfig: "context7ApiKey",
 		AnonymousAllowed: anonymousAllowed,
-		Limits:           LimitsConfig{DefaultTimeoutMs: 30000, MaxTimeoutMs: 120000, MaxOutputChars: 24000},
+		Limits:           LimitsConfig{MaxOutputChars: 24000},
 	}
 	payload, err := json.Marshal(config)
 	if err != nil {

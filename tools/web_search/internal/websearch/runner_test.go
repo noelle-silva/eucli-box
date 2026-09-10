@@ -108,7 +108,7 @@ func newWebSearchFixture(t *testing.T, tavilyEndpoint string, anySearchEndpoint 
 			{ID: "tavily", Kind: providerKindTavily, Enabled: true, Endpoint: tavilyEndpoint, APIKeyEnv: "TAVILY_API_KEY", APIKeyUserConfig: "tavilyApiKey", MaxResults: 20},
 			{ID: "anysearch", Kind: providerKindAnySearch, Enabled: true, Endpoint: anySearchEndpoint, APIKeyEnv: "ANYSEARCH_API_KEY", APIKeyUserConfig: "anysearchApiKey", AnonymousAllowed: true, MaxResults: 100},
 		},
-		Limits: LimitsConfig{DefaultTimeoutMs: 30000, MaxTimeoutMs: 120000, DefaultMaxResults: 5, MaxResults: 100, MaxOutputChars: 20000},
+		Limits: LimitsConfig{DefaultMaxResults: 5, MaxResults: 100, MaxOutputChars: 20000},
 	}
 	payload, err := json.Marshal(config)
 	if err != nil {

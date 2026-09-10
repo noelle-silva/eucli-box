@@ -142,12 +142,19 @@ func TestDoStreamReportsIdleTimeout(t *testing.T) {
 	assertAppErrorCode(t, err, "network.timeout")
 }
 
-func TestNewSystemRejectsZeroMaxTimeout(t *testing.T) {
-	_, err := NewSystem(Config{MaxTimeout: 0, DefaultTimeout: time.Second})
+func TestNewSystemRejectsNegativeTimeouts(t *testing.T) {
+	_, err := NewSystem(Config{MaxTimeout: -1})
 	if err == nil {
-		t.Fatal("expected error for zero MaxTimeout")
+		t.Fatal("expected error for negative MaxTimeout")
 	}
 	var appErr *apperrors.AppError
+	if !errors.As(err, &appErr) || appErr.Code != "network.invalid_request" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_, err = NewSystem(Config{DefaultTimeout: -1})
+	if err == nil {
+		t.Fatal("expected error for negative DefaultTimeout")
+	}
 	if !errors.As(err, &appErr) || appErr.Code != "network.invalid_request" {
 		t.Fatalf("unexpected error: %v", err)
 	}

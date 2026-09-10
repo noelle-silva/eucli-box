@@ -3,7 +3,6 @@ package zhihusearch
 import (
 	"context"
 	"strings"
-	"time"
 
 	"eucli-box/pkg/types"
 	networkrequest "eucli-box/src/network-request-system"
@@ -18,7 +17,7 @@ func Execute(ctx context.Context, input types.ToolExecutionInput) types.ToolExec
 	if err != nil {
 		return failure("parse zhihu_search request", err, nil)
 	}
-	network, err := networkrequest.NewSystem(networkrequest.Config{DefaultTimeout: time.Duration(config.Limits.DefaultTimeoutMs) * time.Millisecond, MaxTimeout: time.Duration(config.Limits.MaxTimeoutMs) * time.Millisecond, UserAgent: "eucli-box-zhihu-search/1.0"})
+	network, err := networkrequest.NewSystem(networkrequest.Config{UserAgent: "eucli-box-zhihu-search/1.0"})
 	if err != nil {
 		return failure("initialize zhihu_search network", err, map[string]any{"searchType": request.SearchType})
 	}

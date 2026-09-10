@@ -2,7 +2,7 @@
   "id": "context7",
   "name": "context7",
   "description": "Fetch up-to-date library documentation from Context7 by searching library ids and querying documentation context.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "eucliBoxCompatibility": {
     "minimumVersion": "0.1.0",
     "maximumVersionExclusive": "0.2.0"
@@ -19,11 +19,6 @@
         "title": "Context7 API Key",
         "description": "Context7 API Key；也可通过 CONTEXT7_API_KEY 环境变量提供。未配置时使用 Context7 匿名访问能力，限额较低。"
       },
-      "timeoutMs": {
-        "type": "integer",
-        "title": "默认超时（毫秒）",
-        "description": "模型未指定 timeoutMs 时使用的请求超时。"
-      },
       "maxOutputChars": {
         "type": "integer",
         "title": "默认最大输出字符数",
@@ -38,7 +33,6 @@
     "additionalProperties": false
   },
   "defaultConfig": {
-    "timeoutMs": 30000,
     "maxOutputChars": 24000,
     "fast": false
   },

@@ -100,7 +100,7 @@ Provider 的可执行文件路径写在 `config.json` 中，并且必须是相�
 
 - `provider`：已启用 Provider 的 id。不传时使用 `config.json` 里的 `defaultProvider`。
 - `workdir`：工作目录。相对路径从 e-b 宿主工作目录解析。`.` 表示当前 e-b 宿主工作目录。
-- `timeoutMs`：命令超时时间，单位毫秒。超过配置上限时会被钳制到最大值。
+- `timeoutMs`：命令超时时间，单位毫秒；调用方未指定时，命令不设截止时间。
 - `maxOutputChars`：每个输出字段最多捕获的字符数。超过配置上限时会被钳制到最大值。
 - `description`：简短说明这次运行命令的原因。
 

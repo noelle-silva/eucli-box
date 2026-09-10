@@ -168,9 +168,7 @@ func buildFixture(ctx context.Context, root string, paths paths) (fixture, error
 			}},
 		}},
 		"limits": map[string]any{
-			"defaultTimeoutMs": 10000,
-			"maxTimeoutMs":     60000,
-			"maxOutputChars":   200000,
+			"maxOutputChars": 200000,
 		},
 	}
 	payload, err := json.Marshal(config)

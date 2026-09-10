@@ -59,12 +59,12 @@ func parseRequest(input types.ToolExecutionInput, config Config) (searchRequest,
 	if maxResults <= 0 || maxResults > config.Limits.MaxResults {
 		return searchRequest{}, fmt.Errorf("maxResults must be between 1 and %d", config.Limits.MaxResults)
 	}
-	timeoutMs, err := mergedInt(input, "timeoutMs", config.Limits.DefaultTimeoutMs)
+	timeoutMs, err := intArgument(input.Arguments, "timeoutMs", 0)
 	if err != nil {
 		return searchRequest{}, err
 	}
-	if timeoutMs <= 0 || timeoutMs > config.Limits.MaxTimeoutMs {
-		return searchRequest{}, fmt.Errorf("timeoutMs must be between 1 and %d", config.Limits.MaxTimeoutMs)
+	if timeoutMs < 0 {
+		return searchRequest{}, fmt.Errorf("timeoutMs must not be negative")
 	}
 	maxOutputChars, err := mergedInt(input, "maxOutputChars", config.Limits.MaxOutputChars)
 	if err != nil {
@@ -246,6 +246,14 @@ func stringArgument(args map[string]any, key string, required bool) (string, err
 		return "", fmt.Errorf("argument %q is required", key)
 	}
 	return text, nil
+}
+
+func intArgument(args map[string]any, key string, fallback int) (int, error) {
+	value, ok := args[key]
+	if !ok || value == nil {
+		return fallback, nil
+	}
+	return intValue(value, key)
 }
 
 func stringValue(value any, key string) (string, error) {

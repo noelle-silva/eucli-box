@@ -7,8 +7,6 @@
     "global_search": "/api/v1/content/global_search"
   },
   "limits": {
-    "defaultTimeoutMs": 30000,
-    "maxTimeoutMs": 120000,
     "defaultCount": 10,
     "zhihuSearchMaxCount": 10,
     "globalSearchMaxCount": 20,

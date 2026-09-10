@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"eucli-box/pkg/toolcontrol"
 	"eucli-box/pkg/types"
 )
 
@@ -57,22 +56,12 @@ func parseRequest(input types.ToolExecutionInput, config Config) (commandRequest
 	if strings.TrimSpace(description) == "" {
 		description = defaultDescription
 	}
-	defaultTimeoutMs, err := intArgument(input.UserConfig, "timeoutMs", config.Limits.DefaultTimeoutMs)
+	timeoutMs, err := intArgument(input.Arguments, "timeoutMs", 0)
 	if err != nil {
 		return commandRequest{}, err
 	}
-	timeoutMs, err := intArgument(input.Arguments, "timeoutMs", defaultTimeoutMs)
-	if err != nil {
-		return commandRequest{}, err
-	}
-	if timeoutMs <= 0 {
-		return commandRequest{}, fmt.Errorf("timeoutMs must be greater than zero")
-	}
-	if timeoutMs > config.Limits.MaxTimeoutMs {
-		timeoutMs = config.Limits.MaxTimeoutMs
-	}
-	if int64(timeoutMs) > toolcontrol.BudgetMaxMs {
-		timeoutMs = int(toolcontrol.BudgetMaxMs)
+	if timeoutMs < 0 {
+		return commandRequest{}, fmt.Errorf("timeoutMs must not be negative")
 	}
 	defaultMaxOutputChars, err := intArgument(input.UserConfig, "maxOutputChars", config.Limits.MaxOutputChars)
 	if err != nil {

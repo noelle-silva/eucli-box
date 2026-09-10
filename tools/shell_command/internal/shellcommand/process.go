@@ -53,8 +53,12 @@ func runProviderCommand(ctx context.Context, provider selectedProvider, request 
 	if err != nil {
 		return processResult{ExitCode: -1, DurationMs: elapsedMs(startedAt), Error: err.Error()}
 	}
-	commandTimeout := time.NewTimer(time.Duration(request.TimeoutMs) * time.Millisecond)
-	defer commandTimeout.Stop()
+	var commandTimeout <-chan time.Time
+	if request.TimeoutMs > 0 {
+		timer := time.NewTimer(time.Duration(request.TimeoutMs) * time.Millisecond)
+		defer timer.Stop()
+		commandTimeout = timer.C
+	}
 	cmd := exec.Command(provider.Executable, args...)
 	cmd.Dir = workdir
 	cmd.Env = providerEnv(provider.Config, os.Environ())
@@ -88,7 +92,7 @@ func runProviderCommand(ctx context.Context, provider selectedProvider, request 
 	terminationError := ""
 	select {
 	case waitErr = <-waitCh:
-	case <-commandTimeout.C:
+	case <-commandTimeout:
 		if ctx.Err() != nil {
 			waitErr, terminationError = terminateAndWait(cmd, waitCh)
 			break

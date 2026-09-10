@@ -46,12 +46,12 @@ func parseRequest(input types.ToolExecutionInput, config Config) (searchRequest,
 		return searchRequest{}, err
 	}
 	count = clampCount(count, searchType, config)
-	timeoutMs, err := mergedInt(input, []string{"timeoutMs", "timeout_ms"}, config.Limits.DefaultTimeoutMs)
+	timeoutMs, err := intArgument(input.Arguments, []string{"timeoutMs", "timeout_ms"}, 0)
 	if err != nil {
 		return searchRequest{}, err
 	}
-	if timeoutMs <= 0 || timeoutMs > config.Limits.MaxTimeoutMs {
-		return searchRequest{}, fmt.Errorf("timeoutMs must be between 1 and %d", config.Limits.MaxTimeoutMs)
+	if timeoutMs < 0 {
+		return searchRequest{}, fmt.Errorf("timeoutMs must not be negative")
 	}
 	maxOutputChars, err := mergedInt(input, []string{"maxOutputChars", "max_output_chars"}, config.Limits.MaxOutputChars)
 	if err != nil {
@@ -169,6 +169,14 @@ func firstValue(source map[string]any, keys []string) (any, string, bool) {
 		}
 	}
 	return nil, "", false
+}
+
+func intArgument(args map[string]any, keys []string, fallback int) (int, error) {
+	value, key, ok := firstValue(args, keys)
+	if !ok || value == nil {
+		return fallback, nil
+	}
+	return intValue(value, key)
 }
 
 func stringValue(value any, key string) (string, error) {

@@ -20,9 +20,7 @@ type Config struct {
 }
 
 type LimitsConfig struct {
-	DefaultTimeoutMs int `json:"defaultTimeoutMs"`
-	MaxTimeoutMs     int `json:"maxTimeoutMs"`
-	MaxOutputChars   int `json:"maxOutputChars"`
+	MaxOutputChars int `json:"maxOutputChars"`
 }
 
 func loadConfig(toolDirectory string) (Config, error) {
@@ -52,12 +50,6 @@ func normalizeConfig(config Config) (Config, error) {
 	}
 	if err := validateEndpoint("contextEndpoint", config.ContextEndpoint); err != nil {
 		return Config{}, err
-	}
-	if config.Limits.DefaultTimeoutMs <= 0 {
-		return Config{}, fmt.Errorf("limits.defaultTimeoutMs must be greater than zero")
-	}
-	if config.Limits.MaxTimeoutMs < config.Limits.DefaultTimeoutMs {
-		return Config{}, fmt.Errorf("limits.maxTimeoutMs must be greater than or equal to limits.defaultTimeoutMs")
 	}
 	if config.Limits.MaxOutputChars <= 0 {
 		return Config{}, fmt.Errorf("limits.maxOutputChars must be greater than zero")

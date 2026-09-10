@@ -5,8 +5,6 @@
   "apiKeyUserConfig": "context7ApiKey",
   "anonymousAllowed": true,
   "limits": {
-    "defaultTimeoutMs": 30000,
-    "maxTimeoutMs": 120000,
     "maxOutputChars": 24000
   }
 }

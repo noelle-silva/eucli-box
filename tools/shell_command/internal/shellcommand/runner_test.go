@@ -204,7 +204,7 @@ func TestExecuteUsesUserConfigDefaults(t *testing.T) {
 	fixture := newShellCommandFixture(t)
 	result := Execute(context.Background(), types.ToolExecutionInput{
 		Arguments:            map[string]any{"command": "large"},
-		UserConfig:           map[string]any{"workdir": ".", "description": "configured run", "timeoutMs": 10000, "maxOutputChars": 8},
+		UserConfig:           map[string]any{"workdir": ".", "description": "configured run", "maxOutputChars": 8},
 		ToolBodyDirectory:    fixture.toolDir,
 		HostWorkingDirectory: fixture.hostDir,
 	})
@@ -280,7 +280,7 @@ func newShellCommandFixture(t *testing.T) shellCommandFixture {
 		DefaultProvider:             "git-bash",
 		AllowModelProviderSelection: true,
 		Providers:                   []ProviderConfig{{ID: "git-bash", Kind: "git-bash", Mode: "bundled", Enabled: true, Encoding: "utf-8", Executables: []types.ToolBinary{{GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Path: filepath.ToSlash(providerRel)}}}},
-		Limits:                      LimitsConfig{DefaultTimeoutMs: 10000, MaxTimeoutMs: 20000, MaxOutputChars: 40},
+		Limits:                      LimitsConfig{MaxOutputChars: 40},
 	}
 	payload, err := json.Marshal(config)
 	if err != nil {

@@ -24,8 +24,6 @@
     }
   ],
   "limits": {
-    "defaultTimeoutMs": 30000,
-    "maxTimeoutMs": 120000,
     "defaultMaxResults": 5,
     "maxResults": 100,
     "maxOutputChars": 20000

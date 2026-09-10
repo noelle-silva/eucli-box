@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -11,11 +10,6 @@ import (
 	"eucli-box/pkg/types"
 	context7 "eucli-box/tools/context7/internal/context7"
 )
-
-// defaultToolBudgetMs is the tool's own default execution budget; a
-// caller-specified budget overrides it, and both are clamped by the unified
-// platform cap.
-const defaultToolBudgetMs = 60_000
 
 func main() {
 	output := run()
@@ -36,8 +30,7 @@ func run() types.ToolExecutionOutput {
 	if err := decoder.Decode(&input); err != nil {
 		return failedOutput("failed to decode tool input", err)
 	}
-	budget := toolcontrol.ClampToolBudget(input.TimeoutMs, defaultToolBudgetMs)
-	executionCtx, cancel := context.WithTimeout(context.Background(), budget)
+	executionCtx, cancel := toolcontrol.ExecutionContext(input.TimeoutMs)
 	defer cancel()
 	client, err := toolcontrol.AdoptControl(executionCtx)
 	if err != nil {

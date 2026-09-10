@@ -3,6 +3,7 @@ package toolcontrol
 import (
 	"context"
 	"errors"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -18,26 +19,29 @@ const (
 	controlRequiredEnv = "EUCLI_TOOL_CONTROL_REQUIRED"
 )
 
-// BudgetMaxMs is the uniform execution budget cap for every tool execution.
-// A caller-requested budget and a tool default budget are both clamped to this
-// limit before the tool starts running.
-const BudgetMaxMs = int64(300_000)
+// ExecutionContext derives the tool execution context from the
+// caller-specified timeout: a positive timeoutMs sets a deadline, zero or a
+// negative timeoutMs mean the caller did not set one and no deadline is
+// applied. Values too large to fit a time.Duration are clamped instead of
+// overflowing, so an extreme timeout can never turn into an already-expired
+// deadline.
+func ExecutionContext(timeoutMs int64) (context.Context, context.CancelFunc) {
+	if timeoutMs > 0 {
+		return context.WithTimeout(context.Background(), deadlineDuration(timeoutMs))
+	}
+	return context.WithCancel(context.Background())
+}
 
-// ClampToolBudget resolves the execution budget for one tool run:
-// the requested value wins when greater than zero, otherwise the tool default
-// applies; the final value never exceeds BudgetMaxMs.
-func ClampToolBudget(requestedMs int64, defaultMs int64) time.Duration {
-	value := defaultMs
-	if requestedMs > 0 {
-		value = requestedMs
+// deadlineDuration converts a positive millisecond value into the largest
+// time.Duration that is guaranteed to sit far in the future. Directly
+// multiplying by time.Millisecond would overflow for extreme values and make
+// the derived context expire immediately.
+func deadlineDuration(timeoutMs int64) time.Duration {
+	const maxMilliseconds = math.MaxInt64 / int64(time.Millisecond)
+	if timeoutMs > maxMilliseconds {
+		timeoutMs = maxMilliseconds
 	}
-	if value <= 0 {
-		value = defaultMs
-	}
-	if value <= 0 || value > BudgetMaxMs {
-		value = BudgetMaxMs
-	}
-	return time.Duration(value) * time.Millisecond
+	return time.Duration(timeoutMs) * time.Millisecond
 }
 
 // AdoptControl connects a tool binary to the host control channel when the

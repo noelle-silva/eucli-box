@@ -3,7 +3,6 @@ package websearch
 import (
 	"context"
 	"strings"
-	"time"
 
 	"eucli-box/pkg/types"
 	networkrequest "eucli-box/src/network-request-system"
@@ -22,7 +21,7 @@ func Execute(ctx context.Context, input types.ToolExecutionInput) types.ToolExec
 	if err != nil {
 		return failure("select web_search provider", err, map[string]any{"provider": effectiveProviderName(config, request.Provider)})
 	}
-	network, err := networkrequest.NewSystem(networkrequest.Config{DefaultTimeout: time.Duration(config.Limits.DefaultTimeoutMs) * time.Millisecond, MaxTimeout: time.Duration(config.Limits.MaxTimeoutMs) * time.Millisecond, UserAgent: "eucli-box-web-search/1.0"})
+	network, err := networkrequest.NewSystem(networkrequest.Config{UserAgent: "eucli-box-web-search/1.0"})
 	if err != nil {
 		return failure("initialize web_search network", err, map[string]any{"provider": provider.ID})
 	}

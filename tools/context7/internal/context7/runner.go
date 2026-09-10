@@ -3,7 +3,6 @@ package context7
 import (
 	"context"
 	"strings"
-	"time"
 
 	"eucli-box/pkg/types"
 	networkrequest "eucli-box/src/network-request-system"
@@ -18,7 +17,7 @@ func Execute(ctx context.Context, input types.ToolExecutionInput) types.ToolExec
 	if err != nil {
 		return failure("parse context7 request", err, nil)
 	}
-	network, err := networkrequest.NewSystem(networkrequest.Config{DefaultTimeout: time.Duration(config.Limits.DefaultTimeoutMs) * time.Millisecond, MaxTimeout: time.Duration(config.Limits.MaxTimeoutMs) * time.Millisecond, UserAgent: "eucli-box-context7/1.0"})
+	network, err := networkrequest.NewSystem(networkrequest.Config{UserAgent: "eucli-box-context7/1.0"})
 	if err != nil {
 		return failure("initialize context7 network", err, map[string]any{"action": request.Action})
 	}

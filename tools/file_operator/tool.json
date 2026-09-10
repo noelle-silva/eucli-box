@@ -2,7 +2,7 @@
   "id": "file_operator",
   "name": "file_operator",
   "description": "使用相对路径或绝对路径读取、搜索、写入、编辑和补丁修改受限文本文件。",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "eucliBoxCompatibility": {
     "minimumVersion": "0.1.0",
     "maximumVersionExclusive": "0.2.0"

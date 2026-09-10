@@ -191,9 +191,7 @@ func writeToolConfig(t *testing.T, toolDir string, providerRel string) {
 			}},
 		}},
 		"limits": map[string]any{
-			"defaultTimeoutMs": 10000,
-			"maxTimeoutMs":     20000,
-			"maxOutputChars":   200,
+			"maxOutputChars": 200,
 		},
 	}
 	payload, err := json.Marshal(config)

@@ -2,7 +2,7 @@
   "id": "web_search",
   "name": "web_search",
   "description": "Search the web through a selected search provider and return normalized markdown results with structured metadata.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "eucliBoxCompatibility": {
     "minimumVersion": "0.1.0",
     "maximumVersionExclusive": "0.2.0"
@@ -24,11 +24,6 @@
         "type": "integer",
         "title": "默认结果数量",
         "description": "模型未指定 maxResults 时使用的结果数量。"
-      },
-      "timeoutMs": {
-        "type": "integer",
-        "title": "默认超时（毫秒）",
-        "description": "模型未指定 timeoutMs 时使用的请求超时。"
       },
       "maxOutputChars": {
         "type": "integer",
@@ -56,7 +51,6 @@
   "defaultConfig": {
     "provider": "anysearch",
     "maxResults": 5,
-    "timeoutMs": 30000,
     "maxOutputChars": 20000,
     "includeContent": false
   },

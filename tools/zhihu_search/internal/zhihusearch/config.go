@@ -24,8 +24,6 @@ type Config struct {
 }
 
 type LimitsConfig struct {
-	DefaultTimeoutMs     int `json:"defaultTimeoutMs"`
-	MaxTimeoutMs         int `json:"maxTimeoutMs"`
 	DefaultCount         int `json:"defaultCount"`
 	ZhihuSearchMaxCount  int `json:"zhihuSearchMaxCount"`
 	GlobalSearchMaxCount int `json:"globalSearchMaxCount"`
@@ -75,12 +73,6 @@ func normalizeConfig(config Config) (Config, error) {
 			return Config{}, fmt.Errorf("endpoint %q must be absolute URL or absolute path", searchType)
 		}
 		config.Endpoints[searchType] = endpoint
-	}
-	if config.Limits.DefaultTimeoutMs <= 0 {
-		return Config{}, fmt.Errorf("limits.defaultTimeoutMs must be greater than zero")
-	}
-	if config.Limits.MaxTimeoutMs < config.Limits.DefaultTimeoutMs {
-		return Config{}, fmt.Errorf("limits.maxTimeoutMs must be greater than or equal to limits.defaultTimeoutMs")
 	}
 	if config.Limits.DefaultCount <= 0 {
 		return Config{}, fmt.Errorf("limits.defaultCount must be greater than zero")

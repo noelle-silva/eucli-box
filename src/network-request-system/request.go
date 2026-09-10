@@ -39,7 +39,10 @@ func buildRequest(ctx context.Context, req types.HTTPRequest, config Config) (pr
 	if timeout == 0 {
 		timeout = config.DefaultTimeout
 	}
-	if timeout < 0 || timeout > config.MaxTimeout {
+	if timeout < 0 {
+		return preparedRequest{}, invalidRequest("request timeout cannot be negative", nil)
+	}
+	if config.MaxTimeout > 0 && timeout > config.MaxTimeout {
 		return preparedRequest{}, invalidRequest("request timeout is outside allowed range", nil)
 	}
 	body, contentType, err := buildBody(req.BodyKind, req.Body)

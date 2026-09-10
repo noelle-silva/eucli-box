@@ -136,7 +136,7 @@ func newZhihuSearchFixture(t *testing.T, baseURL string) zhihuSearchFixture {
 			searchTypeZhihu:  "/api/v1/content/zhihu_search",
 			searchTypeGlobal: "/api/v1/content/global_search",
 		},
-		Limits: LimitsConfig{DefaultTimeoutMs: 30000, MaxTimeoutMs: 120000, DefaultCount: 10, ZhihuSearchMaxCount: 10, GlobalSearchMaxCount: 20, MaxOutputChars: 20000},
+		Limits: LimitsConfig{DefaultCount: 10, ZhihuSearchMaxCount: 10, GlobalSearchMaxCount: 20, MaxOutputChars: 20000},
 	}
 	payload, err := json.Marshal(config)
 	if err != nil {

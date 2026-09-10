@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -12,17 +11,40 @@ import (
 	everything "eucli-box/tools/everything/internal/everything"
 )
 
-// defaultToolBudgetMs is the tool's own default execution budget; a
-// caller-specified budget overrides it, and both are clamped by the unified
-// platform cap.
-const defaultToolBudgetMs = 60_000
-
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "--keepalive-guard":
+			os.Exit(runKeepAliveGuard(os.Args[2:]))
+		case "--steward-install":
+			os.Exit(runStewardInstall(os.Args[2:]))
+		}
+	}
 	output := run()
 	encoder := json.NewEncoder(os.Stdout)
 	if err := encoder.Encode(output); err != nil {
 		os.Exit(1)
 	}
+}
+
+func runKeepAliveGuard(args []string) int {
+	if len(args) != 2 {
+		return 1
+	}
+	if err := everything.RunKeepAliveGuard(args[0], args[1]); err != nil {
+		return 2
+	}
+	return 0
+}
+
+func runStewardInstall(args []string) int {
+	if len(args) != 1 {
+		return 1
+	}
+	if err := everything.RunStewardInstall(args[0]); err != nil {
+		return 2
+	}
+	return 0
 }
 
 func run() types.ToolExecutionOutput {
@@ -36,8 +58,7 @@ func run() types.ToolExecutionOutput {
 	if err := decoder.Decode(&input); err != nil {
 		return failedOutput("failed to decode tool input", err)
 	}
-	budget := toolcontrol.ClampToolBudget(input.TimeoutMs, defaultToolBudgetMs)
-	executionCtx, cancel := context.WithTimeout(context.Background(), budget)
+	executionCtx, cancel := toolcontrol.ExecutionContext(input.TimeoutMs)
 	defer cancel()
 	client, err := toolcontrol.AdoptControl(executionCtx)
 	if err != nil {

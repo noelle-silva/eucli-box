@@ -21,8 +21,6 @@
     "probeIntervalMs": 250
   },
   "limits": {
-    "defaultTimeoutMs": 120000,
-    "maxTimeoutMs": 120000,
     "defaultConnectTimeoutMs": 5000,
     "defaultMaxResults": 80,
     "maxResults": 500,

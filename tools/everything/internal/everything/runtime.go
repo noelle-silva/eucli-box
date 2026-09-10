@@ -3,8 +3,10 @@ package everything
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +16,8 @@ import (
 	"time"
 )
 
+const defaultKeepAliveSeconds = 300
+
 type runtimeLock struct {
 	file *os.File
 	path string
@@ -21,7 +25,10 @@ type runtimeLock struct {
 
 const scopedInstanceSuffix = "-scoped"
 
-func acquireBundledRuntimeLock(ctx context.Context, toolDataDirectory string, config Config, request searchRequest) (*runtimeLock, error) {
+// acquireBundledRuntimeLock waits until the runtime lock is free and takes it.
+// The wait ends only when the lock is acquired, an explicit hard file error
+// appears, or the caller-specified deadline expires (reported as busy).
+func acquireBundledRuntimeLock(ctx context.Context, toolDataDirectory string, config Config) (*runtimeLock, error) {
 	runtimeDir, err := bundledRuntimeDir(toolDataDirectory, config.Runtime.Directory)
 	if err != nil {
 		return nil, err
@@ -30,32 +37,39 @@ func acquireBundledRuntimeLock(ctx context.Context, toolDataDirectory string, co
 		return nil, fmt.Errorf("create Everything runtime directory: %w", err)
 	}
 	lockPath := filepath.Join(runtimeDir, "everything.lock")
-	deadline := time.Now().Add(time.Duration(request.TimeoutMs) * time.Millisecond)
-	for {
+	var acquired *runtimeLock
+	probe := func(context.Context) (bool, error) {
 		file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 		if err == nil {
 			_, _ = fmt.Fprintf(file, "pid=%d\n", os.Getpid())
-			return &runtimeLock{file: file, path: lockPath}, nil
+			acquired = &runtimeLock{file: file, path: lockPath}
+			return true, nil
 		}
 		if !os.IsExist(err) {
-			return nil, fmt.Errorf("create Everything runtime lock: %w", err)
+			return false, fmt.Errorf("create Everything runtime lock: %w", err)
 		}
-		if err := removeStaleRuntimeLock(lockPath, config); err != nil {
-			return nil, err
+		if err := removeStaleRuntimeLock(lockPath); err != nil {
+			return false, err
 		}
-		if time.Now().After(deadline) {
+		return false, nil
+	}
+	env := waitEnvironment{
+		interval: time.Duration(config.Runtime.ProbeIntervalMs) * time.Millisecond,
+		sleep:    sleepWithContext,
+	}
+	if err := waitUntil(ctx, env, probe); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
 			return nil, fmt.Errorf("Everything runtime is busy")
 		}
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if sleep := minDuration(time.Duration(config.Runtime.ProbeIntervalMs)*time.Millisecond, time.Until(deadline)); sleep > 0 {
-			time.Sleep(sleep)
-		}
+		return nil, err
 	}
+	return acquired, nil
 }
 
-func removeStaleRuntimeLock(lockPath string, config Config) error {
+// removeStaleRuntimeLock removes a runtime lock left behind by a crashed
+// owner. A lock whose recorded owner process is still alive is never treated
+// as stale.
+func removeStaleRuntimeLock(lockPath string) error {
 	info, err := os.Stat(lockPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -63,14 +77,63 @@ func removeStaleRuntimeLock(lockPath string, config Config) error {
 		}
 		return fmt.Errorf("stat Everything runtime lock: %w", err)
 	}
-	maxAge := time.Duration(config.Limits.MaxTimeoutMs+config.Runtime.ReadyTimeoutMs) * time.Millisecond
-	if maxAge <= 0 || time.Since(info.ModTime()) <= maxAge {
+	if info.IsDir() {
+		return fmt.Errorf("Everything runtime lock path is a directory")
+	}
+	pid, ok := lockOwnerPID(lockPath)
+	if !ok || processAlive(pid) {
 		return nil
 	}
 	if err := os.Remove(lockPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove stale Everything runtime lock: %w", err)
 	}
 	return nil
+}
+
+// lockOwnerPID reads the owner pid recorded in a runtime lock file.
+func lockOwnerPID(lockPath string) (int, bool) {
+	payload, err := os.ReadFile(lockPath)
+	if err != nil {
+		return 0, false
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(payload)), "\n") {
+		key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if ok && strings.TrimSpace(key) == "pid" {
+			pid, err := strconv.Atoi(strings.TrimSpace(value))
+			if err != nil || pid <= 0 {
+				return 0, false
+			}
+			return pid, true
+		}
+	}
+	return 0, false
+}
+
+// processAlive reports whether a process with the given pid exists. When the
+// check itself fails the process is conservatively treated as alive.
+func processAlive(pid int) bool {
+	if runtime.GOOS == "windows" {
+		output, err := exec.Command("tasklist", "/FI", "PID eq "+strconv.Itoa(pid)).CombinedOutput()
+		if err != nil {
+			return true
+		}
+		for _, line := range strings.Split(string(output), "\r\n") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 && fields[1] == strconv.Itoa(pid) {
+				return true
+			}
+		}
+		return false
+	}
+	err := exec.Command("kill", "-0", strconv.Itoa(pid)).Run()
+	if err == nil {
+		return true
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return false
+	}
+	return true
 }
 
 func (l *runtimeLock) Release() {
@@ -104,13 +167,14 @@ func ensureBundledRuntime(ctx context.Context, toolDataDirectory string, config 
 	runtimeConfig := filepath.Join(runtimeDir, "Everything.ini")
 	databasePath := filepath.Join(runtimeDir, "Everything.db")
 	desiredConfig := runtimeConfigContent(runtimeDir, indexedFolders(request))
-	if requiresBundledWindowsService(request) {
-		if err := ensureBundledWindowsService(ctx, runtimeExecutable, request.InstanceName, config); err != nil {
-			return searchRequest{}, err
+	stateFile := filepath.Join(runtimeDir, keepAliveStateFileName)
+	instanceRunning := bundledRuntimeResponds(ctx, provider.ESExecutable, request.InstanceName, config)
+	if !runtimeConfigMatches(runtimeConfig, desiredConfig) || !keepAliveLeaseActive(stateFile, provider.ESExecutable, request.InstanceName) || !instanceRunning {
+		if instanceRunning {
+			if err := stopBundledInstance(toolDataDirectory, config, provider.ESExecutable, request.InstanceName); err != nil {
+				return searchRequest{}, fmt.Errorf("replace the running Everything instance: %w", err)
+			}
 		}
-	}
-	if !runtimeConfigMatches(runtimeConfig, desiredConfig) || !bundledRuntimeResponds(ctx, provider.ESExecutable, request.InstanceName, config) {
-		_ = stopBundledEverything(ctx, provider.ESExecutable, request.InstanceName, config)
 		if err := writeRuntimeConfig(runtimeConfig, desiredConfig); err != nil {
 			return searchRequest{}, err
 		}
@@ -274,10 +338,6 @@ func readyProbePaths(request searchRequest) []string {
 	return indexedFolders(request)
 }
 
-func requiresBundledWindowsService(request searchRequest) bool {
-	return request.ScopeMode == scopeModeAllLocalDrives
-}
-
 func startBundledEverything(executable string, instanceName string, configPath string, databasePath string) error {
 	cmd := exec.Command(executable,
 		"-instance", instanceName,
@@ -291,9 +351,11 @@ func startBundledEverything(executable string, instanceName string, configPath s
 	return cmd.Process.Release()
 }
 
-func stopBundledEverything(ctx context.Context, executable string, instanceName string, config Config) error {
-	timeout := time.Duration(config.Limits.DefaultConnectTimeoutMs) * time.Millisecond
-	_, err := runCommandOutput(ctx, timeout, executable, everythingExitArgs(instanceName, config.Limits.DefaultConnectTimeoutMs)...)
+// stopInstance asks the bundled Everything instance to exit gracefully
+// through the CLI, waiting at most connectTimeoutMs for the exit to start.
+func stopInstance(ctx context.Context, esExecutable string, instanceName string, connectTimeoutMs int) error {
+	timeout := time.Duration(connectTimeoutMs) * time.Millisecond
+	_, err := runCommandOutput(ctx, timeout, esExecutable, everythingExitArgs(instanceName, connectTimeoutMs)...)
 	return err
 }
 
@@ -303,8 +365,7 @@ func persistBundledDatabaseIfMissing(ctx context.Context, executable string, dat
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("stat Everything database: %w", err)
 	}
-	timeout := time.Duration(request.TimeoutMs) * time.Millisecond
-	if _, err := runCommandOutput(ctx, timeout, executable, everythingSaveDatabaseArgs(request.InstanceName, request.ConnectTimeoutMs)...); err != nil {
+	if _, err := runCommandOutput(ctx, 0, executable, everythingSaveDatabaseArgs(request.InstanceName, request.ConnectTimeoutMs)...); err != nil {
 		return fmt.Errorf("save Everything database: %w", err)
 	}
 	if _, err := os.Stat(databasePath); err != nil {
@@ -316,200 +377,8 @@ func persistBundledDatabaseIfMissing(ctx context.Context, executable string, dat
 	return nil
 }
 
-type bundledWindowsServiceOps interface {
-	Exists(ctx context.Context, name string, config Config) (bool, error)
-	Install(ctx context.Context, executable string, instanceName string, config Config) error
-	Uninstall(ctx context.Context, executable string, instanceName string, config Config) error
-	UsesExecutable(ctx context.Context, name string, expectedExecutable string, config Config) (bool, error)
-	EnsureRunning(ctx context.Context, name string, config Config) error
-}
-
-type scBundledWindowsServiceOps struct{}
-
-var bundledServiceOps bundledWindowsServiceOps = scBundledWindowsServiceOps{}
-
-func (scBundledWindowsServiceOps) Exists(ctx context.Context, name string, config Config) (bool, error) {
-	return windowsServiceExists(ctx, name, config)
-}
-
-func (scBundledWindowsServiceOps) Install(ctx context.Context, executable string, instanceName string, config Config) error {
-	if _, err := runCommandOutput(ctx, runtimeCommandTimeout(config), executable, "-instance", instanceName, "-install-service"); err != nil {
-		return fmt.Errorf("install bundled Everything service: %w", err)
-	}
-	return nil
-}
-
-func (scBundledWindowsServiceOps) Uninstall(ctx context.Context, executable string, instanceName string, config Config) error {
-	if _, err := runCommandOutput(ctx, runtimeCommandTimeout(config), executable, "-instance", instanceName, "-uninstall-service"); err != nil {
-		return fmt.Errorf("uninstall bundled Everything service: %w", err)
-	}
-	return nil
-}
-
-func (scBundledWindowsServiceOps) UsesExecutable(ctx context.Context, name string, expectedExecutable string, config Config) (bool, error) {
-	return windowsServiceUsesExecutable(ctx, name, expectedExecutable, config)
-}
-
-func (scBundledWindowsServiceOps) EnsureRunning(ctx context.Context, name string, config Config) error {
-	return ensureWindowsServiceRunning(ctx, name, config)
-}
-
-func ensureBundledWindowsService(ctx context.Context, executable string, instanceName string, config Config) error {
-	if runtime.GOOS != "windows" {
-		return fmt.Errorf("bundled full-disk Everything search is only supported on Windows")
-	}
-	serviceName := bundledServiceName(instanceName)
-	exists, err := bundledServiceOps.Exists(ctx, serviceName, config)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		if err := bundledServiceOps.Install(ctx, executable, instanceName, config); err != nil {
-			return err
-		}
-	} else {
-		matches, err := bundledServiceOps.UsesExecutable(ctx, serviceName, executable, config)
-		if err != nil {
-			return err
-		}
-		if !matches {
-			if err := bundledServiceOps.Uninstall(ctx, executable, instanceName, config); err != nil {
-				return err
-			}
-			if err := bundledServiceOps.Install(ctx, executable, instanceName, config); err != nil {
-				return err
-			}
-		}
-	}
-	matches, err := bundledServiceOps.UsesExecutable(ctx, serviceName, executable, config)
-	if err != nil {
-		return err
-	}
-	if !matches {
-		return fmt.Errorf("bundled Everything service uses a different runtime path")
-	}
-	return bundledServiceOps.EnsureRunning(ctx, serviceName, config)
-}
-
-func bundledServiceName(instanceName string) string {
-	return "Everything (" + strings.TrimSpace(instanceName) + ")"
-}
-
-func windowsServiceExists(ctx context.Context, name string, config Config) (bool, error) {
-	output, err := runCommandOutput(ctx, serviceQueryTimeout(config), "sc.exe", "query", name)
-	if err == nil {
-		return true, nil
-	}
-	if isWindowsServiceNotFound(output) || isWindowsServiceNotFound(err.Error()) {
-		return false, nil
-	}
-	return false, fmt.Errorf("query bundled Everything service: %w", err)
-}
-
-func windowsServiceUsesExecutable(ctx context.Context, name string, expectedExecutable string, config Config) (bool, error) {
-	output, err := runCommandOutput(ctx, serviceQueryTimeout(config), "sc.exe", "qc", name)
-	if err != nil {
-		return false, fmt.Errorf("query bundled Everything service config: %w", err)
-	}
-	actual := windowsServiceBinaryPath(output)
-	if actual == "" {
-		return false, fmt.Errorf("bundled Everything service binary path is missing: %s", name)
-	}
-	return serviceBinaryPathUsesExecutable(actual, expectedExecutable), nil
-}
-
-func ensureWindowsServiceRunning(ctx context.Context, name string, config Config) error {
-	running, err := windowsServiceRunning(ctx, name, config)
-	if err != nil {
-		return err
-	}
-	if running {
-		return nil
-	}
-	if _, err := runCommandOutput(ctx, runtimeCommandTimeout(config), "sc.exe", "start", name); err != nil {
-		return fmt.Errorf("start bundled Everything service: %w", err)
-	}
-	deadline := time.Now().Add(runtimeCommandTimeout(config))
-	for {
-		running, err := windowsServiceRunning(ctx, name, config)
-		if err != nil {
-			return err
-		}
-		if running {
-			return nil
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("bundled Everything service did not reach RUNNING state: %s", name)
-		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		time.Sleep(time.Duration(config.Runtime.ProbeIntervalMs) * time.Millisecond)
-	}
-}
-
-func windowsServiceRunning(ctx context.Context, name string, config Config) (bool, error) {
-	output, err := runCommandOutput(ctx, serviceQueryTimeout(config), "sc.exe", "query", name)
-	if err != nil {
-		return false, fmt.Errorf("query bundled Everything service state: %w", err)
-	}
-	return strings.Contains(strings.ToUpper(output), "RUNNING"), nil
-}
-
-func windowsServiceBinaryPath(scOutput string) string {
-	for _, line := range strings.Split(scOutput, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, "BINARY_PATH_NAME") {
-			continue
-		}
-		_, value, found := strings.Cut(trimmed, ":")
-		if !found {
-			return ""
-		}
-		return strings.TrimSpace(value)
-	}
-	return ""
-}
-
-func serviceBinaryPathUsesExecutable(binaryPath string, expectedExecutable string) bool {
-	actual := serviceBinaryExecutablePath(binaryPath)
-	if actual == "" {
-		return false
-	}
-	return strings.EqualFold(filepath.Clean(actual), filepath.Clean(expectedExecutable))
-}
-
-func serviceBinaryExecutablePath(binaryPath string) string {
-	value := strings.TrimSpace(binaryPath)
-	if value == "" {
-		return ""
-	}
-	if strings.HasPrefix(value, "\"") {
-		end := strings.Index(value[1:], "\"")
-		if end < 0 {
-			return strings.Trim(value, "\"")
-		}
-		return value[1 : end+1]
-	}
-	fields := strings.Fields(value)
-	if len(fields) == 0 {
-		return ""
-	}
-	return fields[0]
-}
-
-func isWindowsServiceNotFound(text string) bool {
-	lower := strings.ToLower(text)
-	return strings.Contains(lower, "1060") || strings.Contains(lower, "does not exist")
-}
-
-func serviceQueryTimeout(config Config) time.Duration {
-	return time.Duration(config.Limits.DefaultConnectTimeoutMs) * time.Millisecond
-}
-
-func runtimeCommandTimeout(config Config) time.Duration {
-	timeout := time.Duration(config.Limits.DefaultTimeoutMs) * time.Millisecond
-	return minDuration(timeout, 20*time.Second)
+func bundledRuntimeResponds(ctx context.Context, executable string, instanceName string, config Config) bool {
+	return waitEverythingReady(ctx, executable, instanceName, config, false) == nil
 }
 
 func waitEverythingReady(ctx context.Context, executable string, instanceName string, config Config, requireWait bool) error {
@@ -540,54 +409,115 @@ func waitEverythingReady(ctx context.Context, executable string, instanceName st
 	return fmt.Errorf("bundled Everything runtime is not ready")
 }
 
-func bundledRuntimeResponds(ctx context.Context, executable string, instanceName string, config Config) bool {
-	return waitEverythingReady(ctx, executable, instanceName, config, false) == nil
+// folderIndexWatcher observes whether every probed folder has a ready index.
+// It keeps the latest transient probe failure so a caller-deadline failure can
+// report why the index never became ready.
+type folderIndexWatcher struct {
+	executable  string
+	request     searchRequest
+	folders     []string
+	lastFailure error
 }
 
+// observe implements waitProbe for the index-readiness wait. A folder is ready
+// when it has visible entries or is actually empty; a hard probe failure ends
+// the wait, while a transient probe failure only keeps it alive.
+func (w *folderIndexWatcher) observe(ctx context.Context) (bool, error) {
+	probeTimeout := time.Duration(w.request.ConnectTimeoutMs) * time.Millisecond
+	if deadline, ok := ctx.Deadline(); ok {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return false, nil
+		}
+		if remaining < probeTimeout {
+			probeTimeout = remaining
+		}
+	}
+	allReady := true
+	for _, folder := range w.folders {
+		output, err := runCommandOutput(ctx, probeTimeout, w.executable, everythingCountArgs(w.request.InstanceName, int(probeTimeout/time.Millisecond), folder)...)
+		if err != nil {
+			if hardProbeFailure(err) {
+				return false, fmt.Errorf("Everything folder index probe failed for %s: %w", folder, err)
+			}
+			w.lastFailure = err
+			allReady = false
+			continue
+		}
+		ready, err := folderIndexReady(folder, output)
+		if err != nil {
+			w.lastFailure = err
+			allReady = false
+			continue
+		}
+		if !ready {
+			allReady = false
+		}
+	}
+	return allReady, nil
+}
+
+// waitIndexedFoldersReady waits until every probed folder reports indexed
+// entries (or is actually empty). The wait ends only when the index is ready,
+// an explicit hard probe failure appears, or the caller-specified deadline
+// expires. It never gives up because visible counts stopped growing.
 func waitIndexedFoldersReady(ctx context.Context, executable string, request searchRequest, config Config) error {
 	folders := readyProbePaths(request)
 	if len(folders) == 0 {
 		return nil
 	}
-	deadline := time.Now().Add(time.Duration(request.TimeoutMs) * time.Millisecond)
-	probeInterval := time.Duration(config.Runtime.ProbeIntervalMs) * time.Millisecond
-	var lastErr error
-	for {
-		remaining := time.Until(deadline)
-		if remaining <= 0 {
-			break
-		}
-		probeTimeout := minDuration(time.Duration(request.ConnectTimeoutMs)*time.Millisecond, remaining)
-		allReady := true
-		for _, folder := range folders {
-			output, err := runCommandOutput(ctx, probeTimeout, executable, everythingCountArgs(request.InstanceName, int(probeTimeout/time.Millisecond), folder)...)
-			if err != nil {
-				lastErr = err
-				allReady = false
-				continue
-			}
-			ready, err := folderIndexReady(folder, output)
-			if err != nil {
-				lastErr = err
-				allReady = false
-				continue
-			}
-			if !ready {
-				lastErr = fmt.Errorf("Everything folder index has no visible entries yet: %s", folder)
-				allReady = false
-			}
-		}
-		if allReady {
-			return nil
-		}
-		if sleep := minDuration(probeInterval, time.Until(deadline)); sleep > 0 {
-			time.Sleep(sleep)
-		}
+	watcher := &folderIndexWatcher{executable: executable, request: request, folders: folders}
+	env := waitEnvironment{
+		interval: time.Duration(config.Runtime.ProbeIntervalMs) * time.Millisecond,
+		sleep:    sleepWithContext,
 	}
-	if lastErr != nil {
-		return fmt.Errorf("Everything folder index is not ready: %w", lastErr)
+	if err := waitUntil(ctx, env, watcher.observe); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			if watcher.lastFailure != nil {
+				return fmt.Errorf("Everything folder index is not ready before the caller deadline: %w", watcher.lastFailure)
+			}
+			return fmt.Errorf("Everything folder index is not ready before the caller deadline")
+		}
+		return err
 	}
-	return fmt.Errorf("Everything folder index is not ready")
+	return nil
+}
+
+// exitCodeCarrier is implemented by errors that carry a process exit code.
+type exitCodeCarrier interface {
+	ExitCode() int
+}
+
+// hardProbeFailure reports whether an index probe failure is an explicit
+// failure fact that waiting cannot recover from: a missing or unusable
+// executable, a lost Everything instance, or a probe process that exited with
+// an error other than a transient busy condition. Everything CLI exit code 7
+// (unable to send IPC message) and 9 (no results found) describe a busy
+// instance or an empty result set rather than a broken probe. Timeouts and
+// unclassifiable failures also keep the wait alive.
+func hardProbeFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	var carrier exitCodeCarrier
+	if errors.As(err, &carrier) {
+		return !transientProbeExitCode(carrier.ExitCode())
+	}
+	var execErr *exec.Error
+	if errors.As(err, &execErr) {
+		return true
+	}
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		return true
+	}
+	return false
+}
+
+// transientProbeExitCode reports whether an Everything CLI exit code describes
+// a condition the index wait can recover from by waiting.
+func transientProbeExitCode(code int) bool {
+	return code == 7 || code == 9
 }
 
 func folderIndexReady(scopePath string, countOutput string) (bool, error) {

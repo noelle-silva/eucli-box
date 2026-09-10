@@ -25,7 +25,7 @@ type searchResponse struct {
 func searchEverything(ctx context.Context, executable string, request searchRequest) (searchResponse, error) {
 	startedAt := time.Now()
 	response := searchResponse{Query: request.Query, Limit: request.MaxResults, ScopePath: request.ScopePath, ScopePaths: request.ScopePaths, ScopeMode: request.ScopeMode, InstanceName: request.InstanceName, Results: []searchResult{}}
-	text, err := runEverythingSearchCSV(ctx, time.Duration(request.TimeoutMs)*time.Millisecond, executable, request)
+	text, err := runEverythingSearchCSV(ctx, executable, request)
 	response.DurationMs = int64(time.Since(startedAt) / time.Millisecond)
 	if err != nil {
 		return response, err
@@ -38,10 +38,7 @@ func searchEverything(ctx context.Context, executable string, request searchRequ
 	return response, nil
 }
 
-func runEverythingSearchCSV(ctx context.Context, timeout time.Duration, executable string, request searchRequest) (string, error) {
-	if timeout <= 0 {
-		return "", fmt.Errorf("search timeout must be positive")
-	}
+func runEverythingSearchCSV(ctx context.Context, executable string, request searchRequest) (string, error) {
 	file, err := os.CreateTemp("", "eucli-everything-search-*.csv")
 	if err != nil {
 		return "", fmt.Errorf("create Everything search export failed: %w", err)
@@ -54,7 +51,7 @@ func runEverythingSearchCSV(ctx context.Context, timeout time.Duration, executab
 	defer os.Remove(csvPath)
 
 	args := everythingSearchArgs(request.InstanceName, request.Query, request.MaxResults, csvPath, request.ScopePath, request.ConnectTimeoutMs)
-	if _, err := runCommandOutput(ctx, timeout, executable, args...); err != nil {
+	if _, err := runCommandOutput(ctx, 0, executable, args...); err != nil {
 		return "", err
 	}
 	content, err := os.ReadFile(csvPath)
@@ -86,19 +83,33 @@ func everythingSearchArgs(instance string, query string, limit int, csvPath stri
 	return append(args, query)
 }
 
+// runCommandOutput runs an Everything CLI command. A positive timeout bounds
+// the command (connection-layer waits); a non-positive timeout leaves the
+// command bounded only by the context, which carries the caller-specified
+// execution deadline when one was set.
 func runCommandOutput(ctx context.Context, timeout time.Duration, name string, args ...string) (string, error) {
-	commandCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	commandCtx := ctx
+	var cancel context.CancelFunc
+	if timeout > 0 {
+		commandCtx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
 	cmd := exec.CommandContext(commandCtx, name, args...)
 	output, err := cmd.CombinedOutput()
 	text := string(output)
 	message := strings.TrimSpace(text)
 	if commandCtx.Err() != nil {
 		if errors.Is(commandCtx.Err(), context.DeadlineExceeded) {
-			if message != "" {
-				return text, fmt.Errorf("Everything search timed out after %s: %s", timeout, message)
+			if timeout > 0 {
+				if message != "" {
+					return text, fmt.Errorf("Everything search timed out after %s: %s", timeout, message)
+				}
+				return text, fmt.Errorf("Everything search timed out after %s", timeout)
 			}
-			return text, fmt.Errorf("Everything search timed out after %s", timeout)
+			if message != "" {
+				return text, fmt.Errorf("Everything search timed out: %s", message)
+			}
+			return text, fmt.Errorf("Everything search timed out")
 		}
 		if message != "" {
 			return text, fmt.Errorf("Everything search cancelled: %s", message)

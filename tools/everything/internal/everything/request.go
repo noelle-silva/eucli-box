@@ -23,10 +23,7 @@ type searchRequest struct {
 	MaxOutputChars   int
 }
 
-func parseRequest(input types.ToolExecutionInput, config Config) (searchRequest, error) {
-	if _, ok := input.Arguments["action"]; ok {
-		return searchRequest{}, fmt.Errorf("argument %q is not supported", "action")
-	}
+func parseSearchRequest(input types.ToolExecutionInput, config Config) (searchRequest, error) {
 	query, err := stringArgument(input.Arguments, "query", true)
 	if err != nil {
 		return searchRequest{}, err
@@ -47,6 +44,9 @@ func parseRequest(input types.ToolExecutionInput, config Config) (searchRequest,
 	if err != nil {
 		return searchRequest{}, err
 	}
+	if scope.Mode == scopeModeAllLocalDrives && instanceName != "" && instanceName != config.Runtime.DefaultInstanceName {
+		return searchRequest{}, fmt.Errorf("full-disk search only supports the default Everything instance %q", config.Runtime.DefaultInstanceName)
+	}
 	maxResults, err := mergedInt(input, "maxResults", config.Limits.DefaultMaxResults)
 	if err != nil {
 		return searchRequest{}, err
@@ -54,12 +54,12 @@ func parseRequest(input types.ToolExecutionInput, config Config) (searchRequest,
 	if maxResults <= 0 || maxResults > config.Limits.MaxResults {
 		return searchRequest{}, fmt.Errorf("maxResults must be between 1 and %d", config.Limits.MaxResults)
 	}
-	timeoutMs, err := mergedInt(input, "timeoutMs", config.Limits.DefaultTimeoutMs)
+	timeoutMs, err := intArgument(input.Arguments, "timeoutMs", 0)
 	if err != nil {
 		return searchRequest{}, err
 	}
-	if timeoutMs <= 0 || timeoutMs > config.Limits.MaxTimeoutMs {
-		return searchRequest{}, fmt.Errorf("timeoutMs must be between 1 and %d", config.Limits.MaxTimeoutMs)
+	if timeoutMs < 0 {
+		return searchRequest{}, fmt.Errorf("timeoutMs must not be negative")
 	}
 	maxOutputChars, err := mergedInt(input, "maxOutputChars", config.Limits.MaxOutputChars)
 	if err != nil {
@@ -68,7 +68,7 @@ func parseRequest(input types.ToolExecutionInput, config Config) (searchRequest,
 	if maxOutputChars <= 0 || maxOutputChars > config.Limits.MaxOutputChars {
 		return searchRequest{}, fmt.Errorf("maxOutputChars must be between 1 and %d", config.Limits.MaxOutputChars)
 	}
-	connectTimeoutMs := minInt(config.Limits.DefaultConnectTimeoutMs, timeoutMs)
+	connectTimeoutMs := config.Limits.DefaultConnectTimeoutMs
 	return searchRequest{Query: query, Description: description, ScopePath: scope.SearchPath, ScopePaths: scope.DisplayPaths, ScopeIndexPaths: scope.IndexPaths, ScopeMode: scope.Mode, InstanceName: instanceName, MaxResults: maxResults, TimeoutMs: timeoutMs, ConnectTimeoutMs: connectTimeoutMs, MaxOutputChars: maxOutputChars}, nil
 }
 
@@ -98,6 +98,19 @@ func mergedInt(input types.ToolExecutionInput, key string, fallback int) (int, e
 	return fallback, nil
 }
 
+func mergedBool(input types.ToolExecutionInput, key string, fallback bool) (bool, error) {
+	if value, ok := input.Arguments[key]; ok && value != nil {
+		return boolValue(value, key)
+	}
+	if value, ok := input.UserConfig[key]; ok && value != nil {
+		return boolValue(value, key)
+	}
+	if value, ok := input.DefaultConfig[key]; ok && value != nil {
+		return boolValue(value, key)
+	}
+	return fallback, nil
+}
+
 func stringArgument(args map[string]any, key string, required bool) (string, error) {
 	value, ok := args[key]
 	if !ok || value == nil {
@@ -114,6 +127,14 @@ func stringArgument(args map[string]any, key string, required bool) (string, err
 		return "", fmt.Errorf("argument %q is required", key)
 	}
 	return text, nil
+}
+
+func intArgument(args map[string]any, key string, fallback int) (int, error) {
+	value, ok := args[key]
+	if !ok || value == nil {
+		return fallback, nil
+	}
+	return intValue(value, key)
 }
 
 func stringValue(value any, key string) (string, error) {
@@ -150,9 +171,21 @@ func intValue(value any, key string) (int, error) {
 	}
 }
 
-func minInt(left int, right int) int {
-	if left < right {
-		return left
+func boolValue(value any, key string) (bool, error) {
+	switch typed := value.(type) {
+	case bool:
+		return typed, nil
+	case string:
+		trimmed := strings.TrimSpace(typed)
+		if trimmed == "" {
+			return false, fmt.Errorf("argument %q must be a boolean", key)
+		}
+		parsed, err := strconv.ParseBool(trimmed)
+		if err != nil {
+			return false, fmt.Errorf("argument %q must be a boolean", key)
+		}
+		return parsed, nil
+	default:
+		return false, fmt.Errorf("argument %q must be a boolean", key)
 	}
-	return right
 }

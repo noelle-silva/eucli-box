@@ -37,8 +37,6 @@ type RuntimeConfig struct {
 }
 
 type LimitsConfig struct {
-	DefaultTimeoutMs        int `json:"defaultTimeoutMs"`
-	MaxTimeoutMs            int `json:"maxTimeoutMs"`
 	DefaultConnectTimeoutMs int `json:"defaultConnectTimeoutMs"`
 	DefaultMaxResults       int `json:"defaultMaxResults"`
 	MaxResults              int `json:"maxResults"`
@@ -80,7 +78,7 @@ func normalizeConfig(config Config) (Config, error) {
 	if config.ESPathEnv == "" {
 		return Config{}, fmt.Errorf("esPathEnv is required")
 	}
-	if err := validateRuntimeConfig(config.Runtime, config.Limits); err != nil {
+	if err := validateRuntimeConfig(config.Runtime); err != nil {
 		return Config{}, err
 	}
 	if err := validateLimits(config.Limits); err != nil {
@@ -92,7 +90,7 @@ func normalizeConfig(config Config) (Config, error) {
 	return config, nil
 }
 
-func validateRuntimeConfig(runtimeConfig RuntimeConfig, limits LimitsConfig) error {
+func validateRuntimeConfig(runtimeConfig RuntimeConfig) error {
 	directory := strings.TrimSpace(runtimeConfig.Directory)
 	if directory == "" {
 		return fmt.Errorf("runtime.directory is required")
@@ -109,21 +107,12 @@ func validateRuntimeConfig(runtimeConfig RuntimeConfig, limits LimitsConfig) err
 	if runtimeConfig.ProbeIntervalMs <= 0 || runtimeConfig.ProbeIntervalMs > runtimeConfig.ReadyTimeoutMs {
 		return fmt.Errorf("runtime.probeIntervalMs must be between 1 and runtime.readyTimeoutMs")
 	}
-	if limits.MaxTimeoutMs > 0 && runtimeConfig.ReadyTimeoutMs > limits.MaxTimeoutMs {
-		return fmt.Errorf("runtime.readyTimeoutMs must be less than or equal to limits.maxTimeoutMs")
-	}
 	return nil
 }
 
 func validateLimits(limits LimitsConfig) error {
-	if limits.DefaultTimeoutMs <= 0 {
-		return fmt.Errorf("limits.defaultTimeoutMs must be greater than zero")
-	}
-	if limits.MaxTimeoutMs < limits.DefaultTimeoutMs {
-		return fmt.Errorf("limits.maxTimeoutMs must be greater than or equal to limits.defaultTimeoutMs")
-	}
-	if limits.DefaultConnectTimeoutMs <= 0 || limits.DefaultConnectTimeoutMs > limits.MaxTimeoutMs {
-		return fmt.Errorf("limits.defaultConnectTimeoutMs must be between 1 and limits.maxTimeoutMs")
+	if limits.DefaultConnectTimeoutMs <= 0 {
+		return fmt.Errorf("limits.defaultConnectTimeoutMs must be greater than zero")
 	}
 	if limits.DefaultMaxResults <= 0 {
 		return fmt.Errorf("limits.defaultMaxResults must be greater than zero")
@@ -188,24 +177,45 @@ func resolveSearchProvider(config Config, input types.ToolExecutionInput) (selec
 }
 
 func resolveBundledProvider(config Config, toolBodyDirectory string) (selectedProvider, error) {
-	for _, provider := range config.Providers {
-		if provider.ID != config.DefaultProvider {
-			continue
-		}
-		if !provider.Enabled {
-			return selectedProvider{}, fmt.Errorf("provider %q is disabled", provider.ID)
-		}
-		esExecutable, err := resolveBundledExecutable(toolBodyDirectory, provider.ID, provider.Executables, "es")
-		if err != nil {
-			return selectedProvider{}, err
-		}
-		runtimeExecutable, err := resolveBundledExecutable(toolBodyDirectory, provider.ID, provider.RuntimeExecutables, "runtime")
-		if err != nil {
-			return selectedProvider{}, err
-		}
-		return selectedProvider{ID: provider.ID, ESExecutable: esExecutable, RuntimeExecutable: runtimeExecutable, ExecutableSource: "bundled", RuntimeSource: "bundled", Bundled: true}, nil
+	provider, ok := defaultProviderConfig(config)
+	if !ok {
+		return selectedProvider{}, fmt.Errorf("provider %q is not configured", config.DefaultProvider)
 	}
-	return selectedProvider{}, fmt.Errorf("provider %q is not configured", config.DefaultProvider)
+	if !provider.Enabled {
+		return selectedProvider{}, fmt.Errorf("provider %q is disabled", provider.ID)
+	}
+	esExecutable, err := resolveBundledExecutable(toolBodyDirectory, provider.ID, provider.Executables, "es")
+	if err != nil {
+		return selectedProvider{}, err
+	}
+	runtimeExecutable, err := bundledRuntimeExecutable(config, toolBodyDirectory)
+	if err != nil {
+		return selectedProvider{}, err
+	}
+	return selectedProvider{ID: provider.ID, ESExecutable: esExecutable, RuntimeExecutable: runtimeExecutable, ExecutableSource: "bundled", RuntimeSource: "bundled", Bundled: true}, nil
+}
+
+func defaultProviderConfig(config Config) (ProviderConfig, bool) {
+	for _, provider := range config.Providers {
+		if provider.ID == config.DefaultProvider {
+			return provider, true
+		}
+	}
+	return ProviderConfig{}, false
+}
+
+// bundledRuntimeExecutable resolves the engine copy of the default bundled
+// provider: the full-disk instance engine. The permission steward always
+// serves this engine, independent of any user-provided CLI override.
+func bundledRuntimeExecutable(config Config, toolBodyDirectory string) (string, error) {
+	provider, ok := defaultProviderConfig(config)
+	if !ok {
+		return "", fmt.Errorf("provider %q is not configured", config.DefaultProvider)
+	}
+	if !provider.Enabled {
+		return "", fmt.Errorf("provider %q is disabled", provider.ID)
+	}
+	return resolveBundledExecutable(toolBodyDirectory, provider.ID, provider.RuntimeExecutables, "runtime")
 }
 
 func resolveBundledExecutable(toolBodyDirectory string, providerID string, executables []types.ToolBinary, label string) (string, error) {

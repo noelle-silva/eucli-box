@@ -3,6 +3,7 @@ package everything
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -57,8 +58,7 @@ func TestExecuteAllowsExplicitExternalCLIOverride(t *testing.T) {
 
 func TestExecuteDefaultsToBundledFullDiskRuntime(t *testing.T) {
 	fixture := newEverythingFixture(t, true)
-	serviceOps := &fakeBundledServiceOps{}
-	useFakeBundledServiceOps(t, serviceOps)
+	stubStewardHealth(t, stewardStateHealthy)
 	result := Execute(context.Background(), types.ToolExecutionInput{
 		Arguments:            map[string]any{"query": "notes", "maxResults": 3, "description": "default full disk"},
 		DefaultConfig:        map[string]any{"maxOutputChars": 20000},
@@ -72,8 +72,8 @@ func TestExecuteDefaultsToBundledFullDiskRuntime(t *testing.T) {
 	if result.Metadata["scopeMode"] != scopeModeAllLocalDrives || result.Metadata["scopePath"] != "" || result.Metadata["runtimeSource"] != "bundled" {
 		t.Fatalf("metadata = %#v", result.Metadata)
 	}
-	if !serviceOps.installed || !serviceOps.executableChecked || !serviceOps.runningEnsured {
-		t.Fatalf("service ops were not exercised: %#v", serviceOps)
+	if _, hasServiceName := result.Metadata["serviceName"]; hasServiceName {
+		t.Fatalf("serviceName must not be reported: %#v", result.Metadata)
 	}
 	if paths, ok := result.Metadata["scopePaths"].([]string); !ok || len(paths) == 0 {
 		t.Fatalf("scopePaths = %#v", result.Metadata["scopePaths"])
@@ -93,14 +93,6 @@ func TestResolveSearchScopeDefaultsToLocalDriveRoots(t *testing.T) {
 	}
 }
 
-func TestWindowsServiceBinaryPathParsing(t *testing.T) {
-	path := windowsServiceBinaryPath(`SERVICE_NAME: Everything (eucli-box-everything)
-        BINARY_PATH_NAME   : "E:\eucli-project\eucli-box\tools\everything\providers\everything\Everything.exe" -svc -instance "eucli-box-everything"`)
-	if path == "" || !serviceBinaryPathUsesExecutable(path, `E:\eucli-project\eucli-box\tools\everything\providers\everything\Everything.exe`) {
-		t.Fatalf("path = %q", path)
-	}
-}
-
 func TestExecuteFailsWhenBundledProviderMissing(t *testing.T) {
 	fixture := newEverythingFixture(t, false)
 	result := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"query": "notes"}, ToolBodyDirectory: fixture.toolDir, ToolDataDirectory: fixture.dataDir})
@@ -117,16 +109,121 @@ func TestExecuteRejectsInvalidLimit(t *testing.T) {
 	}
 }
 
-func TestExecuteRejectsUnsupportedActionArgument(t *testing.T) {
+func TestExecuteRejectsUnknownAction(t *testing.T) {
 	fixture := newEverythingFixture(t, true)
 	result := Execute(context.Background(), types.ToolExecutionInput{
-		Arguments:            map[string]any{"action": "search", "query": "notes"},
+		Arguments:            map[string]any{"action": "unknown", "query": "notes"},
 		ToolBodyDirectory:    fixture.toolDir,
 		ToolDataDirectory:    fixture.dataDir,
 		HostWorkingDirectory: fixture.hostDir,
 	})
-	if result.Status != types.ToolStatusFailed || !strings.Contains(result.Error, "not supported") {
+	if result.Status != types.ToolStatusFailed || !strings.Contains(result.Error, "action") {
 		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestExecuteBlocksFullDiskSearchWithoutHealthySteward(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("the permission steward is Windows-only")
+	}
+	fixture := newEverythingFixture(t, true)
+	stubStewardHealth(t, stewardStateNotInstalled)
+	result := Execute(context.Background(), types.ToolExecutionInput{
+		Arguments:            map[string]any{"query": "notes"},
+		ToolBodyDirectory:    fixture.toolDir,
+		ToolDataDirectory:    fixture.dataDir,
+		HostWorkingDirectory: fixture.hostDir,
+	})
+	if result.Status != types.ToolStatusFailed {
+		t.Fatalf("result = %#v", result)
+	}
+	if !containsAll(result.Content, "authorize", "confirm the system elevation prompt") {
+		t.Fatalf("content must guide authorization: %s", result.Content)
+	}
+	if result.Metadata["stewardState"] != string(stewardStateNotInstalled) || result.Metadata["serviceName"] == "" {
+		t.Fatalf("metadata = %#v", result.Metadata)
+	}
+	if _, err := os.Stat(filepath.Join(fixture.dataDir, "runtime")); !os.IsNotExist(err) {
+		t.Fatalf("full-disk action must not prepare the runtime before authorization, stat err = %v", err)
+	}
+}
+
+func TestExecuteBlocksIndexWithoutHealthySteward(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("the permission steward is Windows-only")
+	}
+	fixture := newEverythingFixture(t, true)
+	stubStewardHealth(t, stewardStateStopped)
+	result := Execute(context.Background(), types.ToolExecutionInput{
+		Arguments:            map[string]any{"action": "index"},
+		ToolBodyDirectory:    fixture.toolDir,
+		ToolDataDirectory:    fixture.dataDir,
+		HostWorkingDirectory: fixture.hostDir,
+	})
+	if result.Status != types.ToolStatusFailed || !containsAll(result.Content, "authorize", "confirm the system elevation prompt") {
+		t.Fatalf("result = %#v", result)
+	}
+	if result.Metadata["action"] != string(actionIndex) || result.Metadata["stewardState"] != string(stewardStateStopped) {
+		t.Fatalf("metadata = %#v", result.Metadata)
+	}
+	if _, err := os.Stat(filepath.Join(fixture.dataDir, "runtime")); !os.IsNotExist(err) {
+		t.Fatalf("index must not prepare the runtime before authorization, stat err = %v", err)
+	}
+}
+
+func TestExecuteAllowsScopedSearchWithoutSteward(t *testing.T) {
+	fixture := newEverythingFixture(t, true)
+	previous := stewardHealthCheck
+	stewardHealthCheck = func(context.Context, Config, string) (stewardStatus, error) {
+		t.Fatal("a scoped search must not consult the permission steward")
+		return stewardStatus{}, nil
+	}
+	t.Cleanup(func() { stewardHealthCheck = previous })
+	result := Execute(context.Background(), types.ToolExecutionInput{
+		Arguments:            map[string]any{"query": "notes", "scopePath": "."},
+		DefaultConfig:        map[string]any{"maxOutputChars": 20000},
+		ToolBodyDirectory:    fixture.toolDir,
+		ToolDataDirectory:    fixture.dataDir,
+		HostWorkingDirectory: fixture.hostDir,
+	})
+	if result.Status != types.ToolStatusSuccess || !strings.Contains(result.Content, "notes.md") {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestExecuteIndexReportsFullDiskIndexFacts(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("the permission steward is Windows-only")
+	}
+	fixture := newEverythingFixture(t, true)
+	stubStewardHealth(t, stewardStateHealthy)
+	result := Execute(context.Background(), types.ToolExecutionInput{
+		Arguments:            map[string]any{"action": "index", "description": "fixture index"},
+		ToolBodyDirectory:    fixture.toolDir,
+		ToolDataDirectory:    fixture.dataDir,
+		HostWorkingDirectory: fixture.hostDir,
+	})
+	if result.Status != types.ToolStatusSuccess {
+		t.Fatalf("result = %#v", result)
+	}
+	if result.Metadata["action"] != string(actionIndex) || result.Metadata["scopeMode"] != scopeModeAllLocalDrives {
+		t.Fatalf("metadata = %#v", result.Metadata)
+	}
+	if result.Metadata["instanceName"] != fixtureConfig().Runtime.DefaultInstanceName {
+		t.Fatalf("metadata = %#v", result.Metadata)
+	}
+	counts, ok := result.Metadata["driveEntryCounts"].(map[string]int)
+	if !ok || len(counts) == 0 {
+		t.Fatalf("driveEntryCounts = %#v", result.Metadata["driveEntryCounts"])
+	}
+	if result.Metadata["entryCount"] != len(counts) {
+		t.Fatalf("entryCount = %#v, counts = %#v", result.Metadata["entryCount"], counts)
+	}
+	if _, ok := result.Metadata["durationMs"].(int64); !ok {
+		t.Fatalf("durationMs = %#v", result.Metadata["durationMs"])
+	}
+	if !strings.Contains(result.Content, "Everything Full-Disk Index Ready") {
+		t.Fatalf("content = %s", result.Content)
 	}
 }
 
@@ -193,22 +290,11 @@ func TestFormatContentShowsAllLocalDrivesScope(t *testing.T) {
 	}
 }
 
-func TestEnsureBundledWindowsServiceDoesNotReinstallMatchingService(t *testing.T) {
-	serviceOps := &fakeBundledServiceOps{exists: true}
-	useFakeBundledServiceOps(t, serviceOps)
-	if err := ensureBundledWindowsService(context.Background(), `E:\Tools\Everything.exe`, "eucli-box-everything-test", fixtureConfig()); err != nil {
-		t.Fatal(err)
-	}
-	if serviceOps.installed || serviceOps.uninstalled || !serviceOps.runningEnsured {
-		t.Fatalf("service ops = %#v", serviceOps)
-	}
-}
-
 func TestPersistBundledDatabaseIfMissingSavesMissingDatabase(t *testing.T) {
 	fixture := newEverythingFixture(t, true)
 	databasePath := filepath.Join(t.TempDir(), "Everything.db")
 	t.Setenv("FAKE_EVERYTHING_DB_PATH", databasePath)
-	request := searchRequest{InstanceName: "custom", TimeoutMs: 30000, ConnectTimeoutMs: 5000}
+	request := searchRequest{InstanceName: "custom", ConnectTimeoutMs: 5000}
 	if err := persistBundledDatabaseIfMissing(context.Background(), fixture.esExe, databasePath, request); err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +306,7 @@ func TestPersistBundledDatabaseIfMissingKeepsExistingDatabase(t *testing.T) {
 	if err := os.WriteFile(databasePath, []byte("existing"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	request := searchRequest{InstanceName: "custom", TimeoutMs: 30000, ConnectTimeoutMs: 5000}
+	request := searchRequest{InstanceName: "custom", ConnectTimeoutMs: 5000}
 	if err := persistBundledDatabaseIfMissing(context.Background(), filepath.Join(t.TempDir(), "missing-es"), databasePath, request); err != nil {
 		t.Fatal(err)
 	}
@@ -251,27 +337,193 @@ func TestFolderIndexReadyRequiresVisibleEntriesForNonEmptyScope(t *testing.T) {
 
 func TestBundledRuntimeLockSerializesRuntimePreparation(t *testing.T) {
 	fixture := newEverythingFixture(t, true)
-	request := searchRequest{TimeoutMs: 40}
 	config := fixtureConfig()
-	first, err := acquireBundledRuntimeLock(context.Background(), fixture.dataDir, config, request)
+	first, err := acquireBundledRuntimeLock(context.Background(), fixture.dataDir, config)
 	if err != nil {
 		t.Fatal(err)
 	}
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+	defer waitCancel()
 	startedAt := time.Now()
-	second, err := acquireBundledRuntimeLock(context.Background(), fixture.dataDir, config, request)
+	second, err := acquireBundledRuntimeLock(waitCtx, fixture.dataDir, config)
 	if err == nil {
 		second.Release()
-		t.Fatal("second lock must wait until timeout while first lock is held")
+		t.Fatal("second lock must wait until deadline while first lock is held")
 	}
 	if time.Since(startedAt) < 30*time.Millisecond {
 		t.Fatalf("lock returned too quickly: %s", time.Since(startedAt))
 	}
 	first.Release()
-	third, err := acquireBundledRuntimeLock(context.Background(), fixture.dataDir, config, searchRequest{TimeoutMs: 1000})
+	third, err := acquireBundledRuntimeLock(context.Background(), fixture.dataDir, config)
 	if err != nil {
 		t.Fatal(err)
 	}
 	third.Release()
+}
+
+func TestBundledRuntimeLockReclaimsStaleLock(t *testing.T) {
+	fixture := newEverythingFixture(t, true)
+	runtimeRootDir, err := bundledRuntimeDir(fixture.dataDir, fixtureConfig().Runtime.Directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(runtimeRootDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(runtimeRootDir, "everything.lock")
+	if err := os.WriteFile(lockPath, []byte(fmt.Sprintf("pid=%d\n", terminatedProcessPID(t))), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	config := fixtureConfig()
+	config.Runtime.ProbeIntervalMs = 2
+	lock, err := acquireBundledRuntimeLock(context.Background(), fixture.dataDir, config)
+	if err != nil {
+		t.Fatalf("stale lock must be reclaimed: %v", err)
+	}
+	defer lock.Release()
+	payload, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(payload), fmt.Sprintf("pid=%d", os.Getpid())) {
+		t.Fatalf("reclaimed lock must record the new owner, got: %s", payload)
+	}
+}
+
+func TestWaitIndexedFoldersReadySucceedsWhenIndexShowsEntries(t *testing.T) {
+	fixture := newEverythingFixture(t, false)
+	config := fixtureConfig()
+	config.Runtime.ProbeIntervalMs = 2
+	scopeDir := filepath.Join(fixture.hostDir, "scoped")
+	if err := os.MkdirAll(scopeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(scopeDir, "notes.md"), []byte("ok"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	request := searchRequest{
+		InstanceName:     "eucli-box-everything-test-scoped",
+		ScopeMode:        scopeModeDirectory,
+		ScopeIndexPaths:  []string{scopeDir},
+		ConnectTimeoutMs: config.Limits.DefaultConnectTimeoutMs,
+	}
+	if err := waitIndexedFoldersReady(context.Background(), fixture.esExe, request, config); err != nil {
+		t.Fatalf("wait with visible index entries failed: %v", err)
+	}
+}
+
+func TestWaitIndexedFoldersReadyEndsAtCallerDeadline(t *testing.T) {
+	fixture := newEverythingFixture(t, false)
+	config := fixtureConfig()
+	config.Runtime.ProbeIntervalMs = 2
+	scopeDir := filepath.Join(fixture.hostDir, "scoped")
+	if err := os.MkdirAll(scopeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(scopeDir, "notes.md"), []byte("ok"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FAKE_EVERYTHING_COUNT", "0")
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Millisecond)
+	defer cancel()
+	startedAt := time.Now()
+	err := waitIndexedFoldersReady(ctx, fixture.esExe, searchRequest{
+		InstanceName:     "eucli-box-everything-test-scoped",
+		ScopeMode:        scopeModeDirectory,
+		ScopeIndexPaths:  []string{scopeDir},
+		ConnectTimeoutMs: config.Limits.DefaultConnectTimeoutMs,
+	}, config)
+	if err == nil {
+		t.Fatal("index wait must fail at the caller deadline")
+	}
+	if !strings.Contains(err.Error(), "caller deadline") {
+		t.Fatalf("deadline failure must explain the reason, got: %v", err)
+	}
+	if time.Since(startedAt) > 3*time.Second {
+		t.Fatalf("deadline-bound wait returned too late: %s", time.Since(startedAt))
+	}
+}
+
+func TestWaitIndexedFoldersReadyFailsImmediatelyOnHardProbeError(t *testing.T) {
+	fixture := newEverythingFixture(t, false)
+	config := fixtureConfig()
+	config.Runtime.ProbeIntervalMs = 2
+	scopeDir := filepath.Join(fixture.hostDir, "scoped")
+	if err := os.MkdirAll(scopeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(scopeDir, "notes.md"), []byte("ok"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FAKE_EVERYTHING_COUNT_HARD_ERROR", "1")
+	result := make(chan error, 1)
+	go func() {
+		result <- waitIndexedFoldersReady(context.Background(), fixture.esExe, searchRequest{
+			InstanceName:     "eucli-box-everything-test-scoped",
+			ScopeMode:        scopeModeDirectory,
+			ScopeIndexPaths:  []string{scopeDir},
+			ConnectTimeoutMs: config.Limits.DefaultConnectTimeoutMs,
+		}, config)
+	}()
+	select {
+	case err := <-result:
+		if err == nil {
+			t.Fatal("a hard probe failure must fail the wait")
+		}
+		if !strings.Contains(err.Error(), "IPC window not found") {
+			t.Fatalf("hard failure must explain the cause, got: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("wait did not fail on a hard probe error")
+	}
+}
+
+func TestWaitIndexedFoldersReadyKeepsWaitingThroughTransientProbeErrors(t *testing.T) {
+	fixture := newEverythingFixture(t, false)
+	config := fixtureConfig()
+	config.Runtime.ProbeIntervalMs = 2
+	scopeDir := filepath.Join(fixture.hostDir, "scoped")
+	if err := os.MkdirAll(scopeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(scopeDir, "notes.md"), []byte("ok"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FAKE_EVERYTHING_TRANSIENT_FIRST", filepath.Join(t.TempDir(), "probe-counter"))
+	result := make(chan error, 1)
+	go func() {
+		result <- waitIndexedFoldersReady(context.Background(), fixture.esExe, searchRequest{
+			InstanceName:     "eucli-box-everything-test-scoped",
+			ScopeMode:        scopeModeDirectory,
+			ScopeIndexPaths:  []string{scopeDir},
+			ConnectTimeoutMs: config.Limits.DefaultConnectTimeoutMs,
+		}, config)
+	}()
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("transient probe error must not fail the wait: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("wait did not continue past a transient probe error")
+	}
+}
+
+func terminatedProcessPID(t *testing.T) int {
+	t.Helper()
+	name, args := "sh", []string{"-c", "exit 0"}
+	if runtime.GOOS == "windows" {
+		name, args = "cmd", []string{"/c", "exit 0"}
+	}
+	cmd := exec.Command(name, args...)
+	if err := cmd.Start(); err != nil {
+		t.Skipf("cannot start helper process: %v", err)
+	}
+	pid := cmd.Process.Pid
+	if err := cmd.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	return pid
 }
 
 type everythingFixture struct {
@@ -279,49 +531,6 @@ type everythingFixture struct {
 	dataDir string
 	hostDir string
 	esExe   string
-}
-
-type fakeBundledServiceOps struct {
-	exists            bool
-	installed         bool
-	uninstalled       bool
-	executableChecked bool
-	runningEnsured    bool
-}
-
-func useFakeBundledServiceOps(t *testing.T, ops bundledWindowsServiceOps) {
-	t.Helper()
-	previous := bundledServiceOps
-	bundledServiceOps = ops
-	t.Cleanup(func() {
-		bundledServiceOps = previous
-	})
-}
-
-func (ops *fakeBundledServiceOps) Exists(ctx context.Context, name string, config Config) (bool, error) {
-	return ops.exists, nil
-}
-
-func (ops *fakeBundledServiceOps) Install(ctx context.Context, executable string, instanceName string, config Config) error {
-	ops.installed = true
-	ops.exists = true
-	return nil
-}
-
-func (ops *fakeBundledServiceOps) Uninstall(ctx context.Context, executable string, instanceName string, config Config) error {
-	ops.uninstalled = true
-	ops.exists = false
-	return nil
-}
-
-func (ops *fakeBundledServiceOps) UsesExecutable(ctx context.Context, name string, expectedExecutable string, config Config) (bool, error) {
-	ops.executableChecked = true
-	return ops.exists, nil
-}
-
-func (ops *fakeBundledServiceOps) EnsureRunning(ctx context.Context, name string, config Config) error {
-	ops.runningEnsured = true
-	return nil
 }
 
 func newEverythingFixture(t *testing.T, includeBundledProvider bool) everythingFixture {
@@ -375,7 +584,7 @@ func fixtureConfig() Config {
 			RuntimeExecutables: []types.ToolBinary{{GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Path: filepath.ToSlash(filepath.Join("providers", "everything", executableName("Everything")))}},
 		}},
 		Runtime: RuntimeConfig{Directory: "runtime", DefaultInstanceName: "eucli-box-everything-test", ReadyTimeoutMs: 30000, ProbeIntervalMs: 250},
-		Limits:  LimitsConfig{DefaultTimeoutMs: 30000, MaxTimeoutMs: 120000, DefaultConnectTimeoutMs: 5000, DefaultMaxResults: 80, MaxResults: 500, MaxOutputChars: 30000},
+		Limits:  LimitsConfig{DefaultConnectTimeoutMs: 5000, DefaultMaxResults: 80, MaxResults: 500, MaxOutputChars: 30000},
 	}
 }
 
@@ -439,6 +648,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 func main() {
@@ -471,7 +681,27 @@ func main() {
 			return
 		}
 		if arg == "-get-result-count" {
-			fmt.Println("1")
+			if os.Getenv("FAKE_EVERYTHING_COUNT_HARD_ERROR") != "" {
+				fmt.Fprintln(os.Stderr, "Error 8: Everything IPC window not found. Please make sure Everything is running.")
+				os.Exit(8)
+			}
+			if counterPath := os.Getenv("FAKE_EVERYTHING_TRANSIENT_FIRST"); counterPath != "" {
+				attempts := 0
+				if payload, err := os.ReadFile(counterPath); err == nil {
+					attempts, _ = strconv.Atoi(string(payload))
+				}
+				attempts++
+				_ = os.WriteFile(counterPath, []byte(strconv.Itoa(attempts)), 0644)
+				if attempts == 1 {
+					fmt.Fprintln(os.Stderr, "Error 7: Unable to send IPC message.")
+					os.Exit(7)
+				}
+			}
+			count := os.Getenv("FAKE_EVERYTHING_COUNT")
+			if count == "" {
+				count = "1"
+			}
+			fmt.Println(count)
 			return
 		}
 	}

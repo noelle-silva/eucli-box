@@ -2,6 +2,7 @@ package everything
 
 import (
 	"context"
+	"runtime"
 	"strings"
 
 	"eucli-box/pkg/types"
@@ -16,6 +17,17 @@ func Execute(ctx context.Context, input types.ToolExecutionInput) types.ToolExec
 	if err != nil {
 		return failure("parse everything request", err, nil)
 	}
+	switch request.Action {
+	case actionAuthorize:
+		return executeAuthorize(ctx, input, config, request.searchRequest)
+	case actionIndex:
+		return executeIndex(ctx, input, config, request.searchRequest)
+	default:
+		return executeSearch(ctx, input, config, request.searchRequest)
+	}
+}
+
+func executeSearch(ctx context.Context, input types.ToolExecutionInput, config Config, request searchRequest) types.ToolExecutionOutput {
 	metadata := requestMetadata(request)
 	provider, err := resolveSearchProvider(config, input)
 	if err != nil {
@@ -24,9 +36,18 @@ func Execute(ctx context.Context, input types.ToolExecutionInput) types.ToolExec
 	metadata["provider"] = provider.ID
 	metadata["executableSource"] = provider.ExecutableSource
 	metadata["runtimeSource"] = provider.RuntimeSource
+	if runtime.GOOS == "windows" && request.ScopeMode == scopeModeAllLocalDrives {
+		sourceEngine, err := bundledRuntimeExecutable(config, input.ToolBodyDirectory)
+		if err != nil {
+			return failure("resolve bundled Everything engine", err, metadata)
+		}
+		if _, err := requireHealthySteward(ctx, config, sourceEngine, metadata); err != nil {
+			return failure("check Everything permission steward", err, metadata)
+		}
+	}
 	var lock *runtimeLock
 	if usesBundledRuntime(provider) {
-		lock, err = acquireBundledRuntimeLock(ctx, input.ToolDataDirectory, config, request)
+		lock, err = acquireBundledRuntimeLock(ctx, input.ToolDataDirectory, config)
 		if err != nil {
 			return failure("lock bundled Everything runtime", err, metadata)
 		}
@@ -36,9 +57,7 @@ func Execute(ctx context.Context, input types.ToolExecutionInput) types.ToolExec
 			return failure("prepare bundled Everything runtime", err, metadata)
 		}
 		metadata["instanceName"] = request.InstanceName
-		if requiresBundledWindowsService(request) {
-			metadata["serviceName"] = bundledServiceName(request.InstanceName)
-		}
+		defer retireBundledRuntimeSilently(input.ToolDataDirectory, config, provider, request, input, metadata)
 	}
 	response, err := searchEverything(ctx, provider.ESExecutable, request)
 	metadata["durationMs"] = response.DurationMs
@@ -70,6 +89,17 @@ func requestMetadata(request searchRequest) map[string]any {
 
 func usesBundledRuntime(provider selectedProvider) bool {
 	return provider.Bundled
+}
+
+// retireBundledRuntimeSilently wires the runtime retirement into an action
+// flow without turning a successful action into a failure: retirement facts
+// are recorded on metadata, never swapped for the action outcome. The
+// retirement itself is independent from the execution context, so it also
+// runs after a deadline exceeded or an active stop.
+func retireBundledRuntimeSilently(toolDataDirectory string, config Config, provider selectedProvider, request searchRequest, input types.ToolExecutionInput, metadata map[string]any) {
+	if err := retireBundledRuntime(toolDataDirectory, config, provider, request, input); err != nil {
+		metadata["runtimeRetireError"] = err.Error()
+	}
 }
 
 func failure(scope string, err error, metadata map[string]any) types.ToolExecutionOutput {

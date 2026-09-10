@@ -1,0 +1,108 @@
+{
+  "id": "file_reader",
+  "name": "file_reader",
+  "description": "使用相对路径或绝对路径查看文件内容、列出目录条目、通配匹配路径以及按正则搜索文本。",
+  "version": "0.1.0",
+  "eucliBoxCompatibility": {
+    "minimumVersion": "0.1.0",
+    "maximumVersionExclusive": "0.2.0"
+  },
+  "promptDescription": "使用 file_reader 查看受限文本文件与目录内容。它是一个只读文本文件工具，必须提供一个 action：read、list、glob 或 grep。相对路径从 e-b 宿主运行位置解析；绝对路径允许指向当前项目外的位置，前提是运行进程具有操作系统权限。本工具只读取文本文件，会拒绝二进制内容、危险空字节、超过 maxFileBytes 的文件，以及超过配置限制的输出。read：使用 path 读取文件或目录，可选 offset 和 limit；文件输出带行号，并返回 hash、totalLines、nextOffset 和截断信息。list：使用 path 列出目录条目，可选 showHidden。glob：使用 path 和 pattern 查找路径，支持 *、? 和 **。grep：使用 path 和正则 query 搜索文本；include 可用通配模式过滤文件，ignoreCase 开启忽略大小写，showHidden 包含隐藏路径。",
+  "defaultInvocationMode": "sync",
+  "type": "local",
+  "bodyDirectory": ".",
+  "userConfigSchema": {
+    "type": "object",
+    "properties": {
+      "maxFileBytes": {
+        "type": "integer",
+        "title": "最大文件字节数",
+        "description": "读取与搜索操作可接受的最大文本文件大小。"
+      },
+      "defaultReadLines": {
+        "type": "integer",
+        "title": "默认读取行数",
+        "description": "模型未提供 limit 时，read/list 默认返回的行数或条目数。"
+      },
+      "maxReadLines": {
+        "type": "integer",
+        "title": "最大读取行数",
+        "description": "每次 read/list 调用最多返回的行数或条目数。"
+      },
+      "maxLineChars": {
+        "type": "integer",
+        "title": "单行最大字符数",
+        "description": "返回文本中每一行最多展示的可见字符数。"
+      },
+      "maxOutputChars": {
+        "type": "integer",
+        "title": "最大输出字符数",
+        "description": "每次工具调用最多返回的可见字符数。"
+      },
+      "maxSearchResults": {
+        "type": "integer",
+        "title": "最大搜索结果数",
+        "description": "glob/grep 每次调用最多返回的匹配结果数。"
+      }
+    },
+    "additionalProperties": false
+  },
+  "defaultConfig": {
+    "maxFileBytes": 10485760,
+    "defaultReadLines": 2000,
+    "maxReadLines": 2000,
+    "maxLineChars": 2000,
+    "maxOutputChars": 50000,
+    "maxSearchResults": 100
+  },
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["read", "list", "glob", "grep"],
+        "description": "要执行的读取操作：read、list、glob 或 grep。"
+      },
+      "path": {
+        "type": "string",
+        "format": "filepath",
+        "description": "目标文件或目录路径。相对路径从 e-b 宿主运行位置解析；绝对路径允许使用。"
+      },
+      "pattern": {
+        "type": "string",
+        "description": "action=glob 时使用的通配模式，支持 *、? 和 **。示例：**/*.go。"
+      },
+      "query": {
+        "type": "string",
+        "description": "action=grep 时使用的正则表达式。读取大量文件前，优先用 grep 定位内容。"
+      },
+      "include": {
+        "type": "string",
+        "description": "grep 的可选文件过滤通配模式，例如 *.go 或 **/*.ts。"
+      },
+      "offset": {
+        "type": "integer",
+        "description": "read/list 的 1 基行号或条目偏移。可使用截断结果中的 nextOffset 继续读取。"
+      },
+      "limit": {
+        "type": "integer",
+        "description": "read/list 最多返回的行数或条目数，会受到配置上限约束。"
+      },
+      "maxOutputChars": {
+        "type": "integer",
+        "description": "本次调用最多返回的可见字符数。允许降低显示量，但不能突破配置硬上限。"
+      },
+      "ignoreCase": {
+        "type": "boolean",
+        "description": "action=grep 时启用忽略大小写的正则匹配。"
+      },
+      "showHidden": {
+        "type": "boolean",
+        "description": "action=list/glob/grep 时包含隐藏文件和隐藏目录。"
+      }
+    },
+    "required": ["action"],
+    "additionalProperties": false
+  },
+  "binaries": []
+}

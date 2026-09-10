@@ -11,7 +11,7 @@ func TestLoadReturnsCompleteFixedCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if catalog.Platform != types.ReleasePlatformWindowsX64 || len(catalog.Sources) != 3 || len(catalog.Artifacts) != 11 {
+	if catalog.Platform != types.ReleasePlatformWindowsX64 || len(catalog.Sources) != 3 || len(catalog.Artifacts) != 12 {
 		t.Fatalf("catalog = %#v", catalog)
 	}
 	for _, kind := range []string{types.ReleaseArtifactKindBox, types.ReleaseArtifactKindTool, types.ReleaseArtifactKindPlugin} {

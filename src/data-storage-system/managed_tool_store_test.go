@@ -37,13 +37,20 @@ func newManagedTestSystem(t *testing.T) (*system, string) {
 
 func installManagedTool(t *testing.T, programRoot string, id string, version string) {
 	t.Helper()
+	installManagedToolWithDefinitionVersion(t, programRoot, id, version, version)
+}
+
+// installManagedToolWithDefinitionVersion 允许包内定义版本与激活版本不同，
+// 用于验证运行期版本事实源统一到激活记录。
+func installManagedToolWithDefinitionVersion(t *testing.T, programRoot string, id string, version string, definitionVersion string) {
+	t.Helper()
 	contentDir := t.TempDir()
 	binaryPath := filepath.ToSlash(filepath.Join("binary", "windows-amd64", id+".exe"))
 	definition := types.ToolDefinition{
 		ID:                    id,
 		Name:                  "Demo " + id,
 		Description:           "demo tool",
-		Version:               version,
+		Version:               definitionVersion,
 		EucliBoxCompatibility: types.EucliBoxCompatibility{MinimumVersion: "0.1.0", MaximumVersionExclusive: "0.2.0"},
 		DefaultInvocationMode: "sync",
 		Type:                  "local",
@@ -138,6 +145,25 @@ func TestManagedToolLoadsFromCurrentVersionDirectory(t *testing.T) {
 	}
 	if !strings.HasSuffix(tool.DataDirectory, filepath.Join("tool-data", "demo")) {
 		t.Fatalf("data directory = %s", tool.DataDirectory)
+	}
+}
+
+func TestManagedToolVersionComesFromCurrentRecord(t *testing.T) {
+	system, programRoot := newManagedTestSystem(t)
+	installManagedToolWithDefinitionVersion(t, programRoot, "demo", "0.1.0.2", "0.1.0")
+	tools, err := system.ListTools(context.Background())
+	if err != nil {
+		t.Fatalf("ListTools() error = %v", err)
+	}
+	if len(tools) != 1 || tools[0].Version != "0.1.0.2" {
+		t.Fatalf("tools = %#v", tools)
+	}
+	tool, err := system.LoadTool(context.Background(), "demo")
+	if err != nil {
+		t.Fatalf("LoadTool() error = %v", err)
+	}
+	if tool.Version != "0.1.0.2" {
+		t.Fatalf("tool version = %s", tool.Version)
 	}
 }
 

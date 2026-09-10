@@ -222,11 +222,11 @@ func validatePackageBoundary(directory string, identity types.ReleaseArtifactIde
 			return err
 		}
 	case types.ReleaseArtifactKindTool:
-		if err := validateToolPackage(directory, identity.ID); err != nil {
+		if err := validateToolPackage(directory, identity.ID, product.Version); err != nil {
 			return err
 		}
 	case types.ReleaseArtifactKindPlugin:
-		if err := validatePluginPackage(directory, identity.ID); err != nil {
+		if err := validatePluginPackage(directory, identity.ID, product.Version); err != nil {
 			return err
 		}
 	default:
@@ -235,7 +235,7 @@ func validatePackageBoundary(directory string, identity types.ReleaseArtifactIde
 	return nil
 }
 
-func validateToolPackage(directory string, id string) error {
+func validateToolPackage(directory string, id string, expectedVersion string) error {
 	if err := requireRegularFile(directory, "definition.json"); err != nil {
 		return err
 	}
@@ -249,6 +249,9 @@ func validateToolPackage(directory string, id string) error {
 	}
 	if definition.ID != id || definition.BodyDirectory != "." || definition.DataDirectory != "" || len(definition.UserConfig) != 0 || definition.PromptDescriptionOverride != "" {
 		return fmt.Errorf("工具成品混入用户资料或运行期路径")
+	}
+	if strings.TrimSpace(definition.Version) != strings.TrimSpace(expectedVersion) {
+		return fmt.Errorf("工具定义版本与成品版本不一致：%s != %s", definition.Version, expectedVersion)
 	}
 	if len(definition.Binaries) == 0 {
 		return fmt.Errorf("工具成品缺少可执行文件声明")
@@ -264,7 +267,7 @@ func validateToolPackage(directory string, id string) error {
 	return nil
 }
 
-func validatePluginPackage(directory string, id string) error {
+func validatePluginPackage(directory string, id string, expectedVersion string) error {
 	for _, name := range []string{"manifest.json", "config.json", filepath.ToSlash(filepath.Join("binary", id+".exe"))} {
 		if err := requireRegularFile(directory, name); err != nil {
 			return err
@@ -280,6 +283,9 @@ func validatePluginPackage(directory string, id string) error {
 	}
 	if manifest.ID != id {
 		return fmt.Errorf("插件身份与目录目标不一致")
+	}
+	if strings.TrimSpace(manifest.Version) != strings.TrimSpace(expectedVersion) {
+		return fmt.Errorf("插件身份声明版本与成品版本不一致：%s != %s", manifest.Version, expectedVersion)
 	}
 	return nil
 }

@@ -258,6 +258,9 @@ func (s *system) loadManagedToolDefinition(ctx context.Context, toolID string) (
 	if strings.TrimSpace(tool.ID) != toolID {
 		return types.ToolDefinition{}, storageInvalid("tool id does not match body directory", nil)
 	}
+	// 运行期版本以当前激活记录为唯一事实源：包内定义只提供内容，
+	// 不参与展示、更新检查与安装动作的版本对比。
+	tool.Version = current.Version
 	tool.BodyDirectory = current.ProgramDirectory
 	return tool, nil
 }

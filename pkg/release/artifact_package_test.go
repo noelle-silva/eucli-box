@@ -3,6 +3,7 @@ package release
 import (
 	"archive/zip"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -81,6 +82,65 @@ func TestAcquireAndValidatePackageReturnsValidatedPackage(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(validated.Directory, "release-product.json")); err != nil {
 		t.Fatalf("missing release-product.json: %v", err)
+	}
+}
+
+func TestAcquireAndValidatePackageAcceptsDevelopmentVersion(t *testing.T) {
+	fixture := newPackageFixture(t, "demo", "0.1.0.2")
+	validated, err := fixture.acquire(t, fixture.source())
+	if err != nil {
+		t.Fatalf("AcquireAndValidatePackage() error = %v", err)
+	}
+	if validated.Product.Version != "0.1.0.2" {
+		t.Fatalf("validated version = %s", validated.Product.Version)
+	}
+}
+
+func TestValidateExtractedPackageRejectsToolDefinitionVersionMismatch(t *testing.T) {
+	root, _ := buildTestToolContents(t, "demo", "0.1.0.2")
+	definitionPath := filepath.Join(root, "definition.json")
+	payload, err := os.ReadFile(definitionPath)
+	if err != nil {
+		t.Fatalf("read definition: %v", err)
+	}
+	var definition types.ToolDefinition
+	if err := json.Unmarshal(payload, &definition); err != nil {
+		t.Fatalf("decode definition: %v", err)
+	}
+	definition.Version = "0.1.0"
+	payload, err = json.MarshalIndent(definition, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal definition: %v", err)
+	}
+	if err := os.WriteFile(definitionPath, payload, 0o644); err != nil {
+		t.Fatalf("write definition: %v", err)
+	}
+	_, err = ValidateExtractedPackage(ValidateExtractedPackageOptions{Directory: root, Product: productForTestTool("demo", "0.1.0.2")})
+	if err == nil || !strings.Contains(err.Error(), "版本不一致") {
+		t.Fatalf("ValidateExtractedPackage() error = %v", err)
+	}
+}
+
+func TestValidatePluginPackageRejectsManifestVersionMismatch(t *testing.T) {
+	root := t.TempDir()
+	files := map[string]string{
+		"manifest.json": `{"id":"demo","version":"0.1.0"}`,
+		"config.json":   "{}",
+		filepath.ToSlash(filepath.Join("binary", "demo.exe")): "plugin-binary",
+	}
+	for name, payload := range files {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(path, []byte(payload), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	product := types.ReleaseProductRecord{Version: "0.1.0.1", Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: "demo"}}
+	err := validatePluginPackage(root, product)
+	if err == nil || !strings.Contains(err.Error(), "版本不一致") {
+		t.Fatalf("validatePluginPackage() error = %v", err)
 	}
 }
 

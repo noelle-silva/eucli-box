@@ -36,10 +36,10 @@ func buildTestToolContents(t *testing.T, id string, version string) (string, []t
 		t.Fatalf("marshal definition: %v", err)
 	}
 	contents := map[string][]byte{
-		"definition.json":              definitionPayload,
-		binaryPath:                     []byte("tool-binary"),
-		"README.md":                    []byte("# " + id + "\n"),
-		"CHANGELOG.md":                 []byte("## " + version + "\n"),
+		"definition.json": definitionPayload,
+		binaryPath:        []byte("tool-binary"),
+		"README.md":       []byte("# " + id + "\n"),
+		"CHANGELOG.md":    []byte("## " + version + "\n"),
 	}
 	for name, payload := range contents {
 		path := filepath.Join(root, filepath.FromSlash(name))
@@ -50,15 +50,7 @@ func buildTestToolContents(t *testing.T, id string, version string) (string, []t
 			t.Fatalf("write %s: %v", path, err)
 		}
 	}
-	product := types.ReleaseProductRecord{
-		SchemaVersion:  ReleaseManifestSchemaVersion,
-		Artifact:       types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: id},
-		Version:        version,
-		Platform:       types.ReleasePlatformWindowsX64,
-		OfficialSource: testOfficialSource,
-		Compatibility:  &testCompatibility,
-		Source:         types.ReleaseSourceRecord{Repository: "https://github.com/noelle-silva/eucli-box", Commit: "0123456789abcdef0123456789abcdef01234567", Recorded: true},
-	}
+	product := productForTestTool(id, version)
 	productPayload, err := json.MarshalIndent(product, "", "  ")
 	if err != nil {
 		t.Fatalf("marshal product: %v", err)
@@ -71,6 +63,19 @@ func buildTestToolContents(t *testing.T, id string, version string) (string, []t
 		t.Fatalf("collect files: %v", err)
 	}
 	return root, files
+}
+
+// productForTestTool 构造与 buildTestToolContents 对应的工具成品身份记录。
+func productForTestTool(id string, version string) types.ReleaseProductRecord {
+	return types.ReleaseProductRecord{
+		SchemaVersion:  ReleaseManifestSchemaVersion,
+		Artifact:       types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: id},
+		Version:        version,
+		Platform:       types.ReleasePlatformWindowsX64,
+		OfficialSource: testOfficialSource,
+		Compatibility:  &testCompatibility,
+		Source:         types.ReleaseSourceRecord{Repository: "https://github.com/noelle-silva/eucli-box", Commit: "0123456789abcdef0123456789abcdef01234567", Recorded: true},
+	}
 }
 
 // zipDirectory 把目录打包成 zip 文件。
@@ -153,14 +158,14 @@ func makeTestToolArchive(t *testing.T, id string, version string) (string, types
 // productFromManifest 从测试清单构造对应的包内期望产品记录。
 func productFromManifest(manifest types.ReleaseManifest) types.ReleaseProductRecord {
 	return types.ReleaseProductRecord{
-		SchemaVersion:    manifest.SchemaVersion,
-		Artifact:         manifest.Artifact,
-		Version:          manifest.Version,
-		Platform:         manifest.Platform,
-		OfficialSource:   manifest.OfficialSource,
-		Compatibility:    manifest.Compatibility,
-		Source:           manifest.Source,
-		DataVersion:      manifest.DataVersion,
-		ExternalAssets:   manifest.ExternalAssets,
+		SchemaVersion:  manifest.SchemaVersion,
+		Artifact:       manifest.Artifact,
+		Version:        manifest.Version,
+		Platform:       manifest.Platform,
+		OfficialSource: manifest.OfficialSource,
+		Compatibility:  manifest.Compatibility,
+		Source:         manifest.Source,
+		DataVersion:    manifest.DataVersion,
+		ExternalAssets: manifest.ExternalAssets,
 	}
 }

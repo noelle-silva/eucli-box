@@ -34,6 +34,20 @@ func TestAssessEucliBoxCompatibilityRejectsInvalidMetadata(t *testing.T) {
 	}
 }
 
+func TestValidateDevelopmentVersionKeepsSourceBaseline(t *testing.T) {
+	if err := ValidateDevelopmentVersion("0.2.0", "0.2.0.1"); err != nil {
+		t.Fatalf("ValidateDevelopmentVersion() error = %v", err)
+	}
+	for _, development := range []string{"0.1.0.1", "0.2.0", "0.2.1.1"} {
+		if err := ValidateDevelopmentVersion("0.2.0", development); err == nil {
+			t.Fatalf("ValidateDevelopmentVersion(0.2.0, %q) error = nil", development)
+		}
+	}
+	if err := ValidateDevelopmentVersion("0.2.0.1", "0.2.0.1"); err == nil {
+		t.Fatal("ValidateDevelopmentVersion() should reject a development baseline")
+	}
+}
+
 func TestCompareVersions(t *testing.T) {
 	tests := []struct {
 		left  string

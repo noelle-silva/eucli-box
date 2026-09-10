@@ -12,16 +12,16 @@ import (
 type VersionFormality string
 
 const (
-	FormalityFormal       VersionFormality = "formal"
-	FormalityDevelopment  VersionFormality = "development"
+	FormalityFormal      VersionFormality = "formal"
+	FormalityDevelopment VersionFormality = "development"
 )
 
 // semanticVersion 是主.次.补( [.开发序号] )版本。
 type semanticVersion struct {
-	major   int
-	minor   int
-	patch   int
-	build   int
+	major    int
+	minor    int
+	patch    int
+	build    int
 	hasBuild bool
 }
 
@@ -52,6 +52,28 @@ func Formality(value string) (VersionFormality, error) {
 		return FormalityDevelopment, nil
 	}
 	return FormalityFormal, nil
+}
+
+// ValidateDevelopmentVersion 校验四段开发版本的前三段与源码正式基线完全一致。
+func ValidateDevelopmentVersion(baseVersion string, developmentVersion string) error {
+	base, err := parseVersion(baseVersion)
+	if err != nil {
+		return fmt.Errorf("源码正式基线无效：%w", err)
+	}
+	if base.hasBuild {
+		return fmt.Errorf("源码正式基线必须是三段式，例如 0.1.0")
+	}
+	development, err := parseVersion(developmentVersion)
+	if err != nil {
+		return err
+	}
+	if !development.hasBuild {
+		return fmt.Errorf("开发版本必须使用四段式，例如 0.1.0.1")
+	}
+	if development.major != base.major || development.minor != base.minor || development.patch != base.patch {
+		return fmt.Errorf("开发版本 %s 的基线必须与源码正式版本 %s 一致", strings.TrimSpace(developmentVersion), strings.TrimSpace(baseVersion))
+	}
+	return nil
 }
 
 func CompareVersions(left string, right string) (int, error) {

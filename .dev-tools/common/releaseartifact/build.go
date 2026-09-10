@@ -21,12 +21,12 @@ import (
 )
 
 type BuildOptions struct {
-	Root           string
-	Target         string
-	WorkRoot       string
-	OutputRoot     string
-	EvidenceRoot   string
-	AssetRoot      string
+	Root         string
+	Target       string
+	WorkRoot     string
+	OutputRoot   string
+	EvidenceRoot string
+	AssetRoot    string
 	// VersionOverride 非空表示开发构建：按给定版本号（四段开发版本或三段版本）
 	// 制作成品，允许源码未完全记录，同版本再次构建直接覆盖旧成品。
 	VersionOverride string
@@ -75,6 +75,9 @@ func Build(ctx context.Context, options BuildOptions) (BuildResult, error) {
 		return BuildResult{}, fmt.Errorf("开发构建版本无效：%w", err)
 	}
 	if devBuild {
+		if err := validateDevelopmentBaseline(artifact.Version, artifactVersion); err != nil {
+			return BuildResult{}, err
+		}
 		if err := releaseops.CheckDevelopment(artifact); err != nil {
 			return BuildResult{}, fmt.Errorf("发布物开发构建检查失败：%w", err)
 		}
@@ -144,7 +147,7 @@ func Build(ctx context.Context, options BuildOptions) (BuildResult, error) {
 	if err := os.MkdirAll(assembledDir, 0o755); err != nil {
 		return result, err
 	}
-	if err := assemble(ctx, root, workDir, assembledDir, artifact, identity, assetRoots, sourceState.CommitTime); err != nil {
+	if err := assemble(ctx, root, workDir, assembledDir, artifact, identity, assetRoots, sourceState.CommitTime, artifactVersion); err != nil {
 		return result, err
 	}
 	externalAssets, err = releaseasset.BindPackagedAssets(assembledDir, identity, externalAssets)
@@ -271,12 +274,12 @@ func Build(ctx context.Context, options BuildOptions) (BuildResult, error) {
 	return result, nil
 }
 
-func assemble(ctx context.Context, root string, workDir string, assembledDir string, artifact releaseops.Artifact, identity types.ReleaseArtifactIdentity, assetRoots map[string]string, sourceTime time.Time) error {
+func assemble(ctx context.Context, root string, workDir string, assembledDir string, artifact releaseops.Artifact, identity types.ReleaseArtifactIdentity, assetRoots map[string]string, sourceTime time.Time, artifactVersion string) error {
 	switch identity.Kind {
 	case types.ReleaseArtifactKindBox:
 		return buildGoBinary(ctx, root, workDir, "./cmd/eucli-box", filepath.Join(assembledDir, "eucli-box.exe"))
 	case types.ReleaseArtifactKindTool:
-		return assembleTool(ctx, root, workDir, assembledDir, artifact, assetRoots, sourceTime)
+		return assembleTool(ctx, root, workDir, assembledDir, artifact, assetRoots, sourceTime, artifactVersion)
 	case types.ReleaseArtifactKindPlugin:
 		packagePath := "./" + filepath.ToSlash(filepath.Join("system-plugins", identity.ID, "cmd", identity.ID))
 		if err := buildGoBinary(ctx, root, workDir, packagePath, filepath.Join(assembledDir, "binary", identity.ID+".exe")); err != nil {
@@ -287,15 +290,15 @@ func assemble(ctx context.Context, root string, workDir string, assembledDir str
 				return err
 			}
 		}
-		return nil
+		return stampPluginManifestVersion(assembledDir, artifactVersion)
 	default:
 		return fmt.Errorf("不支持的发布物类别 %q", identity.Kind)
 	}
 }
 
-func assembleTool(ctx context.Context, root string, workDir string, assembledDir string, artifact releaseops.Artifact, assetRoots map[string]string, sourceTime time.Time) error {
+func assembleTool(ctx context.Context, root string, workDir string, assembledDir string, artifact releaseops.Artifact, assetRoots map[string]string, sourceTime time.Time, artifactVersion string) error {
 	dataDir := filepath.Join(workDir, "tool-build")
-	args := []string{"run", "devtools/eucli-toolpack", "-tool", artifact.ID, "-data-dir", dataDir, "-build-time", sourceTime.UTC().Format(time.RFC3339Nano)}
+	args := []string{"run", "devtools/eucli-toolpack", "-tool", artifact.ID, "-data-dir", dataDir, "-build-time", sourceTime.UTC().Format(time.RFC3339Nano), "-version", artifactVersion}
 	keys := make([]string, 0, len(assetRoots))
 	for name := range assetRoots {
 		keys = append(keys, name)
@@ -322,6 +325,37 @@ func assembleTool(ctx context.Context, root string, workDir string, assembledDir
 		return fmt.Errorf("组装工具本体失败：%w", err)
 	}
 	return nil
+}
+
+// validateDevelopmentBaseline 要求四段开发版本建立在源码正式基线上；
+// 三段显式版本保持原有语义，不加基线约束。
+func validateDevelopmentBaseline(sourceVersion string, artifactVersion string) error {
+	formality, err := release.Formality(artifactVersion)
+	if err != nil {
+		return fmt.Errorf("开发构建版本无效：%w", err)
+	}
+	if formality != release.FormalityDevelopment {
+		return nil
+	}
+	if err := release.ValidateDevelopmentVersion(sourceVersion, artifactVersion); err != nil {
+		return fmt.Errorf("开发构建版本必须建立在源码正式基线上：%w", err)
+	}
+	return nil
+}
+
+// stampPluginManifestVersion 把成品版本写入插件身份声明，使包内身份与成品版本一致。
+func stampPluginManifestVersion(assembledDir string, version string) error {
+	path := filepath.Join(assembledDir, "manifest.json")
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("读取插件身份声明失败：%w", err)
+	}
+	var manifest types.SystemPluginManifest
+	if err := json.Unmarshal(payload, &manifest); err != nil {
+		return fmt.Errorf("插件身份声明无效：%w", err)
+	}
+	manifest.Version = version
+	return writeJSON(path, manifest)
 }
 
 func buildGoBinary(ctx context.Context, root string, workDir string, packagePath string, target string) error {

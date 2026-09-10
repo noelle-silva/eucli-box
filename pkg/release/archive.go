@@ -146,7 +146,7 @@ func ValidateExtractedPackage(options ValidateExtractedPackageOptions) (Validate
 	if err := validateExtractedExternalAssets(directory, product.ExternalAssets); err != nil {
 		return ValidatedPackage{}, err
 	}
-	if err := validateRequiredPackageFiles(directory, options.Product.Artifact); err != nil {
+	if err := validateRequiredPackageFiles(directory, options.Product); err != nil {
 		return ValidatedPackage{}, err
 	}
 	files, err := CollectFileRecords(directory)
@@ -245,25 +245,25 @@ func validatePackageBoundary(directory string) error {
 	return nil
 }
 
-func validateRequiredPackageFiles(directory string, identity types.ReleaseArtifactIdentity) error {
+func validateRequiredPackageFiles(directory string, product types.ReleaseProductRecord) error {
 	for _, name := range []string{"README.md", "CHANGELOG.md", "release-product.json"} {
 		if err := requireRegularFile(directory, name); err != nil {
 			return err
 		}
 	}
-	switch identity.Kind {
+	switch product.Artifact.Kind {
 	case types.ReleaseArtifactKindBox:
 		return requireRegularFile(directory, "eucli-box.exe")
 	case types.ReleaseArtifactKindTool:
-		return validateToolPackage(directory, identity.ID)
+		return validateToolPackage(directory, product)
 	case types.ReleaseArtifactKindPlugin:
-		return validatePluginPackage(directory, identity.ID)
+		return validatePluginPackage(directory, product)
 	default:
-		return fmt.Errorf("未知成品类别 %q", identity.Kind)
+		return fmt.Errorf("未知成品类别 %q", product.Artifact.Kind)
 	}
 }
 
-func validateToolPackage(directory string, id string) error {
+func validateToolPackage(directory string, product types.ReleaseProductRecord) error {
 	if err := requireRegularFile(directory, "definition.json"); err != nil {
 		return err
 	}
@@ -275,8 +275,11 @@ func validateToolPackage(directory string, id string) error {
 	if err := json.Unmarshal(payload, &definition); err != nil {
 		return fmt.Errorf("工具 definition.json 无效：%w", err)
 	}
-	if definition.ID != id || definition.BodyDirectory != "." || definition.DataDirectory != "" || len(definition.UserConfig) != 0 || definition.PromptDescriptionOverride != "" {
+	if definition.ID != product.Artifact.ID || definition.BodyDirectory != "." || definition.DataDirectory != "" || len(definition.UserConfig) != 0 || definition.PromptDescriptionOverride != "" {
 		return fmt.Errorf("工具成品混入用户资料或运行期路径")
+	}
+	if strings.TrimSpace(definition.Version) != strings.TrimSpace(product.Version) {
+		return fmt.Errorf("工具定义版本与成品身份版本不一致：%s != %s", definition.Version, product.Version)
 	}
 	if len(definition.Binaries) == 0 {
 		return fmt.Errorf("工具成品缺少可执行文件声明")
@@ -297,8 +300,8 @@ func validateToolPackage(directory string, id string) error {
 	return nil
 }
 
-func validatePluginPackage(directory string, id string) error {
-	for _, name := range []string{"manifest.json", "config.json", filepath.ToSlash(filepath.Join("binary", id+".exe"))} {
+func validatePluginPackage(directory string, product types.ReleaseProductRecord) error {
+	for _, name := range []string{"manifest.json", "config.json", filepath.ToSlash(filepath.Join("binary", product.Artifact.ID+".exe"))} {
 		if err := requireRegularFile(directory, name); err != nil {
 			return err
 		}
@@ -311,8 +314,11 @@ func validatePluginPackage(directory string, id string) error {
 	if err := json.Unmarshal(payload, &manifest); err != nil {
 		return fmt.Errorf("插件 manifest.json 无效：%w", err)
 	}
-	if manifest.ID != id {
+	if manifest.ID != product.Artifact.ID {
 		return fmt.Errorf("插件身份与目录目标不一致")
+	}
+	if strings.TrimSpace(manifest.Version) != strings.TrimSpace(product.Version) {
+		return fmt.Errorf("插件身份声明版本与成品身份版本不一致：%s != %s", manifest.Version, product.Version)
 	}
 	return nil
 }

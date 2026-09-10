@@ -30,6 +30,7 @@ type options struct {
 	dataDir            string
 	migrateLayout      bool
 	buildTime          time.Time
+	version            string
 	assetRoots         assetRootFlags
 	assetRootDir       string
 	requiredAssetRoots requiredAssetRootFlags
@@ -84,6 +85,7 @@ func run(ctx context.Context, args []string) error {
 	flags.StringVar(&opts.dataDir, "data-dir", "", "runtime data directory; defaults to the tool runtime root")
 	flags.BoolVar(&opts.migrateLayout, "migrate-layout", false, "move existing tool bodies and tool data into the current layout")
 	buildTimeValue := flags.String("build-time", "", "stable RFC3339 build time; defaults to the current time")
+	flags.StringVar(&opts.version, "version", "", "release version stamped into definition.json (three or four segments); defaults to tool.json")
 	flags.Var(&opts.assetRoots, "asset-root", "tool asset root in name=path form; repeatable")
 	flags.StringVar(&opts.assetRootDir, "asset-root-dir", "", "directory of prepared asset roots, each subdirectory keyed by asset name")
 	flags.Var(&opts.requiredAssetRoots, "require-asset-root", "asset root name that must be provided when declared by a matched tool; repeatable")
@@ -219,6 +221,12 @@ func buildTool(ctx context.Context, repoRoot string, dataDir string, source tool
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("build %s: %w", source.ID, err)
+	}
+	if version := strings.TrimSpace(opts.version); version != "" {
+		if err := release.ValidateVersion(version); err != nil {
+			return fmt.Errorf("tool %s release version: %w", source.ID, err)
+		}
+		definition.Version = version
 	}
 	definition.BodyDirectory = "."
 	definition.DataDirectory = ""

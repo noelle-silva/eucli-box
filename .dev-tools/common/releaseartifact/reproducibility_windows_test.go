@@ -19,7 +19,7 @@ func TestBuildProducesSameArtifactFromSameSource(t *testing.T) {
 			WorkRoot:        root + "\\work",
 			OutputRoot:      root + "\\output",
 			EvidenceRoot:    root + "\\evidence",
-			VersionOverride: "0.1.9.1",
+			VersionOverride: "0.2.0.1",
 			AssetRoot:       root + "\\assets",
 		})
 		if err != nil {

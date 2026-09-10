@@ -1,4 +1,4 @@
-// eucli-store-sync 是本地商店的一键铺货入口：查询本地货架当前最大开发尾号，
+// eucli-store-sync 是本地商店的一键铺货入口：查询构建输出区当前最大开发尾号，
 // 取尾号加 1 生成新开发版本（未显式指定时），构建成品并复制入架。
 package main
 
@@ -65,14 +65,14 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	buildVersion, err := resolveBuildVersion(storeRoot, identity, artifact.Version, opts.version)
-	if err != nil {
-		return err
-	}
 	if err := toolruntime.ValidateWorkLocation(root, opts.workRoot, opts.outputRoot); err != nil {
 		return err
 	}
 	workRoot, outputRoot, evidenceRoot, err := resolveRoots(root, opts)
+	if err != nil {
+		return err
+	}
+	buildVersion, err := resolveBuildVersion(outputRoot, identity, artifact.Version, opts.version)
 	if err != nil {
 		return err
 	}
@@ -146,67 +146,15 @@ func resolveRoots(root string, opts options) (string, string, string, error) {
 }
 
 // resolveBuildVersion 决定本次铺货版本：显式指定直接用；
-// 否则查货架该货品当前最大开发尾号，取尾号加 1（无货时从源码版本加 .1 起步）。
-func resolveBuildVersion(storeRoot string, identity types.ReleaseArtifactIdentity, sourceVersion string, explicit string) (string, error) {
+// 否则以构建输出区为单一事实源，在源码正式基线上取同基线最大开发尾号的下一号。
+func resolveBuildVersion(outputRoot string, identity types.ReleaseArtifactIdentity, sourceVersion string, explicit string) (string, error) {
 	if strings.TrimSpace(explicit) != "" {
 		if err := release.ValidateVersion(strings.TrimSpace(explicit)); err != nil {
 			return "", fmt.Errorf("指定版本无效：%w", err)
 		}
 		return strings.TrimSpace(explicit), nil
 	}
-	if err := release.ValidateFormalVersion(sourceVersion); err != nil {
-		return "", fmt.Errorf("源码版本无效：%w", err)
-	}
-	maxTail, err := maxDevelopmentTail(storeRoot, identity, sourceVersion)
-	if err != nil {
-		return "", err
-	}
-	return sourceVersion + "." + fmt.Sprint(maxTail+1), nil
-}
-
-// maxDevelopmentTail 读取货架上该货品全部四段开发版本，返回最大尾号；没有则 0。
-func maxDevelopmentTail(storeRoot string, identity types.ReleaseArtifactIdentity, sourceVersion string) (int, error) {
-	kindDir := "ai-tools"
-	if identity.Kind == types.ReleaseArtifactKindPlugin {
-		kindDir = "system-plugins"
-	}
-	entries, err := os.ReadDir(filepath.Join(storeRoot, kindDir, identity.ID))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return 0, nil
-		}
-		return 0, err
-	}
-	maxTail := 0
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		version := entry.Name()
-		if !strings.HasPrefix(version, sourceVersion+".") {
-			continue
-		}
-		fourth := strings.TrimPrefix(version, sourceVersion+".")
-		if fourth == "" || strings.Contains(fourth, ".") {
-			continue
-		}
-		tail := 0
-		parsed := true
-		for _, digit := range fourth {
-			if digit < '0' || digit > '9' {
-				parsed = false
-				break
-			}
-			tail = tail*10 + int(digit-'0')
-		}
-		if !parsed {
-			continue
-		}
-		if tail > maxTail {
-			maxTail = tail
-		}
-	}
-	return maxTail, nil
+	return releaseartifact.NextDevelopmentVersion(outputRoot, identity, sourceVersion)
 }
 
 func runStoreCopy(ctx context.Context, root string, outputRoot string, storeRoot string, target string) error {

@@ -68,28 +68,26 @@ API Secret 不要放进 prompt，也不要写入仓库。
 
 当你需要查询知乎内容时，使用 `zhihu_search`。
 
-站内搜索：
+站内搜索，通过模型自带工具调用通道传入参数：
 
-```text
-<<<TOOL_REQUEST>>>
-[tool]: zhihu_search
-[query]: AI Agent 应用实践
-[searchType]: zhihu_search
-[count]: 5
-[description]: 查询知乎站内讨论
-<<<END_TOOL_REQUEST>>>
+```json
+{
+  "query": "AI Agent 应用实践",
+  "searchType": "zhihu_search",
+  "count": 5,
+  "description": "查询知乎站内讨论"
+}
 ```
 
 全局搜索：
 
-```text
-<<<TOOL_REQUEST>>>
-[tool]: zhihu_search
-[query]: 如何理解 rave 文化
-[searchType]: global_search
-[count]: 8
-[description]: 查询知乎全局内容
-<<<END_TOOL_REQUEST>>>
+```json
+{
+  "query": "如何理解 rave 文化",
+  "searchType": "global_search",
+  "count": 8,
+  "description": "查询知乎全局内容"
+}
 ```
 
 使用建议：

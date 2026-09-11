@@ -122,36 +122,33 @@
 
 当你需要查找 Windows 本机文件时，使用 `everything`。
 
-全盘搜索前需要一次授权安装权限管家，请先调用：
+全盘搜索前需要一次授权安装权限管家，请先通过模型自带工具调用通道调用：
 
-```text
-<<<TOOL_REQUEST>>>
-[tool]: everything
-[action]: authorize
-[description]: 授权安装全盘索引权限管家
-<<<END_TOOL_REQUEST>>>
+```json
+{
+  "action": "authorize",
+  "description": "授权安装全盘索引权限管家"
+}
 ```
 
 授权成功后，可以显式准备全盘索引：
 
-```text
-<<<TOOL_REQUEST>>>
-[tool]: everything
-[action]: index
-[description]: 准备全盘索引
-<<<END_TOOL_REQUEST>>>
+```json
+{
+  "action": "index",
+  "description": "准备全盘索引"
+}
 ```
 
-之后每次搜索使用一个独立工具块：
+之后每次搜索传入参数，例如：
 
-```text
-<<<TOOL_REQUEST>>>
-[tool]: everything
-[query]: todo.md
-[scopePath]: E:\eucli-project
-[maxResults]: 20
-[description]: 查找项目里的待办文件
-<<<END_TOOL_REQUEST>>>
+```json
+{
+  "query": "todo.md",
+  "scopePath": "E:\\eucli-project",
+  "maxResults": 20,
+  "description": "查找项目里的待办文件"
+}
 ```
 
 结果处理建议：

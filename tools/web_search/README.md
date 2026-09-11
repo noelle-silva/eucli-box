@@ -99,18 +99,17 @@ AnySearch 可选参数：
 
 当你需要联网搜索公开信息时，使用 `web_search`。
 
-通过 e-b 文本工具协议请求工具时，每次搜索使用一个独立工具块：
+通过模型自带工具调用通道传入参数，例如：
 
-```text
-<<<TOOL_REQUEST>>>
-[tool]: web_search
-[provider]: anysearch
-[query]: Go 1.22 release notes
-[maxResults]: 5
-[domain]: code
-[tag]: code.doc
-[description]: 查询 Go 版本说明
-<<<END_TOOL_REQUEST>>>
+```json
+{
+  "provider": "anysearch",
+  "query": "Go 1.22 release notes",
+  "maxResults": 5,
+  "domain": "code",
+  "tag": "code.doc",
+  "description": "查询 Go 版本说明"
+}
 ```
 
 Provider 选择建议：

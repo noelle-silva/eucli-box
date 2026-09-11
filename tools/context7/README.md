@@ -71,28 +71,26 @@ API Key 不要放进 prompt。
 
 当你需要查询库、框架、API 的当前官方文档时，使用 `context7`。
 
-先用 `search` 查找资料库 id：
+先用 `search` 查找资料库 id，通过模型自带工具调用通道传入参数：
 
-```text
-<<<TOOL_REQUEST>>>
-[tool]: context7
-[action]: search
-[libraryName]: nextjs
-[query]: How to set up middleware authentication in Next.js 15
-[description]: 查询 Next.js 文档库 id
-<<<END_TOOL_REQUEST>>>
+```json
+{
+  "action": "search",
+  "libraryName": "nextjs",
+  "query": "How to set up middleware authentication in Next.js 15",
+  "description": "查询 Next.js 文档库 id"
+}
 ```
 
 再用 `docs` 读取具体文档：
 
-```text
-<<<TOOL_REQUEST>>>
-[tool]: context7
-[action]: docs
-[libraryId]: /vercel/next.js
-[query]: How to set up middleware authentication in Next.js 15
-[description]: 查询 Next.js 中间件认证文档
-<<<END_TOOL_REQUEST>>>
+```json
+{
+  "action": "docs",
+  "libraryId": "/vercel/next.js",
+  "query": "How to set up middleware authentication in Next.js 15",
+  "description": "查询 Next.js 中间件认证文档"
+}
 ```
 
 使用建议：

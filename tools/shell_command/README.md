@@ -155,18 +155,17 @@ Provider 的可执行文件路径写在 `config.json` 中，并且必须是相�
 - 长时间运行的 session。
 - 需要 `write_stdin` 的命令。
 
-通过 e-b 文本工具协议请求工具时，每条命令使用一个独立工具块：
+通过模型自带工具调用通道传入参数，例如：
 
-```text
-<<<TOOL_REQUEST>>>
-[tool]: shell_command
-[provider]: git-bash
-[command]: go test ./...
-[workdir]: .
-[timeoutMs]: 120000
-[maxOutputChars]: 20000
-[description]: 运行全部 Go 测试
-<<<END_TOOL_REQUEST>>>
+```json
+{
+  "provider": "git-bash",
+  "command": "go test ./...",
+  "workdir": ".",
+  "timeoutMs": 120000,
+  "maxOutputChars": 20000,
+  "description": "运行全部 Go 测试"
+}
 ```
 
 Provider 选择建议：

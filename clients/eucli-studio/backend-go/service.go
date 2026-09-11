@@ -52,6 +52,8 @@ func (s *service) dispatch(ctx context.Context, method string, params json.RawMe
 		return map[string]any{"protocolVersion": directProtocolVersion, "clientVersion": s.release.Version, "status": "ok", "configured": cfg.EucliBoxURL != ""}, nil
 	case "studio.bootstrap":
 		return s.bootstrap(ctx)
+	case "releaseChecks.get":
+		return s.getReleaseChecks(ctx)
 	case "releaseChecks.refresh":
 		var refreshReq struct {
 			Kind string `json:"kind"`
@@ -150,6 +152,25 @@ func (s *service) requestShutdown() {
 	if shutdown != nil {
 		go shutdown()
 	}
+}
+
+// getReleaseChecks 读取业务端当前安装来源的快照，不触发刷新。
+// 切换安装来源后，客户端用它直接取用业务端已保存的对应来源结果。
+func (s *service) getReleaseChecks(ctx context.Context) (types.ReleaseCheckSnapshot, error) {
+	state := s.connectionSnapshot()
+	if state == nil || !state.EucliBoxReachable {
+		return failedReleaseCheckSnapshot(s.releaseCheckSnapshot(), fmt.Errorf("需要先连接业务端")), nil
+	}
+	raw, err := s.eb.request(ctx, ebRequest{Method: "GET", Path: "/api/release-checks", Timeout: 8000})
+	if err != nil {
+		return failedReleaseCheckSnapshot(s.releaseCheckSnapshot(), err), nil
+	}
+	snapshot, err := decodeReleaseCheckSnapshot(raw)
+	if err != nil {
+		return failedReleaseCheckSnapshot(s.releaseCheckSnapshot(), err), nil
+	}
+	s.storeReleaseCheckSnapshot(snapshot)
+	return s.releaseCheckSnapshot(), nil
 }
 
 func (s *service) refreshReleaseChecks(ctx context.Context, kind string) (types.ReleaseCheckSnapshot, error) {

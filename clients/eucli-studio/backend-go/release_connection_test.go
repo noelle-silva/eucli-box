@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"eucli-box/pkg/installsource"
 	"eucli-box/pkg/types"
 )
 
@@ -229,6 +230,59 @@ func TestReleaseCheckRefreshWithoutConnectionFails(t *testing.T) {
 	snapshot, err := svc.refreshReleaseChecks(context.Background(), "")
 	if err != nil {
 		t.Fatalf("refresh error = %v", err)
+	}
+	if snapshot.Status != types.ReleaseCheckStatusFailed {
+		t.Fatalf("snapshot = %#v", snapshot)
+	}
+}
+
+func TestReleaseCheckGetReadsCurrentSourceSnapshot(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/release-checks" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": types.ReleaseCheckSnapshot{
+			Status:     types.ReleaseCheckStatusCompleted,
+			SourceKind: string(installsource.KindLocal),
+			Results: []types.ReleaseCheckResult{{
+				Artifact:      types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "context7"},
+				LatestVersion: "0.1.0",
+				Status:        types.ReleaseCheckStatusCompleted,
+			}},
+		}})
+	}))
+	defer server.Close()
+
+	svc, err := newService(configuredTestStore(t, server.URL), testClientRelease(), nil)
+	if err != nil {
+		t.Fatalf("newService() error = %v", err)
+	}
+	svc.setConnectionState(runtimeBootstrap{EucliBoxReachable: true})
+
+	snapshot, err := svc.getReleaseChecks(context.Background())
+	if err != nil {
+		t.Fatalf("get error = %v", err)
+	}
+	if snapshot.Status != types.ReleaseCheckStatusCompleted || snapshot.SourceKind != string(installsource.KindLocal) || len(snapshot.Results) != 1 {
+		t.Fatalf("snapshot = %#v", snapshot)
+	}
+	if projected := svc.releaseCheckSnapshot(); projected.SourceKind != string(installsource.KindLocal) || len(projected.Results) != 1 {
+		t.Fatalf("projected snapshot = %#v", projected)
+	}
+}
+
+func TestReleaseCheckGetWithoutConnectionFails(t *testing.T) {
+	store, err := newConfigStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("newConfigStore() error = %v", err)
+	}
+	svc, err := newService(store, testClientRelease(), nil)
+	if err != nil {
+		t.Fatalf("newService() error = %v", err)
+	}
+	snapshot, err := svc.getReleaseChecks(context.Background())
+	if err != nil {
+		t.Fatalf("get error = %v", err)
 	}
 	if snapshot.Status != types.ReleaseCheckStatusFailed {
 		t.Fatalf("snapshot = %#v", snapshot)

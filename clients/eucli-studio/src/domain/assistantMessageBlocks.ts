@@ -1,38 +1,21 @@
-import {
-  assistantToolPartId,
-  assistantToolParts,
-  isTextProtocolToolPart,
-  planTextProtocolToolRanges,
-  textProtocolToolParts,
-} from './textProtocolTools'
 import { isPendingToolConfirmationPart } from './toolConfirmation'
 
-export type AssistantMessageRenderSegment =
-  | { type: 'text'; id: string; text: string; start: number; end: number }
-  | { type: 'text_protocol_tool'; id: string; request: any; part: any | null; start: number; end: number }
-
-export type AssistantMessageBlockKind = 'text' | 'reasoning' | 'tool_confirmation' | 'tool_invocation' | 'tool_result' | 'diagnostic'
+export type AssistantMessageBlockKind = 'text' | 'reasoning' | 'tool_confirmation' | 'tool_invocation' | 'tool_result'
 
 export type AssistantMessageBlock =
-  | { kind: 'text'; id: string; text: string; start: number; end: number; parts: any[] }
+  | { kind: 'text'; id: string; text: string; start: number; end: number }
   | { kind: 'reasoning'; id: string; part: any }
   | { kind: 'tool_confirmation'; id: string; part: any }
   | { kind: 'tool_invocation'; id: string; part: any; start?: number; end?: number }
   | { kind: 'tool_result'; id: string; part: any; start?: number; end?: number }
-  | { kind: 'diagnostic'; id: string; reason: string; part?: any }
 
-export type AssistantMessageRenderDiagnostic = {
-  id: string
-  part: any
-  reason: string
+export function assistantToolParts(parts: any[]) {
+  return (Array.isArray(parts) ? parts : []).filter((part: any) => String(part?.type || '') === 'tool')
 }
 
-export type AssistantMessageRenderPlan = {
-  segments: AssistantMessageRenderSegment[]
-  diagnostics: AssistantMessageRenderDiagnostic[]
+export function assistantToolPartId(part: any, index = 0) {
+  return String(part?.id || part?.callId || `tool:${index}`)
 }
-
-export { assistantToolPartId } from './textProtocolTools'
 
 function toolPartDisplay(part: any) {
   return part?.display && typeof part.display === 'object' ? part.display : {}
@@ -46,10 +29,6 @@ export function isToolResultHidden(part: any) {
   return !!toolPartDisplay(part).hideResult
 }
 
-export function isToolPartVisibleInPrompt(part: any) {
-  return !isToolInvocationHidden(part) && !isToolResultHidden(part)
-}
-
 function pushToolBlocks(blocks: AssistantMessageBlock[], part: any, opts?: { start?: number; end?: number; index?: number }) {
   const id = assistantToolPartId(part, opts?.index || blocks.length)
   const start = typeof opts?.start === 'number' ? opts.start : undefined
@@ -59,29 +38,9 @@ function pushToolBlocks(blocks: AssistantMessageBlock[], part: any, opts?: { sta
   if (part?.result && typeof part.result === 'object' && !isToolResultHidden(part)) blocks.push({ kind: 'tool_result', id: `tool-result:${id}`, part, start, end })
 }
 
-export function planAssistantMessageRender(contentRaw: unknown, partsRaw: any[]): AssistantMessageRenderPlan {
-  const content = String(contentRaw ?? '')
-  const segments: AssistantMessageRenderSegment[] = []
-  const rangePlan = planTextProtocolToolRanges(content, partsRaw)
-  let cursor = 0
-
-  for (const range of rangePlan.ranges) {
-    if (range.start > cursor) segments.push({ type: 'text', id: `text:${cursor}:${range.start}`, text: content.slice(cursor, range.start), start: cursor, end: range.start })
-    segments.push({ type: 'text_protocol_tool', id: range.id, request: range.request, part: range.part || null, start: range.start, end: range.end })
-    cursor = range.end
-  }
-
-  if (cursor < content.length) {
-    segments.push({ type: 'text', id: `text:${cursor}:${content.length}`, text: content.slice(cursor), start: cursor, end: content.length })
-  }
-
-  return { segments, diagnostics: rangePlan.diagnostics }
-}
-
 export function planAssistantMessageBlocks(contentRaw: unknown, partsRaw: any[]): AssistantMessageBlock[] {
   const content = String(contentRaw ?? '')
   const toolParts = assistantToolParts(partsRaw)
-  const inlineParts = textProtocolToolParts(partsRaw)
   const reasoningParts = (Array.isArray(partsRaw) ? partsRaw : []).filter((part: any) => String(part?.type || '').trim() === 'reasoning' && String(part?.text || '').trim())
   const blocks: AssistantMessageBlock[] = []
 
@@ -89,13 +48,9 @@ export function planAssistantMessageBlocks(contentRaw: unknown, partsRaw: any[])
     blocks.push({ kind: 'reasoning', id: String(part?.id || `reasoning:${index}`), part })
   })
 
-  if (content.trim() || inlineParts.length) blocks.push({ kind: 'text', id: `text:0:${content.length}`, text: content, start: 0, end: content.length, parts: inlineParts })
+  if (content.trim()) blocks.push({ kind: 'text', id: `text:0:${content.length}`, text: content, start: 0, end: content.length })
 
   toolParts.forEach((part: any, index: number) => {
-    if (isTextProtocolToolPart(part)) {
-      if (isPendingToolConfirmationPart(part)) blocks.push({ kind: 'tool_confirmation', id: `tool-confirmation:${assistantToolPartId(part, index)}`, part })
-      return
-    }
     pushToolBlocks(blocks, part, { index })
   })
 

@@ -27,8 +27,7 @@ func TestChatProjectionPreservesMessageParts(t *testing.T) {
 			"parts": []any{map[string]any{
 				"id":       "part-1",
 				"type":     "tool",
-				"source":   "text_protocol",
-				"raw":      "<<<TOOL_REQUEST>>>\n[tool]: shell_command\n[command]: pwd\n<<<END_TOOL_REQUEST>>>",
+				"raw":      `{"command":"pwd"}`,
 				"callId":   "call-1",
 				"toolName": "shell_command",
 				"state":    "completed",
@@ -49,7 +48,7 @@ func TestChatProjectionPreservesMessageParts(t *testing.T) {
 	if got := intField(messages[0], "tokenEstimate", 0); got != 12 {
 		t.Fatalf("ui token estimate = %d, want 12", got)
 	}
-	if parts := objectList(messages[0]["parts"]); len(parts) != 1 || stringField(parts[0], "source") != "text_protocol" || stringField(parts[0], "raw") == "" || stringField(parts[0], "callId") != "call-1" {
+	if parts := objectList(messages[0]["parts"]); len(parts) != 1 || stringField(parts[0], "callId") != "call-1" || stringField(parts[0], "toolName") != "shell_command" || stringField(parts[0], "raw") == "" {
 		t.Fatalf("ui parts = %#v", messages[0]["parts"])
 	}
 }

@@ -2,7 +2,6 @@ export type ToolConfirmationInfo = {
   decisionId: string
   partId: string
   toolName: string
-  source: string
   state: string
   decisionStatus: string
   reason: string
@@ -35,7 +34,6 @@ export function readToolConfirmationInfo(part: any): ToolConfirmationInfo | null
     decisionId,
     partId: text(part.id || part.callId),
     toolName,
-    source: text(part.source),
     state,
     decisionStatus,
     reason: text(decision?.reason),

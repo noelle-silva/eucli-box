@@ -67,7 +67,7 @@ export function RoleNativeToolsSection(props: RoleNativeToolsSectionProps) {
                 默认不传递任何原生工具
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                文本协议请写进系统提示词；这里仅控制供应商原生 tools 字段。
+                这里仅控制写入供应商 tools 字段的工具名单。
               </Typography>
             </Paper>
           )}

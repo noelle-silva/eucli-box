@@ -14,12 +14,6 @@ type ToolConfirmationCardProps = {
   onDecision?: (approved: boolean) => void | Promise<void>
 }
 
-function sourceText(source: string) {
-  if (source === 'text_protocol') return '文本协议工具'
-  if (source === 'native') return '原生工具'
-  return '工具'
-}
-
 export function ToolConfirmationCard(props: ToolConfirmationCardProps) {
   const { info, disabled, submitting, onDecision } = props
   const [detailsOpen, setDetailsOpen] = React.useState(false)
@@ -64,7 +58,6 @@ export function ToolConfirmationCard(props: ToolConfirmationCardProps) {
         </Stack>
 
         <Stack direction="row" spacing={0.75} sx={{ mt: 1, flexWrap: 'wrap' }}>
-          <Chip size="small" label={sourceText(info.source)} variant="outlined" />
           <Chip size="small" label={`状态：${info.decisionStatus || info.state || '未知'}`} variant="outlined" />
           <Button
             size="small"

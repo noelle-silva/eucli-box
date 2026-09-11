@@ -61,7 +61,6 @@ function serializeSessionMessagePartsForPatch(partsRaw: unknown) {
     if (type === 'text') {
       next.text = String(part.text ?? '')
     } else {
-      next.source = String(part.source || '').trim()
       next.raw = String(part.raw || '')
       next.callId = String(part.callId || '').trim()
       next.toolName = String(part.toolName || '').trim()

@@ -15,7 +15,6 @@ export type AiChatController = {
   activeChat: () => any
   getProvider: (providerId: any) => any
   renderAssistantInto: (el: unknown, text: unknown, options?: any) => void
-  renderAssistantMessageInto: (el: unknown, text: unknown, parts: any[], options?: any) => void
   actions: Record<string, any>
   dispose: () => void
 }

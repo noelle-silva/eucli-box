@@ -9,8 +9,6 @@ import { createHtmlSanitizer, sanitizeSvg } from './sanitize'
 import { hydrateStickerSizes } from './stickers'
 import type { BoolRef } from './types'
 import { enhanceMathCopyButtons } from './mathCopy'
-import { planAssistantMessageRender } from './assistantMessagePlan'
-import { renderAssistantTextProtocolToolHtml, renderAssistantToolDiagnosticHtml } from './assistantToolHtml'
 import type { AiChatCapabilities } from '../gateway/capabilities'
 
 type RenderSafetyPolicy = 'original' | 'baseline' | 'unsafe'
@@ -25,7 +23,6 @@ export type AssistantRenderEngine = {
   sanitizeHtml: (html: unknown, policy?: RenderSafetyPolicy) => string
   sanitizeSvg: (svg: unknown, policy?: RenderSafetyPolicy) => string
   renderAssistantInto: (el: unknown, text: unknown, options?: AssistantRenderOptions) => void
-  renderAssistantMessageInto: (el: unknown, text: unknown, parts: any[], options?: AssistantRenderOptions) => void
 }
 
 export function createDefaultAssistantRenderEngine(capabilities: AiChatCapabilities): AssistantRenderEngine {
@@ -149,37 +146,10 @@ export function createDefaultAssistantRenderEngine(capabilities: AiChatCapabilit
     enhanceAssistantDom(el, renderSafetyPolicy)
   }
 
-  function renderAssistantMessageInto(el: unknown, text: unknown, parts: any[], options?: AssistantRenderOptions) {
-    if (!(el instanceof HTMLElement)) return
-    ensureRenderer().catch(() => {})
-    const renderSafetyPolicy = normalizeRenderSafetyPolicy(options)
-    const plan = planAssistantMessageRender(text, parts)
-    const html: string[] = []
-    const placeholders = new Map<string, string>()
-
-    for (const segment of plan.segments) {
-      if (segment.type === 'text') {
-        html.push(segment.text)
-        continue
-      }
-      const token = `fwtool-${crypto.randomUUID()}-${placeholders.size}`
-      placeholders.set(token, renderAssistantTextProtocolToolHtml(segment.request, segment.part))
-      html.push(`<div class="fw-tool-placeholder" data-fw-tool-placeholder="${token}"></div>`)
-    }
-
-    for (const diagnostic of plan.diagnostics) {
-      html.push(`\n\n${renderAssistantToolDiagnosticHtml(diagnostic.reason)}`)
-    }
-
-    el.innerHTML = renderAssistantTextHtml(html.join(''), options, placeholders)
-    enhanceAssistantDom(el, renderSafetyPolicy)
-  }
-
   return {
     ensureRenderer,
     sanitizeHtml: htmlSanitizer.sanitizeHtml,
     sanitizeSvg,
     renderAssistantInto,
-    renderAssistantMessageInto,
   }
 }

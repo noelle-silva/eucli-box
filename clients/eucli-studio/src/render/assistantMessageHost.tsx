@@ -4,18 +4,17 @@ export function AssistantMessageHost(props: {
   controller: any
   className?: string
   text: string
-  parts: any[]
   mid: string
   renderSafetyPolicyKey: string
   chatRootRef: React.RefObject<HTMLElement | null>
 }) {
-  const { controller, className, text, parts, mid, renderSafetyPolicyKey, chatRootRef } = props
+  const { controller, className, text, mid, renderSafetyPolicyKey, chatRootRef } = props
   const ref = React.useRef<HTMLDivElement | null>(null)
 
   React.useLayoutEffect(() => {
     if (!ref.current) return
-    controller.renderAssistantMessageInto(ref.current, text, parts)
-  }, [controller, text, parts, renderSafetyPolicyKey])
+    controller.renderAssistantInto(ref.current, text)
+  }, [controller, text, renderSafetyPolicyKey])
 
   const onClick = React.useCallback((e: React.MouseEvent) => {
     const t = e.target as any

@@ -45,13 +45,6 @@ function toolResultStatusText(value: unknown): string {
   return status
 }
 
-function toolSourceText(value: unknown): string {
-  const source = String(value || '').trim()
-  if (source === 'native') return '原生工具调用'
-  if (source === 'text_protocol') return '文本协议工具调用'
-  return '工具调用'
-}
-
 function toolPartPreview(part: any): string {
   if (!part || typeof part !== 'object') return ''
   const result = (part as any).result && typeof (part as any).result === 'object' ? (part as any).result : null
@@ -61,7 +54,7 @@ function toolPartPreview(part: any): string {
     return `工具返回：${name}${status ? `（${status}）` : ''}`
   }
   const state = toolStateText((part as any).state)
-  return `${toolSourceText((part as any).source)}：${name}${state ? `（${state}）` : ''}`
+  return `工具调用：${name}${state ? `（${state}）` : ''}`
 }
 
 function legacyToolResponsePreview(content: string): string {
@@ -82,19 +75,12 @@ function legacyToolResponsePreview(content: string): string {
   return pairs.length ? `工具返回：${pairs.join('，')}` : '工具返回结果'
 }
 
-function contentPreview(message: any, parts: any[]): string {
+function contentPreview(message: any): string {
   const content = String(message?.content ?? '')
   if (String(message?.type || '').trim() === CHAT_MESSAGE_TYPE_ASYNC_TOOL_RESULT) return clampPreview(`异步工具返回：${content}`)
   const legacyToolPreview = legacyToolResponsePreview(content)
   if (legacyToolPreview) return clampPreview(legacyToolPreview)
-
-  let text = content
-  for (const part of parts) {
-    if (!part || typeof part !== 'object' || String((part as any).type || '') !== 'tool') continue
-    const raw = String((part as any).raw || '')
-    if (raw) text = text.split(raw).join(' ')
-  }
-  return clampPreview(text)
+  return clampPreview(content)
 }
 
 function partPreview(part: any): string {
@@ -109,7 +95,7 @@ function partPreview(part: any): string {
 function messagePreview(message: any): string {
   if (!message || typeof message !== 'object') return ''
   const parts = Array.isArray(message.parts) ? message.parts : []
-  const text = contentPreview(message, parts)
+  const text = contentPreview(message)
   if (text) return text
   for (const part of parts) {
     const preview = partPreview(part)

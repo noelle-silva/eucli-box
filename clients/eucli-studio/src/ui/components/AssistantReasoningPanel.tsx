@@ -50,7 +50,7 @@ export function AssistantReasoningPanel(props: AssistantReasoningPanelProps) {
       </Stack>
       <Collapse in={expanded} timeout={160} unmountOnExit>
         <Box sx={{ px: 1.1, pb: 1.05, pt: 0.1 }}>
-          <AssistantMessageHost controller={controller} className="prose" text={text} parts={[]} mid={`${mid}:reasoning`} renderSafetyPolicyKey={renderSafetyPolicyKey} chatRootRef={chatRootRef} />
+          <AssistantMessageHost controller={controller} className="prose" text={text} mid={`${mid}:reasoning`} renderSafetyPolicyKey={renderSafetyPolicyKey} chatRootRef={chatRootRef} />
         </Box>
       </Collapse>
     </Paper>

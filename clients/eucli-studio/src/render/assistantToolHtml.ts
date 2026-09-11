@@ -96,73 +96,24 @@ function toolSessionHtml(summaryHtml: string, bodyHtml: string) {
   ].join('')
 }
 
-function displayObject(part: any) {
-  return part?.display && typeof part.display === 'object' ? part.display : {}
-}
-
-function toolResultHidden(part: any) {
-  return !!displayObject(part).hideResult
-}
-
-export function renderAssistantTextProtocolToolRequestHtml(request: any, part?: any) {
-  const name = String(request?.toolName || part?.toolName || 'tool')
-  const inputText = safePrettyJson(request?.input || part?.input || {})
-
-  return [
-    `<section class="fw-tool-block fw-tool-invocation fw-tool-text-protocol-request" data-stop="1" data-tool-kind="text-protocol-request" data-tool-name="${esc(name)}" data-tool-call-id="${esc(part?.callId || '')}">`,
-    '<div class="fw-tool-header">',
-    '<div class="fw-tool-title"><span class="fw-tool-glyph" aria-hidden="true"></span>',
-    '<span>文本协议工具请求</span></div>',
-    '<div class="fw-tool-spacer"></div>',
-    callIdHtml(part),
-    '</div>',
-    '<div class="fw-tool-chip-row">',
-    chip(name),
-    chip('text_protocol'),
-    part?.state ? chip(toolPartStateText(part.state), stateTone(part.state)) : '',
-    '</div>',
-    preBlock('输入参数', inputText),
-    decisionLine(part),
-    '</section>',
-  ].join('')
-}
-
-export function renderAssistantTextProtocolToolHtml(request: any, part?: any) {
-  const resultHtml = part && part?.result && !toolResultHidden(part) ? renderAssistantToolResultHtml(part) : ''
-  const name = String(request?.toolName || part?.toolName || 'tool')
-  const stateText = part?.state ? toolPartStateText(part.state) : ''
-  const resultStatus = part?.result && typeof part.result === 'object' ? String(part.result.status || '').trim() : ''
-  const callId = String(part?.callId || '').trim()
-  return toolSessionHtml(
-    toolSessionSummaryHtml(name, stateText || '工具调用', resultStatus, '', callId),
-    renderAssistantTextProtocolToolRequestHtml(request, part) + resultHtml,
-  )
-}
-
 export function renderAssistantToolInvocationHtml(part: any) {
   const name = String(part?.toolName || 'tool')
-  const source = String(part?.source || '').trim()
-  const isTextProtocol = source === 'text_protocol'
   const state = String(part?.state || '')
-  const rawText = String(part?.raw || '')
-  const title = isTextProtocol ? '文本协议工具调用' : '原生工具调用'
   const inputText = safePrettyJson(part?.input || {})
 
   return [
     `<section class="fw-tool-block fw-tool-invocation" data-stop="1" data-tool-kind="invocation" data-tool-name="${esc(name)}" data-tool-call-id="${esc(part?.callId || '')}">`,
     '<div class="fw-tool-header">',
     '<div class="fw-tool-title"><span class="fw-tool-glyph" aria-hidden="true"></span>',
-    `<span>${esc(title)}</span></div>`,
+    '<span>工具调用</span></div>',
     '<div class="fw-tool-spacer"></div>',
     callIdHtml(part),
     '</div>',
     '<div class="fw-tool-chip-row">',
     chip(name),
-    chip(source),
     chip(toolPartStateText(state), stateTone(state)),
     '</div>',
     liveOutputBlock(part),
-    isTextProtocol ? preBlock('原始 TOOL_REQUEST', rawText, 'fw-tool-pre-raw') : '',
     preBlock('输入参数', inputText),
     decisionLine(part),
     '</section>',
@@ -208,15 +159,6 @@ export function renderAssistantToolResultHtml(part: any) {
     chip(status, resultTone(status)),
     '</div>',
     preBlock('返回内容', resultText),
-    '</section>',
-  ].join('')
-}
-
-export function renderAssistantToolDiagnosticHtml(reason: unknown) {
-  return [
-    '<section class="fw-tool-diagnostic" data-stop="1" data-tool-kind="diagnostic">',
-    '<div class="fw-tool-diagnostic-title">工具渲染定位异常</div>',
-    `<div class="fw-tool-diagnostic-text">${esc(reason)}</div>`,
     '</section>',
   ].join('')
 }

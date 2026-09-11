@@ -8,7 +8,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined'
 import CloseIcon from '@mui/icons-material/Close'
 import { planAssistantMessageBlocks, type AssistantMessageBlock } from '../../render/assistantMessagePlan'
-import { renderAssistantToolDiagnosticHtml, renderAssistantToolInvocationHtml, renderAssistantToolResultHtml } from '../../render/assistantToolHtml'
+import { renderAssistantToolInvocationHtml, renderAssistantToolResultHtml } from '../../render/assistantToolHtml'
 import { AssistantMessageHost } from '../../render/assistantMessageHost'
 import type { AiChatToastOptions } from '../../gateway/capabilities'
 import { readToolConfirmationInfo } from '../../domain/toolConfirmation'
@@ -35,14 +35,12 @@ function blockTitle(block: AssistantMessageBlock) {
   if (block.kind === 'reasoning') return '思考过程'
   if (block.kind === 'tool_confirmation') return '工具确认'
   if (block.kind === 'tool_invocation') return '工具调用'
-  if (block.kind === 'tool_result') return '工具返回'
-  return '渲染诊断'
+  return '工具返回'
 }
 
 function blockTone(block: AssistantMessageBlock) {
   if (block.kind === 'reasoning') return { bgcolor: 'rgba(245, 158, 11, .045)' }
   if (block.kind === 'tool_invocation' || block.kind === 'tool_result') return { bgcolor: 'rgba(248,250,252,.92)' }
-  if (block.kind === 'diagnostic') return { bgcolor: 'rgba(220,38,38,.035)' }
   return { bgcolor: 'rgba(255,255,255,.54)' }
 }
 
@@ -122,7 +120,7 @@ function blockEditText(block: AssistantMessageBlock) {
     const result = block.part?.result && typeof block.part.result === 'object' ? block.part.result : null
     return String(result?.content || result?.error || '')
   }
-  return block.kind === 'diagnostic' ? block.reason : ''
+  return ''
 }
 
 function blockCopyText(block: AssistantMessageBlock) {
@@ -136,13 +134,12 @@ function blockCopyText(block: AssistantMessageBlock) {
     const text = String(result.content || result.error || '')
     return text || prettyJson(result)
   }
-  return block.reason
+  return ''
 }
 
 function renderToolBlockHtml(block: AssistantMessageBlock) {
   if (block.kind === 'tool_invocation') return renderAssistantToolInvocationHtml(block.part)
   if (block.kind === 'tool_result') return renderAssistantToolResultHtml(block.part)
-  if (block.kind === 'diagnostic') return renderAssistantToolDiagnosticHtml(block.reason)
   return ''
 }
 
@@ -365,7 +362,7 @@ export function AssistantMessageBlocks(props: AssistantMessageBlocksProps) {
         if (block.kind === 'text') {
           return (
             <Box key={block.id} data-mid={mid} data-assistant-block-kind={block.kind} sx={{ minWidth: 0 }}>
-              <AssistantMessageHost controller={controller} className="prose" text={block.text} parts={block.parts} mid={mid} renderSafetyPolicyKey={renderSafetyPolicyKey} chatRootRef={chatRootRef} />
+              <AssistantMessageHost controller={controller} className="prose" text={block.text} mid={mid} renderSafetyPolicyKey={renderSafetyPolicyKey} chatRootRef={chatRootRef} />
             </Box>
           )
         }
@@ -388,8 +385,8 @@ export function AssistantMessageBlocks(props: AssistantMessageBlocksProps) {
         }
         const isEditing = editing.id === block.id
         const tone = blockTone(block)
-        const canEdit = block.kind !== 'diagnostic' && !disabled
-        const canDelete = block.kind !== 'diagnostic' && !disabled
+        const canEdit = !disabled
+        const canDelete = !disabled
         return (
           <Paper
             key={block.id}

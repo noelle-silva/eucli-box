@@ -1,6 +1,5 @@
 import { assistantToolPartId, planAssistantMessageBlocks, type AssistantMessageBlockKind } from './assistantMessageBlocks'
 import { syncMessageTextPart } from './message'
-import { isTextProtocolToolPart, syncTextProtocolToolParts, validateTextProtocolToolRequestsForParts } from './textProtocolTools'
 
 export type AssistantMessageBlockRef = {
   kind: AssistantMessageBlockKind
@@ -59,23 +58,15 @@ function replaceContentRange(message: any, ref: AssistantMessageBlockRef, replac
   const start = Number(ref.start)
   const end = Number(ref.end)
   if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || end > content.length) return { ok: false, error: '文本块范围无效' }
-  const nextContent = content.slice(0, start) + replacement + content.slice(end)
-  const validation = validateTextProtocolToolRequestsForParts(nextContent, message?.parts)
-  if (!validation.ok) return { ok: false, error: validation.error }
-  message.content = nextContent
+  message.content = content.slice(0, start) + replacement + content.slice(end)
   syncMessageTextPart(message)
-  syncTextProtocolToolParts(message.parts, validation.matches)
   return { ok: true }
 }
 
 export function replaceMessageText(message: any, text: unknown): MutationResult {
   if (!message || typeof message !== 'object') return { ok: false, error: '消息无效' }
-  const nextContent = String(text ?? '')
-  const validation = validateTextProtocolToolRequestsForParts(nextContent, message?.parts)
-  if (!validation.ok) return { ok: false, error: validation.error }
-  message.content = nextContent
+  message.content = String(text ?? '')
   syncMessageTextPart(message)
-  syncTextProtocolToolParts(message.parts, validation.matches)
   return { ok: true }
 }
 
@@ -89,7 +80,6 @@ function editTextBlock(message: any, ref: AssistantMessageBlockRef, text: string
 function editInvocationBlock(message: any, ref: AssistantMessageBlockRef, text: string): MutationResult {
   const part = findToolPart(message, ref)
   if (!part) return { ok: false, error: '工具调用块不存在' }
-  if (isTextProtocolToolPart(part)) return { ok: false, error: '文本协议工具调用属于消息正文，请编辑消息文本' }
 
   const parsed = parseJsonObject(String(text || '{}'))
   if (!parsed.ok) return { ok: false, error: parsed.error }
@@ -122,7 +112,6 @@ function deleteTextBlock(message: any, ref: AssistantMessageBlockRef): MutationR
 function deleteInvocationBlock(message: any, ref: AssistantMessageBlockRef): MutationResult {
   const part = findToolPart(message, ref)
   if (!part) return { ok: false, error: '工具调用块不存在' }
-  if (isTextProtocolToolPart(part)) return { ok: false, error: '文本协议工具调用属于消息正文，请删除消息文本' }
   ensureDisplay(part).hideInvocation = true
   return { ok: true }
 }

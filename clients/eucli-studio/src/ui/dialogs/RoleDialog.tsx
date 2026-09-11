@@ -95,7 +95,7 @@ export function RoleDialog(props: { open: boolean; controller: any; providers: a
               fullWidth
               multiline
               minRows={7}
-              placeholder="写入系统提示词…文本协议工具说明也写在这里。"
+              placeholder="写入系统提示词…"
               sx={{ flex: 1 }}
             />
             <RoleNativeToolsSection controller={controller} draft={draft} tools={tools} />

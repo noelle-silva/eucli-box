@@ -191,6 +191,25 @@ export function normalizeReleaseCheckSnapshot(value: unknown): ReleaseCheckSnaps
   }
 }
 
+// RELEASE_SNAPSHOT_FRESHNESS_MS 是切换发布来源时复用已有结果的有效期；期内不重新获取。
+export const RELEASE_SNAPSHOT_FRESHNESS_MS = 5 * 60 * 1000
+
+// isReleaseSnapshotFreshForKind 判断快照是否属于目标来源，且该分类结果仍在有效期内。
+export function isReleaseSnapshotFreshForKind(
+  snapshot: ReleaseCheckSnapshot | null | undefined,
+  sourceKind: string,
+  artifactKind: string,
+): boolean {
+  if (!snapshot || String(snapshot.source || '') !== sourceKind) return false
+  let newest = 0
+  for (const result of snapshot.results) {
+    if (String(result.artifact?.kind || '') !== artifactKind) continue
+    const time = Date.parse(result.checkedAt)
+    if (Number.isFinite(time) && time > newest) newest = time
+  }
+  return newest > 0 && Date.now() - newest < RELEASE_SNAPSHOT_FRESHNESS_MS
+}
+
 function normalizeReleaseCheckResult(value: unknown): ReleaseCheckResult {
   const source = objectValue(value)
   return {

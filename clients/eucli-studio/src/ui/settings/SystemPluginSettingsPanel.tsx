@@ -16,6 +16,7 @@ type SystemPluginSettingsPanelProps = {
   systemPlugins: any
   releaseChecks?: ReleaseCheckSnapshot | null
   releaseCheckBusy?: boolean
+  onReadReleaseChecks?: () => Promise<ReleaseCheckSnapshot | null>
   onRefreshReleaseChecks?: (kind?: string) => Promise<void> | void
 }
 
@@ -24,7 +25,7 @@ function text(value: unknown) {
 }
 
 export function SystemPluginSettingsPanel(props: SystemPluginSettingsPanelProps) {
-  const { controller, loading, systemPlugins, releaseChecks, releaseCheckBusy, onRefreshReleaseChecks } = props
+  const { controller, loading, systemPlugins, releaseChecks, releaseCheckBusy, onReadReleaseChecks, onRefreshReleaseChecks } = props
   const busy = loading || !!systemPlugins?.loading || !!systemPlugins?.detailLoading || !!systemPlugins?.saving
   const selectedPlugin = systemPlugins?.selectedPlugin as SystemPluginDetail | null
   const unavailable = selectedPlugin?.status !== 'active'
@@ -152,10 +153,11 @@ export function SystemPluginSettingsPanel(props: SystemPluginSettingsPanelProps)
         onClose={() => setStoreOpen(false)}
         kind="plugin"
         title="系统插件商店"
-        results={releaseChecks?.results || []}
+        releaseChecks={releaseChecks}
         installState={systemPlugins?.installState}
         actionBusy={systemPlugins?.installLoading === true || releaseCheckBusy === true}
         onAction={handleStoreAction}
+        onRead={onReadReleaseChecks}
         onRefresh={() => onRefreshReleaseChecks?.('plugin')}
         getInstallSource={() => controller.actions.getInstallSource?.()}
         setInstallSource={(kind) => controller.actions.setInstallSource?.(kind)}

@@ -231,6 +231,20 @@ export function App() {
     }
   }
 
+  const readReleaseChecks = React.useCallback(async (): Promise<ReleaseCheckSnapshot | null> => {
+    const runtime = runtimeRef.current
+    if (!runtime) return null
+    const runtimeVersion = runtimeVersionRef.current
+    try {
+      const snapshot = await runtime.getReleaseChecks()
+      if (runtimeVersionRef.current !== runtimeVersion || !mountedRef.current) return null
+      setRuntimeBootstrap(current => current ? { ...current, releaseChecks: snapshot } : current)
+      return snapshot
+    } catch {
+      return null
+    }
+  }, [])
+
   const refreshReleaseChecks = React.useCallback(async (kind?: string) => {
     const runtime = runtimeRef.current
     if (!runtime || releaseCheckBusyRef.current) return
@@ -309,6 +323,7 @@ export function App() {
                 actions: windowControlActions,
              }}
              releaseCheckBusy={releaseCheckBusy}
+             onReadReleaseChecks={readReleaseChecks}
              onRefreshReleaseChecks={refreshReleaseChecks}
             />
         </div>

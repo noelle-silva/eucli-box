@@ -1,38 +1,45 @@
 import * as React from 'react'
-import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Stack, Typography } from '@mui/material'
+import { Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Stack, Typography } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
 import StorefrontIcon from '@mui/icons-material/Storefront'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import DownloadIcon from '@mui/icons-material/Download'
 import UpdateIcon from '@mui/icons-material/Update'
-import { artifactStatusLabels, compatibilityRangeText, type ReleaseArtifactIdentity, type ReleaseCheckResult } from '../../domain/release'
+import { artifactStatusLabels, compatibilityRangeText, isReleaseSnapshotFreshForKind, type ReleaseArtifactIdentity, type ReleaseCheckResult, type ReleaseCheckSnapshot } from '../../domain/release'
 import { SettingsPill } from './SettingsSurfaces'
+
+type StoreSourceKind = 'official' | 'local'
 
 type ArtifactStoreDialogProps = {
   open: boolean
   onClose: () => void
   kind: 'tool' | 'plugin'
   title: string
-  results: ReleaseCheckResult[]
+  releaseChecks?: ReleaseCheckSnapshot | null
   installState: any
   actionBusy: boolean
   onAction: (artifact: ReleaseArtifactIdentity, action: 'install' | 'update') => Promise<void> | void
+  onRead?: () => Promise<ReleaseCheckSnapshot | null>
   onRefresh: () => Promise<void> | void
   getInstallSource?: () => Promise<string | null>
-  setInstallSource?: (kind: 'official' | 'local') => Promise<{ ok: boolean; error?: string }>
+  setInstallSource?: (kind: StoreSourceKind) => Promise<{ ok: boolean; error?: string }>
 }
 
 export function ArtifactStoreDialog(props: ArtifactStoreDialogProps) {
-  const { open, onClose, kind, title, results, installState, actionBusy, onAction, onRefresh, getInstallSource, setInstallSource } = props
+  const { open, onClose, kind, title, releaseChecks, installState, actionBusy, onAction, onRead, onRefresh, getInstallSource, setInstallSource } = props
   const [refreshing, setRefreshing] = React.useState(false)
-  const [sourceKind, setSourceKind] = React.useState<'official' | 'local'>('official')
-  const [sourceBusy, setSourceBusy] = React.useState(false)
+  const [sourceKind, setSourceKind] = React.useState<StoreSourceKind>('official')
+  const [pendingSource, setPendingSource] = React.useState<StoreSourceKind | null>(null)
   const [sourceError, setSourceError] = React.useState('')
-  const items = Array.isArray(results)
-    ? results
+
+  const sourceSnapshot = releaseChecks && typeof releaseChecks === 'object' ? releaseChecks : null
+  const snapshotReady = !!sourceSnapshot && String(sourceSnapshot.source || '') === sourceKind
+  const items = sourceSnapshot && String(sourceSnapshot.source || '') === sourceKind
+    ? sourceSnapshot.results
         .filter((result) => String(result.artifact?.kind || '') === kind)
         .sort((a, b) => String(a.artifact?.id || '').localeCompare(String(b.artifact?.id || '')))
     : []
+  const busy = pendingSource !== null || refreshing
 
   React.useEffect(() => {
     if (!open) return
@@ -51,15 +58,17 @@ export function ArtifactStoreDialog(props: ArtifactStoreDialogProps) {
   const refresh = async () => {
     setRefreshing(true)
     try {
-      await onRefresh()
+      await Promise.resolve(onRefresh()).catch(() => {})
     } finally {
       setRefreshing(false)
     }
   }
 
-  const switchSource = async (next: 'official' | 'local') => {
-    if (next === sourceKind || sourceBusy) return
-    setSourceBusy(true)
+  // switchSource 的时序：切换即刻进入加载态；切换成功后先读已保存的对应来源结果，
+  // 只有结果不存在或超出有效期时才重新获取。等待期间不展示上一个来源的清单。
+  const switchSource = async (next: StoreSourceKind) => {
+    if (next === sourceKind || busy) return
+    setPendingSource(next)
     setSourceError('')
     try {
       const outcome = await Promise.resolve(setInstallSource?.(next))
@@ -68,9 +77,12 @@ export function ArtifactStoreDialog(props: ArtifactStoreDialogProps) {
         return
       }
       setSourceKind(next)
-      await refresh()
+      const snapshot = (await Promise.resolve(onRead?.()).catch(() => null)) ?? null
+      if (!isReleaseSnapshotFreshForKind(snapshot, next, kind)) {
+        await Promise.resolve(onRefresh()).catch(() => {})
+      }
     } finally {
-      setSourceBusy(false)
+      setPendingSource(null)
     }
   }
 
@@ -81,14 +93,20 @@ export function ArtifactStoreDialog(props: ArtifactStoreDialogProps) {
         {title}
         <Box sx={{ flex: 1 }} />
         <Stack direction="row" spacing={0.5}>
-          <Button size="small" variant={sourceKind === 'official' ? 'contained' : 'outlined'} disabled={sourceBusy} onClick={() => void switchSource('official')}>
-            官方源
-          </Button>
-          <Button size="small" variant={sourceKind === 'local' ? 'contained' : 'outlined'} disabled={sourceBusy} onClick={() => void switchSource('local')}>
-            本地源
-          </Button>
+          {(['official', 'local'] as const).map((value) => (
+            <Button
+              key={value}
+              size="small"
+              variant={(pendingSource ?? sourceKind) === value ? 'contained' : 'outlined'}
+              disabled={busy}
+              startIcon={pendingSource === value ? <CircularProgress size={12} color="inherit" /> : undefined}
+              onClick={() => void switchSource(value)}
+            >
+              {value === 'official' ? '官方源' : '本地源'}
+            </Button>
+          ))}
         </Stack>
-        <Button startIcon={<RefreshIcon />} size="small" variant="text" onClick={refresh} disabled={refreshing}>
+        <Button startIcon={<RefreshIcon />} size="small" variant="text" onClick={() => void refresh()} disabled={busy}>
           {refreshing ? '刷新中…' : '刷新'}
         </Button>
         <IconButton onClick={onClose} size="small" aria-label="关闭商店">
@@ -105,13 +123,20 @@ export function ArtifactStoreDialog(props: ArtifactStoreDialogProps) {
               {sourceError}
             </Typography>
           ) : null}
-          {items.length ? (
+          {busy ? (
+            <Stack spacing={1} alignItems="center" sx={{ p: 3 }}>
+              <CircularProgress size={22} />
+              <Typography variant="body2" color="text.secondary">
+                {pendingSource ? `正在切换到${pendingSource === 'local' ? '本地源' : '官方源'}…` : '正在获取商店清单…'}
+              </Typography>
+            </Stack>
+          ) : items.length ? (
             items.map((result) => (
               <StoreItem key={`${result.artifact.kind}:${result.artifact.id}`} result={result} installState={installState} actionBusy={actionBusy} onAction={onAction} sourceKind={sourceKind} />
             ))
           ) : (
             <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
-              当前没有可显示的{itemTitle(kind)}。请先刷新商店清单。
+              {snapshotReady ? `当前没有可显示的${itemTitle(kind)}。请先刷新商店清单。` : '尚未获取当前来源的商店清单，请点击刷新。'}
             </Typography>
           )}
         </Stack>
@@ -126,7 +151,7 @@ export function ArtifactStoreDialog(props: ArtifactStoreDialogProps) {
   )
 }
 
-function StoreItem(props: { result: ReleaseCheckResult; installState: any; actionBusy: boolean; onAction: (artifact: ReleaseArtifactIdentity, action: 'install' | 'update') => Promise<void> | void; sourceKind: 'official' | 'local' }) {
+function StoreItem(props: { result: ReleaseCheckResult; installState: any; actionBusy: boolean; onAction: (artifact: ReleaseArtifactIdentity, action: 'install' | 'update') => Promise<void> | void; sourceKind: StoreSourceKind }) {
   const { result, installState, actionBusy, onAction, sourceKind } = props
   const artifact = result.artifact
   const id = String(artifact?.id || '')

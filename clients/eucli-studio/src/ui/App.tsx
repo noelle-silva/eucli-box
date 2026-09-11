@@ -123,7 +123,7 @@ import {
 import { chatMessageMaterialKind, isSystemControlMessage } from '../domain/message'
 import type { HookPromptLibrary } from '../domain/hookPrompt'
 import type { PlaceholderLibrary } from '../domain/placeholder'
-import type { StudioBootstrap } from '../domain/release'
+import type { ReleaseCheckSnapshot, StudioBootstrap } from '../domain/release'
 import { resolveColorThemePreset } from '../domain/colorTheme'
 import { colorMixVar, colorThemeCssVariables, createStudioMuiTheme } from './colorThemeStyles'
 
@@ -1064,8 +1064,8 @@ function ComposerInputControls(props: {
   )
 }
 
-export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap; dataDirectory?: AiChatDataDirectory; windowControls?: AiChatWindowControls; releaseCheckBusy?: boolean; onRefreshReleaseChecks?: (kind?: string) => Promise<void> | void }) {
-  const { controller, bootstrap, dataDirectory, windowControls, releaseCheckBusy, onRefreshReleaseChecks } = props
+export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap; dataDirectory?: AiChatDataDirectory; windowControls?: AiChatWindowControls; releaseCheckBusy?: boolean; onReadReleaseChecks?: () => Promise<ReleaseCheckSnapshot | null>; onRefreshReleaseChecks?: (kind?: string) => Promise<void> | void }) {
+  const { controller, bootstrap, dataDirectory, windowControls, releaseCheckBusy, onReadReleaseChecks, onRefreshReleaseChecks } = props
   const s = useAiChatState(controller)
   const data = s.data
   const colorThemePreset = resolveColorThemePreset(data?.settings?.colorTheme)
@@ -6991,6 +6991,7 @@ export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap;
             modelRequestConfig={(s as any).modelRequestConfig}
             bootstrap={bootstrap}
             releaseCheckBusy={releaseCheckBusy}
+            onReadReleaseChecks={onReadReleaseChecks}
             onRefreshReleaseChecks={onRefreshReleaseChecks}
             accessSettings={(s as any)?.accessSettings}
             hookPrompts={hookPrompts}
@@ -7393,6 +7394,7 @@ function PluginSettingsPage(props: {
   modelRequestConfig: any
   bootstrap?: StudioBootstrap
   releaseCheckBusy?: boolean
+  onReadReleaseChecks?: () => Promise<ReleaseCheckSnapshot | null>
   onRefreshReleaseChecks?: (kind?: string) => Promise<void> | void
   accessSettings?: any
   hookPrompts: any
@@ -7406,7 +7408,7 @@ function PluginSettingsPage(props: {
   onTabChange: (tab: SettingsTab) => void
   dataDirectory?: AiChatDataDirectory
 }) {
-  const { controller, loading, data, roles, groups, workspaces, providers, modelGroups, models, tools, modelRequestConfig, bootstrap, releaseCheckBusy, onRefreshReleaseChecks, accessSettings, hookPrompts, placeholders, systemPlugins, draft, activeRoleId, activeWorkspaceId, activeTargetKind, tab, onTabChange, dataDirectory } = props
+  const { controller, loading, data, roles, groups, workspaces, providers, modelGroups, models, tools, modelRequestConfig, bootstrap, releaseCheckBusy, onReadReleaseChecks, onRefreshReleaseChecks, accessSettings, hookPrompts, placeholders, systemPlugins, draft, activeRoleId, activeWorkspaceId, activeTargetKind, tab, onTabChange, dataDirectory } = props
   const [treeHotkeyRecording, setTreeHotkeyRecording] = React.useState(false)
 
   React.useEffect(() => {
@@ -7997,7 +7999,7 @@ function PluginSettingsPage(props: {
   }
 
   if (tab === 'tools') {
-    return wrapSettingsPanel(<AiToolsSettingsPanel controller={controller} loading={loading} tools={tools} releaseChecks={bootstrap?.releaseChecks} releaseCheckBusy={releaseCheckBusy} onRefreshReleaseChecks={onRefreshReleaseChecks} />)
+    return wrapSettingsPanel(<AiToolsSettingsPanel controller={controller} loading={loading} tools={tools} releaseChecks={bootstrap?.releaseChecks} releaseCheckBusy={releaseCheckBusy} onReadReleaseChecks={onReadReleaseChecks} onRefreshReleaseChecks={onRefreshReleaseChecks} />)
   }
 
   if (tab === 'hookPrompts') {
@@ -8009,7 +8011,7 @@ function PluginSettingsPage(props: {
   }
 
   if (tab === 'systemPlugins') {
-    return wrapSettingsPanel(<SystemPluginSettingsPanel controller={controller} loading={loading} systemPlugins={systemPlugins} releaseChecks={bootstrap?.releaseChecks} releaseCheckBusy={releaseCheckBusy} onRefreshReleaseChecks={onRefreshReleaseChecks} />)
+    return wrapSettingsPanel(<SystemPluginSettingsPanel controller={controller} loading={loading} systemPlugins={systemPlugins} releaseChecks={bootstrap?.releaseChecks} releaseCheckBusy={releaseCheckBusy} onReadReleaseChecks={onReadReleaseChecks} onRefreshReleaseChecks={onRefreshReleaseChecks} />)
   }
 
   if (tab === 'eb') {

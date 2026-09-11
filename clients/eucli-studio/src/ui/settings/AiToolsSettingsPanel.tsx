@@ -30,6 +30,7 @@ type AiToolsSettingsPanelProps = {
   tools: any
   releaseChecks?: ReleaseCheckSnapshot | null
   releaseCheckBusy?: boolean
+  onReadReleaseChecks?: () => Promise<ReleaseCheckSnapshot | null>
   onRefreshReleaseChecks?: (kind?: string) => Promise<void> | void
 }
 
@@ -47,7 +48,7 @@ type ToolSummary = {
 }
 
 export function AiToolsSettingsPanel(props: AiToolsSettingsPanelProps) {
-  const { controller, loading, tools, releaseChecks, releaseCheckBusy, onRefreshReleaseChecks } = props
+  const { controller, loading, tools, releaseChecks, releaseCheckBusy, onReadReleaseChecks, onRefreshReleaseChecks } = props
   const [filter, setFilter] = React.useState('')
   const [storeOpen, setStoreOpen] = React.useState(false)
 
@@ -140,10 +141,11 @@ export function AiToolsSettingsPanel(props: AiToolsSettingsPanelProps) {
         onClose={() => setStoreOpen(false)}
         kind="tool"
         title="AI 工具商店"
-        results={releaseChecks?.results || []}
+        releaseChecks={releaseChecks}
         installState={tools?.installState}
         actionBusy={tools?.installLoading === true || releaseCheckBusy === true}
         onAction={handleStoreAction}
+        onRead={onReadReleaseChecks}
         onRefresh={() => onRefreshReleaseChecks?.('tool')}
         getInstallSource={() => controller.actions.getInstallSource?.()}
         setInstallSource={(kind) => controller.actions.setInstallSource?.(kind)}

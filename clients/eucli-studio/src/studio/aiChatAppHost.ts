@@ -19,6 +19,7 @@ export type AiChatAppRuntime = {
   getEucliBoxConfig: () => Promise<EucliBoxConfig>
   setEucliBoxConfig: (config: EucliBoxConfigInput) => Promise<EucliBoxConfig>
   getBootstrap: () => Promise<StudioBootstrap>
+  getReleaseChecks: () => Promise<ReleaseCheckSnapshot>
   refreshReleaseChecks: (kind?: string) => Promise<ReleaseCheckSnapshot>
   dispose: () => void
 }
@@ -58,6 +59,7 @@ export async function createAiChatAppRuntime(options: AiChatAppHostOptions): Pro
     getEucliBoxConfig: () => directClient.invoke<EucliBoxConfig>('eucli.config.get'),
     setEucliBoxConfig: (config) => directClient.invoke<EucliBoxConfig>('eucli.config.set', config),
     getBootstrap: async () => normalizeStudioBootstrap(await directClient.invoke('studio.bootstrap')),
+    getReleaseChecks: async () => normalizeReleaseCheckSnapshot(await directClient.invoke('releaseChecks.get')),
     refreshReleaseChecks: async (kind?: string) => normalizeReleaseCheckSnapshot(await directClient.invoke('releaseChecks.refresh', kind ? { kind } : {})),
     dispose() {
       try {

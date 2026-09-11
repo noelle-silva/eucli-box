@@ -24,9 +24,6 @@ func readTextFile(path string, maxFileBytes int64) ([]byte, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	if isBinary(data) {
-		return nil, "", fmt.Errorf("binary files are not readable as text")
-	}
 	return data, hashBytes(data), nil
 }
 
@@ -35,13 +32,9 @@ func hashBytes(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func isBinary(data []byte) bool {
-	limit := len(data)
-	if limit > 8192 {
-		limit = 8192
-	}
-	for i := 0; i < limit; i++ {
-		if data[i] == 0 {
+func containsNullByte(data []byte) bool {
+	for _, value := range data {
+		if value == 0 {
 			return true
 		}
 	}

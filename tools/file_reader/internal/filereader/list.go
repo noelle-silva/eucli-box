@@ -19,11 +19,11 @@ func runList(input types.ToolExecutionInput, config Config, policy PathPolicy) t
 	if err != nil {
 		return failure("resolve list path", err, nil)
 	}
-	return listDirectory(input, config, resolved)
+	return listDirectory(input, config, resolved, "list")
 }
 
-func listDirectory(input types.ToolExecutionInput, config Config, resolved ResolvedPath) types.ToolExecutionOutput {
-	metadata := baseMetadata("list", resolved)
+func listDirectory(input types.ToolExecutionInput, config Config, resolved ResolvedPath, action string) types.ToolExecutionOutput {
+	metadata := baseMetadata(action, resolved)
 	metadata["type"] = "directory"
 	entries, err := os.ReadDir(resolved.Absolute)
 	if err != nil {
@@ -81,13 +81,22 @@ func listDirectory(input types.ToolExecutionInput, config Config, resolved Resol
 		}
 		builder.WriteString(fmt.Sprintf("%d: %s\t%s\t%d\t%s\n", i+1, name, entryType, size, modified))
 	}
-	content, outputTruncated := truncateText(builder.String(), maxOutput)
+	windowTruncated := end < len(filtered)
+	facts := []resultFact{
+		intFact("totalEntries", len(filtered)),
+		intFact("returnedEntries", end-start),
+	}
+	if windowTruncated {
+		facts = append(facts, intFact("nextOffset", end+1))
+	}
+	facts = append(facts, boolFact("truncated", windowTruncated))
+	content, outputTruncated := composeContent(builder.String(), action, facts, maxOutput)
 	metadata["offset"] = offset
 	metadata["limit"] = limit
 	metadata["returnedEntries"] = end - start
 	metadata["totalEntries"] = len(filtered)
-	metadata["truncated"] = outputTruncated || end < len(filtered)
-	if end < len(filtered) {
+	metadata["truncated"] = outputTruncated || windowTruncated
+	if windowTruncated {
 		metadata["nextOffset"] = end + 1
 	}
 	return success(content, metadata)

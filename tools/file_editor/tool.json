@@ -2,12 +2,12 @@
   "id": "file_editor",
   "name": "file_editor",
   "description": "使用相对路径或绝对路径写入、精确编辑以及按补丁修改受限文本文件。",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "eucliBoxCompatibility": {
     "minimumVersion": "0.1.0",
     "maximumVersionExclusive": "0.2.0"
   },
-  "promptDescription": "使用 file_editor 修改受限文本文件。它是一个文本编辑与写入工具，必须提供一个 action：write、edit 或 apply_patch。相对路径从 e-b 宿主运行位置解析；绝对路径允许指向当前项目外的位置，前提是运行进程具有操作系统权限。本工具只处理文本文件，会拒绝二进制内容、危险空字节、超过 maxFileBytes 的文件。修改现有文件时，推荐使用之前 read 返回的 expectedHash，避免覆盖已发生变化的文件。write：使用 path 和 content 创建或替换文本文件；修改已读取过的现有文件时使用 expectedHash。edit：使用 path、oldString、newString 做精确替换，可选 replaceAll 和 expectedHash；oldString 默认必须唯一，除非 replaceAll 为 true；空 oldString 只允许创建缺失文件，目标已存在时会失败。apply_patch：使用结构化 patchText，格式为 *** Begin Patch / *** End Patch，中间包含 *** Add File、*** Delete File、*** Update File，可选 *** Move to；补丁更新行中，空格表示上下文，- 表示删除行，+ 表示新增行，@@ 表示分隔；旧补丁文本必须唯一匹配。apply_patch 会先规划所有操作再写入，因此后续规划失败不会留下前置半截修改。删除和移动操作仍然保持文本文件边界，会拒绝非文本目标。",
+  "promptDescription": "使用 file_editor 修改受限文本文件。它是一个文本编辑与写入工具，必须提供一个 action：write、edit 或 apply_patch。相对路径从 e-b 宿主运行位置解析；绝对路径允许指向当前项目外的位置，前提是运行进程具有操作系统权限。本工具只处理文本文件，会拒绝二进制内容、危险空字节、超过 maxFileBytes 的文件。原有文件的换行风格会被保留：编辑与补丁会把输入换行适配成文件自身的风格。每个成功结果末尾都有一条 [file_editor] 信息条，给出本次操作的关键事实（含新 hash），可直接用于后续的 expectedHash。修改现有文件时，推荐使用之前 read 或上次修改结果中的 hash；传入 expectedHash 时目标必须存在，否则会失败，文件变化时会回报当前真实 hash。write：使用 path 和 content 创建或替换文本文件。edit：使用 path、oldString、newString 做精确替换，可选 replaceAll 和 expectedHash；oldString 默认必须唯一，除非 replaceAll 为 true；空 oldString 只允许创建缺失文件，目标已存在时会失败。apply_patch：使用结构化 patchText，格式为 *** Begin Patch / *** End Patch，中间包含 *** Add File、*** Delete File、*** Update File，可选 *** Move to（仅限 Update 段）；更新行中空格表示上下文、- 表示删除、+ 表示新增、@@ 表示分段；每个 @@ 段独立定位并按顺序应用，旧文本需在该位置唯一匹配；补丁正文中的空行视为空上下文行；同一文件在一份补丁里只能出现一次；语法不合规（如结束标记后还有内容、@@ 后带内容、新增/删除段带移动指令）会明确失败。apply_patch 会先规划所有操作再写入，因此后续规划失败不会留下前置半截修改。删除和移动操作仍然保持文本文件边界，会拒绝非文本目标。",
   "defaultInvocationMode": "sync",
   "type": "local",
   "bodyDirectory": ".",
@@ -56,11 +56,11 @@
       },
       "patchText": {
         "type": "string",
-        "description": "action=apply_patch 时使用的补丁文本。使用 *** Begin Patch 和 *** End Patch，文件段支持 Add File、Delete File、Update File、可选 Move to，以及空格/-/+ 更新行。"
+        "description": "action=apply_patch 时使用的补丁文本。使用 *** Begin Patch 和 *** End Patch，文件段支持 Add File、Delete File、Update File、可选 Move to（仅限 Update 段），以及空格/-/+ 更新行；每个 @@ 段独立定位按序应用，空行按空上下文对待，同一文件只能出现一次。"
       },
       "expectedHash": {
         "type": "string",
-        "description": "可选的 sha256 值，来自之前的 read。修改现有文件时传入它，如果文件已经变化，write/edit 会失败。"
+        "description": "可选的 sha256 值，来自之前的 read 或上次修改结果的信息条。修改现有文件时传入它；传入时目标必须存在且内容一致，否则失败并回报当前真实 hash。"
       }
     },
     "required": ["action"],

@@ -427,6 +427,443 @@ func TestApplyPatchPlansBeforeWriting(t *testing.T) {
 	}
 }
 
+func TestEditAdaptsToCRLFLineEndings(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "crlf.txt")
+	writeTestFileBytes(t, target, []byte("alpha\r\nbeta\r\ngamma\r\n"))
+
+	output := Execute(context.Background(), toolInput(root, map[string]any{
+		"action":    "edit",
+		"path":      "crlf.txt",
+		"oldString": "beta\ngamma",
+		"newString": "BETA\nGAMMA",
+	}))
+	if output.Status != types.ToolStatusSuccess {
+		t.Fatalf("status = %s, error = %s", output.Status, output.Error)
+	}
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "alpha\r\nBETA\r\nGAMMA\r\n" {
+		t.Fatalf("content = %q", string(data))
+	}
+}
+
+func TestApplyPatchHandlesSeparatedHunks(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "hunks.txt")
+	writeTestFile(t, target, "line1\nline2\nline3\nline4\nline5\nline6\n")
+	patchText := strings.Join([]string{
+		"*** Begin Patch",
+		"*** Update File: hunks.txt",
+		"@@",
+		" line1",
+		"-line2",
+		"+LINE2",
+		"@@",
+		" line5",
+		"-line6",
+		"+LINE6",
+		"*** End Patch",
+	}, "\n")
+
+	output := Execute(context.Background(), toolInput(root, map[string]any{
+		"action":    "apply_patch",
+		"patchText": patchText,
+	}))
+	if output.Status != types.ToolStatusSuccess {
+		t.Fatalf("status = %s, error = %s", output.Status, output.Error)
+	}
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "line1\nLINE2\nline3\nline4\nline5\nLINE6\n" {
+		t.Fatalf("content = %q", string(data))
+	}
+}
+
+func TestApplyPatchTreatsBlankLineAsEmptyContext(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "blank.txt")
+	writeTestFile(t, target, "alpha\n\nbeta\n")
+	patchText := strings.Join([]string{
+		"*** Begin Patch",
+		"*** Update File: blank.txt",
+		"@@",
+		" alpha",
+		"",
+		"-beta",
+		"+gamma",
+		"*** End Patch",
+	}, "\n")
+
+	output := Execute(context.Background(), toolInput(root, map[string]any{
+		"action":    "apply_patch",
+		"patchText": patchText,
+	}))
+	if output.Status != types.ToolStatusSuccess {
+		t.Fatalf("status = %s, error = %s", output.Status, output.Error)
+	}
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "alpha\n\ngamma\n" {
+		t.Fatalf("content = %q", string(data))
+	}
+}
+
+func TestApplyPatchKeepsCRLFFileStyle(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "crlf.txt")
+	writeTestFileBytes(t, target, []byte("line1\r\nline2\r\nline3\r\n"))
+	patchText := strings.Join([]string{
+		"*** Begin Patch",
+		"*** Update File: crlf.txt",
+		"@@",
+		" line1",
+		"-line2",
+		"+LINE2",
+		"@@",
+		"-line3",
+		"+LINE3",
+		"*** End Patch",
+	}, "\n")
+
+	output := Execute(context.Background(), toolInput(root, map[string]any{
+		"action":    "apply_patch",
+		"patchText": patchText,
+	}))
+	if output.Status != types.ToolStatusSuccess {
+		t.Fatalf("status = %s, error = %s", output.Status, output.Error)
+	}
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "line1\r\nLINE2\r\nLINE3\r\n" {
+		t.Fatalf("content = %q", string(data))
+	}
+}
+
+func TestApplyPatchMatchesFileWithoutTrailingNewline(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "eof.txt")
+	writeTestFile(t, target, "alpha\nbeta")
+	patchText := strings.Join([]string{
+		"*** Begin Patch",
+		"*** Update File: eof.txt",
+		"@@",
+		"-alpha",
+		"+ALPHA",
+		"@@",
+		"-beta",
+		"+BETA",
+		"*** End Patch",
+	}, "\n")
+
+	output := Execute(context.Background(), toolInput(root, map[string]any{
+		"action":    "apply_patch",
+		"patchText": patchText,
+	}))
+	if output.Status != types.ToolStatusSuccess {
+		t.Fatalf("status = %s, error = %s", output.Status, output.Error)
+	}
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "ALPHA\nBETA" {
+		t.Fatalf("content = %q", string(data))
+	}
+}
+
+func TestApplyPatchMovesAndUpdates(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "source.txt"), "alpha\n")
+	patchText := strings.Join([]string{
+		"*** Begin Patch",
+		"*** Update File: source.txt",
+		"*** Move to: moved.txt",
+		"@@",
+		"-alpha",
+		"+beta",
+		"*** End Patch",
+	}, "\n")
+
+	output := Execute(context.Background(), toolInput(root, map[string]any{
+		"action":    "apply_patch",
+		"patchText": patchText,
+	}))
+	if output.Status != types.ToolStatusSuccess {
+		t.Fatalf("status = %s, error = %s", output.Status, output.Error)
+	}
+	if _, err := os.Stat(filepath.Join(root, "source.txt")); !os.IsNotExist(err) {
+		t.Fatalf("source still exists: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "moved.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "beta\n" {
+		t.Fatalf("moved content = %q", string(data))
+	}
+}
+
+func TestApplyPatchStrictSyntaxRejections(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "a.txt"), "alpha\n")
+	writeTestFile(t, filepath.Join(root, "b.txt"), "beta\n")
+	cases := map[string]string{
+		"trailing content": strings.Join([]string{
+			"*** Begin Patch",
+			"*** Update File: a.txt",
+			"@@",
+			"-alpha",
+			"+changed",
+			"*** End Patch",
+			"junk",
+		}, "\n"),
+		"separator with content": strings.Join([]string{
+			"*** Begin Patch",
+			"*** Update File: a.txt",
+			"@@ section one",
+			"-alpha",
+			"+changed",
+			"*** End Patch",
+		}, "\n"),
+		"move on add": strings.Join([]string{
+			"*** Begin Patch",
+			"*** Add File: added.txt",
+			"*** Move to: other.txt",
+			"+data",
+			"*** End Patch",
+		}, "\n"),
+		"delete with content": strings.Join([]string{
+			"*** Begin Patch",
+			"*** Delete File: b.txt",
+			"+data",
+			"*** End Patch",
+		}, "\n"),
+		"same file twice": strings.Join([]string{
+			"*** Begin Patch",
+			"*** Update File: a.txt",
+			"@@",
+			"-alpha",
+			"+changed",
+			"*** Update File: a.txt",
+			"@@",
+			"-changed",
+			"+again",
+			"*** End Patch",
+		}, "\n"),
+	}
+	for name, patchText := range cases {
+		output := Execute(context.Background(), toolInput(root, map[string]any{
+			"action":    "apply_patch",
+			"patchText": patchText,
+		}))
+		if output.Status != types.ToolStatusFailed {
+			t.Fatalf("%s: status = %s, want failed", name, output.Status)
+		}
+	}
+}
+
+func TestWriteExpectedHashRequiresExistingTarget(t *testing.T) {
+	root := t.TempDir()
+	output := Execute(context.Background(), toolInput(root, map[string]any{
+		"action":       "write",
+		"path":         "created.txt",
+		"content":      "new\n",
+		"expectedHash": strings.Repeat("0", 64),
+	}))
+	if output.Status != types.ToolStatusFailed {
+		t.Fatalf("status = %s, want failed", output.Status)
+	}
+	if !strings.Contains(output.Error, "does not exist") {
+		t.Fatalf("error = %q", output.Error)
+	}
+	if _, err := os.Stat(filepath.Join(root, "created.txt")); !os.IsNotExist(err) {
+		t.Fatalf("file was created despite hash guard: %v", err)
+	}
+}
+
+func TestEditCreateRejectsExpectedHashOnMissingTarget(t *testing.T) {
+	root := t.TempDir()
+	output := Execute(context.Background(), toolInput(root, map[string]any{
+		"action":       "edit",
+		"path":         "created.txt",
+		"oldString":    "",
+		"newString":    "new\n",
+		"expectedHash": strings.Repeat("0", 64),
+	}))
+	if output.Status != types.ToolStatusFailed {
+		t.Fatalf("status = %s, want failed", output.Status)
+	}
+	if _, err := os.Stat(filepath.Join(root, "created.txt")); !os.IsNotExist(err) {
+		t.Fatalf("file was created despite hash guard: %v", err)
+	}
+}
+
+func TestHashMismatchReportsCurrentHash(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "guarded.txt")
+	writeTestFile(t, target, "old\n")
+	wrong := strings.Repeat("0", 64)
+	wantCurrent := hashBytes([]byte("old\n"))
+
+	writeOutput := Execute(context.Background(), toolInput(root, map[string]any{
+		"action":       "write",
+		"path":         "guarded.txt",
+		"content":      "new\n",
+		"expectedHash": wrong,
+	}))
+	if writeOutput.Status != types.ToolStatusFailed || writeOutput.Metadata["currentHash"] != wantCurrent {
+		t.Fatalf("write status = %s, metadata = %#v", writeOutput.Status, writeOutput.Metadata)
+	}
+
+	editOutput := Execute(context.Background(), toolInput(root, map[string]any{
+		"action":       "edit",
+		"path":         "guarded.txt",
+		"oldString":    "old",
+		"newString":    "new",
+		"expectedHash": wrong,
+	}))
+	if editOutput.Status != types.ToolStatusFailed || editOutput.Metadata["currentHash"] != wantCurrent {
+		t.Fatalf("edit status = %s, metadata = %#v", editOutput.Status, editOutput.Metadata)
+	}
+}
+
+func TestWriteLeavesNoTemporaryFiles(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "notes.txt")
+	writeTestFile(t, target, "old\n")
+
+	output := Execute(context.Background(), toolInput(root, map[string]any{
+		"action":  "write",
+		"path":    "notes.txt",
+		"content": "new\n",
+	}))
+	if output.Status != types.ToolStatusSuccess {
+		t.Fatalf("status = %s, error = %s", output.Status, output.Error)
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "notes.txt" {
+		t.Fatalf("leftover files: %v", entryNames(entries))
+	}
+}
+
+func TestWriteRejectsNullByteContent(t *testing.T) {
+	root := t.TempDir()
+	output := Execute(context.Background(), toolInput(root, map[string]any{
+		"action":  "write",
+		"path":    "binary.txt",
+		"content": "a\x00b",
+	}))
+	if output.Status != types.ToolStatusFailed {
+		t.Fatalf("status = %s, want failed", output.Status)
+	}
+	if _, err := os.Stat(filepath.Join(root, "binary.txt")); !os.IsNotExist(err) {
+		t.Fatalf("null-byte content was written: %v", err)
+	}
+}
+
+func TestEditEnvelopeCarriesHashes(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "notes.txt")
+	writeTestFile(t, target, "old\n")
+
+	output := Execute(context.Background(), toolInput(root, map[string]any{
+		"action":    "edit",
+		"path":      "notes.txt",
+		"oldString": "old",
+		"newString": "new",
+	}))
+	if output.Status != types.ToolStatusSuccess {
+		t.Fatalf("status = %s, error = %s", output.Status, output.Error)
+	}
+	envelope := lastEnvelopeLine(output.Content)
+	for _, fragment := range []string{"action=edit", "replacements=1", "hash=" + output.Metadata["hash"].(string), "previousHash=" + hashBytes([]byte("old\n"))} {
+		if !strings.Contains(envelope, fragment) {
+			t.Fatalf("envelope %q missing %q", envelope, fragment)
+		}
+	}
+}
+
+func TestApplyPatchEnvelopeReportsCounts(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "a.txt"), "alpha\n")
+	patchText := strings.Join([]string{
+		"*** Begin Patch",
+		"*** Update File: a.txt",
+		"@@",
+		"-alpha",
+		"+changed",
+		"*** End Patch",
+	}, "\n")
+
+	output := Execute(context.Background(), toolInput(root, map[string]any{
+		"action":    "apply_patch",
+		"patchText": patchText,
+	}))
+	if output.Status != types.ToolStatusSuccess {
+		t.Fatalf("status = %s, error = %s", output.Status, output.Error)
+	}
+	envelope := lastEnvelopeLine(output.Content)
+	if !strings.Contains(envelope, "action=apply_patch") || !strings.Contains(envelope, "operations=1") || !strings.Contains(envelope, "changedPaths=1") {
+		t.Fatalf("envelope = %q", envelope)
+	}
+}
+
+func TestWriteEnvelopeCarriesHash(t *testing.T) {
+	root := t.TempDir()
+	output := Execute(context.Background(), toolInput(root, map[string]any{
+		"action":  "write",
+		"path":    "notes.txt",
+		"content": "alpha\n",
+	}))
+	if output.Status != types.ToolStatusSuccess {
+		t.Fatalf("status = %s, error = %s", output.Status, output.Error)
+	}
+	envelope := lastEnvelopeLine(output.Content)
+	for _, fragment := range []string{"action=write", "created=true", "bytes=6", "hash=" + output.Metadata["hash"].(string)} {
+		if !strings.Contains(envelope, fragment) {
+			t.Fatalf("envelope %q missing %q", envelope, fragment)
+		}
+	}
+}
+
+func lastEnvelopeLine(content string) string {
+	lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
+	if len(lines) == 0 {
+		return ""
+	}
+	return lines[len(lines)-1]
+}
+
+func entryNames(entries []os.DirEntry) []string {
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	return names
+}
+
+func writeTestFileBytes(t *testing.T, path string, content []byte) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func toolInput(root string, arguments map[string]any) types.ToolExecutionInput {
 	return types.ToolExecutionInput{
 		ActionID:             "test-action",

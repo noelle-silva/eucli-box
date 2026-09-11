@@ -1,6 +1,8 @@
 package filereader
 
 import (
+	"unicode/utf8"
+
 	"eucli-box/pkg/types"
 )
 
@@ -27,15 +29,31 @@ func truncateText(text string, limit int) (string, bool) {
 	if limit <= 0 || len(text) <= limit {
 		return text, false
 	}
+	cut := clampToRuneBoundary(text, limit)
 	if limit < 32 {
-		return text[:limit], true
+		return cut, true
 	}
-	return text[:limit] + "\n[truncated: output exceeded maxOutputChars]", true
+	return cut + "\n[truncated: output exceeded maxOutputChars]", true
 }
 
 func truncateLine(line string, maxChars int) (string, bool) {
 	if maxChars <= 0 || len(line) <= maxChars {
 		return line, false
 	}
-	return line[:maxChars] + "...[line truncated]", true
+	return clampToRuneBoundary(line, maxChars) + "...[line truncated]", true
+}
+
+// clampToRuneBoundary cuts text to at most limit bytes without splitting a
+// multi-byte character.
+func clampToRuneBoundary(text string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	if limit >= len(text) {
+		return text
+	}
+	for limit > 0 && !utf8.RuneStart(text[limit]) {
+		limit--
+	}
+	return text[:limit]
 }

@@ -1,6 +1,7 @@
 package fileeditor
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,10 +11,27 @@ import (
 )
 
 type patchOperation struct {
+	Kind       string
+	Path       string
+	MoveTo     string
+	AddContent []string
+	Hunks      []patchHunk
+}
+
+type patchHunk struct {
+	Lines []patchHunkLine
+}
+
+type patchHunkLine struct {
+	Kind byte
+	Text string
+}
+
+type patchSection struct {
 	Kind   string
 	Path   string
 	MoveTo string
-	Lines  []string
+	Body   []string
 }
 
 type patchChange struct {
@@ -51,7 +69,11 @@ func runApplyPatch(input types.ToolExecutionInput, config Config, policy PathPol
 		return failure("apply patch", err, metadata)
 	}
 	metadata["changedPaths"] = changedPaths
-	return success(fmt.Sprintf("Applied patch to %d operation(s).", len(operations)), metadata)
+	facts := []resultFact{
+		intFact("operations", len(operations)),
+		intFact("changedPaths", len(changedPaths)),
+	}
+	return success(appendEnvelope(fmt.Sprintf("Applied patch to %d operation(s).", len(operations)), "apply_patch", facts), metadata)
 }
 
 func parsePatchText(patchText string) ([]patchOperation, error) {
@@ -60,25 +82,45 @@ func parsePatchText(patchText string) ([]patchOperation, error) {
 		return nil, fmt.Errorf("patch must start with *** Begin Patch")
 	}
 	operations := []patchOperation{}
-	var current *patchOperation
+	var current *patchSection
+	finished := false
+	flush := func() error {
+		if current == nil {
+			return nil
+		}
+		operation, err := finalizePatchSection(*current)
+		if err != nil {
+			return err
+		}
+		operations = append(operations, operation)
+		current = nil
+		return nil
+	}
 	for index := 1; index < len(lines); index++ {
 		line := lines[index]
 		trimmed := strings.TrimSpace(line)
-		if trimmed == "*** End Patch" {
-			if current != nil {
-				operations = append(operations, *current)
+		if finished {
+			if trimmed != "" {
+				return nil, fmt.Errorf("patch content appeared after *** End Patch at line %d", index+1)
 			}
-			return operations, nil
+			continue
+		}
+		if trimmed == "*** End Patch" {
+			if err := flush(); err != nil {
+				return nil, err
+			}
+			finished = true
+			continue
 		}
 		if strings.HasPrefix(line, "*** Add File: ") || strings.HasPrefix(line, "*** Delete File: ") || strings.HasPrefix(line, "*** Update File: ") {
-			if current != nil {
-				operations = append(operations, *current)
+			if err := flush(); err != nil {
+				return nil, err
 			}
-			operation, err := parsePatchHeader(line)
+			section, err := parsePatchHeader(line)
 			if err != nil {
 				return nil, err
 			}
-			current = &operation
+			current = &section
 			continue
 		}
 		if current == nil {
@@ -88,12 +130,25 @@ func parsePatchText(patchText string) ([]patchOperation, error) {
 			return nil, fmt.Errorf("patch content appeared before a file header at line %d", index+1)
 		}
 		if strings.HasPrefix(line, "*** Move to: ") {
-			current.MoveTo = strings.TrimSpace(strings.TrimPrefix(line, "*** Move to: "))
+			if current.Kind != "update" {
+				return nil, fmt.Errorf("*** Move to is only allowed in an Update File section")
+			}
+			if current.MoveTo != "" {
+				return nil, fmt.Errorf("duplicate *** Move to line in %s", current.Path)
+			}
+			moveTo := strings.TrimSpace(strings.TrimPrefix(line, "*** Move to: "))
+			if moveTo == "" {
+				return nil, fmt.Errorf("move target path is required")
+			}
+			current.MoveTo = moveTo
 			continue
 		}
-		current.Lines = append(current.Lines, line)
+		current.Body = append(current.Body, line)
 	}
-	return nil, fmt.Errorf("patch must end with *** End Patch")
+	if !finished {
+		return nil, fmt.Errorf("patch must end with *** End Patch")
+	}
+	return operations, nil
 }
 
 func splitPatchLines(text string) []string {
@@ -102,28 +157,117 @@ func splitPatchLines(text string) []string {
 	return strings.Split(text, "\n")
 }
 
-func parsePatchHeader(line string) (patchOperation, error) {
+func parsePatchHeader(line string) (patchSection, error) {
 	switch {
 	case strings.HasPrefix(line, "*** Add File: "):
 		path := strings.TrimSpace(strings.TrimPrefix(line, "*** Add File: "))
 		if path == "" {
-			return patchOperation{}, fmt.Errorf("add file path is required")
+			return patchSection{}, fmt.Errorf("add file path is required")
 		}
-		return patchOperation{Kind: "add", Path: path}, nil
+		return patchSection{Kind: "add", Path: path}, nil
 	case strings.HasPrefix(line, "*** Delete File: "):
 		path := strings.TrimSpace(strings.TrimPrefix(line, "*** Delete File: "))
 		if path == "" {
-			return patchOperation{}, fmt.Errorf("delete file path is required")
+			return patchSection{}, fmt.Errorf("delete file path is required")
 		}
-		return patchOperation{Kind: "delete", Path: path}, nil
+		return patchSection{Kind: "delete", Path: path}, nil
 	case strings.HasPrefix(line, "*** Update File: "):
 		path := strings.TrimSpace(strings.TrimPrefix(line, "*** Update File: "))
 		if path == "" {
-			return patchOperation{}, fmt.Errorf("update file path is required")
+			return patchSection{}, fmt.Errorf("update file path is required")
 		}
-		return patchOperation{Kind: "update", Path: path}, nil
+		return patchSection{Kind: "update", Path: path}, nil
 	default:
-		return patchOperation{}, fmt.Errorf("invalid patch file header")
+		return patchSection{}, fmt.Errorf("invalid patch file header")
+	}
+}
+
+// finalizePatchSection validates one raw section and turns it into a patch
+// operation. Trailing blank lines are formatting; interior blank lines in an
+// update body are empty context lines.
+func finalizePatchSection(section patchSection) (patchOperation, error) {
+	body := section.Body
+	for len(body) > 0 && strings.TrimSpace(body[len(body)-1]) == "" {
+		body = body[:len(body)-1]
+	}
+	operation := patchOperation{Kind: section.Kind, Path: section.Path, MoveTo: section.MoveTo}
+	switch section.Kind {
+	case "add":
+		for _, line := range body {
+			if !strings.HasPrefix(line, "+") {
+				return patchOperation{}, fmt.Errorf("add file lines must start with +: %q", line)
+			}
+			operation.AddContent = append(operation.AddContent, strings.TrimPrefix(line, "+"))
+		}
+	case "delete":
+		if len(body) > 0 {
+			return patchOperation{}, fmt.Errorf("delete file section cannot carry content: %s", section.Path)
+		}
+	case "update":
+		hunks, err := parseUpdateHunks(body)
+		if err != nil {
+			return patchOperation{}, fmt.Errorf("update %s: %w", section.Path, err)
+		}
+		operation.Hunks = hunks
+		if len(hunks) == 0 && operation.MoveTo == "" {
+			return patchOperation{}, fmt.Errorf("update file section has no changes: %s", section.Path)
+		}
+	default:
+		return patchOperation{}, fmt.Errorf("unsupported patch operation %q", section.Kind)
+	}
+	return operation, nil
+}
+
+func parseUpdateHunks(body []string) ([]patchHunk, error) {
+	hunks := []patchHunk{}
+	var current []patchHunkLine
+	flush := func() error {
+		if current == nil {
+			return nil
+		}
+		if len(current) == 0 {
+			return fmt.Errorf("@@ section has no change lines")
+		}
+		hunks = append(hunks, patchHunk{Lines: current})
+		current = nil
+		return nil
+	}
+	for _, line := range body {
+		if strings.HasPrefix(line, "@@") {
+			if strings.TrimSpace(strings.TrimPrefix(line, "@@")) != "" {
+				return nil, fmt.Errorf("@@ separator must not carry content")
+			}
+			if err := flush(); err != nil {
+				return nil, err
+			}
+			current = []patchHunkLine{}
+			continue
+		}
+		parsed, err := parseUpdateHunkLine(line)
+		if err != nil {
+			return nil, err
+		}
+		current = append(current, parsed)
+	}
+	if err := flush(); err != nil {
+		return nil, err
+	}
+	return hunks, nil
+}
+
+func parseUpdateHunkLine(line string) (patchHunkLine, error) {
+	if line == "" {
+		return patchHunkLine{Kind: ' ', Text: ""}, nil
+	}
+	switch line[0] {
+	case ' ':
+		return patchHunkLine{Kind: ' ', Text: line[1:]}, nil
+	case '-':
+		return patchHunkLine{Kind: '-', Text: line[1:]}, nil
+	case '+':
+		return patchHunkLine{Kind: '+', Text: line[1:]}, nil
+	default:
+		return patchHunkLine{}, fmt.Errorf("update lines must start with space, -, +, or @@")
 	}
 }
 
@@ -176,11 +320,7 @@ func planAdd(operation patchOperation, config Config, policy PathPolicy) ([]patc
 	if err := ensureParentCreatable(resolved.Absolute); err != nil {
 		return nil, err
 	}
-	content, err := addedPatchContent(operation.Lines)
-	if err != nil {
-		return nil, err
-	}
-	contentBytes := []byte(content)
+	contentBytes := []byte(addedPatchContent(operation.AddContent))
 	if err := validateWritableText(contentBytes, config.MaxFileBytes); err != nil {
 		return nil, err
 	}
@@ -208,7 +348,7 @@ func planUpdate(operation patchOperation, config Config, policy PathPolicy) ([]p
 	if err != nil {
 		return nil, err
 	}
-	updated, err := applyUpdateLines(string(original), operation.Lines)
+	updated, err := applyUpdateLines(string(original), operation.Hunks)
 	if err != nil {
 		return nil, fmt.Errorf("update %s: %w", resolved.Display, err)
 	}
@@ -241,8 +381,8 @@ func planMoveUpdate(operation patchOperation, config Config, policy PathPolicy) 
 		return nil, err
 	}
 	final := original
-	if hasPatchBody(operation.Lines) {
-		updated, err := applyUpdateLines(string(original), operation.Lines)
+	if len(operation.Hunks) > 0 {
+		updated, err := applyUpdateLines(string(original), operation.Hunks)
 		if err != nil {
 			return nil, fmt.Errorf("update %s: %w", source.Display, err)
 		}
@@ -257,12 +397,83 @@ func planMoveUpdate(operation patchOperation, config Config, policy PathPolicy) 
 	}, nil
 }
 
+// applyUpdateLines applies each hunk independently and in order. A hunk is
+// located after the previous hunk's replacement and must be unique there.
+func applyUpdateLines(content string, hunks []patchHunk) (string, error) {
+	style := detectLineEnding([]byte(content))
+	searchStart := 0
+	for index, hunk := range hunks {
+		oldText, newText := hunkTexts(hunk)
+		oldText = applyLineEndingStyle(oldText, style)
+		newText = applyLineEndingStyle(newText, style)
+		if oldText == "" {
+			return "", fmt.Errorf("patch section %d has no removable or context text", index+1)
+		}
+		area := content[searchStart:]
+		matchedOld, matchedNew, err := matchPatchText(area, oldText, newText)
+		if err != nil {
+			return "", fmt.Errorf("patch section %d: %w", index+1, err)
+		}
+		found := strings.Index(area, matchedOld)
+		if strings.Contains(area[found+1:], matchedOld) {
+			return "", fmt.Errorf("patch section %d: old patch text is ambiguous; provide more context", index+1)
+		}
+		absolute := searchStart + found
+		content = content[:absolute] + matchedNew + content[absolute+len(matchedOld):]
+		searchStart = absolute + len(matchedNew)
+	}
+	return content, nil
+}
+
+// matchPatchText locates the hunk text in the search area. When the hunk text
+// carries a trailing newline but the file ends without one, the trimmed form
+// is used instead.
+func matchPatchText(searchArea string, oldText string, newText string) (string, string, error) {
+	if strings.Contains(searchArea, oldText) {
+		return oldText, newText, nil
+	}
+	trimmedOld := strings.TrimSuffix(oldText, "\n")
+	trimmedNew := strings.TrimSuffix(newText, "\n")
+	if trimmedOld != oldText && trimmedOld != "" && strings.Contains(searchArea, trimmedOld) {
+		return trimmedOld, trimmedNew, nil
+	}
+	return "", "", fmt.Errorf("old patch text was not found")
+}
+
+func hunkTexts(hunk patchHunk) (string, string) {
+	oldLines := []string{}
+	newLines := []string{}
+	for _, line := range hunk.Lines {
+		switch line.Kind {
+		case ' ':
+			oldLines = append(oldLines, line.Text)
+			newLines = append(newLines, line.Text)
+		case '-':
+			oldLines = append(oldLines, line.Text)
+		case '+':
+			newLines = append(newLines, line.Text)
+		}
+	}
+	oldText := strings.Join(oldLines, "\n")
+	newText := strings.Join(newLines, "\n")
+	if oldText != "" {
+		oldText += "\n"
+	}
+	if newText != "" {
+		newText += "\n"
+	}
+	return oldText, newText
+}
+
 func commitPatchChanges(changes []patchChange) ([]string, error) {
 	applied := make([]patchChange, 0, len(changes))
 	changedPaths := make([]string, 0, len(changes))
 	for _, change := range changes {
 		if err := applyPatchChange(change); err != nil {
-			rollbackPatchChanges(append(applied, change))
+			failed := append(append([]patchChange{}, applied...), change)
+			if rollbackErr := rollbackPatchChanges(failed); rollbackErr != nil {
+				return nil, fmt.Errorf("%w (rollback also failed: %v)", err, rollbackErr)
+			}
 			return nil, err
 		}
 		applied = append(applied, change)
@@ -281,102 +492,26 @@ func applyPatchChange(change patchChange) error {
 	return nil
 }
 
-func rollbackPatchChanges(changes []patchChange) {
+func rollbackPatchChanges(changes []patchChange) error {
+	failures := []error{}
 	for i := len(changes) - 1; i >= 0; i-- {
 		change := changes[i]
 		if change.Original.Exists {
-			_ = writeTextFile(change.FinalPath, change.Original.Content)
+			if err := writeTextFile(change.FinalPath, change.Original.Content); err != nil {
+				failures = append(failures, fmt.Errorf("restore %s: %w", change.FinalPath, err))
+			}
 			continue
 		}
-		_ = os.Remove(change.FinalPath)
+		if err := os.Remove(change.FinalPath); err != nil && !os.IsNotExist(err) {
+			failures = append(failures, fmt.Errorf("remove %s: %w", change.FinalPath, err))
+		}
 	}
+	return errors.Join(failures...)
 }
 
-func hasPatchBody(lines []string) bool {
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed != "" && !strings.HasPrefix(trimmed, "@@") {
-			return true
-		}
+func addedPatchContent(lines []string) string {
+	if len(lines) == 0 {
+		return ""
 	}
-	return false
-}
-
-func addedPatchContent(lines []string) (string, error) {
-	contentLines := make([]string, 0, len(lines))
-	for _, line := range lines {
-		if line == "" {
-			continue
-		}
-		if !strings.HasPrefix(line, "+") {
-			return "", fmt.Errorf("add file lines must start with +")
-		}
-		contentLines = append(contentLines, strings.TrimPrefix(line, "+"))
-	}
-	return strings.Join(contentLines, "\n") + "\n", nil
-}
-
-func applyUpdateLines(content string, lines []string) (string, error) {
-	oldText, newText, err := updatePatchTexts(lines)
-	if err != nil {
-		return "", err
-	}
-	if oldText == "" {
-		return "", fmt.Errorf("update patch has no removable or context text")
-	}
-	oldText, newText, err = matchPatchText(content, oldText, newText)
-	if err != nil {
-		return "", err
-	}
-	if strings.Count(content, oldText) != 1 {
-		return "", fmt.Errorf("old patch text is ambiguous; provide more context")
-	}
-	return strings.Replace(content, oldText, newText, 1), nil
-}
-
-func matchPatchText(content string, oldText string, newText string) (string, string, error) {
-	if strings.Contains(content, oldText) {
-		return oldText, newText, nil
-	}
-	trimmedOld := strings.TrimSuffix(oldText, "\n")
-	trimmedNew := strings.TrimSuffix(newText, "\n")
-	if trimmedOld != oldText && trimmedOld != "" && strings.Contains(content, trimmedOld) {
-		return trimmedOld, trimmedNew, nil
-	}
-	return "", "", fmt.Errorf("old patch text was not found")
-}
-
-func updatePatchTexts(lines []string) (string, string, error) {
-	oldLines := []string{}
-	newLines := []string{}
-	for _, line := range lines {
-		if strings.HasPrefix(line, "@@") || line == "" {
-			continue
-		}
-		prefix := line[0]
-		body := ""
-		if len(line) > 1 {
-			body = line[1:]
-		}
-		switch prefix {
-		case ' ':
-			oldLines = append(oldLines, body)
-			newLines = append(newLines, body)
-		case '-':
-			oldLines = append(oldLines, body)
-		case '+':
-			newLines = append(newLines, body)
-		default:
-			return "", "", fmt.Errorf("update lines must start with space, -, +, or @@")
-		}
-	}
-	oldText := strings.Join(oldLines, "\n")
-	newText := strings.Join(newLines, "\n")
-	if oldText != "" {
-		oldText += "\n"
-	}
-	if newText != "" {
-		newText += "\n"
-	}
-	return oldText, newText, nil
+	return strings.Join(lines, "\n") + "\n"
 }

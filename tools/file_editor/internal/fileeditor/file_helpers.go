@@ -30,11 +30,43 @@ func readTextFile(path string, maxFileBytes int64) ([]byte, string, error) {
 	return data, hashBytes(data), nil
 }
 
+// writeTextFile writes through a same-directory temporary file and renames it
+// into place, so a failure never leaves a half-written target and the target's
+// permissions are preserved.
 func writeTextFile(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	directory := filepath.Dir(path)
+	if err := os.MkdirAll(directory, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	mode := os.FileMode(0o644)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	temp, err := os.CreateTemp(directory, "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tempName := temp.Name()
+	if _, err := temp.Write(data); err != nil {
+		_ = temp.Close()
+		_ = os.Remove(tempName)
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		_ = os.Remove(tempName)
+		return err
+	}
+	if err := os.Chmod(tempName, mode); err != nil {
+		_ = os.Remove(tempName)
+		return err
+	}
+	if err := os.Rename(tempName, path); err != nil {
+		_ = os.Remove(tempName)
+		return err
+	}
+	return nil
 }
 
 func validateWritableText(content []byte, maxFileBytes int64) error {
@@ -74,16 +106,18 @@ func isBinary(data []byte) bool {
 	return false
 }
 
-func ensureExpectedHash(path string, expectedHash string, maxFileBytes int64) (string, error) {
-	expectedHash = strings.TrimSpace(expectedHash)
-	if expectedHash == "" {
+// verifyExpectedHash enforces the optional expected-hash guard. An expected
+// hash is a statement that the target must exist with exactly that content,
+// so a missing target is an error and a mismatch reports the real hash.
+func verifyExpectedHash(expected string, targetExists bool, currentHash string) (string, error) {
+	expected = strings.TrimSpace(expected)
+	if expected == "" {
 		return "", nil
 	}
-	_, currentHash, err := readTextFile(path, maxFileBytes)
-	if err != nil {
-		return "", err
+	if !targetExists {
+		return "", fmt.Errorf("expectedHash was provided but the target file does not exist")
 	}
-	if currentHash != expectedHash {
+	if currentHash != expected {
 		return currentHash, fmt.Errorf("file changed since expectedHash; current hash is %s", currentHash)
 	}
 	return currentHash, nil

@@ -12,10 +12,9 @@ import (
 )
 
 type pathMatch struct {
-	Display  string
-	IsDir    bool
-	Size     int64
-	Modified int64
+	Display string
+	IsDir   bool
+	Size    int64
 }
 
 func runGlob(ctx context.Context, input types.ToolExecutionInput, config Config, policy PathPolicy) types.ToolExecutionOutput {
@@ -31,16 +30,20 @@ func runGlob(ctx context.Context, input types.ToolExecutionInput, config Config,
 	if err != nil {
 		return failure("resolve glob path", err, nil)
 	}
+	metadata := baseMetadata("glob", resolved)
+	metadata["pattern"] = pattern
+	matcher, err := compileGlob(pattern)
+	if err != nil {
+		return failure("compile glob pattern", err, metadata)
+	}
 	showHidden, err := boolArgument(input, "showHidden", false)
 	if err != nil {
-		return failure("parse glob request", err, baseMetadata("glob", resolved))
+		return failure("parse glob request", err, metadata)
 	}
 	maxOutput, err := effectiveMaxOutput(input, config)
 	if err != nil {
-		return failure("parse output limit", err, baseMetadata("glob", resolved))
+		return failure("parse output limit", err, metadata)
 	}
-	metadata := baseMetadata("glob", resolved)
-	metadata["pattern"] = pattern
 	results := make([]pathMatch, 0)
 	root := resolved.Absolute
 	info, err := os.Stat(root)
@@ -70,24 +73,26 @@ func runGlob(ctx context.Context, input types.ToolExecutionInput, config Config,
 		if err != nil {
 			return nil
 		}
-		if !globMatches(pattern, rel) {
+		if !matcher.Match(rel) {
 			return nil
 		}
 		info, err := entry.Info()
 		if err != nil {
 			return nil
 		}
-		results = append(results, pathMatch{Display: displayPath(policy.baseDir, path), IsDir: entry.IsDir(), Size: info.Size(), Modified: info.ModTime().UnixNano()})
+		results = append(results, pathMatch{Display: displayPath(policy.baseDir, path), IsDir: entry.IsDir(), Size: info.Size()})
 		return nil
 	})
 	if walkErr != nil {
 		return failure("glob files", walkErr, metadata)
 	}
 	sort.Slice(results, func(i, j int) bool {
-		if results[i].Modified != results[j].Modified {
-			return results[i].Modified > results[j].Modified
+		left := strings.ToLower(results[i].Display)
+		right := strings.ToLower(results[j].Display)
+		if left != right {
+			return left < right
 		}
-		return strings.ToLower(results[i].Display) < strings.ToLower(results[j].Display)
+		return results[i].Display < results[j].Display
 	})
 	truncated := false
 	if len(results) > config.MaxSearchResults {
@@ -104,7 +109,11 @@ func runGlob(ctx context.Context, input types.ToolExecutionInput, config Config,
 		}
 		builder.WriteString(fmt.Sprintf("%d: %s\t%s\t%d\n", index+1, filepath.ToSlash(name), kind, item.Size))
 	}
-	content, outputTruncated := truncateText(builder.String(), maxOutput)
+	facts := []resultFact{
+		intFact("resultsCount", len(results)),
+		boolFact("truncated", truncated),
+	}
+	content, outputTruncated := composeContent(builder.String(), "glob", facts, maxOutput)
 	metadata["resultsCount"] = len(results)
 	metadata["truncated"] = truncated || outputTruncated
 	metadata["maxSearchResults"] = config.MaxSearchResults

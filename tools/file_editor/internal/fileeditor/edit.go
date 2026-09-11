@@ -38,7 +38,7 @@ func runEdit(input types.ToolExecutionInput, config Config, policy PathPolicy) t
 		return failure("parse edit request", err, metadata)
 	}
 	if oldString == "" {
-		return createMissingByEdit(config, policy, resolved, newString)
+		return createMissingByEdit(config, policy, resolved, newString, providedHash)
 	}
 	resolvedExisting, err := policy.ResolveExisting(pathArg)
 	if err != nil {
@@ -49,23 +49,28 @@ func runEdit(input types.ToolExecutionInput, config Config, policy PathPolicy) t
 	if err != nil {
 		return failure("edit file", err, metadata)
 	}
-	if expected := strings.TrimSpace(providedHash); expected != "" && expected != currentHash {
+	if _, err := verifyExpectedHash(providedHash, true, currentHash); err != nil {
 		metadata["currentHash"] = currentHash
-		return failure("edit file", fmt.Errorf("file changed since expectedHash; current hash is %s", currentHash), metadata)
+		return failure("edit file", err, metadata)
 	}
 	content := string(data)
-	count := strings.Count(content, oldString)
+	style := detectLineEnding(data)
+	oldText := applyLineEndingStyle(oldString, style)
+	newText := applyLineEndingStyle(newString, style)
+	count := strings.Count(content, oldText)
 	if count == 0 {
 		return failure("edit file", fmt.Errorf("oldString was not found"), metadata)
 	}
 	if count > 1 && !replaceAll {
 		return failure("edit file", fmt.Errorf("oldString appears %d times; set replaceAll=true or provide a more specific oldString", count), metadata)
 	}
+	replacements := 1
 	updated := ""
 	if replaceAll {
-		updated = strings.ReplaceAll(content, oldString, newString)
+		updated = strings.ReplaceAll(content, oldText, newText)
+		replacements = count
 	} else {
-		updated = strings.Replace(content, oldString, newString, 1)
+		updated = strings.Replace(content, oldText, newText, 1)
 	}
 	updatedBytes := []byte(updated)
 	if err := validateWritableText(updatedBytes, config.MaxFileBytes); err != nil {
@@ -74,20 +79,26 @@ func runEdit(input types.ToolExecutionInput, config Config, policy PathPolicy) t
 	if err := writeTextFile(resolvedExisting.Absolute, updatedBytes); err != nil {
 		return failure("edit file", err, metadata)
 	}
-	metadata["hash"] = hashBytes(updatedBytes)
+	newHash := hashBytes(updatedBytes)
+	metadata["hash"] = newHash
 	metadata["previousHash"] = currentHash
-	metadata["replacements"] = count
-	if !replaceAll {
-		metadata["replacements"] = 1
+	metadata["replacements"] = replacements
+	facts := []resultFact{
+		intFact("replacements", replacements),
+		textFact("hash", newHash),
+		textFact("previousHash", currentHash),
 	}
-	return success(fmt.Sprintf("Edited %s (%v replacement(s)).", resolvedExisting.Display, metadata["replacements"]), metadata)
+	return success(appendEnvelope(fmt.Sprintf("Edited %s (%d replacement(s)).", resolvedExisting.Display, replacements), "edit", facts), metadata)
 }
 
-func createMissingByEdit(config Config, policy PathPolicy, resolved ResolvedPath, content string) types.ToolExecutionOutput {
+func createMissingByEdit(config Config, policy PathPolicy, resolved ResolvedPath, content string, providedHash string) types.ToolExecutionOutput {
 	metadata := baseMetadata("edit", resolved)
 	if _, err := os.Stat(resolved.Absolute); err == nil {
 		return failure("edit file", fmt.Errorf("empty oldString can only create a missing file"), metadata)
 	} else if !os.IsNotExist(err) {
+		return failure("edit file", err, metadata)
+	}
+	if _, err := verifyExpectedHash(providedHash, false, ""); err != nil {
 		return failure("edit file", err, metadata)
 	}
 	if err := ensureParentCreatable(resolved.Absolute); err != nil {
@@ -100,7 +111,12 @@ func createMissingByEdit(config Config, policy PathPolicy, resolved ResolvedPath
 	if err := writeTextFile(resolved.Absolute, contentBytes); err != nil {
 		return failure("edit file", err, metadata)
 	}
+	newHash := hashBytes(contentBytes)
 	metadata["created"] = true
-	metadata["hash"] = hashBytes(contentBytes)
-	return success(fmt.Sprintf("Created %s via edit.", resolved.Display), metadata)
+	metadata["hash"] = newHash
+	facts := []resultFact{
+		boolFact("created", true),
+		textFact("hash", newHash),
+	}
+	return success(appendEnvelope(fmt.Sprintf("Created %s via edit.", resolved.Display), "edit", facts), metadata)
 }

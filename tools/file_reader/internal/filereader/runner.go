@@ -66,15 +66,15 @@ func effectiveReadWindow(input types.ToolExecutionInput, config Config) (int, in
 	if err != nil {
 		return 0, 0, err
 	}
-	if offset <= 0 {
-		offset = 1
+	if offset < 1 {
+		return 0, 0, fmt.Errorf("argument %q must be greater than zero", "offset")
 	}
 	limit, err := intArgument(input, "limit", config.DefaultReadLines)
 	if err != nil {
 		return 0, 0, err
 	}
-	if limit <= 0 {
-		limit = config.DefaultReadLines
+	if limit < 1 {
+		return 0, 0, fmt.Errorf("argument %q must be greater than zero", "limit")
 	}
 	if limit > config.MaxReadLines {
 		limit = config.MaxReadLines

@@ -3,6 +3,7 @@ package fileeditor
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"eucli-box/pkg/types"
 )
@@ -29,11 +30,12 @@ func runWrite(input types.ToolExecutionInput, config Config, policy PathPolicy) 
 	if err := validateWritableText(contentBytes, config.MaxFileBytes); err != nil {
 		return failure("write file", err, metadata)
 	}
-	existed := false
 	providedHash, err := expectedHashArgument(input)
 	if err != nil {
 		return failure("parse write request", err, metadata)
 	}
+	existed := false
+	currentHash := ""
 	if info, err := os.Stat(resolved.Absolute); err == nil {
 		if info.IsDir() {
 			return failure("write file", fmt.Errorf("path is a directory"), metadata)
@@ -46,22 +48,38 @@ func runWrite(input types.ToolExecutionInput, config Config, policy PathPolicy) 
 		resolved = resolvedExisting
 		metadata = baseMetadata("write", resolved)
 		metadata["bytes"] = len(contentBytes)
-		if _, err := ensureExpectedHash(resolved.Absolute, providedHash, config.MaxFileBytes); err != nil {
-			return failure("write file", err, metadata)
+		if strings.TrimSpace(providedHash) != "" {
+			_, hash, err := readTextFile(resolved.Absolute, config.MaxFileBytes)
+			if err != nil {
+				return failure("write file", err, metadata)
+			}
+			currentHash = hash
 		}
 	} else if !os.IsNotExist(err) {
+		return failure("write file", err, metadata)
+	}
+	if _, err := verifyExpectedHash(providedHash, existed, currentHash); err != nil {
+		if currentHash != "" {
+			metadata["currentHash"] = currentHash
+		}
 		return failure("write file", err, metadata)
 	}
 	if err := writeTextFile(resolved.Absolute, contentBytes); err != nil {
 		return failure("write file", err, metadata)
 	}
+	newHash := hashBytes(contentBytes)
 	metadata["created"] = !existed
-	metadata["hash"] = hashBytes(contentBytes)
+	metadata["hash"] = newHash
 	verb := "Updated"
 	if !existed {
 		verb = "Created"
 	}
-	return success(fmt.Sprintf("%s %s (%d bytes).", verb, resolved.Display, len(contentBytes)), metadata)
+	facts := []resultFact{
+		boolFact("created", !existed),
+		intFact("bytes", len(contentBytes)),
+		textFact("hash", newHash),
+	}
+	return success(appendEnvelope(fmt.Sprintf("%s %s (%d bytes).", verb, resolved.Display, len(contentBytes)), "write", facts), metadata)
 }
 
 func expectedHashArgument(input types.ToolExecutionInput) (string, error) {

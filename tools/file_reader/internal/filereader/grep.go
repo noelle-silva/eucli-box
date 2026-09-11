@@ -21,6 +21,7 @@ type grepMatch struct {
 type grepCollector struct {
 	Matches   []grepMatch
 	Truncated bool
+	Skipped   int
 	Max       int
 }
 
@@ -68,6 +69,14 @@ func runGrep(ctx context.Context, input types.ToolExecutionInput, config Config,
 	if err != nil {
 		return failure("compile grep query", err, metadata)
 	}
+	var includeMatcher *globMatcher
+	if strings.TrimSpace(include) != "" {
+		matcher, err := compileGlob(include)
+		if err != nil {
+			return failure("compile grep include", err, metadata)
+		}
+		includeMatcher = &matcher
+	}
 	maxOutput, err := effectiveMaxOutput(input, config)
 	if err != nil {
 		return failure("parse output limit", err, metadata)
@@ -79,12 +88,13 @@ func runGrep(ctx context.Context, input types.ToolExecutionInput, config Config,
 		return failure("stat grep path", err, metadata)
 	}
 	if !info.IsDir() {
-		if err := grepFile(root, filepath.Dir(root), compiled, include, config, policy, collector); err != nil {
+		if err := grepFile(root, filepath.Dir(root), compiled, includeMatcher, config, policy, collector); err != nil {
 			return failure("grep file", err, metadata)
 		}
 	} else {
 		walkErr := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 			if err != nil {
+				collector.Skipped++
 				return nil
 			}
 			if ctx.Err() != nil {
@@ -103,9 +113,9 @@ func runGrep(ctx context.Context, input types.ToolExecutionInput, config Config,
 				return nil
 			}
 			if collector.Truncated {
-				return nil
+				return filepath.SkipAll
 			}
-			return grepFile(path, root, compiled, include, config, policy, collector)
+			return grepFile(path, root, compiled, includeMatcher, config, policy, collector)
 		})
 		if walkErr != nil {
 			return failure("grep files", walkErr, metadata)
@@ -118,22 +128,34 @@ func runGrep(ctx context.Context, input types.ToolExecutionInput, config Config,
 		}
 		return matches[i].Line < matches[j].Line
 	})
+	lineTruncated := false
 	var builder strings.Builder
 	for index, match := range matches {
-		line, lineTruncated := truncateLine(match.Text, config.MaxLineChars)
-		if lineTruncated {
-			metadata["lineTruncated"] = true
+		line, truncated := truncateLine(match.Text, config.MaxLineChars)
+		if truncated {
+			lineTruncated = true
 		}
 		builder.WriteString(fmt.Sprintf("%d: %s:%d: %s\n", index+1, filepath.ToSlash(match.Path), match.Line, line))
 	}
-	content, outputTruncated := truncateText(builder.String(), maxOutput)
+	facts := []resultFact{
+		intFact("resultsCount", len(matches)),
+	}
+	if collector.Skipped > 0 {
+		facts = append(facts, intFact("skippedFiles", collector.Skipped))
+	}
+	facts = append(facts, boolFact("truncated", collector.Truncated))
+	content, outputTruncated := composeContent(builder.String(), "grep", facts, maxOutput)
 	metadata["resultsCount"] = len(matches)
+	metadata["skippedFiles"] = collector.Skipped
 	metadata["truncated"] = collector.Truncated || outputTruncated
 	metadata["maxSearchResults"] = config.MaxSearchResults
+	if lineTruncated {
+		metadata["lineTruncated"] = true
+	}
 	return success(content, metadata)
 }
 
-func grepFile(path string, root string, compiled *regexp.Regexp, include string, config Config, policy PathPolicy, collector *grepCollector) error {
+func grepFile(path string, root string, compiled *regexp.Regexp, includeMatcher *globMatcher, config Config, policy PathPolicy, collector *grepCollector) error {
 	if collector.Truncated {
 		return nil
 	}
@@ -141,18 +163,25 @@ func grepFile(path string, root string, compiled *regexp.Regexp, include string,
 	if err != nil {
 		rel = filepath.Base(path)
 	}
-	if strings.TrimSpace(include) != "" && !globMatches(include, rel) {
+	if includeMatcher != nil && !includeMatcher.MatchFilter(rel) {
 		return nil
 	}
 	resolved, err := policy.ResolveExisting(path)
 	if err != nil {
+		collector.Skipped++
 		return nil
 	}
 	data, _, err := readTextFile(resolved.Absolute, config.MaxFileBytes)
 	if err != nil {
+		collector.Skipped++
 		return nil
 	}
-	lines := splitLines(string(data))
+	decoded, err := decodeText(data)
+	if err != nil {
+		collector.Skipped++
+		return nil
+	}
+	lines := splitLines(decoded.Text)
 	for index, line := range lines {
 		if compiled.MatchString(line) {
 			if !collector.Add(grepMatch{Path: displayPath(policy.baseDir, resolved.Absolute), Line: index + 1, Text: line}) {

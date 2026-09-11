@@ -327,3 +327,37 @@ func TestOfficialModeSnapshotIsMarkedOfficial(t *testing.T) {
 		t.Fatalf("SourceKind = %q, want %q", snapshot.SourceKind, installsource.KindOfficial)
 	}
 }
+
+func TestSourceSnapshotsDoNotOverwriteEachOther(t *testing.T) {
+	runner := &fakeRunner{run: func(installed []releasecheck.InstalledArtifact) types.ReleaseCheckSnapshot {
+		return types.ReleaseCheckSnapshot{Status: types.ReleaseCheckStatusCompleted, Results: []types.ReleaseCheckResult{
+			{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "context7"}, Status: types.ReleaseCheckStatusCompleted, LatestVersion: "0.2.0"},
+		}}
+	}}
+	current := installsource.KindOfficial
+	system, err := NewSystemWithChecker(Config{Now: time.Now, CurrentSource: func() installsource.Kind { return current }, LocalSource: &fakeLocalShelf{items: []releasecheck.LocalShelfItem{
+		{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "context7"}, Candidate: localToolCandidate("0.1.0")},
+	}}}, runner, fakeTools{}, fakePlugins{}, "0.1.0")
+	if err != nil {
+		t.Fatalf("NewSystemWithChecker error = %v", err)
+	}
+	official := system.Refresh(context.Background(), types.ReleaseArtifactKindTool)
+	if official.SourceKind != string(installsource.KindOfficial) || len(official.Results) != 1 || official.Results[0].LatestVersion != "0.2.0" {
+		t.Fatalf("official snapshot = %#v", official)
+	}
+
+	current = installsource.KindLocal
+	local := system.Refresh(context.Background(), types.ReleaseArtifactKindTool)
+	if local.SourceKind != string(installsource.KindLocal) || len(local.Results) != 1 || local.Results[0].LatestVersion != "0.1.0" {
+		t.Fatalf("local snapshot = %#v", local)
+	}
+
+	current = installsource.KindOfficial
+	restored := system.Snapshot()
+	if restored.SourceKind != string(installsource.KindOfficial) || len(restored.Results) != 1 || restored.Results[0].LatestVersion != "0.2.0" {
+		t.Fatalf("restored official snapshot = %#v", restored)
+	}
+	if runner.calls() != 1 {
+		t.Fatalf("runner calls = %d, want 1", runner.calls())
+	}
+}

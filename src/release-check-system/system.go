@@ -59,9 +59,10 @@ type system struct {
 	currentSource func() installsource.Kind
 	localSource   releasecheck.LocalShelf
 
-	mu       sync.RWMutex
-	snapshot types.ReleaseCheckSnapshot
-	running  bool
+	mu               sync.RWMutex
+	officialSnapshot types.ReleaseCheckSnapshot
+	localSnapshot    types.ReleaseCheckSnapshot
+	running          bool
 }
 
 func NewSystem(config Config, network NetworkSystem, tools ToolSystem, plugins PluginSystem) (System, error) {
@@ -111,20 +112,22 @@ func NewSystemWithChecker(config Config, checker checkRunner, tools ToolSystem, 
 
 func newSystem(config Config, checker checkRunner, catalog releasecatalog.Catalog, tools ToolSystem, plugins PluginSystem, boxVersion string) *system {
 	return &system{
-		boxVersion:    boxVersion,
-		now:           config.Now,
-		checker:       checker,
-		catalog:       catalog,
-		tools:         tools,
-		plugins:       plugins,
-		currentSource: config.CurrentSource,
-		localSource:   config.LocalSource,
-		snapshot:      releasecheck.PendingSnapshot(),
+		boxVersion:       boxVersion,
+		now:              config.Now,
+		checker:          checker,
+		catalog:          catalog,
+		tools:            tools,
+		plugins:          plugins,
+		currentSource:    config.CurrentSource,
+		localSource:      config.LocalSource,
+		officialSnapshot: releasecheck.PendingSnapshot(),
+		localSnapshot:    releasecheck.PendingSnapshot(),
 	}
 }
 
 // Refresh 执行一次用户主动的分类刷新。kind 为空表示全量刷新；
 // kind 只能是 eucli-box、tool 或 plugin，且只读取该分类对应官方仓库的一份统一版本索引。
+// 官方来源与本地来源各自保留最近一次结果，刷新只更新当前安装来源对应的那一份。
 func (s *system) Refresh(ctx context.Context, kind string) types.ReleaseCheckSnapshot {
 	if ctx == nil {
 		ctx = context.Background()
@@ -133,15 +136,16 @@ func (s *system) Refresh(ctx context.Context, kind string) types.ReleaseCheckSna
 	if kind != "" && !validRefreshKind(kind) {
 		return failedKindSnapshot(s.now, fmt.Errorf("不支持的刷新分类 %q", kind))
 	}
+	local := s.localMode()
 	s.mu.Lock()
 	if s.running {
-		snapshot := cloneSnapshot(s.snapshot)
+		snapshot := cloneSnapshot(s.snapshotLocked(local))
 		s.mu.Unlock()
 		return snapshot
 	}
 	s.running = true
-	previous := cloneSnapshot(s.snapshot)
-	s.snapshot = releasecheck.CheckingSnapshot(previous, s.now())
+	previous := cloneSnapshot(s.snapshotLocked(local))
+	s.storeSnapshotLocked(local, releasecheck.CheckingSnapshot(previous, s.now()))
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
@@ -152,10 +156,10 @@ func (s *system) Refresh(ctx context.Context, kind string) types.ReleaseCheckSna
 	requested := s.requestedArtifacts(kind)
 	installed, localFailures := s.installedArtifacts(ctx)
 	var snapshot types.ReleaseCheckSnapshot
-	if s.localMode() {
+	if local {
 		// 本地来源状态：快照描述本地商店货架与已装事实，与分类无关，全量替换。
 		// 不读取官方索引，不产生官方新版本更新提示。
-		snapshot = s.localSnapshot(ctx, installed)
+		snapshot = s.buildLocalSnapshot(ctx, installed)
 	} else {
 		snapshot = s.checker.CheckOnly(ctx, installed, s.boxVersion, requested)
 		if snapshot.Status == types.ReleaseCheckStatusCompleted || snapshot.Status == types.ReleaseCheckStatusFailed {
@@ -166,24 +170,43 @@ func (s *system) Refresh(ctx context.Context, kind string) types.ReleaseCheckSna
 	}
 
 	s.mu.Lock()
-	s.snapshot = cloneSnapshot(snapshot)
+	s.storeSnapshotLocked(local, snapshot)
 	s.mu.Unlock()
 	return snapshot
 }
 
+// Snapshot 返回当前安装来源对应的快照：官方来源与本地来源各自保留最近一次结果，互不覆盖。
 func (s *system) Snapshot() types.ReleaseCheckSnapshot {
+	local := s.localMode()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return cloneSnapshot(s.snapshot)
+	return cloneSnapshot(s.snapshotLocked(local))
+}
+
+// snapshotLocked 返回指定来源的快照；调用方必须持有锁。
+func (s *system) snapshotLocked(local bool) types.ReleaseCheckSnapshot {
+	if local {
+		return s.localSnapshot
+	}
+	return s.officialSnapshot
+}
+
+// storeSnapshotLocked 写入指定来源的快照；调用方必须持有锁。
+func (s *system) storeSnapshotLocked(local bool, snapshot types.ReleaseCheckSnapshot) {
+	if local {
+		s.localSnapshot = snapshot
+		return
+	}
+	s.officialSnapshot = snapshot
 }
 
 func (s *system) localMode() bool {
 	return s.currentSource != nil && s.currentSource() == installsource.KindLocal
 }
 
-// localSnapshot 在本地来源状态下构造版本检查事实：可安装列表从本地商店货架读取，
+// buildLocalSnapshot 在本地来源状态下构造版本检查事实：可安装列表从本地商店货架读取，
 // 不读取官方索引，不产生任何官方新版本更新提示；快照整体标记来源为本地源。
-func (s *system) localSnapshot(ctx context.Context, installed []releasecheck.InstalledArtifact) types.ReleaseCheckSnapshot {
+func (s *system) buildLocalSnapshot(ctx context.Context, installed []releasecheck.InstalledArtifact) types.ReleaseCheckSnapshot {
 	checkedAt := s.now()
 	installedByIdentity := make(map[string]releasecheck.InstalledArtifact, len(installed))
 	for _, item := range installed {
@@ -288,7 +311,7 @@ func mergeKindSnapshot(previous types.ReleaseCheckSnapshot, current types.Releas
 			break
 		}
 	}
-	return types.ReleaseCheckSnapshot{Status: status, StartedAt: current.StartedAt, CheckedAt: current.CheckedAt, Results: results}
+	return types.ReleaseCheckSnapshot{Status: status, SourceKind: current.SourceKind, StartedAt: current.StartedAt, CheckedAt: current.CheckedAt, Results: results}
 }
 
 func validRefreshKind(kind string) bool {

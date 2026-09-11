@@ -242,7 +242,6 @@ func normalizeTextPart(part types.MessagePart, text string, now time.Time, seen 
 func normalizeToolPart(part types.MessagePart, now time.Time, seen map[string]struct{}) types.MessagePart {
 	part.Type = "tool"
 	part.ID = normalizeMessagePartID(part.ID, seen)
-	part.Source = strings.TrimSpace(part.Source)
 	part.CallID = strings.TrimSpace(part.CallID)
 	part.ToolName = strings.TrimSpace(part.ToolName)
 	part.State = strings.TrimSpace(part.State)

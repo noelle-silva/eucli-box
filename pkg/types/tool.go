@@ -102,11 +102,11 @@ type ToolStopResult struct {
 	Terminated int `json:"terminated"`
 }
 
-type ToolIntent struct {	ID             string             `json:"id"`
+type ToolIntent struct {
+	ID             string             `json:"id"`
 	ToolName       string             `json:"toolName"`
 	Arguments      map[string]any     `json:"arguments,omitempty"`
 	InvocationMode ToolInvocationMode `json:"invocationMode,omitempty"`
-	Source         string             `json:"source,omitempty"`
 	Raw            string             `json:"raw,omitempty"`
 	CreatedAt      time.Time          `json:"createdAt"`
 }
@@ -149,17 +149,11 @@ func ValidExplicitToolInvocationMode(mode ToolInvocationMode) bool {
 	}
 }
 
-const (
-	ToolCallSourceNative       = "native"
-	ToolCallSourceTextProtocol = "text_protocol"
-)
-
 type ToolAction struct {
 	ID             string             `json:"id"`
 	ToolName       string             `json:"toolName"`
 	Arguments      map[string]any     `json:"arguments,omitempty"`
 	InvocationMode ToolInvocationMode `json:"invocationMode,omitempty"`
-	Source         string             `json:"source,omitempty"`
 	Raw            string             `json:"raw,omitempty"`
 	CreatedAt      time.Time          `json:"createdAt"`
 }

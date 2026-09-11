@@ -26,15 +26,9 @@ func EstimateMessageTokenCount(message Message) int {
 			chars += utf8.RuneCountInString(strings.TrimSpace(part.Signature))
 			chars += utf8.RuneCountInString(strings.TrimSpace(part.Data))
 		case "tool":
-			isTextProtocolTool := strings.TrimSpace(part.Source) == ToolCallSourceTextProtocol
-			if !isTextProtocolTool {
-				chars += utf8.RuneCountInString(strings.TrimSpace(part.ToolName))
-				chars += mapStringTokenChars(part.Input)
-			}
+			chars += utf8.RuneCountInString(strings.TrimSpace(part.ToolName))
+			chars += mapStringTokenChars(part.Input)
 			if part.Result != nil {
-				if isTextProtocolTool {
-					chars += utf8.RuneCountInString(strings.TrimSpace(part.ToolName))
-				}
 				chars += utf8.RuneCountInString(strings.TrimSpace(string(part.Result.Status)))
 				chars += utf8.RuneCountInString(strings.TrimSpace(part.Result.Content))
 				chars += utf8.RuneCountInString(strings.TrimSpace(part.Result.Error))

@@ -213,7 +213,7 @@ func (p *anthropicStreamParser) Finish(response types.HTTPResponse) (types.Model
 		if id == "" {
 			id = "tool-use-" + strconv.Itoa(index)
 		}
-		result.ToolIntents = append(result.ToolIntents, types.ToolIntent{ID: id, ToolName: builder.Name, Arguments: args, Source: types.ToolCallSourceNative, Raw: argsRaw, CreatedAt: result.CreatedAt})
+		result.ToolIntents = append(result.ToolIntents, types.ToolIntent{ID: id, ToolName: builder.Name, Arguments: args, Raw: argsRaw, CreatedAt: result.CreatedAt})
 	}
 	return result, nil
 }
@@ -325,7 +325,7 @@ func (anthropicAdapter) ParseCompleteResponse(response types.HTTPResponse) (type
 			result.ReasoningSignature = strings.TrimSpace(item.Signature)
 			result.ReasoningData = strings.TrimSpace(item.Data)
 		case "tool_use":
-			result.ToolIntents = append(result.ToolIntents, types.ToolIntent{ID: item.ID, ToolName: item.Name, Arguments: item.Input, Source: types.ToolCallSourceNative, CreatedAt: createdAt})
+			result.ToolIntents = append(result.ToolIntents, types.ToolIntent{ID: item.ID, ToolName: item.Name, Arguments: item.Input, CreatedAt: createdAt})
 		}
 	}
 	if strings.TrimSpace(result.Reasoning) != "" || strings.TrimSpace(result.ReasoningSignature) != "" || strings.TrimSpace(result.ReasoningData) != "" {
@@ -346,22 +346,20 @@ func anthropicMessages(messages []types.PromptMessage) ([]map[string]any, string
 				systemText += "\n\n" + message.Content
 			}
 		case "user", "assistant":
-			nativeToolParts := promptNativeToolParts(message)
-			textProtocolResultParts := promptTextProtocolToolResultParts(message)
-			if message.Role == "assistant" && len(nativeToolParts) > 0 {
-				if err := requireToolResults(nativeToolParts); err != nil {
+			toolParts := promptToolParts(message)
+			if message.Role == "assistant" && len(toolParts) > 0 {
+				if err := requireToolResults(toolParts); err != nil {
 					return nil, "", err
 				}
-				content, err := anthropicAssistantToolContent(message, nativeToolParts)
+				content, err := anthropicAssistantToolContent(message, toolParts)
 				if err != nil {
 					return nil, "", err
 				}
 				converted = append(converted, map[string]any{"role": "assistant", "content": appendAnthropicReasoningContent(content, message)})
-				resultBlocks := anthropicToolResultBlocks(nativeToolParts)
+				resultBlocks := anthropicToolResultBlocks(toolParts)
 				if len(resultBlocks) > 0 {
 					converted = append(converted, map[string]any{"role": "user", "content": resultBlocks})
 				}
-				converted = appendUserTextObservation(converted, textProtocolToolResultsText(textProtocolResultParts))
 				continue
 			}
 			content, err := anthropicMessageContent(message)
@@ -372,9 +370,6 @@ func anthropicMessages(messages []types.PromptMessage) ([]map[string]any, string
 				content = appendAnthropicReasoningContent(content, message)
 			}
 			converted = append(converted, map[string]any{"role": message.Role, "content": content})
-			if message.Role == "assistant" {
-				converted = appendUserTextObservation(converted, textProtocolToolResultsText(textProtocolResultParts))
-			}
 		default:
 			return nil, "", providerInvalid("Anthropic messages only support system, user, and assistant roles", nil)
 		}

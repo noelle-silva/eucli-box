@@ -1008,16 +1008,42 @@ func TestRunWaitsForToolConfirmationThenCompletes(t *testing.T) {
 	}
 }
 
-func TestRunParsesTextToolRequestsIntoUnifiedToolFlow(t *testing.T) {
+func TestRunDoesNotRecognizeTextRequestInAssistantContent(t *testing.T) {
 	fakes := newRuntimeFakes()
-	fakes.provider.responses = []types.ModelResponse{
-		{ID: "m1", Content: "I will check.\n\n<<<TOOL_REQUEST>>>\n[tool]: file-reader\n[path]: README.md\n<<<END_TOOL_REQUEST>>>"},
-		{ID: "m2", Content: "final"},
-	}
 	rawRequest := "<<<TOOL_REQUEST>>>\n[tool]: file-reader\n[path]: README.md\n<<<END_TOOL_REQUEST>>>"
-	fakes.tool.parsedIntents = []types.ToolIntent{{ID: "text-intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}, Source: types.ToolCallSourceTextProtocol, Raw: rawRequest}}
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "I will check.\n\n" + rawRequest}}
 	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use text tool"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	if fakes.tool.executeCount != 0 || len(fakes.tool.normalizedIntents) != 0 || fakes.provider.callCount() != 1 {
+		t.Fatalf("text request triggered tool flow execute=%d intents=%#v calls=%d", fakes.tool.executeCount, fakes.tool.normalizedIntents, fakes.provider.callCount())
+	}
+	session := fakes.storage.lastSession()
+	if len(session.Messages) < 2 || session.Messages[1].Content != "I will check.\n\n"+rawRequest {
+		t.Fatalf("assistant message = %#v", session.Messages)
+	}
+	for _, part := range session.Messages[1].Parts {
+		if part.Type == "tool" {
+			t.Fatalf("text request created a tool part: %#v", session.Messages[1].Parts)
+		}
+	}
+}
+
+func TestRunExecutesNativeToolIntentIntoUnifiedToolFlow(t *testing.T) {
+	fakes := newRuntimeFakes()
+	rawArgs := `{"path":"README.md"}`
+	fakes.provider.responses = []types.ModelResponse{
+		{ID: "m1", Content: "I will check.", ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}, Raw: rawArgs}}},
+		{ID: "m2", Content: "final"},
+	}
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use native tool"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -1029,50 +1055,20 @@ func TestRunParsesTextToolRequestsIntoUnifiedToolFlow(t *testing.T) {
 		t.Fatalf("tool flow execute=%d intents=%#v", fakes.tool.executeCount, fakes.tool.normalizedIntents)
 	}
 	session := fakes.storage.lastSession()
-	if len(session.Messages) < 2 || session.Messages[1].Content != "I will check.\n\n"+rawRequest {
+	if len(session.Messages) < 2 || session.Messages[1].Content != "I will check." {
 		t.Fatalf("assistant message = %#v", session.Messages)
 	}
-	if got := toolPartByCallID(session.Messages[1], "text-intent-1"); got == nil || got.State != "completed" || got.Source != types.ToolCallSourceTextProtocol || got.Raw != rawRequest || got.Result == nil || got.Result.Content != "tool ok" || !got.IsToolInvocationHidden() {
+	if got := toolPartByCallID(session.Messages[1], "intent-1"); got == nil || got.State != "completed" || got.Raw != rawArgs || got.Result == nil || got.Result.Content != "tool ok" || len(got.Display) != 0 {
 		t.Fatalf("tool part = %#v", session.Messages[1].Parts)
-	}
-}
-
-func TestRunPreservesPureTextToolRequestAsAssistantContent(t *testing.T) {
-	fakes := newRuntimeFakes()
-	fakes.provider.responses = []types.ModelResponse{
-		{ID: "m1", Content: "<<<TOOL_REQUEST>>>\n[tool]: file-reader\n[path]: README.md\n<<<END_TOOL_REQUEST>>>"},
-		{ID: "m2", Content: "final"},
-	}
-	rawRequest := "<<<TOOL_REQUEST>>>\n[tool]: file-reader\n[path]: README.md\n<<<END_TOOL_REQUEST>>>"
-	fakes.tool.parsedIntents = []types.ToolIntent{{ID: "text-intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}, Source: types.ToolCallSourceTextProtocol, Raw: rawRequest}}
-	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use pure text tool"})
-	if err != nil {
-		t.Fatalf("StartRun() error = %v", err)
-	}
-	final := waitRun(t, system, state.ID)
-	if final.Status != types.RunStatusCompleted {
-		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
-	}
-	session := fakes.storage.lastSession()
-	if len(session.Messages) < 3 {
-		t.Fatalf("messages = %#v", session.Messages)
-	}
-	if session.Messages[1].Type != "assistant" || session.Messages[1].Content != rawRequest {
-		t.Fatalf("assistant raw content = %#v", session.Messages)
-	}
-	if got := toolPartByCallID(session.Messages[1], "text-intent-1"); got == nil || got.State != "completed" || got.Source != types.ToolCallSourceTextProtocol || got.Raw != rawRequest || got.Result == nil || !got.IsToolInvocationHidden() {
-		t.Fatalf("assistant lacks completed text protocol tool part: %#v", session.Messages)
 	}
 }
 
 func TestRunPublishesToolOutputUpdateEvents(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.responses = []types.ModelResponse{
-		{ID: "m1", Content: "checking\n\n<<<TOOL_REQUEST>>>\n[tool]: file-reader\n[path]: README.md\n<<<END_TOOL_REQUEST>>>"},
+		{ID: "m1", Content: "checking", ToolIntents: []types.ToolIntent{{ID: "intent-out-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}}}},
 		{ID: "m2", Content: "final"},
 	}
-	fakes.tool.parsedIntents = []types.ToolIntent{{ID: "intent-out-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}, Source: types.ToolCallSourceTextProtocol, Raw: "<<<TOOL_REQUEST>>>\n[tool]: file-reader\n[path]: README.md\n<<<END_TOOL_REQUEST>>>"}}
 	fakes.tool.outputUpdates = []types.ToolOutputUpdate{
 		{CallID: "intent-out-1", ToolName: "file-reader", Bytes: 1024, Preview: "progress-first"},
 		{CallID: "intent-out-1", ToolName: "file-reader", Bytes: 2048, Preview: "progress-second"},
@@ -1115,29 +1111,28 @@ func TestRunPublishesToolOutputUpdateEvents(t *testing.T) {
 	}
 }
 
-func TestRunTextProtocolToolUsesUnifiedConfirmationState(t *testing.T) {
+func TestRunNativeToolUsesUnifiedConfirmationState(t *testing.T) {
 	fakes := newRuntimeFakes()
-	rawRequest := "<<<TOOL_REQUEST>>>\n[tool]: file-reader\n[path]: README.md\n<<<END_TOOL_REQUEST>>>"
+	rawArgs := `{"path":"README.md"}`
 	fakes.provider.responses = []types.ModelResponse{
-		{ID: "m1", Content: rawRequest},
+		{ID: "m1", Content: "need tool", ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}, Raw: rawArgs}}},
 		{ID: "m2", Content: "final"},
 	}
-	fakes.tool.parsedIntents = []types.ToolIntent{{ID: "text-intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}, Source: types.ToolCallSourceTextProtocol, Raw: rawRequest}}
-	fakes.tool.prepareDecision = types.PermissionDecision{ID: "decision-1", ActionID: "text-intent-1", ToolName: "file-reader", Status: types.PermissionStatusNeedsConfirmation}
-	fakes.tool.confirmedDecision = types.PermissionDecision{ID: "decision-1", ActionID: "text-intent-1", ToolName: "file-reader", Status: types.PermissionStatusAllowed}
+	fakes.tool.prepareDecision = types.PermissionDecision{ID: "decision-1", ActionID: "intent-1", ToolName: "file-reader", Status: types.PermissionStatusNeedsConfirmation}
+	fakes.tool.confirmedDecision = types.PermissionDecision{ID: "decision-1", ActionID: "intent-1", ToolName: "file-reader", Status: types.PermissionStatusAllowed}
 	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use text tool"})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use native tool"})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
 	waitStatus(t, system, state.ID, types.RunStatusWaitingConfirmation)
 	session := fakes.storage.lastSession()
-	if len(session.Messages) < 2 || session.Messages[1].Content != rawRequest {
+	if len(session.Messages) < 2 || session.Messages[1].Content != "need tool" {
 		t.Fatalf("assistant content = %#v", session.Messages)
 	}
-	part := toolPartByCallID(session.Messages[1], "text-intent-1")
-	if part == nil || part.State != "needs_confirmation" || part.Source != types.ToolCallSourceTextProtocol || part.Raw != rawRequest || part.Decision == nil || !part.IsToolInvocationHidden() {
-		t.Fatalf("text protocol confirmation part = %#v", session.Messages[1].Parts)
+	part := toolPartByCallID(session.Messages[1], "intent-1")
+	if part == nil || part.State != "needs_confirmation" || part.Raw != rawArgs || part.Decision == nil {
+		t.Fatalf("confirmation part = %#v", session.Messages[1].Parts)
 	}
 	if err := system.SubmitToolConfirmation(context.Background(), types.ToolConfirmation{DecisionID: "decision-1", Approved: true}); err != nil {
 		t.Fatalf("SubmitToolConfirmation() error = %v", err)
@@ -1147,9 +1142,9 @@ func TestRunTextProtocolToolUsesUnifiedConfirmationState(t *testing.T) {
 		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
 	}
 	finalSession := fakes.storage.lastSession()
-	part = toolPartByCallID(finalSession.Messages[1], "text-intent-1")
-	if part == nil || part.State != "completed" || part.Result == nil || part.Result.Content != "tool ok" || !part.IsToolInvocationHidden() {
-		t.Fatalf("completed text protocol part = %#v", finalSession.Messages[1].Parts)
+	part = toolPartByCallID(finalSession.Messages[1], "intent-1")
+	if part == nil || part.State != "completed" || part.Result == nil || part.Result.Content != "tool ok" {
+		t.Fatalf("completed part = %#v", finalSession.Messages[1].Parts)
 	}
 }
 
@@ -2763,8 +2758,6 @@ type fakeRuntimeTools struct {
 	executeErr          error
 	outputUpdates       []types.ToolOutputUpdate
 	toolSummaries       []types.ToolSummary
-	parsedIntents       []types.ToolIntent
-	parseErr            error
 	normalizedIntents   []types.ToolIntent
 }
 
@@ -2772,21 +2765,9 @@ func newFakeRuntimeTools() *fakeRuntimeTools {
 	return &fakeRuntimeTools{prepareDecision: types.PermissionDecision{ID: "decision-1", Status: types.PermissionStatusAllowed}}
 }
 
-func (f *fakeRuntimeTools) ParseTextToolRequests(ctx context.Context, content string) ([]types.ToolIntent, error) {
-	if f.parseErr != nil {
-		return nil, f.parseErr
-	}
-	if strings.Contains(content, "<<<TOOL_REQUEST>>>") {
-		intents := append([]types.ToolIntent(nil), f.parsedIntents...)
-		f.parsedIntents = nil
-		return intents, nil
-	}
-	return nil, nil
-}
-
 func (f *fakeRuntimeTools) NormalizeIntent(ctx context.Context, intent types.ToolIntent) (types.ToolAction, error) {
 	f.normalizedIntents = append(f.normalizedIntents, intent)
-	return types.ToolAction{ID: intent.ID, ToolName: intent.ToolName, Arguments: intent.Arguments, InvocationMode: intent.InvocationMode, Source: intent.Source, Raw: intent.Raw}, nil
+	return types.ToolAction{ID: intent.ID, ToolName: intent.ToolName, Arguments: intent.Arguments, InvocationMode: intent.InvocationMode, Raw: intent.Raw}, nil
 }
 
 func (f *fakeRuntimeTools) Prepare(ctx context.Context, roleID string, workspaceID string, action types.ToolAction) (types.ToolRunPlan, error) {

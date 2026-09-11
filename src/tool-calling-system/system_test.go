@@ -27,50 +27,6 @@ func TestNormalizeIntentCreatesStandardAction(t *testing.T) {
 	}
 }
 
-func TestParseTextToolRequestsExtractsIntentWithoutConsumingContent(t *testing.T) {
-	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{})
-	intents, err := system.ParseTextToolRequests(context.Background(), `I will check it.
-
-<<<TOOL_REQUEST>>>
-[tool]: web-search
-[query]: 东京明天天气
-[limit]: 5
-<<<END_TOOL_REQUEST>>>
-
-I will continue after the result.`)
-	if err != nil {
-		t.Fatalf("ParseTextToolRequests() error = %v", err)
-	}
-	if len(intents) != 1 || intents[0].ToolName != "web-search" || intents[0].Arguments["query"] != "东京明天天气" || intents[0].Arguments["limit"] != "5" {
-		t.Fatalf("intents = %#v", intents)
-	}
-	if intents[0].ID == "" || intents[0].Raw == "" || intents[0].Source != types.ToolCallSourceTextProtocol {
-		t.Fatalf("intent metadata = %#v", intents[0])
-	}
-}
-
-func TestTextToolInstructionsDescribeProtocolAndTools(t *testing.T) {
-	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{})
-	prompt, err := system.TextToolInstructions(context.Background(), []types.ToolDefinition{{ID: "web-search", Name: "web-search", Description: "Search the web", InputSchema: map[string]any{"type": "object", "properties": map[string]any{"query": map[string]any{"type": "string"}}}}})
-	if err != nil {
-		t.Fatalf("TextToolInstructions() error = %v", err)
-	}
-	if prompt.Role != "system" || !strings.Contains(prompt.Content, "<<<TOOL_REQUEST>>>") || !strings.Contains(prompt.Content, "[tool]: tool-name") || !strings.Contains(prompt.Content, "web-search") || !strings.Contains(prompt.Content, "query") || !strings.Contains(prompt.Content, "execute independent tools in parallel") {
-		t.Fatalf("prompt = %#v", prompt)
-	}
-}
-
-func TestTextToolInstructionsPreferPromptDescription(t *testing.T) {
-	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{})
-	prompt, err := system.TextToolInstructions(context.Background(), []types.ToolDefinition{{ID: "shell_command", Name: "shell_command", Description: "Short description", PromptDescription: "Detailed prompt usage"}})
-	if err != nil {
-		t.Fatalf("TextToolInstructions() error = %v", err)
-	}
-	if !strings.Contains(prompt.Content, "Detailed prompt usage") || strings.Contains(prompt.Content, "Short description") {
-		t.Fatalf("prompt = %s", prompt.Content)
-	}
-}
-
 func TestSaveToolUserSettingsUpdatesConfigAndPromptOverride(t *testing.T) {
 	storage := newFakeToolStorage()
 	system := newTestToolSystem(t, &fakePermission{}, storage, Config{})
@@ -86,56 +42,6 @@ func TestSaveToolUserSettingsUpdatesConfigAndPromptOverride(t *testing.T) {
 	if updated.UserConfig["timeoutMs"] != float64(2000) || updated.PromptDescriptionOverride != "Run one safe command" || updated.DefaultConfig["provider"] != "git-bash" || updated.Description != tool.Description {
 		t.Fatalf("updated tool = %#v", updated)
 	}
-}
-
-func TestTextToolInstructionsPreferPromptDescriptionOverride(t *testing.T) {
-	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{})
-	prompt, err := system.TextToolInstructions(context.Background(), []types.ToolDefinition{{ID: "shell_command", Name: "shell_command", Description: "Short description", PromptDescription: "Detailed prompt usage", PromptDescriptionOverride: "User prompt usage"}})
-	if err != nil {
-		t.Fatalf("TextToolInstructions() error = %v", err)
-	}
-	if !strings.Contains(prompt.Content, "User prompt usage") || strings.Contains(prompt.Content, "Detailed prompt usage") || strings.Contains(prompt.Content, "Short description") {
-		t.Fatalf("prompt = %s", prompt.Content)
-	}
-}
-
-func TestParseTextToolRequestsExtractsMultipleBlocks(t *testing.T) {
-	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{})
-	intents, err := system.ParseTextToolRequests(context.Background(), `<<<TOOL_REQUEST>>>
-[tool]: web-search
-[query]: 东京明天天气
-<<<END_TOOL_REQUEST>>>
-
-<<<TOOL_REQUEST>>>
-[tool]: read-file
-[path]: README.md
-<<<END_TOOL_REQUEST>>>`)
-	if err != nil {
-		t.Fatalf("ParseTextToolRequests() error = %v", err)
-	}
-	if len(intents) != 2 || intents[0].ToolName != "web-search" || intents[1].ToolName != "read-file" || intents[1].Arguments["path"] != "README.md" {
-		t.Fatalf("intents = %#v", intents)
-	}
-}
-
-func TestTextToolProtocolIgnoresMarkersInsideMarkdownFence(t *testing.T) {
-	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{})
-	source := "Example:\n```text\n<<<TOOL_REQUEST>>>\n[tool]: web-search\n[query]: 东京明天天气\n<<<END_TOOL_REQUEST>>>\n```"
-	intents, err := system.ParseTextToolRequests(context.Background(), source)
-	if err != nil {
-		t.Fatalf("ParseTextToolRequests() error = %v", err)
-	}
-	if len(intents) != 0 {
-		t.Fatalf("intents=%#v", intents)
-	}
-}
-
-func TestParseTextToolRequestsFailsOnBadProtocol(t *testing.T) {
-	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{})
-	_, err := system.ParseTextToolRequests(context.Background(), `<<<TOOL_REQUEST>>>
-[query]: 东京明天天气
-<<<END_TOOL_REQUEST>>>`)
-	assertAppErrorCode(t, err, "tool.protocol_invalid")
 }
 
 func TestPrepareReturnsDeniedPlanWhenPermissionDenies(t *testing.T) {

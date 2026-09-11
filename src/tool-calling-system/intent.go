@@ -39,12 +39,8 @@ func (s *system) NormalizeIntent(ctx context.Context, intent types.ToolIntent) (
 		}
 		arguments[trimmed] = value
 	}
-	source := strings.TrimSpace(intent.Source)
-	if source == "" {
-		source = types.ToolCallSourceNative
-	}
 	if !types.ValidToolInvocationMode(invocationMode) {
 		return types.ToolAction{}, toolInvalid("tool invocation mode must be sync or async", nil)
 	}
-	return types.ToolAction{ID: actionID, ToolName: toolName, Arguments: arguments, InvocationMode: types.ToolInvocationMode(strings.TrimSpace(string(invocationMode))), Source: source, Raw: intent.Raw, CreatedAt: time.Now().UTC()}, nil
+	return types.ToolAction{ID: actionID, ToolName: toolName, Arguments: arguments, InvocationMode: types.ToolInvocationMode(strings.TrimSpace(string(invocationMode))), Raw: intent.Raw, CreatedAt: time.Now().UTC()}, nil
 }

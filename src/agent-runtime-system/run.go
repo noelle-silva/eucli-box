@@ -230,11 +230,6 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 			s.failRun(context.Background(), record, record.session, err)
 			return
 		}
-		modelResponse, err = s.mergeTextToolRequests(ctx, modelResponse)
-		if err != nil {
-			s.failRun(context.Background(), record, record.session, err)
-			return
-		}
 		if err := ctx.Err(); err != nil {
 			s.cancelRunRecord(context.Background(), record, record.session)
 			return
@@ -313,17 +308,6 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 
 func shouldRecordAssistantOutput(response types.ModelResponse) bool {
 	return strings.TrimSpace(response.Content) != "" || strings.TrimSpace(response.Reasoning) != "" || strings.TrimSpace(response.ReasoningSignature) != "" || strings.TrimSpace(response.ReasoningData) != "" || len(response.ToolIntents) == 0
-}
-
-func (s *system) mergeTextToolRequests(ctx context.Context, response types.ModelResponse) (types.ModelResponse, error) {
-	textIntents, err := s.tools.ParseTextToolRequests(ctx, response.Content)
-	if err != nil {
-		return types.ModelResponse{}, runtimeToolFailed("failed to parse text tool requests", err)
-	}
-	if len(textIntents) > 0 {
-		response.ToolIntents = append(response.ToolIntents, textIntents...)
-	}
-	return response, nil
 }
 
 func validateRunRequest(ctx context.Context, request types.RunRequest) error {

@@ -192,7 +192,7 @@ func (p *openAIStreamParser) Finish(response types.HTTPResponse) (types.ModelRes
 		if id == "" {
 			id = "tool-call-" + strconv.Itoa(index)
 		}
-		result.ToolIntents = append(result.ToolIntents, types.ToolIntent{ID: id, ToolName: builder.Name, Arguments: args, Source: types.ToolCallSourceNative, Raw: argsRaw, CreatedAt: result.CreatedAt})
+		result.ToolIntents = append(result.ToolIntents, types.ToolIntent{ID: id, ToolName: builder.Name, Arguments: args, Raw: argsRaw, CreatedAt: result.CreatedAt})
 	}
 	return result, nil
 }
@@ -289,7 +289,7 @@ func (openAIAdapter) ParseCompleteResponse(response types.HTTPResponse) (types.M
 		if err != nil {
 			return types.ModelResponse{}, err
 		}
-		result.ToolIntents = append(result.ToolIntents, types.ToolIntent{ID: toolCall.ID, ToolName: toolCall.Function.Name, Arguments: args, Source: types.ToolCallSourceNative, Raw: toolCall.Function.Arguments, CreatedAt: result.CreatedAt})
+		result.ToolIntents = append(result.ToolIntents, types.ToolIntent{ID: toolCall.ID, ToolName: toolCall.Function.Name, Arguments: args, Raw: toolCall.Function.Arguments, CreatedAt: result.CreatedAt})
 	}
 	return result, nil
 }
@@ -319,15 +319,14 @@ func parseOpenAIReasoningPayload(raw json.RawMessage) (string, string, error) {
 func openAIMessages(messages []types.PromptMessage) ([]map[string]any, error) {
 	converted := make([]map[string]any, 0, len(messages))
 	for _, message := range messages {
-		nativeToolParts := promptNativeToolParts(message)
-		textProtocolResultParts := promptTextProtocolToolResultParts(message)
-		if message.Role == "assistant" && len(nativeToolParts) > 0 {
-			if err := requireToolResults(nativeToolParts); err != nil {
+		toolParts := promptToolParts(message)
+		if message.Role == "assistant" && len(toolParts) > 0 {
+			if err := requireToolResults(toolParts); err != nil {
 				return nil, err
 			}
 			assistant := openAIAssistantMessage(message)
-			toolCalls := make([]map[string]any, 0, len(nativeToolParts))
-			for _, part := range nativeToolParts {
+			toolCalls := make([]map[string]any, 0, len(toolParts))
+			for _, part := range toolParts {
 				arguments, err := toolArgumentsJSON(part)
 				if err != nil {
 					return nil, err
@@ -336,22 +335,18 @@ func openAIMessages(messages []types.PromptMessage) ([]map[string]any, error) {
 			}
 			assistant["tool_calls"] = toolCalls
 			converted = append(converted, assistant)
-			for _, part := range nativeToolParts {
+			for _, part := range toolParts {
 				if part.Result == nil {
 					continue
 				}
 				converted = append(converted, map[string]any{"role": "tool", "tool_call_id": part.CallID, "content": toolResultText(part)})
 			}
-			converted = appendUserTextObservation(converted, textProtocolToolResultsText(textProtocolResultParts))
 			continue
 		}
 		if message.Role == "assistant" {
 			converted = append(converted, openAIAssistantMessage(message))
 		} else {
 			converted = append(converted, map[string]any{"role": message.Role, "content": openAIMessageContent(message)})
-		}
-		if message.Role == "assistant" {
-			converted = appendUserTextObservation(converted, textProtocolToolResultsText(textProtocolResultParts))
 		}
 	}
 	return converted, nil

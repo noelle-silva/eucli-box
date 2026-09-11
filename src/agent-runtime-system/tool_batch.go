@@ -365,11 +365,7 @@ func fallbackToolAction(intent types.ToolIntent) types.ToolAction {
 		}
 		arguments[trimmed] = value
 	}
-	source := strings.TrimSpace(intent.Source)
-	if source == "" {
-		source = types.ToolCallSourceNative
-	}
-	return types.ToolAction{ID: actionID, ToolName: toolName, Arguments: arguments, Source: source, Raw: intent.Raw, CreatedAt: time.Now().UTC()}
+	return types.ToolAction{ID: actionID, ToolName: toolName, Arguments: arguments, Raw: intent.Raw, CreatedAt: time.Now().UTC()}
 }
 
 func isToolContextCancelled(err error) bool {

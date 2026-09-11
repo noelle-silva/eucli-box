@@ -4,10 +4,7 @@ import "time"
 
 const DefaultSessionTitle = "新聊天"
 
-const (
-	MessagePartDisplayHideInvocation = "hideInvocation"
-	MessagePartDisplayHideResult     = "hideResult"
-)
+const MessagePartDisplayHideResult = "hideResult"
 
 type Message struct {
 	ID              string              `json:"id"`
@@ -82,10 +79,6 @@ type MessagePart struct {
 	Display   map[string]any  `json:"display,omitempty"`
 	CreatedAt time.Time       `json:"createdAt,omitempty"`
 	UpdatedAt time.Time       `json:"updatedAt,omitempty"`
-}
-
-func (part MessagePart) IsToolInvocationHidden() bool {
-	return messagePartDisplayTruthy(part.Display, MessagePartDisplayHideInvocation)
 }
 
 func (part MessagePart) IsToolResultHidden() bool {

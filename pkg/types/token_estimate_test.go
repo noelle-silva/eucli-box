@@ -21,20 +21,18 @@ func TestEstimateMessageTokenCountIncludesTextAttachment(t *testing.T) {
 	}
 }
 
-func TestEstimateMessageTokenCountSkipsTextProtocolToolRawRequest(t *testing.T) {
+func TestEstimateMessageTokenCountCountsToolPartFields(t *testing.T) {
 	message := Message{
 		Content: "abcd",
 		Parts: []MessagePart{{
 			Type:     "tool",
-			Source:   ToolCallSourceTextProtocol,
-			Raw:      "this raw request is already inside content",
 			ToolName: "tool",
 			Input:    map[string]any{"command": "pwd"},
 			Result:   &ToolPartResult{Status: ToolStatusSuccess, Content: "abcd"},
 		}},
 	}
 
-	if got := EstimateMessageTokenCount(message); got != 5 {
-		t.Fatalf("token estimate = %d, want 5", got)
+	if got := EstimateMessageTokenCount(message); got != 9 {
+		t.Fatalf("token estimate = %d, want 9", got)
 	}
 }

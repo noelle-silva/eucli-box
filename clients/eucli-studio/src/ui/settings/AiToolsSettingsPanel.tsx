@@ -22,16 +22,16 @@ import { SettingsListItem, SettingsPill, SettingsSection, SettingsSurface } from
 import { ToolPromptDescriptionSection } from './ToolPromptDescriptionSection'
 import { ArtifactStoreDialog } from './ArtifactStoreDialog'
 import { plainObject, stringField } from './schemaFieldValues'
-import { compatibilityRangeText, type CompatibilityStatus, type EucliBoxCompatibility, type ReleaseArtifactIdentity, type ReleaseCheckSnapshot } from '../../domain/release'
+import { compatibilityRangeText, type CompatibilityStatus, type EucliBoxCompatibility, type ReleaseArtifactIdentity, type ReleaseCandidatesView } from '../../domain/release'
 
 type AiToolsSettingsPanelProps = {
   controller: any
   loading: boolean
   tools: any
-  releaseChecks?: ReleaseCheckSnapshot | null
-  releaseCheckBusy?: boolean
-  onReadReleaseChecks?: () => Promise<ReleaseCheckSnapshot | null>
-  onRefreshReleaseChecks?: (kind?: string) => Promise<void> | void
+  releaseView?: ReleaseCandidatesView | null
+  releaseBusy?: boolean
+  onReleaseRead?: (kind?: string) => Promise<void> | void
+  onReleaseRefresh?: (kind?: string) => Promise<void> | void
 }
 
 type ToolSummary = {
@@ -48,7 +48,7 @@ type ToolSummary = {
 }
 
 export function AiToolsSettingsPanel(props: AiToolsSettingsPanelProps) {
-  const { controller, loading, tools, releaseChecks, releaseCheckBusy, onReadReleaseChecks, onRefreshReleaseChecks } = props
+  const { controller, loading, tools, releaseView, releaseBusy, onReleaseRead, onReleaseRefresh } = props
   const [filter, setFilter] = React.useState('')
   const [storeOpen, setStoreOpen] = React.useState(false)
 
@@ -61,7 +61,7 @@ export function AiToolsSettingsPanel(props: AiToolsSettingsPanelProps) {
     if (!toolId) return
     if (action === 'install') await controller.actions.installTool?.(toolId)
     else await controller.actions.updateTool?.(toolId)
-    await Promise.resolve(onRefreshReleaseChecks?.('tool')).catch(() => {})
+    await Promise.resolve(onReleaseRefresh?.('tool')).catch(() => {})
   })
 
   const items = toolItems(tools)
@@ -141,12 +141,12 @@ export function AiToolsSettingsPanel(props: AiToolsSettingsPanelProps) {
         onClose={() => setStoreOpen(false)}
         kind="tool"
         title="AI 工具商店"
-        releaseChecks={releaseChecks}
+        releaseView={releaseView}
         installState={tools?.installState}
-        actionBusy={tools?.installLoading === true || releaseCheckBusy === true}
+        actionBusy={tools?.installLoading === true || releaseBusy === true}
         onAction={handleStoreAction}
-        onRead={onReadReleaseChecks}
-        onRefresh={() => onRefreshReleaseChecks?.('tool')}
+        onRead={(kind) => onReleaseRead?.(kind)}
+        onRefresh={(kind) => onReleaseRefresh?.(kind)}
         getInstallSource={() => controller.actions.getInstallSource?.()}
         setInstallSource={(kind) => controller.actions.setInstallSource?.(kind)}
       />

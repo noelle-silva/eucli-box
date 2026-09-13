@@ -123,7 +123,7 @@ import {
 import { chatMessageMaterialKind, isSystemControlMessage } from '../domain/message'
 import type { HookPromptLibrary } from '../domain/hookPrompt'
 import type { PlaceholderLibrary } from '../domain/placeholder'
-import type { ReleaseCheckSnapshot, StudioBootstrap } from '../domain/release'
+import type { ReleaseCandidatesView, StudioBootstrap } from '../domain/release'
 import { resolveColorThemePreset } from '../domain/colorTheme'
 import { colorMixVar, colorThemeCssVariables, createStudioMuiTheme } from './colorThemeStyles'
 
@@ -1064,8 +1064,8 @@ function ComposerInputControls(props: {
   )
 }
 
-export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap; dataDirectory?: AiChatDataDirectory; windowControls?: AiChatWindowControls; releaseCheckBusy?: boolean; onReadReleaseChecks?: () => Promise<ReleaseCheckSnapshot | null>; onRefreshReleaseChecks?: (kind?: string) => Promise<void> | void }) {
-  const { controller, bootstrap, dataDirectory, windowControls, releaseCheckBusy, onReadReleaseChecks, onRefreshReleaseChecks } = props
+export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap; dataDirectory?: AiChatDataDirectory; windowControls?: AiChatWindowControls; releaseBusy?: boolean; releaseView?: ReleaseCandidatesView | null; onReleaseRead?: (kind?: string) => Promise<void> | void; onReleaseRefresh?: (kind?: string) => Promise<void> | void }) {
+  const { controller, bootstrap, dataDirectory, windowControls, releaseBusy, releaseView, onReleaseRead, onReleaseRefresh } = props
   const s = useAiChatState(controller)
   const data = s.data
   const colorThemePreset = resolveColorThemePreset(data?.settings?.colorTheme)
@@ -6990,9 +6990,9 @@ export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap;
             tools={(s as any).tools}
             modelRequestConfig={(s as any).modelRequestConfig}
             bootstrap={bootstrap}
-            releaseCheckBusy={releaseCheckBusy}
-            onReadReleaseChecks={onReadReleaseChecks}
-            onRefreshReleaseChecks={onRefreshReleaseChecks}
+            releaseBusy={releaseBusy}
+            releaseView={releaseView}
+            onReleaseRefresh={onReleaseRefresh}
             accessSettings={(s as any)?.accessSettings}
             hookPrompts={hookPrompts}
             placeholders={placeholders}
@@ -7393,9 +7393,10 @@ function PluginSettingsPage(props: {
   tools: any
   modelRequestConfig: any
   bootstrap?: StudioBootstrap
-  releaseCheckBusy?: boolean
-  onReadReleaseChecks?: () => Promise<ReleaseCheckSnapshot | null>
-  onRefreshReleaseChecks?: (kind?: string) => Promise<void> | void
+  releaseBusy?: boolean
+  releaseView?: ReleaseCandidatesView | null
+  onReleaseRead?: (kind?: string) => Promise<void> | void
+  onReleaseRefresh?: (kind?: string) => Promise<void> | void
   accessSettings?: any
   hookPrompts: any
   placeholders: any
@@ -7408,7 +7409,7 @@ function PluginSettingsPage(props: {
   onTabChange: (tab: SettingsTab) => void
   dataDirectory?: AiChatDataDirectory
 }) {
-  const { controller, loading, data, roles, groups, workspaces, providers, modelGroups, models, tools, modelRequestConfig, bootstrap, releaseCheckBusy, onReadReleaseChecks, onRefreshReleaseChecks, accessSettings, hookPrompts, placeholders, systemPlugins, draft, activeRoleId, activeWorkspaceId, activeTargetKind, tab, onTabChange, dataDirectory } = props
+  const { controller, loading, data, roles, groups, workspaces, providers, modelGroups, models, tools, modelRequestConfig, bootstrap, releaseBusy, releaseView, onReleaseRead, onReleaseRefresh, accessSettings, hookPrompts, placeholders, systemPlugins, draft, activeRoleId, activeWorkspaceId, activeTargetKind, tab, onTabChange, dataDirectory } = props
   const [treeHotkeyRecording, setTreeHotkeyRecording] = React.useState(false)
 
   React.useEffect(() => {
@@ -7999,7 +8000,7 @@ function PluginSettingsPage(props: {
   }
 
   if (tab === 'tools') {
-    return wrapSettingsPanel(<AiToolsSettingsPanel controller={controller} loading={loading} tools={tools} releaseChecks={bootstrap?.releaseChecks} releaseCheckBusy={releaseCheckBusy} onReadReleaseChecks={onReadReleaseChecks} onRefreshReleaseChecks={onRefreshReleaseChecks} />)
+    return wrapSettingsPanel(<AiToolsSettingsPanel controller={controller} loading={loading} tools={tools} releaseView={releaseView} releaseBusy={releaseBusy} onReleaseRead={onReleaseRead} onReleaseRefresh={onReleaseRefresh} />)
   }
 
   if (tab === 'hookPrompts') {
@@ -8011,11 +8012,11 @@ function PluginSettingsPage(props: {
   }
 
   if (tab === 'systemPlugins') {
-    return wrapSettingsPanel(<SystemPluginSettingsPanel controller={controller} loading={loading} systemPlugins={systemPlugins} releaseChecks={bootstrap?.releaseChecks} releaseCheckBusy={releaseCheckBusy} onReadReleaseChecks={onReadReleaseChecks} onRefreshReleaseChecks={onRefreshReleaseChecks} />)
+    return wrapSettingsPanel(<SystemPluginSettingsPanel controller={controller} loading={loading} systemPlugins={systemPlugins} releaseView={releaseView} releaseBusy={releaseBusy} onReleaseRead={onReleaseRead} onReleaseRefresh={onReleaseRefresh} />)
   }
 
   if (tab === 'eb') {
-    return wrapSettingsPanel(<EbSettingsPanel controller={controller} loading={loading} modelRequestConfig={modelRequestConfig} bootstrap={bootstrap} releaseCheckBusy={releaseCheckBusy} onRefreshReleaseChecks={onRefreshReleaseChecks} />)
+    return wrapSettingsPanel(<EbSettingsPanel controller={controller} loading={loading} modelRequestConfig={modelRequestConfig} bootstrap={bootstrap} releaseBusy={releaseBusy} onReleaseRefresh={onReleaseRefresh} />)
   }
 
   if (tab === 'access') {

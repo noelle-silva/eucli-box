@@ -1,58 +1,111 @@
 import { describe, expect, it } from 'vitest'
-import { isReleaseSnapshotFreshForKind, RELEASE_SNAPSHOT_FRESHNESS_MS, type ReleaseCheckSnapshot } from './release'
+import {
+  composeReleaseCandidatesView,
+  emptyReleaseCache,
+  isReleaseCacheFresh,
+  RELEASE_CACHE_FRESHNESS_MS,
+  writeReleaseCache,
+  type ArtifactReleaseCandidate,
+} from './release'
 
-function snapshotWithCheckedAt(source: string, checkedAt: string): ReleaseCheckSnapshot {
+function candidate(kind: string, id: string, version: string): ArtifactReleaseCandidate {
   return {
+    artifact: { kind, id },
+    source: { kind, repository: '', owner: '', name: '' },
+    installed: false,
+    currentVersion: '',
+    latestVersion: version,
     status: 'completed',
-    source,
-    startedAt: checkedAt,
-    checkedAt,
-    results: [
-      {
-        artifact: { kind: 'tool', id: 'context7' },
-        source: { kind: 'tool', repository: '', owner: '', name: '' },
-        installed: false,
-        currentVersion: '',
-        latestVersion: '0.1.0',
-        status: 'completed',
-        checkedAt,
-        updateAvailable: true,
-        releaseUrl: '',
-        releaseNotes: '',
-        downloadSize: 0,
-        compatibility: null,
-        affectedArtifacts: [],
-        failureReason: '',
-      },
-    ],
+    publishedAt: '',
+    updateAvailable: true,
+    releaseUrl: '',
+    releaseNotes: '',
+    downloadSize: 0,
+    compatibility: null,
+    affectedArtifacts: [],
     failureReason: '',
   }
 }
 
-describe('isReleaseSnapshotFreshForKind', () => {
-  it('accepts a matching source with a recent checked time', () => {
-    const snapshot = snapshotWithCheckedAt('official', new Date(Date.now() - 60_000).toISOString())
-    expect(isReleaseSnapshotFreshForKind(snapshot, 'official', 'tool')).toBe(true)
+describe('release cache', () => {
+  it('writes one source-kind cell without touching other cells', () => {
+    const cache = writeReleaseCache(emptyReleaseCache(), 'official', 'tool', {
+      candidates: [candidate('tool', 'context7', '0.1.2')],
+      failure: '',
+    })
+    expect(cache.official.tool.candidates).toHaveLength(1)
+    expect(cache.official.plugin.candidates).toHaveLength(0)
+    expect(cache.local.tool.candidates).toHaveLength(0)
+    expect(isReleaseCacheFresh(cache, 'official', 'tool')).toBe(true)
+    expect(isReleaseCacheFresh(cache, 'local', 'tool')).toBe(false)
+    expect(isReleaseCacheFresh(cache, 'official', 'plugin')).toBe(false)
   })
 
-  it('rejects a snapshot from another source', () => {
-    const snapshot = snapshotWithCheckedAt('local', new Date().toISOString())
-    expect(isReleaseSnapshotFreshForKind(snapshot, 'official', 'tool')).toBe(false)
+  it('rejects an expired cell or a cell without candidates', () => {
+    const cache = emptyReleaseCache()
+    cache.official.tool = {
+      checkedAt: new Date(Date.now() - RELEASE_CACHE_FRESHNESS_MS - 1000).toISOString(),
+      candidates: [candidate('tool', 'context7', '0.1.2')],
+      failure: '',
+    }
+    expect(isReleaseCacheFresh(cache, 'official', 'tool')).toBe(false)
+    cache.official.tool.checkedAt = new Date().toISOString()
+    cache.official.tool.candidates = []
+    expect(isReleaseCacheFresh(cache, 'official', 'tool')).toBe(false)
   })
 
-  it('rejects an expired snapshot', () => {
-    const expired = new Date(Date.now() - RELEASE_SNAPSHOT_FRESHNESS_MS - 60_000).toISOString()
-    const snapshot = snapshotWithCheckedAt('official', expired)
-    expect(isReleaseSnapshotFreshForKind(snapshot, 'official', 'tool')).toBe(false)
+  it('keeps official and local caches independent', () => {
+    let cache = writeReleaseCache(emptyReleaseCache(), 'official', 'plugin', {
+      candidates: [candidate('plugin', 'time-plugin', '0.1.0')],
+      failure: '',
+    })
+    cache = writeReleaseCache(cache, 'local', 'plugin', {
+      candidates: [candidate('plugin', 'time-plugin', '0.0.9')],
+      failure: '',
+    })
+    expect(cache.official.plugin.candidates[0].latestVersion).toBe('0.1.0')
+    expect(cache.local.plugin.candidates[0].latestVersion).toBe('0.0.9')
+  })
+})
+
+describe('composeReleaseCandidatesView', () => {
+  it('merges requested kinds and reports per-kind status', () => {
+    let cache = writeReleaseCache(emptyReleaseCache(), 'official', 'tool', {
+      candidates: [candidate('tool', 'context7', '0.1.2')],
+      failure: '',
+    })
+    cache = writeReleaseCache(cache, 'official', 'plugin', { candidates: [], failure: 'plugin: 索引读取失败' })
+    const view = composeReleaseCandidatesView(cache, 'official', { kinds: ['tool', 'plugin'], checking: false })
+    expect(view.candidates.map((item) => item.artifact.id)).toEqual(['context7'])
+    expect(view.statuses.tool).toBe('completed')
+    expect(view.statuses.plugin).toBe('not_checked')
+    expect(view.failing).toEqual(['plugin: 索引读取失败'])
+    expect(view.checkedAts.tool).not.toBe('')
   })
 
-  it('rejects a snapshot without results for the requested artifact kind', () => {
-    const snapshot = snapshotWithCheckedAt('official', new Date().toISOString())
-    expect(isReleaseSnapshotFreshForKind(snapshot, 'official', 'plugin')).toBe(false)
+  it('reports checking without losing cached candidates', () => {
+    const cache = writeReleaseCache(emptyReleaseCache(), 'official', 'tool', {
+      candidates: [candidate('tool', 'context7', '0.1.2')],
+      failure: '',
+    })
+    const view = composeReleaseCandidatesView(cache, 'official', { kinds: ['tool'], checking: true })
+    expect(view.status).toBe('checking')
+    expect(view.statuses.tool).toBe('checking')
+    expect(view.candidates).toHaveLength(1)
   })
 
-  it('rejects an absent snapshot or an invalid checked time', () => {
-    expect(isReleaseSnapshotFreshForKind(null, 'official', 'tool')).toBe(false)
-    expect(isReleaseSnapshotFreshForKind(snapshotWithCheckedAt('official', ''), 'official', 'tool')).toBe(false)
+  it('exposes both source caches for store switching', () => {
+    let cache = writeReleaseCache(emptyReleaseCache(), 'official', 'tool', {
+      candidates: [candidate('tool', 'context7', '0.1.2')],
+      failure: '',
+    })
+    cache = writeReleaseCache(cache, 'local', 'tool', {
+      candidates: [candidate('tool', 'context7', '0.1.1')],
+      failure: '',
+    })
+    const view = composeReleaseCandidatesView(cache, 'official', { kinds: ['tool'], checking: false })
+    expect(view.sourceCandidates.official[0].latestVersion).toBe('0.1.2')
+    expect(view.sourceCandidates.local[0].latestVersion).toBe('0.1.1')
+    expect(view.sourceCheckedAts.local.tool).not.toBe('')
   })
 })

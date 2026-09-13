@@ -5,9 +5,9 @@ import RefreshIcon from '@mui/icons-material/Refresh'
 import RestartAltIcon from '@mui/icons-material/RestartAlt'
 import SaveIcon from '@mui/icons-material/Save'
 import { MODEL_REQUEST_TIMEOUT_LIMITS } from '../../controller/modelRequestConfig'
-import { compatibilityRangeText, type StudioBootstrap } from '../../domain/release'
+import { compatibilityRangeText, type ReleaseCandidatesView, type StudioBootstrap } from '../../domain/release'
 import { useEvent } from '../hooks/useEvent'
-import { ReleaseChecksPanel } from '../release/ReleaseChecksPanel'
+import { ReleaseCandidatesPanel } from '../release/ReleaseCandidatesPanel'
 import { SettingsPill, SettingsSection, SettingsSurface } from './SettingsSurfaces'
 
 type EbSettingsPanelProps = {
@@ -15,12 +15,13 @@ type EbSettingsPanelProps = {
   loading: boolean
   modelRequestConfig: any
   bootstrap?: StudioBootstrap
-  releaseCheckBusy?: boolean
-  onRefreshReleaseChecks?: (kind?: string) => Promise<void> | void
+  releaseView?: ReleaseCandidatesView | null
+  releaseBusy?: boolean
+  onReleaseRefresh?: (kind?: string) => Promise<void> | void
 }
 
 export function EbSettingsPanel(props: EbSettingsPanelProps) {
-  const { controller, loading, modelRequestConfig, bootstrap, releaseCheckBusy, onRefreshReleaseChecks } = props
+  const { controller, loading, modelRequestConfig, bootstrap, releaseView, releaseBusy, onReleaseRefresh } = props
   const box = modelRequestConfig && typeof modelRequestConfig === 'object' ? modelRequestConfig : {}
   const draft = box.draft && typeof box.draft === 'object' ? box.draft : {}
   const value = box.value && typeof box.value === 'object' ? box.value : {}
@@ -90,10 +91,10 @@ export function EbSettingsPanel(props: EbSettingsPanelProps) {
 
           {bootstrap ? (
             <SettingsSection tone="muted">
-              <ReleaseChecksPanel
-                snapshot={bootstrap.releaseChecks}
-                busy={releaseCheckBusy}
-                onRefresh={onRefreshReleaseChecks}
+              <ReleaseCandidatesPanel
+                view={releaseView}
+                busy={releaseBusy}
+                onRefresh={onReleaseRefresh}
               />
             </SettingsSection>
           ) : null}

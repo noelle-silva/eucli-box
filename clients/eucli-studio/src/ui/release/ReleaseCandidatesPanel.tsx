@@ -1,12 +1,12 @@
 import * as React from 'react'
 import { Box, Button, Link, Stack, Typography } from '@mui/material'
 import RefreshIcon from '@mui/icons-material/Refresh'
-import type { ReleaseArtifactIdentity, ReleaseCheckResult, ReleaseCheckSnapshot } from '../../domain/release'
+import type { ArtifactReleaseCandidate, ReleaseArtifactIdentity, ReleaseCandidatesView } from '../../domain/release'
 
-type ReleaseChecksPanelProps = {
-  snapshot?: ReleaseCheckSnapshot | null
+type ReleaseCandidatesPanelProps = {
+  view?: ReleaseCandidatesView | null
   busy?: boolean
-  onRefresh?: () => Promise<void> | void
+  onRefresh?: (kind?: string) => Promise<void> | void
   compact?: boolean
   kindFilter?: string
   onToolAction?: (artifact: ReleaseArtifactIdentity, action: 'install' | 'update') => Promise<void> | void
@@ -15,11 +15,11 @@ type ReleaseChecksPanelProps = {
   pluginActionBusy?: boolean
 }
 
-export function ReleaseChecksPanel(props: ReleaseChecksPanelProps) {
-  const snapshot = props.snapshot || emptySnapshot()
-  const checking = props.busy === true || snapshot.status === 'checking'
-  const results = Array.isArray(snapshot.results)
-    ? snapshot.results.filter((result) => !props.kindFilter || String(result.artifact?.kind || '') === props.kindFilter)
+export function ReleaseCandidatesPanel(props: ReleaseCandidatesPanelProps) {
+  const view = props.view || emptyView()
+  const checking = props.busy === true || view.status === 'checking'
+  const results = Array.isArray(view.candidates)
+    ? view.candidates.filter((candidate) => !props.kindFilter || String(candidate.artifact?.kind || '') === props.kindFilter)
     : []
 
   return (
@@ -28,35 +28,35 @@ export function ReleaseChecksPanel(props: ReleaseChecksPanelProps) {
         <Box sx={{ minWidth: 0, flex: 1 }}>
           <Stack direction="row" spacing={0.75} alignItems="center" sx={{ flexWrap: 'wrap' }}>
             <Typography sx={{ fontWeight: 900 }}>正式版本</Typography>
-            <StatusPill status={snapshot.status} />
+            <StatusPill status={view.status} />
           </Stack>
-          {snapshot.checkedAt ? (
+          {view.checkedAt ? (
             <Typography variant="caption" color="text.secondary">
-              最近检查：{formatCheckedAt(snapshot.checkedAt)}
+              最近读取：{formatCheckedAt(view.checkedAt)}
             </Typography>
           ) : null}
         </Box>
         <Button
           startIcon={<RefreshIcon />}
           variant="text"
-          onClick={props.onRefresh}
+          onClick={() => props.onRefresh?.(props.kindFilter)}
           disabled={!props.onRefresh || checking}
           sx={{ alignSelf: { xs: 'flex-start', sm: 'center' } }}
         >
-          {checking ? '检查中…' : '重新检查'}
+          {checking ? '读取中…' : '重新读取'}
         </Button>
       </Stack>
 
-      {snapshot.failureReason ? (
+      {view.failing.length ? (
         <Typography variant="body2" color="error" role="alert" sx={{ overflowWrap: 'anywhere' }}>
-          {snapshot.failureReason}
+          {view.failing.join('；')}
         </Typography>
       ) : null}
 
       {results.length ? (
         <Stack spacing={1}>
           {results.map((result) => (
-            <ReleaseCheckItem
+            <ReleaseCandidateItem
               key={`${result.artifact.kind}:${result.artifact.id}`}
               result={result}
               compact={props.compact === true}
@@ -69,14 +69,14 @@ export function ReleaseChecksPanel(props: ReleaseChecksPanelProps) {
         </Stack>
       ) : (
         <Typography variant="body2" color="text.secondary">
-          {checking ? '正在读取官方发行记录。' : snapshot.status === 'failed' ? '本次没有取得可用的发行记录。' : '尚未检查官方发行记录。'}
+          {checking ? '正在读取发行来源记录。' : view.status === 'failed' ? '本次没有取得可用的发行记录。' : '尚未读取发行记录。'}
         </Typography>
       )}
     </Stack>
   )
 }
 
-function ReleaseCheckItem(props: { result: ReleaseCheckResult; compact: boolean; onToolAction?: (artifact: ReleaseArtifactIdentity, action: 'install' | 'update') => Promise<void> | void; onPluginAction?: (artifact: ReleaseArtifactIdentity, action: 'install' | 'update') => Promise<void> | void; toolActionBusy: boolean; pluginActionBusy: boolean }) {
+function ReleaseCandidateItem(props: { result: ArtifactReleaseCandidate; compact: boolean; onToolAction?: (artifact: ReleaseArtifactIdentity, action: 'install' | 'update') => Promise<void> | void; onPluginAction?: (artifact: ReleaseArtifactIdentity, action: 'install' | 'update') => Promise<void> | void; toolActionBusy: boolean; pluginActionBusy: boolean }) {
   const { result, compact } = props
   const status = resultStatus(result)
   const compatibility = result.compatibility
@@ -112,7 +112,7 @@ function ReleaseCheckItem(props: { result: ReleaseCheckResult; compact: boolean;
 
         <Stack direction="row" spacing={1.5} sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>
           <ReleaseFact label="当前" value={result.installed ? result.currentVersion || '版本资料无效' : '未安装'} />
-          <ReleaseFact label="官方" value={result.latestVersion || '暂无正式发行'} />
+          <ReleaseFact label="可用" value={result.latestVersion || '暂无正式发行'} />
           {result.downloadSize > 0 ? <ReleaseFact label="大小" value={formatBytes(result.downloadSize)} /> : null}
         </Stack>
 
@@ -156,7 +156,7 @@ function StatusPill(props: { status: string; label?: string }) {
   const background = status === 'failed' ? 'rgba(220,38,38,.10)' : status === 'completed' || status === 'available' ? 'rgba(22,163,74,.10)' : 'action.selected'
   return (
     <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', minHeight: 24, px: 1, borderRadius: 999, bgcolor: background, color, fontSize: 12, fontWeight: 800, lineHeight: 1 }}>
-      {props.label || snapshotStatusLabel(status)}
+      {props.label || viewStatusLabel(status)}
     </Box>
   )
 }
@@ -169,19 +169,19 @@ function ReleaseFact(props: { label: string; value: string }) {
   )
 }
 
-function resultStatus(result: ReleaseCheckResult): { tone: string; label: string } {
-  if (result.status === 'failed') return { tone: 'failed', label: '检查失败' }
+function resultStatus(result: ArtifactReleaseCandidate): { tone: string; label: string } {
+  if (result.status === 'failed') return { tone: 'failed', label: '读取失败' }
   if (!result.latestVersion) return { tone: 'completed', label: '暂无正式发行' }
   if (!result.installed) return { tone: 'available', label: '可安装' }
   if (result.updateAvailable) return { tone: 'available', label: '可更新' }
   return { tone: 'completed', label: '已是最新版' }
 }
 
-function snapshotStatusLabel(status: string) {
-  if (status === 'checking') return '检查中'
-  if (status === 'completed') return '检查完成'
-  if (status === 'failed') return '检查失败'
-  return '尚未检查'
+function viewStatusLabel(status: string) {
+  if (status === 'checking') return '读取中'
+  if (status === 'completed') return '读取完成'
+  if (status === 'failed') return '读取失败'
+  return '尚未读取'
 }
 
 function artifactLabel(artifact: ReleaseArtifactIdentity) {
@@ -206,6 +206,20 @@ function formatBytes(value: number) {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
 }
 
-function emptySnapshot(): ReleaseCheckSnapshot {
-  return { status: 'not_checked', startedAt: '', checkedAt: '', results: [], failureReason: '' }
+function emptyView(): ReleaseCandidatesView {
+  return {
+    status: 'not_checked',
+    statuses: {},
+    source: 'official',
+    checkedAt: '',
+    checkedAts: {},
+    failing: [],
+    candidates: [],
+    installations: [],
+    sourceCandidates: { official: [], local: [] },
+    sourceCheckedAts: {
+      official: { 'eucli-box': '', tool: '', plugin: '' },
+      local: { 'eucli-box': '', tool: '', plugin: '' },
+    },
+  }
 }

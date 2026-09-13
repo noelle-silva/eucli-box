@@ -5,7 +5,7 @@ import StorefrontIcon from '@mui/icons-material/Storefront'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import DownloadIcon from '@mui/icons-material/Download'
 import UpdateIcon from '@mui/icons-material/Update'
-import { artifactStatusLabels, compatibilityRangeText, isReleaseSnapshotFreshForKind, type ReleaseArtifactIdentity, type ReleaseCheckResult, type ReleaseCheckSnapshot } from '../../domain/release'
+import { artifactStatusLabels, compatibilityRangeText, type ArtifactReleaseCandidate, type ReleaseArtifactIdentity, type ReleaseCandidatesView } from '../../domain/release'
 import { SettingsPill } from './SettingsSurfaces'
 
 type StoreSourceKind = 'official' | 'local'
@@ -15,57 +15,61 @@ type ArtifactStoreDialogProps = {
   onClose: () => void
   kind: 'tool' | 'plugin'
   title: string
-  releaseChecks?: ReleaseCheckSnapshot | null
+  releaseView?: ReleaseCandidatesView | null
   installState: any
   actionBusy: boolean
   onAction: (artifact: ReleaseArtifactIdentity, action: 'install' | 'update') => Promise<void> | void
-  onRead?: () => Promise<ReleaseCheckSnapshot | null>
-  onRefresh: () => Promise<void> | void
+  onRead?: (kind: string) => Promise<void> | void
+  onRefresh: (kind?: string) => Promise<void> | void
   getInstallSource?: () => Promise<string | null>
   setInstallSource?: (kind: StoreSourceKind) => Promise<{ ok: boolean; error?: string }>
 }
 
 export function ArtifactStoreDialog(props: ArtifactStoreDialogProps) {
-  const { open, onClose, kind, title, releaseChecks, installState, actionBusy, onAction, onRead, onRefresh, getInstallSource, setInstallSource } = props
+  const { open, onClose, kind, title, releaseView, installState, actionBusy, onAction, onRead, onRefresh, getInstallSource, setInstallSource } = props
   const [refreshing, setRefreshing] = React.useState(false)
   const [sourceKind, setSourceKind] = React.useState<StoreSourceKind>('official')
   const [pendingSource, setPendingSource] = React.useState<StoreSourceKind | null>(null)
   const [sourceError, setSourceError] = React.useState('')
+  const refreshRef = React.useRef(onRefresh)
+  const readRef = React.useRef(onRead)
+  refreshRef.current = onRefresh
+  readRef.current = onRead
 
-  const sourceSnapshot = releaseChecks && typeof releaseChecks === 'object' ? releaseChecks : null
-  const snapshotReady = !!sourceSnapshot && String(sourceSnapshot.source || '') === sourceKind
-  const items = sourceSnapshot && String(sourceSnapshot.source || '') === sourceKind
-    ? sourceSnapshot.results
-        .filter((result) => String(result.artifact?.kind || '') === kind)
-        .sort((a, b) => String(a.artifact?.id || '').localeCompare(String(b.artifact?.id || '')))
-    : []
+  const sourceCandidates = releaseView?.sourceCandidates?.[sourceKind] || []
+  const items = sourceCandidates
+    .filter((candidate) => String(candidate.artifact?.kind || '') === kind)
+    .sort((a, b) => String(a.artifact?.id || '').localeCompare(String(b.artifact?.id || '')))
   const busy = pendingSource !== null || refreshing
 
+  // 打开弹窗时读取当前来源：已有新鲜缓存不重复读取；没有缓存才按分类读取一次。
   React.useEffect(() => {
     if (!open) return
     let cancelled = false
     setSourceError('')
     Promise.resolve(getInstallSource?.())
       .then((kind) => {
-        if (!cancelled && (kind === 'official' || kind === 'local')) setSourceKind(kind)
+        if (cancelled || (kind !== 'official' && kind !== 'local')) return
+        setSourceKind(kind)
+        void Promise.resolve(readRef.current?.(props.kind)).catch(() => {})
       })
       .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [open, getInstallSource])
+  }, [open, kind, getInstallSource])
 
   const refresh = async () => {
     setRefreshing(true)
     try {
-      await Promise.resolve(onRefresh()).catch(() => {})
+      await Promise.resolve(refreshRef.current?.(kind)).catch(() => {})
     } finally {
       setRefreshing(false)
     }
   }
 
-  // switchSource 的时序：切换即刻进入加载态；切换成功后先读已保存的对应来源结果，
-  // 只有结果不存在或超出有效期时才重新获取。等待期间不展示上一个来源的清单。
+  // switchSource 的时序：切换即刻进入加载态；切换成功后读该来源缓存，
+  // 只有该来源该分类没有缓存时才发起读取。等待期间不展示上一个来源的清单。
   const switchSource = async (next: StoreSourceKind) => {
     if (next === sourceKind || busy) return
     setPendingSource(next)
@@ -77,9 +81,9 @@ export function ArtifactStoreDialog(props: ArtifactStoreDialogProps) {
         return
       }
       setSourceKind(next)
-      const snapshot = (await Promise.resolve(onRead?.()).catch(() => null)) ?? null
-      if (!isReleaseSnapshotFreshForKind(snapshot, next, kind)) {
-        await Promise.resolve(onRefresh()).catch(() => {})
+      // 该来源该分类已有缓存则直接展示；没有才发起读取（读取端点自带新鲜度判定）。
+      if (!hasSourceKind(releaseView, next, kind)) {
+        await Promise.resolve(readRef.current?.(kind)).catch(() => {})
       }
     } finally {
       setPendingSource(null)
@@ -136,7 +140,7 @@ export function ArtifactStoreDialog(props: ArtifactStoreDialogProps) {
             ))
           ) : (
             <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
-              {snapshotReady ? `当前没有可显示的${itemTitle(kind)}。请先刷新商店清单。` : '尚未获取当前来源的商店清单，请点击刷新。'}
+              {`当前没有可显示的${itemTitle(kind)}。请先刷新商店清单。`}
             </Typography>
           )}
         </Stack>
@@ -151,7 +155,7 @@ export function ArtifactStoreDialog(props: ArtifactStoreDialogProps) {
   )
 }
 
-function StoreItem(props: { result: ReleaseCheckResult; installState: any; actionBusy: boolean; onAction: (artifact: ReleaseArtifactIdentity, action: 'install' | 'update') => Promise<void> | void; sourceKind: StoreSourceKind }) {
+function StoreItem(props: { result: ArtifactReleaseCandidate; installState: any; actionBusy: boolean; onAction: (artifact: ReleaseArtifactIdentity, action: 'install' | 'update') => Promise<void> | void; sourceKind: StoreSourceKind }) {
   const { result, installState, actionBusy, onAction, sourceKind } = props
   const artifact = result.artifact
   const id = String(artifact?.id || '')
@@ -232,6 +236,11 @@ function StoreItem(props: { result: ReleaseCheckResult; installState: any; actio
 
 function itemTitle(kind: string) {
   return kind === 'plugin' ? '系统插件' : 'AI 工具'
+}
+
+function hasSourceKind(view: ReleaseCandidatesView | null | undefined, source: StoreSourceKind, kind: string): boolean {
+  if (!view?.sourceCandidates) return false
+  return (view.sourceCandidates[source] || []).some((candidate) => String(candidate.artifact?.kind || '') === kind)
 }
 
 function formatBytes(value: number) {

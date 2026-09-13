@@ -4,7 +4,7 @@ import RefreshIcon from '@mui/icons-material/Refresh'
 import SaveIcon from '@mui/icons-material/Save'
 import StorefrontIcon from '@mui/icons-material/Storefront'
 import { lifecycleTypeLabel, pluginStatusLabel, systemPluginLocatorId, type SystemPluginDetail } from '../../domain/systemPlugin'
-import { compatibilityRangeText, type ReleaseArtifactIdentity, type ReleaseCheckSnapshot } from '../../domain/release'
+import { compatibilityRangeText, type ReleaseArtifactIdentity, type ReleaseCandidatesView } from '../../domain/release'
 import { cloneConfigObject, ConfigFieldsForm, removeConfigValueAtPath, setConfigValueAtPath } from './ConfigFieldsForm'
 import { ArtifactStoreDialog } from './ArtifactStoreDialog'
 import { SettingsSection, SettingsSurface } from './SettingsSurfaces'
@@ -14,10 +14,10 @@ type SystemPluginSettingsPanelProps = {
   controller: any
   loading: boolean
   systemPlugins: any
-  releaseChecks?: ReleaseCheckSnapshot | null
-  releaseCheckBusy?: boolean
-  onReadReleaseChecks?: () => Promise<ReleaseCheckSnapshot | null>
-  onRefreshReleaseChecks?: (kind?: string) => Promise<void> | void
+  releaseView?: ReleaseCandidatesView | null
+  releaseBusy?: boolean
+  onReleaseRead?: (kind?: string) => Promise<void> | void
+  onReleaseRefresh?: (kind?: string) => Promise<void> | void
 }
 
 function text(value: unknown) {
@@ -25,7 +25,7 @@ function text(value: unknown) {
 }
 
 export function SystemPluginSettingsPanel(props: SystemPluginSettingsPanelProps) {
-  const { controller, loading, systemPlugins, releaseChecks, releaseCheckBusy, onReadReleaseChecks, onRefreshReleaseChecks } = props
+  const { controller, loading, systemPlugins, releaseView, releaseBusy, onReleaseRead, onReleaseRefresh } = props
   const busy = loading || !!systemPlugins?.loading || !!systemPlugins?.detailLoading || !!systemPlugins?.saving
   const selectedPlugin = systemPlugins?.selectedPlugin as SystemPluginDetail | null
   const unavailable = selectedPlugin?.status !== 'active'
@@ -39,7 +39,7 @@ export function SystemPluginSettingsPanel(props: SystemPluginSettingsPanelProps)
     if (!pluginId) return
     if (action === 'install') await controller.actions.installSystemPlugin?.(pluginId)
     else await controller.actions.updateSystemPlugin?.(pluginId)
-    await Promise.resolve(onRefreshReleaseChecks?.('plugin')).catch(() => {})
+    await Promise.resolve(onReleaseRefresh?.('plugin')).catch(() => {})
   })
 
   React.useEffect(() => {
@@ -153,12 +153,12 @@ export function SystemPluginSettingsPanel(props: SystemPluginSettingsPanelProps)
         onClose={() => setStoreOpen(false)}
         kind="plugin"
         title="系统插件商店"
-        releaseChecks={releaseChecks}
+        releaseView={releaseView}
         installState={systemPlugins?.installState}
-        actionBusy={systemPlugins?.installLoading === true || releaseCheckBusy === true}
+        actionBusy={systemPlugins?.installLoading === true || releaseBusy === true}
         onAction={handleStoreAction}
-        onRead={onReadReleaseChecks}
-        onRefresh={() => onRefreshReleaseChecks?.('plugin')}
+        onRead={(kind) => onReleaseRead?.(kind)}
+        onRefresh={(kind) => onReleaseRefresh?.(kind)}
         getInstallSource={() => controller.actions.getInstallSource?.()}
         setInstallSource={(kind) => controller.actions.setInstallSource?.(kind)}
       />

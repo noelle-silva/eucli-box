@@ -22,14 +22,27 @@ export type OfficialReleaseSource = {
   name: string
 }
 
-export type ReleaseCheckResult = {
+// ArtifactInstallation 是业务端当前真实的已装事实。
+export type ArtifactInstallation = {
+  artifact: ReleaseArtifactIdentity
+  version: string
+  eucliBoxCompatibility: EucliBoxCompatibility | null
+  failureReason: string
+}
+
+export type ArtifactInstallationList = {
+  artifacts: ArtifactInstallation[]
+}
+
+// ArtifactReleaseCandidate 是某个发布物在某个来源下的可用候选事实与比对结论。
+export type ArtifactReleaseCandidate = {
   artifact: ReleaseArtifactIdentity
   source: OfficialReleaseSource
   installed: boolean
   currentVersion: string
   latestVersion: string
-  status: 'not_checked' | 'checking' | 'completed' | 'failed' | string
-  checkedAt: string
+  status: 'completed' | 'failed' | string
+  publishedAt: string
   updateAvailable: boolean
   releaseUrl: string
   releaseNotes: string
@@ -39,14 +52,18 @@ export type ReleaseCheckResult = {
   failureReason: string
 }
 
-export type ReleaseCheckSnapshot = {
-  status: 'not_checked' | 'checking' | 'completed' | 'failed' | string
-  source?: string
-  startedAt: string
-  checkedAt: string
-  results: ReleaseCheckResult[]
-  failureReason: string
+export type ArtifactCandidateList = {
+  source: 'official' | 'local' | string
+  candidates: ArtifactReleaseCandidate[]
 }
+
+export type ReleaseSourceKind = 'official' | 'local'
+
+export type ReleaseArtifactKind = 'eucli-box' | 'tool' | 'plugin'
+
+export const RELEASE_SOURCE_KINDS: ReleaseSourceKind[] = ['official', 'local']
+
+export const RELEASE_ARTIFACT_KINDS: ReleaseArtifactKind[] = ['eucli-box', 'tool', 'plugin']
 
 export type ReleaseOperationProgress = {
   receivedBytes: number
@@ -140,7 +157,6 @@ export type StudioBootstrap = {
   eucliBoxCompatibility: CompatibilityStatus | null
   businessAvailable: boolean
   eucliBoxIssue: string
-  releaseChecks: ReleaseCheckSnapshot
 }
 
 export function normalizeEucliBoxCompatibility(value: unknown): EucliBoxCompatibility {
@@ -175,42 +191,171 @@ export function normalizeStudioBootstrap(value: unknown): StudioBootstrap {
       : null,
     businessAvailable: source.businessAvailable === true,
     eucliBoxIssue: text(source.eucliBoxIssue),
-    releaseChecks: normalizeReleaseCheckSnapshot(source.releaseChecks),
   }
 }
 
-export function normalizeReleaseCheckSnapshot(value: unknown): ReleaseCheckSnapshot {
+export function normalizeArtifactCandidateList(value: unknown): ArtifactCandidateList {
   const source = objectValue(value)
   return {
-    status: text(source.status) || 'not_checked',
     source: text(source.source),
-    startedAt: text(source.startedAt),
-    checkedAt: text(source.checkedAt),
-    results: Array.isArray(source.results) ? source.results.map(normalizeReleaseCheckResult) : [],
-    failureReason: text(source.failureReason),
+    candidates: Array.isArray(source.candidates) ? source.candidates.map(normalizeArtifactReleaseCandidate) : [],
   }
 }
 
-// RELEASE_SNAPSHOT_FRESHNESS_MS 是切换发布来源时复用已有结果的有效期；期内不重新获取。
-export const RELEASE_SNAPSHOT_FRESHNESS_MS = 5 * 60 * 1000
-
-// isReleaseSnapshotFreshForKind 判断快照是否属于目标来源，且该分类结果仍在有效期内。
-export function isReleaseSnapshotFreshForKind(
-  snapshot: ReleaseCheckSnapshot | null | undefined,
-  sourceKind: string,
-  artifactKind: string,
-): boolean {
-  if (!snapshot || String(snapshot.source || '') !== sourceKind) return false
-  let newest = 0
-  for (const result of snapshot.results) {
-    if (String(result.artifact?.kind || '') !== artifactKind) continue
-    const time = Date.parse(result.checkedAt)
-    if (Number.isFinite(time) && time > newest) newest = time
+export function normalizeArtifactInstallationList(value: unknown): ArtifactInstallationList {
+  const source = objectValue(value)
+  return {
+    artifacts: Array.isArray(source.artifacts) ? source.artifacts.map(normalizeArtifactInstallation) : [],
   }
-  return newest > 0 && Date.now() - newest < RELEASE_SNAPSHOT_FRESHNESS_MS
 }
 
-function normalizeReleaseCheckResult(value: unknown): ReleaseCheckResult {
+// ---------------------------------------------------------------------------
+// 客户端发行缓存：按「来源 × 分类」各自成格；本地与官方互不覆盖。
+// ---------------------------------------------------------------------------
+
+// RELEASE_CACHE_FRESHNESS_MS 是客户端复用已有缓存的有效期；期内不重新读取。
+export const RELEASE_CACHE_FRESHNESS_MS = 5 * 60 * 1000
+
+export type ReleaseCacheCell = {
+  checkedAt: string
+  candidates: ArtifactReleaseCandidate[]
+  failure: string
+}
+
+export type ReleaseCache = Record<ReleaseSourceKind, Record<ReleaseArtifactKind, ReleaseCacheCell>>
+
+export function emptyReleaseCacheCell(): ReleaseCacheCell {
+  return { checkedAt: '', candidates: [], failure: '' }
+}
+
+export function emptyReleaseCache(): ReleaseCache {
+  return {
+    official: { 'eucli-box': emptyReleaseCacheCell(), tool: emptyReleaseCacheCell(), plugin: emptyReleaseCacheCell() },
+    local: { 'eucli-box': emptyReleaseCacheCell(), tool: emptyReleaseCacheCell(), plugin: emptyReleaseCacheCell() },
+  }
+}
+
+export function releaseCacheCell(cache: ReleaseCache, sourceKind: ReleaseSourceKind, artifactKind: ReleaseArtifactKind): ReleaseCacheCell {
+  return cache[sourceKind][artifactKind]
+}
+
+export function isReleaseCacheFresh(cache: ReleaseCache, sourceKind: ReleaseSourceKind, artifactKind: ReleaseArtifactKind): boolean {
+  const cell = releaseCacheCell(cache, sourceKind, artifactKind)
+  if (!cell.candidates.length || cell.failure) return false
+  const time = Date.parse(cell.checkedAt)
+  return Number.isFinite(time) && time > 0 && Date.now() - time < RELEASE_CACHE_FRESHNESS_MS
+}
+
+export function writeReleaseCache(
+  cache: ReleaseCache,
+  sourceKind: ReleaseSourceKind,
+  artifactKind: ReleaseArtifactKind,
+  result: { candidates: ArtifactReleaseCandidate[]; failure: string },
+): ReleaseCache {
+  const cell: ReleaseCacheCell = {
+    checkedAt: new Date().toISOString(),
+    candidates: result.candidates.filter((item) => String(item.artifact?.kind || '') === artifactKind),
+    failure: result.failure,
+  }
+  return { ...cache, [sourceKind]: { ...cache[sourceKind], [artifactKind]: cell } }
+}
+
+export type ReleaseCandidatesView = {
+  status: 'not_checked' | 'checking' | 'completed' | 'failed'
+  statuses: Record<string, 'not_checked' | 'checking' | 'completed' | 'failed'>
+  source: ReleaseSourceKind
+  checkedAt: string
+  checkedAts: Record<string, string>
+  failing: string[]
+  candidates: ArtifactReleaseCandidate[]
+  installations: ArtifactInstallation[]
+  sourceCandidates: Record<ReleaseSourceKind, ArtifactReleaseCandidate[]>
+  sourceCheckedAts: Record<ReleaseSourceKind, Record<ReleaseArtifactKind, string>>
+}
+
+export function composeReleaseCandidatesView(
+  cache: ReleaseCache,
+  sourceKind: ReleaseSourceKind,
+  options: { kinds: ReleaseArtifactKind[]; checking: boolean; installations?: ArtifactInstallation[] },
+): ReleaseCandidatesView {
+  const statuses: Record<string, 'not_checked' | 'checking' | 'completed' | 'failed'> = {}
+  const checkedAts: Record<string, string> = {}
+  const failing: string[] = []
+  const candidates: ArtifactReleaseCandidate[] = []
+  for (const kind of options.kinds) {
+    const cell = cache[sourceKind][kind]
+    checkedAts[kind] = cell.candidates.length ? cell.checkedAt : ''
+    if (options.checking) {
+      statuses[kind] = 'checking'
+    } else if (cell.candidates.length) {
+      statuses[kind] = cell.failure ? 'failed' : 'completed'
+    } else {
+      statuses[kind] = 'not_checked'
+    }
+    if (cell.failure) failing.push(cell.failure)
+    candidates.push(...cell.candidates)
+  }
+  candidates.sort((left, right) => {
+    const leftKey = `${left.artifact.kind}:${left.artifact.id}`
+    const rightKey = `${right.artifact.kind}:${right.artifact.id}`
+    return leftKey.localeCompare(rightKey)
+  })
+  const hasCandidates = candidates.length > 0
+  const hasFailure = options.kinds.some((kind) => cache[sourceKind][kind].failure !== '')
+  const status = options.checking
+    ? 'checking'
+    : hasCandidates
+      ? (hasFailure ? 'failed' : 'completed')
+      : 'not_checked'
+  return {
+    status,
+    statuses,
+    source: sourceKind,
+    checkedAt: newestCheckedAt(checkedAts),
+    checkedAts,
+    failing,
+    candidates,
+    installations: options.installations ? [...options.installations] : [],
+    sourceCandidates: {
+      official: collectSourceCandidates(cache, 'official'),
+      local: collectSourceCandidates(cache, 'local'),
+    },
+    sourceCheckedAts: {
+      official: { 'eucli-box': cache.official['eucli-box'].checkedAt, tool: cache.official.tool.checkedAt, plugin: cache.official.plugin.checkedAt },
+      local: { 'eucli-box': cache.local['eucli-box'].checkedAt, tool: cache.local.tool.checkedAt, plugin: cache.local.plugin.checkedAt },
+    },
+  }
+}
+
+function collectSourceCandidates(cache: ReleaseCache, sourceKind: ReleaseSourceKind): ArtifactReleaseCandidate[] {
+  return [
+    ...cache[sourceKind]['eucli-box'].candidates,
+    ...cache[sourceKind].tool.candidates,
+    ...cache[sourceKind].plugin.candidates,
+  ]
+}
+
+function newestCheckedAt(checkedAts: Record<string, string>): string {
+  let newest = ''
+  let newestTime = 0
+  for (const value of Object.values(checkedAts)) {
+    const time = Date.parse(value)
+    if (Number.isFinite(time) && time > newestTime) {
+      newest = value
+      newestTime = time
+    }
+  }
+  return newest
+}
+
+export function compatibilityRangeText(value: EucliBoxCompatibility | null | undefined): string {
+  const minimum = text(value?.minimumVersion)
+  const maximum = text(value?.maximumVersionExclusive)
+  if (!minimum || !maximum) return '范围资料无效'
+  return `[${minimum}, ${maximum})`
+}
+
+function normalizeArtifactReleaseCandidate(value: unknown): ArtifactReleaseCandidate {
   const source = objectValue(value)
   return {
     artifact: normalizeReleaseArtifactIdentity(source.artifact),
@@ -219,7 +364,7 @@ function normalizeReleaseCheckResult(value: unknown): ReleaseCheckResult {
     currentVersion: text(source.currentVersion),
     latestVersion: text(source.latestVersion),
     status: text(source.status) || 'not_checked',
-    checkedAt: text(source.checkedAt),
+    publishedAt: text(source.publishedAt),
     updateAvailable: source.updateAvailable === true,
     releaseUrl: text(source.releaseUrl),
     releaseNotes: text(source.releaseNotes),
@@ -230,6 +375,18 @@ function normalizeReleaseCheckResult(value: unknown): ReleaseCheckResult {
     affectedArtifacts: Array.isArray(source.affectedArtifacts)
       ? source.affectedArtifacts.map(normalizeReleaseArtifactIdentity)
       : [],
+    failureReason: text(source.failureReason),
+  }
+}
+
+function normalizeArtifactInstallation(value: unknown): ArtifactInstallation {
+  const source = objectValue(value)
+  return {
+    artifact: normalizeReleaseArtifactIdentity(source.artifact),
+    version: text(source.version),
+    eucliBoxCompatibility: source.eucliBoxCompatibility && typeof source.eucliBoxCompatibility === 'object'
+      ? normalizeEucliBoxCompatibility(source.eucliBoxCompatibility)
+      : null,
     failureReason: text(source.failureReason),
   }
 }
@@ -247,13 +404,6 @@ function normalizeOfficialReleaseSource(value: unknown): OfficialReleaseSource {
     owner: text(source.owner),
     name: text(source.name),
   }
-}
-
-export function compatibilityRangeText(value: EucliBoxCompatibility | null | undefined): string {
-  const minimum = text(value?.minimumVersion)
-  const maximum = text(value?.maximumVersionExclusive)
-  if (!minimum || !maximum) return '范围资料无效'
-  return `[${minimum}, ${maximum})`
 }
 
 function objectValue(value: unknown): Record<string, any> {

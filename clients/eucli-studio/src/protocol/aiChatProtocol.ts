@@ -4,6 +4,11 @@ export const AI_CHAT_DIRECT_PROTOCOL_VERSION = 2
 
 export const AI_CHAT_DIRECT_METHOD = {
   healthCheck: 'aiChat.healthCheck',
+  studioBootstrap: 'studio.bootstrap',
+  eucliConfigGet: 'eucli.config.get',
+  eucliConfigSet: 'eucli.config.set',
+  releaseCandidatesList: 'releaseCandidates.list',
+  artifactsInstallations: 'artifacts.installations',
   submitChatCompletion: 'aiChat.submitChatCompletion',
   submitManyChatCompletions: 'aiChat.submitManyChatCompletions',
   submitRawServiceRequest: 'aiChat.submitRawServiceRequest',

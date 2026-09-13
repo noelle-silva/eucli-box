@@ -6,7 +6,7 @@ import { createDirectCapabilitiesAdapter } from '../direct/createDirectCapabilit
 import { createAiChatCapabilitiesFromHostApi, type AiChatShowToast } from '../gateway/capabilities'
 import { AI_CHAT_DIRECT_PROTOCOL_VERSION } from '../protocol/aiChatProtocol'
 import { EUCLI_STUDIO_APP_ID, EUCLI_STUDIO_CONTROLLER_KEY } from '../runtime/eucliStudioGlobals'
-import { normalizeReleaseCheckSnapshot, normalizeStudioBootstrap, type ReleaseCheckSnapshot, type StudioBootstrap } from '../domain/release'
+import { normalizeArtifactCandidateList, normalizeArtifactInstallationList, normalizeStudioBootstrap, type ArtifactCandidateList, type ArtifactInstallationList, type StudioBootstrap } from '../domain/release'
 
 type BackendEndpoint = {
   url: string
@@ -19,8 +19,8 @@ export type AiChatAppRuntime = {
   getEucliBoxConfig: () => Promise<EucliBoxConfig>
   setEucliBoxConfig: (config: EucliBoxConfigInput) => Promise<EucliBoxConfig>
   getBootstrap: () => Promise<StudioBootstrap>
-  getReleaseChecks: () => Promise<ReleaseCheckSnapshot>
-  refreshReleaseChecks: (kind?: string) => Promise<ReleaseCheckSnapshot>
+  listReleaseCandidates: (kind: string) => Promise<ArtifactCandidateList>
+  listArtifactInstallations: () => Promise<ArtifactInstallationList>
   dispose: () => void
 }
 
@@ -59,8 +59,8 @@ export async function createAiChatAppRuntime(options: AiChatAppHostOptions): Pro
     getEucliBoxConfig: () => directClient.invoke<EucliBoxConfig>('eucli.config.get'),
     setEucliBoxConfig: (config) => directClient.invoke<EucliBoxConfig>('eucli.config.set', config),
     getBootstrap: async () => normalizeStudioBootstrap(await directClient.invoke('studio.bootstrap')),
-    getReleaseChecks: async () => normalizeReleaseCheckSnapshot(await directClient.invoke('releaseChecks.get')),
-    refreshReleaseChecks: async (kind?: string) => normalizeReleaseCheckSnapshot(await directClient.invoke('releaseChecks.refresh', kind ? { kind } : {})),
+    listReleaseCandidates: async (kind: string) => normalizeArtifactCandidateList(await directClient.invoke('releaseCandidates.list', { kind })),
+    listArtifactInstallations: async () => normalizeArtifactInstallationList(await directClient.invoke('artifacts.installations')),
     dispose() {
       try {
         if (controller && (window as any)[EUCLI_STUDIO_CONTROLLER_KEY] === controller) {

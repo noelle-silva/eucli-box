@@ -20,7 +20,6 @@ type runtimeBootstrap struct {
 	EucliBoxCompatibility       *types.CompatibilityStatus  `json:"eucliBoxCompatibility,omitempty"`
 	BusinessAvailable           bool                        `json:"businessAvailable"`
 	EucliBoxIssue               string                      `json:"eucliBoxIssue,omitempty"`
-	ReleaseChecks               types.ReleaseCheckSnapshot  `json:"releaseChecks"`
 }
 
 func (s *service) bootstrap(ctx context.Context) (runtimeBootstrap, error) {
@@ -32,7 +31,6 @@ func (s *service) bootstrap(ctx context.Context) (runtimeBootstrap, error) {
 		ClientVersion:               s.release.Version,
 		ClientEucliBoxCompatibility: s.release.EucliBoxCompatibility,
 		EucliBoxURL:                 cfg.EucliBoxURL,
-		ReleaseChecks:               s.releaseCheckSnapshot(),
 	}
 	if strings.TrimSpace(cfg.EucliBoxURL) == "" {
 		info.EucliBoxIssue = "EUCLI_BOX_NOT_CONFIGURED: 请先配置业务端地址与访问 Key"
@@ -75,35 +73,8 @@ func (s *service) bootstrapConnected(ctx context.Context, info runtimeBootstrap)
 	} else {
 		info.BusinessAvailable = true
 	}
-	if rawChecks, checkErr := s.eb.request(ctx, ebRequest{Method: "GET", Path: "/api/release-checks", Timeout: 8000}); checkErr != nil {
-		info.ReleaseChecks = types.ReleaseCheckSnapshot{Status: types.ReleaseCheckStatusFailed, Results: []types.ReleaseCheckResult{}, FailureReason: checkErr.Error()}
-	} else if checks, decodeErr := decodeReleaseCheckSnapshot(rawChecks); decodeErr != nil {
-		info.ReleaseChecks = types.ReleaseCheckSnapshot{Status: types.ReleaseCheckStatusFailed, Results: []types.ReleaseCheckResult{}, FailureReason: decodeErr.Error()}
-	} else {
-		info.ReleaseChecks = checks
-	}
 	s.setConnectionState(info)
 	return info, nil
-}
-
-func decodeReleaseCheckSnapshot(raw any) (types.ReleaseCheckSnapshot, error) {
-	payload, err := json.Marshal(raw)
-	if err != nil {
-		return types.ReleaseCheckSnapshot{}, fmt.Errorf("读取正式发行检查结果失败：%w", err)
-	}
-	var snapshot types.ReleaseCheckSnapshot
-	if err := json.Unmarshal(payload, &snapshot); err != nil {
-		return types.ReleaseCheckSnapshot{}, fmt.Errorf("读取正式发行检查结果失败：%w", err)
-	}
-	switch snapshot.Status {
-	case types.ReleaseCheckStatusNotChecked, types.ReleaseCheckStatusChecking, types.ReleaseCheckStatusCompleted, types.ReleaseCheckStatusFailed:
-	default:
-		return types.ReleaseCheckSnapshot{}, fmt.Errorf("正式发行检查返回了无效状态")
-	}
-	if snapshot.Results == nil {
-		snapshot.Results = []types.ReleaseCheckResult{}
-	}
-	return snapshot, nil
 }
 
 func decodeBoxRelease(raw any) (types.EucliBoxReleaseInfo, error) {

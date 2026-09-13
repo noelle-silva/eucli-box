@@ -6,9 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"sync"
 	"testing"
-	"time"
 
 	"eucli-box/pkg/installsource"
 	"eucli-box/pkg/types"
@@ -159,45 +157,16 @@ func TestBusinessMethodsRequireSuccessfulBootstrap(t *testing.T) {
 	}
 }
 
-func TestReleaseCheckRefreshKeepsPreviousResultsOnTotalFailure(t *testing.T) {
+func TestReleaseCandidatesListPassesThroughWithoutState(t *testing.T) {
+	requests := make(chan *http.Request, 4)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "boom", http.StatusInternalServerError)
-	}))
-	defer server.Close()
-	svc, err := newService(configuredTestStore(t, server.URL), testClientRelease(), nil)
-	if err != nil {
-		t.Fatalf("newService() error = %v", err)
-	}
-	svc.setConnectionState(runtimeBootstrap{EucliBoxReachable: true})
-	svc.storeReleaseCheckSnapshot(types.ReleaseCheckSnapshot{
-		Status: types.ReleaseCheckStatusCompleted,
-		Results: []types.ReleaseCheckResult{{
-			Artifact:      types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "context7"},
-			Status:        types.ReleaseCheckStatusCompleted,
-			LatestVersion: "0.1.0",
-		}},
-	})
-
-	snapshot, err := svc.refreshReleaseChecks(context.Background(), "")
-	if err != nil {
-		t.Fatalf("refresh error = %v", err)
-	}
-	if snapshot.Status != types.ReleaseCheckStatusFailed || len(snapshot.Results) != 1 || snapshot.Results[0].LatestVersion != "0.1.0" {
-		t.Fatalf("snapshot = %#v", snapshot)
-	}
-}
-
-func TestReleaseCheckRefreshUsesConnectedBusinessBackend(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/release-checks/refresh" {
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": types.ReleaseCheckSnapshot{
-			Status: types.ReleaseCheckStatusCompleted,
-			Results: []types.ReleaseCheckResult{{
+		requests <- r
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": types.ArtifactCandidateList{
+			SourceKind: string(installsource.KindOfficial),
+			Candidates: []types.ArtifactReleaseCandidate{{
 				Artifact:      types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: "time-plugin"},
 				LatestVersion: "0.1.0",
-				Status:        types.ReleaseCheckStatusCompleted,
+				Status:        types.ReleaseCandidateStatusCompleted,
 			}},
 		}})
 	}))
@@ -209,45 +178,33 @@ func TestReleaseCheckRefreshUsesConnectedBusinessBackend(t *testing.T) {
 	}
 	svc.setConnectionState(runtimeBootstrap{EucliBoxReachable: true})
 
-	snapshot, err := svc.refreshReleaseChecks(context.Background(), "")
+	list, err := svc.listReleaseCandidates(context.Background(), "plugin")
 	if err != nil {
-		t.Fatalf("refresh error = %v", err)
+		t.Fatalf("listReleaseCandidates() error = %v", err)
 	}
-	if snapshot.Status != types.ReleaseCheckStatusCompleted || len(snapshot.Results) != 1 || snapshot.Results[0].Artifact.ID != "time-plugin" {
-		t.Fatalf("snapshot = %#v", snapshot)
+	if list.SourceKind != string(installsource.KindOfficial) || len(list.Candidates) != 1 || list.Candidates[0].Artifact.ID != "time-plugin" {
+		t.Fatalf("list = %#v", list)
 	}
+	request := <-requests
+	if request.Method != http.MethodGet || request.URL.Path != "/api/release-candidates" || request.URL.Query().Get("kind") != "plugin" {
+		t.Fatalf("unexpected request: %s %s?%s", request.Method, request.URL.Path, request.URL.RawQuery)
+	}
+	// 客户端不保存任何候选结果：第二次读取仍打到业务端。
+	if _, err := svc.listReleaseCandidates(context.Background(), "plugin"); err != nil {
+		t.Fatalf("second listReleaseCandidates() error = %v", err)
+	}
+	<-requests
 }
 
-func TestReleaseCheckRefreshWithoutConnectionFails(t *testing.T) {
-	store, err := newConfigStore(t.TempDir())
-	if err != nil {
-		t.Fatalf("newConfigStore() error = %v", err)
-	}
-	svc, err := newService(store, testClientRelease(), nil)
-	if err != nil {
-		t.Fatalf("newService() error = %v", err)
-	}
-	snapshot, err := svc.refreshReleaseChecks(context.Background(), "")
-	if err != nil {
-		t.Fatalf("refresh error = %v", err)
-	}
-	if snapshot.Status != types.ReleaseCheckStatusFailed {
-		t.Fatalf("snapshot = %#v", snapshot)
-	}
-}
-
-func TestReleaseCheckGetReadsCurrentSourceSnapshot(t *testing.T) {
+func TestArtifactInstallationsListPassesThrough(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/api/release-checks" {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/artifact-installations" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": types.ReleaseCheckSnapshot{
-			Status:     types.ReleaseCheckStatusCompleted,
-			SourceKind: string(installsource.KindLocal),
-			Results: []types.ReleaseCheckResult{{
-				Artifact:      types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "context7"},
-				LatestVersion: "0.1.0",
-				Status:        types.ReleaseCheckStatusCompleted,
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": types.ArtifactInstallationList{
+			Artifacts: []types.ArtifactInstallation{{
+				Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "context7"},
+				Version:  "0.1.0",
 			}},
 		}})
 	}))
@@ -258,83 +215,46 @@ func TestReleaseCheckGetReadsCurrentSourceSnapshot(t *testing.T) {
 		t.Fatalf("newService() error = %v", err)
 	}
 	svc.setConnectionState(runtimeBootstrap{EucliBoxReachable: true})
-
-	snapshot, err := svc.getReleaseChecks(context.Background())
+	list, err := svc.listArtifactInstallations(context.Background())
 	if err != nil {
-		t.Fatalf("get error = %v", err)
+		t.Fatalf("listArtifactInstallations() error = %v", err)
 	}
-	if snapshot.Status != types.ReleaseCheckStatusCompleted || snapshot.SourceKind != string(installsource.KindLocal) || len(snapshot.Results) != 1 {
-		t.Fatalf("snapshot = %#v", snapshot)
-	}
-	if projected := svc.releaseCheckSnapshot(); projected.SourceKind != string(installsource.KindLocal) || len(projected.Results) != 1 {
-		t.Fatalf("projected snapshot = %#v", projected)
+	if len(list.Artifacts) != 1 || list.Artifacts[0].Version != "0.1.0" {
+		t.Fatalf("list = %#v", list)
 	}
 }
 
-func TestReleaseCheckGetWithoutConnectionFails(t *testing.T) {
-	store, err := newConfigStore(t.TempDir())
-	if err != nil {
-		t.Fatalf("newConfigStore() error = %v", err)
-	}
-	svc, err := newService(store, testClientRelease(), nil)
+func TestReleaseCandidateReadsFailClearly(t *testing.T) {
+	svc, err := newService(configuredTestStore(t, "http://127.0.0.1:1"), testClientRelease(), nil)
 	if err != nil {
 		t.Fatalf("newService() error = %v", err)
 	}
-	snapshot, err := svc.getReleaseChecks(context.Background())
-	if err != nil {
-		t.Fatalf("get error = %v", err)
+	if _, err := svc.listReleaseCandidates(context.Background(), "unknown"); err == nil {
+		t.Fatal("unknown kind error = nil")
 	}
-	if snapshot.Status != types.ReleaseCheckStatusFailed {
-		t.Fatalf("snapshot = %#v", snapshot)
+	_, err = svc.listReleaseCandidates(context.Background(), "tool")
+	var coded codedError
+	if !errors.As(err, &coded) || coded.Code() != "EUCLI_BOX_CONNECTION_REQUIRED" {
+		t.Fatalf("disconnected error = %#v", err)
+	}
+	if _, err := svc.listArtifactInstallations(context.Background()); !errors.As(err, &coded) || coded.Code() != "EUCLI_BOX_CONNECTION_REQUIRED" {
+		t.Fatalf("installations disconnected error = %#v", err)
 	}
 }
 
-func TestReleaseCheckRefreshDoesNotRunConcurrently(t *testing.T) {
-	started := make(chan struct{})
-	firstDone := make(chan struct{})
+func TestReleaseCandidateRejectsInvalidSource(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case <-started:
-		default:
-			close(started)
-		}
-		<-firstDone
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": types.ReleaseCheckSnapshot{
-			Status:  types.ReleaseCheckStatusCompleted,
-			Results: []types.ReleaseCheckResult{},
-		}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": types.ArtifactCandidateList{SourceKind: "bogus", Candidates: []types.ArtifactReleaseCandidate{}}})
 	}))
 	defer server.Close()
-
 	svc, err := newService(configuredTestStore(t, server.URL), testClientRelease(), nil)
 	if err != nil {
 		t.Fatalf("newService() error = %v", err)
 	}
 	svc.setConnectionState(runtimeBootstrap{EucliBoxReachable: true})
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		_, _ = svc.refreshReleaseChecks(context.Background(), "")
-	}()
-	<-started
-
-	second := make(chan types.ReleaseCheckSnapshot, 1)
-	go func() {
-		snapshot, _ := svc.refreshReleaseChecks(context.Background(), "")
-		second <- snapshot
-	}()
-	select {
-	case snapshot := <-second:
-		if snapshot.Status != types.ReleaseCheckStatusChecking {
-			t.Fatalf("second snapshot status = %q", snapshot.Status)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("second refresh did not return while first is running")
+	if _, err := svc.listReleaseCandidates(context.Background(), "tool"); err == nil {
+		t.Fatal("invalid source error = nil")
 	}
-	close(firstDone)
-	wg.Wait()
 }
 
 func configuredTestStore(t *testing.T, url string) *configStore {

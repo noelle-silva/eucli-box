@@ -8,27 +8,23 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
-	"eucli-box/pkg/releasecheck"
+	"eucli-box/pkg/installsource"
 	"eucli-box/pkg/types"
 )
 
 type service struct {
-	config              *configStore
-	release             clientRelease
-	eb                  *ebClient
-	projection          *projectionService
-	runtime             *runtimeStore
-	hub                 *eventHub
-	connectionMu        sync.RWMutex
-	connectionState     *runtimeBootstrap
-	connectionChanged   chan struct{}
-	shutdownMu          sync.RWMutex
-	shutdown            func()
-	releaseCheckMu      sync.RWMutex
-	releaseChecks       types.ReleaseCheckSnapshot
-	releaseCheckRunning bool
+	config            *configStore
+	release           clientRelease
+	eb                *ebClient
+	projection        *projectionService
+	runtime           *runtimeStore
+	hub               *eventHub
+	connectionMu      sync.RWMutex
+	connectionState   *runtimeBootstrap
+	connectionChanged chan struct{}
+	shutdownMu        sync.RWMutex
+	shutdown          func()
 }
 
 func newService(config *configStore, release clientRelease, hub *eventHub) (*service, error) {
@@ -39,7 +35,6 @@ func newService(config *configStore, release clientRelease, hub *eventHub) (*ser
 	service := &service{
 		config: config, release: release, eb: eb, projection: newProjectionService(config, eb), runtime: newRuntimeStore(), hub: hub,
 		connectionChanged: make(chan struct{}, 1),
-		releaseChecks:     releasecheck.PendingSnapshot(),
 	}
 	eb.setConnectionProvider(service.currentBoxConnection)
 	return service, nil
@@ -52,14 +47,14 @@ func (s *service) dispatch(ctx context.Context, method string, params json.RawMe
 		return map[string]any{"protocolVersion": directProtocolVersion, "clientVersion": s.release.Version, "status": "ok", "configured": cfg.EucliBoxURL != ""}, nil
 	case "studio.bootstrap":
 		return s.bootstrap(ctx)
-	case "releaseChecks.get":
-		return s.getReleaseChecks(ctx)
-	case "releaseChecks.refresh":
-		var refreshReq struct {
+	case "releaseCandidates.list":
+		var listReq struct {
 			Kind string `json:"kind"`
 		}
-		_ = json.Unmarshal(paramsOrEmpty(params), &refreshReq)
-		return s.refreshReleaseChecks(ctx, refreshReq.Kind)
+		_ = json.Unmarshal(paramsOrEmpty(params), &listReq)
+		return s.listReleaseCandidates(ctx, listReq.Kind)
+	case "artifacts.installations":
+		return s.listArtifactInstallations(ctx)
 	case "eucli.config.get":
 		return s.config.load()
 	case "eucli.config.set":
@@ -154,119 +149,75 @@ func (s *service) requestShutdown() {
 	}
 }
 
-// getReleaseChecks 读取业务端当前安装来源的快照，不触发刷新。
-// 切换安装来源后，客户端用它直接取用业务端已保存的对应来源结果。
-func (s *service) getReleaseChecks(ctx context.Context) (types.ReleaseCheckSnapshot, error) {
-	state := s.connectionSnapshot()
-	if state == nil || !state.EucliBoxReachable {
-		return failedReleaseCheckSnapshot(s.releaseCheckSnapshot(), fmt.Errorf("需要先连接业务端")), nil
-	}
-	raw, err := s.eb.request(ctx, ebRequest{Method: "GET", Path: "/api/release-checks", Timeout: 8000})
-	if err != nil {
-		return failedReleaseCheckSnapshot(s.releaseCheckSnapshot(), err), nil
-	}
-	snapshot, err := decodeReleaseCheckSnapshot(raw)
-	if err != nil {
-		return failedReleaseCheckSnapshot(s.releaseCheckSnapshot(), err), nil
-	}
-	s.storeReleaseCheckSnapshot(snapshot)
-	return s.releaseCheckSnapshot(), nil
-}
-
-func (s *service) refreshReleaseChecks(ctx context.Context, kind string) (types.ReleaseCheckSnapshot, error) {
+// listReleaseCandidates 直通读取业务端当前安装来源下某分类的候选事实；客户端不保存任何结果。
+func (s *service) listReleaseCandidates(ctx context.Context, kind string) (types.ArtifactCandidateList, error) {
 	kind = strings.TrimSpace(kind)
-	if kind != "" && kind != types.ReleaseArtifactKindBox && kind != types.ReleaseArtifactKindTool && kind != types.ReleaseArtifactKindPlugin {
-		return failedReleaseCheckSnapshot(s.releaseCheckSnapshot(), fmt.Errorf("不支持的刷新分类 %q", kind)), nil
+	switch kind {
+	case types.ReleaseArtifactKindBox, types.ReleaseArtifactKindTool, types.ReleaseArtifactKindPlugin:
+	default:
+		return types.ArtifactCandidateList{}, newError("BAD_REQUEST", fmt.Sprintf("不支持的候选分类 %q", kind))
 	}
+	if err := s.requireReachableBusiness(); err != nil {
+		return types.ArtifactCandidateList{}, err
+	}
+	raw, err := s.eb.request(ctx, ebRequest{Method: "GET", Path: "/api/release-candidates", Query: mustJSON(map[string]any{"kind": kind}), Timeout: 8000})
+	if err != nil {
+		return types.ArtifactCandidateList{}, err
+	}
+	return decodeArtifactCandidateList(raw)
+}
+
+// listArtifactInstallations 直通读取业务端当前真实的已装事实；客户端不保存任何结果。
+func (s *service) listArtifactInstallations(ctx context.Context) (types.ArtifactInstallationList, error) {
+	if err := s.requireReachableBusiness(); err != nil {
+		return types.ArtifactInstallationList{}, err
+	}
+	raw, err := s.eb.request(ctx, ebRequest{Method: "GET", Path: "/api/artifact-installations", Timeout: 8000})
+	if err != nil {
+		return types.ArtifactInstallationList{}, err
+	}
+	return decodeArtifactInstallationList(raw)
+}
+
+func (s *service) requireReachableBusiness() error {
 	state := s.connectionSnapshot()
 	if state == nil || !state.EucliBoxReachable {
-		return failedReleaseCheckSnapshot(s.releaseCheckSnapshot(), fmt.Errorf("需要先连接业务端")), nil
+		return newError("EUCLI_BOX_CONNECTION_REQUIRED", "需要先连接业务端")
 	}
+	return nil
+}
 
-	s.releaseCheckMu.Lock()
-	if s.releaseCheckRunning {
-		snapshot := cloneReleaseCheckSnapshot(s.releaseChecks)
-		s.releaseCheckMu.Unlock()
-		return snapshot, nil
-	}
-	previous := cloneReleaseCheckSnapshot(s.releaseChecks)
-	s.releaseCheckRunning = true
-	s.releaseChecks = releasecheck.CheckingSnapshot(previous, time.Now().UTC())
-	s.releaseCheckMu.Unlock()
-	defer func() {
-		s.releaseCheckMu.Lock()
-		s.releaseCheckRunning = false
-		s.releaseCheckMu.Unlock()
-	}()
-
-	body := mustJSON(map[string]any{"kind": kind})
-	raw, err := s.eb.request(ctx, ebRequest{Method: "POST", Path: "/api/release-checks/refresh", Query: nil, Body: body, Timeout: 30000})
+func decodeArtifactCandidateList(raw any) (types.ArtifactCandidateList, error) {
+	payload, err := json.Marshal(raw)
 	if err != nil {
-		snapshot := failedReleaseCheckSnapshot(previous, err)
-		s.storeReleaseCheckSnapshot(snapshot)
-		return snapshot, nil
+		return types.ArtifactCandidateList{}, fmt.Errorf("读取发行候选失败：%w", err)
 	}
-	snapshot, err := decodeReleaseCheckSnapshot(raw)
+	var list types.ArtifactCandidateList
+	if err := json.Unmarshal(payload, &list); err != nil {
+		return types.ArtifactCandidateList{}, fmt.Errorf("读取发行候选失败：%w", err)
+	}
+	if list.SourceKind != string(installsource.KindOfficial) && list.SourceKind != string(installsource.KindLocal) {
+		return types.ArtifactCandidateList{}, fmt.Errorf("发行候选返回了无效来源")
+	}
+	if list.Candidates == nil {
+		list.Candidates = []types.ArtifactReleaseCandidate{}
+	}
+	return list, nil
+}
+
+func decodeArtifactInstallationList(raw any) (types.ArtifactInstallationList, error) {
+	payload, err := json.Marshal(raw)
 	if err != nil {
-		snapshot := failedReleaseCheckSnapshot(previous, err)
-		s.storeReleaseCheckSnapshot(snapshot)
-		return snapshot, nil
+		return types.ArtifactInstallationList{}, fmt.Errorf("读取已装事实失败：%w", err)
 	}
-	snapshot = preservePreviousReleaseResults(previous, snapshot)
-	s.storeReleaseCheckSnapshot(snapshot)
-	return snapshot, nil
-}
-
-func (s *service) releaseCheckSnapshot() types.ReleaseCheckSnapshot {
-	s.releaseCheckMu.RLock()
-	defer s.releaseCheckMu.RUnlock()
-	return cloneReleaseCheckSnapshot(s.releaseChecks)
-}
-
-func (s *service) storeReleaseCheckSnapshot(snapshot types.ReleaseCheckSnapshot) {
-	s.releaseCheckMu.Lock()
-	s.releaseChecks = cloneReleaseCheckSnapshot(snapshot)
-	s.releaseCheckMu.Unlock()
-}
-
-func cloneReleaseCheckSnapshot(snapshot types.ReleaseCheckSnapshot) types.ReleaseCheckSnapshot {
-	result := snapshot
-	result.Results = append([]types.ReleaseCheckResult(nil), snapshot.Results...)
-	for index := range result.Results {
-		result.Results[index].AffectedArtifacts = append([]types.ReleaseArtifactIdentity(nil), snapshot.Results[index].AffectedArtifacts...)
+	var list types.ArtifactInstallationList
+	if err := json.Unmarshal(payload, &list); err != nil {
+		return types.ArtifactInstallationList{}, fmt.Errorf("读取已装事实失败：%w", err)
 	}
-	return result
-}
-
-func failedReleaseCheckSnapshot(previous types.ReleaseCheckSnapshot, err error) types.ReleaseCheckSnapshot {
-	now := time.Now().UTC()
-	return types.ReleaseCheckSnapshot{
-		Status:        types.ReleaseCheckStatusFailed,
-		StartedAt:     now,
-		CheckedAt:     now,
-		Results:       append([]types.ReleaseCheckResult(nil), previous.Results...),
-		FailureReason: strings.TrimSpace(err.Error()),
+	if list.Artifacts == nil {
+		list.Artifacts = []types.ArtifactInstallation{}
 	}
-}
-
-func preservePreviousReleaseResults(previous types.ReleaseCheckSnapshot, current types.ReleaseCheckSnapshot) types.ReleaseCheckSnapshot {
-	if current.Status != types.ReleaseCheckStatusFailed || previous.Status != types.ReleaseCheckStatusCompleted || !allReleaseResultsFailed(current.Results) {
-		return current
-	}
-	current.Results = append([]types.ReleaseCheckResult(nil), previous.Results...)
-	return current
-}
-
-func allReleaseResultsFailed(results []types.ReleaseCheckResult) bool {
-	if len(results) == 0 {
-		return true
-	}
-	for _, result := range results {
-		if result.Status != types.ReleaseCheckStatusFailed {
-			return false
-		}
-	}
-	return true
+	return list, nil
 }
 
 func isBusinessMethod(method string) bool {

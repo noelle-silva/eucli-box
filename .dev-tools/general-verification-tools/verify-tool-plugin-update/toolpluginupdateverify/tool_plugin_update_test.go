@@ -1073,7 +1073,7 @@ func TestToolPluginUpdate(t *testing.T) {
 	if state["status"] != types.ArtifactStatusNotInstalled {
 		t.Fatalf("未安装插件状态 = %#v", state)
 	}
-	_, payload = box.call(http.MethodPost, "/api/release-checks/refresh", "")
+	_, payload = box.call(http.MethodGet, "/api/release-candidates?kind=tool", "")
 	results := findReleaseResults(t, payload)
 	if context7 := results["tool:context7"]; context7["installed"] != false || context7["updateAvailable"] != true {
 		t.Fatalf("发行检查 context7 = %#v", context7)
@@ -1286,10 +1286,10 @@ func TestToolPluginUpdate(t *testing.T) {
 		t.Fatalf("失败后占位符读取 HTTP %d", status)
 	}
 
-	// 步骤 17：发行检查只读，发现新版但不执行用户动作时没有下载、安装、目录切换或状态变化。
+	// 步骤 17：发行候选读取只读，发现新版但不执行用户动作时没有下载、安装、目录切换或状态变化。
 	programBefore := snapshotDir(programRoot)
 	_, boxStateBefore := box.call(http.MethodGet, "/api/tools/context7/install-state", "")
-	_, payload = box.call(http.MethodPost, "/api/release-checks/refresh", "")
+	_, payload = box.call(http.MethodGet, "/api/release-candidates?kind=tool", "")
 	_, boxStateAfter := box.call(http.MethodGet, "/api/tools/context7/install-state", "")
 	if !bytes.Equal(boxStateBefore, boxStateAfter) {
 		t.Fatalf("只读检查改变了工具状态")
@@ -1526,18 +1526,19 @@ func verifyInterruptedSwitchRecovery(t *testing.T, boxPath string, envDir string
 	return box
 }
 
+// findReleaseResults 把分类候选响应的 candidates 数组按身份整理成查询表。
 func findReleaseResults(t *testing.T, payload []byte) map[string]map[string]any {
 	t.Helper()
 	var envelope struct {
 		Data struct {
-			Results []map[string]any `json:"results"`
+			Candidates []map[string]any `json:"candidates"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(payload, &envelope); err != nil {
-		t.Fatalf("解析发行检查响应失败：%v", err)
+		t.Fatalf("解析发行候选响应失败：%v", err)
 	}
 	result := map[string]map[string]any{}
-	for _, item := range envelope.Data.Results {
+	for _, item := range envelope.Data.Candidates {
 		artifact, _ := item["artifact"].(map[string]any)
 		key := fmt.Sprintf("%s:%s", artifact["kind"], artifact["id"])
 		result[key] = item

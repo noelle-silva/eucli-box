@@ -79,10 +79,10 @@ func runReleasePublishPreflight(ctx context.Context, root string, paths runPaths
 			args:    []string{"test", "./pkg/releasecatalog", "devtools/common/releasepublish", "./pkg/releasecheck", "devtools/common/releaseverify", "-count=1"},
 		},
 		{
-			name:    "业务端自动检查与维护入口",
+			name:    "业务端发行来源读取与维护入口",
 			workdir: root,
 			command: "go",
-			args:    []string{"test", "./src/release-check-system", "./src/gateway-system", "-count=1"},
+			args:    []string{"test", "./src/release-source-system", "./src/gateway-system", "-count=1"},
 		},
 		{
 			name:    "客户端独立检查与业务端结果转发",

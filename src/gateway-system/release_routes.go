@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -16,19 +15,23 @@ func (s *system) handleRelease(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusOK, info)
 }
 
-func (s *system) handleReleaseChecks(w http.ResponseWriter, r *http.Request) {
-	writeData(w, http.StatusOK, s.releaseChecks.Snapshot())
+// handleArtifactInstallations 返回业务端当前真实的已装事实。
+func (s *system) handleArtifactInstallations(w http.ResponseWriter, r *http.Request) {
+	list, err := s.releaseSource.ListInstallations(r.Context())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, list)
 }
 
-func (s *system) handleRefreshReleaseChecks(w http.ResponseWriter, r *http.Request) {
-	kind := ""
-	if r.Body != nil {
-		var body struct {
-			Kind string `json:"kind"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
-			kind = strings.TrimSpace(body.Kind)
-		}
+// handleReleaseCandidates 返回当前安装来源下某分类的候选事实与比对结论。
+func (s *system) handleReleaseCandidates(w http.ResponseWriter, r *http.Request) {
+	kind := strings.TrimSpace(r.URL.Query().Get("kind"))
+	list, err := s.releaseSource.ListCandidates(r.Context(), kind)
+	if err != nil {
+		writeError(w, gatewayInvalid(err.Error(), nil))
+		return
 	}
-	writeData(w, http.StatusOK, s.releaseChecks.Refresh(r.Context(), kind))
+	writeData(w, http.StatusOK, list)
 }

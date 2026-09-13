@@ -176,9 +176,10 @@ type AIAssistSystem interface {
 	FixMermaidInMessage(ctx context.Context, request types.MermaidFixRequest) (types.MermaidFixResult, error)
 }
 
-type ReleaseCheckSystem interface {
-	Snapshot() types.ReleaseCheckSnapshot
-	Refresh(ctx context.Context, kind string) types.ReleaseCheckSnapshot
+// ReleaseSourceSystem 是发行来源的网关视图：按需读取已装事实与候选事实。
+type ReleaseSourceSystem interface {
+	ListInstallations(ctx context.Context) (types.ArtifactInstallationList, error)
+	ListCandidates(ctx context.Context, kind string) (types.ArtifactCandidateList, error)
 }
 
 // InstallSourceSystem 是安装来源状态的网关视图：只读当前值、切换来源。
@@ -233,7 +234,7 @@ type system struct {
 	placeholders  PlaceholderSystem
 	systemPlugins SystemPluginSystem
 	assist        AIAssistSystem
-	releaseChecks ReleaseCheckSystem
+	releaseSource ReleaseSourceSystem
 	access        AccessSystem
 	mux           *http.ServeMux
 	server        *http.Server
@@ -244,7 +245,7 @@ type system struct {
 	connections map[*websocket.Conn]struct{}
 }
 
-func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups ChatGroupSystem, workspaces WorkspaceSystem, providers ProviderSystem, tools ToolSystem, sessions SessionSystem, stickers StickerSystem, hooks HookPromptSystem, placeholders PlaceholderSystem, systemPlugins SystemPluginSystem, assist AIAssistSystem, releaseChecks ReleaseCheckSystem) (System, error) {
+func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups ChatGroupSystem, workspaces WorkspaceSystem, providers ProviderSystem, tools ToolSystem, sessions SessionSystem, stickers StickerSystem, hooks HookPromptSystem, placeholders PlaceholderSystem, systemPlugins SystemPluginSystem, assist AIAssistSystem, releaseSource ReleaseSourceSystem) (System, error) {
 	if runtime == nil {
 		return nil, gatewayInvalid("runtime system dependency is required", nil)
 	}
@@ -281,8 +282,8 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups Ch
 	if assist == nil {
 		return nil, gatewayInvalid("ai assist system dependency is required", nil)
 	}
-	if releaseChecks == nil {
-		return nil, gatewayInvalid("release check system dependency is required", nil)
+	if releaseSource == nil {
+		return nil, gatewayInvalid("release source system dependency is required", nil)
 	}
 	if config.Addr == "" {
 		config.Addr = "127.0.0.1:8765"
@@ -325,7 +326,7 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups Ch
 		stickers:      stickers,
 		hooks:         hooks,
 		assist:        assist,
-		releaseChecks: releaseChecks,
+		releaseSource: releaseSource,
 		placeholders:  placeholders,
 		systemPlugins: systemPlugins,
 		access:        config.Access,

@@ -19,7 +19,7 @@ func (s *system) handleSetInstallSource(w http.ResponseWriter, r *http.Request) 
 		Kind string `json:"kind"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, gatewayInvalid("请求体必须是 {\"kind\": \"official\"|\"development\"}", nil))
+		writeError(w, gatewayInvalid("请求体必须是 {\"kind\": \"official\"|\"local\"}", nil))
 		return
 	}
 	kind, err := installsource.ParseKind(strings.TrimSpace(body.Kind))

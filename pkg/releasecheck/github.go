@@ -1,14 +1,12 @@
 package releasecheck
 
 import (
-	"context"
 	"fmt"
 	"net/url"
 	"strings"
 	"time"
 
 	"eucli-box/pkg/release"
-	"eucli-box/pkg/releasecatalog"
 	"eucli-box/pkg/types"
 )
 
@@ -30,11 +28,6 @@ type ReleaseCandidate struct {
 	SHA256           string
 	// Local 标记候选来自本地商店货架（本地源）。
 	Local bool
-}
-
-// CandidateReader 是业务端系统读取官方候选的只读接口；工具和插件安装共用同一份。
-type CandidateReader interface {
-	LatestCandidate(ctx context.Context, identity types.ReleaseArtifactIdentity) (*ReleaseCandidate, error)
 }
 
 // PackageSource 把已核对候选转换成可下载事实；不执行网络请求。
@@ -59,59 +52,6 @@ func (c ReleaseCandidate) PackageSource() (release.ArtifactPackageSource, error)
 		return release.ArtifactPackageSource{}, err
 	}
 	return source, nil
-}
-
-func (c *Checker) LatestCandidate(ctx context.Context, identity types.ReleaseArtifactIdentity) (*ReleaseCandidate, error) {
-	if !c.catalog.Contains(identity) {
-		return nil, fmt.Errorf("发布物不在正式白名单中")
-	}
-	source, err := c.catalog.SourceFor(identity.Kind)
-	if err != nil {
-		return nil, err
-	}
-	sourceRepository, err := c.catalog.SourceFor(types.ReleaseArtifactKindBox)
-	if err != nil {
-		return nil, err
-	}
-	index, err := c.readIndex(ctx, source)
-	if err != nil {
-		return nil, err
-	}
-	version, ok := index.LatestVersion(identity)
-	if !ok {
-		return nil, fmt.Errorf("%s 官方索引没有该发布物的正式版本", identity.ID)
-	}
-	pkg, ok := version.PackageFor(types.ReleasePlatformWindowsX64)
-	if !ok {
-		return nil, fmt.Errorf("%s 官方索引没有 %s 平台压缩包", identity.ID, types.ReleasePlatformWindowsX64)
-	}
-	archiveURL, err := releasecatalog.DownloadURL(c.downloadBase, source, pkg)
-	if err != nil {
-		return nil, fmt.Errorf("%s 官方索引压缩包地址无效：%w", identity.ID, err)
-	}
-	releaseURL, err := releaseTagURL(source, pkg.ReleaseTag)
-	if err != nil {
-		return nil, fmt.Errorf("%s 官方发行页地址无效：%w", identity.ID, err)
-	}
-	return &ReleaseCandidate{
-		Artifact:         identity,
-		Version:          version.Version,
-		PublishedAt:      version.PublishedAt,
-		SourceRevision:   version.SourceRevision,
-		SourceRepository: sourceRepository.Repository,
-		DataVersion:      version.DataVersion,
-		Compatibility:    version.Compatibility,
-		ReleaseNotes:     strings.TrimSpace(version.ReleaseNotes),
-		OfficialSource:   source.Repository,
-		ReleaseURL:       releaseURL,
-		ArchiveURL:       archiveURL,
-		SizeBytes:        pkg.SizeBytes,
-		SHA256:           pkg.SHA256,
-	}, nil
-}
-
-func (c *Checker) readIndex(ctx context.Context, source types.OfficialReleaseSource) (releasecatalog.Index, error) {
-	return releasecatalog.ReadIndex(ctx, c.client, source, c.indexBaseURL)
 }
 
 func releaseTagURL(source types.OfficialReleaseSource, tag string) (string, error) {

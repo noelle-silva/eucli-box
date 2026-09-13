@@ -36,7 +36,7 @@ import (
 	networkrequest "eucli-box/src/network-request-system"
 	permission "eucli-box/src/permission-system"
 	placeholdersystem "eucli-box/src/placeholder-system"
-	releasechecksystem "eucli-box/src/release-check-system"
+	releasesourcesystem "eucli-box/src/release-source-system"
 	roleprompt "eucli-box/src/role-prompt-system"
 	systemplugin "eucli-box/src/system-plugin-system"
 	toolcalling "eucli-box/src/tool-calling-system"
@@ -80,13 +80,8 @@ func run() error {
 		}
 	}
 	officialDoer := boxOfficialHTTPDoer{network: networkSystem}
-	apiBaseURL := strings.TrimSpace(os.Getenv("EUCLI_BOX_RELEASE_API_BASE"))
-	if apiBaseURL == "" {
-		apiBaseURL = "https://api.github.com"
-	}
 	officialChecker, err := releasecheck.New(releasecheck.Config{
 		Client:       officialDoer,
-		APIBaseURL:   apiBaseURL,
 		IndexBase:    strings.TrimSpace(os.Getenv("EUCLI_BOX_RELEASE_INDEX_BASE")),
 		DownloadBase: strings.TrimSpace(os.Getenv("EUCLI_BOX_RELEASE_DOWNLOAD_BASE")),
 	})
@@ -204,11 +199,11 @@ func run() error {
 	}
 	log.Printf("[11/13] ai-assist-system        ✓")
 
-	releaseCheckSystem, err := releasechecksystem.NewSystemWithChecker(releasechecksystem.Config{BoxVersion: boxRelease.Version, CurrentSource: sourceState.Current, LocalSource: localCandidateReader}, officialChecker, toolSystem, systemPluginSystem, boxRelease.Version)
+	releaseSourceSystem, err := releasesourcesystem.NewSystemWithChecker(releasesourcesystem.Config{BoxVersion: boxRelease.Version, CurrentSource: sourceState.Current, LocalSource: localCandidateReader}, officialChecker, toolSystem, systemPluginSystem)
 	if err != nil {
-		return fmt.Errorf("start release check system: %w", err)
+		return fmt.Errorf("start release source system: %w", err)
 	}
-	log.Printf("[12/13] release-check-system    ✓")
+	log.Printf("[12/13] release-source-system   ✓")
 
 	accessSystem, err := accesssystem.NewSystem(dataDir)
 	if err != nil {
@@ -222,7 +217,7 @@ func run() error {
 		busyKey = " (key: active)"
 	}
 	gatewayConfig := gateway.Config{Addr: envOrDefault("EUCLI_BOX_ADDR", "127.0.0.1:8765"), Key: boxKey, BoxVersion: boxRelease.Version, Access: accessSystem, InstallSource: sourceState}
-	gatewaySystem, err := gateway.NewSystem(gatewayConfig, runtimeSystem, roleSystem, storageSystem, storageSystem, providerSystem, toolSystem, storageSystem, storageSystem, storageSystem, placeholderSystem, systemPluginSystem, assistSystem, releaseCheckSystem)
+	gatewaySystem, err := gateway.NewSystem(gatewayConfig, runtimeSystem, roleSystem, storageSystem, storageSystem, providerSystem, toolSystem, storageSystem, storageSystem, storageSystem, placeholderSystem, systemPluginSystem, assistSystem, releaseSourceSystem)
 	if err != nil {
 		return fmt.Errorf("start gateway system: %w", err)
 	}

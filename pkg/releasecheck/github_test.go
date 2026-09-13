@@ -38,8 +38,8 @@ func TestLatestCandidateBindsIdentityVersionAndSource(t *testing.T) {
 	if strings.TrimSpace(source.ArchiveURL) == "" || source.SizeBytes <= 0 || len(source.SHA256) != 64 {
 		t.Fatalf("source facts missing: %#v", source)
 	}
-	if fixture.sourceRequests[identity.Kind] != 1 {
-		t.Fatalf("source requests = %d, want 1", fixture.sourceRequests[identity.Kind])
+	if fixture.kindRequests[identity.Kind] != 1 {
+		t.Fatalf("source requests = %d, want 1", fixture.kindRequests[identity.Kind])
 	}
 }
 
@@ -99,32 +99,5 @@ func TestPackageSourceRejectsInvalidCandidate(t *testing.T) {
 	bad.SourceRevision = ""
 	if _, err := bad.PackageSource(); err == nil {
 		t.Fatal("PackageSource() with empty source revision error = nil")
-	}
-}
-
-func TestCheckDoesNotTreatCandidateAsInstalled(t *testing.T) {
-	fixture := newGitHubFixture(t)
-	fixture.addIndexVersion(types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "context7"}, "0.1.2")
-	checker := fixture.checker(t)
-	snapshot := checker.Check(context.Background(), nil, "0.1.0")
-	result := findCheckResult(t, snapshot, "tool", "context7")
-	if result.Installed || result.CurrentVersion != "" {
-		t.Fatalf("result = %#v", result)
-	}
-	if !result.UpdateAvailable {
-		t.Fatalf("result updateAvailable = false, want true")
-	}
-}
-
-func TestCheckSkipsInstalledInputWithInvalidVersion(t *testing.T) {
-	fixture := newGitHubFixture(t)
-	fixture.addIndexVersion(types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "context7"}, "0.1.2")
-	checker := fixture.checker(t)
-	snapshot := checker.Check(context.Background(), []InstalledArtifact{
-		{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "context7"}, Version: "not-a-version"},
-	}, "0.1.0")
-	result := findCheckResult(t, snapshot, "tool", "context7")
-	if result.Installed {
-		t.Fatalf("result = %#v", result)
 	}
 }

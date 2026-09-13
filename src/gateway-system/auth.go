@@ -88,7 +88,7 @@ func (s *system) authWrap(next http.HandlerFunc) http.HandlerFunc {
 
 func releaseMaintenancePath(path string) bool {
 	switch path {
-	case "/api/release", "/api/release-checks", "/api/release-checks/refresh":
+	case "/api/release", "/api/artifact-installations", "/api/release-candidates":
 		return true
 	default:
 		return false

@@ -4,50 +4,35 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
-	"eucli-box/pkg/release"
 	"eucli-box/pkg/releasecatalog"
 	"eucli-box/pkg/types"
 )
 
 const (
-	defaultAPIBaseURL  = "https://api.github.com"
-	defaultIndexBase   = "https://raw.githubusercontent.com"
-	defaultTimeout     = 15 * time.Second
+	defaultIndexBase = "https://raw.githubusercontent.com"
+	defaultTimeout   = 15 * time.Second
 )
 
 type HTTPDoer interface {
 	Do(request *http.Request) (*http.Response, error)
 }
 
-type InstalledArtifact struct {
-	Artifact      types.ReleaseArtifactIdentity
-	Version       string
-	Compatibility *types.EucliBoxCompatibility
-}
-
 type Config struct {
 	Client       HTTPDoer
-	APIBaseURL   string
 	IndexBase    string
 	DownloadBase string
 	Timeout      time.Duration
-	Now          func() time.Time
-	Token        string
 }
 
+// Checker 按需读取官方统一版本索引；自身不保存任何检查结果。
 type Checker struct {
 	catalog      releasecatalog.Catalog
 	client       HTTPDoer
-	apiBaseURL   string
 	indexBaseURL string
 	downloadBase string
-	timeout      time.Duration
-	now          func() time.Time
-	token        string
 }
 
 func New(config Config) (*Checker, error) {
@@ -58,13 +43,6 @@ func New(config Config) (*Checker, error) {
 	if config.Client == nil {
 		config.Client = &http.Client{Timeout: defaultTimeout}
 	}
-	config.APIBaseURL = strings.TrimRight(strings.TrimSpace(config.APIBaseURL), "/")
-	if config.APIBaseURL == "" {
-		config.APIBaseURL = defaultAPIBaseURL
-	}
-	if !strings.HasPrefix(config.APIBaseURL, "https://") && !strings.HasPrefix(config.APIBaseURL, "http://127.0.0.1:") {
-		return nil, fmt.Errorf("发行检查 API 必须使用 GitHub HTTPS 地址")
-	}
 	config.IndexBase = strings.TrimRight(strings.TrimSpace(config.IndexBase), "/")
 	if config.IndexBase == "" {
 		config.IndexBase = defaultIndexBase
@@ -74,204 +52,144 @@ func New(config Config) (*Checker, error) {
 		config.Timeout = defaultTimeout
 	}
 	if config.Timeout < 0 {
-		return nil, fmt.Errorf("发行检查超时不能为负数")
-	}
-	if config.Now == nil {
-		config.Now = func() time.Time { return time.Now().UTC() }
+		return nil, fmt.Errorf("发行来源读取超时不能为负数")
 	}
 	return &Checker{
 		catalog:      catalog,
 		client:       config.Client,
-		apiBaseURL:   config.APIBaseURL,
 		indexBaseURL: config.IndexBase,
 		downloadBase: config.DownloadBase,
-		timeout:      config.Timeout,
-		now:          config.Now,
-		token:        strings.TrimSpace(config.Token),
 	}, nil
 }
 
-func (c *Checker) Check(ctx context.Context, installed []InstalledArtifact, currentBoxVersion string) types.ReleaseCheckSnapshot {
-	return c.CheckOnly(ctx, installed, currentBoxVersion, c.catalog.Artifacts)
+// CandidateReader 是业务端系统读取单个发布物最新候选的只读接口；安装与更新系统共用。
+type CandidateReader interface {
+	LatestCandidate(ctx context.Context, identity types.ReleaseArtifactIdentity) (*ReleaseCandidate, error)
 }
 
-// CheckOnly 按请求的发布物类别分别读取对应官方仓库的统一版本索引。
-// 每个被请求的类别只读取一次索引；不读取其他类别仓库，不列举 Release，不读取 Release 附属资料。
-func (c *Checker) CheckOnly(ctx context.Context, installed []InstalledArtifact, currentBoxVersion string, requested []types.ReleaseArtifactIdentity) types.ReleaseCheckSnapshot {
-	started := c.now()
+// CandidateRecord 是某个发布物的一次候选读取结果：
+// Candidate 非空表示读取成功；FailureReason 非空表示该发布物在来源中不可用及原因。
+type CandidateRecord struct {
+	Artifact      types.ReleaseArtifactIdentity
+	Candidate     *ReleaseCandidate
+	FailureReason string
+}
+
+// ListCandidates 按分类读取该分类正式白名单内全部发布物的候选事实。
+// 每个分类只读取一次对应官方仓库的统一版本索引；
+// 不读取其他分类仓库，不列举 Release，不读取 Release 附属资料。
+// 读取成功的发布物给出完整候选；索引中缺该发布物、缺平台压缩包或地址无效的发布物按失败记录。
+func (c *Checker) ListCandidates(ctx context.Context, kind string) ([]CandidateRecord, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	requestedSet := make(map[string]struct{}, len(requested))
-	for _, artifact := range requested {
-		if c.catalog.Contains(artifact) {
-			requestedSet[identityKey(artifact)] = struct{}{}
-		}
-	}
-	installedByIdentity := normalizeInstalled(installed)
-
-	kindRequested := make(map[string]struct{})
+	kind = strings.TrimSpace(kind)
+	whitelist := make([]types.ReleaseArtifactIdentity, 0, len(c.catalog.Artifacts))
 	for _, artifact := range c.catalog.Artifacts {
-		if _, requested := requestedSet[identityKey(artifact)]; requested {
-			kindRequested[artifact.Kind] = struct{}{}
+		if artifact.Kind == kind {
+			whitelist = append(whitelist, artifact)
 		}
 	}
-	kindIndexes := make(map[string]releasecatalog.Index, len(kindRequested))
-	kindErrors := make(map[string]error, len(kindRequested))
-	for kind := range kindRequested {
-		source, err := c.catalog.SourceFor(kind)
-		if err != nil {
-			kindErrors[kind] = err
-			continue
-		}
-		index, err := c.readIndex(ctx, source)
-		if err != nil {
-			kindErrors[kind] = err
-			continue
-		}
-		kindIndexes[kind] = index
+	if len(whitelist) == 0 {
+		return []CandidateRecord{}, nil
 	}
-
-	results := make([]types.ReleaseCheckResult, 0, len(requestedSet))
-	for _, artifact := range c.catalog.Artifacts {
-		if _, requested := requestedSet[identityKey(artifact)]; !requested {
-			continue
-		}
-		installedArtifact, isInstalled := installedByIdentity[identityKey(artifact)]
-		source, sourceErr := c.catalog.SourceFor(artifact.Kind)
-		if sourceErr != nil {
-			sourceErr = fmt.Errorf("读取 %s 官方来源失败：%w", artifact.Kind, sourceErr)
-		}
-		result := types.ReleaseCheckResult{
-			Artifact:       artifact,
-			Source:         source,
-			Installed:      isInstalled,
-			CurrentVersion: installedArtifact.Version,
-			Status:         types.ReleaseCheckStatusCompleted,
-			CheckedAt:      started,
-		}
-		if sourceErr != nil || kindErrors[artifact.Kind] != nil {
-			result.Status = types.ReleaseCheckStatusFailed
-			if sourceErr != nil {
-				result.FailureReason = sourceErr.Error()
-			} else {
-				result.FailureReason = kindErrors[artifact.Kind].Error()
-			}
-			results = append(results, result)
-			continue
-		}
-		index := kindIndexes[artifact.Kind]
-		version, ok := index.LatestVersion(artifact)
+	source, err := c.catalog.SourceFor(kind)
+	if err != nil {
+		return nil, err
+	}
+	sourceRepository, err := c.catalog.SourceFor(types.ReleaseArtifactKindBox)
+	if err != nil {
+		return nil, err
+	}
+	index, err := c.readIndex(ctx, source)
+	if err != nil {
+		return nil, err
+	}
+	records := make([]CandidateRecord, 0, len(whitelist))
+	for _, identity := range whitelist {
+		record := CandidateRecord{Artifact: identity}
+		version, ok := index.LatestVersion(identity)
 		if !ok {
-			result.Status = types.ReleaseCheckStatusFailed
-			result.FailureReason = fmt.Sprintf("%s 官方索引没有该发布物的正式版本", artifact.ID)
-			results = append(results, result)
+			record.FailureReason = fmt.Sprintf("%s 官方索引没有该发布物的正式版本", identity.ID)
+			records = append(records, record)
 			continue
 		}
 		pkg, ok := version.PackageFor(types.ReleasePlatformWindowsX64)
 		if !ok {
-			result.Status = types.ReleaseCheckStatusFailed
-			result.FailureReason = fmt.Sprintf("%s 官方索引没有 %s 平台压缩包", artifact.ID, types.ReleasePlatformWindowsX64)
-			results = append(results, result)
+			record.FailureReason = fmt.Sprintf("%s 官方索引没有 %s 平台压缩包", identity.ID, types.ReleasePlatformWindowsX64)
+			records = append(records, record)
 			continue
 		}
-		result.LatestVersion = version.Version
-		result.PublishedAt = version.PublishedAt
-		result.IndexUpdatedAt = index.UpdatedAt
-		result.ReleaseNotes = strings.TrimSpace(version.ReleaseNotes)
-		result.DownloadSize = pkg.SizeBytes
-		if releaseURL, urlErr := releaseTagURL(source, pkg.ReleaseTag); urlErr == nil {
-			result.ReleaseURL = releaseURL
-		}
-		if isInstalled {
-			order, compareErr := release.CompareVersions(version.Version, installedArtifact.Version)
-			if compareErr != nil {
-				result.Status = types.ReleaseCheckStatusFailed
-				result.FailureReason = compareErr.Error()
-				results = append(results, result)
-				continue
-			}
-			result.UpdateAvailable = order > 0
-		} else {
-			result.UpdateAvailable = true
-		}
-		if version.Compatibility != nil && strings.TrimSpace(currentBoxVersion) != "" {
-			status := release.AssessEucliBoxCompatibility(version.Version, currentBoxVersion, *version.Compatibility)
-			result.Compatibility = &status
-		}
-		results = append(results, result)
-	}
-	sort.Slice(results, func(i int, j int) bool {
-		if results[i].Artifact.Kind != results[j].Artifact.Kind {
-			return results[i].Artifact.Kind < results[j].Artifact.Kind
-		}
-		return results[i].Artifact.ID < results[j].Artifact.ID
-	})
-	annotateBoxImpact(results, installedByIdentity)
-	status := types.ReleaseCheckStatusCompleted
-	for _, result := range results {
-		if result.Status == types.ReleaseCheckStatusFailed {
-			status = types.ReleaseCheckStatusFailed
-			break
-		}
-	}
-	return types.ReleaseCheckSnapshot{Status: status, StartedAt: started, CheckedAt: c.now(), Results: results}
-}
-
-func PendingSnapshot() types.ReleaseCheckSnapshot {
-	return types.ReleaseCheckSnapshot{Status: types.ReleaseCheckStatusNotChecked, Results: []types.ReleaseCheckResult{}}
-}
-
-func CheckingSnapshot(previous types.ReleaseCheckSnapshot, started time.Time) types.ReleaseCheckSnapshot {
-	return types.ReleaseCheckSnapshot{Status: types.ReleaseCheckStatusChecking, StartedAt: started.UTC(), CheckedAt: previous.CheckedAt, Results: append([]types.ReleaseCheckResult(nil), previous.Results...)}
-}
-
-func normalizeInstalled(installed []InstalledArtifact) map[string]InstalledArtifact {
-	result := make(map[string]InstalledArtifact, len(installed))
-	for _, item := range installed {
-		item.Artifact.Kind = strings.TrimSpace(item.Artifact.Kind)
-		item.Artifact.ID = strings.TrimSpace(item.Artifact.ID)
-		item.Version = strings.TrimSpace(item.Version)
-		if item.Artifact.Kind == "" || item.Artifact.ID == "" || release.ValidateVersion(item.Version) != nil {
+		candidate, buildErr := c.buildCandidate(identity, source, sourceRepository, version, pkg)
+		if buildErr != nil {
+			record.FailureReason = buildErr.Error()
+			records = append(records, record)
 			continue
 		}
-		result[identityKey(item.Artifact)] = item
+		record.Candidate = candidate
+		records = append(records, record)
 	}
-	return result
+	return records, nil
 }
 
-func annotateBoxImpact(results []types.ReleaseCheckResult, installed map[string]InstalledArtifact) {
-	for index := range results {
-		result := &results[index]
-		if result.Artifact.Kind != types.ReleaseArtifactKindBox || !result.UpdateAvailable || release.ValidateVersion(result.LatestVersion) != nil {
-			continue
-		}
-		for _, item := range installed {
-			if item.Artifact.Kind != types.ReleaseArtifactKindTool && item.Artifact.Kind != types.ReleaseArtifactKindPlugin || item.Compatibility == nil {
-				continue
-			}
-			status := release.AssessEucliBoxCompatibility(item.Version, result.LatestVersion, *item.Compatibility)
-			if !status.Compatible {
-				result.AffectedArtifacts = append(result.AffectedArtifacts, item.Artifact)
-			}
-		}
-		sort.Slice(result.AffectedArtifacts, func(i int, j int) bool {
-			if result.AffectedArtifacts[i].Kind != result.AffectedArtifacts[j].Kind {
-				return result.AffectedArtifacts[i].Kind < result.AffectedArtifacts[j].Kind
-			}
-			return result.AffectedArtifacts[i].ID < result.AffectedArtifacts[j].ID
-		})
+// LatestCandidate 读取单个发布物的最新候选，供安装与更新系统使用。
+func (c *Checker) LatestCandidate(ctx context.Context, identity types.ReleaseArtifactIdentity) (*ReleaseCandidate, error) {
+	if !c.catalog.Contains(identity) {
+		return nil, fmt.Errorf("发布物不在正式白名单中")
 	}
+	source, err := c.catalog.SourceFor(identity.Kind)
+	if err != nil {
+		return nil, err
+	}
+	sourceRepository, err := c.catalog.SourceFor(types.ReleaseArtifactKindBox)
+	if err != nil {
+		return nil, err
+	}
+	index, err := c.readIndex(ctx, source)
+	if err != nil {
+		return nil, err
+	}
+	version, ok := index.LatestVersion(identity)
+	if !ok {
+		return nil, fmt.Errorf("%s 官方索引没有该发布物的正式版本", identity.ID)
+	}
+	pkg, ok := version.PackageFor(types.ReleasePlatformWindowsX64)
+	if !ok {
+		return nil, fmt.Errorf("%s 官方索引没有 %s 平台压缩包", identity.ID, types.ReleasePlatformWindowsX64)
+	}
+	candidate, err := c.buildCandidate(identity, source, sourceRepository, version, pkg)
+	if err != nil {
+		return nil, err
+	}
+	return candidate, nil
 }
 
-func normalizedSource(catalog releasecatalog.Catalog, source types.OfficialReleaseSource) types.OfficialReleaseSource {
-	normalized, err := catalog.SourceFor(source.Kind)
-	if err == nil {
-		return normalized
+func (c *Checker) buildCandidate(identity types.ReleaseArtifactIdentity, source types.OfficialReleaseSource, sourceRepository types.OfficialReleaseSource, version releasecatalog.IndexVersion, pkg releasecatalog.IndexPackage) (*ReleaseCandidate, error) {
+	archiveURL, err := releasecatalog.DownloadURL(c.downloadBase, source, pkg)
+	if err != nil {
+		return nil, fmt.Errorf("%s 官方索引压缩包地址无效：%w", identity.ID, err)
 	}
-	return source
+	releaseURL, err := releaseTagURL(source, pkg.ReleaseTag)
+	if err != nil {
+		return nil, fmt.Errorf("%s 官方发行页地址无效：%w", identity.ID, err)
+	}
+	return &ReleaseCandidate{
+		Artifact:         identity,
+		Version:          version.Version,
+		PublishedAt:      version.PublishedAt,
+		SourceRevision:   version.SourceRevision,
+		SourceRepository: sourceRepository.Repository,
+		DataVersion:      version.DataVersion,
+		Compatibility:    version.Compatibility,
+		ReleaseNotes:     strings.TrimSpace(version.ReleaseNotes),
+		OfficialSource:   source.Repository,
+		ReleaseURL:       releaseURL,
+		ArchiveURL:       archiveURL,
+		SizeBytes:        pkg.SizeBytes,
+		SHA256:           pkg.SHA256,
+	}, nil
 }
 
-func identityKey(identity types.ReleaseArtifactIdentity) string {
-	return identity.Kind + ":" + identity.ID
+func (c *Checker) readIndex(ctx context.Context, source types.OfficialReleaseSource) (releasecatalog.Index, error) {
+	return releasecatalog.ReadIndex(ctx, c.client, source, c.indexBaseURL)
 }

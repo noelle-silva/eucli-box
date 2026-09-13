@@ -32,10 +32,8 @@ const (
 
 	ReleasePlatformWindowsX64 = "windows-x64"
 
-	ReleaseCheckStatusNotChecked = "not_checked"
-	ReleaseCheckStatusChecking   = "checking"
-	ReleaseCheckStatusCompleted  = "completed"
-	ReleaseCheckStatusFailed     = "failed"
+	ReleaseCandidateStatusCompleted = "completed"
+	ReleaseCandidateStatusFailed    = "failed"
 )
 
 type ReleaseArtifactIdentity struct {
@@ -99,16 +97,30 @@ type ReleaseManifest struct {
 	Files            []ReleaseFileRecord     `json:"files"`
 }
 
-type ReleaseCheckResult struct {
+// ArtifactInstallation 是业务端当前真实的已装事实：某个发布物装了、装的是哪个版本、适用什么范围。
+// FailureReason 只在读取该分类已装事实失败时出现，此时身份是分类本身。
+type ArtifactInstallation struct {
+	Artifact      ReleaseArtifactIdentity `json:"artifact"`
+	Version       string                  `json:"version"`
+	Compatibility *EucliBoxCompatibility  `json:"eucliBoxCompatibility,omitempty"`
+	FailureReason string                  `json:"failureReason,omitempty"`
+}
+
+// ArtifactInstallationList 是已装事实的完整清单。
+type ArtifactInstallationList struct {
+	Artifacts []ArtifactInstallation `json:"artifacts"`
+}
+
+// ArtifactReleaseCandidate 是某个发布物在某个来源下的可用候选事实，
+// 以及它与已装事实比对后的结论；不携带任何快照状态。
+type ArtifactReleaseCandidate struct {
 	Artifact          ReleaseArtifactIdentity   `json:"artifact"`
 	Source            OfficialReleaseSource     `json:"source"`
 	Installed         bool                      `json:"installed"`
 	CurrentVersion    string                    `json:"currentVersion,omitempty"`
 	LatestVersion     string                    `json:"latestVersion,omitempty"`
 	Status            string                    `json:"status"`
-	CheckedAt         time.Time                 `json:"checkedAt,omitempty"`
 	PublishedAt       time.Time                 `json:"publishedAt,omitempty"`
-	IndexUpdatedAt    time.Time                 `json:"indexUpdatedAt,omitempty"`
 	UpdateAvailable   bool                      `json:"updateAvailable"`
 	ReleaseURL        string                    `json:"releaseUrl,omitempty"`
 	ReleaseNotes      string                    `json:"releaseNotes,omitempty"`
@@ -118,13 +130,11 @@ type ReleaseCheckResult struct {
 	FailureReason     string                    `json:"failureReason,omitempty"`
 }
 
-type ReleaseCheckSnapshot struct {
-	Status        string               `json:"status"`
-	SourceKind    string               `json:"source,omitempty"`
-	StartedAt     time.Time            `json:"startedAt,omitempty"`
-	CheckedAt     time.Time            `json:"checkedAt,omitempty"`
-	Results       []ReleaseCheckResult `json:"results"`
-	FailureReason string               `json:"failureReason,omitempty"`
+// ArtifactCandidateList 是某个分类在某个来源下的候选完整清单：
+// 来源种类（official/local）+ 该分类全部可展示项。
+type ArtifactCandidateList struct {
+	SourceKind string                    `json:"source"`
+	Candidates []ArtifactReleaseCandidate `json:"candidates"`
 }
 
 // ArtifactInstallState 表示单个发布物（工具或插件）当前对外展示的整体安装/更新状态。

@@ -125,7 +125,7 @@ func (e *accessNotFoundError) Error() string { return "not found" }
 
 func newAccessTestGateway(t *testing.T, fakes *gatewayFakes, access AccessSystem) System {
 	t.Helper()
-	system, err := NewSystem(Config{Addr: "127.0.0.1:0", Key: "session-credential-0000000000000000000000000000000000000000000000000000000000000000", Access: access}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseChecks)
+	system, err := NewSystem(Config{Addr: "127.0.0.1:0", Key: "session-credential-0000000000000000000000000000000000000000000000000000000000000000", Access: access}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseSource)
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -283,7 +283,7 @@ func TestDirectGatewayAcceptsLongTermKey(t *testing.T) {
 func TestDirectGatewayRequiresIdentityOnceAnyKeyExists(t *testing.T) {
 	fakes := newGatewayFakes()
 	access := &fakeGatewayAccess{}
-	system, err := NewSystem(Config{Addr: "127.0.0.1:0", Access: access}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseChecks)
+	system, err := NewSystem(Config{Addr: "127.0.0.1:0", Access: access}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseSource)
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}

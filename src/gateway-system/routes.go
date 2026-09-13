@@ -28,8 +28,8 @@ func (s *system) registerBoxRoutes() {
 
 func (s *system) registerRoutes() {
 	s.mux.HandleFunc("GET /api/release", s.authWrap(s.handleRelease))
-	s.mux.HandleFunc("GET /api/release-checks", s.authWrap(s.handleReleaseChecks))
-	s.mux.HandleFunc("POST /api/release-checks/refresh", s.authWrap(s.handleRefreshReleaseChecks))
+	s.mux.HandleFunc("GET /api/artifact-installations", s.authWrap(s.handleArtifactInstallations))
+	s.mux.HandleFunc("GET /api/release-candidates", s.authWrap(s.handleReleaseCandidates))
 	if s.config.InstallSource != nil {
 		s.mux.HandleFunc("GET /api/install-source", s.authWrap(s.handleInstallSource))
 		s.mux.HandleFunc("PUT /api/install-source", s.authWrap(s.handleSetInstallSource))

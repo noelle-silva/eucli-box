@@ -59,10 +59,39 @@ func TestReleaseRouteReturnsVersionAndClientCompatibility(t *testing.T) {
 	}
 }
 
-func TestReleaseCheckRoutesReadAndRefreshOneAuthority(t *testing.T) {
+func TestReleaseSourceRoutesReadInstallationsAndCandidates(t *testing.T) {
 	fakes := newGatewayFakes()
-	fakes.releaseChecks.snapshot = types.ReleaseCheckSnapshot{Status: types.ReleaseCheckStatusCompleted, Results: []types.ReleaseCheckResult{{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindBox, ID: "eucli-box"}, LatestVersion: "0.1.1"}}}
+	fakes.releaseSource.installations = types.ArtifactInstallationList{Artifacts: []types.ArtifactInstallation{{
+		Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindBox, ID: "eucli-box"},
+		Version:  "0.1.0",
+	}}}
+	fakes.releaseSource.candidates = types.ArtifactCandidateList{SourceKind: "official", Candidates: []types.ArtifactReleaseCandidate{{
+		Artifact:      types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "context7"},
+		LatestVersion: "0.1.1",
+		Status:        types.ReleaseCandidateStatusCompleted,
+	}}}
 	system := newTestGateway(t, fakes)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/artifact-installations", nil)
+	rec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"version":"0.1.0"`) {
+		t.Fatalf("installations status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/release-candidates?kind=tool", nil)
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"latestVersion":"0.1.1"`) {
+		t.Fatalf("candidates status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if fakes.releaseSource.lastKind != "tool" {
+		t.Fatalf("last kind = %q", fakes.releaseSource.lastKind)
+	}
+}
+
+func TestReleaseChecksSnapshotRoutesAreGone(t *testing.T) {
+	system := newTestGateway(t, newGatewayFakes())
 	for _, test := range []struct {
 		method string
 		path   string
@@ -73,12 +102,9 @@ func TestReleaseCheckRoutesReadAndRefreshOneAuthority(t *testing.T) {
 		req := httptest.NewRequest(test.method, test.path, nil)
 		rec := httptest.NewRecorder()
 		system.Handler().ServeHTTP(rec, req)
-		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"latestVersion":"0.1.1"`) {
+		if rec.Code != http.StatusNotFound {
 			t.Fatalf("%s %s status=%d body=%s", test.method, test.path, rec.Code, rec.Body.String())
 		}
-	}
-	if fakes.releaseChecks.refreshes != 1 {
-		t.Fatalf("refreshes = %d", fakes.releaseChecks.refreshes)
 	}
 }
 
@@ -710,7 +736,7 @@ func newTestGateway(t *testing.T, fakes *gatewayFakes) System {
 	if fakes.installSource != nil {
 		source = fakes.installSource
 	}
-	system, err := NewSystem(Config{InstallSource: source}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseChecks)
+	system, err := NewSystem(Config{InstallSource: source}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseSource)
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -730,13 +756,13 @@ type gatewayFakes struct {
 	placeholders  *fakeGatewayPlaceholders
 	systemPlugins *fakeGatewaySystemPlugins
 	assist        *fakeGatewayAssist
-	releaseChecks *fakeGatewayReleaseChecks
+	releaseSource *fakeGatewayReleaseSource
 	installSource *fakeGatewayInstallSource
 }
 
 func newGatewayFakes() *gatewayFakes {
 	stickers := newFakeGatewayStickers()
-	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), groups: newFakeGatewayGroups(), workspaces: newFakeGatewayWorkspaces(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, hooks: &fakeGatewayHooks{}, placeholders: &fakeGatewayPlaceholders{}, systemPlugins: &fakeGatewaySystemPlugins{}, assist: &fakeGatewayAssist{stickers: stickers}, releaseChecks: &fakeGatewayReleaseChecks{snapshot: types.ReleaseCheckSnapshot{Status: types.ReleaseCheckStatusNotChecked, Results: []types.ReleaseCheckResult{}}}, installSource: newFakeGatewayInstallSource()}
+	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), groups: newFakeGatewayGroups(), workspaces: newFakeGatewayWorkspaces(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, hooks: &fakeGatewayHooks{}, placeholders: &fakeGatewayPlaceholders{}, systemPlugins: &fakeGatewaySystemPlugins{}, assist: &fakeGatewayAssist{stickers: stickers}, releaseSource: &fakeGatewayReleaseSource{}, installSource: newFakeGatewayInstallSource()}
 }
 
 type fakeGatewayInstallSource struct {
@@ -762,18 +788,19 @@ func (f *fakeGatewayInstallSource) Set(_ context.Context, kind installsource.Kin
 	return kind, nil
 }
 
-type fakeGatewayReleaseChecks struct {
-	snapshot  types.ReleaseCheckSnapshot
-	refreshes int
+type fakeGatewayReleaseSource struct {
+	installations types.ArtifactInstallationList
+	candidates    types.ArtifactCandidateList
+	lastKind      string
 }
 
-func (f *fakeGatewayReleaseChecks) Snapshot() types.ReleaseCheckSnapshot {
-	return f.snapshot
+func (f *fakeGatewayReleaseSource) ListInstallations(context.Context) (types.ArtifactInstallationList, error) {
+	return f.installations, nil
 }
 
-func (f *fakeGatewayReleaseChecks) Refresh(context.Context, string) types.ReleaseCheckSnapshot {
-	f.refreshes++
-	return f.snapshot
+func (f *fakeGatewayReleaseSource) ListCandidates(_ context.Context, kind string) (types.ArtifactCandidateList, error) {
+	f.lastKind = kind
+	return f.candidates, nil
 }
 
 type fakeGatewayHooks struct {

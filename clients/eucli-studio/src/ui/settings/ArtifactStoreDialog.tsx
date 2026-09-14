@@ -19,7 +19,7 @@ type ArtifactStoreDialogProps = {
   installState: any
   actionBusy: boolean
   onAction: (artifact: ReleaseArtifactIdentity, action: 'install' | 'update') => Promise<void> | void
-  onRead?: (kind: string) => Promise<void> | void
+  onRead: (kind: string) => Promise<void> | void
   onRefresh: (kind?: string) => Promise<void> | void
   getInstallSource?: () => Promise<string | null>
   setInstallSource?: (kind: StoreSourceKind) => Promise<{ ok: boolean; error?: string }>
@@ -31,10 +31,9 @@ export function ArtifactStoreDialog(props: ArtifactStoreDialogProps) {
   const [sourceKind, setSourceKind] = React.useState<StoreSourceKind>('official')
   const [pendingSource, setPendingSource] = React.useState<StoreSourceKind | null>(null)
   const [sourceError, setSourceError] = React.useState('')
-  const refreshRef = React.useRef(onRefresh)
-  const readRef = React.useRef(onRead)
-  refreshRef.current = onRefresh
-  readRef.current = onRead
+  // 回调统一经引用读取最新值：父级重渲染不会更换副作用依赖，打开读取只触发一次。
+  const callbacksRef = React.useRef({ onRead, onRefresh, getInstallSource })
+  callbacksRef.current = { onRead, onRefresh, getInstallSource }
 
   const sourceCandidates = releaseView?.sourceCandidates?.[sourceKind] || []
   const items = sourceCandidates
@@ -47,22 +46,22 @@ export function ArtifactStoreDialog(props: ArtifactStoreDialogProps) {
     if (!open) return
     let cancelled = false
     setSourceError('')
-    Promise.resolve(getInstallSource?.())
-      .then((kind) => {
-        if (cancelled || (kind !== 'official' && kind !== 'local')) return
-        setSourceKind(kind)
-        void Promise.resolve(readRef.current?.(props.kind)).catch(() => {})
+    Promise.resolve(callbacksRef.current.getInstallSource?.())
+      .then((source) => {
+        if (cancelled || (source !== 'official' && source !== 'local')) return
+        setSourceKind(source)
+        void Promise.resolve(callbacksRef.current.onRead(kind)).catch(() => {})
       })
       .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [open, kind, getInstallSource])
+  }, [open, kind])
 
   const refresh = async () => {
     setRefreshing(true)
     try {
-      await Promise.resolve(refreshRef.current?.(kind)).catch(() => {})
+      await Promise.resolve(callbacksRef.current.onRefresh(kind)).catch(() => {})
     } finally {
       setRefreshing(false)
     }
@@ -83,7 +82,7 @@ export function ArtifactStoreDialog(props: ArtifactStoreDialogProps) {
       setSourceKind(next)
       // 该来源该分类已有缓存则直接展示；没有才发起读取（读取端点自带新鲜度判定）。
       if (!hasSourceKind(releaseView, next, kind)) {
-        await Promise.resolve(readRef.current?.(kind)).catch(() => {})
+        await Promise.resolve(callbacksRef.current.onRead(kind)).catch(() => {})
       }
     } finally {
       setPendingSource(null)

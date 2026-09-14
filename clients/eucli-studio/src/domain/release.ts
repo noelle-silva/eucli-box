@@ -246,6 +246,16 @@ export function isReleaseCacheFresh(cache: ReleaseCache, sourceKind: ReleaseSour
   return Number.isFinite(time) && time > 0 && Date.now() - time < RELEASE_CACHE_FRESHNESS_MS
 }
 
+// releaseKindsToLoad 返回本次需要读取的分类：强制刷新时全读，否则只读没有新鲜缓存的分类。
+export function releaseKindsToLoad(
+  cache: ReleaseCache,
+  sourceKind: ReleaseSourceKind,
+  kinds: ReleaseArtifactKind[],
+  force: boolean,
+): ReleaseArtifactKind[] {
+  return kinds.filter((kind) => force || !isReleaseCacheFresh(cache, sourceKind, kind))
+}
+
 export function writeReleaseCache(
   cache: ReleaseCache,
   sourceKind: ReleaseSourceKind,

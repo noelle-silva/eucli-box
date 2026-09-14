@@ -28,10 +28,10 @@ type AiToolsSettingsPanelProps = {
   controller: any
   loading: boolean
   tools: any
-  releaseView?: ReleaseCandidatesView | null
-  releaseBusy?: boolean
-  onReleaseRead?: (kind?: string) => Promise<void> | void
-  onReleaseRefresh?: (kind?: string) => Promise<void> | void
+  releaseView: ReleaseCandidatesView | null
+  releaseBusy: boolean
+  onReleaseRead: (kind?: string) => Promise<void> | void
+  onReleaseRefresh: (kind?: string) => Promise<void> | void
 }
 
 type ToolSummary = {

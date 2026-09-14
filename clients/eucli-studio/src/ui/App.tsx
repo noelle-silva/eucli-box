@@ -1064,7 +1064,7 @@ function ComposerInputControls(props: {
   )
 }
 
-export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap; dataDirectory?: AiChatDataDirectory; windowControls?: AiChatWindowControls; releaseBusy?: boolean; releaseView?: ReleaseCandidatesView | null; onReleaseRead?: (kind?: string) => Promise<void> | void; onReleaseRefresh?: (kind?: string) => Promise<void> | void }) {
+export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap; dataDirectory?: AiChatDataDirectory; windowControls?: AiChatWindowControls; releaseBusy: boolean; releaseView: ReleaseCandidatesView | null; onReleaseRead: (kind?: string) => Promise<void> | void; onReleaseRefresh: (kind?: string) => Promise<void> | void }) {
   const { controller, bootstrap, dataDirectory, windowControls, releaseBusy, releaseView, onReleaseRead, onReleaseRefresh } = props
   const s = useAiChatState(controller)
   const data = s.data
@@ -6992,6 +6992,7 @@ export function AiChatApp(props: { controller: any; bootstrap?: StudioBootstrap;
             bootstrap={bootstrap}
             releaseBusy={releaseBusy}
             releaseView={releaseView}
+            onReleaseRead={onReleaseRead}
             onReleaseRefresh={onReleaseRefresh}
             accessSettings={(s as any)?.accessSettings}
             hookPrompts={hookPrompts}
@@ -7393,10 +7394,10 @@ function PluginSettingsPage(props: {
   tools: any
   modelRequestConfig: any
   bootstrap?: StudioBootstrap
-  releaseBusy?: boolean
-  releaseView?: ReleaseCandidatesView | null
-  onReleaseRead?: (kind?: string) => Promise<void> | void
-  onReleaseRefresh?: (kind?: string) => Promise<void> | void
+  releaseBusy: boolean
+  releaseView: ReleaseCandidatesView | null
+  onReleaseRead: (kind?: string) => Promise<void> | void
+  onReleaseRefresh: (kind?: string) => Promise<void> | void
   accessSettings?: any
   hookPrompts: any
   placeholders: any

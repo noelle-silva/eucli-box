@@ -3,6 +3,7 @@ import {
   composeReleaseCandidatesView,
   emptyReleaseCache,
   isReleaseCacheFresh,
+  releaseKindsToLoad,
   RELEASE_CACHE_FRESHNESS_MS,
   writeReleaseCache,
   type ArtifactReleaseCandidate,
@@ -65,6 +66,39 @@ describe('release cache', () => {
     })
     expect(cache.official.plugin.candidates[0].latestVersion).toBe('0.1.0')
     expect(cache.local.plugin.candidates[0].latestVersion).toBe('0.0.9')
+  })
+})
+
+describe('releaseKindsToLoad', () => {
+  it('loads every requested kind when nothing is cached', () => {
+    const cache = emptyReleaseCache()
+    expect(releaseKindsToLoad(cache, 'official', ['eucli-box', 'tool', 'plugin'], false)).toEqual(['eucli-box', 'tool', 'plugin'])
+  })
+
+  it('skips fresh cells and keeps expired or failed ones', () => {
+    let cache = writeReleaseCache(emptyReleaseCache(), 'official', 'tool', {
+      candidates: [candidate('tool', 'context7', '0.1.2')],
+      failure: '',
+    })
+    cache.official.plugin = {
+      checkedAt: new Date(Date.now() - RELEASE_CACHE_FRESHNESS_MS - 1000).toISOString(),
+      candidates: [candidate('plugin', 'time-plugin', '0.1.0')],
+      failure: '',
+    }
+    cache.official['eucli-box'] = {
+      checkedAt: new Date().toISOString(),
+      candidates: [],
+      failure: '业务端候选读取失败',
+    }
+    expect(releaseKindsToLoad(cache, 'official', ['eucli-box', 'tool', 'plugin'], false)).toEqual(['eucli-box', 'plugin'])
+  })
+
+  it('loads every requested kind on force refresh', () => {
+    const cache = writeReleaseCache(emptyReleaseCache(), 'official', 'tool', {
+      candidates: [candidate('tool', 'context7', '0.1.2')],
+      failure: '',
+    })
+    expect(releaseKindsToLoad(cache, 'official', ['tool'], true)).toEqual(['tool'])
   })
 })
 

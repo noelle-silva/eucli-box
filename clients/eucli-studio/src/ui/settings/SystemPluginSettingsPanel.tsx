@@ -14,10 +14,10 @@ type SystemPluginSettingsPanelProps = {
   controller: any
   loading: boolean
   systemPlugins: any
-  releaseView?: ReleaseCandidatesView | null
-  releaseBusy?: boolean
-  onReleaseRead?: (kind?: string) => Promise<void> | void
-  onReleaseRefresh?: (kind?: string) => Promise<void> | void
+  releaseView: ReleaseCandidatesView | null
+  releaseBusy: boolean
+  onReleaseRead: (kind?: string) => Promise<void> | void
+  onReleaseRefresh: (kind?: string) => Promise<void> | void
 }
 
 function text(value: unknown) {

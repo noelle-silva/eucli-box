@@ -8,3 +8,12 @@ export function snippetText(raw: any, maxLen = 26) {
   if (one.length <= maxLen) return one
   return one.slice(0, Math.max(0, maxLen - 1)).trimEnd() + '…'
 }
+
+export function chatHistoryMatchesSearch(chat: any, fallbackTitle: string, queryText: string) {
+  const q = String(queryText || '').trim().toLowerCase()
+  if (!q) return true
+  if (!chat) return false
+  const title = String(chat?.title || fallbackTitle || '')
+  const raw = String(chat?.lastMessagePreview || '')
+  return (title + '\n' + raw).toLowerCase().includes(q)
+}

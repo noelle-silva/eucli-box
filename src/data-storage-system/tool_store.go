@@ -95,9 +95,14 @@ func (s *system) listDevTools(ctx context.Context) ([]types.ToolSummary, error) 
 			continue
 		}
 		toolID := entry.Name()
-		summary, ok := s.toolSummaryFromDefinition(ctx, toolID)
-		if !ok {
-			summaries = append(summaries, unavailableToolSummary(toolID, storageReadFailed("failed to load tool definition", nil)))
+		tool, err := s.loadToolDefinition(ctx, toolID)
+		if err != nil {
+			summaries = append(summaries, unavailableToolSummary(toolID, err))
+			continue
+		}
+		summary, err := s.toolSummaryFromDefinition(ctx, tool)
+		if err != nil {
+			summaries = append(summaries, unavailableToolSummary(toolID, err))
 			continue
 		}
 		summaries = append(summaries, summary)
@@ -125,7 +130,7 @@ func (s *system) listManagedTools(ctx context.Context) ([]types.ToolSummary, err
 			continue
 		}
 		toolID := entry.Name()
-		_, loadErr := s.loadToolDefinition(ctx, toolID)
+		tool, loadErr := s.loadToolDefinition(ctx, toolID)
 		if loadErr != nil {
 			if errors.Is(loadErr, os.ErrNotExist) {
 				continue
@@ -133,9 +138,9 @@ func (s *system) listManagedTools(ctx context.Context) ([]types.ToolSummary, err
 			summaries = append(summaries, unavailableToolSummary(toolID, loadErr))
 			continue
 		}
-		summary, ok := s.toolSummaryFromDefinition(ctx, toolID)
-		if !ok {
-			summaries = append(summaries, unavailableToolSummary(toolID, storageReadFailed("failed to load tool definition", nil)))
+		summary, summaryErr := s.toolSummaryFromDefinition(ctx, tool)
+		if summaryErr != nil {
+			summaries = append(summaries, unavailableToolSummary(toolID, summaryErr))
 			continue
 		}
 		summaries = append(summaries, summary)
@@ -144,21 +149,17 @@ func (s *system) listManagedTools(ctx context.Context) ([]types.ToolSummary, err
 	return summaries, nil
 }
 
-// toolSummaryFromDefinition 从已加载的定义和用户设置构造摘要；失败返回 false。
-func (s *system) toolSummaryFromDefinition(ctx context.Context, toolID string) (types.ToolSummary, bool) {
-	tool, err := s.loadToolDefinition(ctx, toolID)
-	if err != nil {
-		return types.ToolSummary{}, false
-	}
+// toolSummaryFromDefinition 从已加载的定义和用户设置构造摘要；设置不可读时返回真实原因。
+func (s *system) toolSummaryFromDefinition(ctx context.Context, tool types.ToolDefinition) (types.ToolSummary, error) {
 	settings, err := s.loadToolUserSettings(ctx, tool.ID)
 	if err != nil {
-		return types.ToolSummary{}, false
+		return types.ToolSummary{}, err
 	}
 	updatedAt := tool.UpdatedAt
 	if settings.UpdatedAt.After(updatedAt) {
 		updatedAt = settings.UpdatedAt
 	}
-	return types.ToolSummary{ID: tool.ID, Name: tool.Name, Description: tool.Description, Version: tool.Version, EucliBoxCompatibility: tool.EucliBoxCompatibility, Type: tool.Type, UpdatedAt: updatedAt}, true
+	return types.ToolSummary{ID: tool.ID, Name: tool.Name, Description: tool.Description, Version: tool.Version, EucliBoxCompatibility: tool.EucliBoxCompatibility, Type: tool.Type, UpdatedAt: updatedAt}, nil
 }
 
 func (s *system) SaveToolUserSettings(ctx context.Context, toolID string, settings types.ToolUserSettings) (types.ToolDefinition, error) {

@@ -147,13 +147,13 @@ func (s ProgramStore) Activate(ctx context.Context, prepared PreparedProgram, pr
 	return nil
 }
 
-// Restore 只恢复已有且完整核对的版本；不存在或资料不一致时返回错误。
+// Restore 只恢复已有且身份可核对的版本；不存在或身份资料不一致时返回错误。
 func (s ProgramStore) Restore(ctx context.Context, version string) error {
 	if err := ValidateVersion(version); err != nil {
 		return err
 	}
 	directory := s.versionDirectory(version)
-	if err := verifyCompleteVersionDirectory(directory, s.identity); err != nil {
+	if err := verifyVersionDirectoryIdentity(directory, s.identity); err != nil {
 		return err
 	}
 	record := currentProgramRecord{
@@ -174,6 +174,10 @@ func (s ProgramStore) Restore(ctx context.Context, version string) error {
 }
 
 // Current 读取并核对当前版本记录；当前版本未知时返回 os.ErrNotExist 的包装错误。
+//
+// 读取只认激活记录这一份事实：核对记录字段、版本目录存在性与身份资料。
+// 负载文件的内容完整性由版本落地时刻一次性核对（PrepareVersion 对照发行清单、
+// Activate 启用前复核）；读取路径不复算全量摘要，也不读取负载文件内容。
 func (s ProgramStore) Current() (CurrentProgram, error) {
 	var record currentProgramRecord
 	if err := readJSONAtomic(s.currentFile(), &record); err != nil {
@@ -202,7 +206,7 @@ func (s ProgramStore) Current() (CurrentProgram, error) {
 	if filepath.Clean(directory) != filepath.Clean(expected) {
 		return CurrentProgram{}, fmt.Errorf("当前版本程序目录与版本记录不一致")
 	}
-	if err := verifyCompleteVersionDirectory(directory, s.identity); err != nil {
+	if err := verifyVersionDirectoryIdentity(directory, s.identity); err != nil {
 		return CurrentProgram{}, err
 	}
 	return CurrentProgram{Version: record.Version, ProgramDirectory: directory}, nil
@@ -231,20 +235,20 @@ func (s ProgramStore) verifiedVersionDirectory(directory string, files []types.R
 	return directory, nil
 }
 
-// verifyCompleteVersionDirectory 核对版本目录存在、非空且身份资料可读。
-func verifyCompleteVersionDirectory(directory string, identity types.ReleaseArtifactIdentity) error {
+// verifyVersionDirectoryIdentity 核对版本目录是存在的普通目录，且带一份与程序根目录一致的身份资料。
+//
+// 它只读取目录条目与 release-product.json：负载文件的全量摘要核对属于版本落地时刻
+// （PrepareVersion / Activate），不属于读取事实。读取路径不得读取负载文件内容。
+func verifyVersionDirectoryIdentity(directory string, identity types.ReleaseArtifactIdentity) error {
 	directory, err := existingDirectory(directory)
 	if err != nil {
 		return err
 	}
-	if err := EnsurePlainDirectory(directory); err != nil {
-		return err
-	}
-	files, err := CollectFileRecords(directory)
+	entries, err := os.ReadDir(directory)
 	if err != nil {
-		return err
+		return fmt.Errorf("版本目录不可读：%w", err)
 	}
-	if len(files) == 0 {
+	if len(entries) == 0 {
 		return fmt.Errorf("版本目录为空")
 	}
 	payload, err := os.ReadFile(filepath.Join(directory, "release-product.json"))

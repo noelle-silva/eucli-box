@@ -138,6 +138,41 @@ func TestProgramStoreRejectsTamperedVersionDirectory(t *testing.T) {
 	}
 }
 
+// TestProgramStoreCurrentIgnoresPayloadContent 读取事实只认激活记录与身份资料：
+// 负载文件内容被改写不影响 Current——内容完整性属于落地校验，不属于读取事实。
+func TestProgramStoreCurrentIgnoresPayloadContent(t *testing.T) {
+	store := newTestProgramStore(t)
+	prepared, _, _ := prepareTestVersion(t, store, "0.1.0")
+	if err := store.Activate(context.Background(), prepared, ""); err != nil {
+		t.Fatalf("Activate() error = %v", err)
+	}
+	payloadPath := filepath.Join(prepared.Directory, "binary", "windows-amd64", "demo.exe")
+	if err := os.WriteFile(payloadPath, []byte("tampered-payload"), 0o644); err != nil {
+		t.Fatalf("tamper payload: %v", err)
+	}
+	current, err := store.Current()
+	if err != nil {
+		t.Fatalf("Current() error = %v", err)
+	}
+	if current.Version != "0.1.0" || current.ProgramDirectory != prepared.Directory {
+		t.Fatalf("current = %#v", current)
+	}
+}
+
+// TestProgramStoreActivateRejectsTamperedContent 内容校验归位落地：
+// 启用前必须对照发行清单逐文件复核，负载被改写时拒绝启用。
+func TestProgramStoreActivateRejectsTamperedContent(t *testing.T) {
+	store := newTestProgramStore(t)
+	prepared, _, _ := prepareTestVersion(t, store, "0.1.0")
+	payloadPath := filepath.Join(prepared.Directory, "binary", "windows-amd64", "demo.exe")
+	if err := os.WriteFile(payloadPath, []byte("tampered-payload"), 0o644); err != nil {
+		t.Fatalf("tamper payload: %v", err)
+	}
+	if err := store.Activate(context.Background(), prepared, ""); err == nil {
+		t.Fatal("Activate() with tampered payload error = nil")
+	}
+}
+
 func TestProgramStoreRejectsReuseWithDifferentContent(t *testing.T) {
 	store := newTestProgramStore(t)
 	archivePath, manifest := makeTestToolArchive(t, "demo", "0.1.0")

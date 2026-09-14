@@ -1,70 +1,23 @@
 // eucli-studio V2 controller: DI assembled from extracted modules.
-import { now, uid, esc, trimSlash, isHttpBaseUrl, clampTemp, normImagePaths, clamp } from '../core/utils'
-import { extractOpenAiDelta } from '../core/sse'
 import { createDefaultAssistantRenderEngine } from '../render/assistantEngineDefault'
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
-import mammoth from 'mammoth/mammoth.browser'
-import { extractPptMarkdown } from '../core/ppt'
 import type { AiChatCapabilities } from '../gateway/capabilities'
-import { IMAGE_VIEWER_ZOOM_MAX, MERMAID_VIEWER_ZOOM_MAX, VIEWER_ZOOM_MIN } from '../core/viewerZoom'
 import type { AiChatController } from './types'
 
 // ---- domain ----
 import {
-  CHAT_ATTACHMENT_KINDS,
-  CHAT_MSG_GROUP_ROLES,
-  CHAT_DEFAULT_BRANCH_ID,
-  VERSION,
-  SPLIT_SCHEMA_VERSION,
-  SPLIT_META_KEY,
-  MAX_DRAFT_FILES,
-  MAX_DRAFT_FILE_BYTES,
-  DEFAULT_ATTACH_MAX_FILE_MB,
-  MAX_ATTACH_MAX_FILE_MB,
-  DEFAULT_ATTACH_SEND_LIMIT_CHARS,
-  REF_IMG_PLACEHOLDER,
-  NEW_ROLE_ID,
-  NEW_GROUP_ID,
   DEFAULT_MERMAID_FIX_SYSTEM_PROMPT,
   DEFAULT_CHAT_TITLE_NAMING_SYSTEM_PROMPT,
   DEFAULT_STICKER_NAMING_SYSTEM_PROMPT,
-  DEFAULT_CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES,
-  CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MIN,
-  CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MAX,
-  NEW_WORKSPACE_ID,
 } from '../domain/constants'
-import { splitRoleKey, splitChatKey, splitGroupKey, splitGroupChatKey } from '../domain/storageKeys'
-import { normalizeBranchId } from '../domain/branching'
-import { normalizeMessageAttachments, normalizeMessageGroup } from '../domain/message'
-import { validateFavoriteFolderName } from '../domain/favoriteValidator'
-import { normalizeReasoningEffort } from '../domain/reasoning'
-import { updateGroupSessionSettings, updateRoleSessionSettings, updateWorkspaceSessionSettings, type SessionSettingsPatch } from './sessionSettingsClient'
-import { moveListItemById, type ListMovePosition } from '../domain/listOrdering'
-import { detectDraftFileKind, addDraftFilePlaceholder, removeDraftFile, removeDraftImage as removeDraftImageFromList, fileExtLower } from '../domain/draftFileUtils'
-import type { DraftFileKind, DraftFileItem, DraftImageItem } from '../domain/draftFileUtils'
-import { validateStickerCategoryName, validateStickerName } from '../domain/stickerValidator'
-import { favoriteChatRefKey, normalizeFavorites, collectFavoriteFolderSubtreeIds } from '../domain/favorites'
-import {
-  normalizeSplitMeta,
-  normalizeData,
-  normalizeRenderSafetyPolicy,
-  normalizeMaxFileSizeMb,
-} from '../domain/dataNormalizers'
+import { removeDraftFile, removeDraftImage as removeDraftImageFromList } from '../domain/draftFileUtils'
+import type { DraftFileKind } from '../domain/draftFileUtils'
 import {
   activateComposerDraftForCurrentSession,
-  saveActiveComposerDraftMirror,
   setActiveComposerFiles,
   setActiveComposerImages,
   setActiveComposerInput,
 } from '../domain/sessionComposerDrafts'
 import { pendingChatForTarget } from '../domain/pendingChat'
-import {
-  COLOR_THEME_SETTING_KEY,
-  listColorThemePresets,
-  mergeImportedColorThemePresets,
-  normalizeColorThemeSettings,
-  parseColorThemePresetImport,
-} from '../domain/colorTheme'
 
 // ---- storage ----
 import { createStickerStorage } from '../storage/stickerStorage'
@@ -87,7 +40,7 @@ import { createAiServices } from '../services/aiServices'
 
 // ---- controller modules ----
 import { createModelRefresh } from './modelRefresh'
-import { createModelGroupsController, defaultModelGroupsState } from './modelGroups'
+import { createModelGroupsController } from './modelGroups'
 import { createFavoritesOperations } from './favoritesOperations'
 import { createEntityEditors } from './entityEditors'
 import { createChatOperations } from './chatOperations'
@@ -95,24 +48,35 @@ import { createPersistence } from './persistence'
 import { createWorkspaceManager } from './workspaceManager'
 import { createAccessSettingsController } from './accessSettingsController'
 import { updateGroupSessionTitle, updateRoleSessionTitle } from './ebRoleSession'
-import { getRunState, isTerminalRunStatus, listActiveRoleRuns, pollRunUntilTerminal, type EbRunState } from './ebRoleRun'
 import { createEbRunEventConsumer } from './ebRunEvents'
 import { createToolCatalog } from './toolCatalog'
 import { createInstallSourceClient } from './installSourceClient'
-import { createModelRequestConfigController, defaultModelRequestConfigState } from './modelRequestConfig'
+import { createModelRequestConfigController } from './modelRequestConfig'
 import { workspaceRoleTargetId } from '../domain/workspaceRoleTarget'
-import { HOOK_PROMPT_SESSION_METADATA_KEY, HOOK_PROMPT_SESSION_METADATA_MODE_KEY, normalizeHookPromptLibrary, normalizeHookPromptSelection, normalizeHookPromptSelectionMode, type HookPromptLibrary, type HookPromptSelectionMode } from '../domain/hookPrompt'
-import { loadHookPromptLibrary, saveHookPromptLibrary, updateGroupSessionHookPrompt, updateRoleSessionHookPrompt, updateWorkspaceSessionHookPrompt } from './hookPromptClient'
-import { normalizePlaceholderLibrary, type PlaceholderLibrary } from '../domain/placeholder'
-import { loadPlaceholderDependencies, loadPlaceholderLibrary, loadPlaceholderProblems, previewPlaceholders, savePlaceholderLibrary } from './placeholderClient'
-import { createPlaceholderFromSystemPluginInterface, installSystemPlugin as installSystemPluginClient, loadAvailableSystemPluginPlaceholderInterfaces, loadSystemPlugin, loadSystemPluginInstallState as loadSystemPluginInstallStateClient, loadSystemPlugins, saveSystemPluginUserConfig, updateSystemPlugin as updateSystemPluginClient } from './systemPluginClient'
-import { systemPluginLocatorId } from '../domain/systemPlugin'
-import { addNativeToolsToPolicy, addToolsToPolicy, emptyRoleToolPolicy, removeNativeToolFromPolicy, removeToolFromPolicy, setToolRunMode } from '../domain/toolPolicy'
-import { readActiveEbRunCardsForTarget, removeEbRoleRunCard, upsertEbRoleRunCard } from '../domain/activeRunCards'
-import { loadWorkspaceSession, workspaceSessionToChat } from './workspaceBridge'
-import { normalizeStoredChat } from '../storage/normalizeStoredChat'
+import { readActiveEbRunCardsForTarget } from '../domain/activeRunCards'
+import { loadWorkspaceSession } from './workspaceBridge'
 import { createChatSessionTarget, chatSettingsTargetKey, type ChatSettingsTarget } from './chatSessionTarget'
 import { createChatSettingsSaveQueue, type ChatSettingsAction } from './chatSettingsSaveQueue'
+import { createInitialControllerState } from './controllerState'
+import { createFileTextExtraction } from './fileTextExtraction'
+import { createHookPromptLibraryController } from './hookPromptLibraryController'
+import { createPlaceholderLibraryController } from './placeholderLibraryController'
+import { createSystemPluginController } from './systemPluginController'
+import { createChatSessionSettingsBridge } from './chatSessionSettingsBridge'
+import { createControllerBootstrap } from './controllerBootstrap'
+import { createAppearanceActions } from './actions/appearanceActions'
+import { createAiServiceActions } from './actions/aiServiceActions'
+import { createStickerActions } from './actions/stickerActions'
+import { createFavoriteActions } from './actions/favoriteActions'
+import { createEntityActions } from './actions/entityActions'
+import { createToolActions } from './actions/toolActions'
+import { createModelActions } from './actions/modelActions'
+import { createAccessActions } from './actions/accessActions'
+import { createLibraryActions } from './actions/libraryActions'
+import { createChatNavigationActions } from './actions/chatNavigationActions'
+import { createChatInteractionActions } from './actions/chatInteractionActions'
+import { createViewerActions } from './actions/viewerActions'
+import { fmtTime, createModalHelpers } from './controllerHelpers'
 
 export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilities }): {
   controller: AiChatController
@@ -125,103 +89,14 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
 
   // ============================================================
   // 1. STATE
-  // ============================================================
-  const state = {
-    loading: true,
-    activeRunCards: [] as any[],
-    sessionComposerDrafts: {} as Record<string, any>,
-    activeSessionComposerDraftKey: '',
-    modal: '',
-    mermaid: { items: [] as any[], index: 0, scale: 1 },
-    imageViewer: { items: [] as any[], index: 0, scale: 1 },
-    sideTab: 'roles' as string,
-    models: { loading: false, error: '', items: [] as any[] },
-    modelGroups: defaultModelGroupsState(),
-    hookPrompts: { loading: false, error: '', library: { presets: [] } as HookPromptLibrary },
-    placeholders: { loading: false, error: '', library: { placeholders: [], folders: [] } as PlaceholderLibrary, preview: { text: '', problems: [] as any[] }, problems: [] as any[], dependencyTree: { name: '' } as any },
-    systemPlugins: { loading: false, error: '', items: [] as any[], selectedPluginId: '', selectedPlugin: null as any, detailLoading: false, detailError: '', saving: false, saveError: '', availableInterfaces: [] as any[], installLoading: false, installError: '', installState: null as any },
-    tools: { loading: false, error: '', items: [] as any[], fetchedAt: 0, detailLoading: false, detailError: '', selectedToolId: '', selectedTool: null as any, configDraft: {} as Record<string, any>, promptDescriptionDraft: '', saving: false, saveError: '', installLoading: false, installError: '', installState: null as any },
-    modelRequestConfig: defaultModelRequestConfigState(),
-    chatSettings: { savingByTarget: {} as Record<string, any> },
-    pendingChat: null as any,
-    pendingGroupChat: null as any,
-    pendingWorkspaceChat: null as any,
-    branchDraft: null as any,
-    draft: {
-      input: '',
-      images: [] as DraftImageItem[],
-      files: [] as DraftFileItem[],
-      activeTargetKind: 'role' as string,
-      activeRoleId: '',
-      activeGroupId: '',
-      activeWorkspaceId: '',
-
-      editRoleId: '',
-      roleName: '',
-      roleAvatar: '',
-      roleAvatarImage: '',
-      roleAvatarImageCropSrc: '',
-      roleSystemPrompt: '',
-      roleProviderId: '',
-      roleModelId: '',
-      roleCustomModelId: '',
-      roleModelSource: 'provider',
-      roleModelGroupId: '',
-      roleTemperature: '0.7',
-      roleHookPromptPresetId: '',
-      roleToolPolicy: emptyRoleToolPolicy(),
-      roleToolWhitelistOpen: false,
-      roleToolAddOpen: false,
-      roleToolSearch: '',
-      roleToolAddSelected: [] as string[],
-      roleToolMenuName: '',
-      roleToolPermissionName: '',
-      roleNativeToolAddOpen: false,
-
-      editGroupId: '',
-      groupName: '',
-      groupAvatar: '',
-      groupAvatarImage: '',
-      groupAvatarImageCropSrc: '',
-      groupPrompt: '',
-      groupMode: 'roundRobin' as string,
-      groupMemberRoleIds: [] as string[],
-      groupRoundRobinOrder: [] as string[],
-      groupRandomWeights: {} as Record<string, number>,
-      groupRandomMinCount: 1,
-      groupRandomMaxCount: 2,
-
-      editWorkspaceId: '',
-      workspaceName: '',
-      workspacePrompt: '',
-      workspaceDirectories: [] as Array<{ path: string; alias: string; description: string }>,
-
-      editProviderId: '',
-      providerName: '',
-      providerBaseUrl: '',
-      providerApiKey: '',
-      providerProtocol: '',
-      providerApiKeyStrategy: 'sequential',
-      providerApiKeys: [] as any[],
-      providerRegisteredModels: [] as any[],
-
-      deleteRoleId: '',
-      deleteGroupId: '',
-      deleteWorkspaceId: '',
-      deleteProviderId: '',
-      renderSafetyPolicyTarget: '',
-    } as any,
-    data: null as any,
-  }
+  const state = createInitialControllerState()
   let disposed = false
-  const restoringRunIds = new Set<string>()
 
   // ============================================================
   // 2. UI CORE
   // ============================================================
   const uiCore = createUiCore()
   const { emit, subscribe, getVer } = uiCore
-  const ver = getVer
 
   // ============================================================
   // 3. SPLIT META CACHE (shared across modules)
@@ -233,29 +108,10 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   // 4. ASSISTANT RENDERER
   // ============================================================
   const assistantRenderer = createDefaultAssistantRenderEngine(capabilities)
-  const { ensureRenderer, renderAssistantInto: renderAssistantIntoRaw, sanitizeHtml, sanitizeSvg } = assistantRenderer
+  const { ensureRenderer, renderAssistantInto: renderAssistantIntoRaw, sanitizeSvg } = assistantRenderer
 
   // ============================================================
   // 5. INLINE HELPERS
-  // ============================================================
-  function fmtTime(ts: any) {
-    try {
-      const t = Number(ts || 0)
-      if (!isFinite(t) || t <= 0) return ''
-      const d = new Date(t)
-      const nowD = new Date()
-      const pad2 = (n: number) => String(n).padStart(2, '0')
-      const hm = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
-      const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
-      const diffDays = Math.floor((startOfDay(nowD) - startOfDay(d)) / 86400000)
-      if (diffDays === 0) return hm
-      if (diffDays === 1) return `昨天 ${hm}`
-      if (diffDays === 2) return `前天 ${hm}`
-      return `${d.getFullYear()}年${pad2(d.getMonth() + 1)}月${pad2(d.getDate())}日 ${hm}`
-    } catch (_) {
-      return ''
-    }
-  }
 
   function render() { emit() }
   function renderComposer() { emit() }
@@ -274,123 +130,13 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     return v === 'unsafe' ? 'unsafe' : v === 'baseline' ? 'baseline' : 'original'
   }
 
-  function closeModal() {
-    // cancelMermaidDrag handled by eventHandlers module
-    state.modal = ''
-    state.draft.deleteRoleId = ''
-    ;(state.draft as any).deleteGroupId = ''
-    ;(state.draft as any).deleteWorkspaceId = ''
-    state.draft.deleteProviderId = ''
-    state.draft.roleToolWhitelistOpen = false
-    state.draft.roleToolAddOpen = false
-    state.draft.roleToolSearch = ''
-    state.draft.roleToolAddSelected = []
-    state.draft.roleToolMenuName = ''
-    state.draft.roleToolPermissionName = ''
-    state.draft.roleNativeToolAddOpen = false
-    ;(state.draft as any).renderSafetyPolicyTarget = ''
-    state.draft.roleAvatarImageCropSrc = ''
-    ;(state.draft as any).groupAvatarImageCropSrc = ''
-    if (String(state.draft.editRoleId || '') === NEW_ROLE_ID) {
-      state.draft.editRoleId = ''
-      state.draft.roleName = ''
-      state.draft.roleAvatar = ''
-      state.draft.roleAvatarImage = ''
-      state.draft.roleAvatarImageCropSrc = ''
-      state.draft.roleSystemPrompt = ''
-      state.draft.roleProviderId = ''
-      state.draft.roleModelId = ''
-      state.draft.roleCustomModelId = ''
-      state.draft.roleTemperature = '0.7'
-      state.draft.roleHookPromptPresetId = ''
-      state.draft.roleToolPolicy = emptyRoleToolPolicy()
-    }
-    if (String((state.draft as any).editGroupId || '') === NEW_GROUP_ID) {
-      ;(state.draft as any).editGroupId = ''
-      ;(state.draft as any).groupName = ''
-      ;(state.draft as any).groupAvatar = ''
-      ;(state.draft as any).groupAvatarImage = ''
-      ;(state.draft as any).groupAvatarImageCropSrc = ''
-      ;(state.draft as any).groupPrompt = ''
-      ;(state.draft as any).groupMode = 'roundRobin'
-      ;(state.draft as any).groupMemberRoleIds = []
-      ;(state.draft as any).groupRoundRobinOrder = []
-      ;(state.draft as any).groupRandomWeights = {}
-      ;(state.draft as any).groupRandomMinCount = 1
-      ;(state.draft as any).groupRandomMaxCount = 2
-    }
-    if (String((state.draft as any).editWorkspaceId || '') === NEW_WORKSPACE_ID) {
-      ;(state.draft as any).editWorkspaceId = ''
-      ;(state.draft as any).workspaceName = ''
-      ;(state.draft as any).workspacePrompt = ''
-      ;(state.draft as any).workspaceDirectories = []
-    }
-    render()
-  }
+  const { closeModal } = createModalHelpers({ state, render })
 
-  async function extractPdfText(file: File): Promise<string> {
-    const buf = await file.arrayBuffer()
-    const doc = await (pdfjsLib as any)
-      .getDocument({ data: new Uint8Array(buf), disableWorker: true })
-      .promise
-    const pages = clamp(Number(doc?.numPages || 0), 1, 200)
-    const maxPages = Math.min(pages, 50)
-    let out = ''
-    for (let i = 1; i <= maxPages; i++) {
-      const page = await doc.getPage(i)
-      const tc = await page.getTextContent()
-      const items = Array.isArray(tc?.items) ? tc.items : []
-      const parts = items
-        .map((x: any) => (x && typeof x.str === 'string' ? String(x.str) : ''))
-        .filter((x: string) => !!x)
-      if (parts.length) out += parts.join(' ') + '\n'
-    }
-    try { doc?.cleanup?.() } catch (_) {}
-    return String(out || '').trim()
-  }
-
-  async function extractDocxText(file: File): Promise<string> {
-    const buf = await file.arrayBuffer()
-    const r = await (mammoth as any).extractRawText({ arrayBuffer: buf })
-    return String(r?.value || '').trim()
-  }
-
-  async function extractTextFromFile(file: File, kind: DraftFileKind): Promise<string> {
-    if (!(file instanceof File)) throw new Error('file 无效')
-    const size = Number(file?.size || 0)
-    if (!isFinite(size) || size <= 0) throw new Error('文件为空')
-    const mb0 = (() => {
-      try {
-        const at = state.data?.settings?.attachments
-        const map = at && typeof at === 'object' ? (at as any).maxFileSizeMbByKind : null
-        return map && typeof map === 'object' ? map[kind] : undefined
-      } catch (_) { return undefined }
-    })()
-    const maxMb = (() => {
-      const n = Number(mb0)
-      if (!isFinite(n)) return DEFAULT_ATTACH_MAX_FILE_MB
-      return clamp(Math.round(n), 0, MAX_ATTACH_MAX_FILE_MB)
-    })()
-    const maxBytes = maxMb <= 0 ? 0 : maxMb * 1024 * 1024
-    if (maxBytes > 0 && size > maxBytes) {
-      const curMb = Math.round((size / 1024 / 1024) * 10) / 10
-      api.ui?.showToast?.(`提示：${globalThis.String(file?.name || '文件')} 大小 ${curMb}MB 超过设置阈值 ${maxMb}MB，仍会尝试解析`)
-    }
-    if (kind === 'txt' || kind === 'md') {
-      const t = await file.text()
-      return String(t || '').trim()
-    }
-    if (kind === 'pdf') return await extractPdfText(file)
-    if (kind === 'docx') {
-      const t = await extractDocxText(file)
-      return String(t || '').trim()
-    }
-    if (kind === 'ppt') {
-      const t = await extractPptMarkdown(file)
-      return String(t || '').trim()
-    }
-    throw new Error('不支持的文件类型')
-  }
+  const fileTextExtraction = createFileTextExtraction({
+    getState: () => state,
+    showToast: api.ui?.showToast,
+  })
+  const { extractTextFromFile } = fileTextExtraction
 
   function getStickerRelPath(category: any, name: any) {
     const cat = typeof category === 'string' ? category.trim() : ''
@@ -494,7 +240,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     loadChat: loadStoredChat,
     ensureChatLoaded: ensureStoredChatLoaded,
     ensureActiveChatLoaded: ensureStoredActiveChatLoaded,
-    removeChat,
     upsertLoadedChat,
     removeLoadedChat,
   } = lazyChatStore
@@ -559,16 +304,10 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     clearPendingChat,
     clearPendingGroupChat,
     clearPendingWorkspaceChat,
-    ensureRoleDefaults,
-    ensureGroupsList,
     ensureGroupChatsBoxBare,
     ensureWorkspaceChatsBoxBare,
     ensureChatsBox,
     ensureChatsBoxBare,
-    findChatByIds,
-    findGroupChatByIds,
-    findWorkspaceChatByIds,
-    pickChatModelRef,
   } = stateAccessors
 
   const chatSessionTarget = createChatSessionTarget({
@@ -644,7 +383,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   })
   const {
     refreshWorkspaces,
-    refreshActiveWorkspaceChats,
     ensureWorkspaceChatLoaded,
     ensureActiveWorkspaceChatLoaded,
     upsertWorkspaceChat,
@@ -677,461 +415,72 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
   // ============================================================
   // 8.1. SAVE & LOAD (bridge to splitStorage)
   // ============================================================
-  async function refreshHookPromptLibrary(force?: boolean) {
-    const netRequest = capabilities.net?.request
-    if (typeof netRequest !== 'function') {
-      state.hookPrompts = { ...state.hookPrompts, loading: false, error: '业务端请求通道不可用' }
-      emit()
-      return state.hookPrompts.library
-    }
-    if (state.hookPrompts.loading && !force) return state.hookPrompts.library
-    state.hookPrompts = { ...state.hookPrompts, loading: true, error: '' }
-    emit()
-    try {
-      const library = await loadHookPromptLibrary(netRequest)
-      state.hookPrompts = { loading: false, error: '', library }
-      emit()
-      return library
-    } catch (e: any) {
-      const message = String(e?.message || e || '加载 hook 提示词失败')
-      state.hookPrompts = { ...state.hookPrompts, loading: false, error: message }
-      api.ui?.showToast?.(message, { kind: 'error' })
-      emit()
-      return state.hookPrompts.library
-    }
-  }
+  const hookPromptLibraryController = createHookPromptLibraryController({
+    getState: () => state,
+    getNetRequest: () => capabilities.net?.request,
+    emit,
+    showToast: api.ui?.showToast,
+  })
+  const { refreshHookPromptLibrary, persistHookPromptLibrary } = hookPromptLibraryController
 
-  async function persistHookPromptLibrary(libraryRaw: any) {
-    const netRequest = capabilities.net?.request
-    if (typeof netRequest !== 'function') throw new Error('业务端请求通道不可用')
-    const previous = state.hookPrompts.library
-    const next = normalizeHookPromptLibrary(libraryRaw)
-    state.hookPrompts = { ...state.hookPrompts, library: next, loading: true, error: '' }
-    emit()
-    try {
-      const saved = await saveHookPromptLibrary(netRequest, next)
-      state.hookPrompts = { loading: false, error: '', library: saved }
-      api.ui?.showToast?.('hook 提示词已保存', { kind: 'success' })
-      emit()
-      return saved
-    } catch (e) {
-      state.hookPrompts = { ...state.hookPrompts, loading: false, library: previous, error: globalThis.String((e as any)?.message || e || '保存 hook 提示词失败') }
-      emit()
-      throw e
-    }
-  }
+  const placeholderLibraryController = createPlaceholderLibraryController({
+    getState: () => state,
+    getNetRequest: () => capabilities.net?.request,
+    emit,
+    showToast: api.ui?.showToast,
+  })
+  const { refreshPlaceholderLibrary, persistPlaceholderLibrary, refreshPlaceholderPreview, refreshPlaceholderDependencyTree } = placeholderLibraryController
 
-  async function refreshPlaceholderLibrary(force?: boolean) {
-    const netRequest = capabilities.net?.request
-    if (typeof netRequest !== 'function') {
-      state.placeholders = { ...state.placeholders, loading: false, error: '业务端请求通道不可用' }
-      emit()
-      return state.placeholders.library
-    }
-    if (state.placeholders.loading && !force) return state.placeholders.library
-    state.placeholders = { ...state.placeholders, loading: true, error: '' }
-    emit()
-    try {
-      const library = await loadPlaceholderLibrary(netRequest)
-      const problems = await loadPlaceholderProblems(netRequest).catch(() => [])
-      state.placeholders = { ...state.placeholders, loading: false, error: '', library, problems }
-      emit()
-      return library
-    } catch (e: any) {
-      const message = String(e?.message || e || '加载占位符失败')
-      state.placeholders = { ...state.placeholders, loading: false, error: message }
-      api.ui?.showToast?.(message, { kind: 'error' })
-      emit()
-      return state.placeholders.library
-    }
-  }
+  const systemPluginController = createSystemPluginController({
+    getState: () => state,
+    getNetRequest: () => capabilities.net?.request,
+    emit,
+    showToast: api.ui?.showToast,
+    refreshPlaceholderLibrary,
+  })
+  const {
+    refreshSystemPlugins,
+    openSystemPlugin,
+    saveSystemPluginConfig,
+    refreshAvailableSystemPluginPlaceholderInterfaces,
+    loadSystemPluginInstallState,
+    installSystemPluginAction,
+    updateSystemPluginAction,
+    createPlaceholderFromSystemPlugin,
+  } = systemPluginController
 
-  async function persistPlaceholderLibrary(libraryRaw: any) {
-    const netRequest = capabilities.net?.request
-    if (typeof netRequest !== 'function') throw new Error('业务端请求通道不可用')
-    const previous = state.placeholders.library
-    const next = normalizePlaceholderLibrary(libraryRaw)
-    state.placeholders = { ...state.placeholders, library: next, loading: true, error: '' }
-    emit()
-    try {
-      const saved = await savePlaceholderLibrary(netRequest, next)
-      const problems = await loadPlaceholderProblems(netRequest).catch(() => [])
-      state.placeholders = { ...state.placeholders, loading: false, error: '', library: saved, problems }
-      api.ui?.showToast?.('占位符已保存', { kind: 'success' })
-      emit()
-      return saved
-    } catch (e) {
-      state.placeholders = { ...state.placeholders, loading: false, library: previous, error: globalThis.String((e as any)?.message || e || '保存占位符失败') }
-      emit()
-      throw e
-    }
-  }
+  const chatSessionSettingsBridge = createChatSessionSettingsBridge({
+    getState: () => state,
+    getNetRequest: () => capabilities.net?.request,
+    emit,
+    showToast: api.ui?.showToast,
+    runChatSettingsSave,
+    captureChatSettingsTarget,
+    currentChatForSettingsTarget,
+    isActiveChatSettingsTarget,
+    upsertWorkspaceChat,
+    upsertLoadedChat,
+  })
+  const { applyChatSettingsAction, selectHookPromptForActiveChat } = chatSessionSettingsBridge
 
-  async function refreshPlaceholderPreview(value: any) {
-    const netRequest = capabilities.net?.request
-    if (typeof netRequest !== 'function') throw new Error('业务端请求通道不可用')
-    const preview = await previewPlaceholders(netRequest, String(value ?? ''))
-    state.placeholders = { ...state.placeholders, preview }
-    emit()
-    return preview
-  }
-
-  async function refreshPlaceholderDependencyTree(name: any) {
-    const netRequest = capabilities.net?.request
-    if (typeof netRequest !== 'function') throw new Error('业务端请求通道不可用')
-    const dependencyTree = await loadPlaceholderDependencies(netRequest, String(name ?? ''))
-    state.placeholders = { ...state.placeholders, dependencyTree }
-    emit()
-    return dependencyTree
-  }
-
-  async function refreshSystemPlugins(force?: boolean) {
-    const netRequest = capabilities.net?.request
-    if (typeof netRequest !== 'function') {
-      state.systemPlugins = { ...state.systemPlugins, loading: false, error: '业务端请求通道不可用' }
-      emit()
-      return state.systemPlugins.items
-    }
-    if (state.systemPlugins.loading && !force) return state.systemPlugins.items
-    state.systemPlugins = { ...state.systemPlugins, loading: true, error: '' }
-    emit()
-    try {
-      const items = await loadSystemPlugins(netRequest)
-      const selectedPluginId = state.systemPlugins.selectedPluginId || systemPluginLocatorId(items[0] || { id: '', sourceId: '' })
-      state.systemPlugins = { ...state.systemPlugins, loading: false, error: '', items, selectedPluginId }
-      emit()
-      if (selectedPluginId) await openSystemPlugin(selectedPluginId).catch(() => null)
-      return items
-    } catch (e: any) {
-      const message = String(e?.message || e || '加载系统插件失败')
-      state.systemPlugins = { ...state.systemPlugins, loading: false, error: message }
-      api.ui?.showToast?.(message, { kind: 'error' })
-      emit()
-      return state.systemPlugins.items
-    }
-  }
-
-  async function openSystemPlugin(pluginIdRaw: any) {
-    const pluginId = String(pluginIdRaw || '').trim()
-    if (!pluginId) return null
-    const netRequest = capabilities.net?.request
-    if (typeof netRequest !== 'function') throw new Error('业务端请求通道不可用')
-    state.systemPlugins = { ...state.systemPlugins, selectedPluginId: pluginId, detailLoading: true, detailError: '' }
-    emit()
-    try {
-      const plugin = await loadSystemPlugin(netRequest, pluginId)
-      state.systemPlugins = { ...state.systemPlugins, detailLoading: false, detailError: '', selectedPlugin: plugin }
-      emit()
-      return plugin
-    } catch (e: any) {
-      const message = String(e?.message || e || '加载系统插件详情失败')
-      state.systemPlugins = { ...state.systemPlugins, detailLoading: false, detailError: message }
-      api.ui?.showToast?.(message, { kind: 'error' })
-      emit()
-      return null
-    }
-  }
-
-  async function saveSystemPluginConfig(pluginIdRaw: any, config: any) {
-    const pluginId = String(pluginIdRaw || '').trim()
-    if (!pluginId) throw new Error('系统插件 ID 不能为空')
-    const netRequest = capabilities.net?.request
-    if (typeof netRequest !== 'function') throw new Error('业务端请求通道不可用')
-    state.systemPlugins = { ...state.systemPlugins, saving: true, saveError: '' }
-    emit()
-    try {
-      const plugin = await saveSystemPluginUserConfig(netRequest, pluginId, config || {})
-      state.systemPlugins = { ...state.systemPlugins, saving: false, saveError: '', selectedPlugin: plugin }
-      api.ui?.showToast?.('系统插件设置已保存', { kind: 'success' })
-      emit()
-      await refreshPlaceholderLibrary(true).catch(() => null)
-      return plugin
-    } catch (e: any) {
-      const message = String(e?.message || e || '保存系统插件设置失败')
-      state.systemPlugins = { ...state.systemPlugins, saving: false, saveError: message }
-      emit()
-      throw e
-    }
-  }
-
-  async function refreshAvailableSystemPluginPlaceholderInterfaces() {
-    const netRequest = capabilities.net?.request
-    if (typeof netRequest !== 'function') throw new Error('业务端请求通道不可用')
-    const interfaces = await loadAvailableSystemPluginPlaceholderInterfaces(netRequest)
-    state.systemPlugins = { ...state.systemPlugins, availableInterfaces: interfaces }
-    emit()
-    return interfaces
-  }
-
-  async function loadSystemPluginInstallState(pluginIdRaw: any) {
-    const pluginId = String(pluginIdRaw || '').trim()
-    if (!pluginId) return null
-    const netRequest = capabilities.net?.request
-    if (typeof netRequest !== 'function') throw new Error('业务端请求通道不可用')
-    state.systemPlugins = { ...state.systemPlugins, installLoading: true, installError: '' }
-    emit()
-    try {
-      const installState = await loadSystemPluginInstallStateClient(netRequest, pluginId)
-      state.systemPlugins = { ...state.systemPlugins, installLoading: false, installError: '', installState }
-      emit()
-      return installState
-    } catch (e: any) {
-      const message = String(e?.message || e || '插件安装状态加载失败')
-      state.systemPlugins = { ...state.systemPlugins, installLoading: false, installError: message }
-      emit()
-      return null
-    }
-  }
-
-  async function installSystemPluginAction(pluginIdRaw: any) {
-    return runSystemPluginOperation(pluginIdRaw, 'install')
-  }
-
-  async function updateSystemPluginAction(pluginIdRaw: any) {
-    return runSystemPluginOperation(pluginIdRaw, 'update')
-  }
-
-  async function runSystemPluginOperation(pluginIdRaw: any, action: 'install' | 'update') {
-    const pluginId = String(pluginIdRaw || '').trim()
-    if (!pluginId) return null
-    const netRequest = capabilities.net?.request
-    if (typeof netRequest !== 'function') throw new Error('业务端请求通道不可用')
-    state.systemPlugins = { ...state.systemPlugins, installLoading: true, installError: '' }
-    emit()
-    try {
-      const installState = action === 'install'
-        ? await installSystemPluginClient(netRequest, pluginId)
-        : await updateSystemPluginClient(netRequest, pluginId)
-      state.systemPlugins = { ...state.systemPlugins, installLoading: false, installError: '', installState }
-      emit()
-      await refreshSystemPlugins(true).catch(() => null)
-      return installState
-    } catch (e: any) {
-      const message = String(e?.message || e || (action === 'install' ? '插件安装失败' : '插件更新失败'))
-      state.systemPlugins = { ...state.systemPlugins, installLoading: false, installError: message }
-      api.ui?.showToast?.(message, { kind: 'error' })
-      emit()
-      return null
-    }
-  }
-
-  async function createPlaceholderFromSystemPlugin(pluginId: any, interfaceId: any) {
-    const netRequest = capabilities.net?.request
-    if (typeof netRequest !== 'function') throw new Error('业务端请求通道不可用')
-    const library = await createPlaceholderFromSystemPluginInterface(netRequest, String(pluginId || ''), String(interfaceId || ''))
-    const problems = await loadPlaceholderProblems(netRequest).catch(() => [])
-    state.placeholders = { ...state.placeholders, loading: false, error: '', library, problems }
-    state.systemPlugins = { ...state.systemPlugins, availableInterfaces: [] }
-    api.ui?.showToast?.('已从插件接口创建占位符', { kind: 'success' })
-    emit()
-    return library
-  }
-
-  function writeHookPromptSelectionToChat(chat: any, modeRaw: any, presetIdRaw?: any) {
-    if (!chat || typeof chat !== 'object') return
-    const selection = normalizeHookPromptSelection({ hookPromptMode: modeRaw, hookPromptPresetId: presetIdRaw })
-    const presetId = globalThis.String(presetIdRaw || '').trim()
-    if (selection.mode === 'inherit') {
-      delete (chat as any).hookPromptMode
-      delete (chat as any).hookPromptPresetId
-    } else if (selection.mode === 'none') {
-      (chat as any).hookPromptMode = 'none'
-      delete (chat as any).hookPromptPresetId
-    } else {
-      ;(chat as any).hookPromptMode = 'preset';
-      (chat as any).hookPromptPresetId = selection.presetId || presetId
-    }
-    if (!(chat as any).metadata || typeof (chat as any).metadata !== 'object') (chat as any).metadata = {}
-    if (selection.mode === 'inherit') {
-      delete (chat as any).metadata[HOOK_PROMPT_SESSION_METADATA_MODE_KEY]
-      delete (chat as any).metadata[HOOK_PROMPT_SESSION_METADATA_KEY]
-    } else if (selection.mode === 'none') {
-      (chat as any).metadata[HOOK_PROMPT_SESSION_METADATA_MODE_KEY] = 'none'
-      delete (chat as any).metadata[HOOK_PROMPT_SESSION_METADATA_KEY]
-    } else {
-      ;(chat as any).metadata[HOOK_PROMPT_SESSION_METADATA_MODE_KEY] = 'preset';
-      (chat as any).metadata[HOOK_PROMPT_SESSION_METADATA_KEY] = selection.presetId || presetId
-    }
-    chat.updatedAt = now()
-  }
-
-  function applyChatSettingsSessionResponse(target: ChatSettingsTarget, session: any) {
-    if (!session || typeof session !== 'object' || String(session.id || '').trim() !== target.sessionId) throw new Error('业务端未返回有效会话')
-    if (target.kind === 'workspace') {
-      const chat = workspaceSessionToChat(session)
-      if (!chat) throw new Error('业务端未返回有效会话')
-      if (!upsertWorkspaceChat(target.workspaceId, chat)) throw new Error('当前会话视窗更新失败')
-      return
-    }
-    const chat = normalizeStoredChat(session, target.kind)
-    if (!chat) throw new Error('业务端未返回有效会话')
-    if (!upsertLoadedChat(target.kind, target.targetId, chat)) throw new Error('当前会话视窗更新失败')
-  }
-
-  // 会话级设置只把业务端确认后的完整会话写回视窗。
-  async function applyChatSettingsAction(target: ChatSettingsTarget, action: ChatSettingsAction, patch: SessionSettingsPatch, applyLocal: (chat: any) => void, failText: string): Promise<'saved' | 'draft' | false> {
-    if (!state.data) return false
-    const chat = currentChatForSettingsTarget(target)
-    if (!chat) return false
-    if (chat && (chat as any).clientDraft) {
-      applyLocal(chat)
-      ;(chat as any).updatedAt = now()
-      emit()
-      return 'draft'
-    }
-    const netRequest = capabilities.net?.request
-    if (typeof netRequest !== 'function') {
-      api.ui?.showToast?.('业务端请求通道不可用', { kind: 'error' })
-      return false
-    }
-    return runChatSettingsSave(target, action, patch, async (isCurrent) => {
-      let session: any = null
-      if (target.kind === 'group') {
-        session = await updateGroupSessionSettings(netRequest, { groupId: target.groupId, sessionId: target.sessionId }, patch)
-      } else if (target.kind === 'workspace') {
-        session = await updateWorkspaceSessionSettings(netRequest, { workspaceId: target.workspaceId, roleId: target.roleId, sessionId: target.sessionId }, patch)
-      } else {
-        session = await updateRoleSessionSettings(netRequest, { roleId: target.roleId, sessionId: target.sessionId }, patch)
-      }
-      if (!isCurrent()) return
-      applyChatSettingsSessionResponse(target, session)
-      emit()
-    }, failText)
-  }
-
-  async function selectHookPromptForActiveChat(modeRaw: any, presetIdRaw?: any) {
-    if (!state.data) return
-    const selection = normalizeHookPromptSelection({ hookPromptMode: modeRaw, hookPromptPresetId: presetIdRaw })
-    const target = captureChatSettingsTarget()
-    if (!target) return api.ui?.showToast?.('请先创建或选择会话', { kind: 'error' })
-    const kind = target.kind
-    const chat = currentChatForSettingsTarget(target)
-    if (!chat) return
-    if ((chat as any).clientDraft) {
-      writeHookPromptSelectionToChat(chat, selection.mode, selection.presetId)
-      emit()
-      return
-    }
-    const netRequest = capabilities.net?.request
-    if (typeof netRequest !== 'function') return api.ui?.showToast?.('业务端请求通道不可用', { kind: 'error' })
-    const ok = await runChatSettingsSave(target, 'hook', { mode: selection.mode, presetId: selection.presetId }, async (isCurrent) => {
-      let session: any = null
-      if (kind === 'group') {
-        session = await updateGroupSessionHookPrompt(netRequest, { groupId: target.groupId, sessionId: target.sessionId, mode: selection.mode, presetId: selection.presetId })
-      } else if (kind === 'workspace') {
-        session = await updateWorkspaceSessionHookPrompt(netRequest, { workspaceId: target.workspaceId, roleId: target.roleId, sessionId: target.sessionId, mode: selection.mode, presetId: selection.presetId })
-      } else {
-        session = await updateRoleSessionHookPrompt(netRequest, { roleId: target.roleId, sessionId: target.sessionId, mode: selection.mode, presetId: selection.presetId })
-      }
-      if (!isCurrent()) return
-      applyChatSettingsSessionResponse(target, session)
-      emit()
-    }, '当前会话 hook 提示词保存失败')
-    if (ok && isActiveChatSettingsTarget(target)) {
-      api.ui?.showToast?.(selection.mode === 'preset' ? '当前会话 hook 提示词已保存' : selection.mode === 'none' ? '已关闭当前会话 hook 提示词' : '已恢复跟随角色默认预设', { kind: 'success' })
-    }
-  }
-
-  async function load() {
-    try {
-      await ensureSplitStoreReady()
-      const split = await loadShell()
-      if (!split) throw new Error('存储未初始化')
-      state.data = split
-      state.draft.activeRoleId = String(split?.ui?.activeRoleId || '')
-      state.draft.activeGroupId = String((split?.ui as any)?.activeGroupId || '')
-      ;(state.draft as any).activeWorkspaceId = String((split?.ui as any)?.activeWorkspaceId || '')
-      const targetKind = String((split?.ui as any)?.activeTargetKind || 'role').trim()
-      state.draft.activeTargetKind = targetKind === 'group' ? 'group' : targetKind === 'workspace' ? 'workspace' : 'role'
-      await refreshWorkspaces((state.draft as any).activeWorkspaceId || undefined).catch(() => null)
-      if (state.draft.activeTargetKind === 'workspace') await ensureActiveWorkspaceChatLoaded().catch(() => null)
-      else await ensureStoredActiveChatLoaded()
-      await refreshHookPromptLibrary(false).catch(() => null)
-      await refreshPlaceholderLibrary(false).catch(() => null)
-    } catch (e: any) {
-      state.data = null
-      state.draft.activeRoleId = ''
-      state.draft.activeGroupId = ''
-      ;(state.draft as any).activeWorkspaceId = ''
-      state.draft.activeTargetKind = 'role'
-      api.ui?.showToast?.(String(e?.message || e || '加载失败'), { kind: 'error' })
-    } finally {
-      state.loading = false
-    }
-  }
-
-  async function restoreActiveEbRoleRuns() {
-    const netRequest = capabilities.net?.request
-    if (typeof netRequest !== 'function') return
-    const runs = await listActiveRoleRuns(netRequest).catch(() => [])
-    const syncRunCard = (run: EbRunState) => {
-      const runId = String(run?.id || '').trim()
-      const roleId = String(run?.roleId || '').trim()
-      const groupId = String((run as any)?.groupId || '').trim()
-      const workspaceId = String((run as any)?.workspaceId || '').trim()
-      const sessionId = String(run?.sessionId || '').trim()
-      if (!runId || !roleId || !sessionId) return false
-      upsertEbRoleRunCard(state, {
-        runId,
-        roleId,
-        groupId,
-        workspaceId,
-        sessionId,
-        inputMessageId: String(run?.inputMessageId || '').trim(),
-        lastMessageId: String(run?.lastMessageId || run?.inputMessageId || '').trim(),
-        anchorMessageId: String(run?.inputMessageId || '').trim(),
-        dependencyMessageIds: Array.isArray(run?.dependencyMessageIds) ? run.dependencyMessageIds : [],
-        status: String(run?.status || 'running').trim() || 'running',
-        stream: !!run?.stream,
-        retry: run?.retry,
-      })
-      return true
-    }
-    const trackRestoredRun = (initialRun: EbRunState) => {
-      const runId = String(initialRun?.id || '').trim()
-      if (!runId || restoringRunIds.has(runId)) return
-      restoringRunIds.add(runId)
-      Promise.resolve()
-        .then(async () => {
-          let latest = await getRunState(netRequest, runId).catch(() => initialRun)
-          if (syncRunCard(latest)) render()
-          if (!isTerminalRunStatus(latest.status)) {
-            latest = await pollRunUntilTerminal(
-              netRequest,
-              latest,
-              async (nextRun) => {
-                latest = nextRun
-                if (syncRunCard(nextRun)) render()
-              },
-              { shouldContinue: () => !disposed },
-            )
-          }
-          const roleId = String(latest?.roleId || '').trim()
-          const groupId = String((latest as any)?.groupId || '').trim()
-          const workspaceId = String((latest as any)?.workspaceId || '').trim()
-          const sessionId = String(latest?.sessionId || '').trim()
-          if (workspaceId && sessionId && typeof reloadWorkspaceSession === 'function') {
-            await reloadWorkspaceSession(workspaceId, sessionId, latest.roleId).catch(() => null)
-          } else if (groupId && sessionId && typeof reloadGroupSession === 'function') {
-            await reloadGroupSession(groupId, sessionId).catch(() => null)
-          } else if (roleId && sessionId && typeof reloadRoleSession === 'function') {
-            await reloadRoleSession(roleId, sessionId).catch(() => null)
-          }
-          removeEbRoleRunCard(state, runId)
-          render()
-        })
-        .finally(() => {
-          restoringRunIds.delete(runId)
-        })
-    }
-    let changed = false
-    for (const run of runs) {
-      if (!syncRunCard(run)) continue
-      changed = true
-      trackRestoredRun(run)
-    }
-    if (changed) render()
-  }
+  const controllerBootstrap = createControllerBootstrap({
+    state,
+    render,
+    showToast: api.ui?.showToast,
+    getNetRequest: () => capabilities.net?.request,
+    isDisposed: () => disposed,
+    ensureSplitStoreReady,
+    loadShell,
+    refreshWorkspaces,
+    ensureActiveWorkspaceChatLoaded,
+    ensureStoredActiveChatLoaded,
+    refreshHookPromptLibrary,
+    refreshPlaceholderLibrary,
+    reloadRoleSession,
+    reloadGroupSession,
+    reloadWorkspaceSession,
+  })
+  const { load, restoreActiveEbRoleRuns } = controllerBootstrap
 
   async function save() {
     await saveCurrentChat()
@@ -1153,7 +502,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     uiRefImgCache,
     uiRefImgPending,
   })
-  const { shrinkImageDataUrl, readFileAsDataUrl, hydrateRefImages } = imageUtils
+  const { readFileAsDataUrl, hydrateRefImages } = imageUtils
   const pickImageFiles = api.files?.pickImages as ((maxCount?: number) => Promise<any[]>) | undefined
 
   // ============================================================
@@ -1265,7 +614,6 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     emit,
   })
   const {
-    mermaidItemsFromDom,
     applyMermaidScaleDom,
     renderMermaidModalDom,
     openMermaidViewer: mermaidOpenViewer,
@@ -1336,18 +684,10 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     saveProviderInlineEditor,
     createProvider,
     deleteProvider,
-    createChatForActiveRole,
-    createChatForActiveGroup,
     createChatForActiveTarget: createEntityChatForActiveTarget,
-    pickChatForActiveRole,
-    pickChatForActiveGroup,
     pickChatForActiveTarget: pickEntityChatForActiveTarget,
     renameChatTitle,
     renameGroupChatTitle,
-    collectChatImagePathSet,
-    collectOtherChatsImagePathSet,
-    collectOtherChatsImagePathSetForGroup,
-    deleteChatImages,
     deleteChatForRole,
     deleteChatForGroup,
   } = entityEditors
@@ -1389,12 +729,9 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     addDraftImagesFromFiles,
     addDraftFilesFromFiles,
     sendChat,
-    sendGroupChat,
     stopSending,
     regenerateAssistantMessage,
-    regenerateGroupAssistantMessage,
     replyFromUserMessage,
-    replyFromUserMessageInGroup,
     createParallelBranchFromAssistantMessage,
     switchBranchByAssistantSibling,
     setActiveBranch,
@@ -1430,7 +767,7 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     ensureActiveChatLoaded,
     syncActiveGroupChatsFromStorage,
   })
-  const { startUiPollers, stopUiPollers, uiPollTick, syncActiveRoleChatsFromStorage, syncActiveTargetChatsFromStorage, syncChatByIdFromStorage, syncGroupChatByIdFromStorage, applyChatUpdatedNoticeOnce } = uiPolling
+  const { startUiPollers, stopUiPollers } = uiPolling
 
   // ============================================================
   // 19. EVENT HANDLERS
@@ -1515,1180 +852,181 @@ export function createAiChatControllerV2(deps: { capabilities: AiChatCapabilitie
     showToast: api.ui?.showToast,
     clipboard: api.clipboard,
   })
-  const { onClick, onWheel, onMouseDown, onInput, onChange, onKeyDown, onPaste, cancelMermaidDrag: evCancelMermaidDrag } = eventHandlers
-
-  async function addStickersFromPickedImages(categoryName: any, pickedItems: any) {
-    if (!state.data) return
-    const list = Array.isArray(pickedItems) ? pickedItems : []
-    if (!list.length) return
-
-    const vCat = validateStickerCategoryName(categoryName)
-    if (!vCat.ok) return api.ui?.showToast?.(vCat.error || '分类名无效', { kind: 'error' })
-    const cat = vCat.name
-
-    let ok = 0
-    let dup = 0
-    let bad = 0
-    let firstError = ''
-
-    for (const it of list) {
-      const fn = String(it?.name || '').trim()
-      const base = fn ? fn.replace(/\.[a-zA-Z0-9]+$/, '').trim() : ''
-      const vName = validateStickerName(base || `表情_${uid('n')}`)
-      const name = vName.ok ? vName.name : `表情_${uid('n')}`
-      const dataUrl = String(it?.dataUrl || '')
-      try {
-        const r = await addStickerInternal(cat, name, dataUrl).catch((e: any) => ({ ok: false, kind: 'err' as const, error: e }))
-        if (r && (r as any).ok) ok++
-        else if ((r as any)?.kind === 'dup') dup++
-        else {
-          bad++
-          if (!firstError) {
-            if ((r as any)?.kind === 'bad-image') firstError = '图片格式不支持（仅支持 png/jpg/webp/gif）'
-            else firstError = String((r as any)?.error?.message || (r as any)?.error || '导入失败')
-          }
-        }
-      } catch (e: any) {
-        bad++
-        if (!firstError) firstError = String(e?.message || e || '导入失败')
-      }
-    }
-
-    if (ok) {
-      await loadStickersFromSource()
-      emit()
-    }
-    if (dup) api.ui?.showToast?.(`跳过重名：${dup} 个`, { kind: 'error' })
-    if (!ok && bad) api.ui?.showToast?.(firstError || '导入失败', { kind: 'error' })
-  }
-
-  async function pickStickerImages(categoryName: any) {
-    if (typeof pickImageFiles !== 'function') return api.ui?.showToast?.('未授权：files.pickImages', { kind: 'error' })
-    try {
-      const items = await pickImageFiles(30)
-      await addStickersFromPickedImages(categoryName, items)
-    } catch (e) {
-      api.ui?.showToast?.(String((e as any)?.message || e || '选择图片失败'), { kind: 'error' })
-    }
-  }
-
-  function ensureAiServiceConfig(serviceName: string) {
-    if (!state.data) return null
-    if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
-    const services = state.data.settings.aiServices as any
-    if (!services[serviceName] || typeof services[serviceName] !== 'object') services[serviceName] = {} as any
-    return services[serviceName] as any
-  }
-
-  function setAiServiceModelSource(serviceName: string, value: any) {
-    const box = ensureAiServiceConfig(serviceName)
-    if (!box) return
-    const raw = String(value || '')
-    const parts = raw.split(':')
-    const kind = parts[0] === 'model_group' ? 'model_group' : 'provider'
-    const id = parts.slice(1).join(':')
-    box.kind = kind
-    box.providerId = kind === 'provider' ? id : ''
-    box.groupId = kind === 'model_group' ? id : ''
-    box.modelId = ''
-    box.customModelId = ''
-    saveMeta().catch(() => {})
-    emit()
-  }
-
-  function setAiServiceModelId(serviceName: string, modelId: any) {
-    const box = ensureAiServiceConfig(serviceName)
-    if (!box) return
-    box.modelId = String(modelId || '')
-    box.customModelId = ''
-    saveMeta().catch(() => {})
-    emit()
-  }
+  const { cancelMermaidDrag: evCancelMermaidDrag } = eventHandlers
 
   // ============================================================
   // 20. ACTIONS — complete controller.actions object
   // ============================================================
+  const appearanceActions = createAppearanceActions({ state, emit, saveMeta, showToast: api.ui?.showToast, currentRenderSafetyPolicy })
+  const aiServiceActionSet = createAiServiceActions({ state, emit, saveMeta, showToast: api.ui?.showToast })
+  const stickerActions = createStickerActions({ state, emit, showToast: api.ui?.showToast, pickImageFiles, addStickerInternal, createStickerCategoryInternal, deleteStickerCategoryInternal, deleteStickerInternal, renameStickerInternal, loadStickersFromSource, setStickersEnabled })
+  const favoriteActions = createFavoriteActions({ favOps })
+  const entityActions = createEntityActions({
+    state,
+    emit,
+    saveMeta,
+    showToast: api.ui?.showToast,
+    getProvider,
+    closeModal,
+    saveRoleOrder,
+    openProvidersEditor,
+    openProviderInlineEditor,
+    saveProviderInlineEditor,
+    createProvider,
+    deleteProvider,
+    openRoleEditor,
+    createRole,
+    saveRoleEditor,
+    deleteRole,
+    openGroupEditor,
+    createGroup,
+    saveGroupEditor,
+    deleteGroup,
+    openWorkspaceEditor,
+    openNewWorkspaceEditor,
+    saveWorkspaceEditor,
+    deleteWorkspaceEditor,
+    addWorkspaceDirectory,
+    removeWorkspaceDirectory,
+    setWorkspaceDirectoryField,
+    refreshWorkspacePromptPreview,
+    pickRoleAvatarImage,
+    clearRoleAvatarImage,
+    pickGroupAvatarImage,
+    clearGroupAvatarImage,
+    renameChatTitle,
+    renameGroupChatTitle,
+    renameWorkspaceChatTitle,
+    deleteChatForRole,
+    deleteChatForGroup,
+    deleteChatForWorkspace,
+  })
+  const toolActions = createToolActions({
+    state,
+    emit,
+    showToast: api.ui?.showToast,
+    refreshTools,
+    openToolConfig,
+    closeToolConfig,
+    setToolConfigValue,
+    removeToolConfigValue,
+    setToolPromptDescriptionDraft,
+    resetToolPromptDescriptionDraftToDefault,
+    saveSelectedToolConfig,
+    loadToolInstallState,
+    installTool,
+    updateTool,
+    getInstallSource,
+    setInstallSource,
+  })
+  const modelActions = createModelActions({
+    refreshModelRequestConfig,
+    setModelRequestConfigDraft,
+    resetModelRequestConfigDraftToDefaults,
+    saveModelRequestConfig,
+    refreshModelGroups,
+    saveModelGroups,
+    createModelGroup,
+    deleteModelGroup,
+    setModelGroupField,
+    createModelGroupModel,
+    deleteModelGroupModel,
+    setModelGroupModelField,
+    createModelGroupMember,
+    deleteModelGroupMember,
+    setModelGroupMemberField,
+    refreshModels,
+  })
+  const accessActions = createAccessActions({ accessSettingsController })
+  const libraryActions = createLibraryActions({
+    refreshHookPromptLibrary,
+    persistHookPromptLibrary,
+    refreshPlaceholderLibrary,
+    persistPlaceholderLibrary,
+    refreshPlaceholderPreview,
+    refreshPlaceholderDependencyTree,
+    refreshSystemPlugins,
+    openSystemPlugin,
+    saveSystemPluginConfig,
+    refreshAvailableSystemPluginPlaceholderInterfaces,
+    createPlaceholderFromSystemPlugin,
+    loadSystemPluginInstallState,
+    installSystemPluginAction,
+    updateSystemPluginAction,
+    selectHookPromptForActiveChat,
+  })
+  const chatNavigationActions = createChatNavigationActions({
+    state,
+    emit,
+    saveMeta,
+    ensureActiveChatLoaded,
+    ensureChatsBoxBare,
+    ensureGroupChatsBoxBare,
+    setActiveWorkspace,
+    setWorkspaceRole,
+    createChatForActiveTarget,
+    pickChatForActiveTarget,
+    pickDraftImages,
+    addDraftImagesFromFiles,
+    addDraftFilesFromFiles,
+  })
+  const chatInteractionActions = createChatInteractionActions({
+    state,
+    emit,
+    showToast: api.ui?.showToast,
+    sendChat,
+    stopSending,
+    regenerateAssistantMessage,
+    replyFromUserMessage,
+    createParallelBranchFromAssistantMessage,
+    switchBranchByAssistantSibling,
+    setActiveBranch,
+    submitToolConfirmationDecision,
+    deleteMessage,
+    deleteMessageSubtree,
+    editMessage,
+    editMessageBlock,
+    deleteMessageBlock,
+    captureChatSettingsTarget,
+    currentChatForSettingsTarget,
+    isActiveChatSettingsTarget,
+    applyChatSettingsAction,
+    isChatModelActionPending: (target: any) => chatSettingsSaveQueue.isTargetActionPending(target, 'model'),
+    aiGenerateChatTitle,
+    aiGenerateGroupChatTitle,
+    aiGenerateStickerName,
+    reloadRoleSession,
+    reloadWorkspaceSession,
+    ensureWorkspaceChatLoaded,
+    loadStickersFromSource,
+  })
+  const viewerActions = createViewerActions({
+    state,
+    emit,
+    showToast: api.ui?.showToast,
+    activeChatFromData,
+    sanitizeSvg,
+    currentRenderSafetyPolicy,
+    locateMessageInActiveChat,
+    aiFixMermaidInMessage,
+    reloadRoleSession,
+    reloadWorkspaceSession,
+  })
+
   const actions: Record<string, any> = {
     emit,
-    setSideTab: (tab: any) => {
-      state.sideTab = tab === 'chats' ? 'chats' : 'roles'
-      emit()
-    },
-    setActiveRole: (roleId: any) => {
-      saveActiveComposerDraftMirror(state)
-      state.branchDraft = null
-      ;(state.draft as any).activeTargetKind = 'role'
-      state.draft.activeRoleId = String(roleId || '')
-      ensureChatsBoxBare(state.draft.activeRoleId)
-      activateComposerDraftForCurrentSession(state)
-      ensureActiveChatLoaded().catch(() => {}).finally(() => emit())
-      saveMeta().catch(() => {})
-      emit()
-    },
-    setActiveGroup: (groupId: any) => {
-      saveActiveComposerDraftMirror(state)
-      state.branchDraft = null
-      ;(state.draft as any).activeTargetKind = 'group'
-      ;(state.draft as any).activeGroupId = String(groupId || '')
-      ensureGroupChatsBoxBare((state.draft as any).activeGroupId)
-      activateComposerDraftForCurrentSession(state)
-      ensureActiveChatLoaded().catch(() => {}).finally(() => emit())
-      saveMeta().catch(() => {})
-      emit()
-    },
-    setActiveWorkspace: (workspaceId: any) => {
-      setActiveWorkspace(workspaceId)
-    },
-    setWorkspaceRole: (roleId: any) => {
-      setWorkspaceRole(roleId)
-    },
-    setActiveChat: (chatId: any) => {
-      saveActiveComposerDraftMirror(state)
-      state.branchDraft = null
-      Promise.resolve(pickChatForActiveTarget(String(chatId || ''))).catch(() => {})
-    },
-    toggleTransparentChatBg: () => {
-      if (!state.data) return
-      state.data.settings.transparentChatBg = !state.data.settings.transparentChatBg
-      saveMeta().catch(() => {})
-      emit()
-    },
-    setChatBgOpacity: (opacity: any, commit: any) => {
-      if (!state.data) return
-      state.data.settings.chatBgOpacity = clamp(Math.round(Number(opacity || 0)), 0, 100)
-      if (commit) saveMeta().catch(() => {})
-      emit()
-    },
-    setChatBgBlur: (blur: any, commit: any) => {
-      if (!state.data) return
-      state.data.settings.chatBgBlur = clamp(Math.round(Number(blur || 0)), 0, 24)
-      if (commit) saveMeta().catch(() => {})
-      emit()
-    },
-    setTopbarOpacity: (opacity: any, commit: any) => {
-      if (!state.data) return
-      state.data.settings.topbarOpacity = clamp(Math.round(Number(opacity || 0)), 0, 100)
-      if (commit) saveMeta().catch(() => {})
-      emit()
-    },
-    setTopbarBlur: (blur: any, commit: any) => {
-      if (!state.data) return
-      state.data.settings.topbarBlur = clamp(Math.round(Number(blur || 0)), 0, 24)
-      if (commit) saveMeta().catch(() => {})
-      emit()
-    },
-    setComposerOpacity: (opacity: any, commit: any) => {
-      if (!state.data) return
-      state.data.settings.composerOpacity = clamp(Math.round(Number(opacity || 0)), 40, 100)
-      if (commit) saveMeta().catch(() => {})
-      emit()
-    },
-    setComposerBlur: (blur: any, commit: any) => {
-      if (!state.data) return
-      state.data.settings.composerBlur = clamp(Math.round(Number(blur || 0)), 0, 24)
-      if (commit) saveMeta().catch(() => {})
-      emit()
-    },
-    setColorThemePreset: (presetId: any) => {
-      if (!state.data) return
-      const id = String(presetId || '').trim()
-      const settings = normalizeColorThemeSettings((state.data.settings as any)[COLOR_THEME_SETTING_KEY])
-      const exists = listColorThemePresets(settings).some((preset) => preset.id === id)
-      if (!exists) return api.ui?.showToast?.('配色预设不存在', { kind: 'error' })
-      ;(state.data.settings as any)[COLOR_THEME_SETTING_KEY] = { ...settings, activePresetId: id }
-      saveMeta().catch(() => {})
-      emit()
-      return true
-    },
-    importColorThemePresets: (jsonText: any) => {
-      if (!state.data) return false
-      try {
-        const presets = parseColorThemePresetImport(String(jsonText || ''), () => uid('color_theme'))
-        ;(state.data.settings as any)[COLOR_THEME_SETTING_KEY] = mergeImportedColorThemePresets(
-          (state.data.settings as any)[COLOR_THEME_SETTING_KEY],
-          presets,
-        )
-        saveMeta().catch(() => {})
-        emit()
-        api.ui?.showToast?.(`已导入 ${presets.length} 个配色预设`, { kind: 'success' })
-        return true
-      } catch (error: any) {
-        api.ui?.showToast?.(String(error?.message || error || '导入配色失败'), { kind: 'error' })
-        return false
-      }
-    },
-    requestSetRenderSafetyPolicy: (policy: any) => {
-      if (!state.data) return
-      const raw = String(policy || '').trim()
-      const next = raw === 'unsafe' ? 'unsafe' : raw === 'baseline' ? 'baseline' : 'original'
-      const cur = currentRenderSafetyPolicy()
-      if (next === cur) return
-      if (next === 'unsafe') {
-        ;(state.draft as any).renderSafetyPolicyTarget = next
-        state.modal = 'confirm'
-        emit()
-        return
-      }
-      ;(state.data.settings as any).renderSafetyPolicy = next
-      saveMeta().catch(() => {})
-      emit()
-    },
-    setBranchTreeDir: (dir: any) => {
-      if (!state.data) return
-      if (!state.data.settings || typeof state.data.settings !== 'object') state.data.settings = {} as any
-      if (!(state.data.settings as any).branchTree || typeof (state.data.settings as any).branchTree !== 'object')
-        (state.data.settings as any).branchTree = { dir: 'lr', view: 'right', followSelected: true, modalHotkey: '' }
-      const v = String(dir || '').trim()
-      const ok = v === 'lr' || v === 'tb' || v === 'bt' || v === 'rl'
-      ;(state.data.settings as any).branchTree.dir = ok ? v : 'lr'
-      saveMeta().catch(() => {})
-      emit()
-    },
-    setBranchTreeView: (view: any) => {
-      if (!state.data) return
-      if (!state.data.settings || typeof state.data.settings !== 'object') state.data.settings = {} as any
-      if (!(state.data.settings as any).branchTree || typeof (state.data.settings as any).branchTree !== 'object')
-        (state.data.settings as any).branchTree = { dir: 'lr', view: 'right', followSelected: true, modalHotkey: '' }
-      const v = String(view || '').trim()
-      const ok = v === 'right' || v === 'float'
-      ;(state.data.settings as any).branchTree.view = ok ? v : 'right'
-      saveMeta().catch(() => {})
-      emit()
-    },
-    setBranchTreeFollowSelected: (enabled: any) => {
-      if (!state.data) return
-      if (!state.data.settings || typeof state.data.settings !== 'object') state.data.settings = {} as any
-      if (!(state.data.settings as any).branchTree || typeof (state.data.settings as any).branchTree !== 'object')
-        (state.data.settings as any).branchTree = { dir: 'lr', view: 'right', followSelected: true, modalHotkey: '' }
-      ;(state.data.settings as any).branchTree.followSelected = !!enabled
-      saveMeta().catch(() => {})
-      emit()
-    },
-    setBranchTreeModalHotkey: (hotkey: any) => {
-      if (!state.data) return
-      if (!state.data.settings || typeof state.data.settings !== 'object') state.data.settings = {} as any
-      if (!(state.data.settings as any).branchTree || typeof (state.data.settings as any).branchTree !== 'object')
-        (state.data.settings as any).branchTree = { dir: 'lr', view: 'right', followSelected: true, modalHotkey: '' }
-      const v = String(hotkey || '').trim().slice(0, 80)
-      ;(state.data.settings as any).branchTree.modalHotkey = v
-      saveMeta().catch(() => {})
-      emit()
-    },
-    toggleUserMessageCollapse: () => {
-      if (!state.data) return
-      state.data.settings.userMessageCollapseEnabled = !state.data.settings.userMessageCollapseEnabled
-      saveMeta().catch(() => {})
-      emit()
-    },
-    setUserMessageCollapseLines: (lines: any, commit: any) => {
-      if (!state.data) return
-      state.data.settings.userMessageCollapseLines = clamp(Math.round(Number(lines || 8)), 1, 50)
-      if (commit) saveMeta().catch(() => {})
-      emit()
-    },
-    setAttachmentsSendLimitChars: (chars: any, commit: any) => {
-      if (!state.data) return
-      if (!state.data.settings.attachments || typeof state.data.settings.attachments !== 'object') {
-        state.data.settings.attachments = { sendLimitChars: DEFAULT_ATTACH_SEND_LIMIT_CHARS } as any
-      }
-      const at = state.data.settings.attachments as any
-      at.sendLimitChars = clamp(Math.round(Number(chars || DEFAULT_ATTACH_SEND_LIMIT_CHARS)), 1000, 2_000_000)
-      if (commit) saveMeta().catch(() => {})
-      emit()
-    },
-    setAttachmentsMaxFileSizeMb: (kind: any, mb: any, commit: any) => {
-      if (!state.data) return
-      const k = String(kind || '').trim()
-      if (!CHAT_ATTACHMENT_KINDS.has(k)) return
-      if (!state.data.settings.attachments || typeof state.data.settings.attachments !== 'object') {
-        state.data.settings.attachments = { sendLimitChars: DEFAULT_ATTACH_SEND_LIMIT_CHARS, maxFileSizeMbByKind: {} } as any
-      }
-      const at = state.data.settings.attachments as any
-      if (!at.maxFileSizeMbByKind || typeof at.maxFileSizeMbByKind !== 'object') at.maxFileSizeMbByKind = {}
-      const n = Number(mb)
-      const next = !isFinite(n) ? DEFAULT_ATTACH_MAX_FILE_MB : clamp(Math.round(n), 0, MAX_ATTACH_MAX_FILE_MB)
-      at.maxFileSizeMbByKind[k] = next
-      if (commit) saveMeta().catch(() => {})
-      emit()
-    },
-    toggleStickersEnabled: () => {
-      if (!state.data) return
-      if (!state.data.settings.stickers || typeof state.data.settings.stickers !== 'object') state.data.settings.stickers = { enabled: false, categories: [], map: {} }
-      const next = !state.data.settings.stickers.enabled
-      setStickersEnabled(next)
-        .then(() => emit())
-        .catch((e: any) => api.ui?.showToast?.(String(e?.message || e || '保存表情包开关失败'), { kind: 'error' }))
-    },
-    createStickerCategory: async (categoryName: any) => {
-      if (!state.data) return
-      const v = validateStickerCategoryName(categoryName)
-      if (!v.ok) return api.ui?.showToast?.(v.error || '分类名无效', { kind: 'error' })
-
-      const name = v.name
-      try {
-        await createStickerCategoryInternal(name)
-        emit()
-        return true
-      } catch (e: any) {
-        api.ui?.showToast?.(String(e?.message || e || '创建分类失败'), { kind: 'error' })
-        return false
-      }
-    },
-    createFavoriteFolder: (name: any, parentId: any) => favOps.createFavoriteFolder(name, parentId),
-    renameFavoriteFolder: (folderId: any, name: any) => favOps.renameFavoriteFolder(folderId, name),
-    deleteFavoriteFolderKeepContents: (folderId: any, targetFolderId: any) => favOps.deleteFavoriteFolderKeepContents(folderId, targetFolderId),
-    deleteFavoriteFolderTree: (folderId: any) => favOps.deleteFavoriteFolderTree(folderId),
-    clearFavoriteFolderRefs: (folderId: any) => favOps.clearFavoriteFolderRefs(folderId),
-    moveFavoriteFolder: (folderId: any, nextParentId: any) => favOps.moveFavoriteFolder(folderId, nextParentId),
-    setChatFavoriteFolders: (targetKind: any, targetId: any, chatId: any, folderIds: any) => favOps.setChatFavoriteFolders(targetKind, targetId, chatId, folderIds),
-    getChatFavoriteFolderIds: (targetKind: any, targetId: any, chatId: any) => favOps.getFavoriteFolderIdsForChat(targetKind, targetId, chatId),
-    deleteStickerCategory: async (categoryName: any) => {
-      if (!state.data) return
-      const name = String(categoryName || '').trim()
-      if (!name) return
-      try {
-        await deleteStickerCategoryInternal(name)
-        emit()
-        return true
-      } catch (e: any) {
-        api.ui?.showToast?.(String(e?.message || e || '删除分类失败'), { kind: 'error' })
-        return false
-      }
-    },
-    addSticker: async (categoryName: any, stickerName: any, dataUrl: any) => {
-      if (!state.data) return
-      if (!state.data.settings.stickers || typeof state.data.settings.stickers !== 'object') state.data.settings.stickers = { enabled: false, categories: [], map: {} }
-
-      const vCat = validateStickerCategoryName(categoryName)
-      if (!vCat.ok) return api.ui?.showToast?.(vCat.error || '分类名无效', { kind: 'error' })
-      const cat = vCat.name
-
-      const vName = validateStickerName(stickerName)
-      if (!vName.ok) return api.ui?.showToast?.(vName.error || '表情名无效', { kind: 'error' })
-      const name = vName.name
-
-      const r = await addStickerInternal(cat, name, dataUrl).catch((e: any) => ({ ok: false, kind: 'err' as const, error: e }))
-      if (!r || !r.ok) {
-        if (r?.kind === 'dup') return api.ui?.showToast?.('重名：该分类下已存在同名表情', { kind: 'error' })
-        if (r?.kind === 'bad-image') return api.ui?.showToast?.('图片格式不支持（仅支持 png/jpg/webp/gif）', { kind: 'error' })
-        return api.ui?.showToast?.(String((r as any)?.error?.message || (r as any)?.error || '保存失败'), { kind: 'error' })
-      }
-
-      await loadStickersFromSource().catch(() => {})
-      emit()
-    },
-    pickStickerImages: (categoryName: any) => pickStickerImages(categoryName),
-    deleteSticker: async (categoryName: any, stickerName: any) => {
-      if (!state.data) return
-      const cat = String(categoryName || '').trim()
-      const name = String(stickerName || '').trim()
-      if (!cat || !name) return
-      try {
-        await deleteStickerInternal(cat, name)
-        emit()
-      } catch (e: any) {
-        api.ui?.showToast?.(String(e?.message || e || '删除表情包失败'), { kind: 'error' })
-      }
-    },
-    renameSticker: async (categoryName: any, oldStickerName: any, newStickerName: any) => {
-      if (!state.data) return
-
-      const vCat = validateStickerCategoryName(categoryName)
-      if (!vCat.ok) return api.ui?.showToast?.(vCat.error || '分类名无效', { kind: 'error' })
-      const cat = vCat.name
-
-      const oldName = String(oldStickerName || '').trim()
-      if (!oldName) return
-
-      const vName = validateStickerName(newStickerName)
-      if (!vName.ok) return api.ui?.showToast?.(vName.error || '表情名无效', { kind: 'error' })
-      const name = vName.name
-
-      if (name === oldName) return api.ui?.showToast?.('名称未变化')
-      try {
-        await renameStickerInternal(cat, oldName, name)
-        emit()
-        return true
-      } catch (e: any) {
-        api.ui?.showToast?.(String(e?.message || e || '表情包改名失败'), { kind: 'error' })
-        return false
-      }
-    },
-    setMermaidFixEnabled: (on: any) => {
-      if (!state.data) return
-      if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
-      if (!state.data.settings.aiServices.mermaidFix || typeof state.data.settings.aiServices.mermaidFix !== 'object') state.data.settings.aiServices.mermaidFix = {} as any
-      state.data.settings.aiServices.mermaidFix.enabled = !!on
-      saveMeta().catch(() => {})
-      emit()
-    },
-    setMermaidFixProviderId: (providerId: any) => {
-      setAiServiceModelSource('mermaidFix', `provider:${String(providerId || '')}`)
-    },
-    setMermaidFixModelSource: (source: any) => {
-      setAiServiceModelSource('mermaidFix', source)
-    },
-    setMermaidFixModelId: (modelId: any) => {
-      setAiServiceModelId('mermaidFix', modelId)
-    },
-    setMermaidFixSystemPrompt: (systemPrompt: any) => {
-      if (!state.data) return
-      const p = typeof systemPrompt === 'string' ? systemPrompt : String(systemPrompt ?? '')
-      if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
-      if (!state.data.settings.aiServices.mermaidFix || typeof state.data.settings.aiServices.mermaidFix !== 'object') state.data.settings.aiServices.mermaidFix = {} as any
-      state.data.settings.aiServices.mermaidFix.systemPrompt = p
-      saveMeta().catch(() => {})
-      emit()
-    },
-    resetMermaidFixSystemPromptDefault: () => {
-      if (!state.data) return
-      if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
-      if (!state.data.settings.aiServices.mermaidFix || typeof state.data.settings.aiServices.mermaidFix !== 'object') state.data.settings.aiServices.mermaidFix = {} as any
-      state.data.settings.aiServices.mermaidFix.systemPrompt = DEFAULT_MERMAID_FIX_SYSTEM_PROMPT
-      saveMeta().catch(() => {})
-      emit()
-    },
-    setChatTitleNamingEnabled: (on: any) => {
-      if (!state.data) return
-      if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
-      if (!state.data.settings.aiServices.chatTitleNaming || typeof state.data.settings.aiServices.chatTitleNaming !== 'object') state.data.settings.aiServices.chatTitleNaming = {} as any
-      state.data.settings.aiServices.chatTitleNaming.enabled = !!on
-      saveMeta().catch(() => {})
-      emit()
-    },
-    setChatTitleNamingProviderId: (providerId: any) => {
-      setAiServiceModelSource('chatTitleNaming', `provider:${String(providerId || '')}`)
-    },
-    setChatTitleNamingModelSource: (source: any) => {
-      setAiServiceModelSource('chatTitleNaming', source)
-    },
-    setChatTitleNamingModelId: (modelId: any) => {
-      setAiServiceModelId('chatTitleNaming', modelId)
-    },
-    setChatTitleNamingSystemPrompt: (systemPrompt: any) => {
-      if (!state.data) return
-      const p = typeof systemPrompt === 'string' ? systemPrompt : String(systemPrompt ?? '')
-      if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
-      if (!state.data.settings.aiServices.chatTitleNaming || typeof state.data.settings.aiServices.chatTitleNaming !== 'object') state.data.settings.aiServices.chatTitleNaming = {} as any
-      state.data.settings.aiServices.chatTitleNaming.systemPrompt = p
-      saveMeta().catch(() => {})
-      emit()
-    },
-    resetChatTitleNamingSystemPromptDefault: () => {
-      if (!state.data) return
-      if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
-      if (!state.data.settings.aiServices.chatTitleNaming || typeof state.data.settings.aiServices.chatTitleNaming !== 'object') state.data.settings.aiServices.chatTitleNaming = {} as any
-      state.data.settings.aiServices.chatTitleNaming.systemPrompt = DEFAULT_CHAT_TITLE_NAMING_SYSTEM_PROMPT
-      saveMeta().catch(() => {})
-      emit()
-    },
-    setStickerNamingEnabled: (on: any) => {
-      if (!state.data) return
-      if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
-      if (!state.data.settings.aiServices.stickerNaming || typeof state.data.settings.aiServices.stickerNaming !== 'object') state.data.settings.aiServices.stickerNaming = {} as any
-      state.data.settings.aiServices.stickerNaming.enabled = !!on
-      saveMeta().catch(() => {})
-      emit()
-    },
-    setStickerNamingProviderId: (providerId: any) => {
-      setAiServiceModelSource('stickerNaming', `provider:${String(providerId || '')}`)
-    },
-    setStickerNamingModelSource: (source: any) => {
-      setAiServiceModelSource('stickerNaming', source)
-    },
-    setStickerNamingModelId: (modelId: any) => {
-      setAiServiceModelId('stickerNaming', modelId)
-    },
-    setStickerNamingSystemPrompt: (systemPrompt: any) => {
-      if (!state.data) return
-      const p = typeof systemPrompt === 'string' ? systemPrompt : String(systemPrompt ?? '')
-      if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
-      if (!state.data.settings.aiServices.stickerNaming || typeof state.data.settings.aiServices.stickerNaming !== 'object') state.data.settings.aiServices.stickerNaming = {} as any
-      state.data.settings.aiServices.stickerNaming.systemPrompt = p
-      saveMeta().catch(() => {})
-      emit()
-    },
-    resetStickerNamingSystemPromptDefault: () => {
-      if (!state.data) return
-      if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
-      if (!state.data.settings.aiServices.stickerNaming || typeof state.data.settings.aiServices.stickerNaming !== 'object') state.data.settings.aiServices.stickerNaming = {} as any
-      state.data.settings.aiServices.stickerNaming.systemPrompt = DEFAULT_STICKER_NAMING_SYSTEM_PROMPT
-      saveMeta().catch(() => {})
-      emit()
-    },
-    setContextCompressionProviderId: (providerId: any) => {
-      setAiServiceModelSource('contextCompression', `provider:${String(providerId || '')}`)
-    },
-    setContextCompressionModelSource: (source: any) => {
-      setAiServiceModelSource('contextCompression', source)
-    },
-    setContextCompressionModelId: (modelId: any) => {
-      setAiServiceModelId('contextCompression', modelId)
-    },
-    setContextCompressionRetainRecentMessages: (value: any) => {
-      if (!state.data) return
-      const count = clamp(
-        Math.round(Number(value || DEFAULT_CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES)),
-        CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MIN,
-        CONTEXT_COMPRESSION_RETAIN_RECENT_MESSAGES_MAX,
-      )
-      if (!state.data.settings.aiServices || typeof state.data.settings.aiServices !== 'object') state.data.settings.aiServices = {} as any
-      if (!state.data.settings.aiServices.contextCompression || typeof state.data.settings.aiServices.contextCompression !== 'object') state.data.settings.aiServices.contextCompression = {} as any
-      state.data.settings.aiServices.contextCompression.retainRecentMessages = count
-      saveMeta().catch(() => {})
-      emit()
-    },
-    closeModal: () => closeModal(),
-    openProviders: () => openProvidersEditor(),
-    createProvider: () => createProvider(),
-    openProviderEditor: (providerId: any) => openProviderInlineEditor(String(providerId || '')),
-    closeProviderEditor: () => {
-      state.draft.editProviderId = ''
-      emit()
-    },
-    saveProvider: () => saveProviderInlineEditor(),
-    moveRole: (roleId: any, targetRoleId: any, position: any) => {
-      if (!state.data || !Array.isArray(state.data.roles)) return
-      const rid = String(roleId || '').trim()
-      const targetRid = String(targetRoleId || '').trim()
-      const pos: ListMovePosition = String(position || '').trim() === 'after' ? 'after' : 'before'
-      if (!rid || !targetRid || rid === targetRid) return
-
-      const nextRoles = moveListItemById(state.data.roles, (role: any) => String(role?.id || ''), rid, targetRid, pos)
-      if (nextRoles === state.data.roles) return
-
-      state.data.roles = nextRoles
-      saveRoleOrder(state.data.roles.map((role: any) => String(role?.id || ''))).catch(() => {})
-      emit()
-    },
-    askDeleteProvider: (providerId: any) => {
-      state.draft.deleteProviderId = String(providerId || '')
-      state.draft.deleteRoleId = ''
-      ;(state.draft as any).deleteGroupId = ''
-      state.modal = 'confirm'
-      emit()
-    },
-    openRoleEditor: (roleId: any) => openRoleEditor(String(roleId || '')),
-    createRole: () => createRole(),
-    saveRole: () => saveRoleEditor(),
-    refreshTools: (force: any) => refreshTools(!!force),
-    openToolConfig: (toolId: any) => openToolConfig(toolId),
-    closeToolConfig: () => closeToolConfig(),
-    setToolConfigValue: (path: any, value: any) => setToolConfigValue(path, value),
-    removeToolConfigValue: (path: any) => removeToolConfigValue(path),
-    setToolPromptDescriptionDraft: (value: any) => setToolPromptDescriptionDraft(value),
-    resetToolPromptDescriptionDraftToDefault: () => resetToolPromptDescriptionDraftToDefault(),
-    saveSelectedToolConfig: () => saveSelectedToolConfig(),
-    loadToolInstallState: (toolId: any) => loadToolInstallState(toolId),
-    installTool: (toolId: any) => installTool(toolId),
-    updateTool: (toolId: any) => updateTool(toolId),
-    getInstallSource: () => getInstallSource(),
-    setInstallSource: (kind: 'official' | 'local') => setInstallSource(kind),
-    refreshModelRequestConfig: (force: any) => refreshModelRequestConfig(!!force),
-    setModelRequestConfigDraft: (key: any, value: any) => setModelRequestConfigDraft(key, value),
-    resetModelRequestConfigDraftToDefaults: () => resetModelRequestConfigDraftToDefaults(),
-    saveModelRequestConfig: () => saveModelRequestConfig(),
-    refreshAccessPorts: (force: any) => accessSettingsController.refreshPorts(),
-    addAccessPort: (name: any, port: any) => accessSettingsController.addPort(String(name || ''), Number(port)),
-    enableAccessPort: (id: any) => accessSettingsController.enablePort(String(id || '')),
-    disableAccessPort: (id: any) => accessSettingsController.disablePort(String(id || '')),
-    deleteAccessPort: (id: any) => accessSettingsController.deletePort(String(id || '')),
-    refreshAccessKeys: (force: any) => accessSettingsController.refreshKeys(),
-    addAccessKey: (name: any, expiresAt: any) => accessSettingsController.addKey(String(name || ''), expiresAt === null ? null : String(expiresAt || '') || null),
-    revealAccessKey: (id: any) => accessSettingsController.revealKey(String(id || '')),
-    setAccessKeyEnabled: (id: any, enabled: any) => accessSettingsController.setKeyEnabled(String(id || ''), enabled === true),
-    setAccessKeyExpiration: (id: any, expiresAt: any) => accessSettingsController.setKeyExpiration(String(id || ''), expiresAt === null ? null : String(expiresAt || '') || null),
-    deleteAccessKey: (id: any) => accessSettingsController.deleteKey(String(id || '')),
-    loadBoxInfo: () => accessSettingsController.loadBoxInfo(),
-    refreshModelGroups: (force: any) => refreshModelGroups(!!force),
-    saveModelGroups: () => saveModelGroups(),
-    createModelGroup: () => createModelGroup(),
-    deleteModelGroup: (groupId: any) => deleteModelGroup(groupId),
-    setModelGroupField: (groupId: any, field: any, value: any) => setModelGroupField(groupId, field, value),
-    createModelGroupModel: (groupId: any) => createModelGroupModel(groupId),
-    deleteModelGroupModel: (groupId: any, modelIndex: any) => deleteModelGroupModel(groupId, modelIndex),
-    setModelGroupModelField: (groupId: any, modelIndex: any, field: any, value: any) => setModelGroupModelField(groupId, modelIndex, field, value),
-    createModelGroupMember: (groupId: any, modelIndex: any) => createModelGroupMember(groupId, modelIndex),
-    deleteModelGroupMember: (groupId: any, modelIndex: any, memberIndex: any) => deleteModelGroupMember(groupId, modelIndex, memberIndex),
-    setModelGroupMemberField: (groupId: any, modelIndex: any, memberIndex: any, field: any, value: any) => setModelGroupMemberField(groupId, modelIndex, memberIndex, field, value),
-    refreshHookPromptLibrary: (force: any) => refreshHookPromptLibrary(!!force),
-    saveHookPromptLibrary: (library: any) => persistHookPromptLibrary(library),
-    refreshPlaceholderLibrary: (force: any) => refreshPlaceholderLibrary(!!force),
-    savePlaceholderLibrary: (library: any) => persistPlaceholderLibrary(library),
-    previewPlaceholders: (value: any) => refreshPlaceholderPreview(value),
-    loadPlaceholderDependencies: (name: any) => refreshPlaceholderDependencyTree(name),
-    refreshSystemPlugins: (force: any) => refreshSystemPlugins(!!force),
-    openSystemPlugin: (pluginId: any) => openSystemPlugin(pluginId),
-    saveSystemPluginConfig: (pluginId: any, config: any) => saveSystemPluginConfig(pluginId, config),
-    refreshAvailableSystemPluginPlaceholderInterfaces: () => refreshAvailableSystemPluginPlaceholderInterfaces(),
-    createPlaceholderFromSystemPlugin: (pluginId: any, interfaceId: any) => createPlaceholderFromSystemPlugin(pluginId, interfaceId),
-    loadSystemPluginInstallState: (pluginId: any) => loadSystemPluginInstallState(pluginId),
-    installSystemPlugin: (pluginId: any) => installSystemPluginAction(pluginId),
-    updateSystemPlugin: (pluginId: any) => updateSystemPluginAction(pluginId),
-    selectHookPromptForActiveChat: (mode: any, presetId: any) => selectHookPromptForActiveChat(mode, presetId),
-    openRoleToolWhitelist: () => {
-      state.draft.roleToolWhitelistOpen = true
-      refreshTools(false).catch(() => {})
-      emit()
-    },
-    closeRoleToolWhitelist: () => {
-      state.draft.roleToolWhitelistOpen = false
-      state.draft.roleToolMenuName = ''
-      state.draft.roleToolPermissionName = ''
-      emit()
-    },
-    openRoleToolAdd: () => {
-      state.draft.roleToolAddOpen = true
-      state.draft.roleToolSearch = ''
-      state.draft.roleToolAddSelected = []
-      refreshTools(false).catch(() => {})
-      emit()
-    },
-    closeRoleToolAdd: () => {
-      state.draft.roleToolAddOpen = false
-      state.draft.roleToolSearch = ''
-      state.draft.roleToolAddSelected = []
-      emit()
-    },
-    setRoleToolSearch: (value: any) => {
-      state.draft.roleToolSearch = String(value || '')
-      emit()
-    },
-    toggleRoleToolAddSelection: (toolName: any) => {
-      const name = String(toolName || '').trim()
-      if (!name) return
-      const selected = Array.isArray(state.draft.roleToolAddSelected) ? state.draft.roleToolAddSelected.map((x: any) => String(x || '').trim()).filter(Boolean) : []
-      state.draft.roleToolAddSelected = selected.includes(name) ? selected.filter((item: string) => item !== name) : selected.concat(name)
-      emit()
-    },
-    addSelectedRoleTools: () => {
-      const selected = Array.isArray(state.draft.roleToolAddSelected) ? state.draft.roleToolAddSelected : []
-      state.draft.roleToolPolicy = addToolsToPolicy(state.draft.roleToolPolicy, selected)
-      state.draft.roleToolAddOpen = false
-      state.draft.roleToolSearch = ''
-      state.draft.roleToolAddSelected = []
-      emit()
-    },
-    openRoleToolMenu: (toolName: any) => {
-      state.draft.roleToolMenuName = String(toolName || '').trim()
-      emit()
-    },
-    closeRoleToolMenu: () => {
-      state.draft.roleToolMenuName = ''
-      emit()
-    },
-    openRoleToolPermission: (toolName: any) => {
-      state.draft.roleToolPermissionName = String(toolName || '').trim()
-      state.draft.roleToolMenuName = ''
-      emit()
-    },
-    closeRoleToolPermission: () => {
-      state.draft.roleToolPermissionName = ''
-      emit()
-    },
-    setRoleToolRunMode: (toolName: any, mode: any) => {
-      state.draft.roleToolPolicy = setToolRunMode(state.draft.roleToolPolicy, String(toolName || ''), mode)
-      state.draft.roleToolPermissionName = ''
-      emit()
-    },
-    removeRoleTool: (toolName: any) => {
-      state.draft.roleToolPolicy = removeToolFromPolicy(state.draft.roleToolPolicy, String(toolName || ''))
-      state.draft.roleToolMenuName = ''
-      state.draft.roleToolPermissionName = ''
-      emit()
-    },
-    openRoleNativeToolAdd: () => {
-      state.draft.roleNativeToolAddOpen = true
-      refreshTools(false).catch(() => {})
-      emit()
-    },
-    closeRoleNativeToolAdd: () => {
-      state.draft.roleNativeToolAddOpen = false
-      emit()
-    },
-    addRoleNativeTool: (toolName: any) => {
-      state.draft.roleToolPolicy = addNativeToolsToPolicy(state.draft.roleToolPolicy, [String(toolName || '')])
-      state.draft.roleNativeToolAddOpen = false
-      emit()
-    },
-    removeRoleNativeTool: (toolName: any) => {
-      state.draft.roleToolPolicy = removeNativeToolFromPolicy(state.draft.roleToolPolicy, String(toolName || ''))
-      emit()
-    },
-    openGroupEditor: (groupId: any) => openGroupEditor(String(groupId || '')),
-    createGroup: () => createGroup(),
-    saveGroup: () => saveGroupEditor(),
-    openWorkspaceEditor: (workspaceId: any) => openWorkspaceEditor(String(workspaceId || '')),
-    openNewWorkspaceEditor: () => openNewWorkspaceEditor(),
-    saveWorkspace: () => saveWorkspaceEditor(),
-    addWorkspaceDirectory: () => addWorkspaceDirectory(),
-    removeWorkspaceDirectory: (index: any) => removeWorkspaceDirectory(index),
-    setWorkspaceDirectoryField: (index: any, field: any, value: any) => setWorkspaceDirectoryField(index, field, value),
-    refreshWorkspacePromptPreview: () => refreshWorkspacePromptPreview(),
-    askDeleteRole: (roleId: any) => {
-      const rid = String(roleId || '')
-      if (!rid || rid === NEW_ROLE_ID) return
-      state.draft.deleteRoleId = rid
-      ;(state.draft as any).deleteGroupId = ''
-      state.draft.deleteProviderId = ''
-      state.modal = 'confirm'
-      emit()
-    },
-    askDeleteGroup: (groupId: any) => {
-      const gid = String(groupId || '')
-      if (!gid || gid === NEW_GROUP_ID) return
-      ;(state.draft as any).deleteGroupId = gid
-      state.draft.deleteRoleId = ''
-      state.draft.deleteProviderId = ''
-      state.modal = 'confirm'
-      emit()
-    },
-    askDeleteWorkspace: (workspaceId: any) => {
-      const wid = String(workspaceId || '')
-      if (!wid || wid === NEW_WORKSPACE_ID) return
-      ;(state.draft as any).deleteWorkspaceId = wid
-      state.draft.deleteRoleId = ''
-      ;(state.draft as any).deleteGroupId = ''
-      state.draft.deleteProviderId = ''
-      state.modal = 'confirm'
-      emit()
-    },
-    confirmDelete: async () => {
-      const rid = String(state.draft.deleteRoleId || '')
-      const gid = String((state.draft as any).deleteGroupId || '')
-      const wid = String((state.draft as any).deleteWorkspaceId || '')
-      const pid = String(state.draft.deleteProviderId || '')
-      const nextRenderSafetyPolicy = String((state.draft as any).renderSafetyPolicyTarget || '').trim() === 'unsafe' ? 'unsafe' : ''
-      let ok = true
-      if (rid) ok = await deleteRole(rid)
-      if (gid) ok = await deleteGroup(gid)
-      if (wid) ok = await deleteWorkspaceEditor(wid)
-      if (pid) ok = await deleteProvider(pid)
-      if (nextRenderSafetyPolicy && state.data) {
-        ;(state.data.settings as any).renderSafetyPolicy = nextRenderSafetyPolicy
-        await saveMeta().catch((e: any) => {
-          ok = false
-          api.ui?.showToast?.(String(e?.message || e || '保存渲染安全策略失败'), { kind: 'error' })
-        })
-      }
-      if (ok) {
-        closeModal()
-      }
-      emit()
-    },
-    aiFixMermaid: (messageId: any, mermaidSrc: any, renderErrorMsg: any) => {
-      let t0 = 0
-      const cost = () => ((now() - t0) / 1000).toFixed(1)
-      let roleId = ''
-      let workspaceId = ''
-      let sessionId = ''
-      let mid = ''
-      return Promise.resolve()
-        .then(() => {
-          const located = locateMessageInActiveChat(String(messageId || ''))
-          const kind = String(located?.kind || '')
-          if (!located || (kind !== 'role' && kind !== 'workspace')) throw new Error('当前会话暂未接入 Mermaid AI 修复')
-          sessionId = String(located.chat?.id || '').trim()
-          workspaceId = kind === 'workspace' ? String(located.targetId || '').trim() : ''
-          roleId = kind === 'workspace' ? String((located.chat as any)?.roleId || state.draft?.activeRoleId || '').trim() : String(located.targetId || '').trim()
-          mid = String(messageId || '').trim()
-          if (!roleId || !sessionId || !mid) throw new Error('Mermaid 修复上下文不完整')
-          t0 = now()
-          api.ui?.showToast?.('AI 修复 Mermaid 中…')
-          return aiFixMermaidInMessage(roleId, sessionId, mid, String(mermaidSrc || ''), String(renderErrorMsg || ''))
-        })
-        .then((fixed: any) => {
-          const nextMermaid = String((fixed as any)?.mermaidSource || '').trim()
-          const reload = workspaceId ? reloadWorkspaceSession(workspaceId, sessionId, roleId) : reloadRoleSession(roleId, sessionId)
-          return reload.then(() => {
-            if (!activeChatFromData()) throw new Error('Mermaid 修复已完成，但刷新最新会话失败')
-            emit()
-            api.ui?.showToast?.(`Mermaid 已修复（${cost()}s）`, { kind: 'success' })
-            return nextMermaid || fixed
-          })
-        })
-        .catch((e: any) => {
-          const msg = String(e?.message || e || 'AI 修复 Mermaid 失败')
-          api.ui?.showToast?.(`AI 修复 Mermaid 失败（${cost()}s）：${msg}`, { kind: 'error' })
-          throw e
-        })
-    },
-    openMermaidViewer: (rootEl: any, srcEl: any) => {
-      const root = rootEl instanceof Element ? rootEl : document.body
-      const blocks = Array.from(root.querySelectorAll?.('.mermaid-block[data-mermaid="1"]') || [])
-      const items: any[] = []
-      const renderSafetyPolicy = currentRenderSafetyPolicy()
-      for (const b of blocks) {
-        const svg = b instanceof HTMLElement ? String(b.innerHTML || '') : ''
-        if (!svg) continue
-        items.push({ svg: sanitizeSvg(svg, renderSafetyPolicy) })
-      }
-      if (!items.length) return
-
-      let idx = 0
-      const src = srcEl instanceof Element ? srcEl : null
-      if (src) {
-        const i = blocks.findIndex((b) => b === src || (b instanceof HTMLElement && b.contains(src)))
-        if (i >= 0) idx = i
-      }
-      state.mermaid.items = items
-      state.mermaid.index = clamp(idx, 0, Math.max(0, items.length - 1))
-      state.mermaid.scale = 1
-      state.modal = 'mermaid'
-      emit()
-    },
-    openImageViewer: (rootEl: any, srcEl: any) => {
-      const root = rootEl instanceof Element ? rootEl : document.body
-      const imgs = Array.from(root.querySelectorAll?.('img[data-fw-img="1"]') || [])
-      const items: any[] = []
-      const elToIdx = new Map()
-      for (const img of imgs) {
-        if (!(img instanceof HTMLImageElement)) continue
-        const src = String(img.getAttribute('src') || '').trim()
-        if (!src) continue
-        const idx = items.length
-        items.push({ src, alt: globalThis.String(img.getAttribute('alt') || '图片') })
-        elToIdx.set(img, idx)
-      }
-      if (!items.length) return
-
-      let idx = 0
-      const src = srcEl instanceof Element ? srcEl : null
-      if (src) {
-        const img = src instanceof HTMLImageElement ? src : (src.closest?.('img[data-fw-img="1"]') as any)
-        const i = img instanceof HTMLImageElement ? elToIdx.get(img) : -1
-        if (typeof i === 'number' && i >= 0) idx = i
-      }
-
-      state.imageViewer.items = items
-      state.imageViewer.index = clamp(idx, 0, Math.max(0, items.length - 1))
-      state.imageViewer.scale = 1
-      state.modal = 'image'
-      emit()
-    },
-    mermaidPrev: () => {
-      const len = Array.isArray(state.mermaid.items) ? state.mermaid.items.length : 0
-      if (!len) return
-      state.mermaid.index = (Number(state.mermaid.index || 0) - 1 + len) % len
-      state.mermaid.scale = 1
-      emit()
-    },
-    mermaidNext: () => {
-      const len = Array.isArray(state.mermaid.items) ? state.mermaid.items.length : 0
-      if (!len) return
-      state.mermaid.index = (Number(state.mermaid.index || 0) + 1) % len
-      state.mermaid.scale = 1
-      emit()
-    },
-    mermaidZoom: (dir: any) => {
-      const factor = Number(dir || 0) >= 0 ? 1.12 : 1 / 1.12
-      state.mermaid.scale = clamp(Number(state.mermaid.scale || 1) * factor, VIEWER_ZOOM_MIN, MERMAID_VIEWER_ZOOM_MAX)
-      emit()
-    },
-    mermaidSetScale: (scale: any) => {
-      state.mermaid.scale = clamp(Number(scale || 1), VIEWER_ZOOM_MIN, MERMAID_VIEWER_ZOOM_MAX)
-      emit()
-    },
-    mermaidReset: () => {
-      state.mermaid.scale = 1
-      emit()
-    },
-    imagePrev: () => {
-      const len = Array.isArray(state.imageViewer.items) ? state.imageViewer.items.length : 0
-      if (!len) return
-      state.imageViewer.index = (Number(state.imageViewer.index || 0) - 1 + len) % len
-      state.imageViewer.scale = 1
-      emit()
-    },
-    imageNext: () => {
-      const len = Array.isArray(state.imageViewer.items) ? state.imageViewer.items.length : 0
-      if (!len) return
-      state.imageViewer.index = (Number(state.imageViewer.index || 0) + 1) % len
-      state.imageViewer.scale = 1
-      emit()
-    },
-    imageZoom: (dir: any) => {
-      const factor = Number(dir || 0) >= 0 ? 1.12 : 1 / 1.12
-      state.imageViewer.scale = clamp(Number(state.imageViewer.scale || 1) * factor, VIEWER_ZOOM_MIN, IMAGE_VIEWER_ZOOM_MAX)
-      emit()
-    },
-    imageSetScale: (scale: any) => {
-      state.imageViewer.scale = clamp(Number(scale || 1), VIEWER_ZOOM_MIN, IMAGE_VIEWER_ZOOM_MAX)
-      emit()
-    },
-    imageReset: () => {
-      state.imageViewer.scale = 1
-      emit()
-    },
-    createChat: () => {
-      return createChatForActiveTarget()
-    },
-    aiGenerateChatTitle: (roleId: any, chatId: any) => {
-      let t0 = 0
-      const cost = () => ((now() - t0) / 1000).toFixed(1)
-      return Promise.resolve()
-        .then(() => {
-          t0 = now()
-          api.ui?.showToast?.('AI 生成标题中…')
-          return aiGenerateChatTitle(String(roleId || ''), String(chatId || ''))
-        })
-        .then((title: any) => {
-	          const nextTitle = String((title as any)?.title || title || '').trim()
-	          return reloadRoleSession(String(roleId || ''), String(chatId || ''))
-	            .then(() => {
-	              emit()
-	              api.ui?.showToast?.(`已更新标题（${cost()}s）：${nextTitle || '（空）'}`, { kind: 'success' })
-	              return title
-	            })
-        })
-        .catch((e: any) => {
-          const msg = String(e?.message || e || 'AI 生成标题失败')
-          api.ui?.showToast?.(`AI 生成标题失败（${cost()}s）：${msg}`, { kind: 'error' })
-          throw e
-        })
-    },
-    aiGenerateGroupChatTitle: (groupId: any, chatId: any) => {
-      let t0 = 0
-      const cost = () => ((now() - t0) / 1000).toFixed(1)
-      return Promise.resolve()
-        .then(() => {
-          t0 = now()
-          api.ui?.showToast?.('AI 生成标题中…')
-          return aiGenerateGroupChatTitle(String(groupId || ''), String(chatId || ''))
-        })
-        .then((title: any) => {
-          api.ui?.showToast?.(`已更新标题（${cost()}s）：${globalThis.String(title || '').trim() || '（空）'}`, { kind: 'success' })
-          return title
-        })
-        .catch((e: any) => {
-          const msg = String(e?.message || e || 'AI 生成标题失败')
-          api.ui?.showToast?.(`AI 生成标题失败（${cost()}s）：${msg}`, { kind: 'error' })
-          throw e
-        })
-    },
-    aiGenerateWorkspaceChatTitle: (workspaceId: any, chatId: any) => {
-      let t0 = 0
-      const cost = () => ((now() - t0) / 1000).toFixed(1)
-      let roleId = ''
-      return Promise.resolve()
-        .then(async () => {
-          const workspaceChat = await ensureWorkspaceChatLoaded(String(workspaceId || ''), String(chatId || ''))
-          roleId = String((workspaceChat as any)?.roleId || '').trim()
-          if (!roleId) throw new Error('工作区会话缺少角色，暂时无法生成标题')
-          t0 = now()
-          api.ui?.showToast?.('AI 生成标题中…')
-          return { roleId, title: await aiGenerateChatTitle(roleId, globalThis.String(chatId || '')) }
-        })
-        .then(async ({ title }: any) => {
-          await reloadWorkspaceSession(String(workspaceId || ''), String(chatId || ''), roleId)
-          const nextTitle = String((title as any)?.title || title || '').trim()
-          emit()
-          api.ui?.showToast?.(`已更新标题（${cost()}s）：${nextTitle || '（空）'}`, { kind: 'success' })
-          return title
-        })
-        .catch((e: any) => {
-          const msg = String(e?.message || e || 'AI 生成标题失败')
-          api.ui?.showToast?.(`AI 生成标题失败（${cost()}s）：${msg}`, { kind: 'error' })
-          throw e
-        })
-    },
-    aiGenerateStickerName: (categoryName: any, stickerName: any) => {
-      let t0 = 0
-      const cost = () => ((now() - t0) / 1000).toFixed(1)
-      return Promise.resolve()
-        .then(() => {
-          t0 = now()
-          api.ui?.showToast?.('AI 取名中…')
-          return aiGenerateStickerName(String(categoryName || ''), String(stickerName || ''))
-        })
-        .then((name: any) => {
-          const nextName = String((name as any)?.name || name || '').trim()
-          return loadStickersFromSource().then(() => {
-            emit()
-            api.ui?.showToast?.(`已更新表情名（${cost()}s）：${nextName || '（空）'}`, { kind: 'success' })
-            return name
-          })
-        })
-        .catch((e: any) => {
-          let msg = String(e?.message || e || 'AI 取名失败')
-          if (msg.includes('sticker naming is disabled')) msg = '请先在“设置 > AI 微服务”中启用表情包取名服务'
-          else if (msg.includes('model coordinate is required')) msg = '请先在“设置 > AI 微服务”中配置表情包取名的供应商和模型'
-          api.ui?.showToast?.(`AI 取名失败（${cost()}s）：${msg}`, { kind: 'error' })
-          throw e
-        })
-    },
-    renameChat: (roleId: any, chatId: any, title: any) => renameChatTitle(String(roleId || ''), String(chatId || ''), String(title ?? '')),
-    renameGroupChat: (groupId: any, chatId: any, title: any) => renameGroupChatTitle(String(groupId || ''), String(chatId || ''), String(title ?? '')),
-    renameWorkspaceChat: (workspaceId: any, chatId: any, title: any) => renameWorkspaceChatTitle(String(workspaceId || ''), String(chatId || ''), String(title ?? '')),
-    deleteChat: (roleId: any, chatId: any) => deleteChatForRole(String(roleId || ''), String(chatId || '')),
-    deleteGroupChat: (groupId: any, chatId: any) => deleteChatForGroup(String(groupId || ''), String(chatId || '')),
-    deleteWorkspaceChat: (workspaceId: any, chatId: any) => deleteChatForWorkspace(String(workspaceId || ''), String(chatId || '')),
-    setDraft: (key: any, value: any) => {
-      const k = String(key || '')
-      if (!k) return
-      if (k === 'input') {
-        setActiveComposerInput(state, value)
-        return
-      }
-      if ((k === 'workspaceName' || k === 'workspacePrompt') && state.modal === 'workspace') {
-        ;(state.draft as any).workspaceActualPromptStale = true
-        ;(state.draft as any).workspaceActualPromptError = ''
-      }
-      ;(state.draft as any)[k] = value
-      emit()
-    },
-    roleProviderChanged: (providerId: any) => {
-      state.draft.roleProviderId = String(providerId || '')
-      const p = getProvider(state.draft.roleProviderId)
-      const cachedItems = Array.isArray(p?.registeredModels) ? p.registeredModels.map((model: any) => String(model?.id || '')).filter(Boolean) : []
-      state.models = { loading: false, error: '', items: cachedItems.slice(0, 300) }
-      state.draft.roleModelId = ''
-      state.draft.roleCustomModelId = ''
-      emit()
-    },
-    roleModelSourceChanged: (source: any) => {
-      state.draft.roleModelSource = String(source || '') === 'model_group' ? 'model_group' : 'provider'
-      state.draft.roleProviderId = ''
-      state.draft.roleModelGroupId = ''
-      state.draft.roleModelId = ''
-      state.draft.roleCustomModelId = ''
-      state.models = { loading: false, error: '', items: [] }
-      emit()
-    },
-    roleModelGroupChanged: (groupId: any) => {
-      state.draft.roleModelGroupId = String(groupId || '')
-      state.draft.roleModelId = ''
-      state.draft.roleCustomModelId = ''
-      emit()
-    },
-    roleModelChanged: (modelId: any) => {
-      state.draft.roleModelId = String(modelId || '')
-      emit()
-    },
-    refreshModels: (providerId: any, force: any) => refreshModels(String(providerId || ''), !!force),
-    pickRoleAvatarImage: () => pickRoleAvatarImage(),
-    clearRoleAvatarImage: () => clearRoleAvatarImage(),
-    pickGroupAvatarImage: () => pickGroupAvatarImage(),
-    clearGroupAvatarImage: () => clearGroupAvatarImage(),
-    removeDraftImage: (id: any) => {
-      const draft = activateComposerDraftForCurrentSession(state)
-      setActiveComposerImages(state, removeDraftImageFromList(draft.images, String(id || '')))
-      emit()
-    },
-    removeDraftFile: (id: any) => {
-      const draft = activateComposerDraftForCurrentSession(state)
-      setActiveComposerFiles(state, removeDraftFile(draft.files, String(id || '')))
-      emit()
-    },
-    setDraftFileSendPct: (id: any, pct: any) => {
-      const rid = String(id || '')
-      if (!rid) return
-      const draft = activateComposerDraftForCurrentSession(state)
-      const it = draft.files.find((x: any) => String(x?.id || '') === rid)
-      if (!it) return
-      it.sendPct = clamp(Math.round(Number(pct ?? 100)), 0, 100)
-      setActiveComposerFiles(state, draft.files)
-      emit()
-    },
-    pickDraftImages: () => pickDraftImages(),
-    addDraftImagesFromFiles: async (files: any) => {
-      await addDraftImagesFromFiles(Array.isArray(files) ? files : [])
-    },
-    addDraftFilesFromFiles: async (files: any) => {
-      await addDraftFilesFromFiles(Array.isArray(files) ? files : [])
-    },
-    send: () => sendChat(),
-    sendFromMid: (forkFromMid: any, opts?: any) => sendChat({ ...(opts && typeof opts === 'object' ? opts : {}), forkFromMid: String(forkFromMid || '') }),
-    stop: (runId?: any) => {
-      stopSending(runId).catch(() => {})
-    },
-    regenerateAssistant: (assistantMid: any, opts?: any) => regenerateAssistantMessage(String(assistantMid || ''), opts && typeof opts === 'object' ? opts : undefined),
-    replyFromUserMessage: (userMid: any, opts?: any) => replyFromUserMessage(String(userMid || ''), opts && typeof opts === 'object' ? opts : undefined),
-    createBranchFromAssistant: (assistantMid: any) => createParallelBranchFromAssistantMessage(String(assistantMid || '')),
-    switchBranchSibling: (assistantMid: any, delta: any) => switchBranchByAssistantSibling(String(assistantMid || ''), Number(delta || 0)).catch(() => {}),
-    setActiveBranch: (branchId: any) => setActiveBranch(String(branchId || '')).catch(() => {}),
-    submitToolConfirmation: (input: any) => submitToolConfirmationDecision(input),
-    setChatModelOverride: async (providerId: any, modelId: any) => {
-      if (!state.data) return
-      const pid = String(providerId || '').trim()
-      const mid = String(modelId || '').trim()
-      if (!pid || !mid) return api.ui?.showToast?.('供应商/模型 不能为空', { kind: 'error' })
-      const target = captureChatSettingsTarget()
-      if (!target) return api.ui?.showToast?.('请先创建或选择会话', { kind: 'error' })
-      const chat = target.chat
-      const nextOverride = { kind: 'provider', providerId: pid, groupId: '', modelId: mid }
-      const ok = await applyChatSettingsAction(
-        target,
-        'model',
-        { modelOverride: nextOverride },
-        (current) => {
-          ;(current as any).modelOverride = nextOverride
-        },
-        '当前会话临时模型保存失败',
-      )
-      if (ok === 'saved' && isActiveChatSettingsTarget(target)) api.ui?.showToast?.('当前会话临时模型已保存', { kind: 'success' })
-    },
-    clearChatModelOverride: async () => {
-      if (!state.data) return
-      const target = captureChatSettingsTarget()
-      if (!target) return api.ui?.showToast?.('请先创建或选择会话', { kind: 'error' })
-      const chat = currentChatForSettingsTarget(target)
-      if (!(chat as any)?.modelOverride && !chatSettingsSaveQueue.isTargetActionPending(target, 'model')) return
-      const ok = await applyChatSettingsAction(
-        target,
-        'model',
-        { modelOverride: null },
-        (current) => {
-          try {
-            delete (current as any).modelOverride
-          } catch (_e) {
-            ;(current as any).modelOverride = null
-          }
-        },
-        '当前会话临时模型清除失败',
-      )
-      if (ok === 'saved' && isActiveChatSettingsTarget(target)) api.ui?.showToast?.('已清除当前会话临时模型', { kind: 'success' })
-    },
-    setChatReasoningEffort: async (effort: any) => {
-      if (!state.data) return
-      const next = normalizeReasoningEffort(effort)
-      const target = captureChatSettingsTarget()
-      if (!target) return api.ui?.showToast?.('请先创建或选择会话', { kind: 'error' })
-      const chat = target.chat
-      const ok = await applyChatSettingsAction(
-        target,
-        'reasoning',
-        { reasoningEffort: String(next || '') },
-        (current) => {
-          if (next) (current as any).reasoningEffort = next
-          else delete (current as any).reasoningEffort
-        },
-        '当前会话思考等级保存失败',
-      )
-      if (ok === 'saved' && isActiveChatSettingsTarget(target)) api.ui?.showToast?.('当前会话思考等级已保存', { kind: 'success' })
-    },
-    toggleChatStreamEnabled: async () => {
-      if (!state.data) return
-      const target = captureChatSettingsTarget()
-      if (!target) return api.ui?.showToast?.('请先创建或选择会话', { kind: 'error' })
-      const chat = target.chat
-      const nextOn = (chat as any).streamEnabled === false
-      const ok = await applyChatSettingsAction(
-        target,
-        'stream',
-        { streamEnabled: nextOn },
-        (current) => {
-          if (nextOn) delete (current as any).streamEnabled
-          else (current as any).streamEnabled = false
-        },
-        '当前会话流式输出保存失败',
-      )
-    },
-    deleteMessage: (messageId: any) => deleteMessage(String(messageId || '')),
-    deleteMessageSubtree: (messageId: any) => deleteMessageSubtree(String(messageId || '')),
-    editMessage: (messageId: any, content: any) => editMessage(String(messageId || ''), content),
-    editMessageBlock: (messageId: any, blockRef: any, text: any) => editMessageBlock(String(messageId || ''), blockRef, text),
-    deleteMessageBlock: (messageId: any, blockRef: any) => deleteMessageBlock(String(messageId || ''), blockRef),
+    ...appearanceActions,
+    ...chatNavigationActions,
+    ...aiServiceActionSet,
+    ...stickerActions,
+    ...favoriteActions,
+    ...entityActions,
+    ...toolActions,
+    ...modelActions,
+    ...accessActions,
+    ...libraryActions,
+    ...chatInteractionActions,
+    ...viewerActions,
     // UI event bridge
     hydrateRefImages,
     applyMermaidScaleDom,

@@ -44,37 +44,15 @@ type VerificationRun struct {
 	Evidence       string
 }
 
-// PrepareVerificationRun 校验统一入口传入的 run-* 目录，并建立验证现场的标准目录。
+// PrepareVerificationRun 校验统一入口传入的 run-* 目录，轮替清除同工具旧轮现场，并建立验证现场的标准目录。
 // 入口脚本预先建立 work、temp 与 cache；其他目录由本函数统一建立并校验边界。
 func PrepareVerificationRun(repositoryRoot string, runRoot string, toolName string) (*VerificationRun, error) {
-	repositoryRoot, err := ExistingPlainDirectory(repositoryRoot, "仓库根目录")
+	repositoryRoot, runRoot, err := resolveVerificationRun(repositoryRoot, runRoot, toolName)
 	if err != nil {
 		return nil, err
 	}
-	runRoot, err = ExistingPlainDirectory(runRoot, "验证运行目录")
-	if err != nil {
+	if err := retirePreviousRuns(runRoot); err != nil {
 		return nil, err
-	}
-	if !safeToolName(toolName) {
-		return nil, fmt.Errorf("工具名只能包含字母、数字、连字符与下划线：%q", toolName)
-	}
-	expectedParent := filepath.Join(repositoryRoot, ".dev-workspace", ".dev-tools-runtime", toolName)
-	runName := filepath.Base(runRoot)
-	if !SamePath(filepath.Dir(runRoot), expectedParent) || len(runName) <= len("run-") || !strings.HasPrefix(runName, "run-") {
-		return nil, fmt.Errorf("验证运行目录必须是 %s 下的独立 run-* 目录", expectedParent)
-	}
-
-	entries, err := os.ReadDir(runRoot)
-	if err != nil {
-		return nil, fmt.Errorf("读取验证运行目录失败：%w", err)
-	}
-	for _, entry := range entries {
-		if entry.Name() != "work" && entry.Name() != "temp" && entry.Name() != "cache" {
-			return nil, fmt.Errorf("验证运行目录包含入口之外的已有内容：%s", entry.Name())
-		}
-		if !entry.IsDir() {
-			return nil, fmt.Errorf("验证运行目录中的预备内容必须是目录：%s", entry.Name())
-		}
 	}
 
 	run := &VerificationRun{
@@ -102,6 +80,73 @@ func PrepareVerificationRun(repositoryRoot string, runRoot string, toolName stri
 		}
 	}
 	return run, nil
+}
+
+// RetirePreviousRuns 轮替清除同一工具运行区内的旧验证现场，只保留当前 run 目录。
+// 执行前先确认当前 run 目录确实是该工具运行区下的独立 run-* 目录且形状合法；
+// 只删除与当前 run 同级的 run-* 目录，非 run-* 条目（公共缓存、工具本体等）一律不动。
+func RetirePreviousRuns(repositoryRoot string, runRoot string, toolName string) error {
+	_, runRoot, err := resolveVerificationRun(repositoryRoot, runRoot, toolName)
+	if err != nil {
+		return err
+	}
+	return retirePreviousRuns(runRoot)
+}
+
+// resolveVerificationRun 校验验证运行根的位置与既有形状，返回规范化后的仓库根与运行根。
+func resolveVerificationRun(repositoryRoot string, runRoot string, toolName string) (string, string, error) {
+	repositoryRoot, err := ExistingPlainDirectory(repositoryRoot, "仓库根目录")
+	if err != nil {
+		return "", "", err
+	}
+	runRoot, err = ExistingPlainDirectory(runRoot, "验证运行目录")
+	if err != nil {
+		return "", "", err
+	}
+	if !safeToolName(toolName) {
+		return "", "", fmt.Errorf("工具名只能包含字母、数字、连字符与下划线：%q", toolName)
+	}
+	expectedParent := filepath.Join(repositoryRoot, ".dev-workspace", ".dev-tools-runtime", toolName)
+	runName := filepath.Base(runRoot)
+	if !SamePath(filepath.Dir(runRoot), expectedParent) || len(runName) <= len("run-") || !strings.HasPrefix(runName, "run-") {
+		return "", "", fmt.Errorf("验证运行目录必须是 %s 下的独立 run-* 目录", expectedParent)
+	}
+
+	entries, err := os.ReadDir(runRoot)
+	if err != nil {
+		return "", "", fmt.Errorf("读取验证运行目录失败：%w", err)
+	}
+	for _, entry := range entries {
+		if entry.Name() != "work" && entry.Name() != "temp" && entry.Name() != "cache" {
+			return "", "", fmt.Errorf("验证运行目录包含入口之外的已有内容：%s", entry.Name())
+		}
+		if !entry.IsDir() {
+			return "", "", fmt.Errorf("验证运行目录中的预备内容必须是目录：%s", entry.Name())
+		}
+	}
+	return repositoryRoot, runRoot, nil
+}
+
+// retirePreviousRuns 删除运行区内除当前 run 外的全部 run-* 目录。
+func retirePreviousRuns(runRoot string) error {
+	runArea := filepath.Dir(runRoot)
+	entries, err := os.ReadDir(runArea)
+	if err != nil {
+		return fmt.Errorf("读取验证运行区失败：%w", err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "run-") {
+			continue
+		}
+		retired := filepath.Join(runArea, entry.Name())
+		if SamePath(retired, runRoot) {
+			continue
+		}
+		if err := os.RemoveAll(retired); err != nil {
+			return fmt.Errorf("轮替清除旧验证现场 %s 失败：%w", retired, err)
+		}
+	}
+	return nil
 }
 
 // DisposableDirectories 返回统一入口收尾所需的固定可清理目录顺序。

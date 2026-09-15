@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -354,6 +355,85 @@ func TestInstallToolCompletesAndBecomesActive(t *testing.T) {
 	}
 }
 
+// TestInstallToolReclaimsWorkDirOnSuccess 验证操作进入成功终态后本轮工作目录立即回收。
+func TestInstallToolReclaimsWorkDirOnSuccess(t *testing.T) {
+	fixture := newToolOperationFixture(t)
+	fixture.makeToolCandidate("demo", "0.1.0", false)
+	state, err := fixture.system.InstallTool(context.Background(), "demo")
+	if err != nil {
+		t.Fatalf("InstallTool() error = %v", err)
+	}
+	if state.Status != types.ArtifactStatusActive {
+		t.Fatalf("state = %#v", state)
+	}
+	fixture.assertWorkRootEmpty(t, "demo")
+	if _, err := os.Stat(filepath.Join(fixture.programRoot, "demo", "operation.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("successful operation record should be removed, err = %v", err)
+	}
+}
+
+// TestUpdateToolReclaimsWorkDirOnProbeFailure 验证失败终态同样回收工作目录，失败记录保留供状态展示。
+func TestUpdateToolReclaimsWorkDirOnProbeFailure(t *testing.T) {
+	fixture := newToolOperationFixture(t)
+	fixture.makeToolCandidate("demo", "0.1.0", false)
+	if _, err := fixture.system.InstallTool(context.Background(), "demo"); err != nil {
+		t.Fatalf("InstallTool() error = %v", err)
+	}
+	fixture.makeToolCandidate("demo", "0.1.1", true)
+	state, err := fixture.system.UpdateTool(context.Background(), "demo")
+	if err != nil {
+		t.Fatalf("UpdateTool() error = %v", err)
+	}
+	if state.Status != types.ArtifactStatusFailed || state.Error.Code != types.ArtifactErrorProbeFailed {
+		t.Fatalf("state = %#v", state)
+	}
+	fixture.assertWorkRootEmpty(t, "demo")
+	record, err := release.ReadOperationRecord(filepath.Join(fixture.programRoot, "demo", "operation.json"))
+	if err != nil {
+		t.Fatalf("failed operation record missing: %v", err)
+	}
+	if record.Result != release.OperationResultFailed || record.ErrorCode != types.ArtifactErrorProbeFailed {
+		t.Fatalf("record = %#v", record)
+	}
+}
+
+// TestToolOperationSweepsStaleWorkDirs 验证下一次操作开始时清扫遗留的操作工作目录，
+// 且不触碰非操作前缀的条目。
+func TestToolOperationSweepsStaleWorkDirs(t *testing.T) {
+	fixture := newToolOperationFixture(t)
+	workRoot := filepath.Join(fixture.programRoot, "demo", "work")
+	staleDir := filepath.Join(workRoot, "tool-operation-stale")
+	if err := os.MkdirAll(filepath.Join(staleDir, "download"), 0o755); err != nil {
+		t.Fatalf("mkdir stale work dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(staleDir, "download", "leftover.bin"), []byte("junk"), 0o644); err != nil {
+		t.Fatalf("write leftover: %v", err)
+	}
+	keepDir := filepath.Join(workRoot, "unrelated")
+	if err := os.MkdirAll(keepDir, 0o755); err != nil {
+		t.Fatalf("mkdir unrelated dir: %v", err)
+	}
+	keepFile := filepath.Join(workRoot, "notes.txt")
+	if err := os.WriteFile(keepFile, []byte("keep"), 0o644); err != nil {
+		t.Fatalf("write unrelated file: %v", err)
+	}
+
+	fixture.makeToolCandidate("demo", "0.1.0", false)
+	if _, err := fixture.system.InstallTool(context.Background(), "demo"); err != nil {
+		t.Fatalf("InstallTool() error = %v", err)
+	}
+
+	if _, err := os.Stat(staleDir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stale operation work dir not swept: %v", err)
+	}
+	if _, err := os.Stat(keepDir); err != nil {
+		t.Fatalf("unrelated directory removed: %v", err)
+	}
+	if _, err := os.Stat(keepFile); err != nil {
+		t.Fatalf("unrelated file removed: %v", err)
+	}
+}
+
 func TestInstallToolRejectsIncompatibleCandidateBeforeDownload(t *testing.T) {
 	fixture := newToolOperationFixture(t)
 	fixture.makeToolCandidate("demo", "0.1.0", false)
@@ -394,6 +474,25 @@ func TestUpdateToolBlockedByActiveExecution(t *testing.T) {
 		t.Fatalf("state = %#v", state)
 	}
 	<-done
+}
+
+// assertWorkRootEmpty 断言某一工具 work/ 下没有任何残留条目；目录不存在同样视为通过。
+func (f *toolOperationFixture) assertWorkRootEmpty(t *testing.T, toolID string) {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Join(f.programRoot, toolID, "work"))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return
+		}
+		t.Fatalf("read work root: %v", err)
+	}
+	if len(entries) != 0 {
+		names := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			names = append(names, entry.Name())
+		}
+		t.Fatalf("work root not empty: %v", names)
+	}
 }
 
 func (f *toolOperationFixture) waitForMarker(t *testing.T, toolID string) {

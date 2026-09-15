@@ -37,6 +37,9 @@ func (s *system) toolPackageSource(candidate *releasecheck.ReleaseCandidate) (re
 	return candidate.PackageSource()
 }
 
+// toolOperationIDPrefix 是工具操作 ID 的固定前缀；work/ 下只有该前缀的目录属于操作工作目录。
+const toolOperationIDPrefix = "tool-operation"
+
 func (s *system) toolOperationFile(toolID string) string {
 	return filepath.Join(s.toolProgramRoot(toolID), "operation.json")
 }
@@ -156,7 +159,7 @@ func (s *system) runToolOperation(ctx context.Context, toolID string, action str
 	}
 
 	activity := s.activityFor(toolID)
-	operationID := utils.NewID("tool-operation")
+	operationID := utils.NewID(toolOperationIDPrefix)
 	if blocked := activity.beginUpdate(operationID); blocked != "" {
 		if blocked == types.ArtifactErrorUpdateInProgress {
 			return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusBlocked, types.ArtifactPhaseActivity, types.ArtifactErrorUpdateInProgress, "同一工具已有操作正在进行")
@@ -164,8 +167,11 @@ func (s *system) runToolOperation(ctx context.Context, toolID string, action str
 		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusBlocked, types.ArtifactPhaseActivity, types.ArtifactErrorToolActive, "工具仍有真实执行，无法开始更新")
 	}
 	defer activity.endUpdate()
+	s.sweepStaleToolWorkDirs(toolID)
 
 	workDir := filepath.Join(s.toolProgramRoot(toolID), "work", operationID)
+	// 函数每次返回都表示本轮操作已进入终态；崩溃不返回时由 recoverPendingOperation 回收。
+	defer func() { _ = os.RemoveAll(workDir) }()
 	record, err := release.NewOperationRecord(operationID, identity, action, targetVersion, workDir)
 	if err != nil {
 		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusFailed, types.ArtifactPhaseCandidate, types.ArtifactErrorPathInvalid, err.Error())
@@ -344,6 +350,22 @@ func (s *system) finishOperation(toolID string, record release.OperationRecord, 
 	record.ErrorMessage = message
 	record.UpdatedAt = time.Now().UTC()
 	_ = s.writeOperation(toolID, record)
+}
+
+// sweepStaleToolWorkDirs 清扫同一工具 work/ 下遗留的旧操作工作目录。
+// work/ 只服务进行中的操作；崩溃窗口和历史版本遗留的目录在此自愈。
+func (s *system) sweepStaleToolWorkDirs(toolID string) {
+	workRoot := filepath.Join(s.toolProgramRoot(toolID), "work")
+	entries, err := os.ReadDir(workRoot)
+	if err != nil {
+		return
+	}
+	prefix := toolOperationIDPrefix + "-"
+	for _, entry := range entries {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), prefix) {
+			_ = os.RemoveAll(filepath.Join(workRoot, entry.Name()))
+		}
+	}
 }
 
 // recoverPendingOperation 按阶段处理上次中断的操作；不根据文件时间或目录猜测当前版本。

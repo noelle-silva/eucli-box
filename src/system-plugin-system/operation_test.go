@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -292,6 +293,25 @@ func zipPluginBytes(t *testing.T, root string) []byte {
 	return payload
 }
 
+// assertWorkRootEmpty 断言某一插件 work/ 下没有任何残留条目；目录不存在同样视为通过。
+func (f *pluginOperationFixture) assertWorkRootEmpty(t *testing.T, pluginID string) {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Join(f.sourceDir, pluginID, "work"))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return
+		}
+		t.Fatalf("read work root: %v", err)
+	}
+	if len(entries) != 0 {
+		names := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			names = append(names, entry.Name())
+		}
+		t.Fatalf("work root not empty: %v", names)
+	}
+}
+
 func TestInstallPluginCompletesAndBecomesActive(t *testing.T) {
 	fixture := newPluginOperationFixture(t)
 	fixture.makePluginCandidate("demo", "0.1.0", types.SystemPluginLifecycleOnDemand, false)
@@ -379,6 +399,85 @@ func TestUpdatePluginRestoresPreviousVersionOnProbeFailure(t *testing.T) {
 	}
 	if state.CurrentVersion != "0.1.0" || state.Status != types.ArtifactStatusActive {
 		t.Fatalf("state = %#v", state)
+	}
+}
+
+// TestInstallPluginReclaimsWorkDirOnSuccess 验证操作进入成功终态后本轮工作目录立即回收。
+func TestInstallPluginReclaimsWorkDirOnSuccess(t *testing.T) {
+	fixture := newPluginOperationFixture(t)
+	fixture.makePluginCandidate("demo", "0.1.0", types.SystemPluginLifecycleOnDemand, false)
+	state, err := fixture.system.InstallPlugin(context.Background(), "demo")
+	if err != nil {
+		t.Fatalf("InstallPlugin() error = %v", err)
+	}
+	if state.Status != types.ArtifactStatusActive {
+		t.Fatalf("state = %#v", state)
+	}
+	fixture.assertWorkRootEmpty(t, "demo")
+	if _, err := os.Stat(filepath.Join(fixture.sourceDir, "demo", "operation.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("successful operation record should be removed, err = %v", err)
+	}
+}
+
+// TestUpdatePluginReclaimsWorkDirOnProbeFailure 验证失败终态同样回收工作目录，失败记录保留供状态展示。
+func TestUpdatePluginReclaimsWorkDirOnProbeFailure(t *testing.T) {
+	fixture := newPluginOperationFixture(t)
+	fixture.makePluginCandidate("demo", "0.1.0", types.SystemPluginLifecycleOnDemand, false)
+	if _, err := fixture.system.InstallPlugin(context.Background(), "demo"); err != nil {
+		t.Fatalf("InstallPlugin() error = %v", err)
+	}
+	fixture.makePluginCandidate("demo", "0.1.1", types.SystemPluginLifecycleOnDemand, true)
+	state, err := fixture.system.UpdatePlugin(context.Background(), "demo")
+	if err != nil {
+		t.Fatalf("UpdatePlugin() error = %v", err)
+	}
+	if state.Status != types.ArtifactStatusFailed || state.Error.Code != types.ArtifactErrorProbeFailed {
+		t.Fatalf("state = %#v", state)
+	}
+	fixture.assertWorkRootEmpty(t, "demo")
+	record, err := release.ReadOperationRecord(filepath.Join(fixture.sourceDir, "demo", "operation.json"))
+	if err != nil {
+		t.Fatalf("failed operation record missing: %v", err)
+	}
+	if record.Result != release.OperationResultFailed || record.ErrorCode != types.ArtifactErrorProbeFailed {
+		t.Fatalf("record = %#v", record)
+	}
+}
+
+// TestPluginOperationSweepsStaleWorkDirs 验证下一次操作开始时清扫遗留的操作工作目录，
+// 且不触碰非操作前缀的条目。
+func TestPluginOperationSweepsStaleWorkDirs(t *testing.T) {
+	fixture := newPluginOperationFixture(t)
+	workRoot := filepath.Join(fixture.sourceDir, "demo", "work")
+	staleDir := filepath.Join(workRoot, "plugin-operation-stale")
+	if err := os.MkdirAll(filepath.Join(staleDir, "extracted"), 0o755); err != nil {
+		t.Fatalf("mkdir stale work dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(staleDir, "extracted", "leftover.bin"), []byte("junk"), 0o644); err != nil {
+		t.Fatalf("write leftover: %v", err)
+	}
+	keepDir := filepath.Join(workRoot, "unrelated")
+	if err := os.MkdirAll(keepDir, 0o755); err != nil {
+		t.Fatalf("mkdir unrelated dir: %v", err)
+	}
+	keepFile := filepath.Join(workRoot, "notes.txt")
+	if err := os.WriteFile(keepFile, []byte("keep"), 0o644); err != nil {
+		t.Fatalf("write unrelated file: %v", err)
+	}
+
+	fixture.makePluginCandidate("demo", "0.1.0", types.SystemPluginLifecycleOnDemand, false)
+	if _, err := fixture.system.InstallPlugin(context.Background(), "demo"); err != nil {
+		t.Fatalf("InstallPlugin() error = %v", err)
+	}
+
+	if _, err := os.Stat(staleDir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stale operation work dir not swept: %v", err)
+	}
+	if _, err := os.Stat(keepDir); err != nil {
+		t.Fatalf("unrelated directory removed: %v", err)
+	}
+	if _, err := os.Stat(keepFile); err != nil {
+		t.Fatalf("unrelated file removed: %v", err)
 	}
 }
 

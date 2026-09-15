@@ -38,6 +38,9 @@ func (s *system) pluginPackageSource(candidate *releasecheck.ReleaseCandidate) (
 	return candidate.PackageSource()
 }
 
+// pluginOperationIDPrefix 是插件操作 ID 的固定前缀；work/ 下只有该前缀的目录属于操作工作目录。
+const pluginOperationIDPrefix = "plugin-operation"
+
 func (s *system) pluginOperationFile(pluginID string) string {
 	return filepath.Join(s.pluginProgramRoot(pluginID), "operation.json")
 }
@@ -148,7 +151,7 @@ func (s *system) runPluginOperation(ctx context.Context, pluginID string, action
 	}
 
 	activity := s.activityFor(pluginID)
-	operationID := utils.NewID("plugin-operation")
+	operationID := utils.NewID(pluginOperationIDPrefix)
 	if blocked := activity.beginUpdate(operationID, s.updateWaitTimeout); blocked != "" {
 		if blocked == types.ArtifactErrorUpdateInProgress {
 			return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusBlocked, types.ArtifactPhaseActivity, types.ArtifactErrorUpdateInProgress, "同一插件已有操作正在进行")
@@ -156,12 +159,15 @@ func (s *system) runPluginOperation(ctx context.Context, pluginID string, action
 		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusBlocked, types.ArtifactPhaseActivity, types.ArtifactErrorPluginActive, "插件仍有真实请求或刷新，无法开始更新")
 	}
 	defer activity.endUpdate()
+	s.sweepStalePluginWorkDirs(pluginID)
 
 	if err := s.stopPluginLifecycles(ctx, pluginID); err != nil {
 		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusBlocked, types.ArtifactPhaseActivity, types.ArtifactErrorPluginActive, "无法确认真实活动结束："+err.Error())
 	}
 
 	workDir := filepath.Join(s.pluginProgramRoot(pluginID), "work", operationID)
+	// 函数每次返回都表示本轮操作已进入终态；崩溃不返回时由 recoverPendingOperation 回收。
+	defer func() { _ = os.RemoveAll(workDir) }()
 	record, err := release.NewOperationRecord(operationID, identity, action, targetVersion, workDir)
 	if err != nil {
 		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusFailed, types.ArtifactPhaseCandidate, types.ArtifactErrorPathInvalid, err.Error())
@@ -415,6 +421,22 @@ func (s *system) finishOperation(pluginID string, record release.OperationRecord
 	record.ErrorMessage = message
 	record.UpdatedAt = time.Now().UTC()
 	_ = s.writeOperation(pluginID, record)
+}
+
+// sweepStalePluginWorkDirs 清扫同一插件 work/ 下遗留的旧操作工作目录。
+// work/ 只服务进行中的操作；崩溃窗口和历史版本遗留的目录在此自愈。
+func (s *system) sweepStalePluginWorkDirs(pluginID string) {
+	workRoot := filepath.Join(s.pluginProgramRoot(pluginID), "work")
+	entries, err := os.ReadDir(workRoot)
+	if err != nil {
+		return
+	}
+	prefix := pluginOperationIDPrefix + "-"
+	for _, entry := range entries {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), prefix) {
+			_ = os.RemoveAll(filepath.Join(workRoot, entry.Name()))
+		}
+	}
 }
 
 // recoverPendingOperation 按阶段处理上次中断的操作；不根据文件时间或目录猜测当前版本。

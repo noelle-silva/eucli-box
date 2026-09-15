@@ -1,0 +1,6 @@
+{
+  "runner": "go run",
+  "actions": {
+    "yyyy": "echo helloworld"
+  }
+}

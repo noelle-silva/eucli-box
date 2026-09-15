@@ -32,49 +32,8 @@ const (
 
 var statusVocabulary = []string{"data-unchanged", "migrated", "recovered", "recovery-failed"}
 
-// verifyPaths 是本次运行的全部落点。
-type verifyPaths struct {
-	root        string
-	inputs      string
-	workspace   string
-	environment string
-	work        string
-	temp        string
-	cache       string
-	evidence    string
-}
-
-func newVerifyPaths(runRoot string) verifyPaths {
-	return verifyPaths{
-		root:        runRoot,
-		inputs:      filepath.Join(runRoot, "inputs"),
-		workspace:   filepath.Join(runRoot, "workspace"),
-		environment: filepath.Join(runRoot, "environment"),
-		work:        filepath.Join(runRoot, "work"),
-		temp:        filepath.Join(runRoot, "temp"),
-		cache:       filepath.Join(runRoot, "cache"),
-		evidence:    filepath.Join(runRoot, "evidence"),
-	}
-}
-
-func (p verifyPaths) disposable() []string {
-	return []string{p.inputs, p.workspace, p.environment, p.work, p.temp, p.cache}
-}
-
 // Run 执行阶段六数据迁移验证：场景编排、逐项检查、证据报告。
 func Run(ctx context.Context, repositoryRoot string, runRoot string, mode string) error {
-	root, err := toolkit.ExistingPlainDirectory(repositoryRoot, "仓库根目录")
-	if err != nil {
-		return err
-	}
-	runRoot, err = filepath.Abs(strings.TrimSpace(runRoot))
-	if err != nil || strings.TrimSpace(runRoot) == "" {
-		return fmt.Errorf("验证运行目录无效")
-	}
-	expectedParent := filepath.Join(root, ".dev-workspace", ".dev-tools-runtime", toolName)
-	if !toolkit.PathWithin(expectedParent, runRoot) || toolkit.SamePath(expectedParent, runRoot) || !strings.HasPrefix(filepath.Base(runRoot), "run-") {
-		return fmt.Errorf("验证运行目录必须位于 %s 的独立 run-* 目录中", expectedParent)
-	}
 	mode = strings.TrimSpace(mode)
 	if mode == "" {
 		mode = defaultMode
@@ -82,14 +41,13 @@ func Run(ctx context.Context, repositoryRoot string, runRoot string, mode string
 	if mode != defaultMode {
 		return fmt.Errorf("数据迁移验证模式只接受 %s", defaultMode)
 	}
-	paths := newVerifyPaths(runRoot)
-	for _, dir := range []string{paths.inputs, paths.workspace, paths.environment, paths.work, paths.temp, paths.cache, paths.evidence} {
-		if err := toolkit.EnsurePlainDirectoryPath(root, dir, "验证资料目录"); err != nil {
-			return err
-		}
+	run, err := toolkit.PrepareVerificationRun(repositoryRoot, runRoot, toolName)
+	if err != nil {
+		return err
 	}
-	recorder := toolkit.NewVerificationRecorder(toolName, mode, runRoot)
-	fmt.Printf("数据迁移验证目录：%s\n", runRoot)
+	root := run.RepositoryRoot
+	recorder := toolkit.NewVerificationRecorder(toolName, mode, run.Root)
+	fmt.Printf("数据迁移验证目录：%s\n", run.Root)
 
 	dataBefore, dataErr := toolkit.DirectorySnapshot(filepath.Join(root, "data"))
 	if dataErr != nil {
@@ -97,7 +55,7 @@ func Run(ctx context.Context, repositoryRoot string, runRoot string, mode string
 	} else {
 		recorder.Pass("记录真实数据初始状态", "已建立只读完整性快照")
 	}
-	gitBefore, gitErr := captureGitStatus(root, paths)
+	gitBefore, gitErr := captureGitStatus(root, run)
 	if gitErr != nil {
 		recorder.Fail("记录源码初始状态", gitErr)
 	} else {
@@ -111,14 +69,14 @@ func Run(ctx context.Context, repositoryRoot string, runRoot string, mode string
 		recorder.Pass("读取业务端目标数据版本", "目标数据版本 "+targetVersion)
 	}
 
-	boxPath := filepath.Join(paths.work, "eucli-box.exe")
-	harnessPath := filepath.Join(paths.work, "migrationharness.exe")
-	buildErr := buildBinaries(ctx, root, paths, boxPath, harnessPath)
+	boxPath := filepath.Join(run.Work, "eucli-box.exe")
+	harnessPath := filepath.Join(run.Work, "migrationharness.exe")
+	buildErr := buildBinaries(ctx, root, run, boxPath, harnessPath)
 	if buildErr != nil {
 		recorder.Fail("构建准备", buildErr)
 	} else {
 		recorder.Pass("构建准备", "业务端与迁移替身程序已编译")
-		runScenarios(ctx, root, paths, recorder, boxPath, harnessPath, targetVersion)
+		runScenarios(ctx, root, run, recorder, boxPath, harnessPath, targetVersion)
 	}
 
 	if dataErr == nil {
@@ -132,7 +90,7 @@ func Run(ctx context.Context, repositoryRoot string, runRoot string, mode string
 		}
 	}
 	if gitErr == nil {
-		gitAfter, snapshotErr := captureGitStatus(root, paths)
+		gitAfter, snapshotErr := captureGitStatus(root, run)
 		if snapshotErr != nil {
 			recorder.Fail("确认源码未被验证改写", snapshotErr)
 		} else if err := toolkit.CompareSnapshots("源码工作区", gitBefore, gitAfter); err != nil {
@@ -141,25 +99,25 @@ func Run(ctx context.Context, repositoryRoot string, runRoot string, mode string
 			recorder.Pass("确认源码未被验证改写", "数据迁移验证只在本次隔离目录产生运行内容")
 		}
 	}
-	return recorder.Finish(paths.evidence, paths.disposable())
+	return recorder.Finish(run.Evidence, run.DisposableDirectories())
 }
 
 // runScenarios 依次执行全部迁移场景；每个场景是逐项检查中的一项。
-func runScenarios(ctx context.Context, root string, paths verifyPaths, recorder *toolkit.VerificationRecorder, boxPath string, harnessPath string, targetVersion string) {
+func runScenarios(ctx context.Context, root string, run *toolkit.VerificationRun, recorder *toolkit.VerificationRecorder, boxPath string, harnessPath string, targetVersion string) {
 	scenarios := []struct {
 		name string
 		run  func() error
 	}{
-		{"首装", func() error { return scenarioInitialInstall(ctx, paths, boxPath, targetVersion) }},
-		{"无迁移", func() error { return scenarioNoMigration(ctx, paths, boxPath, targetVersion) }},
-		{"连续迁移", func() error { return scenarioContinuousMigration(ctx, paths, harnessPath) }},
-		{"缺少步骤", func() error { return scenarioMissingStep(ctx, paths, harnessPath) }},
-		{"步骤执行失败", func() error { return scenarioStepFailure(ctx, paths, harnessPath) }},
-		{"步骤核对失败", func() error { return scenarioVerifyFailure(ctx, paths, harnessPath) }},
-		{"中断恢复", func() error { return scenarioCrashRecovery(ctx, paths, harnessPath) }},
-		{"恢复失败", func() error { return scenarioRecoveryFailure(ctx, paths, harnessPath) }},
-		{"版本过高", func() error { return scenarioVersionTooHigh(ctx, paths, boxPath, targetVersion) }},
-		{"边界检查", func() error { return scenarioBoundaryChecks(paths) }},
+		{"首装", func() error { return scenarioInitialInstall(ctx, run, boxPath, targetVersion) }},
+		{"无迁移", func() error { return scenarioNoMigration(ctx, run, boxPath, targetVersion) }},
+		{"连续迁移", func() error { return scenarioContinuousMigration(ctx, run, harnessPath) }},
+		{"缺少步骤", func() error { return scenarioMissingStep(ctx, run, harnessPath) }},
+		{"步骤执行失败", func() error { return scenarioStepFailure(ctx, run, harnessPath) }},
+		{"步骤核对失败", func() error { return scenarioVerifyFailure(ctx, run, harnessPath) }},
+		{"中断恢复", func() error { return scenarioCrashRecovery(ctx, run, harnessPath) }},
+		{"恢复失败", func() error { return scenarioRecoveryFailure(ctx, run, harnessPath) }},
+		{"版本过高", func() error { return scenarioVersionTooHigh(ctx, run, boxPath, targetVersion) }},
+		{"边界检查", func() error { return scenarioBoundaryChecks(run) }},
 	}
 	for _, scenario := range scenarios {
 		if err := scenario.run(); err != nil {
@@ -172,11 +130,11 @@ func runScenarios(ctx context.Context, root string, paths verifyPaths, recorder 
 
 // ---------- 构建与公共运行 ----------
 
-func buildBinaries(ctx context.Context, root string, paths verifyPaths, boxPath string, harnessPath string) error {
-	if err := toolkit.RunCommand(ctx, "构建隔离业务端", paths.work, paths.evidence, paths.temp, nil, "go", "build", "-o", boxPath, "eucli-box/cmd/eucli-box"); err != nil {
+func buildBinaries(ctx context.Context, root string, run *toolkit.VerificationRun, boxPath string, harnessPath string) error {
+	if err := toolkit.RunCommand(ctx, "构建隔离业务端", run.Work, run.Evidence, run.Temp, nil, "go", "build", "-o", boxPath, "eucli-box/cmd/eucli-box"); err != nil {
 		return err
 	}
-	if err := toolkit.RunCommand(ctx, "构建迁移替身程序", paths.work, paths.evidence, paths.temp, nil, "go", "build", "-o", harnessPath, "devtools/general-verification-tools/verify-data-migration/migrationverify/migrationharness"); err != nil {
+	if err := toolkit.RunCommand(ctx, "构建迁移替身程序", run.Work, run.Evidence, run.Temp, nil, "go", "build", "-o", harnessPath, "devtools/general-verification-tools/verify-data-migration/migrationverify/migrationharness"); err != nil {
 		return err
 	}
 	if info, err := os.Stat(boxPath); err != nil || info.IsDir() {
@@ -188,8 +146,8 @@ func buildBinaries(ctx context.Context, root string, paths verifyPaths, boxPath 
 	return nil
 }
 
-func captureGitStatus(root string, paths verifyPaths) (string, error) {
-	output, err := toolkit.RunCommandCapture(context.Background(), "git-status", root, paths.evidence, paths.temp, nil, "git", "status", "--porcelain=v1", "--untracked-files=all")
+func captureGitStatus(root string, run *toolkit.VerificationRun) (string, error) {
+	output, err := toolkit.RunCommandCapture(context.Background(), "git-status", root, run.Evidence, run.Temp, nil, "git", "status", "--porcelain=v1", "--untracked-files=all")
 	if err != nil {
 		return "", fmt.Errorf("读取源码状态失败：%w", err)
 	}
@@ -223,18 +181,18 @@ type boxProcess struct {
 	exitErr  error
 }
 
-func startBox(ctx context.Context, paths verifyPaths, boxPath string, dataDir string, logName string) (*boxProcess, error) {
+func startBox(ctx context.Context, run *toolkit.VerificationRun, boxPath string, dataDir string, logName string) (*boxProcess, error) {
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return nil, fmt.Errorf("建立隔离数据目录失败：%w", err)
 	}
-	logPath := filepath.Join(paths.evidence, logName)
+	logPath := filepath.Join(run.Evidence, logName)
 	logFile, err := os.Create(logPath)
 	if err != nil {
 		return nil, fmt.Errorf("建立业务端日志失败：%w", err)
 	}
 	command := exec.Command(boxPath)
-	command.Dir = paths.environment
-	command.Env = toolkit.CommandEnvironment(paths.temp, map[string]string{
+	command.Dir = run.Environment
+	command.Env = toolkit.CommandEnvironment(run.Temp, map[string]string{
 		"EUCLI_BOX_DATA_DIR": dataDir,
 		"EUCLI_BOX_ADDR":     "127.0.0.1:0",
 	})
@@ -328,11 +286,11 @@ type harnessResult struct {
 	exitCode int
 }
 
-func runHarness(ctx context.Context, paths verifyPaths, harnessPath string, dataDir string, logName string, extraArgs ...string) (harnessResult, error) {
+func runHarness(ctx context.Context, run *toolkit.VerificationRun, harnessPath string, dataDir string, logName string, extraArgs ...string) (harnessResult, error) {
 	args := append([]string{"-data-dir", dataDir, "-target", harnessTarget}, extraArgs...)
 	command := exec.Command(harnessPath, args...)
-	command.Dir = paths.work
-	command.Env = toolkit.CommandEnvironment(paths.temp, nil)
+	command.Dir = run.Work
+	command.Env = toolkit.CommandEnvironment(run.Temp, nil)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	command.Stdout = &stdout
@@ -347,13 +305,13 @@ func runHarness(ctx context.Context, paths verifyPaths, harnessPath string, data
 			return result, fmt.Errorf("运行迁移替身失败：%w", runErr)
 		}
 	}
-	if err := os.MkdirAll(paths.evidence, 0o755); err != nil {
+	if err := os.MkdirAll(run.Evidence, 0o755); err != nil {
 		return result, err
 	}
 	payload := append([]byte("stdout:\n"), stdout.Bytes()...)
 	payload = append(payload, []byte("\nstderr:\n")...)
 	payload = append(payload, stderr.Bytes()...)
-	if err := os.WriteFile(filepath.Join(paths.evidence, logName), payload, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(run.Evidence, logName), payload, 0o644); err != nil {
 		return result, err
 	}
 	return result, nil
@@ -361,9 +319,9 @@ func runHarness(ctx context.Context, paths verifyPaths, harnessPath string, data
 
 // ---------- 场景 ----------
 
-func scenarioInitialInstall(ctx context.Context, paths verifyPaths, boxPath string, targetVersion string) error {
-	dataDir := filepath.Join(paths.environment, "case-initial", "data")
-	process, err := startBox(ctx, paths, boxPath, dataDir, "case-initial-box.log")
+func scenarioInitialInstall(ctx context.Context, run *toolkit.VerificationRun, boxPath string, targetVersion string) error {
+	dataDir := filepath.Join(run.Environment, "case-initial", "data")
+	process, err := startBox(ctx, run, boxPath, dataDir, "case-initial-box.log")
 	if err != nil {
 		return err
 	}
@@ -389,8 +347,8 @@ func scenarioInitialInstall(ctx context.Context, paths verifyPaths, boxPath stri
 	return nil
 }
 
-func scenarioNoMigration(ctx context.Context, paths verifyPaths, boxPath string, targetVersion string) error {
-	dataDir := filepath.Join(paths.environment, "case-no-migration", "data")
+func scenarioNoMigration(ctx context.Context, run *toolkit.VerificationRun, boxPath string, targetVersion string) error {
+	dataDir := filepath.Join(run.Environment, "case-no-migration", "data")
 	metaDir := datapaths.MetaDir(dataDir)
 	if err := os.MkdirAll(metaDir, 0o755); err != nil {
 		return err
@@ -411,7 +369,7 @@ func scenarioNoMigration(ctx context.Context, paths verifyPaths, boxPath string,
 	if err != nil {
 		return err
 	}
-	process, err := startBox(ctx, paths, boxPath, dataDir, "case-no-migration-box.log")
+	process, err := startBox(ctx, run, boxPath, dataDir, "case-no-migration-box.log")
 	if err != nil {
 		return err
 	}
@@ -444,12 +402,12 @@ func scenarioNoMigration(ctx context.Context, paths verifyPaths, boxPath string,
 	return nil
 }
 
-func scenarioContinuousMigration(ctx context.Context, paths verifyPaths, harnessPath string) error {
-	dataDir := filepath.Join(paths.environment, "case-migrate", "data")
+func scenarioContinuousMigration(ctx context.Context, run *toolkit.VerificationRun, harnessPath string) error {
+	dataDir := filepath.Join(run.Environment, "case-migrate", "data")
 	if err := seedHarnessData(dataDir, "1.0.0"); err != nil {
 		return err
 	}
-	result, err := runHarness(ctx, paths, harnessPath, dataDir, "case-migrate-harness.log", "-chain", "ok")
+	result, err := runHarness(ctx, run, harnessPath, dataDir, "case-migrate-harness.log", "-chain", "ok")
 	if err != nil {
 		return err
 	}
@@ -491,8 +449,8 @@ func scenarioContinuousMigration(ctx context.Context, paths verifyPaths, harness
 	return nil
 }
 
-func scenarioMissingStep(ctx context.Context, paths verifyPaths, harnessPath string) error {
-	dataDir := filepath.Join(paths.environment, "case-gap", "data")
+func scenarioMissingStep(ctx context.Context, run *toolkit.VerificationRun, harnessPath string) error {
+	dataDir := filepath.Join(run.Environment, "case-gap", "data")
 	if err := seedHarnessData(dataDir, "1.0.0"); err != nil {
 		return err
 	}
@@ -500,7 +458,7 @@ func scenarioMissingStep(ctx context.Context, paths verifyPaths, harnessPath str
 	if err != nil {
 		return err
 	}
-	result, err := runHarness(ctx, paths, harnessPath, dataDir, "case-gap-harness.log", "-chain", "gap")
+	result, err := runHarness(ctx, run, harnessPath, dataDir, "case-gap-harness.log", "-chain", "gap")
 	if err != nil {
 		return err
 	}
@@ -520,16 +478,16 @@ func scenarioMissingStep(ctx context.Context, paths verifyPaths, harnessPath str
 	return nil
 }
 
-func scenarioStepFailure(ctx context.Context, paths verifyPaths, harnessPath string) error {
-	return runRecoveredScenario(ctx, paths, harnessPath, "case-step-failure", "case-step-failure-harness.log", "-chain", "ok", "-fail-at", "2")
+func scenarioStepFailure(ctx context.Context, run *toolkit.VerificationRun, harnessPath string) error {
+	return runRecoveredScenario(ctx, run, harnessPath, "case-step-failure", "case-step-failure-harness.log", "-chain", "ok", "-fail-at", "2")
 }
 
-func scenarioVerifyFailure(ctx context.Context, paths verifyPaths, harnessPath string) error {
-	return runRecoveredScenario(ctx, paths, harnessPath, "case-verify-failure", "case-verify-failure-harness.log", "-chain", "ok", "-verify-fail-at", "2")
+func scenarioVerifyFailure(ctx context.Context, run *toolkit.VerificationRun, harnessPath string) error {
+	return runRecoveredScenario(ctx, run, harnessPath, "case-verify-failure", "case-verify-failure-harness.log", "-chain", "ok", "-verify-fail-at", "2")
 }
 
-func runRecoveredScenario(ctx context.Context, paths verifyPaths, harnessPath string, caseName string, logName string, args ...string) error {
-	dataDir := filepath.Join(paths.environment, caseName, "data")
+func runRecoveredScenario(ctx context.Context, run *toolkit.VerificationRun, harnessPath string, caseName string, logName string, args ...string) error {
+	dataDir := filepath.Join(run.Environment, caseName, "data")
 	if err := seedHarnessData(dataDir, "1.0.0"); err != nil {
 		return err
 	}
@@ -537,7 +495,7 @@ func runRecoveredScenario(ctx context.Context, paths verifyPaths, harnessPath st
 	if err != nil {
 		return err
 	}
-	result, err := runHarness(ctx, paths, harnessPath, dataDir, logName, args...)
+	result, err := runHarness(ctx, run, harnessPath, dataDir, logName, args...)
 	if err != nil {
 		return err
 	}
@@ -571,8 +529,8 @@ func runRecoveredScenario(ctx context.Context, paths verifyPaths, harnessPath st
 	return nil
 }
 
-func scenarioCrashRecovery(ctx context.Context, paths verifyPaths, harnessPath string) error {
-	dataDir := filepath.Join(paths.environment, "case-crash", "data")
+func scenarioCrashRecovery(ctx context.Context, run *toolkit.VerificationRun, harnessPath string) error {
+	dataDir := filepath.Join(run.Environment, "case-crash", "data")
 	if err := seedHarnessData(dataDir, "1.0.0"); err != nil {
 		return err
 	}
@@ -580,7 +538,7 @@ func scenarioCrashRecovery(ctx context.Context, paths verifyPaths, harnessPath s
 	if err != nil {
 		return err
 	}
-	crashResult, err := runHarness(ctx, paths, harnessPath, dataDir, "case-crash-harness.log", "-chain", "ok", "-crash-at", "2")
+	crashResult, err := runHarness(ctx, run, harnessPath, dataDir, "case-crash-harness.log", "-chain", "ok", "-crash-at", "2")
 	if err != nil {
 		return err
 	}
@@ -591,7 +549,7 @@ func scenarioCrashRecovery(ctx context.Context, paths verifyPaths, harnessPath s
 	if _, err := os.Stat(filepath.Join(workspaceDir, processFileName)); err != nil {
 		return fmt.Errorf("中断后 process.json 缺失：%v", err)
 	}
-	rerunResult, err := runHarness(ctx, paths, harnessPath, dataDir, "case-crash-rerun-harness.log", "-chain", "ok")
+	rerunResult, err := runHarness(ctx, run, harnessPath, dataDir, "case-crash-rerun-harness.log", "-chain", "ok")
 	if err != nil {
 		return err
 	}
@@ -625,12 +583,12 @@ func scenarioCrashRecovery(ctx context.Context, paths verifyPaths, harnessPath s
 	return nil
 }
 
-func scenarioRecoveryFailure(ctx context.Context, paths verifyPaths, harnessPath string) error {
-	dataDir := filepath.Join(paths.environment, "case-recovery-failure", "data")
+func scenarioRecoveryFailure(ctx context.Context, run *toolkit.VerificationRun, harnessPath string) error {
+	dataDir := filepath.Join(run.Environment, "case-recovery-failure", "data")
 	if err := seedHarnessData(dataDir, "1.0.0"); err != nil {
 		return err
 	}
-	result, err := runHarness(ctx, paths, harnessPath, dataDir, "case-recovery-failure-harness.log", "-chain", "ok", "-fail-at", "2", "-corrupt-backup")
+	result, err := runHarness(ctx, run, harnessPath, dataDir, "case-recovery-failure-harness.log", "-chain", "ok", "-fail-at", "2", "-corrupt-backup")
 	if err != nil {
 		return err
 	}
@@ -664,8 +622,8 @@ func scenarioRecoveryFailure(ctx context.Context, paths verifyPaths, harnessPath
 	return nil
 }
 
-func scenarioVersionTooHigh(ctx context.Context, paths verifyPaths, boxPath string, targetVersion string) error {
-	dataDir := filepath.Join(paths.environment, "case-too-high", "data")
+func scenarioVersionTooHigh(ctx context.Context, run *toolkit.VerificationRun, boxPath string, targetVersion string) error {
+	dataDir := filepath.Join(run.Environment, "case-too-high", "data")
 	metaDir := datapaths.MetaDir(dataDir)
 	if err := os.MkdirAll(metaDir, 0o755); err != nil {
 		return err
@@ -675,7 +633,7 @@ func scenarioVersionTooHigh(ctx context.Context, paths verifyPaths, boxPath stri
 	if err := os.WriteFile(datapaths.VersionFile(dataDir), []byte(versionPayload), 0o644); err != nil {
 		return err
 	}
-	process, err := startBox(ctx, paths, boxPath, dataDir, "case-too-high-box.log")
+	process, err := startBox(ctx, run, boxPath, dataDir, "case-too-high-box.log")
 	if err != nil {
 		return err
 	}
@@ -698,9 +656,9 @@ func scenarioVersionTooHigh(ctx context.Context, paths verifyPaths, boxPath stri
 	return nil
 }
 
-func scenarioBoundaryChecks(paths verifyPaths) error {
+func scenarioBoundaryChecks(run *toolkit.VerificationRun) error {
 	for _, caseName := range []string{"case-migrate", "case-step-failure", "case-verify-failure", "case-crash", "case-recovery-failure"} {
-		dataDir := filepath.Join(paths.environment, caseName, "data")
+		dataDir := filepath.Join(run.Environment, caseName, "data")
 		workspaceDir := filepath.Join(filepath.Dir(dataDir), "data.migration")
 		if filepath.Dir(workspaceDir) != filepath.Dir(dataDir) || filepath.Base(workspaceDir) != "data.migration" {
 			return fmt.Errorf("替身工作区不是数据目录兄弟目录：%s", workspaceDir)
@@ -708,7 +666,7 @@ func scenarioBoundaryChecks(paths verifyPaths) error {
 		if toolkit.PathWithin(dataDir, workspaceDir) {
 			return fmt.Errorf("替身工作区进入了活动数据目录内部：%s", workspaceDir)
 		}
-		if !toolkit.PathWithin(paths.environment, workspaceDir) {
+		if !toolkit.PathWithin(run.Environment, workspaceDir) {
 			return fmt.Errorf("替身工作区越过验证运行目录：%s", workspaceDir)
 		}
 		status, err := readMigrationStatus(dataDir)

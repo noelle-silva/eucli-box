@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"devtools/common/toolkit"
 )
@@ -29,71 +28,29 @@ const (
 	verificationCacheDirectory       = "cache"
 )
 
-// validToolName 校验工具名只包含字母、数字、连字符与下划线。
-func validToolName(value string) bool {
-	if value == "" {
-		return false
-	}
-	for _, char := range value {
-		if char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9' || char == '-' || char == '_' {
-			continue
-		}
-		return false
-	}
-	return true
-}
-
 type cleanupEntry struct {
 	name string
 	path string
 }
 
 func prepareRun(repositoryRoot string, runRoot string, tool string) (runPaths, error) {
-	repositoryRoot, err := toolkit.ExistingPlainDirectory(repositoryRoot, "仓库根目录")
+	run, err := toolkit.PrepareVerificationRun(repositoryRoot, runRoot, tool)
 	if err != nil {
 		return runPaths{}, err
 	}
-	if !validToolName(tool) {
-		return runPaths{}, fmt.Errorf("验证工具名只能包含字母、数字、连字符与下划线：%q", tool)
-	}
-	expectedParent := filepath.Join(repositoryRoot, ".dev-workspace", ".dev-tools-runtime", tool)
-	if !toolkit.PathWithin(expectedParent, runRoot) || toolkit.SamePath(expectedParent, runRoot) || !strings.HasPrefix(filepath.Base(runRoot), "run-") {
-		return runPaths{}, fmt.Errorf("验证运行目录必须位于 %s 的独立 run-* 目录中", expectedParent)
-	}
-	if err := toolkit.EnsurePlainDirectoryPath(repositoryRoot, runRoot, "验证运行目录"); err != nil {
-		return runPaths{}, err
-	}
-	if _, err := os.Stat(runRoot); err == nil {
-		entries, readErr := os.ReadDir(runRoot)
-		if readErr != nil {
-			return runPaths{}, readErr
-		}
-		for _, entry := range entries {
-			if entry.Name() != "temp" && entry.Name() != "cache" && entry.Name() != "work" {
-				return runPaths{}, fmt.Errorf("验证运行目录包含本次入口之外的已有内容：%s", entry.Name())
-			}
-			if !entry.IsDir() {
-				return runPaths{}, fmt.Errorf("验证运行目录中的预备内容必须是目录：%s", entry.Name())
-			}
-		}
-	} else if !os.IsNotExist(err) {
-		return runPaths{}, err
-	}
 	paths := runPaths{
-		root:        runRoot,
-		inputs:      filepath.Join(runRoot, "inputs"),
-		workspace:   filepath.Join(runRoot, "workspace"),
-		environment: filepath.Join(runRoot, "environment"),
-		work:        filepath.Join(runRoot, "work"),
-		temp:        filepath.Join(runRoot, "temp"),
-		cache:       filepath.Join(runRoot, "cache"),
-		evidence:    filepath.Join(runRoot, "evidence"),
-		sharedCache: filepath.Join(repositoryRoot, ".dev-workspace", ".dev-tools-runtime", "cache"),
+		root:        run.Root,
+		inputs:      run.Inputs,
+		workspace:   run.Workspace,
+		environment: run.Environment,
+		work:        run.Work,
+		temp:        run.Temp,
+		cache:       run.Cache,
+		evidence:    run.Evidence,
+		sharedCache: filepath.Join(run.RepositoryRoot, ".dev-workspace", ".dev-tools-runtime", "cache"),
 	}
-	for _, path := range []string{paths.inputs, paths.workspace, paths.environment, paths.temp, paths.cache, paths.evidence, paths.sharedCache} {
-		if err := toolkit.EnsurePlainDirectoryPath(repositoryRoot, path, "验证资料目录"); err != nil {
-			return runPaths{}, err
-		}
+	if err := toolkit.EnsurePlainDirectoryPath(run.RepositoryRoot, paths.sharedCache, "验证资料目录"); err != nil {
+		return runPaths{}, err
 	}
 	return paths, nil
 }

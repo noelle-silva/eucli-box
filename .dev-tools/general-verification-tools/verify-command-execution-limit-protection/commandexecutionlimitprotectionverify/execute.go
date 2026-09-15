@@ -129,14 +129,14 @@ func (f *fakeToolStorage) LoadWorkspace(ctx context.Context, workspaceID string)
 	return types.Workspace{ID: workspaceID}, nil
 }
 
-func buildFixture(ctx context.Context, root string, paths paths) (fixture, error) {
-	toolDir := filepath.Join(paths.work, "tool")
+func buildFixture(ctx context.Context, root string, run *toolkit.VerificationRun) (fixture, error) {
+	toolDir := filepath.Join(run.Work, "tool")
 	if err := os.MkdirAll(toolDir, 0o755); err != nil {
 		return fixture{}, err
 	}
 	ext := executableExtension()
 	shellExe := filepath.Join(toolDir, "shell_command"+ext)
-	if _, err := toolkit.RunCommandCapture(ctx, "编译 shell_command", paths.work, paths.evidence, paths.temp, nil, "go", "build", "-o", shellExe, "eucli-box/tools/shell_command/cmd/shell_command"); err != nil {
+	if _, err := toolkit.RunCommandCapture(ctx, "编译 shell_command", run.Work, run.Evidence, run.Temp, nil, "go", "build", "-o", shellExe, "eucli-box/tools/shell_command/cmd/shell_command"); err != nil {
 		return fixture{}, err
 	}
 	providerDir := filepath.Join(toolDir, "providers", "git-bash")
@@ -144,11 +144,11 @@ func buildFixture(ctx context.Context, root string, paths paths) (fixture, error
 		return fixture{}, err
 	}
 	providerExe := filepath.Join(providerDir, "fake-provider"+ext)
-	sourceFile := filepath.Join(paths.work, "fake-provider.go")
+	sourceFile := filepath.Join(run.Work, "fake-provider.go")
 	if err := os.WriteFile(sourceFile, []byte(fakeProviderSource), 0o644); err != nil {
 		return fixture{}, err
 	}
-	if _, err := toolkit.RunCommandCapture(ctx, "编译假 provider", paths.work, paths.evidence, paths.temp, nil, "go", "build", "-o", providerExe, sourceFile); err != nil {
+	if _, err := toolkit.RunCommandCapture(ctx, "编译假 provider", run.Work, run.Evidence, run.Temp, nil, "go", "build", "-o", providerExe, sourceFile); err != nil {
 		return fixture{}, err
 	}
 	config := map[string]any{
@@ -208,8 +208,8 @@ func executeHost(ctx context.Context, system toolcalling.System, fixture fixture
 	return system.Execute(ctx, plan)
 }
 
-func captureGitStatus(ctx context.Context, root string, paths paths) (string, error) {
-	output, err := toolkit.RunCommandCapture(ctx, "记录源码工作区状态", paths.work, paths.evidence, paths.temp, nil, "git", "-C", root, "status", "--porcelain")
+func captureGitStatus(ctx context.Context, root string, run *toolkit.VerificationRun) (string, error) {
+	output, err := toolkit.RunCommandCapture(ctx, "记录源码工作区状态", run.Work, run.Evidence, run.Temp, nil, "git", "-C", root, "status", "--porcelain")
 	if err != nil {
 		return "", err
 	}

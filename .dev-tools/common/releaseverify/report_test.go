@@ -89,13 +89,16 @@ func newRunPathsForTest(t *testing.T) runPaths {
 	t.Helper()
 	repositoryRoot := t.TempDir()
 	runRoot := filepath.Join(workspace.VerificationToolRoot(repositoryRoot, "verify-release-build"), "run-test")
+	// temp 与 cache 由正式入口（invoke-verification.ps1）预建；测试夹具模拟入口行为。
+	if err := os.MkdirAll(filepath.Join(runRoot, "temp"), 0o755); err != nil {
+		t.Fatalf("create temp directory: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(runRoot, "cache"), 0o755); err != nil {
+		t.Fatalf("create cache directory: %v", err)
+	}
 	paths, err := prepareRun(repositoryRoot, runRoot, "verify-release-build")
 	if err != nil {
 		t.Fatalf("prepare run: %v", err)
-	}
-	// work 目录由正式入口（invoke-verification.ps1）预建；测试夹具模拟入口行为。
-	if err := os.MkdirAll(paths.work, 0o755); err != nil {
-		t.Fatalf("create work directory: %v", err)
 	}
 	return paths
 }

@@ -92,7 +92,7 @@ func Build(ctx context.Context, options BuildOptions) (BuildResult, error) {
 	if err != nil {
 		return BuildResult{}, err
 	}
-	sourceState, err := readSourceState(ctx, root, sourceRepository.Repository, devBuild)
+	sourceState, err := readSourceState(ctx, root, sourceRepository.Repository)
 	if err != nil {
 		return BuildResult{}, err
 	}

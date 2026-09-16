@@ -15,7 +15,7 @@ type sourceState struct {
 	CommitTime time.Time
 }
 
-func readSourceState(ctx context.Context, root string, repository string, allowUnrecorded bool) (sourceState, error) {
+func readSourceState(ctx context.Context, root string, repository string) (sourceState, error) {
 	commit, err := gitOutput(ctx, root, "rev-parse", "HEAD")
 	if err != nil {
 		return sourceState{}, fmt.Errorf("读取源码状态失败：%w", err)
@@ -36,12 +36,8 @@ func readSourceState(ctx context.Context, root string, repository string, allowU
 	if err != nil {
 		return sourceState{}, fmt.Errorf("核对源码状态失败：%w", err)
 	}
-	recorded := strings.TrimSpace(status) == ""
-	if !allowUnrecorded && !recorded {
-		return sourceState{}, fmt.Errorf("正式成品只能从已经完整进入 Git 记录的源码状态制作")
-	}
 	return sourceState{
-		Record:     types.ReleaseSourceRecord{Repository: repository, Commit: commit, Recorded: recorded},
+		Record:     types.ReleaseSourceRecord{Repository: repository, Commit: commit, Recorded: strings.TrimSpace(status) == ""},
 		CommitTime: commitTime.UTC(),
 	}, nil
 }

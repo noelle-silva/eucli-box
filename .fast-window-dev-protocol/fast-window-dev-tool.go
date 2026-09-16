@@ -84,6 +84,7 @@ type storeManifest struct {
 	Name          string                 `json:"name"`
 	VersionSource string                 `json:"versionSource"`
 	Package       storeManifestPackage   `json:"package"`
+	Service       string                 `json:"service"`
 	DisplayMode   string                 `json:"displayMode"`
 	Commands      []storeManifestCommand `json:"commands"`
 }
@@ -104,6 +105,7 @@ type storeRuntimeManifest struct {
 	Version           string                 `json:"version"`
 	WindowsExecutable string                 `json:"windowsExecutable"`
 	Icon              string                 `json:"icon,omitempty"`
+	Service           string                 `json:"service,omitempty"`
 	DisplayMode       string                 `json:"displayMode,omitempty"`
 	Commands          []storeManifestCommand `json:"commands,omitempty"`
 }
@@ -345,12 +347,28 @@ func buildStorePackage(protocolDir string, artifact map[string]string) (map[stri
 	if err := copyFileTo(filepath.Join(tempDir, filepath.FromSlash(iconTarget)), iconSource); err != nil {
 		return nil, err
 	}
+	serviceTarget := ""
+	if strings.TrimSpace(manifest.Service) != "" {
+		serviceRelative, err := resolveManifestPath(manifest.Service, "service")
+		if err != nil {
+			return nil, err
+		}
+		serviceSource := filepath.Join(root, filepath.FromSlash(serviceRelative))
+		if info, statErr := os.Stat(serviceSource); statErr != nil || info.IsDir() {
+			return nil, fmt.Errorf("服务声明文件不存在：%s", serviceRelative)
+		}
+		serviceTarget = path.Base(serviceRelative)
+		if err := copyFileTo(filepath.Join(tempDir, serviceTarget), serviceSource); err != nil {
+			return nil, err
+		}
+	}
 	runtimeManifest := storeRuntimeManifest{
 		ID:                manifest.ID,
 		Name:              manifest.Name,
 		Version:           version,
 		WindowsExecutable: executable,
 		Icon:              iconTarget,
+		Service:           serviceTarget,
 		DisplayMode:       manifest.DisplayMode,
 		Commands:          manifest.Commands,
 	}

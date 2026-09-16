@@ -120,6 +120,12 @@ func TestBuildStorePackageProducesInstallableArchive(t *testing.T) {
 	protocolDir := filepath.Join(root, ".fast-window-dev-protocol")
 	writeTestFile(t, filepath.Join(root, "internal", "boxrelease", "release.json"), "{\n  \"version\": \"0.1.2\",\n  \"dataVersion\": \"1.0.0\"\n}\n")
 	writeTestFile(t, filepath.Join(protocolDir, "assets", "icon.svg"), "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\"></svg>\n")
+	writeTestFile(t, filepath.Join(protocolDir, "fw-app.service.json"), `{
+  "schemaVersion": 1,
+  "id": "eucli-box",
+  "start": { "executable": "eucli-box.exe" }
+}
+`)
 	writeTestFile(t, filepath.Join(protocolDir, "fw-app.package.json"), `{
   "schemaVersion": 1,
   "id": "eucli-box",
@@ -130,6 +136,7 @@ func TestBuildStorePackageProducesInstallableArchive(t *testing.T) {
     "windowsExecutable": "eucli-box.exe",
     "icon": ".fast-window-dev-protocol/assets/icon.svg"
   },
+  "service": ".fast-window-dev-protocol/fw-app.service.json",
   "displayMode": "default",
   "commands": []
 }
@@ -156,7 +163,7 @@ func TestBuildStorePackageProducesInstallableArchive(t *testing.T) {
 	}
 
 	names := listZipNames(t, result["path"])
-	for _, name := range []string{"fw-app.json", "assets/icon.svg", "eucli-box.exe", "README.md", "release-product.json"} {
+	for _, name := range []string{"fw-app.json", "fw-app.service.json", "assets/icon.svg", "eucli-box.exe", "README.md", "release-product.json"} {
 		if !containsString(names, name) {
 			t.Fatalf("商店包缺少 %s：%v", name, names)
 		}
@@ -168,6 +175,7 @@ func TestBuildStorePackageProducesInstallableArchive(t *testing.T) {
 		Version           string `json:"version"`
 		WindowsExecutable string `json:"windowsExecutable"`
 		Icon              string `json:"icon"`
+		Service           string `json:"service"`
 		DisplayMode       string `json:"displayMode"`
 	}
 	if err := json.Unmarshal([]byte(readZipEntry(t, result["path"], "fw-app.json")), &manifest); err != nil {
@@ -178,6 +186,9 @@ func TestBuildStorePackageProducesInstallableArchive(t *testing.T) {
 	}
 	if manifest.WindowsExecutable != "eucli-box.exe" || manifest.Icon != "assets/icon.svg" || manifest.DisplayMode != "default" {
 		t.Fatalf("fw-app.json = %#v", manifest)
+	}
+	if manifest.Service != "fw-app.service.json" {
+		t.Fatalf("fw-app.json service = %q", manifest.Service)
 	}
 	if icon := readZipEntry(t, result["path"], "assets/icon.svg"); !strings.Contains(icon, "<svg") {
 		t.Fatalf("图标内容异常：%q", icon)
@@ -211,6 +222,32 @@ func TestBuildStorePackageRejectsMissingIcon(t *testing.T) {
 	writeTestZip(t, baseZip, map[string]string{"eucli-box.exe": "fake-exe"})
 
 	if _, err := buildStorePackage(protocolDir, map[string]string{"path": baseZip}); err == nil || !strings.Contains(err.Error(), "图标") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestBuildStorePackageRejectsMissingServiceDeclaration(t *testing.T) {
+	root := t.TempDir()
+	protocolDir := filepath.Join(root, ".fast-window-dev-protocol")
+	writeTestFile(t, filepath.Join(root, "internal", "boxrelease", "release.json"), "{\n  \"version\": \"0.1.2\"\n}\n")
+	writeTestFile(t, filepath.Join(protocolDir, "assets", "icon.svg"), "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\"></svg>\n")
+	writeTestFile(t, filepath.Join(protocolDir, "fw-app.package.json"), `{
+  "id": "eucli-box",
+  "name": "eucli-box",
+  "versionSource": "internal/boxrelease/release.json",
+  "package": {
+    "windowsExecutable": "eucli-box.exe",
+    "icon": ".fast-window-dev-protocol/assets/icon.svg"
+  },
+  "service": ".fast-window-dev-protocol/fw-app.service.json",
+  "displayMode": "default",
+  "commands": []
+}
+`)
+	baseZip := filepath.Join(root, "base", "eucli-box_0.1.2_windows-x64.zip")
+	writeTestZip(t, baseZip, map[string]string{"eucli-box.exe": "fake-exe"})
+
+	if _, err := buildStorePackage(protocolDir, map[string]string{"path": baseZip}); err == nil || !strings.Contains(err.Error(), "服务声明") {
 		t.Fatalf("err = %v", err)
 	}
 }

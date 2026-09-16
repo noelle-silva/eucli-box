@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "eucli-box",
+  "name": "eucli-box",
+  "description": "eucli-AI agent 内核。",
+  "versionSource": "internal/boxrelease/release.json",
+  "icon": ".fast-window-dev-protocol/assets/icon.svg",
+  "package": {
+    "windowsExecutable": "eucli-box.exe"
+  },
+  "displayMode": "default",
+  "commands": []
+}

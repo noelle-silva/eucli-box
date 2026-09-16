@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"eucli-box/pkg/datapaths"
 	"eucli-box/pkg/release"
 	"eucli-box/pkg/types"
 )
@@ -246,11 +247,22 @@ func launchBox(ctx context.Context, directory string, environment string, temp s
 	}()
 	client := &http.Client{Timeout: 750 * time.Millisecond}
 	url := "http://127.0.0.1:" + port + "/api/release"
+	key := ""
 	for {
 		if err := ctx.Err(); err != nil {
 			return fmt.Errorf("业务端启动验收超时：%w", err)
 		}
-		response, requestErr := client.Get(url)
+		if key == "" {
+			key = readBoxAccessKey(dataDir)
+		}
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return err
+		}
+		if key != "" {
+			request.Header.Set("Authorization", "Bearer "+key)
+		}
+		response, requestErr := client.Do(request)
 		if requestErr == nil {
 			payload, readErr := io.ReadAll(response.Body)
 			_ = response.Body.Close()
@@ -269,6 +281,16 @@ func launchBox(ctx context.Context, directory string, environment string, temp s
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
+}
+
+// readBoxAccessKey 读取业务端首次启动时自行生成并记录的访问钥匙；
+// 尚未生成时返回空串，由调用方下一轮继续尝试。
+func readBoxAccessKey(dataDir string) string {
+	payload, err := os.ReadFile(datapaths.BoxKeyFile(dataDir))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(payload))
 }
 
 func launchTool(ctx context.Context, directory string, environment string, temp string, evidence string) error {

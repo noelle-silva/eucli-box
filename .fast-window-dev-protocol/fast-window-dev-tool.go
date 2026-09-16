@@ -1,13 +1,19 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
+	"path"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -21,14 +27,20 @@ const (
 
 	statusSucceeded = "succeeded"
 	statusFailed    = "failed"
+
+	storeManifestFileName        = "fw-app.package.json"
+	storeRuntimeManifestFileName = "fw-app.json"
+	storePackageDirName          = "dist"
+	storeIconDirName             = "assets"
 )
 
 type actionDefinition struct {
-	Command  string            `json:"command"`
-	Artifact map[string]string `json:"artifact"`
+	Command      string            `json:"command"`
+	Artifact     map[string]string `json:"artifact"`
+	StorePackage bool              `json:"storePackage"`
 }
 
-// UnmarshalJSON 同时接受两种动作形态：纯命令字符串，或带产物声明的对象。
+// UnmarshalJSON 同时接受两种动作形态：纯命令字符串，或带产物与商店化声明的对象。
 func (definition *actionDefinition) UnmarshalJSON(payload []byte) error {
 	var text string
 	if err := json.Unmarshal(payload, &text); err == nil {
@@ -36,14 +48,16 @@ func (definition *actionDefinition) UnmarshalJSON(payload []byte) error {
 		return nil
 	}
 	var parsed struct {
-		Command  string            `json:"command"`
-		Artifact map[string]string `json:"artifact"`
+		Command      string            `json:"command"`
+		Artifact     map[string]string `json:"artifact"`
+		StorePackage bool              `json:"storePackage"`
 	}
 	if err := json.Unmarshal(payload, &parsed); err != nil {
 		return err
 	}
 	definition.Command = parsed.Command
 	definition.Artifact = parsed.Artifact
+	definition.StorePackage = parsed.StorePackage
 	return nil
 }
 
@@ -63,6 +77,35 @@ type receipt struct {
 	ExitCode        *int        `json:"exitCode"`
 	Error           string      `json:"error"`
 	Data            receiptData `json:"data"`
+}
+
+type storeManifest struct {
+	ID            string                 `json:"id"`
+	Name          string                 `json:"name"`
+	VersionSource string                 `json:"versionSource"`
+	Package       storeManifestPackage   `json:"package"`
+	DisplayMode   string                 `json:"displayMode"`
+	Commands      []storeManifestCommand `json:"commands"`
+}
+
+type storeManifestPackage struct {
+	WindowsExecutable string `json:"windowsExecutable"`
+	Icon              string `json:"icon"`
+}
+
+type storeManifestCommand struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
+type storeRuntimeManifest struct {
+	ID                string                 `json:"id"`
+	Name              string                 `json:"name"`
+	Version           string                 `json:"version"`
+	WindowsExecutable string                 `json:"windowsExecutable"`
+	Icon              string                 `json:"icon,omitempty"`
+	DisplayMode       string                 `json:"displayMode,omitempty"`
+	Commands          []storeManifestCommand `json:"commands,omitempty"`
 }
 
 func main() {
@@ -100,6 +143,13 @@ func executeAction(args []string, protocolFile string) receipt {
 	exitCode, result, artifact, err := runCommand(definition)
 	if err != nil {
 		return failureReceipt(action, err)
+	}
+	if definition.StorePackage && exitCode == 0 {
+		packaged, err := buildStorePackage(filepath.Dir(protocolFile), artifact)
+		if err != nil {
+			return failureReceipt(action, err)
+		}
+		artifact = packaged
 	}
 	status := statusSucceeded
 	if exitCode != 0 {
@@ -243,6 +293,288 @@ func valueAtPath(root any, dotted string) (string, bool) {
 		return "", false
 	}
 	return text, true
+}
+
+// buildStorePackage 把基础成品包加工成商店包：解包后写入运行清单与图标，再重打包到协议目录的产出区。
+// 运行清单内容全部来自同目录的商店打包清单与应用的版本文件，不依赖应用本体的任何改造。
+func buildStorePackage(protocolDir string, artifact map[string]string) (map[string]string, error) {
+	protocolDir, err := filepath.Abs(strings.TrimSpace(protocolDir))
+	if err != nil {
+		return nil, fmt.Errorf("确定协议目录失败：%w", err)
+	}
+	sourcePath := strings.TrimSpace(artifact["path"])
+	if sourcePath == "" {
+		return nil, errors.New("商店化需要成品路径：命令输出没有提供 artifact.path")
+	}
+	sourcePath, err = filepath.Abs(sourcePath)
+	if err != nil {
+		return nil, fmt.Errorf("确定成品路径失败：%w", err)
+	}
+	root := filepath.Dir(protocolDir)
+	manifest, err := readStoreManifest(filepath.Join(protocolDir, storeManifestFileName))
+	if err != nil {
+		return nil, err
+	}
+	version, err := readStoreVersion(root, manifest.VersionSource)
+	if err != nil {
+		return nil, err
+	}
+	executable, err := resolveManifestPath(manifest.Package.WindowsExecutable, "package.windowsExecutable")
+	if err != nil {
+		return nil, err
+	}
+	iconRelative, err := resolveManifestPath(manifest.Package.Icon, "package.icon")
+	if err != nil {
+		return nil, err
+	}
+	iconSource := filepath.Join(root, filepath.FromSlash(iconRelative))
+	if info, statErr := os.Stat(iconSource); statErr != nil || info.IsDir() {
+		return nil, fmt.Errorf("图标文件不存在：%s", iconRelative)
+	}
+
+	tempDir, err := os.MkdirTemp("", "fast-window-dev-store-*")
+	if err != nil {
+		return nil, fmt.Errorf("建立商店化临时区失败：%w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	if err := unpackZip(sourcePath, tempDir); err != nil {
+		return nil, err
+	}
+	iconTarget := path.Join(storeIconDirName, path.Base(iconRelative))
+	if err := copyFileTo(filepath.Join(tempDir, filepath.FromSlash(iconTarget)), iconSource); err != nil {
+		return nil, err
+	}
+	runtimeManifest := storeRuntimeManifest{
+		ID:                manifest.ID,
+		Name:              manifest.Name,
+		Version:           version,
+		WindowsExecutable: executable,
+		Icon:              iconTarget,
+		DisplayMode:       manifest.DisplayMode,
+		Commands:          manifest.Commands,
+	}
+	if err := writeStoreRuntimeManifest(tempDir, runtimeManifest); err != nil {
+		return nil, err
+	}
+
+	distDir := filepath.Join(protocolDir, storePackageDirName)
+	if err := os.MkdirAll(distDir, 0o755); err != nil {
+		return nil, fmt.Errorf("建立商店包产出目录失败：%w", err)
+	}
+	targetPath := filepath.Join(distDir, filepath.Base(sourcePath))
+	if err := packZipDirectory(tempDir, targetPath); err != nil {
+		return nil, err
+	}
+	sum, err := sha256OfFile(targetPath)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]string{
+		"path":   targetPath,
+		"name":   filepath.Base(targetPath),
+		"sha256": sum,
+	}, nil
+}
+
+func readStoreManifest(file string) (storeManifest, error) {
+	payload, err := os.ReadFile(file)
+	if err != nil {
+		return storeManifest{}, fmt.Errorf("读取商店清单失败：%w", err)
+	}
+	var manifest storeManifest
+	if err := json.Unmarshal(payload, &manifest); err != nil {
+		return storeManifest{}, fmt.Errorf("解析商店清单失败：%w", err)
+	}
+	if strings.TrimSpace(manifest.ID) == "" {
+		return storeManifest{}, errors.New("商店清单缺少 id")
+	}
+	if strings.TrimSpace(manifest.Name) == "" {
+		return storeManifest{}, errors.New("商店清单缺少 name")
+	}
+	if strings.TrimSpace(manifest.VersionSource) == "" {
+		return storeManifest{}, errors.New("商店清单缺少 versionSource")
+	}
+	return manifest, nil
+}
+
+func readStoreVersion(root string, versionSource string) (string, error) {
+	relative, err := resolveManifestPath(versionSource, "versionSource")
+	if err != nil {
+		return "", err
+	}
+	payload, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(relative)))
+	if err != nil {
+		return "", fmt.Errorf("读取 versionSource 失败：%w", err)
+	}
+	var info struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(payload, &info); err != nil {
+		return "", fmt.Errorf("解析 versionSource 失败：%w", err)
+	}
+	version := strings.TrimSpace(info.Version)
+	if version == "" {
+		return "", errors.New("versionSource 缺少 version")
+	}
+	return version, nil
+}
+
+func resolveManifestPath(value string, field string) (string, error) {
+	normalized := strings.ReplaceAll(strings.TrimSpace(value), "\\", "/")
+	if normalized == "" {
+		return "", fmt.Errorf("%s 不能为空", field)
+	}
+	if path.IsAbs(normalized) || filepath.IsAbs(normalized) || (len(normalized) >= 2 && normalized[1] == ':') {
+		return "", fmt.Errorf("%s 不允许是绝对路径：%s", field, normalized)
+	}
+	for _, segment := range strings.Split(normalized, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return "", fmt.Errorf("%s 不安全：%s", field, normalized)
+		}
+	}
+	return normalized, nil
+}
+
+func unpackZip(archivePath string, targetDir string) error {
+	reader, err := zip.OpenReader(archivePath)
+	if err != nil {
+		return fmt.Errorf("打开成品包失败：%w", err)
+	}
+	defer reader.Close()
+	cleanTarget := filepath.Clean(targetDir)
+	for _, entry := range reader.File {
+		cleanName := path.Clean(strings.ReplaceAll(entry.Name, "\\", "/"))
+		if cleanName == "." || cleanName == "" {
+			continue
+		}
+		if path.IsAbs(cleanName) || cleanName == ".." || strings.HasPrefix(cleanName, "../") || (len(cleanName) >= 2 && cleanName[1] == ':') {
+			return fmt.Errorf("成品包含不安全路径：%s", entry.Name)
+		}
+		destination := filepath.Join(cleanTarget, filepath.FromSlash(cleanName))
+		if entry.FileInfo().IsDir() {
+			if err := os.MkdirAll(destination, 0o755); err != nil {
+				return fmt.Errorf("解包目录失败：%w", err)
+			}
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+			return fmt.Errorf("解包目录失败：%w", err)
+		}
+		if err := extractZipEntry(entry, destination); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func extractZipEntry(entry *zip.File, destination string) error {
+	source, err := entry.Open()
+	if err != nil {
+		return fmt.Errorf("读取成品包条目失败：%w", err)
+	}
+	defer source.Close()
+	target, err := os.Create(destination)
+	if err != nil {
+		return fmt.Errorf("写入成品包条目失败：%w", err)
+	}
+	if _, err := io.Copy(target, source); err != nil {
+		_ = target.Close()
+		return fmt.Errorf("写入成品包条目失败：%w", err)
+	}
+	if err := target.Close(); err != nil {
+		return fmt.Errorf("写入成品包条目失败：%w", err)
+	}
+	return nil
+}
+
+func packZipDirectory(sourceDir string, targetPath string) error {
+	file, err := os.Create(targetPath)
+	if err != nil {
+		return fmt.Errorf("创建商店包失败：%w", err)
+	}
+	writer := zip.NewWriter(file)
+	walkErr := filepath.WalkDir(sourceDir, func(filePath string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		relative, err := filepath.Rel(sourceDir, filePath)
+		if err != nil {
+			return err
+		}
+		entryWriter, err := writer.Create(filepath.ToSlash(relative))
+		if err != nil {
+			return err
+		}
+		payload, err := os.Open(filePath)
+		if err != nil {
+			return err
+		}
+		_, copyErr := io.Copy(entryWriter, payload)
+		closeErr := payload.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		return closeErr
+	})
+	if walkErr == nil {
+		walkErr = writer.Close()
+	} else {
+		_ = writer.Close()
+	}
+	closeErr := file.Close()
+	if walkErr != nil {
+		_ = os.Remove(targetPath)
+		return fmt.Errorf("打包商店包失败：%w", walkErr)
+	}
+	if closeErr != nil {
+		_ = os.Remove(targetPath)
+		return fmt.Errorf("保存商店包失败：%w", closeErr)
+	}
+	return nil
+}
+
+func copyFileTo(target string, source string) error {
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return fmt.Errorf("建立图标目录失败：%w", err)
+	}
+	payload, err := os.ReadFile(source)
+	if err != nil {
+		return fmt.Errorf("读取图标文件失败：%w", err)
+	}
+	if err := os.WriteFile(target, payload, 0o644); err != nil {
+		return fmt.Errorf("写入图标文件失败：%w", err)
+	}
+	return nil
+}
+
+func writeStoreRuntimeManifest(packageRoot string, manifest storeRuntimeManifest) error {
+	payload, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return fmt.Errorf("生成 fw-app.json 失败：%w", err)
+	}
+	payload = append(payload, '\n')
+	target := filepath.Join(packageRoot, storeRuntimeManifestFileName)
+	if err := os.WriteFile(target, payload, 0o644); err != nil {
+		return fmt.Errorf("写入 fw-app.json 失败：%w", err)
+	}
+	return nil
+}
+
+func sha256OfFile(file string) (string, error) {
+	source, err := os.Open(file)
+	if err != nil {
+		return "", fmt.Errorf("读取商店包失败：%w", err)
+	}
+	defer source.Close()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, source); err != nil {
+		return "", fmt.Errorf("计算商店包摘要失败：%w", err)
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 func writeReceipt(output io.Writer, value receipt) error {

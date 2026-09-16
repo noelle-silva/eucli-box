@@ -8,32 +8,33 @@ import "path/filepath"
 // 数据区相对路径常量（一律以 / 分隔，基准为数据根目录）。
 // 目录与文件的事实命名只在出现于本列表。
 const (
-	RelMetaDir                 = ".meta"
-	RelAccessDir               = ".meta/access"
-	RelVersionFile             = ".meta/version.json"
-	RelBoxKeyFile              = ".meta/box.key"
-	RelPlaceholdersFile        = ".meta/placeholders.json"
-	RelInstallSourceFile       = ".meta/install-source.json"
-	RelStickerNamingFile       = ".meta/sticker-naming.json"
-	RelMermaidFixFile          = ".meta/mermaid-fix.json"
-	RelChatTitleNamingFile     = ".meta/chat-title-naming.json"
-	RelContextCompressionFile  = ".meta/context-compression.json"
-	RelModelRequestFile        = ".meta/model-request.json"
-	RelModelGroupsFile         = ".meta/model-groups.json"
-	RelHookPromptsFile         = ".meta/hook-prompts.json"
-	RelSessionsDir             = "sessions"
-	RelSessionRolesDir         = "sessions/roles"
-	RelSessionGroupsDir        = "sessions/groups"
-	RelSessionWorkspacesDir    = "sessions/workspaces"
-	RelRolesDir                = "roles"
-	RelGroupsDir               = "groups"
-	RelWorkspacesDir           = "workspaces"
-	RelProvidersDir            = "providers"
-	RelStickersDir             = "stickers"
-	RelRecycleDir              = "recycle"
-	RelToolDataDir             = "tool-data"
-	RelToolBodiesDir           = "tool-bodies"
-	RelSystemPluginsDataDir    = "system-plugins-data"
+	RelMetaDir                = ".meta"
+	RelAccessDir              = ".meta/access"
+	RelVersionFile            = ".meta/version.json"
+	RelBoxKeyFile             = ".meta/box.key"
+	RelPortFile               = ".meta/port.json"
+	RelPlaceholdersFile       = ".meta/placeholders.json"
+	RelInstallSourceFile      = ".meta/install-source.json"
+	RelStickerNamingFile      = ".meta/sticker-naming.json"
+	RelMermaidFixFile         = ".meta/mermaid-fix.json"
+	RelChatTitleNamingFile    = ".meta/chat-title-naming.json"
+	RelContextCompressionFile = ".meta/context-compression.json"
+	RelModelRequestFile       = ".meta/model-request.json"
+	RelModelGroupsFile        = ".meta/model-groups.json"
+	RelHookPromptsFile        = ".meta/hook-prompts.json"
+	RelSessionsDir            = "sessions"
+	RelSessionRolesDir        = "sessions/roles"
+	RelSessionGroupsDir       = "sessions/groups"
+	RelSessionWorkspacesDir   = "sessions/workspaces"
+	RelRolesDir               = "roles"
+	RelGroupsDir              = "groups"
+	RelWorkspacesDir          = "workspaces"
+	RelProvidersDir           = "providers"
+	RelStickersDir            = "stickers"
+	RelRecycleDir             = "recycle"
+	RelToolDataDir            = "tool-data"
+	RelToolBodiesDir          = "tool-bodies"
+	RelSystemPluginsDataDir   = "system-plugins-data"
 )
 
 // Join 以数据根目录为基准合并相对路径。
@@ -79,6 +80,11 @@ func VersionFile(root string) string {
 // BoxKeyFile 返回访问钥匙文件。
 func BoxKeyFile(root string) string {
 	return Join(root, RelBoxKeyFile)
+}
+
+// PortFile 返回网关端口配置文件。
+func PortFile(root string) string {
+	return Join(root, RelPortFile)
 }
 
 // PlaceholdersFile 返回占位符库文件。

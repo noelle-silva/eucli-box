@@ -92,6 +92,20 @@ const fixtureManifest = `{
 }
 `
 
+func TestCheckManifestValidatesServiceDeclaration(t *testing.T) {
+	root := writeFixture(t)
+	rewriteManifest(t, root, func(text string) string {
+		return strings.Replace(text, `"displayMode"`, `"service": ".fast-window-dev-protocol/fw-app.service.json",`+"\n  "+`"displayMode"`, 1)
+	})
+	if _, err := checkManifest(manifestPathOf(root)); err == nil || !strings.Contains(err.Error(), "服务声明") {
+		t.Fatalf("缺少服务声明文件应报错：err = %v", err)
+	}
+	writeTestFile(t, filepath.Join(root, ".fast-window-dev-protocol", "fw-app.service.json"), "{\n  \"schemaVersion\": 1\n}\n")
+	if _, err := checkManifest(manifestPathOf(root)); err != nil {
+		t.Fatalf("补齐服务声明后应通过：err = %v", err)
+	}
+}
+
 func writeFixture(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()

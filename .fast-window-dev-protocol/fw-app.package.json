@@ -8,6 +8,7 @@
     "windowsExecutable": "eucli-box.exe",
     "icon": ".fast-window-dev-protocol/assets/icon.svg"
   },
+  "service": ".fast-window-dev-protocol/fw-app.service.json",
   "displayMode": "default",
   "commands": []
 }

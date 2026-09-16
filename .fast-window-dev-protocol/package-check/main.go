@@ -30,6 +30,7 @@ type manifest struct {
 	Description   string         `json:"description"`
 	VersionSource string         `json:"versionSource"`
 	Package       packageSection `json:"package"`
+	Service       string         `json:"service"`
 	DisplayMode   string         `json:"displayMode"`
 	Commands      []command      `json:"commands"`
 }
@@ -141,6 +142,15 @@ func checkManifest(manifestPath string) (report, error) {
 	}
 	if err := requireFile(filepath.Join(root, filepath.FromSlash(icon)), "图标"); err != nil {
 		return report{}, err
+	}
+	if service := strings.TrimSpace(parsed.Service); service != "" {
+		servicePath, err := normalizeRelativePath(service, "service")
+		if err != nil {
+			return report{}, err
+		}
+		if err := requireFile(filepath.Join(root, filepath.FromSlash(servicePath)), "服务声明"); err != nil {
+			return report{}, err
+		}
 	}
 	return report{ID: id, Version: version, Executable: executable, Icon: icon}, nil
 }

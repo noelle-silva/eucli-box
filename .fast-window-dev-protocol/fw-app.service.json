@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "eucli-box",
+  "start": {
+    "executable": "eucli-box.exe",
+    "args": [],
+    "environment": {
+      "EUCLI_BOX_ADDR": "127.0.0.1:8765"
+    }
+  },
+  "ready": {
+    "type": "log",
+    "match": "is ready"
+  },
+  "connection": {
+    "address": {
+      "type": "value",
+      "value": "http://127.0.0.1:8765"
+    },
+    "key": {
+      "type": "file",
+      "path": "data/.meta/box.key"
+    }
+  },
+  "stop": {
+    "type": "terminate"
+  }
+}

@@ -1,6 +1,9 @@
 {
   "runner": "go run",
   "actions": {
-    "yyyy": "echo helloworld"
+    "yyyy": "echo helloworld",
+    "eucli-box-version-patch": "go run devtools/eucli-version -root .. -target eucli-box -bump patch -message \"例行版本递增\"",
+    "eucli-box-version-minor": "go run devtools/eucli-version -root .. -target eucli-box -bump minor -message \"例行版本递增\"",
+    "eucli-box-version-major": "go run devtools/eucli-version -root .. -target eucli-box -bump major -message \"例行版本递增\""
   }
 }

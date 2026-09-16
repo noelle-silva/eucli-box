@@ -16,6 +16,15 @@ const (
 	FormalityDevelopment VersionFormality = "development"
 )
 
+// VersionLevel 表示三段正式版本的递增档位。
+type VersionLevel string
+
+const (
+	LevelPatch VersionLevel = "patch"
+	LevelMinor VersionLevel = "minor"
+	LevelMajor VersionLevel = "major"
+)
+
 // semanticVersion 是主.次.补( [.开发序号] )版本。
 type semanticVersion struct {
 	major    int
@@ -52,6 +61,37 @@ func Formality(value string) (VersionFormality, error) {
 		return FormalityDevelopment, nil
 	}
 	return FormalityFormal, nil
+}
+
+// ParseVersionLevel 解析三段正式版本的递增档位文本。
+func ParseVersionLevel(value string) (VersionLevel, error) {
+	level := VersionLevel(strings.TrimSpace(value))
+	switch level {
+	case LevelPatch, LevelMinor, LevelMajor:
+		return level, nil
+	}
+	return "", fmt.Errorf("版本递增档位必须是 patch、minor 或 major")
+}
+
+// NextFormalVersion 返回三段正式版本按档位递增的结果：
+// patch 档 0.1.2 → 0.1.3，minor 档 0.1.2 → 0.2.0，major 档 0.1.2 → 1.0.0。
+func NextFormalVersion(value string, level VersionLevel) (string, error) {
+	version, err := parseVersion(value)
+	if err != nil {
+		return "", err
+	}
+	if version.hasBuild {
+		return "", fmt.Errorf("档位递增只适用于三段正式版本，例如 0.1.0")
+	}
+	switch level {
+	case LevelPatch:
+		return fmt.Sprintf("%d.%d.%d", version.major, version.minor, version.patch+1), nil
+	case LevelMinor:
+		return fmt.Sprintf("%d.%d.0", version.major, version.minor+1), nil
+	case LevelMajor:
+		return fmt.Sprintf("%d.0.0", version.major+1), nil
+	}
+	return "", fmt.Errorf("未知版本递增档位：%s", level)
 }
 
 // ValidateDevelopmentVersion 校验四段开发版本的前三段与源码正式基线完全一致。

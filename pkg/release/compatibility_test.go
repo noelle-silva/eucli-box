@@ -72,3 +72,58 @@ func TestCompareVersions(t *testing.T) {
 		t.Fatal("CompareVersions() should reject invalid versions")
 	}
 }
+
+func TestNextFormalVersion(t *testing.T) {
+	tests := []struct {
+		value string
+		level VersionLevel
+		want  string
+	}{
+		{value: "0.1.2", level: LevelPatch, want: "0.1.3"},
+		{value: "0.1.9", level: LevelPatch, want: "0.1.10"},
+		{value: "0.1.2", level: LevelMinor, want: "0.2.0"},
+		{value: "0.1.2", level: LevelMajor, want: "1.0.0"},
+		{value: "1.9.9", level: LevelMajor, want: "2.0.0"},
+	}
+	for _, test := range tests {
+		got, err := NextFormalVersion(test.value, test.level)
+		if err != nil {
+			t.Fatalf("NextFormalVersion(%q, %q) error = %v", test.value, test.level, err)
+		}
+		if got != test.want {
+			t.Fatalf("NextFormalVersion(%q, %q) = %q, want %q", test.value, test.level, got, test.want)
+		}
+	}
+	for _, value := range []string{"0.1", "0.1.2.1", "", "01.2.3"} {
+		if _, err := NextFormalVersion(value, LevelPatch); err == nil {
+			t.Fatalf("NextFormalVersion(%q) error = nil", value)
+		}
+	}
+	if _, err := NextFormalVersion("0.1.2", VersionLevel("tiny")); err == nil {
+		t.Fatal("NextFormalVersion() should reject unknown levels")
+	}
+}
+
+func TestParseVersionLevel(t *testing.T) {
+	for _, test := range []struct {
+		text string
+		want VersionLevel
+	}{
+		{text: "patch", want: LevelPatch},
+		{text: "minor", want: LevelMinor},
+		{text: "major", want: LevelMajor},
+	} {
+		got, err := ParseVersionLevel(test.text)
+		if err != nil {
+			t.Fatalf("ParseVersionLevel(%q) error = %v", test.text, err)
+		}
+		if got != test.want {
+			t.Fatalf("ParseVersionLevel(%q) = %q, want %q", test.text, got, test.want)
+		}
+	}
+	for _, text := range []string{"", "tiny", "Patch"} {
+		if _, err := ParseVersionLevel(text); err == nil {
+			t.Fatalf("ParseVersionLevel(%q) error = nil", text)
+		}
+	}
+}

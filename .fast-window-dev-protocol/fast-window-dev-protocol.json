@@ -8,6 +8,7 @@
     "eucli-box-version-check": "go run devtools/eucli-version -root .. -target eucli-box",
     "eucli-box-build": {
       "command": "go run devtools/eucli-release build -root .. -target eucli-box",
+      "storePackage": true,
       "artifact": {
         "path": "ArchivePath",
         "name": "Manifest.archive.name",

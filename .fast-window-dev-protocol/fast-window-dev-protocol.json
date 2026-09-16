@@ -6,7 +6,14 @@
     "eucli-box-version-minor": "go run devtools/eucli-version -root .. -target eucli-box -bump minor -message \"例行版本递增\"",
     "eucli-box-version-major": "go run devtools/eucli-version -root .. -target eucli-box -bump major -message \"例行版本递增\"",
     "eucli-box-version-check": "go run devtools/eucli-version -root .. -target eucli-box",
-    "eucli-box-build": "go run devtools/eucli-release build -root .. -target eucli-box",
+    "eucli-box-build": {
+      "command": "go run devtools/eucli-release build -root .. -target eucli-box",
+      "artifact": {
+        "path": "ArchivePath",
+        "name": "Manifest.archive.name",
+        "sha256": "Manifest.archive.sha256"
+      }
+    },
     "eucli-box-test": "go test eucli-box/...",
     "eucli-box-run": "..\\.dev-tools\\dev-box\\run-dev-box.cmd"
   }

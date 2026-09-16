@@ -10,17 +10,16 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-
-	"eucli-box/pkg/release"
 )
 
 const manifestFileName = "fw-app.package.json"
 const manifestSchemaVersion = 1
 
 var (
-	safeIDPattern  = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
-	iconExtensions = map[string]bool{".png": true, ".svg": true}
-	displayModes   = map[string]bool{"default": true, "window": true, "top": true}
+	safeIDPattern        = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+	iconExtensions       = map[string]bool{".png": true, ".svg": true}
+	displayModes         = map[string]bool{"default": true, "window": true, "top": true}
+	formalVersionPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 )
 
 type manifest struct {
@@ -188,8 +187,8 @@ func readVersionSource(path string) (string, error) {
 		return "", fmt.Errorf("versionSource 必须是 JSON 对象：%w", err)
 	}
 	version := strings.TrimSpace(info.Version)
-	if err := release.ValidateFormalVersion(version); err != nil {
-		return "", fmt.Errorf("versionSource 版本无效：%w", err)
+	if !formalVersionPattern.MatchString(version) {
+		return "", errors.New("versionSource 版本无效：必须是三段正式版本，例如 0.1.0")
 	}
 	return version, nil
 }

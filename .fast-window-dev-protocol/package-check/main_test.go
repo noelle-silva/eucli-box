@@ -124,19 +124,9 @@ func TestCheckManifestRejectsBrokenServiceSections(t *testing.T) {
 			message: "service.stop.type 必须为 terminate",
 		},
 		{
-			name:    "连接端口类型不支持",
-			service: `"ready": { "type": "log", "match": "ready" }, "stop": { "type": "terminate" }, "connection": { "port": { "type": "env" } }`,
-			message: "connection.port.type 必须为 value 或 file",
-		},
-		{
-			name:    "连接文件路径不安全",
-			service: `"ready": { "type": "log", "match": "ready" }, "stop": { "type": "terminate" }, "connection": { "key": { "type": "file", "path": "../box.key" } }`,
-			message: "connection.key.path 不安全",
-		},
-		{
-			name:    "JSON 连接文件缺少字段名",
-			service: `"ready": { "type": "log", "match": "ready" }, "stop": { "type": "terminate" }, "connection": { "port": { "type": "file", "path": "data/port.json", "format": "json" } }`,
-			message: "connection.port.field 不能为空",
+			name:    "残留连接声明被拒绝",
+			service: `"ready": { "type": "log", "match": "ready" }, "stop": { "type": "terminate" }, "connection": { "port": { "type": "file", "path": "data/.meta/port.json" } }`,
+			message: "解析清单文件失败",
 		},
 	}
 	for _, test := range tests {
@@ -183,10 +173,6 @@ const fixtureServiceManifest = `{
   "service": {
     "start": { "args": ["--port", "8765"], "environment": { "EUCLI_BOX_MODE": "service" } },
     "ready": { "type": "log", "match": "is ready", "timeoutSeconds": 30 },
-    "connection": {
-      "port": { "type": "file", "path": "data/.meta/port.json", "format": "json", "field": "port" },
-      "key": { "type": "file", "path": "data/.meta/box.key", "format": "text" }
-    },
     "stop": { "type": "terminate" }
   },
   "displayMode": "default",

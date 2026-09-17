@@ -13,19 +13,6 @@
       "type": "log",
       "match": "is ready"
     },
-    "connection": {
-      "port": {
-        "type": "file",
-        "path": "data/.meta/port.json",
-        "format": "json",
-        "field": "port"
-      },
-      "key": {
-        "type": "file",
-        "path": "data/.meta/box.key",
-        "format": "text"
-      }
-    },
     "stop": {
       "type": "terminate"
     }

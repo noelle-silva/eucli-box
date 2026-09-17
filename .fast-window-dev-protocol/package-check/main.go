@@ -49,10 +49,9 @@ type command struct {
 }
 
 type serviceSection struct {
-	Start      *serviceStart      `json:"start"`
-	Ready      *serviceReady      `json:"ready"`
-	Connection *serviceConnection `json:"connection"`
-	Stop       *serviceStop       `json:"stop"`
+	Start *serviceStart `json:"start"`
+	Ready *serviceReady `json:"ready"`
+	Stop  *serviceStop  `json:"stop"`
 }
 
 type serviceStart struct {
@@ -68,19 +67,6 @@ type serviceReady struct {
 
 type serviceStop struct {
 	Type string `json:"type"`
-}
-
-type serviceConnection struct {
-	Port *serviceConnectionEntry `json:"port"`
-	Key  *serviceConnectionEntry `json:"key"`
-}
-
-type serviceConnectionEntry struct {
-	Type   string `json:"type"`
-	Value  string `json:"value"`
-	Path   string `json:"path"`
-	Format string `json:"format"`
-	Field  string `json:"field"`
 }
 
 type report struct {
@@ -224,14 +210,6 @@ func checkServiceSection(service *serviceSection) error {
 	if kind := strings.TrimSpace(service.Stop.Type); kind != "terminate" {
 		return fmt.Errorf("service.stop.type 必须为 terminate：%s", kind)
 	}
-	if service.Connection != nil {
-		if err := checkServiceConnectionEntry(service.Connection.Port, "port"); err != nil {
-			return err
-		}
-		if err := checkServiceConnectionEntry(service.Connection.Key, "key"); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
@@ -246,34 +224,6 @@ func checkServiceStart(start *serviceStart) error {
 		if strings.ContainsRune(value, '\x00') {
 			return fmt.Errorf("service.start.environment 变量值不合法：%s", key)
 		}
-	}
-	return nil
-}
-
-func checkServiceConnectionEntry(entry *serviceConnectionEntry, field string) error {
-	if entry == nil {
-		return nil
-	}
-	switch kind := strings.TrimSpace(entry.Type); kind {
-	case "value":
-		if strings.TrimSpace(entry.Value) == "" {
-			return fmt.Errorf("service.connection.%s.value 不能为空", field)
-		}
-	case "file":
-		if _, err := normalizeRelativePath(entry.Path, "service.connection."+field+".path"); err != nil {
-			return err
-		}
-		switch format := strings.TrimSpace(entry.Format); format {
-		case "", "text":
-		case "json":
-			if strings.TrimSpace(entry.Field) == "" {
-				return fmt.Errorf("service.connection.%s.field 不能为空", field)
-			}
-		default:
-			return fmt.Errorf("service.connection.%s.format 必须为 text 或 json：%s", field, format)
-		}
-	default:
-		return fmt.Errorf("service.connection.%s.type 必须为 value 或 file：%s", field, kind)
 	}
 	return nil
 }

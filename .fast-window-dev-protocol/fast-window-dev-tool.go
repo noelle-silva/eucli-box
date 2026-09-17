@@ -28,10 +28,13 @@ const (
 	statusSucceeded = "succeeded"
 	statusFailed    = "failed"
 
-	storeManifestFileName        = "fw-app.package.json"
-	storeRuntimeManifestFileName = "fw-app.json"
-	storePackageDirName          = "dist"
-	storeIconDirName             = "assets"
+	sourceManifestFileName = "fw-app.json"
+	storeManifestFileName  = "fw-app.json"
+	storePackageDirName    = "dist"
+	storeIconDirName       = "assets"
+
+	appTypeDesktopApp = "desktop-app"
+	appTypeServiceApp = "service-app"
 )
 
 type actionDefinition struct {
@@ -79,35 +82,40 @@ type receipt struct {
 	Data            receiptData `json:"data"`
 }
 
-type storeManifest struct {
-	ID            string                 `json:"id"`
-	Name          string                 `json:"name"`
-	VersionSource string                 `json:"versionSource"`
-	Package       storeManifestPackage   `json:"package"`
-	Service       string                 `json:"service"`
-	DisplayMode   string                 `json:"displayMode"`
-	Commands      []storeManifestCommand `json:"commands"`
+// appManifest 是源侧手写的应用清单：应用信息的唯一事实源。
+type appManifest struct {
+	Type          string          `json:"type"`
+	ID            string          `json:"id"`
+	Name          string          `json:"name"`
+	Description   string          `json:"description"`
+	VersionSource string          `json:"versionSource"`
+	Package       appPackage      `json:"package"`
+	Service       json.RawMessage `json:"service"`
+	DisplayMode   string          `json:"displayMode"`
+	Commands      []appCommand    `json:"commands"`
 }
 
-type storeManifestPackage struct {
+// storeManifest 是加工后的商店包内清单：补具体版本、路径改包内基准、service 段内联。
+type storeManifest struct {
+	Type        string          `json:"type"`
+	ID          string          `json:"id"`
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Version     string          `json:"version"`
+	Package     appPackage      `json:"package"`
+	Service     json.RawMessage `json:"service,omitempty"`
+	DisplayMode string          `json:"displayMode,omitempty"`
+	Commands    []appCommand    `json:"commands,omitempty"`
+}
+
+type appPackage struct {
 	WindowsExecutable string `json:"windowsExecutable"`
 	Icon              string `json:"icon"`
 }
 
-type storeManifestCommand struct {
+type appCommand struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
-}
-
-type storeRuntimeManifest struct {
-	ID                string                 `json:"id"`
-	Name              string                 `json:"name"`
-	Version           string                 `json:"version"`
-	WindowsExecutable string                 `json:"windowsExecutable"`
-	Icon              string                 `json:"icon,omitempty"`
-	Service           string                 `json:"service,omitempty"`
-	DisplayMode       string                 `json:"displayMode,omitempty"`
-	Commands          []storeManifestCommand `json:"commands,omitempty"`
 }
 
 func main() {
@@ -297,8 +305,8 @@ func valueAtPath(root any, dotted string) (string, bool) {
 	return text, true
 }
 
-// buildStorePackage 把基础成品包加工成商店包：解包后写入运行清单与图标，再重打包到协议目录的产出区。
-// 运行清单内容全部来自同目录的商店打包清单与应用的版本文件，不依赖应用本体的任何改造。
+// buildStorePackage 把基础成品包加工成商店包：解包后写入商店清单与图标，再重打包到协议目录的产出区。
+// 商店清单由协议目录内手写的 fw-app.json 转换而来：补具体版本、图标改包内基准，其余字段原样内联。
 func buildStorePackage(protocolDir string, artifact map[string]string) (map[string]string, error) {
 	protocolDir, err := filepath.Abs(strings.TrimSpace(protocolDir))
 	if err != nil {
@@ -313,7 +321,7 @@ func buildStorePackage(protocolDir string, artifact map[string]string) (map[stri
 		return nil, fmt.Errorf("确定成品路径失败：%w", err)
 	}
 	root := filepath.Dir(protocolDir)
-	manifest, err := readStoreManifest(filepath.Join(protocolDir, storeManifestFileName))
+	manifest, err := readSourceManifest(filepath.Join(protocolDir, sourceManifestFileName))
 	if err != nil {
 		return nil, err
 	}
@@ -347,32 +355,21 @@ func buildStorePackage(protocolDir string, artifact map[string]string) (map[stri
 	if err := copyFileTo(filepath.Join(tempDir, filepath.FromSlash(iconTarget)), iconSource); err != nil {
 		return nil, err
 	}
-	serviceTarget := ""
-	if strings.TrimSpace(manifest.Service) != "" {
-		serviceRelative, err := resolveManifestPath(manifest.Service, "service")
-		if err != nil {
-			return nil, err
-		}
-		serviceSource := filepath.Join(root, filepath.FromSlash(serviceRelative))
-		if info, statErr := os.Stat(serviceSource); statErr != nil || info.IsDir() {
-			return nil, fmt.Errorf("服务声明文件不存在：%s", serviceRelative)
-		}
-		serviceTarget = path.Base(serviceRelative)
-		if err := copyFileTo(filepath.Join(tempDir, serviceTarget), serviceSource); err != nil {
-			return nil, err
-		}
+	storeManifestValue := storeManifest{
+		Type:        manifest.Type,
+		ID:          manifest.ID,
+		Name:        manifest.Name,
+		Description: manifest.Description,
+		Version:     version,
+		Package: appPackage{
+			WindowsExecutable: executable,
+			Icon:              iconTarget,
+		},
+		Service:     manifest.Service,
+		DisplayMode: manifest.DisplayMode,
+		Commands:    manifest.Commands,
 	}
-	runtimeManifest := storeRuntimeManifest{
-		ID:                manifest.ID,
-		Name:              manifest.Name,
-		Version:           version,
-		WindowsExecutable: executable,
-		Icon:              iconTarget,
-		Service:           serviceTarget,
-		DisplayMode:       manifest.DisplayMode,
-		Commands:          manifest.Commands,
-	}
-	if err := writeStoreRuntimeManifest(tempDir, runtimeManifest); err != nil {
+	if err := writeStoreManifest(tempDir, storeManifestValue); err != nil {
 		return nil, err
 	}
 
@@ -395,25 +392,51 @@ func buildStorePackage(protocolDir string, artifact map[string]string) (map[stri
 	}, nil
 }
 
-func readStoreManifest(file string) (storeManifest, error) {
+func readSourceManifest(file string) (appManifest, error) {
 	payload, err := os.ReadFile(file)
 	if err != nil {
-		return storeManifest{}, fmt.Errorf("读取商店清单失败：%w", err)
+		return appManifest{}, fmt.Errorf("读取应用清单失败：%w", err)
 	}
-	var manifest storeManifest
+	var manifest appManifest
 	if err := json.Unmarshal(payload, &manifest); err != nil {
-		return storeManifest{}, fmt.Errorf("解析商店清单失败：%w", err)
+		return appManifest{}, fmt.Errorf("解析应用清单失败：%w", err)
 	}
 	if strings.TrimSpace(manifest.ID) == "" {
-		return storeManifest{}, errors.New("商店清单缺少 id")
+		return appManifest{}, errors.New("应用清单缺少 id")
 	}
 	if strings.TrimSpace(manifest.Name) == "" {
-		return storeManifest{}, errors.New("商店清单缺少 name")
+		return appManifest{}, errors.New("应用清单缺少 name")
 	}
 	if strings.TrimSpace(manifest.VersionSource) == "" {
-		return storeManifest{}, errors.New("商店清单缺少 versionSource")
+		return appManifest{}, errors.New("应用清单缺少 versionSource")
+	}
+	if err := validateSourceService(manifest.Type, manifest.Service); err != nil {
+		return appManifest{}, err
 	}
 	return manifest, nil
+}
+
+// validateSourceService 校验清单类别与 service 段的一致性，并确保 service 段是 JSON 对象。
+func validateSourceService(appType string, service json.RawMessage) error {
+	trimmed := bytes.TrimSpace(service)
+	switch strings.TrimSpace(appType) {
+	case appTypeDesktopApp:
+		if len(trimmed) != 0 && !bytes.Equal(trimmed, []byte("null")) {
+			return fmt.Errorf("清单 type 为 %s 时不允许携带 service 段", appTypeDesktopApp)
+		}
+		return nil
+	case appTypeServiceApp:
+		if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+			return fmt.Errorf("清单 type 为 %s 时必须提供 service 段", appTypeServiceApp)
+		}
+		var section map[string]json.RawMessage
+		if err := json.Unmarshal(trimmed, &section); err != nil {
+			return fmt.Errorf("service 段必须是 JSON 对象：%w", err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("清单 type 必须为 %s 或 %s", appTypeDesktopApp, appTypeServiceApp)
+	}
 }
 
 func readStoreVersion(root string, versionSource string) (string, error) {
@@ -569,13 +592,13 @@ func copyFileTo(target string, source string) error {
 	return nil
 }
 
-func writeStoreRuntimeManifest(packageRoot string, manifest storeRuntimeManifest) error {
+func writeStoreManifest(packageRoot string, manifest storeManifest) error {
 	payload, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return fmt.Errorf("生成 fw-app.json 失败：%w", err)
 	}
 	payload = append(payload, '\n')
-	target := filepath.Join(packageRoot, storeRuntimeManifestFileName)
+	target := filepath.Join(packageRoot, storeManifestFileName)
 	if err := os.WriteFile(target, payload, 0o644); err != nil {
 		return fmt.Errorf("写入 fw-app.json 失败：%w", err)
 	}

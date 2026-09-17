@@ -120,14 +120,8 @@ func TestBuildStorePackageProducesInstallableArchive(t *testing.T) {
 	protocolDir := filepath.Join(root, ".fast-window-dev-protocol")
 	writeTestFile(t, filepath.Join(root, "internal", "boxrelease", "release.json"), "{\n  \"version\": \"0.1.2\",\n  \"dataVersion\": \"1.0.0\"\n}\n")
 	writeTestFile(t, filepath.Join(protocolDir, "assets", "icon.svg"), "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\"></svg>\n")
-	writeTestFile(t, filepath.Join(protocolDir, "fw-app.service.json"), `{
-  "schemaVersion": 1,
-  "id": "eucli-box",
-  "start": { "executable": "eucli-box.exe" }
-}
-`)
-	writeTestFile(t, filepath.Join(protocolDir, "fw-app.package.json"), `{
-  "schemaVersion": 1,
+	writeTestFile(t, filepath.Join(protocolDir, "fw-app.json"), `{
+  "type": "service-app",
   "id": "eucli-box",
   "name": "eucli-box",
   "description": "eucli-box 商店化测试。",
@@ -136,7 +130,10 @@ func TestBuildStorePackageProducesInstallableArchive(t *testing.T) {
     "windowsExecutable": "eucli-box.exe",
     "icon": ".fast-window-dev-protocol/assets/icon.svg"
   },
-  "service": ".fast-window-dev-protocol/fw-app.service.json",
+  "service": {
+    "ready": { "type": "log", "match": "is ready" },
+    "stop": { "type": "terminate" }
+  },
   "displayMode": "default",
   "commands": []
 }
@@ -163,35 +160,84 @@ func TestBuildStorePackageProducesInstallableArchive(t *testing.T) {
 	}
 
 	names := listZipNames(t, result["path"])
-	for _, name := range []string{"fw-app.json", "fw-app.service.json", "assets/icon.svg", "eucli-box.exe", "README.md", "release-product.json"} {
+	for _, name := range []string{"fw-app.json", "assets/icon.svg", "eucli-box.exe", "README.md", "release-product.json"} {
 		if !containsString(names, name) {
 			t.Fatalf("商店包缺少 %s：%v", name, names)
 		}
 	}
+	if containsString(names, "fw-app.service.json") {
+		t.Fatalf("商店包不应再携带独立服务声明：%v", names)
+	}
 
 	var manifest struct {
-		ID                string `json:"id"`
-		Name              string `json:"name"`
-		Version           string `json:"version"`
-		WindowsExecutable string `json:"windowsExecutable"`
-		Icon              string `json:"icon"`
-		Service           string `json:"service"`
-		DisplayMode       string `json:"displayMode"`
+		Type     string `json:"type"`
+		ID       string `json:"id"`
+		Name     string `json:"name"`
+		Version  string `json:"version"`
+		Package  struct {
+			WindowsExecutable string `json:"windowsExecutable"`
+			Icon              string `json:"icon"`
+		} `json:"package"`
+		Service struct {
+			Ready struct {
+				Type  string `json:"type"`
+				Match string `json:"match"`
+			} `json:"ready"`
+			Stop struct {
+				Type string `json:"type"`
+			} `json:"stop"`
+		} `json:"service"`
+		DisplayMode string `json:"displayMode"`
 	}
 	if err := json.Unmarshal([]byte(readZipEntry(t, result["path"], "fw-app.json")), &manifest); err != nil {
 		t.Fatalf("fw-app.json 解析失败：%v", err)
 	}
-	if manifest.ID != "eucli-box" || manifest.Name != "eucli-box" || manifest.Version != "0.1.2" {
+	if manifest.Type != appTypeServiceApp || manifest.ID != "eucli-box" || manifest.Name != "eucli-box" || manifest.Version != "0.1.2" {
 		t.Fatalf("fw-app.json = %#v", manifest)
 	}
-	if manifest.WindowsExecutable != "eucli-box.exe" || manifest.Icon != "assets/icon.svg" || manifest.DisplayMode != "default" {
+	if manifest.Package.WindowsExecutable != "eucli-box.exe" || manifest.Package.Icon != "assets/icon.svg" || manifest.DisplayMode != "default" {
 		t.Fatalf("fw-app.json = %#v", manifest)
 	}
-	if manifest.Service != "fw-app.service.json" {
-		t.Fatalf("fw-app.json service = %q", manifest.Service)
+	if manifest.Service.Ready.Type != "log" || manifest.Service.Ready.Match != "is ready" || manifest.Service.Stop.Type != "terminate" {
+		t.Fatalf("fw-app.json service = %#v", manifest.Service)
 	}
 	if icon := readZipEntry(t, result["path"], "assets/icon.svg"); !strings.Contains(icon, "<svg") {
 		t.Fatalf("图标内容异常：%q", icon)
+	}
+}
+
+func TestBuildStorePackageKeepsDesktopAppWithoutService(t *testing.T) {
+	root := t.TempDir()
+	protocolDir := filepath.Join(root, ".fast-window-dev-protocol")
+	writeTestFile(t, filepath.Join(root, "internal", "boxrelease", "release.json"), "{\n  \"version\": \"0.1.2\"\n}\n")
+	writeTestFile(t, filepath.Join(protocolDir, "assets", "icon.svg"), "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\"></svg>\n")
+	writeTestFile(t, filepath.Join(protocolDir, "fw-app.json"), `{
+  "type": "desktop-app",
+  "id": "eucli-box",
+  "name": "eucli-box",
+  "description": "桌面应用商店化测试。",
+  "versionSource": "internal/boxrelease/release.json",
+  "package": {
+    "windowsExecutable": "eucli-box.exe",
+    "icon": ".fast-window-dev-protocol/assets/icon.svg"
+  },
+  "displayMode": "default",
+  "commands": []
+}
+`)
+	baseZip := filepath.Join(root, "base", "eucli-box_0.1.2_windows-x64.zip")
+	writeTestZip(t, baseZip, map[string]string{"eucli-box.exe": "fake-exe"})
+
+	result, err := buildStorePackage(protocolDir, map[string]string{"path": baseZip})
+	if err != nil {
+		t.Fatalf("buildStorePackage() error = %v", err)
+	}
+	payload := readZipEntry(t, result["path"], "fw-app.json")
+	if strings.Contains(payload, "service") {
+		t.Fatalf("桌面应用清单不应带 service 段：%s", payload)
+	}
+	if strings.Contains(payload, "versionSource") {
+		t.Fatalf("商店清单不应保留 versionSource：%s", payload)
 	}
 }
 
@@ -206,7 +252,8 @@ func TestBuildStorePackageRejectsMissingIcon(t *testing.T) {
 	root := t.TempDir()
 	protocolDir := filepath.Join(root, ".fast-window-dev-protocol")
 	writeTestFile(t, filepath.Join(root, "internal", "boxrelease", "release.json"), "{\n  \"version\": \"0.1.2\"\n}\n")
-	writeTestFile(t, filepath.Join(protocolDir, "fw-app.package.json"), `{
+	writeTestFile(t, filepath.Join(protocolDir, "fw-app.json"), `{
+  "type": "desktop-app",
   "id": "eucli-box",
   "name": "eucli-box",
   "versionSource": "internal/boxrelease/release.json",
@@ -226,29 +273,54 @@ func TestBuildStorePackageRejectsMissingIcon(t *testing.T) {
 	}
 }
 
-func TestBuildStorePackageRejectsMissingServiceDeclaration(t *testing.T) {
-	root := t.TempDir()
-	protocolDir := filepath.Join(root, ".fast-window-dev-protocol")
-	writeTestFile(t, filepath.Join(root, "internal", "boxrelease", "release.json"), "{\n  \"version\": \"0.1.2\"\n}\n")
-	writeTestFile(t, filepath.Join(protocolDir, "assets", "icon.svg"), "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\"></svg>\n")
-	writeTestFile(t, filepath.Join(protocolDir, "fw-app.package.json"), `{
+func TestReadSourceManifestValidatesTypeAndService(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		message string
+	}{
+		{
+			name: "未知类别",
+			content: `{
+  "type": "daemon-app",
+  "id": "eucli-box",
+  "name": "eucli-box",
+  "versionSource": "internal/boxrelease/release.json"
+}`,
+			message: "type 必须为",
+		},
+		{
+			name: "服务应用缺少服务段",
+			content: `{
+  "type": "service-app",
+  "id": "eucli-box",
+  "name": "eucli-box",
+  "versionSource": "internal/boxrelease/release.json"
+}`,
+			message: "必须提供 service 段",
+		},
+		{
+			name: "桌面应用带服务段",
+			content: `{
+  "type": "desktop-app",
   "id": "eucli-box",
   "name": "eucli-box",
   "versionSource": "internal/boxrelease/release.json",
-  "package": {
-    "windowsExecutable": "eucli-box.exe",
-    "icon": ".fast-window-dev-protocol/assets/icon.svg"
-  },
-  "service": ".fast-window-dev-protocol/fw-app.service.json",
-  "displayMode": "default",
-  "commands": []
-}
-`)
-	baseZip := filepath.Join(root, "base", "eucli-box_0.1.2_windows-x64.zip")
-	writeTestZip(t, baseZip, map[string]string{"eucli-box.exe": "fake-exe"})
-
-	if _, err := buildStorePackage(protocolDir, map[string]string{"path": baseZip}); err == nil || !strings.Contains(err.Error(), "服务声明") {
-		t.Fatalf("err = %v", err)
+  "service": { "stop": { "type": "terminate" } }
+}`,
+			message: "不允许携带 service 段",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			file := filepath.Join(t.TempDir(), sourceManifestFileName)
+			writeTestFile(t, file, test.content)
+			if _, err := readSourceManifest(file); err == nil {
+				t.Fatal("readSourceManifest() 应该失败")
+			} else if !strings.Contains(err.Error(), test.message) {
+				t.Fatalf("err = %v，期望包含 %q", err, test.message)
+			}
+		})
 	}
 }
 

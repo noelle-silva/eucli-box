@@ -12,8 +12,12 @@ import (
 	"strings"
 )
 
-const manifestFileName = "fw-app.package.json"
-const manifestSchemaVersion = 1
+const manifestFileName = "fw-app.json"
+
+const (
+	appTypeDesktopApp = "desktop-app"
+	appTypeServiceApp = "service-app"
+)
 
 var (
 	safeIDPattern        = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
@@ -23,15 +27,15 @@ var (
 )
 
 type manifest struct {
-	SchemaVersion int            `json:"schemaVersion"`
-	ID            string         `json:"id"`
-	Name          string         `json:"name"`
-	Description   string         `json:"description"`
-	VersionSource string         `json:"versionSource"`
-	Package       packageSection `json:"package"`
-	Service       string         `json:"service"`
-	DisplayMode   string         `json:"displayMode"`
-	Commands      []command      `json:"commands"`
+	Type          string          `json:"type"`
+	ID            string          `json:"id"`
+	Name          string          `json:"name"`
+	Description   string          `json:"description"`
+	VersionSource string          `json:"versionSource"`
+	Package       packageSection  `json:"package"`
+	Service       *serviceSection `json:"service"`
+	DisplayMode   string          `json:"displayMode"`
+	Commands      []command       `json:"commands"`
 }
 
 type packageSection struct {
@@ -42,6 +46,41 @@ type packageSection struct {
 type command struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
+}
+
+type serviceSection struct {
+	Start      *serviceStart      `json:"start"`
+	Ready      *serviceReady      `json:"ready"`
+	Connection *serviceConnection `json:"connection"`
+	Stop       *serviceStop       `json:"stop"`
+}
+
+type serviceStart struct {
+	Args        []string          `json:"args"`
+	Environment map[string]string `json:"environment"`
+}
+
+type serviceReady struct {
+	Type           string `json:"type"`
+	Match          string `json:"match"`
+	TimeoutSeconds *int64 `json:"timeoutSeconds"`
+}
+
+type serviceStop struct {
+	Type string `json:"type"`
+}
+
+type serviceConnection struct {
+	Port *serviceConnectionEntry `json:"port"`
+	Key  *serviceConnectionEntry `json:"key"`
+}
+
+type serviceConnectionEntry struct {
+	Type   string `json:"type"`
+	Value  string `json:"value"`
+	Path   string `json:"path"`
+	Format string `json:"format"`
+	Field  string `json:"field"`
 }
 
 type report struct {
@@ -97,8 +136,8 @@ func checkManifest(manifestPath string) (report, error) {
 	if err != nil {
 		return report{}, err
 	}
-	if parsed.SchemaVersion != manifestSchemaVersion {
-		return report{}, fmt.Errorf("schemaVersion 必须为 %d，当前为 %d", manifestSchemaVersion, parsed.SchemaVersion)
+	if err := checkService(parsed.Type, parsed.Service); err != nil {
+		return report{}, err
 	}
 	id := strings.TrimSpace(parsed.ID)
 	if !safeIDPattern.MatchString(id) {
@@ -142,16 +181,101 @@ func checkManifest(manifestPath string) (report, error) {
 	if err := requireFile(filepath.Join(root, filepath.FromSlash(icon)), "图标"); err != nil {
 		return report{}, err
 	}
-	if service := strings.TrimSpace(parsed.Service); service != "" {
-		servicePath, err := normalizeRelativePath(service, "service")
-		if err != nil {
-			return report{}, err
+	return report{ID: id, Version: version, Executable: executable, Icon: icon}, nil
+}
+
+// checkService 校验清单类别与 service 段的一致性，并校验内联服务声明的结构。
+func checkService(appType string, service *serviceSection) error {
+	switch strings.TrimSpace(appType) {
+	case appTypeDesktopApp:
+		if service != nil {
+			return fmt.Errorf("type 为 %s 时不允许携带 service 段", appTypeDesktopApp)
 		}
-		if err := requireFile(filepath.Join(root, filepath.FromSlash(servicePath)), "服务声明"); err != nil {
-			return report{}, err
+		return nil
+	case appTypeServiceApp:
+		if service == nil {
+			return fmt.Errorf("type 为 %s 时必须提供 service 段", appTypeServiceApp)
+		}
+		return checkServiceSection(service)
+	default:
+		return fmt.Errorf("type 必须为 %s 或 %s", appTypeDesktopApp, appTypeServiceApp)
+	}
+}
+
+func checkServiceSection(service *serviceSection) error {
+	if err := checkServiceStart(service.Start); err != nil {
+		return err
+	}
+	if service.Ready == nil {
+		return errors.New("service.ready 不能为空")
+	}
+	if kind := strings.TrimSpace(service.Ready.Type); kind != "log" {
+		return fmt.Errorf("service.ready.type 必须为 log：%s", kind)
+	}
+	if strings.TrimSpace(service.Ready.Match) == "" {
+		return errors.New("service.ready.match 不能为空")
+	}
+	if service.Ready.TimeoutSeconds != nil && *service.Ready.TimeoutSeconds <= 0 {
+		return errors.New("service.ready.timeoutSeconds 必须为正整数")
+	}
+	if service.Stop == nil {
+		return errors.New("service.stop 不能为空")
+	}
+	if kind := strings.TrimSpace(service.Stop.Type); kind != "terminate" {
+		return fmt.Errorf("service.stop.type 必须为 terminate：%s", kind)
+	}
+	if service.Connection != nil {
+		if err := checkServiceConnectionEntry(service.Connection.Port, "port"); err != nil {
+			return err
+		}
+		if err := checkServiceConnectionEntry(service.Connection.Key, "key"); err != nil {
+			return err
 		}
 	}
-	return report{ID: id, Version: version, Executable: executable, Icon: icon}, nil
+	return nil
+}
+
+func checkServiceStart(start *serviceStart) error {
+	if start == nil {
+		return nil
+	}
+	for key, value := range start.Environment {
+		if key == "" || strings.ContainsAny(key, "=\x00") {
+			return fmt.Errorf("service.start.environment 变量名不合法：%s", key)
+		}
+		if strings.ContainsRune(value, '\x00') {
+			return fmt.Errorf("service.start.environment 变量值不合法：%s", key)
+		}
+	}
+	return nil
+}
+
+func checkServiceConnectionEntry(entry *serviceConnectionEntry, field string) error {
+	if entry == nil {
+		return nil
+	}
+	switch kind := strings.TrimSpace(entry.Type); kind {
+	case "value":
+		if strings.TrimSpace(entry.Value) == "" {
+			return fmt.Errorf("service.connection.%s.value 不能为空", field)
+		}
+	case "file":
+		if _, err := normalizeRelativePath(entry.Path, "service.connection."+field+".path"); err != nil {
+			return err
+		}
+		switch format := strings.TrimSpace(entry.Format); format {
+		case "", "text":
+		case "json":
+			if strings.TrimSpace(entry.Field) == "" {
+				return fmt.Errorf("service.connection.%s.field 不能为空", field)
+			}
+		default:
+			return fmt.Errorf("service.connection.%s.format 必须为 text 或 json：%s", field, format)
+		}
+	default:
+		return fmt.Errorf("service.connection.%s.type 必须为 value 或 file：%s", field, kind)
+	}
+	return nil
 }
 
 func readManifest(path string) (manifest, error) {

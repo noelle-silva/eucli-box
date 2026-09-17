@@ -1,0 +1,35 @@
+{
+  "type": "service-app",
+  "id": "eucli-box",
+  "name": "eucli-box",
+  "description": "eucli-AI agent 内核",
+  "versionSource": "internal/boxrelease/release.json",
+  "package": {
+    "windowsExecutable": "eucli-box.exe",
+    "icon": ".fast-window-dev-protocol/assets/icon.svg"
+  },
+  "service": {
+    "ready": {
+      "type": "log",
+      "match": "is ready"
+    },
+    "connection": {
+      "port": {
+        "type": "file",
+        "path": "data/.meta/port.json",
+        "format": "json",
+        "field": "port"
+      },
+      "key": {
+        "type": "file",
+        "path": "data/.meta/box.key",
+        "format": "text"
+      }
+    },
+    "stop": {
+      "type": "terminate"
+    }
+  },
+  "displayMode": "default",
+  "commands": []
+}

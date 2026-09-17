@@ -8,7 +8,7 @@ import (
 )
 
 func TestCheckManifestAcceptsCompleteFixture(t *testing.T) {
-	root := writeFixture(t)
+	root := writeFixture(t, fixtureManifest)
 	result, err := checkManifest(manifestPathOf(root))
 	if err != nil {
 		t.Fatalf("checkManifest() error = %v", err)
@@ -18,6 +18,13 @@ func TestCheckManifestAcceptsCompleteFixture(t *testing.T) {
 	}
 	if result.Executable != "eucli-box.exe" {
 		t.Fatalf("executable = %q", result.Executable)
+	}
+}
+
+func TestCheckManifestAcceptsServiceAppFixture(t *testing.T) {
+	root := writeFixture(t, fixtureServiceManifest)
+	if _, err := checkManifest(manifestPathOf(root)); err != nil {
+		t.Fatalf("checkManifest() error = %v", err)
 	}
 }
 
@@ -35,6 +42,24 @@ func TestCheckManifestRejectsBrokenManifests(t *testing.T) {
 				})
 			},
 			message: "解析清单文件失败",
+		},
+		{
+			name: "非法类别",
+			mutate: func(t *testing.T, root string) {
+				rewriteManifest(t, root, func(text string) string {
+					return strings.Replace(text, `"type": "desktop-app"`, `"type": "daemon-app"`, 1)
+				})
+			},
+			message: "type 必须为",
+		},
+		{
+			name: "服务应用缺少服务段",
+			mutate: func(t *testing.T, root string) {
+				rewriteManifest(t, root, func(text string) string {
+					return strings.Replace(text, `"type": "desktop-app"`, `"type": "service-app"`, 1)
+				})
+			},
+			message: "必须提供 service 段",
 		},
 		{
 			name: "非法 id",
@@ -66,7 +91,7 @@ func TestCheckManifestRejectsBrokenManifests(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			root := writeFixture(t)
+			root := writeFixture(t, fixtureManifest)
 			test.mutate(t, root)
 			if _, err := checkManifest(manifestPathOf(root)); err == nil {
 				t.Fatal("checkManifest() 应该失败")
@@ -77,8 +102,61 @@ func TestCheckManifestRejectsBrokenManifests(t *testing.T) {
 	}
 }
 
+func TestCheckManifestRejectsBrokenServiceSections(t *testing.T) {
+	tests := []struct {
+		name    string
+		service string
+		message string
+	}{
+		{
+			name:    "就绪规则类型不支持",
+			service: `"ready": { "type": "port", "match": "ready" }, "stop": { "type": "terminate" }`,
+			message: "service.ready.type 必须为 log",
+		},
+		{
+			name:    "就绪规则缺少匹配文本",
+			service: `"ready": { "type": "log" }, "stop": { "type": "terminate" }`,
+			message: "service.ready.match 不能为空",
+		},
+		{
+			name:    "停止方式不支持",
+			service: `"ready": { "type": "log", "match": "ready" }, "stop": { "type": "kill" }`,
+			message: "service.stop.type 必须为 terminate",
+		},
+		{
+			name:    "连接端口类型不支持",
+			service: `"ready": { "type": "log", "match": "ready" }, "stop": { "type": "terminate" }, "connection": { "port": { "type": "env" } }`,
+			message: "connection.port.type 必须为 value 或 file",
+		},
+		{
+			name:    "连接文件路径不安全",
+			service: `"ready": { "type": "log", "match": "ready" }, "stop": { "type": "terminate" }, "connection": { "key": { "type": "file", "path": "../box.key" } }`,
+			message: "connection.key.path 不安全",
+		},
+		{
+			name:    "JSON 连接文件缺少字段名",
+			service: `"ready": { "type": "log", "match": "ready" }, "stop": { "type": "terminate" }, "connection": { "port": { "type": "file", "path": "data/port.json", "format": "json" } }`,
+			message: "connection.port.field 不能为空",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := writeFixture(t, fixtureManifest)
+			rewriteManifest(t, root, func(text string) string {
+				next := strings.Replace(text, `"type": "desktop-app"`, `"type": "service-app"`, 1)
+				return strings.Replace(next, `"displayMode"`, `"service": {`+test.service+`},`+"\n  "+`"displayMode"`, 1)
+			})
+			if _, err := checkManifest(manifestPathOf(root)); err == nil {
+				t.Fatal("checkManifest() 应该失败")
+			} else if !strings.Contains(err.Error(), test.message) {
+				t.Fatalf("err = %v，期望包含 %q", err, test.message)
+			}
+		})
+	}
+}
+
 const fixtureManifest = `{
-  "schemaVersion": 1,
+  "type": "desktop-app",
   "id": "eucli-box",
   "name": "eucli-box",
   "description": "本地 AI 工作台业务端。",
@@ -92,26 +170,36 @@ const fixtureManifest = `{
 }
 `
 
-func TestCheckManifestValidatesServiceDeclaration(t *testing.T) {
-	root := writeFixture(t)
-	rewriteManifest(t, root, func(text string) string {
-		return strings.Replace(text, `"displayMode"`, `"service": ".fast-window-dev-protocol/fw-app.service.json",`+"\n  "+`"displayMode"`, 1)
-	})
-	if _, err := checkManifest(manifestPathOf(root)); err == nil || !strings.Contains(err.Error(), "服务声明") {
-		t.Fatalf("缺少服务声明文件应报错：err = %v", err)
-	}
-	writeTestFile(t, filepath.Join(root, ".fast-window-dev-protocol", "fw-app.service.json"), "{\n  \"schemaVersion\": 1\n}\n")
-	if _, err := checkManifest(manifestPathOf(root)); err != nil {
-		t.Fatalf("补齐服务声明后应通过：err = %v", err)
-	}
+const fixtureServiceManifest = `{
+  "type": "service-app",
+  "id": "eucli-box",
+  "name": "eucli-box",
+  "description": "本地 AI 工作台业务端。",
+  "versionSource": "internal/boxrelease/release.json",
+  "package": {
+    "windowsExecutable": "eucli-box.exe",
+    "icon": ".fast-window-dev-protocol/assets/icon.svg"
+  },
+  "service": {
+    "start": { "args": ["--port", "8765"], "environment": { "EUCLI_BOX_MODE": "service" } },
+    "ready": { "type": "log", "match": "is ready", "timeoutSeconds": 30 },
+    "connection": {
+      "port": { "type": "file", "path": "data/.meta/port.json", "format": "json", "field": "port" },
+      "key": { "type": "file", "path": "data/.meta/box.key", "format": "text" }
+    },
+    "stop": { "type": "terminate" }
+  },
+  "displayMode": "default",
+  "commands": []
 }
+`
 
-func writeFixture(t *testing.T) string {
+func writeFixture(t *testing.T, content string) string {
 	t.Helper()
 	root := t.TempDir()
 	writeTestFile(t, filepath.Join(root, "internal", "boxrelease", "release.json"), "{\n  \"version\": \"0.1.2\",\n  \"dataVersion\": \"1.0.0\"\n}\n")
 	writeTestFile(t, filepath.Join(root, ".fast-window-dev-protocol", "assets", "icon.svg"), "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\"></svg>\n")
-	writeTestFile(t, manifestPathOf(root), fixtureManifest)
+	writeTestFile(t, manifestPathOf(root), content)
 	return root
 }
 

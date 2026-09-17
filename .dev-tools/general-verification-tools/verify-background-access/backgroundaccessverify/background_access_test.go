@@ -16,6 +16,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"eucli-box/pkg/datapaths"
 )
 
 // ---------- 业务端进程（普通模式） ----------
@@ -40,18 +42,19 @@ func startRegularBox(t *testing.T, boxPath string, envDir string) *boxProcess {
 			t.Fatalf("mkdir %s: %v", dir, err)
 		}
 	}
+	const fixedKey = "background-access-fixed-key"
 	port := freePort(t)
+	if err := writeServiceProfile(boxData, port, fixedKey); err != nil {
+		t.Fatalf("写入启动配置画像失败：%v", err)
+	}
 	logFile, err := os.Create(filepath.Join(envDir, "box-"+unique+".log"))
 	if err != nil {
 		t.Fatalf("create box log: %v", err)
 	}
-	const fixedKey = "background-access-fixed-key"
 	cmd := exec.Command(boxPath)
 	cmd.Env = append(os.Environ(),
 		"EUCLI_BOX_DATA_DIR="+boxData,
 		"EUCLI_BOX_PROGRAM_ROOT="+programRoot,
-		"EUCLI_BOX_ADDR=127.0.0.1:"+port,
-		"EUCLI_BOX_KEY="+fixedKey,
 	)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
@@ -59,7 +62,7 @@ func startRegularBox(t *testing.T, boxPath string, envDir string) *boxProcess {
 		t.Fatalf("start box: %v", err)
 	}
 	box := &boxProcess{
-		t: t, cmd: cmd, baseURL: "http://127.0.0.1:" + port, credential: fixedKey,
+		t: t, cmd: cmd, baseURL: "http://127.0.0.1:" + strconv.Itoa(port), credential: fixedKey,
 		client: &http.Client{Timeout: 30 * time.Second}, logFile: logFile,
 	}
 	t.Cleanup(func() { box.stop() })
@@ -67,7 +70,7 @@ func startRegularBox(t *testing.T, boxPath string, envDir string) *boxProcess {
 	return box
 }
 
-func freePort(t *testing.T) string {
+func freePort(t *testing.T) int {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -75,7 +78,16 @@ func freePort(t *testing.T) string {
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
 	_ = listener.Close()
-	return fmt.Sprintf("%d", port)
+	return port
+}
+
+// writeServiceProfile 预置启动配置画像，模拟平台侧按固定读法写入端口与钥匙。
+func writeServiceProfile(boxData string, port int, key string) error {
+	payload, err := json.Marshal(map[string]any{"port": port, "key": key})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(datapaths.ServiceProfileFile(boxData), append(payload, '\n'), 0o600)
 }
 
 func (b *boxProcess) waitReady(t *testing.T) {

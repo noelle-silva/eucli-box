@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -770,12 +771,16 @@ type boxProcess struct {
 func startBox(t *testing.T, boxPath string, envDir string, serverURL string) *boxProcess {
 	t.Helper()
 	port := freePort(t)
+	const boxKey = "tool-plugin-update-verify-key"
 	boxData := filepath.Join(envDir, "box-data")
 	tempDir := filepath.Join(envDir, "temp")
 	for _, dir := range []string{boxData, tempDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", dir, err)
 		}
+	}
+	if err := writeServiceProfile(boxData, port, boxKey); err != nil {
+		t.Fatalf("写入启动配置画像失败：%v", err)
 	}
 	logFile, err := os.Create(filepath.Join(envDir, "box.log"))
 	if err != nil {
@@ -784,7 +789,6 @@ func startBox(t *testing.T, boxPath string, envDir string, serverURL string) *bo
 	cmd := exec.Command(boxPath)
 	cmd.Env = append(os.Environ(),
 		"EUCLI_BOX_DATA_DIR="+boxData,
-		"EUCLI_BOX_ADDR=127.0.0.1:"+port,
 		"EUCLI_BOX_RELEASE_INDEX_BASE="+serverURL,
 		"EUCLI_BOX_RELEASE_DOWNLOAD_BASE="+serverURL,
 		"TEMP="+tempDir,
@@ -795,7 +799,7 @@ func startBox(t *testing.T, boxPath string, envDir string, serverURL string) *bo
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start box: %v", err)
 	}
-	box := &boxProcess{t: t, cmd: cmd, baseURL: "http://127.0.0.1:" + port, client: &http.Client{Timeout: 60 * time.Second}, logFile: logFile, boxData: boxData}
+	box := &boxProcess{t: t, cmd: cmd, baseURL: "http://127.0.0.1:" + strconv.Itoa(port), client: &http.Client{Timeout: 60 * time.Second}, logFile: logFile, boxData: boxData, key: boxKey}
 	t.Cleanup(func() {
 		box.stop()
 	})
@@ -803,7 +807,7 @@ func startBox(t *testing.T, boxPath string, envDir string, serverURL string) *bo
 	return box
 }
 
-func freePort(t *testing.T) string {
+func freePort(t *testing.T) int {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -811,16 +815,13 @@ func freePort(t *testing.T) string {
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
 	_ = listener.Close()
-	return fmt.Sprintf("%d", port)
+	return port
 }
 
 func (b *boxProcess) waitReady(t *testing.T) {
 	t.Helper()
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
-		if b.key == "" {
-			b.key = readBoxKey(b.boxData)
-		}
 		status, _ := b.call(http.MethodGet, "/api/release", "")
 		if status >= 200 && status < 300 {
 			return
@@ -830,13 +831,13 @@ func (b *boxProcess) waitReady(t *testing.T) {
 	t.Fatalf("业务端未在期限内就绪，日志：\n%s", b.logText())
 }
 
-// readBoxKey 读取业务端数据目录的访问钥匙文件。
-func readBoxKey(boxData string) string {
-	payload, err := os.ReadFile(datapaths.BoxKeyFile(boxData))
+// writeServiceProfile 预置启动配置画像，模拟平台侧按固定读法写入端口与钥匙。
+func writeServiceProfile(boxData string, port int, key string) error {
+	payload, err := json.Marshal(map[string]any{"port": port, "key": key})
 	if err != nil {
-		return ""
+		return err
 	}
-	return strings.TrimSpace(string(payload))
+	return os.WriteFile(datapaths.ServiceProfileFile(boxData), append(payload, '\n'), 0o600)
 }
 
 func (b *boxProcess) stop() {

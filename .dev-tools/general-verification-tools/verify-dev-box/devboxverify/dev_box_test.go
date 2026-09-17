@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -14,7 +15,11 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"eucli-box/pkg/datapaths"
 )
+
+const devBoxKey = "devbox-verify-key"
 
 type devBoxProcess struct {
 	t       *testing.T
@@ -34,6 +39,9 @@ func startDevBox(t *testing.T, boxPath string, envDir string) *devBoxProcess {
 			t.Fatalf("mkdir %s: %v", dir, err)
 		}
 	}
+	if err := writeServiceProfile(boxData, freePort(t), devBoxKey); err != nil {
+		t.Fatalf("写入启动配置画像失败：%v", err)
+	}
 	logFile, err := os.Create(filepath.Join(envDir, "box-"+unique+".log"))
 	if err != nil {
 		t.Fatalf("create box log: %v", err)
@@ -41,8 +49,6 @@ func startDevBox(t *testing.T, boxPath string, envDir string) *devBoxProcess {
 	cmd := exec.Command(boxPath)
 	cmd.Env = append(os.Environ(),
 		"EUCLI_BOX_DATA_DIR="+boxData,
-		"EUCLI_BOX_ADDR=127.0.0.1:0",
-		"EUCLI_BOX_KEY=devbox-verify-key",
 		"EUCLI_DEV_TOOL_SOURCE=1",
 		"EUCLI_DEV_TOOL_PACKAGE_ROOT="+toolRoot,
 	)
@@ -57,6 +63,26 @@ func startDevBox(t *testing.T, boxPath string, envDir string) *devBoxProcess {
 	t.Cleanup(func() { box.stop() })
 	box.waitReady(t)
 	return box
+}
+
+func freePort(t *testing.T) int {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("free port: %v", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	_ = listener.Close()
+	return port
+}
+
+// writeServiceProfile 预置启动配置画像，模拟平台侧按固定读法写入端口与钥匙。
+func writeServiceProfile(boxData string, port int, key string) error {
+	payload, err := json.Marshal(map[string]any{"port": port, "key": key})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(datapaths.ServiceProfileFile(boxData), append(payload, '\n'), 0o600)
 }
 
 var readyLinePattern = regexp.MustCompile("listening on (http://127\\.0\\.0\\.1:\\d+)")
@@ -130,7 +156,7 @@ func (b *devBoxProcess) call(method string, path string, body string) (int, []by
 	if body != "" {
 		request.Header.Set("Content-Type", "application/json")
 	}
-	request.Header.Set("Authorization", "Bearer devbox-verify-key")
+	request.Header.Set("Authorization", "Bearer "+devBoxKey)
 	response, err := b.client.Do(request)
 	if err != nil {
 		b.t.Logf("box.call %s %s 失败：%v", method, path, err)

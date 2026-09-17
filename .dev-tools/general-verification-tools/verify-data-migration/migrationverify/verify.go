@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -185,6 +186,9 @@ func startBox(ctx context.Context, run *toolkit.VerificationRun, boxPath string,
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return nil, fmt.Errorf("建立隔离数据目录失败：%w", err)
 	}
+	if err := writeServiceProfile(dataDir); err != nil {
+		return nil, fmt.Errorf("写入启动配置画像失败：%w", err)
+	}
 	logPath := filepath.Join(run.Evidence, logName)
 	logFile, err := os.Create(logPath)
 	if err != nil {
@@ -194,7 +198,6 @@ func startBox(ctx context.Context, run *toolkit.VerificationRun, boxPath string,
 	command.Dir = run.Environment
 	command.Env = toolkit.CommandEnvironment(run.Temp, map[string]string{
 		"EUCLI_BOX_DATA_DIR": dataDir,
-		"EUCLI_BOX_ADDR":     "127.0.0.1:0",
 	})
 	command.Stdout = logFile
 	command.Stderr = logFile
@@ -208,6 +211,29 @@ func startBox(ctx context.Context, run *toolkit.VerificationRun, boxPath string,
 		_ = logFile.Close()
 	}()
 	return process, nil
+}
+
+// writeServiceProfile 预置启动配置画像，模拟平台侧按固定读法写入端口与钥匙。
+func writeServiceProfile(dataDir string) error {
+	port, err := freePort()
+	if err != nil {
+		return err
+	}
+	payload, err := json.Marshal(map[string]any{"port": port, "key": "data-migration-verify-key"})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(datapaths.ServiceProfileFile(dataDir), append(payload, '\n'), 0o600)
+}
+
+func freePort() (int, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	_ = listener.Close()
+	return port, nil
 }
 
 func (b *boxProcess) waitReady(ctx context.Context) error {

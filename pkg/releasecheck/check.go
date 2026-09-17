@@ -97,7 +97,7 @@ func (c *Checker) ListCandidates(ctx context.Context, kind string) ([]CandidateR
 	if err != nil {
 		return nil, err
 	}
-	sourceRepository, err := c.catalog.SourceFor(types.ReleaseArtifactKindBox)
+	sourceRepository, err := c.catalog.RecordRepository()
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +141,7 @@ func (c *Checker) LatestCandidate(ctx context.Context, identity types.ReleaseArt
 	if err != nil {
 		return nil, err
 	}
-	sourceRepository, err := c.catalog.SourceFor(types.ReleaseArtifactKindBox)
+	sourceRepository, err := c.catalog.RecordRepository()
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +164,7 @@ func (c *Checker) LatestCandidate(ctx context.Context, identity types.ReleaseArt
 	return candidate, nil
 }
 
-func (c *Checker) buildCandidate(identity types.ReleaseArtifactIdentity, source types.OfficialReleaseSource, sourceRepository types.OfficialReleaseSource, version releasecatalog.IndexVersion, pkg releasecatalog.IndexPackage) (*ReleaseCandidate, error) {
+func (c *Checker) buildCandidate(identity types.ReleaseArtifactIdentity, source types.OfficialReleaseSource, sourceRepository string, version releasecatalog.IndexVersion, pkg releasecatalog.IndexPackage) (*ReleaseCandidate, error) {
 	archiveURL, err := releasecatalog.DownloadURL(c.downloadBase, source, pkg)
 	if err != nil {
 		return nil, fmt.Errorf("%s 官方索引压缩包地址无效：%w", identity.ID, err)
@@ -178,7 +178,7 @@ func (c *Checker) buildCandidate(identity types.ReleaseArtifactIdentity, source 
 		Version:          version.Version,
 		PublishedAt:      version.PublishedAt,
 		SourceRevision:   version.SourceRevision,
-		SourceRepository: sourceRepository.Repository,
+		SourceRepository: sourceRepository,
 		DataVersion:      version.DataVersion,
 		Compatibility:    version.Compatibility,
 		ReleaseNotes:     strings.TrimSpace(version.ReleaseNotes),

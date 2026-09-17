@@ -65,16 +65,10 @@ func (f *releaseFixture) addIndexVersion(identity types.ReleaseArtifactIdentity,
 		f.t.Fatalf("ArchiveName() error = %v", err)
 	}
 	compatibility := &types.EucliBoxCompatibility{MinimumVersion: "0.1.0", MaximumVersionExclusive: "0.2.0"}
-	dataVersion := ""
-	if identity.Kind == types.ReleaseArtifactKindBox {
-		compatibility = nil
-		dataVersion = "1.0.0"
-	}
 	index.Artifacts[artifactIndex].Versions = append(index.Artifacts[artifactIndex].Versions, releasecatalog.IndexVersion{
 		Version:        version,
 		PublishedAt:    now,
 		SourceRevision: "0123456789abcdef0123456789abcdef01234567",
-		DataVersion:    dataVersion,
 		Compatibility:  compatibility,
 		ReleaseNotes:   "发行说明 " + version,
 		Packages: []releasecatalog.IndexPackage{{
@@ -95,8 +89,6 @@ func (f *releaseFixture) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		kind = types.ReleaseArtifactKindTool
 	case strings.Contains(r.URL.Path, "/noelle-silva/eucli-box-system-plugins/"):
 		kind = types.ReleaseArtifactKindPlugin
-	case strings.Contains(r.URL.Path, "/noelle-silva/eucli-box/"):
-		kind = types.ReleaseArtifactKindBox
 	}
 	if kind == "" {
 		http.NotFound(w, r)

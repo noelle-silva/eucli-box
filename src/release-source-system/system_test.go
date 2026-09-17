@@ -12,7 +12,7 @@ import (
 	"eucli-box/pkg/types"
 )
 
-func TestListInstallationsReadsBoxToolsAndPlugins(t *testing.T) {
+func TestListInstallationsReadsToolsAndPlugins(t *testing.T) {
 	system := newTestSystem(t, testOptions{
 		tools: []types.ToolSummary{
 			{ID: "context7", Version: "0.1.2", Status: types.ToolAvailabilityActive, EucliBoxCompatibility: compatibility("0.1.0", "0.2.0")},
@@ -27,17 +27,13 @@ func TestListInstallationsReadsBoxToolsAndPlugins(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListInstallations() error = %v", err)
 	}
-	box := findInstallation(t, list, types.ReleaseArtifactKindBox, types.ReleaseArtifactKindBox)
-	if box.Version != "0.1.0" {
-		t.Fatalf("box = %#v", box)
-	}
 	context7 := findInstallation(t, list, types.ReleaseArtifactKindTool, "context7")
 	if context7.Version != "0.1.2" || context7.Compatibility == nil {
 		t.Fatalf("context7 = %#v", context7)
 	}
 	findInstallation(t, list, types.ReleaseArtifactKindPlugin, "time-plugin")
 	for _, item := range list.Artifacts {
-		if item.Artifact.ID == "unavailable" || item.Artifact.ID == "not-installed" {
+		if item.Artifact.ID == "unavailable" || item.Artifact.ID == "not-installed" || item.Artifact.Kind == types.ReleaseArtifactKindBox {
 			t.Fatalf("list included non-active artifact: %#v", item)
 		}
 	}
@@ -170,25 +166,10 @@ func TestLocalCandidatesRequireActiveShelf(t *testing.T) {
 	}
 }
 
-func TestBoxUpdateAnnotatesIncompatibleInstalledArtifacts(t *testing.T) {
-	system := newTestSystem(t, testOptions{
-		tools: []types.ToolSummary{
-			{ID: "old_tool", Version: "0.1.0", Status: types.ToolAvailabilityActive, EucliBoxCompatibility: compatibility("0.1.0", "0.2.0")},
-			{ID: "future_tool", Version: "0.2.0", Status: types.ToolAvailabilityActive, EucliBoxCompatibility: compatibility("0.2.0", "0.3.0")},
-		},
-		candidates: map[string][]releasecheck.CandidateRecord{
-			types.ReleaseArtifactKindBox: {
-				{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindBox, ID: types.ReleaseArtifactKindBox}, Candidate: candidate(types.ReleaseArtifactKindBox, types.ReleaseArtifactKindBox, "0.2.0")},
-			},
-		},
-	})
-	list, err := system.ListCandidates(context.Background(), types.ReleaseArtifactKindBox)
-	if err != nil {
-		t.Fatalf("ListCandidates() error = %v", err)
-	}
-	box := findCandidate(t, list, types.ReleaseArtifactKindBox, types.ReleaseArtifactKindBox)
-	if !box.UpdateAvailable || len(box.AffectedArtifacts) != 1 || box.AffectedArtifacts[0].ID != "old_tool" {
-		t.Fatalf("box = %#v", box)
+func TestListCandidatesRejectsBoxKind(t *testing.T) {
+	system := newTestSystem(t, testOptions{})
+	if _, err := system.ListCandidates(context.Background(), types.ReleaseArtifactKindBox); err == nil {
+		t.Fatal("ListCandidates() box kind error = nil")
 	}
 }
 

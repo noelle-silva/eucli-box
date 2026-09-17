@@ -159,13 +159,6 @@ func SortedFileRecords(records []types.ReleaseFileRecord) []types.ReleaseFileRec
 
 func validateReleaseSpecificFacts(identity types.ReleaseArtifactIdentity, compatibility *types.EucliBoxCompatibility, dataVersion string) error {
 	switch identity.Kind {
-	case types.ReleaseArtifactKindBox:
-		if compatibility != nil {
-			return fmt.Errorf("业务端发行不能声明对自身的适用范围")
-		}
-		if err := ValidateVersion(dataVersion); err != nil {
-			return fmt.Errorf("业务端目标数据版本无效：%w", err)
-		}
 	case types.ReleaseArtifactKindTool, types.ReleaseArtifactKindPlugin:
 		if compatibility == nil {
 			return fmt.Errorf("工具和插件必须声明业务端适用范围")
@@ -189,10 +182,6 @@ func validateIdentity(identity types.ReleaseArtifactIdentity) error {
 		return fmt.Errorf("发布物 ID 不能为空")
 	}
 	switch identity.Kind {
-	case types.ReleaseArtifactKindBox:
-		if identity.ID != types.ReleaseArtifactKindBox {
-			return fmt.Errorf("业务端发布物 ID 必须为 %s", types.ReleaseArtifactKindBox)
-		}
 	case types.ReleaseArtifactKindTool, types.ReleaseArtifactKindPlugin:
 	default:
 		return fmt.Errorf("发布物类别无效")

@@ -140,16 +140,10 @@ func (f *githubFixture) addIndexVersion(identity types.ReleaseArtifactIdentity, 
 		f.t.Fatalf("ArchiveName error = %v", err)
 	}
 	compatibility := &types.EucliBoxCompatibility{MinimumVersion: "0.1.0", MaximumVersionExclusive: "0.2.0"}
-	dataVersion := ""
-	if identity.Kind == types.ReleaseArtifactKindBox {
-		compatibility = nil
-		dataVersion = "1.0.0"
-	}
 	index.Artifacts[artifactIndex].Versions = append(index.Artifacts[artifactIndex].Versions, releasecatalog.IndexVersion{
 		Version:        version,
 		PublishedAt:    f.now,
 		SourceRevision: "0123456789abcdef0123456789abcdef01234567",
-		DataVersion:    dataVersion,
 		Compatibility:  compatibility,
 		ReleaseNotes:   "发行说明 " + version,
 		Packages: []releasecatalog.IndexPackage{{
@@ -188,8 +182,6 @@ func repositoryForIndexPath(path string) string {
 		return "noelle-silva/eucli-box-ai-tools"
 	case strings.Contains(path, "/noelle-silva/eucli-box-system-plugins/"):
 		return "noelle-silva/eucli-box-system-plugins"
-	case strings.Contains(path, "/noelle-silva/eucli-box/"):
-		return "noelle-silva/eucli-box"
 	default:
 		return ""
 	}
@@ -218,8 +210,6 @@ func kindForIndexPath(path string) string {
 		return types.ReleaseArtifactKindTool
 	case strings.Contains(path, "/noelle-silva/eucli-box-system-plugins/"):
 		return types.ReleaseArtifactKindPlugin
-	case strings.Contains(path, "/noelle-silva/eucli-box/"):
-		return types.ReleaseArtifactKindBox
 	default:
 		return ""
 	}

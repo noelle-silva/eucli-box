@@ -113,11 +113,7 @@ func ValidateArtifactPackageSource(source ArtifactPackageSource) error {
 
 // ArchiveFileName 返回发布物在指定正式版本的压缩包文件名。
 func ArchiveFileName(identity types.ReleaseArtifactIdentity, version string) string {
-	name := identity.Kind
-	if identity.Kind != types.ReleaseArtifactKindBox {
-		name += "-" + identity.ID
-	}
-	return fmt.Sprintf("%s_%s_%s.zip", name, version, types.ReleasePlatformWindowsX64)
+	return fmt.Sprintf("%s-%s_%s_%s.zip", identity.Kind, identity.ID, version, types.ReleasePlatformWindowsX64)
 }
 
 // CopyPlainFile 把本地开发成品压包复制到目标路径，并核对大小与 SHA-256。

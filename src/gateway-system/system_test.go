@@ -62,7 +62,7 @@ func TestReleaseRouteReturnsVersionAndClientCompatibility(t *testing.T) {
 func TestReleaseSourceRoutesReadInstallationsAndCandidates(t *testing.T) {
 	fakes := newGatewayFakes()
 	fakes.releaseSource.installations = types.ArtifactInstallationList{Artifacts: []types.ArtifactInstallation{{
-		Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindBox, ID: "eucli-box"},
+		Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "context7"},
 		Version:  "0.1.0",
 	}}}
 	fakes.releaseSource.candidates = types.ArtifactCandidateList{SourceKind: "official", Candidates: []types.ArtifactReleaseCandidate{{

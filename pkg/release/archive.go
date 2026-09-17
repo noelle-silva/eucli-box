@@ -252,8 +252,6 @@ func validateRequiredPackageFiles(directory string, product types.ReleaseProduct
 		}
 	}
 	switch product.Artifact.Kind {
-	case types.ReleaseArtifactKindBox:
-		return requireRegularFile(directory, "eucli-box.exe")
 	case types.ReleaseArtifactKindTool:
 		return validateToolPackage(directory, product)
 	case types.ReleaseArtifactKindPlugin:

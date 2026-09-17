@@ -129,12 +129,9 @@ func (s *system) ListCandidates(ctx context.Context, kind string) (types.Artifac
 	return types.ArtifactCandidateList{SourceKind: s.sourceKind(), Candidates: candidates}, nil
 }
 
-// supportsKind 判断分类在当前来源下是否可读；本地源不提供业务端本体候选。
+// supportsKind 判断分类在当前来源下是否可读；本体不参与发行候选。
 func (s *system) supportsKind(kind string) bool {
-	if s.localMode() {
-		return kind == types.ReleaseArtifactKindTool || kind == types.ReleaseArtifactKindPlugin
-	}
-	return kind == types.ReleaseArtifactKindBox || kind == types.ReleaseArtifactKindTool || kind == types.ReleaseArtifactKindPlugin
+	return kind == types.ReleaseArtifactKindTool || kind == types.ReleaseArtifactKindPlugin
 }
 
 func (s *system) officialCandidates(ctx context.Context, kind string, installed []types.ArtifactInstallation, installedByIdentity map[string]types.ArtifactInstallation) []types.ArtifactReleaseCandidate {
@@ -146,7 +143,6 @@ func (s *system) officialCandidates(ctx context.Context, kind string, installed 
 	for _, record := range records {
 		candidates = append(candidates, s.candidateFor(record, installedByIdentity))
 	}
-	s.annotateBoxImpact(candidates, installed)
 	return candidates
 }
 
@@ -245,42 +241,9 @@ func (s *system) failedArtifactCandidate(artifact types.ReleaseArtifactIdentity,
 	return candidate
 }
 
-// annotateBoxImpact 在业务端本体存在更新时，标出升级后预计不再适用的已装工具与插件。
-func (s *system) annotateBoxImpact(candidates []types.ArtifactReleaseCandidate, installed []types.ArtifactInstallation) {
-	for index := range candidates {
-		candidate := &candidates[index]
-		if candidate.Artifact.Kind != types.ReleaseArtifactKindBox || !candidate.UpdateAvailable || release.ValidateVersion(candidate.LatestVersion) != nil {
-			continue
-		}
-		affected := make([]types.ReleaseArtifactIdentity, 0)
-		for _, item := range installed {
-			if item.Artifact.Kind != types.ReleaseArtifactKindTool && item.Artifact.Kind != types.ReleaseArtifactKindPlugin {
-				continue
-			}
-			if item.Compatibility == nil {
-				continue
-			}
-			status := release.AssessEucliBoxCompatibility(item.Version, candidate.LatestVersion, *item.Compatibility)
-			if !status.Compatible {
-				affected = append(affected, item.Artifact)
-			}
-		}
-		sort.Slice(affected, func(i int, j int) bool {
-			if affected[i].Kind != affected[j].Kind {
-				return affected[i].Kind < affected[j].Kind
-			}
-			return affected[i].ID < affected[j].ID
-		})
-		candidate.AffectedArtifacts = affected
-	}
-}
-
-// installedArtifacts 读取业务端本体、可用工具与已装插件的真实版本事实。
+// installedArtifacts 读取可用工具与已装插件的真实版本事实。
 func (s *system) installedArtifacts(ctx context.Context) []types.ArtifactInstallation {
-	installed := []types.ArtifactInstallation{{
-		Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindBox, ID: types.ReleaseArtifactKindBox},
-		Version:  s.boxVersion,
-	}}
+	installed := make([]types.ArtifactInstallation, 0)
 	tools, err := s.tools.ListTools(ctx)
 	if err != nil {
 		installed = append(installed, failedInstallation(types.ReleaseArtifactKindTool, "读取当前工具状态失败："+err.Error()))

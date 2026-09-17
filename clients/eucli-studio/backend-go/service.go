@@ -153,7 +153,7 @@ func (s *service) requestShutdown() {
 func (s *service) listReleaseCandidates(ctx context.Context, kind string) (types.ArtifactCandidateList, error) {
 	kind = strings.TrimSpace(kind)
 	switch kind {
-	case types.ReleaseArtifactKindBox, types.ReleaseArtifactKindTool, types.ReleaseArtifactKindPlugin:
+	case types.ReleaseArtifactKindTool, types.ReleaseArtifactKindPlugin:
 	default:
 		return types.ArtifactCandidateList{}, newError("BAD_REQUEST", fmt.Sprintf("不支持的候选分类 %q", kind))
 	}

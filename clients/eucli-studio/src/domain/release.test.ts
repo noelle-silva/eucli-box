@@ -72,11 +72,11 @@ describe('release cache', () => {
 describe('releaseKindsToLoad', () => {
   it('loads every requested kind when nothing is cached', () => {
     const cache = emptyReleaseCache()
-    expect(releaseKindsToLoad(cache, 'official', ['eucli-box', 'tool', 'plugin'], false)).toEqual(['eucli-box', 'tool', 'plugin'])
+    expect(releaseKindsToLoad(cache, 'official', ['tool', 'plugin'], false)).toEqual(['tool', 'plugin'])
   })
 
   it('skips fresh cells and keeps expired or failed ones', () => {
-    let cache = writeReleaseCache(emptyReleaseCache(), 'official', 'tool', {
+    const cache = writeReleaseCache(emptyReleaseCache(), 'official', 'tool', {
       candidates: [candidate('tool', 'context7', '0.1.2')],
       failure: '',
     })
@@ -85,12 +85,17 @@ describe('releaseKindsToLoad', () => {
       candidates: [candidate('plugin', 'time-plugin', '0.1.0')],
       failure: '',
     }
-    cache.official['eucli-box'] = {
+    expect(releaseKindsToLoad(cache, 'official', ['tool', 'plugin'], false)).toEqual(['plugin'])
+  })
+
+  it('reloads failed cells even when freshly checked', () => {
+    const cache = emptyReleaseCache()
+    cache.official.plugin = {
       checkedAt: new Date().toISOString(),
       candidates: [],
-      failure: '业务端候选读取失败',
+      failure: '插件候选读取失败',
     }
-    expect(releaseKindsToLoad(cache, 'official', ['eucli-box', 'tool', 'plugin'], false)).toEqual(['eucli-box', 'plugin'])
+    expect(releaseKindsToLoad(cache, 'official', ['tool', 'plugin'], false)).toEqual(['tool', 'plugin'])
   })
 
   it('loads every requested kind on force refresh', () => {

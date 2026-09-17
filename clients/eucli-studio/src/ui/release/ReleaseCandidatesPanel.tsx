@@ -185,7 +185,6 @@ function viewStatusLabel(status: string) {
 }
 
 function artifactLabel(artifact: ReleaseArtifactIdentity) {
-  if (artifact.kind === 'eucli-box') return '业务端'
   if (artifact.kind === 'tool') return `AI 工具 · ${artifact.id || '未知'}`
   if (artifact.kind === 'plugin') return `系统插件 · ${artifact.id || '未知'}`
   return artifact.id || '未知发布物'
@@ -218,8 +217,8 @@ function emptyView(): ReleaseCandidatesView {
     installations: [],
     sourceCandidates: { official: [], local: [] },
     sourceCheckedAts: {
-      official: { 'eucli-box': '', tool: '', plugin: '' },
-      local: { 'eucli-box': '', tool: '', plugin: '' },
+      official: { tool: '', plugin: '' },
+      local: { tool: '', plugin: '' },
     },
   }
 }

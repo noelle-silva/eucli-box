@@ -11,7 +11,7 @@ export type CompatibilityStatus = {
 }
 
 export type ReleaseArtifactIdentity = {
-  kind: 'eucli-box' | 'tool' | 'plugin' | string
+  kind: 'tool' | 'plugin' | string
   id: string
 }
 
@@ -59,11 +59,11 @@ export type ArtifactCandidateList = {
 
 export type ReleaseSourceKind = 'official' | 'local'
 
-export type ReleaseArtifactKind = 'eucli-box' | 'tool' | 'plugin'
+export type ReleaseArtifactKind = 'tool' | 'plugin'
 
 export const RELEASE_SOURCE_KINDS: ReleaseSourceKind[] = ['official', 'local']
 
-export const RELEASE_ARTIFACT_KINDS: ReleaseArtifactKind[] = ['eucli-box', 'tool', 'plugin']
+export const RELEASE_ARTIFACT_KINDS: ReleaseArtifactKind[] = ['tool', 'plugin']
 
 export type ReleaseOperationProgress = {
   receivedBytes: number
@@ -230,8 +230,8 @@ export function emptyReleaseCacheCell(): ReleaseCacheCell {
 
 export function emptyReleaseCache(): ReleaseCache {
   return {
-    official: { 'eucli-box': emptyReleaseCacheCell(), tool: emptyReleaseCacheCell(), plugin: emptyReleaseCacheCell() },
-    local: { 'eucli-box': emptyReleaseCacheCell(), tool: emptyReleaseCacheCell(), plugin: emptyReleaseCacheCell() },
+    official: { tool: emptyReleaseCacheCell(), plugin: emptyReleaseCacheCell() },
+    local: { tool: emptyReleaseCacheCell(), plugin: emptyReleaseCacheCell() },
   }
 }
 
@@ -331,15 +331,14 @@ export function composeReleaseCandidatesView(
       local: collectSourceCandidates(cache, 'local'),
     },
     sourceCheckedAts: {
-      official: { 'eucli-box': cache.official['eucli-box'].checkedAt, tool: cache.official.tool.checkedAt, plugin: cache.official.plugin.checkedAt },
-      local: { 'eucli-box': cache.local['eucli-box'].checkedAt, tool: cache.local.tool.checkedAt, plugin: cache.local.plugin.checkedAt },
+      official: { tool: cache.official.tool.checkedAt, plugin: cache.official.plugin.checkedAt },
+      local: { tool: cache.local.tool.checkedAt, plugin: cache.local.plugin.checkedAt },
     },
   }
 }
 
 function collectSourceCandidates(cache: ReleaseCache, sourceKind: ReleaseSourceKind): ArtifactReleaseCandidate[] {
   return [
-    ...cache[sourceKind]['eucli-box'].candidates,
     ...cache[sourceKind].tool.candidates,
     ...cache[sourceKind].plugin.candidates,
   ]

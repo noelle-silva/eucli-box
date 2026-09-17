@@ -11,8 +11,7 @@ const (
 	RelMetaDir                = ".meta"
 	RelAccessDir              = ".meta/access"
 	RelVersionFile            = ".meta/version.json"
-	RelBoxKeyFile             = ".meta/box.key"
-	RelPortFile               = ".meta/port.json"
+	RelServiceProfileFile     = "service-profile.json"
 	RelPlaceholdersFile       = ".meta/placeholders.json"
 	RelInstallSourceFile      = ".meta/install-source.json"
 	RelStickerNamingFile      = ".meta/sticker-naming.json"
@@ -77,14 +76,9 @@ func VersionFile(root string) string {
 	return Join(root, RelVersionFile)
 }
 
-// BoxKeyFile 返回访问钥匙文件。
-func BoxKeyFile(root string) string {
-	return Join(root, RelBoxKeyFile)
-}
-
-// PortFile 返回网关端口配置文件。
-func PortFile(root string) string {
-	return Join(root, RelPortFile)
+// ServiceProfileFile 返回启动配置画像文件（公开契约，平台按固定读法查看与编辑）。
+func ServiceProfileFile(root string) string {
+	return Join(root, RelServiceProfileFile)
 }
 
 // PlaceholdersFile 返回占位符库文件。

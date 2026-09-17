@@ -285,8 +285,8 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups Ch
 	if releaseSource == nil {
 		return nil, gatewayInvalid("release source system dependency is required", nil)
 	}
-	if config.Addr == "" {
-		config.Addr = "127.0.0.1:8765"
+	if strings.TrimSpace(config.Addr) == "" {
+		return nil, gatewayInvalid("gateway listen address is required", nil)
 	}
 	if config.ReadTimeout == 0 {
 		config.ReadTimeout = 15 * time.Second

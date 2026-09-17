@@ -736,7 +736,7 @@ func newTestGateway(t *testing.T, fakes *gatewayFakes) System {
 	if fakes.installSource != nil {
 		source = fakes.installSource
 	}
-	system, err := NewSystem(Config{InstallSource: source}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseSource)
+	system, err := NewSystem(Config{Addr: "127.0.0.1:0", InstallSource: source}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseSource)
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}

@@ -3,19 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -26,6 +21,7 @@ import (
 	"eucli-box/pkg/localrun"
 	"eucli-box/pkg/release"
 	"eucli-box/pkg/releasecheck"
+	"eucli-box/pkg/serviceprofile"
 	"eucli-box/pkg/types"
 	accesssystem "eucli-box/src/access-system"
 	agentruntime "eucli-box/src/agent-runtime-system"
@@ -212,32 +208,22 @@ func run() error {
 	}
 	log.Printf("[12.5/13] access-system            ✓")
 
-	busyKey := ""
-	boxKey := ensureBoxKey(dataDir)
-	if boxKey != "" {
-		busyKey = " (key: active)"
-	}
-	if err := ensurePortFile(dataDir); err != nil {
-		return err
-	}
-	listenAddr, err := resolveListenAddr(dataDir)
+	profile, err := serviceprofile.Ensure(dataDir)
 	if err != nil {
-		return err
+		return fmt.Errorf("准备启动配置画像失败：%w", err)
 	}
-	gatewayConfig := gateway.Config{Addr: listenAddr, Key: boxKey, BoxVersion: boxRelease.Version, Access: accessSystem, InstallSource: sourceState}
+	gatewayConfig := gateway.Config{Addr: profile.ListenAddr(), Key: profile.Key, BoxVersion: boxRelease.Version, Access: accessSystem, InstallSource: sourceState}
 	gatewaySystem, err := gateway.NewSystem(gatewayConfig, runtimeSystem, roleSystem, storageSystem, storageSystem, providerSystem, toolSystem, storageSystem, storageSystem, storageSystem, placeholderSystem, systemPluginSystem, assistSystem, releaseSourceSystem)
 	if err != nil {
 		return fmt.Errorf("start gateway system: %w", err)
 	}
 	accessSystem.SetHandler(gatewaySystem.LongTermHandler())
-	log.Printf("[13/13] gateway-system         ✓%s", busyKey)
+	log.Printf("[13/13] gateway-system         ✓ (key: active)")
 
 	if err := gatewaySystem.Start(ctx); err != nil {
 		return fmt.Errorf("start gateway listener: %w", err)
 	}
-	if entrypoint := entrypointPortFromAddr(gatewayConfig.Addr); entrypoint > 0 {
-		accessSystem.SetLocalEntrypointPort(entrypoint)
-	}
+	accessSystem.SetLocalEntrypointPort(profile.Port)
 	if err := migrationSession.Complete(ctx); err != nil {
 		return fmt.Errorf("数据迁移收尾失败：%w", err)
 	}
@@ -264,169 +250,6 @@ func envOrDefault(key string, fallback string) string {
 		return fallback
 	}
 	return value
-}
-
-func readBoxKey(dataDir string) string {
-	if envKey := strings.TrimSpace(os.Getenv("EUCLI_BOX_KEY")); envKey != "" {
-		return envKey
-	}
-	keyFile := datapaths.BoxKeyFile(dataDir)
-	payload, err := os.ReadFile(keyFile)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(payload))
-}
-
-// ensureBoxKey 保证数据房存有访问钥匙：首次启动时自行生成并记录，以后复用；
-// 不依赖任何外部注入。
-func ensureBoxKey(dataDir string) string {
-	existing := readBoxKey(dataDir)
-	if existing != "" {
-		return existing
-	}
-	buffer := make([]byte, 32)
-	if _, err := io.ReadFull(rand.Reader, buffer); err != nil {
-		log.Printf("生成访问钥匙失败：%v", err)
-		return ""
-	}
-	key := hex.EncodeToString(buffer)
-	metaDir := datapaths.MetaDir(dataDir)
-	if err := os.MkdirAll(metaDir, 0o700); err != nil {
-		log.Printf("生成访问钥匙失败：%v", err)
-		return ""
-	}
-	if err := os.WriteFile(filepath.Join(metaDir, "box.key"), []byte(key+"\n"), 0o600); err != nil {
-		log.Printf("生成访问钥匙失败：%v", err)
-		return ""
-	}
-	return key
-}
-
-// 端口配置事实：gatewayHost 是业务端监听的内置宿主地址，
-// defaultGatewayAddr 是 port 取值为 "default" 时的完整内置监听地址。
-const (
-	gatewayHost        = "127.0.0.1"
-	defaultGatewayAddr = gatewayHost + ":8765"
-	portDefaultValue   = "default"
-	portMinValue       = 1
-	portMaxValue       = 65535
-)
-
-// portFileDocument 是端口配置文件的写入形态。
-type portFileDocument struct {
-	Port string `json:"port"`
-}
-
-// ensurePortFile 保证数据房存有端口配置文件：首次启动时写入默认内容，已存在则绝不改动。
-func ensurePortFile(dataDir string) error {
-	portFile := datapaths.PortFile(dataDir)
-	_, err := os.Stat(portFile)
-	if err == nil {
-		return nil
-	}
-	if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("读取端口配置失败：%w", err)
-	}
-	payload, err := json.MarshalIndent(portFileDocument{Port: portDefaultValue}, "", "  ")
-	if err != nil {
-		return fmt.Errorf("生成端口配置失败：%w", err)
-	}
-	if err := os.MkdirAll(datapaths.MetaDir(dataDir), 0o700); err != nil {
-		return fmt.Errorf("生成端口配置失败：%w", err)
-	}
-	if err := os.WriteFile(portFile, append(payload, '\n'), 0o600); err != nil {
-		return fmt.Errorf("生成端口配置失败：%w", err)
-	}
-	return nil
-}
-
-// readPortFile 读取并校验端口配置文件：返回 nil 表示配置为 "default"（使用内置默认地址），
-// 否则返回 1-65535 的端口号；任何非法取值都直接报错（快速失败，不静默回退）。
-func readPortFile(dataDir string) (*int, error) {
-	portFile := datapaths.PortFile(dataDir)
-	payload, err := os.ReadFile(portFile)
-	if err != nil {
-		return nil, fmt.Errorf("读取端口配置失败：%w", err)
-	}
-	decoder := json.NewDecoder(bytes.NewReader(payload))
-	decoder.UseNumber()
-	var document map[string]any
-	if err := decoder.Decode(&document); err != nil {
-		return nil, fmt.Errorf("端口配置 %s 不是有效 JSON：%w", portFile, err)
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		return nil, fmt.Errorf("端口配置 %s 不是有效 JSON：包含多余内容", portFile)
-	}
-	value, exists := document["port"]
-	if !exists {
-		return nil, fmt.Errorf("端口配置 %s 缺少 port 字段", portFile)
-	}
-	text, err := portValueText(value)
-	if err != nil {
-		return nil, fmt.Errorf("端口配置 %s 的 port 取值无效：%w", portFile, err)
-	}
-	if text == portDefaultValue {
-		return nil, nil
-	}
-	port, err := strconv.Atoi(text)
-	if err != nil {
-		return nil, fmt.Errorf("端口配置 %s 的 port 取值无效：必须是 %d-%d 之间的整数，实际为 %q", portFile, portMinValue, portMaxValue, text)
-	}
-	if port < portMinValue || port > portMaxValue {
-		return nil, fmt.Errorf("端口配置 %s 的 port 取值无效：必须在 %d-%d 之间，实际为 %d", portFile, portMinValue, portMaxValue, port)
-	}
-	return &port, nil
-}
-
-// portValueText 把 port 字段归一到文本：字符串取去除首尾空白后的内容，JSON 数字取字面量，其余类型拒绝。
-func portValueText(value any) (string, error) {
-	switch typed := value.(type) {
-	case string:
-		return strings.TrimSpace(typed), nil
-	case json.Number:
-		return typed.String(), nil
-	case nil:
-		return "", errors.New("不能为 null")
-	case bool:
-		return "", errors.New("不能为布尔值")
-	case []any:
-		return "", errors.New("不能为数组")
-	case map[string]any:
-		return "", errors.New("不能为对象")
-	default:
-		return "", fmt.Errorf("类型不受支持：%T", value)
-	}
-}
-
-// resolveListenAddr 解析最终监听地址，优先级：EUCLI_BOX_ADDR 环境变量 > 配置文件（非 default）> 内置默认。
-// 配置文件无论是否被采用都会先读取与校验，环境变量不会掩盖文件坏值。
-func resolveListenAddr(dataDir string) (string, error) {
-	port, err := readPortFile(dataDir)
-	if err != nil {
-		return "", err
-	}
-	if envAddr := strings.TrimSpace(os.Getenv("EUCLI_BOX_ADDR")); envAddr != "" {
-		return envAddr, nil
-	}
-	if port == nil {
-		return defaultGatewayAddr, nil
-	}
-	return gatewayHost + ":" + strconv.Itoa(*port), nil
-}
-
-// entrypointPortFromAddr 解析网关监听地址的真实端口；随机端口（0）返回 0。
-func entrypointPortFromAddr(addr string) int {
-	_, portValue, err := net.SplitHostPort(strings.TrimSpace(addr))
-	if err != nil {
-		return 0
-	}
-	port, err := strconv.Atoi(portValue)
-	if err != nil || port < 1 {
-		return 0
-	}
-	return port
 }
 
 func programStatusLabel(programsRoot string) string {

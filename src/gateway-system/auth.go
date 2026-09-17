@@ -121,7 +121,7 @@ func (s *system) validateRequestKey(r *http.Request) error {
 		return nil
 	}
 	// 网关直连入口同时接受两种身份：
-	// 1. 直连固定 Key（正式配钥、EUCLI_BOX_KEY 注入的网关身份）；
+	// 1. 直连固定 Key（启动配置画像携带的网关身份）；
 	// 2. 有效长期 Key（客户端以长期 Key 直连网关的身份）。
 	// 两者都未配置时，网关处于未安装身份状态，不做鉴权。
 	requestKey := extractRequestKey(r)

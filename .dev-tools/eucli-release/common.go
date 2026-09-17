@@ -66,8 +66,5 @@ func githubToken(root string, kind string) (string, error) {
 }
 
 func releaseOutputName(identity types.ReleaseArtifactIdentity) string {
-	if identity.Kind == types.ReleaseArtifactKindBox {
-		return identity.ID
-	}
 	return identity.Kind + "-" + identity.ID
 }

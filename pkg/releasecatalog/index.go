@@ -93,12 +93,10 @@ func ValidateIndex(index Index) error {
 		return fmt.Errorf("统一版本索引不能为空")
 	}
 	expectedKinds := map[string]struct{}{
-		types.ReleaseArtifactKindBox:    {},
 		types.ReleaseArtifactKindTool:   {},
 		types.ReleaseArtifactKindPlugin: {},
 	}
 	identities := map[string]struct{}{}
-	boxCount := 0
 	for _, artifact := range index.Artifacts {
 		artifact.Kind = strings.TrimSpace(artifact.Kind)
 		artifact.ID = strings.TrimSpace(artifact.ID)
@@ -108,12 +106,6 @@ func ValidateIndex(index Index) error {
 		if !validID(artifact.ID) {
 			return fmt.Errorf("统一版本索引包含无效发布物 ID %q", artifact.ID)
 		}
-		if artifact.Kind == types.ReleaseArtifactKindBox {
-			boxCount++
-			if artifact.ID != types.ReleaseArtifactKindBox {
-				return fmt.Errorf("业务端发布物 ID 必须为 %s", types.ReleaseArtifactKindBox)
-			}
-		}
 		key := artifact.Kind + ":" + artifact.ID
 		if _, exists := identities[key]; exists {
 			return fmt.Errorf("统一版本索引包含重复发布物 %s", key)
@@ -122,9 +114,6 @@ func ValidateIndex(index Index) error {
 		if err := validateIndexVersions(artifact); err != nil {
 			return fmt.Errorf("%s 版本资料无效：%w", key, err)
 		}
-	}
-	if boxCount > 1 {
-		return fmt.Errorf("统一版本索引只能包含一个业务端发布物")
 	}
 	return nil
 }
@@ -200,13 +189,6 @@ func validateIndexVersions(artifact IndexArtifact) error {
 
 func validateIndexVersionFacts(kind string, version IndexVersion) error {
 	switch kind {
-	case types.ReleaseArtifactKindBox:
-		if version.Compatibility != nil {
-			return fmt.Errorf("业务端发行不能声明对自身的适用范围")
-		}
-		if err := release.ValidateVersion(version.DataVersion); err != nil {
-			return fmt.Errorf("业务端目标数据版本无效：%w", err)
-		}
 	case types.ReleaseArtifactKindTool, types.ReleaseArtifactKindPlugin:
 		if version.Compatibility == nil {
 			return fmt.Errorf("工具和插件必须声明业务端适用范围")

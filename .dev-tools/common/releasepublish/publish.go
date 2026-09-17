@@ -299,9 +299,6 @@ func (p *Publisher) createDraft(ctx context.Context, source types.OfficialReleas
 		"draft":      true,
 		"prerelease": false,
 	}
-	if manifest.Artifact.Kind == types.ReleaseArtifactKindBox {
-		payload["target_commitish"] = manifest.Source.Commit
-	}
 	endpoint := fmt.Sprintf("%s/repos/%s/%s/releases", p.apiBaseURL, url.PathEscape(source.Owner), url.PathEscape(source.Name))
 	var created githubRelease
 	if _, err := p.requestJSON(ctx, http.MethodPost, endpoint, payload, &created); err != nil {

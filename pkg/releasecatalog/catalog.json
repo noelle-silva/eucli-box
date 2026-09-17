@@ -1,12 +1,8 @@
 {
   "schemaVersion": 1,
   "platform": "windows-x64",
+  "sourceRepository": "https://github.com/noelle-silva/eucli-box",
   "sources": [
-    {
-      "kind": "eucli-box",
-      "repository": "https://github.com/noelle-silva/eucli-box",
-      "ref": "main"
-    },
     {
       "kind": "tool",
       "repository": "https://github.com/noelle-silva/eucli-box-ai-tools",
@@ -19,7 +15,6 @@
     }
   ],
   "artifacts": [
-    { "kind": "eucli-box", "id": "eucli-box" },
     { "kind": "tool", "id": "context7" },
     { "kind": "tool", "id": "everything" },
     { "kind": "tool", "id": "file_editor" },

@@ -65,7 +65,10 @@ func Build(ctx context.Context, options BuildOptions) (BuildResult, error) {
 		return BuildResult{}, err
 	}
 	if artifact.Kind == releaseops.KindClient {
-		return BuildResult{}, fmt.Errorf("客户端不属于任务 026 的正式成品")
+		return BuildResult{}, fmt.Errorf("客户端不属于正式成品")
+	}
+	if artifact.Kind == releaseops.KindBox {
+		return BuildResult{}, fmt.Errorf("业务端本体已退出正式成品制作，请使用本体打包")
 	}
 	devBuild := strings.TrimSpace(options.VersionOverride) != ""
 	artifactVersion := strings.TrimSpace(options.VersionOverride)
@@ -88,11 +91,11 @@ func Build(ctx context.Context, options BuildOptions) (BuildResult, error) {
 	if err != nil {
 		return BuildResult{}, err
 	}
-	sourceRepository, err := catalog.SourceFor(types.ReleaseArtifactKindBox)
+	sourceRepository, err := catalog.RecordRepository()
 	if err != nil {
 		return BuildResult{}, err
 	}
-	sourceState, err := readSourceState(ctx, root, sourceRepository.Repository)
+	sourceState, err := readSourceState(ctx, root, sourceRepository)
 	if err != nil {
 		return BuildResult{}, err
 	}
@@ -104,7 +107,7 @@ func Build(ctx context.Context, options BuildOptions) (BuildResult, error) {
 	if err != nil {
 		return BuildResult{}, err
 	}
-	workRoot, outputRoot, err := resolveRoots(root, options)
+	workRoot, outputRoot, err := resolveRoots(options.WorkRoot, options.OutputRoot)
 	if err != nil {
 		return BuildResult{}, err
 	}
@@ -235,36 +238,8 @@ func Build(ctx context.Context, options BuildOptions) (BuildResult, error) {
 		}
 	}
 	outputDir := filepath.Join(outputRoot, outputDirectoryName(identity), artifactVersion)
-	if info, err := os.Stat(outputDir); err == nil {
-		if !devBuild {
-			return result, fmt.Errorf("本地成品目录已经存在，不能覆盖：%s", outputDir)
-		}
-		if !info.IsDir() {
-			return result, fmt.Errorf("本地成品路径不是目录：%s", outputDir)
-		}
-		if err := os.RemoveAll(outputDir); err != nil {
-			return result, fmt.Errorf("覆盖旧开发成品失败：%w", err)
-		}
-	} else if !os.IsNotExist(err) {
+	if err := publishOutputDirectory(outputDir, []string{archivePath, manifestPath, notesPath}, devBuild); err != nil {
 		return result, err
-	}
-	stagingOutput := outputDir + ".staging"
-	if err := os.RemoveAll(stagingOutput); err != nil {
-		return result, err
-	}
-	if err := os.MkdirAll(stagingOutput, 0o755); err != nil {
-		return result, fmt.Errorf("建立成品输出目录失败：%w", err)
-	}
-	for _, source := range []string{archivePath, manifestPath, notesPath} {
-		if err := copyFile(source, filepath.Join(stagingOutput, filepath.Base(source))); err != nil {
-			return result, err
-		}
-	}
-	if err := os.MkdirAll(filepath.Dir(outputDir), 0o755); err != nil {
-		return result, err
-	}
-	if err := os.Rename(stagingOutput, outputDir); err != nil {
-		return result, fmt.Errorf("启用本地正式成品失败：%w", err)
 	}
 	result.Manifest = manifest
 	result.OutputDir = outputDir
@@ -276,8 +251,6 @@ func Build(ctx context.Context, options BuildOptions) (BuildResult, error) {
 
 func assemble(ctx context.Context, root string, workDir string, assembledDir string, artifact releaseops.Artifact, identity types.ReleaseArtifactIdentity, assetRoots map[string]string, sourceTime time.Time, artifactVersion string) error {
 	switch identity.Kind {
-	case types.ReleaseArtifactKindBox:
-		return buildGoBinary(ctx, root, workDir, "./cmd/eucli-box", filepath.Join(assembledDir, "eucli-box.exe"))
 	case types.ReleaseArtifactKindTool:
 		return assembleTool(ctx, root, workDir, assembledDir, artifact, assetRoots, sourceTime, artifactVersion)
 	case types.ReleaseArtifactKindPlugin:
@@ -399,12 +372,49 @@ func buildEnvironment(base []string, root string) []string {
 	return result
 }
 
-func resolveRoots(root string, options BuildOptions) (string, string, error) {
-	workRoot := strings.TrimSpace(options.WorkRoot)
+// publishOutputDirectory 把本次产出的文件原子地放入成品输出目录；
+// allowReplace 为假时同版本目录已存在即拒绝，为真时先清空再放入。
+func publishOutputDirectory(outputDir string, sources []string, allowReplace bool) error {
+	if info, err := os.Stat(outputDir); err == nil {
+		if !allowReplace {
+			return fmt.Errorf("本地成品目录已经存在，不能覆盖：%s", outputDir)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("本地成品路径不是目录：%s", outputDir)
+		}
+		if err := os.RemoveAll(outputDir); err != nil {
+			return fmt.Errorf("覆盖旧成品失败：%w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	stagingOutput := outputDir + ".staging"
+	if err := os.RemoveAll(stagingOutput); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(stagingOutput, 0o755); err != nil {
+		return fmt.Errorf("建立成品输出目录失败：%w", err)
+	}
+	for _, source := range sources {
+		if err := copyFile(source, filepath.Join(stagingOutput, filepath.Base(source))); err != nil {
+			return err
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(outputDir), 0o755); err != nil {
+		return err
+	}
+	if err := os.Rename(stagingOutput, outputDir); err != nil {
+		return fmt.Errorf("启用本地成品失败：%w", err)
+	}
+	return nil
+}
+
+func resolveRoots(workRootValue string, outputRootValue string) (string, string, error) {
+	workRoot := strings.TrimSpace(workRootValue)
 	if workRoot == "" {
 		return "", "", fmt.Errorf("制作工作根不能为空：必须显式传入本轮工作现场（工具运行区 work\\build-<轮>）")
 	}
-	outputRoot := strings.TrimSpace(options.OutputRoot)
+	outputRoot := strings.TrimSpace(outputRootValue)
 	if outputRoot == "" {
 		return "", "", fmt.Errorf("成品输出根不能为空：必须显式传入工具运行区 output")
 	}

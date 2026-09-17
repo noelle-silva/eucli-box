@@ -5,17 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
-	"eucli-box/pkg/datapaths"
 	"eucli-box/pkg/release"
 	"eucli-box/pkg/types"
 )
@@ -191,8 +186,6 @@ func launchCheck(parent context.Context, identity types.ReleaseArtifactIdentity,
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	switch identity.Kind {
-	case types.ReleaseArtifactKindBox:
-		return launchBox(ctx, directory, environment, temp, evidence)
 	case types.ReleaseArtifactKindTool:
 		return launchTool(ctx, directory, environment, temp, evidence)
 	case types.ReleaseArtifactKindPlugin:
@@ -200,97 +193,6 @@ func launchCheck(parent context.Context, identity types.ReleaseArtifactIdentity,
 	default:
 		return fmt.Errorf("无法验收未知发布物类别 %q", identity.Kind)
 	}
-}
-
-func launchBox(ctx context.Context, directory string, environment string, temp string, evidence string) error {
-	if runtime.GOOS != "windows" || runtime.GOARCH != "amd64" {
-		return fmt.Errorf("业务端启动验收只能在 Windows x64 执行")
-	}
-	port, err := reservePort()
-	if err != nil {
-		return err
-	}
-	dataDir := filepath.Join(environment, "box-data")
-	for _, path := range []string{dataDir, temp} {
-		if err := os.MkdirAll(path, 0o755); err != nil {
-			return err
-		}
-	}
-	stdout, err := os.OpenFile(filepath.Join(evidence, "box.stdout.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-	if err != nil {
-		return err
-	}
-	defer stdout.Close()
-	stderr, err := os.OpenFile(filepath.Join(evidence, "box.stderr.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-	if err != nil {
-		return err
-	}
-	defer stderr.Close()
-	cmd := exec.CommandContext(ctx, filepath.Join(directory, "eucli-box.exe"))
-	cmd.Dir = directory
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-	cmd.Env = replaceEnvironment(os.Environ(), map[string]string{
-		"EUCLI_BOX_ADDR":     "127.0.0.1:" + port,
-		"EUCLI_BOX_DATA_DIR": dataDir,
-		"TEMP":               temp,
-		"TMP":                temp,
-	})
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("业务端启动失败：%w", err)
-	}
-	defer func() {
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
-		_ = cmd.Wait()
-	}()
-	client := &http.Client{Timeout: 750 * time.Millisecond}
-	url := "http://127.0.0.1:" + port + "/api/release"
-	key := ""
-	for {
-		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("业务端启动验收超时：%w", err)
-		}
-		if key == "" {
-			key = readBoxAccessKey(dataDir)
-		}
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return err
-		}
-		if key != "" {
-			request.Header.Set("Authorization", "Bearer "+key)
-		}
-		response, requestErr := client.Do(request)
-		if requestErr == nil {
-			payload, readErr := io.ReadAll(response.Body)
-			_ = response.Body.Close()
-			if readErr == nil && response.StatusCode == http.StatusOK {
-				var envelope struct {
-					Data types.EucliBoxReleaseInfo `json:"data"`
-				}
-				if json.Unmarshal(payload, &envelope) == nil && release.ValidateVersion(envelope.Data.Version) == nil && release.ValidateVersion(envelope.Data.DataVersion) == nil {
-					return nil
-				}
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("业务端启动验收超时：%w", ctx.Err())
-		case <-time.After(100 * time.Millisecond):
-		}
-	}
-}
-
-// readBoxAccessKey 读取业务端首次启动时自行生成并记录的访问钥匙；
-// 尚未生成时返回空串，由调用方下一轮继续尝试。
-func readBoxAccessKey(dataDir string) string {
-	payload, err := os.ReadFile(datapaths.BoxKeyFile(dataDir))
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(payload))
 }
 
 func launchTool(ctx context.Context, directory string, environment string, temp string, evidence string) error {
@@ -379,19 +281,6 @@ func captureJSONProcess(cmd *exec.Cmd, stdoutPath string, stderrPath string, req
 		return err
 	}
 	return nil
-}
-
-func reservePort() (string, error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return "", fmt.Errorf("准备验收端口失败：%w", err)
-	}
-	defer listener.Close()
-	address, ok := listener.Addr().(*net.TCPAddr)
-	if !ok || address.Port <= 0 {
-		return "", fmt.Errorf("系统没有返回有效验收端口")
-	}
-	return fmt.Sprint(address.Port), nil
 }
 
 func absoluteRegularFile(path string, label string) (string, error) {

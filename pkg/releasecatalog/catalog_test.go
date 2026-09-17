@@ -11,10 +11,13 @@ func TestLoadReturnsCompleteFixedCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if catalog.Platform != types.ReleasePlatformWindowsX64 || len(catalog.Sources) != 3 || len(catalog.Artifacts) != 12 {
+	if catalog.Platform != types.ReleasePlatformWindowsX64 || len(catalog.Sources) != 2 || len(catalog.Artifacts) != 11 {
 		t.Fatalf("catalog = %#v", catalog)
 	}
-	for _, kind := range []string{types.ReleaseArtifactKindBox, types.ReleaseArtifactKindTool, types.ReleaseArtifactKindPlugin} {
+	if catalog.SourceRepository != "https://github.com/noelle-silva/eucli-box" {
+		t.Fatalf("sourceRepository = %q", catalog.SourceRepository)
+	}
+	for _, kind := range []string{types.ReleaseArtifactKindTool, types.ReleaseArtifactKindPlugin} {
 		source, err := catalog.SourceFor(kind)
 		if err != nil {
 			t.Fatalf("SourceFor(%s) error = %v", kind, err)
@@ -23,6 +26,13 @@ func TestLoadReturnsCompleteFixedCatalog(t *testing.T) {
 			t.Fatalf("source = %#v", source)
 		}
 	}
+	recordRepository, err := catalog.RecordRepository()
+	if err != nil {
+		t.Fatalf("RecordRepository() error = %v", err)
+	}
+	if recordRepository != catalog.SourceRepository {
+		t.Fatalf("RecordRepository() = %q", recordRepository)
+	}
 }
 
 func TestTagNameKeepsIndependentArtifactIdentity(t *testing.T) {
@@ -30,7 +40,6 @@ func TestTagNameKeepsIndependentArtifactIdentity(t *testing.T) {
 		identity types.ReleaseArtifactIdentity
 		want     string
 	}{
-		{identity: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindBox, ID: "eucli-box"}, want: "v0.1.0"},
 		{identity: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "context7"}, want: "context7/v0.1.0"},
 		{identity: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: "time-plugin"}, want: "time-plugin/v0.1.0"},
 	}
@@ -45,12 +54,12 @@ func TestTagNameKeepsIndependentArtifactIdentity(t *testing.T) {
 	}
 }
 
-func TestResolveTargetRejectsClientAndUnknownArtifacts(t *testing.T) {
+func TestResolveTargetRejectsNonReleaseArtifacts(t *testing.T) {
 	catalog, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	for _, target := range []string{"eucli-studio", "tool:missing", "plugin:../escape"} {
+	for _, target := range []string{"eucli-box", "eucli-studio", "tool:missing", "plugin:../escape"} {
 		if _, err := catalog.ResolveTarget(target); err == nil {
 			t.Fatalf("ResolveTarget(%q) error = nil", target)
 		}

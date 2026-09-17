@@ -14,7 +14,6 @@ import (
 const relativePath = workspace.RelativeCredentialsPath
 
 var keyByKind = map[string]string{
-	types.ReleaseArtifactKindBox:    "EUCLI_BOX_GITHUB_TOKEN",
 	types.ReleaseArtifactKindTool:   "EUCLI_TOOLS_GITHUB_TOKEN",
 	types.ReleaseArtifactKindPlugin: "EUCLI_PLUGINS_GITHUB_TOKEN",
 }

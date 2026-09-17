@@ -83,8 +83,6 @@ func indexSource(kind string) (owner string, name string, err error) {
 		return "noelle-silva", "eucli-box-ai-tools", nil
 	case types.ReleaseArtifactKindPlugin:
 		return "noelle-silva", "eucli-box-system-plugins", nil
-	case types.ReleaseArtifactKindBox:
-		return "noelle-silva", "eucli-box", nil
 	default:
 		return "", "", fmt.Errorf("未知发布物类别 %q", kind)
 	}
@@ -255,17 +253,6 @@ func (f *toolPluginUpdateServer) latestCandidateFor(identity types.ReleaseArtifa
 		ArchiveURL:       f.server.URL + "/" + owner + "/" + name + "/releases/download/" + tag + "/" + fileName,
 		SizeBytes:        best.manifest.Archive.Size,
 		SHA256:           best.manifest.Archive.SHA256,
-	}
-}
-
-func releaseKindFromPath(path string) string {
-	switch {
-	case strings.Contains(path, "eucli-box-ai-tools"):
-		return types.ReleaseArtifactKindTool
-	case strings.Contains(path, "eucli-box-system-plugins"):
-		return types.ReleaseArtifactKindPlugin
-	default:
-		return types.ReleaseArtifactKindBox
 	}
 }
 

@@ -12,7 +12,6 @@ import (
 func TestLoadSelectsCredentialByReleaseKind(t *testing.T) {
 	root := t.TempDir()
 	writeCredentials(t, root, strings.Join([]string{
-		"EUCLI_BOX_GITHUB_TOKEN=box-token",
 		"EUCLI_TOOLS_GITHUB_TOKEN=tool-token",
 		"EUCLI_PLUGINS_GITHUB_TOKEN=plugin-token",
 	}, "\n")+"\n")
@@ -21,7 +20,6 @@ func TestLoadSelectsCredentialByReleaseKind(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 	tests := map[string]string{
-		types.ReleaseArtifactKindBox:    "box-token",
 		types.ReleaseArtifactKindTool:   "tool-token",
 		types.ReleaseArtifactKindPlugin: "plugin-token",
 	}
@@ -31,12 +29,15 @@ func TestLoadSelectsCredentialByReleaseKind(t *testing.T) {
 			t.Fatalf("TokenFor(%q) = %q, %v; want %q", kind, got, err, want)
 		}
 	}
+	if _, err := credentials.TokenFor(types.ReleaseArtifactKindBox); err == nil {
+		t.Fatal("TokenFor(eucli-box) error = nil")
+	}
 }
 
 func TestLoadRejectsUnknownAndDuplicateFields(t *testing.T) {
 	for name, content := range map[string]string{
-		"unknown":   "EUCLI_BOX_GITHUB_TOKEN=a\nEUCLI_TOOLS_GITHUB_TOKEN=b\nEUCLI_PLUGINS_GITHUB_TOKEN=c\nOTHER=x\n",
-		"duplicate": "EUCLI_BOX_GITHUB_TOKEN=a\nEUCLI_BOX_GITHUB_TOKEN=b\nEUCLI_TOOLS_GITHUB_TOKEN=c\nEUCLI_PLUGINS_GITHUB_TOKEN=d\n",
+		"unknown":   "EUCLI_TOOLS_GITHUB_TOKEN=b\nEUCLI_PLUGINS_GITHUB_TOKEN=c\nEUCLI_BOX_GITHUB_TOKEN=x\n",
+		"duplicate": "EUCLI_TOOLS_GITHUB_TOKEN=c\nEUCLI_TOOLS_GITHUB_TOKEN=d\nEUCLI_PLUGINS_GITHUB_TOKEN=e\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
@@ -50,12 +51,12 @@ func TestLoadRejectsUnknownAndDuplicateFields(t *testing.T) {
 
 func TestTokenForRejectsEmptyCredentialWithoutExposingOthers(t *testing.T) {
 	root := t.TempDir()
-	writeCredentials(t, root, "EUCLI_BOX_GITHUB_TOKEN=\nEUCLI_TOOLS_GITHUB_TOKEN=private-tool-token\nEUCLI_PLUGINS_GITHUB_TOKEN=private-plugin-token\n")
+	writeCredentials(t, root, "EUCLI_TOOLS_GITHUB_TOKEN=\nEUCLI_PLUGINS_GITHUB_TOKEN=private-plugin-token\n")
 	credentials, err := Load(root)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	_, err = credentials.TokenFor(types.ReleaseArtifactKindBox)
+	_, err = credentials.TokenFor(types.ReleaseArtifactKindTool)
 	if err == nil || strings.Contains(err.Error(), "private-") {
 		t.Fatalf("TokenFor() error = %v", err)
 	}

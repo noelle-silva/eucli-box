@@ -169,7 +169,9 @@ func createZip(sourceDir string, target string) error {
 	return nil
 }
 
-func validatePackageBoundary(directory string, identity types.ReleaseArtifactIdentity) error {
+// validatePackageFiles 检查成品目录的文件事实：非空、路径安全且不含禁止内容；
+// externalAssetRoots 内允许携带 data 目录，其余位置一律拒绝运行期资料。
+func validatePackageFiles(directory string, externalAssetRoots []string) error {
 	files, err := recordsForDirectory(directory)
 	if err != nil {
 		return err
@@ -177,19 +179,19 @@ func validatePackageBoundary(directory string, identity types.ReleaseArtifactIde
 	if len(files) == 0 {
 		return fmt.Errorf("成品目录为空")
 	}
-	seen := make(map[string]struct{}, len(files))
 	for _, file := range files {
 		name := filepath.ToSlash(file.Name)
 		if !safeArchivePath(name) {
 			return fmt.Errorf("成品包含越界路径：%s", name)
 		}
-		seen[name] = struct{}{}
-	}
-	for _, required := range []string{"README.md", "CHANGELOG.md", "release-product.json"} {
-		if _, ok := seen[required]; !ok {
-			return fmt.Errorf("成品缺少 %s", required)
+		if forbiddenPackagePath(name, externalAssetRoots) {
+			return fmt.Errorf("成品包含禁止内容：%s", name)
 		}
 	}
+	return nil
+}
+
+func validatePackageBoundary(directory string, identity types.ReleaseArtifactIdentity) error {
 	payload, err := os.ReadFile(filepath.Join(directory, "release-product.json"))
 	if err != nil {
 		return err
@@ -210,17 +212,15 @@ func validatePackageBoundary(directory string, identity types.ReleaseArtifactIde
 			return fmt.Errorf("成品外部附带内容位于禁止目录：%s", root)
 		}
 	}
-	for _, file := range files {
-		name := filepath.ToSlash(file.Name)
-		if forbiddenPackagePath(name, externalAssetRoots) {
-			return fmt.Errorf("成品包含禁止内容：%s", name)
+	if err := validatePackageFiles(directory, externalAssetRoots); err != nil {
+		return err
+	}
+	for _, name := range []string{"README.md", "CHANGELOG.md", "release-product.json"} {
+		if err := requireRegularFile(directory, name); err != nil {
+			return err
 		}
 	}
 	switch identity.Kind {
-	case types.ReleaseArtifactKindBox:
-		if err := requireRegularFile(directory, "eucli-box.exe"); err != nil {
-			return err
-		}
 	case types.ReleaseArtifactKindTool:
 		if err := validateToolPackage(directory, identity.ID, product.Version); err != nil {
 			return err

@@ -15,6 +15,16 @@
         "sha256": "Manifest.archive.sha256"
       }
     },
+    "eucli-box-stage-dev": {
+      "command": "go run devtools/eucli-release build -root .. -target eucli-box",
+      "storePackage": {
+        "form": "exploded",
+        "outDir": "../.dev-workspace/.dev-runtime/eucli-box"
+      },
+      "artifact": {
+        "path": "ArchivePath"
+      }
+    },
     "eucli-box-test": "go test eucli-box/...",
     "eucli-box-run": "..\\.dev-tools\\dev-box\\run-dev-box.cmd"
   }

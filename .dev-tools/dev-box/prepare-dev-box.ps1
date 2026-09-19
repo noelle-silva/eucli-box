@@ -15,32 +15,18 @@ function Get-RepositoryRoot {
 }
 
 $repositoryRoot = Get-RepositoryRoot
-$devRuntimeRoot = Get-FullPath (Join-Path $repositoryRoot ".dev-workspace\.dev-runtime")
-$boxRoot = Get-FullPath (Join-Path $devRuntimeRoot "eucli-box")
-$toolRuntimeRoot = Get-FullPath (Join-Path $repositoryRoot ".dev-workspace\.dev-tools-runtime\dev-box")
-$toolWorkRoot = Get-FullPath (Join-Path $toolRuntimeRoot "work")
-$toolTempRoot = Get-FullPath (Join-Path $toolRuntimeRoot "temp")
-
-foreach ($directory in @($devRuntimeRoot, $boxRoot, $toolWorkRoot, $toolTempRoot)) {
-    [System.IO.Directory]::CreateDirectory($directory) | Out-Null
-}
-
-$env:TEMP = $toolTempRoot
-$env:TMP = $toolTempRoot
-$env:GOTMPDIR = Join-Path $toolTempRoot "go"
-[System.IO.Directory]::CreateDirectory($env:GOTMPDIR) | Out-Null
-
-# 本体自治：编译产物直接放到实例根（本体与 data\、programs\ 等平级），零传递定位信息。
+$protocolTool = Join-Path $repositoryRoot ".fast-window-dev-protocol\fast-window-dev-tool.mjs"
+$boxRoot = Get-FullPath (Join-Path $repositoryRoot ".dev-workspace\.dev-runtime\eucli-box")
 $boxExe = Join-Path $boxRoot "eucli-box.exe"
-Write-Host "Building current source eucli-box -> $boxExe"
-Push-Location $repositoryRoot
-try {
-    & go build -o $boxExe ./cmd/eucli-box
-    if ($LASTEXITCODE -ne 0) {
-        throw "eucli-box build failed, exit code: $LASTEXITCODE"
-    }
+
+# 开发装配走协议工具的开发装配动作：构建当前源码成品，并按散装形态把程序、清单与图标
+# 落到实例根；data\ 与 programs\ 原样保留，宿主可直接以该可执行文件注册。
+Write-Host "Staging current source eucli-box -> $boxRoot"
+& node $protocolTool eucli-box-stage-dev
+if ($LASTEXITCODE -ne 0) {
+    throw "eucli-box dev staging failed, exit code: $LASTEXITCODE"
 }
-finally {
-    Pop-Location
+if (-not (Test-Path -LiteralPath $boxExe -PathType Leaf)) {
+    throw "eucli-box.exe not found after staging: $boxExe"
 }
-Write-Host "Build finished: $boxExe"
+Write-Host "Stage finished: $boxExe"

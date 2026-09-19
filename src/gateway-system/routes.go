@@ -29,6 +29,7 @@ func (s *system) registerBoxRoutes() {
 func (s *system) registerRoutes() {
 	s.mux.HandleFunc("GET /api/release", s.authWrap(s.handleRelease))
 	s.mux.HandleFunc("GET /api/artifact-installations", s.authWrap(s.handleArtifactInstallations))
+	s.mux.HandleFunc("GET /api/artifact-operations", s.authWrap(s.handleArtifactOperations))
 	s.mux.HandleFunc("GET /api/release-candidates", s.authWrap(s.handleReleaseCandidates))
 	if s.config.InstallSource != nil {
 		s.mux.HandleFunc("GET /api/install-source", s.authWrap(s.handleInstallSource))
@@ -121,6 +122,7 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("GET /api/tools/{toolID}/install-state", s.authWrap(s.handleToolInstallState))
 	s.mux.HandleFunc("POST /api/tools/{toolID}/install", s.authWrap(s.handleInstallTool))
 	s.mux.HandleFunc("POST /api/tools/{toolID}/update", s.authWrap(s.handleUpdateTool))
+	s.mux.HandleFunc("POST /api/tools/{toolID}/cancel", s.authWrap(s.handleCancelTool))
 	s.mux.HandleFunc("POST /api/tools/{toolID}/stop", s.authWrap(s.handleStopTool))
 
 	s.mux.HandleFunc("GET /api/stickers", s.authWrap(s.handleLoadStickerLibrary))
@@ -158,6 +160,7 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("GET /api/system-plugins/{pluginID}/install-state", s.authWrap(s.handlePluginInstallState))
 	s.mux.HandleFunc("POST /api/system-plugins/{pluginID}/install", s.authWrap(s.handleInstallPlugin))
 	s.mux.HandleFunc("POST /api/system-plugins/{pluginID}/update", s.authWrap(s.handleUpdatePlugin))
+	s.mux.HandleFunc("POST /api/system-plugins/{pluginID}/cancel", s.authWrap(s.handleCancelPlugin))
 
 	s.mux.HandleFunc("GET /ws/events", s.handleEventsWebSocket)
 }

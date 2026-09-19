@@ -80,6 +80,25 @@ func (s *system) handleInstallPlugin(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusOK, state)
 }
 
+// handleCancelPlugin 取消正在进行的插件安装/更新；进入切换阶段后拒绝。
+func (s *system) handleCancelPlugin(w http.ResponseWriter, r *http.Request) {
+	pluginID, err := pathValue(r, "pluginID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if _, err := decodeJSON[emptyRequestBody](r); err != nil {
+		writeError(w, err)
+		return
+	}
+	state, err := s.systemPlugins.CancelPluginOperation(r.Context(), pluginID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, state)
+}
+
 func (s *system) handleUpdatePlugin(w http.ResponseWriter, r *http.Request) {
 	pluginID, err := pathValue(r, "pluginID")
 	if err != nil {

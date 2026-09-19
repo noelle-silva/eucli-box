@@ -85,6 +85,8 @@ type ToolSystem interface {
 	InstallTool(ctx context.Context, toolID string) (types.ArtifactInstallState, error)
 	UpdateTool(ctx context.Context, toolID string) (types.ArtifactInstallState, error)
 	ToolInstallState(ctx context.Context, toolID string) (types.ArtifactInstallState, error)
+	CancelToolOperation(ctx context.Context, toolID string) (types.ArtifactInstallState, error)
+	ListToolOperations(ctx context.Context) ([]types.ArtifactInstallState, error)
 	ToolActivity(ctx context.Context, toolID string) (types.ArtifactActivityState, error)
 	StopToolExecution(ctx context.Context, toolID string) (types.ToolStopResult, error)
 }
@@ -167,6 +169,8 @@ type SystemPluginSystem interface {
 	InstallPlugin(ctx context.Context, pluginID string) (types.ArtifactInstallState, error)
 	UpdatePlugin(ctx context.Context, pluginID string) (types.ArtifactInstallState, error)
 	PluginInstallState(ctx context.Context, pluginID string) (types.ArtifactInstallState, error)
+	CancelPluginOperation(ctx context.Context, pluginID string) (types.ArtifactInstallState, error)
+	ListPluginOperations(ctx context.Context) ([]types.ArtifactInstallState, error)
 	PluginActivity(ctx context.Context, pluginID string) (types.ArtifactActivityState, error)
 }
 

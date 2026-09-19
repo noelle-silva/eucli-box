@@ -888,6 +888,14 @@ func (f *fakeGatewaySystemPlugins) PluginInstallState(ctx context.Context, plugi
 	return types.ArtifactInstallState{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: pluginID}, Status: types.ArtifactStatusNotInstalled}, nil
 }
 
+func (f *fakeGatewaySystemPlugins) CancelPluginOperation(ctx context.Context, pluginID string) (types.ArtifactInstallState, error) {
+	return types.ArtifactInstallState{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: pluginID}, Status: types.ArtifactStatusCancelled}, nil
+}
+
+func (f *fakeGatewaySystemPlugins) ListPluginOperations(ctx context.Context) ([]types.ArtifactInstallState, error) {
+	return []types.ArtifactInstallState{}, nil
+}
+
 func (f *fakeGatewaySystemPlugins) PluginActivity(ctx context.Context, pluginID string) (types.ArtifactActivityState, error) {
 	return types.ArtifactActivityState{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: pluginID}}, nil
 }
@@ -1493,6 +1501,14 @@ func (f *fakeGatewayTools) UpdateTool(ctx context.Context, toolID string) (types
 
 func (f *fakeGatewayTools) ToolInstallState(ctx context.Context, toolID string) (types.ArtifactInstallState, error) {
 	return types.ArtifactInstallState{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: toolID}, Status: types.ArtifactStatusNotInstalled}, nil
+}
+
+func (f *fakeGatewayTools) CancelToolOperation(ctx context.Context, toolID string) (types.ArtifactInstallState, error) {
+	return types.ArtifactInstallState{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: toolID}, Status: types.ArtifactStatusCancelled}, nil
+}
+
+func (f *fakeGatewayTools) ListToolOperations(ctx context.Context) ([]types.ArtifactInstallState, error) {
+	return []types.ArtifactInstallState{}, nil
 }
 
 func (f *fakeGatewayTools) ToolActivity(ctx context.Context, toolID string) (types.ArtifactActivityState, error) {

@@ -332,6 +332,25 @@ func (s *system) handleUpdateTool(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusOK, state)
 }
 
+// handleCancelTool 取消正在进行的工具安装/更新；进入切换阶段后拒绝。
+func (s *system) handleCancelTool(w http.ResponseWriter, r *http.Request) {
+	toolID, err := pathValue(r, "toolID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if _, err := decodeJSON[emptyRequestBody](r); err != nil {
+		writeError(w, err)
+		return
+	}
+	state, err := s.tools.CancelToolOperation(r.Context(), toolID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, state)
+}
+
 func (s *system) handleStopTool(w http.ResponseWriter, r *http.Request) {
 	toolID, err := pathValue(r, "toolID")
 	if err != nil {

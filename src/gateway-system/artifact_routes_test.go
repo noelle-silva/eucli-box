@@ -120,3 +120,48 @@ func TestUpdatePluginRoute(t *testing.T) {
 		t.Fatalf("data = %#v", data)
 	}
 }
+
+func TestCancelToolRoute(t *testing.T) {
+	system := newTestGateway(t, newGatewayFakes())
+	recorder, payload := requestGateway(t, system, http.MethodPost, "/api/tools/demo/cancel", "{}")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", recorder.Code, recorder.Body.String())
+	}
+	data, ok := payload["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("payload = %#v", payload)
+	}
+	if data["status"] != types.ArtifactStatusCancelled {
+		t.Fatalf("data = %#v", data)
+	}
+}
+
+func TestCancelPluginRoute(t *testing.T) {
+	system := newTestGateway(t, newGatewayFakes())
+	recorder, payload := requestGateway(t, system, http.MethodPost, "/api/system-plugins/demo/cancel", "{}")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", recorder.Code, recorder.Body.String())
+	}
+	data, ok := payload["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("payload = %#v", payload)
+	}
+	if data["status"] != types.ArtifactStatusCancelled {
+		t.Fatalf("data = %#v", data)
+	}
+}
+
+func TestArtifactOperationsRoute(t *testing.T) {
+	system := newTestGateway(t, newGatewayFakes())
+	recorder, payload := requestGateway(t, system, http.MethodGet, "/api/artifact-operations", "")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", recorder.Code, recorder.Body.String())
+	}
+	data, ok := payload["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("payload = %#v", payload)
+	}
+	if _, ok := data["operations"].([]any); !ok {
+		t.Fatalf("data = %#v", data)
+	}
+}

@@ -17,6 +17,12 @@ import (
 //go:embed catalog.json
 var source []byte
 
+// releaseKinds 是正式发布物与官方来源共同允许的类别集合，发布物身份规则的唯一事实源。
+var releaseKinds = map[string]struct{}{
+	types.ReleaseArtifactKindTool:   {},
+	types.ReleaseArtifactKindPlugin: {},
+}
+
 type Catalog struct {
 	SchemaVersion    int                             `json:"schemaVersion"`
 	Platform         string                          `json:"platform"`
@@ -51,14 +57,10 @@ func Validate(catalog Catalog) error {
 	if _, err := normalizeRepository(catalog.SourceRepository); err != nil {
 		return fmt.Errorf("源码记录仓库无效：%w", err)
 	}
-	expectedKinds := map[string]struct{}{
-		types.ReleaseArtifactKindTool:   {},
-		types.ReleaseArtifactKindPlugin: {},
-	}
 	sources := make(map[string]types.OfficialReleaseSource, len(catalog.Sources))
 	for _, item := range catalog.Sources {
 		item.Kind = strings.TrimSpace(item.Kind)
-		if _, ok := expectedKinds[item.Kind]; !ok {
+		if _, ok := releaseKinds[item.Kind]; !ok {
 			return fmt.Errorf("正式发行清单包含未知来源类别 %q", item.Kind)
 		}
 		if _, exists := sources[item.Kind]; exists {
@@ -77,7 +79,7 @@ func Validate(catalog Catalog) error {
 		}
 		sources[item.Kind] = item
 	}
-	if len(sources) != len(expectedKinds) {
+	if len(sources) != len(releaseKinds) {
 		return fmt.Errorf("正式发行清单必须完整声明 AI 工具和系统插件两类官方来源")
 	}
 
@@ -85,17 +87,26 @@ func Validate(catalog Catalog) error {
 	for _, artifact := range catalog.Artifacts {
 		artifact.Kind = strings.TrimSpace(artifact.Kind)
 		artifact.ID = strings.TrimSpace(artifact.ID)
-		if _, ok := expectedKinds[artifact.Kind]; !ok {
-			return fmt.Errorf("正式发行清单包含未知发布物类别 %q", artifact.Kind)
-		}
-		if !validID(artifact.ID) {
-			return fmt.Errorf("正式发行清单包含无效发布物 ID %q", artifact.ID)
+		if err := ValidateArtifactIdentity(artifact); err != nil {
+			return fmt.Errorf("正式发行清单包含无效发布物：%w", err)
 		}
 		key := artifact.Kind + ":" + artifact.ID
 		if _, exists := identities[key]; exists {
 			return fmt.Errorf("正式发行清单包含重复发布物 %s", key)
 		}
 		identities[key] = struct{}{}
+	}
+	return nil
+}
+
+// ValidateArtifactIdentity 校验发布物身份：类别必须为 AI 工具或系统插件，ID 必须为合法单段标识。
+// 一切接受发布物身份作为输入的开发工具统一复用此处，身份规则只维护一份。
+func ValidateArtifactIdentity(identity types.ReleaseArtifactIdentity) error {
+	if _, ok := releaseKinds[strings.TrimSpace(identity.Kind)]; !ok {
+		return fmt.Errorf("发布物类别 %q 无效", identity.Kind)
+	}
+	if !validID(identity.ID) {
+		return fmt.Errorf("发布物 ID %q 无效", identity.ID)
 	}
 	return nil
 }

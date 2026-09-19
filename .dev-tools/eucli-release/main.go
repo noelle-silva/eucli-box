@@ -28,11 +28,13 @@ func run(ctx context.Context, args []string) error {
 		return runRemote(ctx, args[1:])
 	case "list":
 		return runList(args[1:])
+	case "delist":
+		return runDelist(ctx, args[1:])
 	default:
 		return usageError()
 	}
 }
 
 func usageError() error {
-	return fmt.Errorf("用法：eucli-release <build|publish|remote|list> [参数]")
+	return fmt.Errorf("用法：eucli-release <build|publish|remote|list|delist> [参数]")
 }

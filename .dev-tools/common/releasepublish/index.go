@@ -73,12 +73,20 @@ func (p *Publisher) UpdateIndex(ctx context.Context, source types.OfficialReleas
 	if err := releasecatalog.ValidateIndex(index); err != nil {
 		return fmt.Errorf("更新后的统一版本索引无效：%w", err)
 	}
+	payload, err := encodeIndex(index)
+	if err != nil {
+		return err
+	}
+	return p.putIndexContents(ctx, source, sha, payload)
+}
+
+// encodeIndex 把统一版本索引编码为提交用载荷；登记与下架共用同一编码事实。
+func encodeIndex(index releasecatalog.Index) ([]byte, error) {
 	payload, err := json.MarshalIndent(index, "", "  ")
 	if err != nil {
-		return fmt.Errorf("生成统一版本索引失败：%w", err)
+		return nil, fmt.Errorf("生成统一版本索引失败：%w", err)
 	}
-	payload = append(payload, '\n')
-	return p.putIndexContents(ctx, source, sha, payload)
+	return append(payload, '\n'), nil
 }
 
 func validateIndexUpdate(update IndexUpdate) error {

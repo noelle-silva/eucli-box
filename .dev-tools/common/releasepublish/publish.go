@@ -273,19 +273,31 @@ type githubReleaseAsset struct {
 }
 
 func (p *Publisher) findReleaseByTag(ctx context.Context, source types.OfficialReleaseSource, tag string) (*githubRelease, error) {
+	releases, err := p.listReleases(ctx, source)
+	if err != nil {
+		return nil, err
+	}
+	for index := range releases {
+		if releases[index].TagName == tag {
+			return &releases[index], nil
+		}
+	}
+	return nil, nil
+}
+
+// listReleases 分页读取官方来源的全部发行记录；
+// 发布查重与下架清点共用同一份远端发行清单事实。
+func (p *Publisher) listReleases(ctx context.Context, source types.OfficialReleaseSource) ([]githubRelease, error) {
+	releases := make([]githubRelease, 0, 100)
 	for page := 1; page <= 100; page++ {
 		endpoint := fmt.Sprintf("%s/repos/%s/%s/releases?per_page=100&page=%d", p.apiBaseURL, url.PathEscape(source.Owner), url.PathEscape(source.Name), page)
-		var releases []githubRelease
-		if _, err := p.requestJSON(ctx, http.MethodGet, endpoint, nil, &releases); err != nil {
+		var batch []githubRelease
+		if _, err := p.requestJSON(ctx, http.MethodGet, endpoint, nil, &batch); err != nil {
 			return nil, fmt.Errorf("读取官方发行记录失败：%w", err)
 		}
-		for index := range releases {
-			if releases[index].TagName == tag {
-				return &releases[index], nil
-			}
-		}
-		if len(releases) < 100 {
-			return nil, nil
+		releases = append(releases, batch...)
+		if len(batch) < 100 {
+			return releases, nil
 		}
 	}
 	return nil, fmt.Errorf("官方发行记录页数超过限制")

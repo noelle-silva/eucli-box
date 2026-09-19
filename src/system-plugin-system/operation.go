@@ -17,6 +17,9 @@ import (
 	"eucli-box/pkg/utils"
 )
 
+// pluginCancelWait 是取消接口等待任务收尾的上限；超时后返回当前状态。
+const pluginCancelWait = 10 * time.Second
+
 // cleanPluginID 校验插件 ID；拒绝路径分隔符、空值和越界写法。
 func cleanPluginID(pluginID string) (string, error) {
 	pluginID = strings.TrimSpace(pluginID)
@@ -49,17 +52,20 @@ func (s *system) pluginProgramStore(pluginID string) (release.ProgramStore, erro
 	return release.NewProgramStore(s.pluginProgramRoot(pluginID), types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: pluginID})
 }
 
-// InstallPlugin 只接受插件 ID，通过统一候选读取器取得官方候选后完成安装。
+// InstallPlugin 只接受插件 ID：请求线程完成占用与恢复后立即返回运行态，
+// 安装由独立后台任务推进，与请求生命周期无关。
 func (s *system) InstallPlugin(ctx context.Context, pluginID string) (types.ArtifactInstallState, error) {
-	return s.runPluginOperation(ctx, pluginID, release.OperationActionInstall)
+	return s.startPluginOperation(ctx, pluginID, release.OperationActionInstall)
 }
 
-// UpdatePlugin 只接受插件 ID；不适用或有真实活动时在下载前返回。
+// UpdatePlugin 只接受插件 ID；不适用或有真实活动时在启动前返回。
 func (s *system) UpdatePlugin(ctx context.Context, pluginID string) (types.ArtifactInstallState, error) {
-	return s.runPluginOperation(ctx, pluginID, release.OperationActionUpdate)
+	return s.startPluginOperation(ctx, pluginID, release.OperationActionUpdate)
 }
 
-// PluginInstallState 返回插件当前整体安装/更新状态；发现中断操作时先按阶段恢复。
+// PluginInstallState 返回插件当前整体安装/更新状态：
+// 运行中的任务直接来自租约事实（含阶段与下载进度）；
+// 否则先按阶段恢复中断操作，再组合当前版本与落盘记录。
 func (s *system) PluginInstallState(ctx context.Context, pluginID string) (types.ArtifactInstallState, error) {
 	pluginID, err := cleanPluginID(pluginID)
 	if err != nil {
@@ -67,6 +73,11 @@ func (s *system) PluginInstallState(ctx context.Context, pluginID string) (types
 	}
 	if !s.managedPrograms() {
 		return types.ArtifactInstallState{}, pluginInvalid("managed plugin programs are not configured", nil)
+	}
+	identity := types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: pluginID}
+	activity := s.activityFor(pluginID)
+	if snapshot := activity.runningSnapshot(); snapshot != nil {
+		return s.runningState(identity, snapshot), nil
 	}
 	if err := s.recoverPendingOperation(ctx, pluginID); err != nil {
 		return types.ArtifactInstallState{}, err
@@ -76,6 +87,95 @@ func (s *system) PluginInstallState(ctx context.Context, pluginID string) (types
 		return types.ArtifactInstallState{}, err
 	}
 	return state, nil
+}
+
+// CancelPluginOperation 取消正在进行的插件操作。
+// 只允许在切换前阶段与探测阶段取消；进入切换后拒绝，保证要么切成功、要么完整回滚。
+func (s *system) CancelPluginOperation(ctx context.Context, pluginID string) (types.ArtifactInstallState, error) {
+	pluginID, err := cleanPluginID(pluginID)
+	if err != nil {
+		return types.ArtifactInstallState{}, err
+	}
+	if !s.managedPrograms() {
+		return types.ArtifactInstallState{}, pluginInvalid("managed plugin programs are not configured", nil)
+	}
+	identity := types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: pluginID}
+	activity := s.activityFor(pluginID)
+	snapshot := activity.runningSnapshot()
+	if snapshot == nil {
+		return s.PluginInstallState(ctx, pluginID)
+	}
+	if !release.OperationPhaseAllowsCancel(snapshot.Phase) {
+		return s.operationState(identity, snapshot.CurrentVersion, "", types.ArtifactStatusBlocked, snapshot.Phase, types.ArtifactErrorCancelRejected, "已进入切换阶段，无法取消")
+	}
+	cancel, ok := activity.cancelUpdate()
+	if !ok {
+		return s.PluginInstallState(ctx, pluginID)
+	}
+	cancel()
+	waitCtx, waitCancel := context.WithTimeout(ctx, pluginCancelWait)
+	defer waitCancel()
+	if err := activity.waitDone(waitCtx); err != nil {
+		return s.PluginInstallState(ctx, pluginID)
+	}
+	return s.PluginInstallState(ctx, pluginID)
+}
+
+// ListPluginOperations 返回所有有操作事实的插件状态：
+// 运行中的任务（含阶段与进度）与落盘的失败/取消终态记录。
+func (s *system) ListPluginOperations(ctx context.Context) ([]types.ArtifactInstallState, error) {
+	states := []types.ArtifactInstallState{}
+	if !s.managedPrograms() {
+		return states, nil
+	}
+	for _, pluginID := range s.runningPluginIDs() {
+		state, err := s.PluginInstallState(ctx, pluginID)
+		if err == nil && state.Artifact.ID != "" {
+			states = append(states, state)
+		}
+	}
+	entries, err := os.ReadDir(s.sourceDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return states, nil
+		}
+		return nil, pluginReadFailed("failed to read plugin program root", err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		pluginID := entry.Name()
+		if s.activityFor(pluginID).runningSnapshot() != nil {
+			continue
+		}
+		record, recordErr := release.ReadOperationRecord(s.pluginOperationFile(pluginID))
+		if recordErr != nil {
+			continue
+		}
+		identity := types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: pluginID}
+		if record.Artifact != identity || !record.IsTerminal() {
+			continue
+		}
+		state, stateErr := s.buildInstallState(ctx, pluginID)
+		if stateErr == nil && state.Artifact.ID != "" {
+			states = append(states, state)
+		}
+	}
+	return states, nil
+}
+
+// runningPluginIDs 返回当前有更新任务在进行的插件 ID 快照。
+func (s *system) runningPluginIDs() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ids := make([]string, 0, len(s.activities))
+	for pluginID, activity := range s.activities {
+		if activity.runningSnapshot() != nil {
+			ids = append(ids, pluginID)
+		}
+	}
+	return ids
 }
 
 // PluginActivity 返回插件当前真实活动事实。
@@ -104,7 +204,10 @@ func (s *system) pluginActiveReason(pluginID string) string {
 	return ""
 }
 
-func (s *system) runPluginOperation(ctx context.Context, pluginID string, action string) (types.ArtifactInstallState, error) {
+// startPluginOperation 在请求线程完成校验、中断恢复、候选确定与租约占用，
+// 随后启动独立后台任务并立即返回运行态。
+// 任务上下文独立于请求：桌面端断开、退出都不再中断下载与切换。
+func (s *system) startPluginOperation(ctx context.Context, pluginID string, action string) (types.ArtifactInstallState, error) {
 	if !s.managedPrograms() {
 		return types.ArtifactInstallState{}, pluginInvalid("managed plugin programs are not configured", nil)
 	}
@@ -115,10 +218,15 @@ func (s *system) runPluginOperation(ctx context.Context, pluginID string, action
 	if err := ctx.Err(); err != nil {
 		return types.ArtifactInstallState{}, pluginExecutionInvalid("operation cancelled", err)
 	}
+	identity := types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: pluginID}
+	activity := s.activityFor(pluginID)
+	// 运行中的任务必须最先识别：中断恢复只服务崩溃遗留，绝不能触碰进行中的工作目录。
+	if snapshot := activity.runningSnapshot(); snapshot != nil {
+		return s.operationState(identity, snapshot.CurrentVersion, "", types.ArtifactStatusBlocked, types.ArtifactPhaseActivity, types.ArtifactErrorUpdateInProgress, "同一插件已有操作正在进行")
+	}
 	if err := s.recoverPendingOperation(ctx, pluginID); err != nil {
 		return types.ArtifactInstallState{}, err
 	}
-	identity := types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: pluginID}
 	currentVersion, installed, stateErr := s.currentPluginVersion(ctx, pluginID)
 	if stateErr != nil {
 		return types.ArtifactInstallState{}, stateErr
@@ -127,6 +235,7 @@ func (s *system) runPluginOperation(ctx context.Context, pluginID string, action
 		return s.operationState(identity, "", "", types.ArtifactStatusFailed, types.ArtifactPhaseCandidate, types.ArtifactErrorNotInstalled, "插件尚未安装，无法更新")
 	}
 
+	// 候选与适用性判定在受理线程完成：失败与阻止在此同步返回，后台任务只负责执行。
 	candidate, err := s.candidates.LatestCandidate(ctx, identity)
 	if err != nil {
 		return s.operationState(identity, currentVersion, "", types.ArtifactStatusFailed, types.ArtifactPhaseCandidate, types.ArtifactErrorReleaseUnavailable, "读取官方候选失败："+err.Error())
@@ -150,71 +259,124 @@ func (s *system) runPluginOperation(ctx context.Context, pluginID string, action
 		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusBlocked, types.ArtifactPhaseCompatibility, types.ArtifactErrorCompatibility, compatibility.Reason)
 	}
 
-	activity := s.activityFor(pluginID)
 	operationID := utils.NewID(pluginOperationIDPrefix)
-	if blocked := activity.beginUpdate(operationID, s.updateWaitTimeout); blocked != "" {
+	taskCtx, cancel := context.WithCancel(context.Background())
+	if blocked := activity.beginUpdate(operationID, cancel, s.updateWaitTimeout); blocked != "" {
+		cancel()
 		if blocked == types.ArtifactErrorUpdateInProgress {
 			return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusBlocked, types.ArtifactPhaseActivity, types.ArtifactErrorUpdateInProgress, "同一插件已有操作正在进行")
 		}
 		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusBlocked, types.ArtifactPhaseActivity, types.ArtifactErrorPluginActive, "插件仍有真实请求或刷新，无法开始更新")
 	}
-	defer activity.endUpdate()
-	s.sweepStalePluginWorkDirs(pluginID)
-
-	if err := s.stopPluginLifecycles(ctx, pluginID); err != nil {
-		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusBlocked, types.ArtifactPhaseActivity, types.ArtifactErrorPluginActive, "无法确认真实活动结束："+err.Error())
+	activity.setRunningBase(currentVersion, installed)
+	go s.runPluginOperationAsync(taskCtx, pluginID, action, operationID, currentVersion, targetVersion, source)
+	snapshot := activity.runningSnapshot()
+	if snapshot == nil {
+		snapshot = &release.RunningOperationSnapshot{OperationID: operationID, Phase: types.ArtifactPhaseCandidate, CurrentVersion: currentVersion, Installed: installed}
 	}
+	return s.runningState(identity, snapshot), nil
+}
 
+// runPluginOperationAsync 推进一次插件安装/更新的执行阶段（停止生命周期 → 下载 → 准备 → 探测 → 切换）。
+// 候选、兼容与租约占用已在受理线程完成；本函数负责在终态释放租约并恢复插件生命周期。
+// 每次返回都表示本轮操作已进入终态；崩溃不返回时由 recoverPendingOperation 回收。
+func (s *system) runPluginOperationAsync(ctx context.Context, pluginID string, action string, operationID string, currentVersion string, targetVersion string, source release.ArtifactPackageSource) {
+	activity := s.activityFor(pluginID)
+	stableCtx := context.WithoutCancel(ctx)
+	defer func() {
+		activity.endUpdate()
+		s.restorePluginLifecycle(stableCtx, pluginID)
+		activity.finishUpdate()
+	}()
+	identity := types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: pluginID}
+
+	s.sweepStalePluginWorkDirs(pluginID)
 	workDir := filepath.Join(s.pluginProgramRoot(pluginID), "work", operationID)
-	// 函数每次返回都表示本轮操作已进入终态；崩溃不返回时由 recoverPendingOperation 回收。
 	defer func() { _ = os.RemoveAll(workDir) }()
 	record, err := release.NewOperationRecord(operationID, identity, action, targetVersion, workDir)
 	if err != nil {
-		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusFailed, types.ArtifactPhaseCandidate, types.ArtifactErrorPathInvalid, err.Error())
+		return
 	}
 	record.CurrentVersion = currentVersion
-	if err := s.writeOperation(pluginID, record); err != nil {
-		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusFailed, types.ArtifactPhaseCandidate, types.ArtifactErrorPathInvalid, err.Error())
+	setPhase := func(phase string) {
+		record.Phase = phase
+		activity.updatePhase(phase)
+		_ = s.writeOperation(pluginID, record)
 	}
 
+	setPhase(types.ArtifactPhaseActivity)
+	if err := s.stopPluginLifecycles(ctx, pluginID); err != nil {
+		if ctx.Err() != nil {
+			s.finishOperationCancelled(pluginID, record, types.ArtifactPhaseActivity)
+			return
+		}
+		s.finishOperation(pluginID, record, types.ArtifactPhaseActivity, types.ArtifactErrorPluginActive, "无法确认真实活动结束："+err.Error())
+		return
+	}
+	if ctx.Err() != nil {
+		s.finishOperationCancelled(pluginID, record, types.ArtifactPhaseActivity)
+		return
+	}
+
+	setPhase(types.ArtifactPhaseDownload)
 	validated, err := release.AcquireAndValidatePackage(ctx, release.AcquirePackageOptions{
 		Source:       source,
 		DownloadDir:  filepath.Join(workDir, "download"),
 		ExtractedDir: filepath.Join(workDir, "extracted"),
 		Client:       s.httpClient,
+		OnProgress: func(progress release.DownloadProgress) {
+			activity.updateProgress(types.ReleaseOperationProgress{ReceivedBytes: progress.ReceivedBytes, TotalBytes: progress.TotalBytes})
+		},
 	})
 	if err != nil {
+		if ctx.Err() != nil {
+			s.finishOperationCancelled(pluginID, record, types.ArtifactPhaseDownload)
+			return
+		}
 		code, phase := acquireErrorMapping(err)
 		s.finishOperation(pluginID, record, phase, code, err.Error())
-		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusFailed, phase, code, err.Error())
+		return
+	}
+	if ctx.Err() != nil {
+		s.finishOperationCancelled(pluginID, record, types.ArtifactPhaseDownload)
+		return
 	}
 
-	record.Phase = types.ArtifactPhasePrepare
-	_ = s.writeOperation(pluginID, record)
+	setPhase(types.ArtifactPhasePrepare)
 	store, err := s.pluginProgramStore(pluginID)
 	if err != nil {
 		s.finishOperation(pluginID, record, types.ArtifactPhasePrepare, types.ArtifactErrorPathInvalid, err.Error())
-		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusFailed, types.ArtifactPhasePrepare, types.ArtifactErrorPathInvalid, err.Error())
+		return
 	}
 	prepared, err := store.PrepareVersion(ctx, validated.Directory, source.Product, validated.Files)
 	if err != nil {
+		if ctx.Err() != nil {
+			s.finishOperationCancelled(pluginID, record, types.ArtifactPhasePrepare)
+			return
+		}
 		s.finishOperation(pluginID, record, types.ArtifactPhasePrepare, types.ArtifactErrorPrepareFailed, err.Error())
-		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusFailed, types.ArtifactPhasePrepare, types.ArtifactErrorPrepareFailed, err.Error())
+		return
+	}
+	if ctx.Err() != nil {
+		s.finishOperationCancelled(pluginID, record, types.ArtifactPhasePrepare)
+		return
 	}
 
-	record.Phase = types.ArtifactPhaseProbe
-	_ = s.writeOperation(pluginID, record)
+	setPhase(types.ArtifactPhaseProbe)
 	probeDataDir := filepath.Join(workDir, "probe-data")
 	if err := s.probePlugin(ctx, prepared, probeDataDir); err != nil {
+		if ctx.Err() != nil {
+			s.finishOperationCancelled(pluginID, record, types.ArtifactPhaseProbe)
+			return
+		}
 		s.finishOperation(pluginID, record, types.ArtifactPhaseProbe, types.ArtifactErrorProbeFailed, err.Error())
-		s.endUpdateAndRestoreLifecycle(activity, ctx, pluginID)
-		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusFailed, types.ArtifactPhaseProbe, types.ArtifactErrorProbeFailed, err.Error())
+		return
 	}
 
-	record.Phase = types.ArtifactPhaseSwitch
-	_ = s.writeOperation(pluginID, record)
-	if err := store.Activate(ctx, prepared, currentVersion); err != nil {
-		restoreErr := s.restoreVersion(ctx, pluginID, store, currentVersion)
+	// 进入切换瞬间起取消窗口关闭：当前版本开始变更，必须保证要么切成功、要么完整回滚。
+	setPhase(types.ArtifactPhaseSwitch)
+	if err := store.Activate(stableCtx, prepared, currentVersion); err != nil {
+		restoreErr := s.restoreVersion(stableCtx, pluginID, store, currentVersion)
 		code := types.ArtifactErrorSwitchFailed
 		message := "切换失败：" + err.Error()
 		if restoreErr != nil {
@@ -222,37 +384,29 @@ func (s *system) runPluginOperation(ctx context.Context, pluginID string, action
 			message = "切换失败且恢复上一版失败：" + err.Error() + "；" + restoreErr.Error()
 		}
 		s.finishOperation(pluginID, record, types.ArtifactPhaseSwitch, code, message)
-		s.endUpdateAndRestoreLifecycle(activity, ctx, pluginID)
-		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusFailed, types.ArtifactPhaseSwitch, code, message)
+		return
 	}
 	// 新版本已经启用，旧版本的失败记录不再适用于当前插件状态；
 	// 不清除会让插件一直无法使用，且无法通过占位符解析自愈。
 	s.setFailure(pluginID, "")
 
-	record.Phase = types.ArtifactPhaseRefresh
-	_ = s.writeOperation(pluginID, record)
-	state, refreshErr := s.buildInstallState(ctx, pluginID)
+	setPhase(types.ArtifactPhaseRefresh)
+	state, refreshErr := s.buildInstallState(stableCtx, pluginID)
 	if refreshErr != nil {
-		restoreErr := s.restoreVersion(ctx, pluginID, store, currentVersion)
+		restoreErr := s.restoreVersion(stableCtx, pluginID, store, currentVersion)
 		if restoreErr != nil {
 			s.finishOperation(pluginID, record, types.ArtifactPhaseRestore, types.ArtifactErrorRestoreFailed, "刷新失败且恢复上一版失败："+refreshErr.Error()+"；"+restoreErr.Error())
-			s.endUpdateAndRestoreLifecycle(activity, ctx, pluginID)
-			return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusFailed, types.ArtifactPhaseRestore, types.ArtifactErrorRestoreFailed, "刷新失败且恢复上一版失败")
+			return
 		}
 		s.finishOperation(pluginID, record, types.ArtifactPhaseRestore, types.ArtifactErrorSwitchFailed, "刷新失败，已恢复上一版："+refreshErr.Error())
 		_ = os.Remove(s.pluginOperationFile(pluginID))
-		s.endUpdateAndRestoreLifecycle(activity, ctx, pluginID)
-		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusFailed, types.ArtifactPhaseRestore, types.ArtifactErrorSwitchFailed, "刷新失败，已恢复上一版")
+		return
 	}
 	if state.Status == types.ArtifactStatusUnavailable {
 		_ = os.Remove(s.pluginOperationFile(pluginID))
-		s.endUpdateAndRestoreLifecycle(activity, ctx, pluginID)
-		return state, nil
+		return
 	}
-	s.finishOperation(pluginID, record, types.ArtifactPhaseRefresh, "", "")
 	_ = os.Remove(s.pluginOperationFile(pluginID))
-	s.endUpdateAndRestoreLifecycle(activity, ctx, pluginID)
-	return s.buildInstallState(ctx, pluginID)
 }
 
 func (s *system) currentPluginVersion(ctx context.Context, pluginID string) (string, bool, error) {
@@ -299,14 +453,7 @@ func (s *system) stopPluginLifecycles(ctx context.Context, pluginID string) erro
 	return nil
 }
 
-// endUpdateAndRestoreLifecycle 先关闭更新闸门，再按当前版本恢复插件生命周期；
-// 恢复动作本身是更新的一部分，不能被自己的闸门挡住。
-func (s *system) endUpdateAndRestoreLifecycle(activity *pluginActivity, ctx context.Context, pluginID string) {
-	activity.endUpdate()
-	s.restorePluginLifecycle(ctx, pluginID)
-}
-
-// restorePluginLifecycle 切换或失败恢复后，按当前版本重新发现并恢复对应生命周期。
+// restorePluginLifecycle 切换、失败恢复或取消后，按当前版本重新发现并恢复对应生命周期。
 func (s *system) restorePluginLifecycle(ctx context.Context, pluginID string) {
 	record, err := s.findRecord(ctx, pluginID)
 	if err != nil || record.status != types.SystemPluginStatusActive {
@@ -423,6 +570,14 @@ func (s *system) finishOperation(pluginID string, record release.OperationRecord
 	_ = s.writeOperation(pluginID, record)
 }
 
+// finishOperationCancelled 把本轮操作标记为取消终态；记录保留供状态查询展示。
+func (s *system) finishOperationCancelled(pluginID string, record release.OperationRecord, phase string) {
+	record.Phase = phase
+	record.Result = release.OperationResultCancelled
+	record.UpdatedAt = time.Now().UTC()
+	_ = s.writeOperation(pluginID, record)
+}
+
 // sweepStalePluginWorkDirs 清扫同一插件 work/ 下遗留的旧操作工作目录。
 // work/ 只服务进行中的操作；崩溃窗口和历史版本遗留的目录在此自愈。
 func (s *system) sweepStalePluginWorkDirs(pluginID string) {
@@ -440,7 +595,11 @@ func (s *system) sweepStalePluginWorkDirs(pluginID string) {
 }
 
 // recoverPendingOperation 按阶段处理上次中断的操作；不根据文件时间或目录猜测当前版本。
+// 内存中已有运行任务时不做任何恢复：正在进行的操作不受盘上记录影响。
 func (s *system) recoverPendingOperation(ctx context.Context, pluginID string) error {
+	if s.activityFor(pluginID).runningSnapshot() != nil {
+		return nil
+	}
 	operationFile := s.pluginOperationFile(pluginID)
 	record, err := release.ReadOperationRecord(operationFile)
 	if err != nil {
@@ -496,15 +655,15 @@ func (s *system) buildInstallState(ctx context.Context, pluginID string) (types.
 	currentVersion, installed, err := s.currentPluginVersion(ctx, pluginID)
 	if err != nil {
 		record, recordErr := release.ReadOperationRecord(s.pluginOperationFile(pluginID))
-		if recordErr == nil && record.Result == release.OperationResultFailed && record.Artifact == identity {
-			return s.operationState(identity, record.CurrentVersion, record.TargetVersion, types.ArtifactStatusFailed, record.Phase, record.ErrorCode, record.ErrorMessage)
+		if recordErr == nil && record.IsTerminal() && record.Artifact == identity {
+			return s.recordState(identity, record)
 		}
 		return s.operationState(identity, "", "", types.ArtifactStatusFailed, types.ArtifactPhaseRestore, types.ArtifactErrorStateUnknown, "无法确认当前插件版本，不启用任何版本")
 	}
 	record, recordErr := release.ReadOperationRecord(s.pluginOperationFile(pluginID))
-	failedRecord := recordErr == nil && record.Result == release.OperationResultFailed && record.Artifact == identity
-	if failedRecord && !installed {
-		return s.operationState(identity, record.CurrentVersion, record.TargetVersion, types.ArtifactStatusFailed, record.Phase, record.ErrorCode, record.ErrorMessage)
+	terminalRecord := recordErr == nil && record.IsTerminal() && record.Artifact == identity
+	if terminalRecord && !installed {
+		return s.recordState(identity, record)
 	}
 	if !installed {
 		return s.operationState(identity, "", "", types.ArtifactStatusNotInstalled, "", "", "")
@@ -512,7 +671,7 @@ func (s *system) buildInstallState(ctx context.Context, pluginID string) (types.
 	view, err := s.LoadPlugin(ctx, pluginID)
 	if err != nil {
 		state, _ := s.operationState(identity, currentVersion, "", types.ArtifactStatusUnavailable, "", types.ArtifactErrorStateUnknown, "插件程序资料不能进入正常业务："+err.Error())
-		if failedRecord {
+		if terminalRecord {
 			state.Error = types.ReleaseOperationError{Code: record.ErrorCode, Phase: record.Phase, Message: record.ErrorMessage}
 		}
 		return state, pluginReadFailed("failed to load installed plugin", err)
@@ -521,10 +680,60 @@ func (s *system) buildInstallState(ctx context.Context, pluginID string) (types.
 	if view.Status != types.SystemPluginStatusActive {
 		state, _ = s.operationState(identity, currentVersion, "", types.ArtifactStatusUnavailable, "", types.ArtifactErrorCompatibility, view.StatusMessage)
 	}
-	if failedRecord {
+	if terminalRecord {
 		state.Error = types.ReleaseOperationError{Code: record.ErrorCode, Phase: record.Phase, Message: record.ErrorMessage}
 	}
 	return state, nil
+}
+
+// recordState 把终态操作记录映射为对外状态；失败与取消同等处理；
+// 活动类错误码保留为「被阻止」语义，供界面区分「失败」与「被阻止」。
+func (s *system) recordState(identity types.ReleaseArtifactIdentity, record release.OperationRecord) (types.ArtifactInstallState, error) {
+	status := types.ArtifactStatusFailed
+	switch {
+	case record.Result == release.OperationResultCancelled:
+		status = types.ArtifactStatusCancelled
+	case record.ErrorCode == types.ArtifactErrorPluginActive || record.ErrorCode == types.ArtifactErrorUpdateInProgress:
+		status = types.ArtifactStatusBlocked
+	}
+	return s.operationState(identity, record.CurrentVersion, record.TargetVersion, status, record.Phase, record.ErrorCode, record.ErrorMessage)
+}
+
+// runningState 组合运行中任务的事实：状态由阶段映射，进度为最近一次下载快照。
+func (s *system) runningState(identity types.ReleaseArtifactIdentity, snapshot *release.RunningOperationSnapshot) types.ArtifactInstallState {
+	return types.ArtifactInstallState{
+		OperationID:    snapshot.OperationID,
+		Artifact:       identity,
+		Installed:      snapshot.Installed,
+		CurrentVersion: snapshot.CurrentVersion,
+		Status:         statusForPhase(snapshot.Phase),
+		Phase:          snapshot.Phase,
+		Progress:       snapshot.Progress,
+	}
+}
+
+// statusForPhase 把运行阶段映射为对外的整体状态；只服务运行中的展示。
+func statusForPhase(phase string) string {
+	switch phase {
+	case types.ArtifactPhaseCandidate, types.ArtifactPhaseCompatibility:
+		return types.ArtifactStatusCheckingRelease
+	case types.ArtifactPhaseActivity:
+		return types.ArtifactStatusCheckingActivity
+	case types.ArtifactPhaseDownload:
+		return types.ArtifactStatusDownloading
+	case types.ArtifactPhaseManifest, types.ArtifactPhaseArchive, types.ArtifactPhasePackage:
+		return types.ArtifactStatusVerifying
+	case types.ArtifactPhasePrepare:
+		return types.ArtifactStatusPreparing
+	case types.ArtifactPhaseProbe:
+		return types.ArtifactStatusStarting
+	case types.ArtifactPhaseSwitch, types.ArtifactPhaseRefresh:
+		return types.ArtifactStatusSwitching
+	case types.ArtifactPhaseRestore:
+		return types.ArtifactStatusRestoring
+	default:
+		return types.ArtifactStatusCheckingRelease
+	}
 }
 
 func (s *system) operationState(identity types.ReleaseArtifactIdentity, currentVersion string, targetVersion string, status string, phase string, code string, message string) (types.ArtifactInstallState, error) {

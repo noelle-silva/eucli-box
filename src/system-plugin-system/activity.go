@@ -5,17 +5,25 @@ import (
 	"sync"
 	"time"
 
+	"eucli-box/pkg/release"
 	"eucli-box/pkg/types"
 )
 
 // pluginActivity 维护单个插件的活动计数和更新闸门；
 // 覆盖 on-demand、persistent 请求和 cached-heartbeat 刷新，不以缓存值存在代表插件仍在运行。
+// 更新期间同时承载运行任务的事实：取消句柄、任务基座、阶段、下载进度与结束信号。
 type pluginActivity struct {
 	mu             sync.Mutex
 	activeRequests int
 	updating       bool
 	operationID    string
 	changed        chan struct{}
+	cancel         context.CancelFunc
+	phase          string
+	progress       types.ReleaseOperationProgress
+	baseVersion    string
+	baseInstalled  bool
+	done           chan struct{}
 }
 
 func (a *pluginActivity) ensureChanged() {
@@ -59,7 +67,8 @@ func (a *pluginActivity) release() {
 
 // beginUpdate 设置更新闸门并等待已开始的活动全部结束；
 // 超过等待时间时清除闸门并返回 PLUGIN_ACTIVE。
-func (a *pluginActivity) beginUpdate(operationID string, waitTimeout time.Duration) string {
+// 成功时保存任务取消句柄，并建立结束信号。
+func (a *pluginActivity) beginUpdate(operationID string, cancel context.CancelFunc, waitTimeout time.Duration) string {
 	a.mu.Lock()
 	if a.updating {
 		a.mu.Unlock()
@@ -67,6 +76,10 @@ func (a *pluginActivity) beginUpdate(operationID string, waitTimeout time.Durati
 	}
 	a.updating = true
 	a.operationID = operationID
+	a.cancel = cancel
+	a.phase = types.ArtifactPhaseCandidate
+	a.progress = types.ReleaseOperationProgress{}
+	a.done = make(chan struct{})
 	changed := a.changed
 	a.mu.Unlock()
 
@@ -81,24 +94,116 @@ func (a *pluginActivity) beginUpdate(operationID string, waitTimeout time.Durati
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
 			a.endUpdate()
+			a.finishUpdate()
 			return types.ArtifactErrorPluginActive
 		}
 		select {
 		case <-changed:
 		case <-time.After(remaining):
 			a.endUpdate()
+			a.finishUpdate()
 			return types.ArtifactErrorPluginActive
 		}
 	}
 }
 
-// endUpdate 清除更新闸门。
+// setRunningBase 固定任务基座事实：受理时刻的当前版本与已安装与否。
+// 运行期间对外查询只使用该基座，不再回读磁盘。
+func (a *pluginActivity) setRunningBase(currentVersion string, installed bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.updating {
+		return
+	}
+	a.baseVersion = currentVersion
+	a.baseInstalled = installed
+}
+
+// endUpdate 清除更新闸门与运行事实；任务结束信号由 finishUpdate 发出。
 func (a *pluginActivity) endUpdate() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.updating = false
 	a.operationID = ""
+	a.cancel = nil
+	a.phase = ""
+	a.progress = types.ReleaseOperationProgress{}
+	a.baseVersion = ""
+	a.baseInstalled = false
 	a.notifyChanged()
+}
+
+// finishUpdate 发出任务结束信号，表示本轮操作的全部收尾（含生命周期恢复）已经完成；幂等。
+func (a *pluginActivity) finishUpdate() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.done != nil {
+		close(a.done)
+		a.done = nil
+	}
+}
+
+// updatePhase 记录当前任务阶段；只在更新期间有效。
+func (a *pluginActivity) updatePhase(phase string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.updating {
+		return
+	}
+	a.phase = phase
+}
+
+// updateProgress 记录最近一次下载进度；只在更新期间有效。
+func (a *pluginActivity) updateProgress(progress types.ReleaseOperationProgress) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.updating {
+		return
+	}
+	a.progress = progress
+}
+
+// runningSnapshot 返回当前更新任务的事实快照；没有进行中的任务时返回 nil。
+func (a *pluginActivity) runningSnapshot() *release.RunningOperationSnapshot {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.updating {
+		return nil
+	}
+	return &release.RunningOperationSnapshot{
+		OperationID:    a.operationID,
+		Phase:          a.phase,
+		Progress:       a.progress,
+		CurrentVersion: a.baseVersion,
+		Installed:      a.baseInstalled,
+	}
+}
+
+// cancelUpdate 取走当前任务的取消句柄；没有进行中的任务时返回 false。
+// 调用方负责在取走前判断阶段是否允许取消。
+func (a *pluginActivity) cancelUpdate() (context.CancelFunc, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.updating || a.cancel == nil {
+		return nil, false
+	}
+	return a.cancel, true
+}
+
+// waitDone 等待当前任务结束；没有进行中的任务时立即返回。
+func (a *pluginActivity) waitDone(ctx context.Context) error {
+	a.mu.Lock()
+	done := a.done
+	a.mu.Unlock()
+	if done == nil {
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-done:
+		return nil
+	}
 }
 
 // state 返回当前活动事实。

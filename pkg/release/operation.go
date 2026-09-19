@@ -21,6 +21,7 @@ const (
 	OperationResultRunning = "running"
 	OperationResultSuccess = "success"
 	OperationResultFailed  = "failed"
+	OperationResultCancelled = "cancelled"
 )
 
 // OperationRecord 记录一次单项安装或更新操作停在哪一个环节。
@@ -137,6 +138,31 @@ func OperationPhaseIsPostSwitch(phase string) bool {
 	}
 }
 
+// OperationPhaseAllowsCancel 表示该阶段允许取消：切换前阶段与探测阶段。
+// 进入切换后当前版本开始变更，必须保证要么切成功、要么完整回滚，不允许中途打断。
+func OperationPhaseAllowsCancel(phase string) bool {
+	if OperationPhaseIsPreSwitch(phase) {
+		return true
+	}
+	return phase == types.ArtifactPhaseProbe
+}
+
+// IsTerminal 表示该操作记录已经结束（失败或取消），不再是进行中的操作。
+func (r OperationRecord) IsTerminal() bool {
+	return r.Result == OperationResultFailed || r.Result == OperationResultCancelled
+}
+
+// RunningOperationSnapshot 是一次进行中的安装/更新任务对外的事实快照：
+// 任务基座（当前版本事实）在受理时刻固定，阶段与下载进度随执行推进。
+// 运行中查询只依赖它，不再回读磁盘，避免与原子替换竞争。
+type RunningOperationSnapshot struct {
+	OperationID    string
+	Phase          string
+	Progress       types.ReleaseOperationProgress
+	CurrentVersion string
+	Installed      bool
+}
+
 func validateOperationRecord(record OperationRecord) error {
 	if record.SchemaVersion != operationSchemaVersion {
 		return fmt.Errorf("操作记录 schemaVersion 必须为 %d", operationSchemaVersion)
@@ -156,7 +182,7 @@ func validateOperationRecord(record OperationRecord) error {
 	if !validArtifactPhase(record.Phase) {
 		return fmt.Errorf("操作记录阶段无效：%s", record.Phase)
 	}
-	if record.Result != OperationResultRunning && record.Result != OperationResultSuccess && record.Result != OperationResultFailed {
+	if record.Result != OperationResultRunning && record.Result != OperationResultSuccess && record.Result != OperationResultFailed && record.Result != OperationResultCancelled {
 		return fmt.Errorf("操作记录结果无效：%s", record.Result)
 	}
 	if record.CurrentVersion != "" && ValidateVersion(record.CurrentVersion) != nil {

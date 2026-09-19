@@ -30,6 +30,8 @@ type System interface {
 	InstallPlugin(ctx context.Context, pluginID string) (types.ArtifactInstallState, error)
 	UpdatePlugin(ctx context.Context, pluginID string) (types.ArtifactInstallState, error)
 	PluginInstallState(ctx context.Context, pluginID string) (types.ArtifactInstallState, error)
+	CancelPluginOperation(ctx context.Context, pluginID string) (types.ArtifactInstallState, error)
+	ListPluginOperations(ctx context.Context) ([]types.ArtifactInstallState, error)
 	PluginActivity(ctx context.Context, pluginID string) (types.ArtifactActivityState, error)
 }
 

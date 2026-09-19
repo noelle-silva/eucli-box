@@ -28,6 +28,8 @@ type System interface {
 	InstallTool(ctx context.Context, toolID string) (types.ArtifactInstallState, error)
 	UpdateTool(ctx context.Context, toolID string) (types.ArtifactInstallState, error)
 	ToolInstallState(ctx context.Context, toolID string) (types.ArtifactInstallState, error)
+	CancelToolOperation(ctx context.Context, toolID string) (types.ArtifactInstallState, error)
+	ListToolOperations(ctx context.Context) ([]types.ArtifactInstallState, error)
 	ToolActivity(ctx context.Context, toolID string) (types.ArtifactActivityState, error)
 	StopToolExecution(ctx context.Context, toolID string) (types.ToolStopResult, error)
 }

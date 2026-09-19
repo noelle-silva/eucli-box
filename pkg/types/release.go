@@ -151,9 +151,17 @@ type ArtifactInstallState struct {
 	Error          ReleaseOperationError    `json:"error,omitempty"`
 }
 
+// ReleaseOperationProgress 是一次安装/更新操作的下载进度事实；
+// 总量未知时 TotalBytes 必须为 0，不能填假值。
 type ReleaseOperationProgress struct {
 	ReceivedBytes int64 `json:"receivedBytes"`
 	TotalBytes    int64 `json:"totalBytes"`
+}
+
+// ArtifactOperationList 是所有有操作事实的发布物状态清单：
+// 运行中的任务与落盘的失败/取消终态记录；无任务的发布物不出现。
+type ArtifactOperationList struct {
+	Operations []ArtifactInstallState `json:"operations"`
 }
 
 type ReleaseOperationError struct {
@@ -186,6 +194,7 @@ const (
 	ArtifactStatusUnavailable      = "unavailable"
 	ArtifactStatusFailed           = "failed"
 	ArtifactStatusBlocked          = "blocked"
+	ArtifactStatusCancelled        = "cancelled"
 	ArtifactStatusRestoring        = "restoring"
 )
 
@@ -223,4 +232,5 @@ const (
 	ArtifactErrorRestoreFailed      = "ARTIFACT_RESTORE_FAILED"
 	ArtifactErrorStateUnknown       = "ARTIFACT_STATE_UNKNOWN"
 	ArtifactErrorDataChanged        = "ARTIFACT_DATA_CHANGED"
+	ArtifactErrorCancelRejected     = "ARTIFACT_CANCEL_REJECTED"
 )

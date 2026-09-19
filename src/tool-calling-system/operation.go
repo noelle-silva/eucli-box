@@ -16,6 +16,9 @@ import (
 	"eucli-box/pkg/utils"
 )
 
+// toolCancelWait 是取消接口等待任务收尾的上限；超时后返回当前状态。
+const toolCancelWait = 10 * time.Second
+
 // cleanToolID 校验工具 ID；拒绝路径分隔符、空值和越界写法。
 func cleanToolID(toolID string) (string, error) {
 	toolID = strings.TrimSpace(toolID)
@@ -48,17 +51,20 @@ func (s *system) toolProgramStore(toolID string) (release.ProgramStore, error) {
 	return release.NewProgramStore(s.toolProgramRoot(toolID), types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: toolID})
 }
 
-// InstallTool 只接受工具 ID，通过统一候选读取器取得官方候选后完成安装。
+// InstallTool 只接受工具 ID：请求线程完成占用与恢复后立即返回运行态，
+// 安装由独立后台任务推进，与请求生命周期无关。
 func (s *system) InstallTool(ctx context.Context, toolID string) (types.ArtifactInstallState, error) {
-	return s.runToolOperation(ctx, toolID, release.OperationActionInstall)
+	return s.startToolOperation(ctx, toolID, release.OperationActionInstall)
 }
 
-// UpdateTool 只接受工具 ID；不适用或有真实活动时在下载前返回。
+// UpdateTool 只接受工具 ID；不适用或有真实活动时在启动前返回。
 func (s *system) UpdateTool(ctx context.Context, toolID string) (types.ArtifactInstallState, error) {
-	return s.runToolOperation(ctx, toolID, release.OperationActionUpdate)
+	return s.startToolOperation(ctx, toolID, release.OperationActionUpdate)
 }
 
-// ToolInstallState 返回工具当前整体安装/更新状态；发现中断操作时先按阶段恢复。
+// ToolInstallState 返回工具当前整体安装/更新状态：
+// 运行中的任务直接来自租约事实（含阶段与下载进度）；
+// 否则先按阶段恢复中断操作，再组合当前版本与落盘记录。
 func (s *system) ToolInstallState(ctx context.Context, toolID string) (types.ArtifactInstallState, error) {
 	toolID, err := cleanToolID(toolID)
 	if err != nil {
@@ -66,6 +72,11 @@ func (s *system) ToolInstallState(ctx context.Context, toolID string) (types.Art
 	}
 	if s.config.ProgramRoot == "" {
 		return types.ArtifactInstallState{}, toolInvalid("managed tool programs are not configured", nil)
+	}
+	identity := types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: toolID}
+	activity := s.activityFor(toolID)
+	if snapshot := activity.runningSnapshot(); snapshot != nil {
+		return s.runningState(identity, snapshot), nil
 	}
 	if err := s.recoverPendingOperation(ctx, toolID); err != nil {
 		return types.ArtifactInstallState{}, err
@@ -75,6 +86,95 @@ func (s *system) ToolInstallState(ctx context.Context, toolID string) (types.Art
 		return types.ArtifactInstallState{}, err
 	}
 	return state, nil
+}
+
+// CancelToolOperation 取消正在进行的工具操作。
+// 只允许在切换前阶段与探测阶段取消；进入切换后拒绝，保证要么切成功、要么完整回滚。
+func (s *system) CancelToolOperation(ctx context.Context, toolID string) (types.ArtifactInstallState, error) {
+	toolID, err := cleanToolID(toolID)
+	if err != nil {
+		return types.ArtifactInstallState{}, err
+	}
+	if s.config.ProgramRoot == "" {
+		return types.ArtifactInstallState{}, toolInvalid("managed tool programs are not configured", nil)
+	}
+	identity := types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: toolID}
+	activity := s.activityFor(toolID)
+	snapshot := activity.runningSnapshot()
+	if snapshot == nil {
+		return s.ToolInstallState(ctx, toolID)
+	}
+	if !release.OperationPhaseAllowsCancel(snapshot.Phase) {
+		return s.operationState(identity, snapshot.CurrentVersion, "", types.ArtifactStatusBlocked, snapshot.Phase, types.ArtifactErrorCancelRejected, "已进入切换阶段，无法取消")
+	}
+	cancel, ok := activity.cancelUpdate()
+	if !ok {
+		return s.ToolInstallState(ctx, toolID)
+	}
+	cancel()
+	waitCtx, waitCancel := context.WithTimeout(ctx, toolCancelWait)
+	defer waitCancel()
+	if err := activity.waitDone(waitCtx); err != nil {
+		return s.ToolInstallState(ctx, toolID)
+	}
+	return s.ToolInstallState(ctx, toolID)
+}
+
+// ListToolOperations 返回所有有操作事实的工具状态：
+// 运行中的任务（含阶段与进度）与落盘的失败/取消终态记录。
+func (s *system) ListToolOperations(ctx context.Context) ([]types.ArtifactInstallState, error) {
+	states := []types.ArtifactInstallState{}
+	if s.config.ProgramRoot == "" {
+		return states, nil
+	}
+	for _, toolID := range s.runningToolIDs() {
+		state, err := s.ToolInstallState(ctx, toolID)
+		if err == nil && state.Artifact.ID != "" {
+			states = append(states, state)
+		}
+	}
+	entries, err := os.ReadDir(s.config.ProgramRoot)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return states, nil
+		}
+		return nil, toolStorageFailed("failed to read tool program root", err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		toolID := entry.Name()
+		if s.activityFor(toolID).runningSnapshot() != nil {
+			continue
+		}
+		record, recordErr := release.ReadOperationRecord(s.toolOperationFile(toolID))
+		if recordErr != nil {
+			continue
+		}
+		identity := types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: toolID}
+		if record.Artifact != identity || !record.IsTerminal() {
+			continue
+		}
+		state, stateErr := s.buildInstallState(ctx, toolID)
+		if stateErr == nil && state.Artifact.ID != "" {
+			states = append(states, state)
+		}
+	}
+	return states, nil
+}
+
+// runningToolIDs 返回当前有更新任务在进行的工具 ID 快照。
+func (s *system) runningToolIDs() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ids := make([]string, 0, len(s.activities))
+	for toolID, activity := range s.activities {
+		if activity.runningSnapshot() != nil {
+			ids = append(ids, toolID)
+		}
+	}
+	return ids
 }
 
 // ToolActivity 返回工具当前真实活动事实。
@@ -112,7 +212,10 @@ func (s *system) StopToolExecution(ctx context.Context, toolID string) (types.To
 	return types.ToolStopResult{Terminated: len(runs)}, nil
 }
 
-func (s *system) runToolOperation(ctx context.Context, toolID string, action string) (types.ArtifactInstallState, error) {
+// startToolOperation 在请求线程完成校验、中断恢复、候选确定与租约占用，
+// 随后启动独立后台任务并立即返回运行态。
+// 任务上下文独立于请求：桌面端断开、退出都不再中断下载与切换。
+func (s *system) startToolOperation(ctx context.Context, toolID string, action string) (types.ArtifactInstallState, error) {
 	if s.config.ProgramRoot == "" {
 		return types.ArtifactInstallState{}, toolInvalid("managed tool programs are not configured", nil)
 	}
@@ -123,10 +226,15 @@ func (s *system) runToolOperation(ctx context.Context, toolID string, action str
 	if err := ctx.Err(); err != nil {
 		return types.ArtifactInstallState{}, toolExecutionInvalid("operation cancelled", err)
 	}
+	identity := types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: toolID}
+	activity := s.activityFor(toolID)
+	// 运行中的任务必须最先识别：中断恢复只服务崩溃遗留，绝不能触碰进行中的工作目录。
+	if snapshot := activity.runningSnapshot(); snapshot != nil {
+		return s.operationState(identity, snapshot.CurrentVersion, "", types.ArtifactStatusBlocked, types.ArtifactPhaseActivity, types.ArtifactErrorUpdateInProgress, "同一工具已有操作正在进行")
+	}
 	if err := s.recoverPendingOperation(ctx, toolID); err != nil {
 		return types.ArtifactInstallState{}, err
 	}
-	identity := types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: toolID}
 	currentVersion, installed, stateErr := s.currentToolVersion(ctx, toolID)
 	if stateErr != nil {
 		return types.ArtifactInstallState{}, stateErr
@@ -135,6 +243,7 @@ func (s *system) runToolOperation(ctx context.Context, toolID string, action str
 		return s.operationState(identity, "", "", types.ArtifactStatusFailed, types.ArtifactPhaseCandidate, types.ArtifactErrorNotInstalled, "工具尚未安装，无法更新")
 	}
 
+	// 候选与适用性判定在受理线程完成：失败与阻止在此同步返回，后台任务只负责执行。
 	candidate, err := s.config.Candidates.LatestCandidate(ctx, identity)
 	if err != nil {
 		return s.operationState(identity, currentVersion, "", types.ArtifactStatusFailed, types.ArtifactPhaseCandidate, types.ArtifactErrorReleaseUnavailable, "读取官方候选失败："+err.Error())
@@ -158,66 +267,107 @@ func (s *system) runToolOperation(ctx context.Context, toolID string, action str
 		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusBlocked, types.ArtifactPhaseCompatibility, types.ArtifactErrorCompatibility, compatibility.Reason)
 	}
 
-	activity := s.activityFor(toolID)
 	operationID := utils.NewID(toolOperationIDPrefix)
-	if blocked := activity.beginUpdate(operationID); blocked != "" {
+	taskCtx, cancel := context.WithCancel(context.Background())
+	if blocked := activity.beginUpdate(operationID, cancel); blocked != "" {
+		cancel()
 		if blocked == types.ArtifactErrorUpdateInProgress {
 			return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusBlocked, types.ArtifactPhaseActivity, types.ArtifactErrorUpdateInProgress, "同一工具已有操作正在进行")
 		}
 		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusBlocked, types.ArtifactPhaseActivity, types.ArtifactErrorToolActive, "工具仍有真实执行，无法开始更新")
 	}
-	defer activity.endUpdate()
-	s.sweepStaleToolWorkDirs(toolID)
+	activity.setRunningBase(currentVersion, installed)
+	go s.runToolOperationAsync(taskCtx, toolID, action, operationID, currentVersion, targetVersion, source)
+	snapshot := activity.runningSnapshot()
+	if snapshot == nil {
+		snapshot = &release.RunningOperationSnapshot{OperationID: operationID, Phase: types.ArtifactPhaseCandidate, CurrentVersion: currentVersion, Installed: installed}
+	}
+	return s.runningState(identity, snapshot), nil
+}
 
+// runToolOperationAsync 推进一次工具安装/更新的执行阶段（下载 → 准备 → 探测 → 切换）。
+// 候选、兼容与租约占用已在受理线程完成；本函数负责在终态释放租约。
+// 每次返回都表示本轮操作已进入终态；崩溃不返回时由 recoverPendingOperation 回收。
+func (s *system) runToolOperationAsync(ctx context.Context, toolID string, action string, operationID string, currentVersion string, targetVersion string, source release.ArtifactPackageSource) {
+	activity := s.activityFor(toolID)
+	defer activity.finishUpdate()
+	defer activity.endUpdate()
+	identity := types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: toolID}
+
+	s.sweepStaleToolWorkDirs(toolID)
 	workDir := filepath.Join(s.toolProgramRoot(toolID), "work", operationID)
-	// 函数每次返回都表示本轮操作已进入终态；崩溃不返回时由 recoverPendingOperation 回收。
 	defer func() { _ = os.RemoveAll(workDir) }()
 	record, err := release.NewOperationRecord(operationID, identity, action, targetVersion, workDir)
 	if err != nil {
-		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusFailed, types.ArtifactPhaseCandidate, types.ArtifactErrorPathInvalid, err.Error())
+		return
 	}
 	record.CurrentVersion = currentVersion
-	if err := s.writeOperation(toolID, record); err != nil {
-		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusFailed, types.ArtifactPhaseCandidate, types.ArtifactErrorPathInvalid, err.Error())
+	setPhase := func(phase string) {
+		record.Phase = phase
+		activity.updatePhase(phase)
+		_ = s.writeOperation(toolID, record)
 	}
 
+	setPhase(types.ArtifactPhaseDownload)
 	validated, err := release.AcquireAndValidatePackage(ctx, release.AcquirePackageOptions{
 		Source:       source,
 		DownloadDir:  filepath.Join(workDir, "download"),
 		ExtractedDir: filepath.Join(workDir, "extracted"),
 		Client:       s.config.HTTPClient,
+		OnProgress: func(progress release.DownloadProgress) {
+			activity.updateProgress(types.ReleaseOperationProgress{ReceivedBytes: progress.ReceivedBytes, TotalBytes: progress.TotalBytes})
+		},
 	})
 	if err != nil {
+		if ctx.Err() != nil {
+			s.finishOperationCancelled(toolID, record, types.ArtifactPhaseDownload)
+			return
+		}
 		code, phase := acquireErrorMapping(err)
 		s.finishOperation(toolID, record, phase, code, err.Error())
-		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusFailed, phase, code, err.Error())
+		return
+	}
+	if ctx.Err() != nil {
+		s.finishOperationCancelled(toolID, record, types.ArtifactPhaseDownload)
+		return
 	}
 
-	record.Phase = types.ArtifactPhasePrepare
-	_ = s.writeOperation(toolID, record)
+	setPhase(types.ArtifactPhasePrepare)
 	store, err := s.toolProgramStore(toolID)
 	if err != nil {
 		s.finishOperation(toolID, record, types.ArtifactPhasePrepare, types.ArtifactErrorPathInvalid, err.Error())
-		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusFailed, types.ArtifactPhasePrepare, types.ArtifactErrorPathInvalid, err.Error())
+		return
 	}
 	prepared, err := store.PrepareVersion(ctx, validated.Directory, source.Product, validated.Files)
 	if err != nil {
+		if ctx.Err() != nil {
+			s.finishOperationCancelled(toolID, record, types.ArtifactPhasePrepare)
+			return
+		}
 		s.finishOperation(toolID, record, types.ArtifactPhasePrepare, types.ArtifactErrorPrepareFailed, err.Error())
-		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusFailed, types.ArtifactPhasePrepare, types.ArtifactErrorPrepareFailed, err.Error())
+		return
+	}
+	if ctx.Err() != nil {
+		s.finishOperationCancelled(toolID, record, types.ArtifactPhasePrepare)
+		return
 	}
 
-	record.Phase = types.ArtifactPhaseProbe
-	_ = s.writeOperation(toolID, record)
+	setPhase(types.ArtifactPhaseProbe)
 	probeDataDir := filepath.Join(workDir, "probe-data")
 	if err := s.probeTool(ctx, prepared, probeDataDir); err != nil {
+		if ctx.Err() != nil {
+			s.finishOperationCancelled(toolID, record, types.ArtifactPhaseProbe)
+			return
+		}
 		s.finishOperation(toolID, record, types.ArtifactPhaseProbe, types.ArtifactErrorProbeFailed, err.Error())
-		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusFailed, types.ArtifactPhaseProbe, types.ArtifactErrorProbeFailed, err.Error())
+		return
 	}
 
-	record.Phase = types.ArtifactPhaseSwitch
-	_ = s.writeOperation(toolID, record)
-	if err := store.Activate(ctx, prepared, currentVersion); err != nil {
-		restoreErr := s.restoreVersion(ctx, toolID, store, currentVersion)
+	// 进入切换瞬间起取消窗口关闭：当前版本开始变更，必须保证要么切成功、要么完整回滚。
+	setPhase(types.ArtifactPhaseSwitch)
+	stableCtx := context.WithoutCancel(ctx)
+	if err := store.Activate(stableCtx, prepared, currentVersion); err != nil {
+		restoreErr := s.restoreVersion(stableCtx, toolID, store, currentVersion)
 		code := types.ArtifactErrorSwitchFailed
 		message := "切换失败：" + err.Error()
 		if restoreErr != nil {
@@ -225,29 +375,26 @@ func (s *system) runToolOperation(ctx context.Context, toolID string, action str
 			message = "切换失败且恢复上一版失败：" + err.Error() + "；" + restoreErr.Error()
 		}
 		s.finishOperation(toolID, record, types.ArtifactPhaseSwitch, code, message)
-		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusFailed, types.ArtifactPhaseSwitch, code, message)
+		return
 	}
 
-	record.Phase = types.ArtifactPhaseRefresh
-	_ = s.writeOperation(toolID, record)
-	state, refreshErr := s.buildInstallState(ctx, toolID)
+	setPhase(types.ArtifactPhaseRefresh)
+	state, refreshErr := s.buildInstallState(stableCtx, toolID)
 	if refreshErr != nil {
-		restoreErr := s.restoreVersion(ctx, toolID, store, currentVersion)
+		restoreErr := s.restoreVersion(stableCtx, toolID, store, currentVersion)
 		if restoreErr != nil {
 			s.finishOperation(toolID, record, types.ArtifactPhaseRestore, types.ArtifactErrorRestoreFailed, "刷新失败且恢复上一版失败："+refreshErr.Error()+"；"+restoreErr.Error())
-			return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusFailed, types.ArtifactPhaseRestore, types.ArtifactErrorRestoreFailed, "刷新失败且恢复上一版失败")
+			return
 		}
 		s.finishOperation(toolID, record, types.ArtifactPhaseRestore, types.ArtifactErrorSwitchFailed, "刷新失败，已恢复上一版："+refreshErr.Error())
 		_ = os.Remove(s.toolOperationFile(toolID))
-		return s.operationState(identity, currentVersion, targetVersion, types.ArtifactStatusFailed, types.ArtifactPhaseRestore, types.ArtifactErrorSwitchFailed, "刷新失败，已恢复上一版")
+		return
 	}
 	if state.Status == types.ArtifactStatusUnavailable {
 		_ = os.Remove(s.toolOperationFile(toolID))
-		return state, nil
+		return
 	}
-	s.finishOperation(toolID, record, types.ArtifactPhaseRefresh, "", "")
 	_ = os.Remove(s.toolOperationFile(toolID))
-	return s.buildInstallState(ctx, toolID)
 }
 
 func (s *system) currentToolVersion(ctx context.Context, toolID string) (string, bool, error) {
@@ -352,6 +499,14 @@ func (s *system) finishOperation(toolID string, record release.OperationRecord, 
 	_ = s.writeOperation(toolID, record)
 }
 
+// finishOperationCancelled 把本轮操作标记为取消终态；记录保留供状态查询展示。
+func (s *system) finishOperationCancelled(toolID string, record release.OperationRecord, phase string) {
+	record.Phase = phase
+	record.Result = release.OperationResultCancelled
+	record.UpdatedAt = time.Now().UTC()
+	_ = s.writeOperation(toolID, record)
+}
+
 // sweepStaleToolWorkDirs 清扫同一工具 work/ 下遗留的旧操作工作目录。
 // work/ 只服务进行中的操作；崩溃窗口和历史版本遗留的目录在此自愈。
 func (s *system) sweepStaleToolWorkDirs(toolID string) {
@@ -369,7 +524,11 @@ func (s *system) sweepStaleToolWorkDirs(toolID string) {
 }
 
 // recoverPendingOperation 按阶段处理上次中断的操作；不根据文件时间或目录猜测当前版本。
+// 内存中已有运行任务时不做任何恢复：正在进行的操作不受盘上记录影响。
 func (s *system) recoverPendingOperation(ctx context.Context, toolID string) error {
+	if s.activityFor(toolID).runningSnapshot() != nil {
+		return nil
+	}
 	operationFile := s.toolOperationFile(toolID)
 	record, err := release.ReadOperationRecord(operationFile)
 	if err != nil {
@@ -425,15 +584,15 @@ func (s *system) buildInstallState(ctx context.Context, toolID string) (types.Ar
 	currentVersion, installed, err := s.currentToolVersion(ctx, toolID)
 	if err != nil {
 		record, recordErr := release.ReadOperationRecord(s.toolOperationFile(toolID))
-		if recordErr == nil && record.Result == release.OperationResultFailed && record.Artifact == identity {
-			return s.operationState(identity, record.CurrentVersion, record.TargetVersion, types.ArtifactStatusFailed, record.Phase, record.ErrorCode, record.ErrorMessage)
+		if recordErr == nil && record.IsTerminal() && record.Artifact == identity {
+			return s.recordState(identity, record)
 		}
 		return s.operationState(identity, "", "", types.ArtifactStatusFailed, types.ArtifactPhaseRestore, types.ArtifactErrorStateUnknown, "无法确认当前工具版本，不启用任何版本")
 	}
 	record, recordErr := release.ReadOperationRecord(s.toolOperationFile(toolID))
-	failedRecord := recordErr == nil && record.Result == release.OperationResultFailed && record.Artifact == identity
-	if failedRecord && !installed {
-		return s.operationState(identity, record.CurrentVersion, record.TargetVersion, types.ArtifactStatusFailed, record.Phase, record.ErrorCode, record.ErrorMessage)
+	terminalRecord := recordErr == nil && record.IsTerminal() && record.Artifact == identity
+	if terminalRecord && !installed {
+		return s.recordState(identity, record)
 	}
 	if !installed {
 		return s.operationState(identity, "", "", types.ArtifactStatusNotInstalled, "", "", "")
@@ -441,7 +600,7 @@ func (s *system) buildInstallState(ctx context.Context, toolID string) (types.Ar
 	tool, err := s.storage.LoadTool(ctx, toolID)
 	if err != nil {
 		state, _ := s.operationState(identity, currentVersion, "", types.ArtifactStatusUnavailable, "", types.ArtifactErrorStateUnknown, "工具程序资料不能进入正常业务："+err.Error())
-		if failedRecord {
+		if terminalRecord {
 			state.Error = types.ReleaseOperationError{Code: record.ErrorCode, Phase: record.Phase, Message: record.ErrorMessage}
 		}
 		return state, toolStorageFailed("failed to load installed tool", err)
@@ -451,10 +610,56 @@ func (s *system) buildInstallState(ctx context.Context, toolID string) (types.Ar
 	if !tool.Compatibility.Compatible {
 		state, _ = s.operationState(identity, currentVersion, "", types.ArtifactStatusUnavailable, "", types.ArtifactErrorCompatibility, tool.Compatibility.Reason)
 	}
-	if failedRecord {
+	if terminalRecord {
 		state.Error = types.ReleaseOperationError{Code: record.ErrorCode, Phase: record.Phase, Message: record.ErrorMessage}
 	}
 	return state, nil
+}
+
+// recordState 把终态操作记录映射为对外状态；失败与取消同等处理。
+func (s *system) recordState(identity types.ReleaseArtifactIdentity, record release.OperationRecord) (types.ArtifactInstallState, error) {
+	status := types.ArtifactStatusFailed
+	if record.Result == release.OperationResultCancelled {
+		status = types.ArtifactStatusCancelled
+	}
+	return s.operationState(identity, record.CurrentVersion, record.TargetVersion, status, record.Phase, record.ErrorCode, record.ErrorMessage)
+}
+
+// runningState 组合运行中任务的事实：状态由阶段映射，进度为最近一次下载快照。
+func (s *system) runningState(identity types.ReleaseArtifactIdentity, snapshot *release.RunningOperationSnapshot) types.ArtifactInstallState {
+	return types.ArtifactInstallState{
+		OperationID:    snapshot.OperationID,
+		Artifact:       identity,
+		Installed:      snapshot.Installed,
+		CurrentVersion: snapshot.CurrentVersion,
+		Status:         statusForPhase(snapshot.Phase),
+		Phase:          snapshot.Phase,
+		Progress:       snapshot.Progress,
+	}
+}
+
+// statusForPhase 把运行阶段映射为对外的整体状态；只服务运行中的展示。
+func statusForPhase(phase string) string {
+	switch phase {
+	case types.ArtifactPhaseCandidate, types.ArtifactPhaseCompatibility:
+		return types.ArtifactStatusCheckingRelease
+	case types.ArtifactPhaseActivity:
+		return types.ArtifactStatusCheckingActivity
+	case types.ArtifactPhaseDownload:
+		return types.ArtifactStatusDownloading
+	case types.ArtifactPhaseManifest, types.ArtifactPhaseArchive, types.ArtifactPhasePackage:
+		return types.ArtifactStatusVerifying
+	case types.ArtifactPhasePrepare:
+		return types.ArtifactStatusPreparing
+	case types.ArtifactPhaseProbe:
+		return types.ArtifactStatusStarting
+	case types.ArtifactPhaseSwitch, types.ArtifactPhaseRefresh:
+		return types.ArtifactStatusSwitching
+	case types.ArtifactPhaseRestore:
+		return types.ArtifactStatusRestoring
+	default:
+		return types.ArtifactStatusCheckingRelease
+	}
 }
 
 func (s *system) operationState(identity types.ReleaseArtifactIdentity, currentVersion string, targetVersion string, status string, phase string, code string, message string) (types.ArtifactInstallState, error) {

@@ -10,7 +10,7 @@ set "GOTMPDIR=%RUNTIME%\temp\go"
 mkdir "%RUNTIME%\temp" 2>nul
 mkdir "%GOTMPDIR%" 2>nul
 mkdir "%RUNTIME%\work" 2>nul
-pushd "%RUNTIME%\work" || exit /b 1
+pushd "%REPO_ROOT%" || exit /b 1
 go run devtools/eucli-release %*
 set "STATUS=%ERRORLEVEL%"
 popd

@@ -1,5 +1,5 @@
 {
-  "runner": "go run",
+  "runner": "node",
   "actions": {
     "helloworld": "echo helloworld",
     "eucli-box-version-patch": "go run devtools/eucli-version -root .. -target eucli-box -bump patch -message \"例行版本递增\"",

@@ -18,7 +18,8 @@
     {
       "name": "command-analyzer-root",
       "target": "analyzer",
-      "requiredFile": "command-analyzer.exe"
+      "requiredFile": "command-analyzer.exe",
+      "requiredInPackage": true
     }
   ],
   "runtimeConfig": {

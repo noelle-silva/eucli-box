@@ -3,6 +3,23 @@
   "platform": "windows-x64",
   "recipes": [
     {
+      "name": "command-analyzer-root",
+      "kind": "command-analyzer",
+      "version": "0.1.0",
+      "source": "https://github.com/noelle-silva/eucli-box",
+      "sources": [
+        "https://github.com/noelle-silva/eucli-box/tree/main/tools/shell_command/analyzer"
+      ],
+      "artifacts": ["tool:shell_command"],
+      "repositoryPath": "tools/shell_command/analyzer",
+      "requiredFiles": [
+        {
+          "path": "command-analyzer.exe",
+          "size": 4090368
+        }
+      ]
+    },
+    {
       "name": "everything-root",
       "kind": "existing",
       "version": "Everything 1.4.1.1032; ES 1.1.0.30",

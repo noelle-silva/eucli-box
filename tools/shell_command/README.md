@@ -48,6 +48,7 @@ data/tool-bodies/shell_command/
   definition.json
   config.json
   binary/windows-amd64/shell_command.exe
+  analyzer/command-analyzer.exe
   providers/
 ```
 
@@ -63,10 +64,13 @@ data/tool-bodies/shell_command/
 scripts\build-tools.cmd -tool shell_command ^
   -asset-root git-bash-root=D:\git\Git ^
   -asset-root powershell-root=E:\TOOOOOLSbox\powershell\7 ^
-  -asset-root nushell-root=E:\TOOOOOLSbox\nushell\0.113.1
+  -asset-root nushell-root=E:\TOOOOOLSbox\nushell\0.113.1 ^
+  -asset-root command-analyzer-root=<只含 command-analyzer.exe 的目录>
 ```
 
 资产入口名称来自 `toolpack.json`。
+
+命令分析器（`command-analyzer-root`）是工具包的必需组件，缺失时打包直接失败。分析器由 `tools/shell_command/analyzer/build.cmd` 构建（Rust）；正式发布链由资产准备系统现场构建并随包，手工打包时须提供一个只含 `command-analyzer.exe` 的目录。分析器源码与构建细节见 `tools/shell_command/analyzer/`。
 
 构建器只会启用真实打包进运行包的 Provider。
 

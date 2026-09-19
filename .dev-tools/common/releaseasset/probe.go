@@ -1,7 +1,9 @@
 package releaseasset
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -62,6 +64,34 @@ func probe(ctx context.Context, root string, recipe Recipe) error {
 		output, err := cmd.CombinedOutput()
 		if err != nil || !strings.Contains(strings.TrimSpace(string(output)), "0.115.0") {
 			return fmt.Errorf("Nushell 运行核对失败：%w：%s", err, strings.TrimSpace(string(output)))
+		}
+		return nil
+	case "command-analyzer":
+		cmd := exec.CommandContext(ctx, filepath.Join(root, "command-analyzer.exe"))
+		cmd.Dir = root
+		cmd.Stdin = strings.NewReader(`{"version":1,"command":"echo ok","shell":"bash","workdir":""}`)
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		hideProcessWindow(cmd)
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("命令分析器运行核对失败：%w：%s", err, strings.TrimSpace(stderr.String()))
+		}
+		var response struct {
+			Version        int    `json:"version"`
+			Classification string `json:"classification"`
+		}
+		if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &response); err != nil {
+			return fmt.Errorf("命令分析器运行核对失败：响应不是合法 JSON：%w", err)
+		}
+		if response.Version != 1 {
+			return fmt.Errorf("命令分析器运行核对失败：协议版本为 %d", response.Version)
+		}
+		switch response.Classification {
+		case "safe", "dangerous", "unknown":
+		default:
+			return fmt.Errorf("命令分析器运行核对失败：分类结果无效 %q", response.Classification)
 		}
 		return nil
 	default:

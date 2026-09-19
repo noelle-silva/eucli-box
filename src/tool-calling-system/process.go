@@ -3,6 +3,7 @@ package toolcalling
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -268,17 +269,45 @@ func (s *system) finishToolProcess(control *toolcontrol.Server, process *toolPro
 	}
 	if event.Kind == toolEventProcessExited && event.FailureKind == "" && control != nil && !handshakeCompleted && waitErr == nil {
 		outcome.FailureKind = "tool_protocol_failed"
+		if outcome.FailureError == nil {
+			if cause := reportedToolFailure(outcome.Stdout); cause != "" {
+				outcome.FailureError = errors.New(cause)
+			}
+		}
 	}
 	if event.Kind == toolEventWatchdogFailed && outcome.FailureKind == "" {
 		outcome.FailureKind = "tool_protocol_failed"
 	}
-	if outcome.FailureKind != "" && len(strings.TrimSpace(string(stderr))) > 0 {
-		outcome.FailureError = errors.New(strings.TrimSpace(string(stderr)))
-	}
-	if outcome.FailureKind != "" && event.Err != nil {
-		outcome.FailureError = errors.Join(outcome.FailureError, event.Err)
+	if outcome.FailureKind != "" {
+		if stderrText := strings.TrimSpace(string(stderr)); stderrText != "" {
+			outcome.FailureError = errors.Join(outcome.FailureError, errors.New(stderrText))
+		}
+		if event.Err != nil {
+			outcome.FailureError = errors.Join(outcome.FailureError, event.Err)
+		}
 	}
 	return outcome
+}
+
+// reportedToolFailure 从工具在控制通道握手完成前输出的 ToolExecutionOutput
+// 中提取工具自己报告的失败原因；解析失败或工具未报告失败时返回空串。
+// 工具在握手前失败退出时，其 stdout 携带的错误才是真实原因，不能被协议误报吞掉。
+func reportedToolFailure(stdout []byte) string {
+	payload := bytes.TrimSpace(stdout)
+	if len(payload) == 0 {
+		return ""
+	}
+	var output types.ToolExecutionOutput
+	if err := json.Unmarshal(payload, &output); err != nil {
+		return ""
+	}
+	if output.Status == types.ToolStatusSuccess {
+		return ""
+	}
+	if message := strings.TrimSpace(output.Error); message != "" {
+		return message
+	}
+	return strings.TrimSpace(output.Content)
 }
 
 func chooseToolProcessEvent(events []toolProcessEvent) toolProcessEvent {

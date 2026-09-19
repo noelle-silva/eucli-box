@@ -109,6 +109,8 @@ func PrepareRequired(ctx context.Context, options PrepareOptions) (map[string]st
 			err = prepareSingleZip(recipe, inputs, staging, powershellNotice)
 		case "nushell":
 			err = prepareSingleZip(recipe, inputs, staging, nushellNotice)
+		case "command-analyzer":
+			err = prepareCommandAnalyzer(ctx, recipe, repositoryRoot, staging, tempRoot)
 		default:
 			err = fmt.Errorf("外部随包配方 %s 不能自动准备", recipe.Name)
 		}
@@ -297,6 +299,39 @@ func prepareSingleZip(recipe Recipe, inputs map[string]string, target string, no
 		return err
 	}
 	return validatePinnedFiles(target, recipe.RequiredFiles)
+}
+
+// prepareCommandAnalyzer 用仓库内源码现场构建命令分析器资产：
+// cargo 构建参数与 tools/shell_command/analyzer/build.cmd 的开发构建保持一致，
+// 只使用仓库锁定依赖（--locked），产物复制为资产根内的 command-analyzer.exe。
+func prepareCommandAnalyzer(ctx context.Context, recipe Recipe, repositoryRoot string, target string, tempRoot string) error {
+	sourceDir := filepath.Join(repositoryRoot, filepath.FromSlash(recipe.RepositoryPath))
+	manifestPath := filepath.Join(sourceDir, "Cargo.toml")
+	if info, err := os.Stat(manifestPath); err != nil || info.IsDir() {
+		return fmt.Errorf("命令分析器源码不完整：%s", manifestPath)
+	}
+	buildRoot, err := os.MkdirTemp(tempRoot, "command-analyzer-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(buildRoot)
+	cargo, err := exec.LookPath("cargo")
+	if err != nil {
+		return fmt.Errorf("构建命令分析器需要 Rust 工具链（cargo）：%w", err)
+	}
+	cmd := exec.CommandContext(ctx, cargo, "build", "--release", "--locked", "--manifest-path", manifestPath)
+	cmd.Dir = sourceDir
+	cmd.Env = replaceEnvironment(os.Environ(), map[string]string{"CARGO_TARGET_DIR": buildRoot})
+	hideProcessWindow(cmd)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("构建命令分析器失败：%w：%s", err, strings.TrimSpace(string(output)))
+	}
+	product := filepath.Join(buildRoot, "release", "command-analyzer.exe")
+	if _, err := os.Stat(product); err != nil {
+		return fmt.Errorf("命令分析器构建产物缺失：%w", err)
+	}
+	return copyFile(product, filepath.Join(target, "command-analyzer.exe"))
 }
 
 func extractZip(path string, target string) error {

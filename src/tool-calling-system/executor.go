@@ -71,9 +71,9 @@ func (s *system) ExecuteWithOutputUpdate(ctx context.Context, plan types.ToolRun
 	case "user_cancelled":
 		return toolCancelledResult(plan, "tool execution cancelled", outcome.FailureError), nil
 	case "tool_unresponsive":
-		return toolFailureResult(plan, "tool execution became unresponsive", outcome.FailureKind, outcome.FailureError), nil
+		return toolFailureResult(plan, protocolFailureMessage("tool execution became unresponsive", outcome.FailureError), outcome.FailureKind, outcome.FailureError), nil
 	case "tool_protocol_failed":
-		return toolFailureResult(plan, "tool control protocol failed", outcome.FailureKind, outcome.FailureError), nil
+		return toolFailureResult(plan, protocolFailureMessage("tool control protocol failed", outcome.FailureError), outcome.FailureKind, outcome.FailureError), nil
 	}
 	if outcome.ExitError != nil {
 		message := outcome.ExitError.Error()
@@ -89,6 +89,18 @@ func (s *system) ExecuteWithOutputUpdate(ctx context.Context, plan types.ToolRun
 		return failedResult(plan, "tool process failed: "+outcome.FailureError.Error()), nil
 	}
 	return parseToolOutput(plan, outcome.Stdout), nil
+}
+
+// protocolFailureMessage 在协议层失败消息后附加可用的真实原因，
+// 让"工具未握手退出"等场景不再吞掉工具自身的错误输出。
+func protocolFailureMessage(message string, cause error) string {
+	if cause == nil {
+		return message
+	}
+	if text := strings.TrimSpace(cause.Error()); text != "" {
+		return message + ": " + text
+	}
+	return message
 }
 
 // requestedTimeoutMs extracts the caller-specified tool budget from the action

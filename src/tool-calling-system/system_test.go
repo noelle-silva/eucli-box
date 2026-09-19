@@ -200,6 +200,32 @@ func main() { time.Sleep(2 * time.Second) }
 	}
 }
 
+// TestExecuteReportsToolFailureBeforeControlHandshake 验证：工具在控制通道握手
+// 完成前失败退出时，业务端透传工具自己输出的真实错误，而不是只报协议失败。
+func TestExecuteReportsToolFailureBeforeControlHandshake(t *testing.T) {
+	executable := buildRawTool(t, `package main
+import (
+  "encoding/json"
+  "os"
+)
+func main() {
+  json.NewEncoder(os.Stdout).Encode(map[string]any{"status":"failed","content":"command analysis failed: component missing","error":"command analysis failed: component missing","metadata":map[string]any{"error":"command analysis failed: component missing"}})
+}
+`)
+	tool := testTool(t, executable)
+	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{})
+	result, err := system.Execute(context.Background(), allowedPlan(tool, executable))
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if result.Status != types.ToolStatusFailed || result.Metadata["failureKind"] != "tool_protocol_failed" {
+		t.Fatalf("result = %#v", result)
+	}
+	if !strings.Contains(result.Error, "command analysis failed: component missing") || !strings.Contains(result.Content, "command analysis failed: component missing") {
+		t.Fatalf("protocol failure must carry the tool-reported cause, result = %#v", result)
+	}
+}
+
 func TestPrepareFailsWhenPlatformBinaryMissing(t *testing.T) {
 	tool := testTool(t, buildTool(t, `package main
 func main() {}

@@ -115,7 +115,7 @@ func validateCatalog(catalog Catalog) error {
 			return fmt.Errorf("外部随包配方必须按名称排序")
 		}
 		switch recipe.Kind {
-		case "existing", "git-bash", "python-science", "powershell", "nushell":
+		case "existing", "git-bash", "python-science", "powershell", "nushell", "command-analyzer":
 		default:
 			return fmt.Errorf("外部随包配方 %s 的类别无效", recipe.Name)
 		}
@@ -133,6 +133,10 @@ func validateCatalog(catalog Catalog) error {
 		if recipe.Kind == "existing" {
 			if !safeRelativePath(recipe.RepositoryPath) || len(recipe.Inputs) != 0 {
 				return fmt.Errorf("仓库内外部内容配方 %s 的目录或输入无效", recipe.Name)
+			}
+		} else if recipe.Kind == "command-analyzer" {
+			if !safeRelativePath(recipe.RepositoryPath) || len(recipe.Inputs) != 0 {
+				return fmt.Errorf("源码构建配方 %s 的目录或输入无效", recipe.Name)
 			}
 		} else if recipe.RepositoryPath != "" || len(recipe.Inputs) == 0 {
 			return fmt.Errorf("可准备外部内容配方 %s 的目录或输入无效", recipe.Name)

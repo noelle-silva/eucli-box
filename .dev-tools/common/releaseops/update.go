@@ -91,7 +91,7 @@ func SetVersion(root string, target string, nextVersion string, message string) 
 }
 
 func prepareVersionChanges(artifact Artifact, nextVersion string, message string) ([]fileChange, error) {
-	changes := make([]fileChange, 0, 7)
+	changes := make([]fileChange, 0, 2)
 	metadata, err := replaceTopLevelJSONVersionFile(artifact.MetadataPath, artifact.Version, nextVersion)
 	if err != nil {
 		return nil, err
@@ -104,29 +104,6 @@ func prepareVersionChanges(artifact Artifact, nextVersion string, message string
 	}
 	changes = append(changes, changelog)
 
-	if artifact.Kind == KindClient {
-		paths := clientVersionFiles(artifact.Directory)
-		for _, path := range paths.jsonFiles {
-			change, err := replaceTopLevelJSONVersionFile(path, artifact.Version, nextVersion)
-			if err != nil {
-				return nil, err
-			}
-			changes = append(changes, change)
-		}
-		for _, source := range []struct {
-			path     string
-			selector tomlVersionSelector
-		}{
-			{path: paths.cargoTOML, selector: packageVersion},
-			{path: paths.cargoLock, selector: eucliStudioLockVersion},
-		} {
-			change, err := replaceTOMLVersionFile(source.path, source.selector, artifact.Version, nextVersion)
-			if err != nil {
-				return nil, err
-			}
-			changes = append(changes, change)
-		}
-	}
 	return changes, nil
 }
 
@@ -230,72 +207,6 @@ func ensureJSONEOF(decoder *json.Decoder) error {
 		return err
 	}
 	return nil
-}
-
-func replaceTOMLVersionFile(path string, selector tomlVersionSelector, previous string, next string) (fileChange, error) {
-	payload, mode, err := readChangeSource(path)
-	if err != nil {
-		return fileChange{}, err
-	}
-	updated, err := replaceTOMLVersion(string(payload), selector, previous, next)
-	if err != nil {
-		return fileChange{}, fmt.Errorf("更新 %s 失败：%w", path, err)
-	}
-	return fileChange{path: path, payload: []byte(updated), mode: mode}, nil
-}
-
-func replaceTOMLVersion(source string, selector tomlVersionSelector, previous string, next string) (string, error) {
-	lineEnding := "\n"
-	if strings.Contains(source, "\r\n") {
-		lineEnding = "\r\n"
-	}
-	lines := strings.Split(strings.ReplaceAll(source, "\r\n", "\n"), "\n")
-	insidePackage := false
-	matchedName := false
-	replaced := false
-	for index, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		switch selector {
-		case packageVersion:
-			if strings.HasPrefix(trimmed, "[") {
-				insidePackage = trimmed == "[package]"
-				continue
-			}
-		case eucliStudioLockVersion:
-			if trimmed == "[[package]]" {
-				insidePackage = true
-				matchedName = false
-				continue
-			}
-			if insidePackage {
-				if name, ok := parseTOMLStringAssignment(trimmed, "name"); ok {
-					matchedName = name == "eucli-studio-app"
-					continue
-				}
-			}
-		}
-		eligible := selector == packageVersion && insidePackage || selector == eucliStudioLockVersion && insidePackage && matchedName
-		if !eligible {
-			continue
-		}
-		version, ok := parseTOMLStringAssignment(trimmed, "version")
-		if !ok {
-			continue
-		}
-		if replaced {
-			return "", fmt.Errorf("存在重复的目标版本字段")
-		}
-		if version != previous {
-			return "", fmt.Errorf("版本为 %q，预期为 %q", version, previous)
-		}
-		prefixLength := len(line) - len(strings.TrimLeft(line, " \t"))
-		lines[index] = line[:prefixLength] + `version = "` + next + `"`
-		replaced = true
-	}
-	if !replaced {
-		return "", fmt.Errorf("未找到目标版本字段")
-	}
-	return strings.Join(lines, lineEnding), nil
 }
 
 func prependChangelogVersion(path string, version string, message string) (fileChange, error) {

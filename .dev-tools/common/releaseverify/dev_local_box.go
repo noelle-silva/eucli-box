@@ -78,9 +78,6 @@ func runDevLocalBoxDefault(ctx context.Context, root string, paths runPaths, rec
 		env     map[string]string
 	}{
 		{name: "开发态普通模式启动、鉴权与工具开发源标记", workdir: root, command: "go", args: []string{"test", "-tags", "eucli_devbox", "-run", "^TestDevBox", "-count=1", "devtools/general-verification-tools/verify-dev-box/devboxverify"}, env: devBoxTestEnvironment(paths, boxPath)},
-		{name: "客户端后台整体测试", workdir: filepath.Join(root, "clients", "eucli-studio", "backend-go"), command: "go", args: []string{"test", "./...", "-count=1"}},
-		{name: "客户端协议和界面类型", workdir: filepath.Join(root, "clients", "eucli-studio"), command: "pnpm", args: []string{"exec", "tsc", "--noEmit"}},
-		{name: "客户端界面构建", workdir: filepath.Join(root, "clients", "eucli-studio"), command: "pnpm", args: []string{"build:ui"}},
 	}
 	for _, command := range commands {
 		if err := runCommandWithEnvironment(ctx, paths, command.name, command.workdir, command.command, command.env, command.args...); err != nil {

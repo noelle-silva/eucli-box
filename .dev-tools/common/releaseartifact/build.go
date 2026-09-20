@@ -69,9 +69,6 @@ func Build(ctx context.Context, options BuildOptions) (BuildResult, error) {
 	if err != nil {
 		return BuildResult{}, err
 	}
-	if artifact.Kind == releaseops.KindClient {
-		return BuildResult{}, fmt.Errorf("客户端不属于正式成品")
-	}
 	if artifact.Kind == releaseops.KindBox {
 		return BuildResult{}, fmt.Errorf("业务端本体已退出正式成品制作，请使用本体打包")
 	}

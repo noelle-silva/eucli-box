@@ -3,5 +3,4 @@ go 1.23
 use (
 	.
 	./.dev-tools
-	./clients/eucli-studio/backend-go
 )

@@ -55,7 +55,7 @@ func parseOptions(args []string) (options, error) {
 	flags := flag.NewFlagSet("eucli-version", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	flags.StringVar(&opts.root, "root", ".", "仓库根目录")
-	flags.StringVar(&opts.target, "target", "", "发布物：eucli-box、eucli-studio、tool:<id> 或 plugin:<id>")
+	flags.StringVar(&opts.target, "target", "", "发布物：eucli-box、tool:<id> 或 plugin:<id>")
 	flags.StringVar(&opts.version, "version", "", "要调整到的三段正式版本；省略时只检查")
 	flags.StringVar(&bumpText, "bump", "", "自动递增三段正式版本的档位：patch、minor 或 major")
 	flags.StringVar(&opts.message, "message", "", "调整版本时写入 CHANGELOG 的中文说明")

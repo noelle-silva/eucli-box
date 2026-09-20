@@ -17,7 +17,6 @@ type Kind string
 
 const (
 	KindBox    Kind = "eucli-box"
-	KindClient Kind = "eucli-studio"
 	KindTool   Kind = "tool"
 	KindPlugin Kind = "plugin"
 )
@@ -34,18 +33,13 @@ type Artifact struct {
 	ChangelogPath string
 }
 
-type clientRelease struct {
-	Version               string                      `json:"version"`
-	EucliBoxCompatibility types.EucliBoxCompatibility `json:"eucliBoxCompatibility"`
-}
-
 func Discover(root string) ([]Artifact, error) {
 	root, err := filepath.Abs(strings.TrimSpace(root))
 	if err != nil {
 		return nil, fmt.Errorf("确定仓库根目录失败：%w", err)
 	}
 	artifacts := make([]Artifact, 0)
-	for _, target := range []string{"eucli-box", "eucli-studio"} {
+	for _, target := range []string{"eucli-box"} {
 		artifact, err := Resolve(root, target)
 		if err != nil {
 			return nil, err
@@ -88,9 +82,6 @@ func Resolve(root string, target string) (Artifact, error) {
 	switch target {
 	case "eucli-box":
 		artifact = Artifact{Kind: KindBox, ID: "eucli-box", Directory: root, MetadataPath: filepath.Join(root, "internal", "boxrelease", "release.json")}
-	case "eucli-studio":
-		artifact = Artifact{Kind: KindClient, ID: "eucli-studio", Directory: filepath.Join(root, "clients", "eucli-studio")}
-		artifact.MetadataPath = filepath.Join(artifact.Directory, "release.json")
 	default:
 		kindText, id, ok := strings.Cut(target, ":")
 		id = strings.TrimSpace(id)
@@ -123,7 +114,7 @@ func Resolve(root string, target string) (Artifact, error) {
 }
 
 func (a Artifact) Target() string {
-	if a.Kind == KindBox || a.Kind == KindClient {
+	if a.Kind == KindBox {
 		return string(a.Kind)
 	}
 	return string(a.Kind) + ":" + a.ID
@@ -142,13 +133,6 @@ func loadMetadata(artifact *Artifact) error {
 		}
 		artifact.Version = strings.TrimSpace(info.Version)
 		artifact.DataVersion = strings.TrimSpace(info.DataVersion)
-	case KindClient:
-		var info clientRelease
-		if err := decodeStrictJSON(payload, &info); err != nil {
-			return metadataError(*artifact, err)
-		}
-		artifact.Version = strings.TrimSpace(info.Version)
-		artifact.Compatibility = &info.EucliBoxCompatibility
 	case KindTool:
 		var info types.ToolDefinition
 		if err := decodeStrictJSON(payload, &info); err != nil {
@@ -221,7 +205,7 @@ func findDocument(directory string, name string) (string, error) {
 }
 
 func invalidTargetError() error {
-	return fmt.Errorf("目标必须是 eucli-box、eucli-studio、tool:<id> 或 plugin:<id>")
+	return fmt.Errorf("目标必须是 eucli-box、tool:<id> 或 plugin:<id>")
 }
 
 func metadataError(artifact Artifact, err error) error {

@@ -85,18 +85,6 @@ func runReleasePublishPreflight(ctx context.Context, root string, paths runPaths
 			command: "go",
 			args:    []string{"test", "./src/release-source-system", "./src/gateway-system", "-count=1"},
 		},
-		{
-			name:    "客户端独立检查与业务端结果转发",
-			workdir: filepath.Join(root, "clients", "eucli-studio", "backend-go"),
-			command: "go",
-			args:    []string{"test", "./...", "-count=1"},
-		},
-		{
-			name:    "客户端检查结果展示类型",
-			workdir: filepath.Join(root, "clients", "eucli-studio"),
-			command: "pnpm",
-			args:    []string{"exec", "tsc", "--noEmit"},
-		},
 	}
 	for _, command := range commands {
 		if err := runCommand(ctx, paths, command.name, command.workdir, command.command, command.args...); err != nil {

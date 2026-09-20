@@ -30,7 +30,7 @@ func TestResolveTargetRejectsNonReleaseArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	for _, target := range []string{"eucli-box", "eucli-studio", "tool:missing", "plugin:../escape"} {
+	for _, target := range []string{"box:eucli-box", "tool:missing", "plugin:../escape"} {
 		if _, err := catalog.ResolveTarget(target); err == nil {
 			t.Fatalf("ResolveTarget(%q) error = nil", target)
 		}

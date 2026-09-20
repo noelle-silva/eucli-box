@@ -12,4 +12,10 @@
 
 当前工具：
 
-- `verify-session-facts-regression`：客户端会话事实、设置动作与业务端路由回归。
+- `verify-background-access`：后台运行与业务端访问设置验证。
+- `verify-command-execution-limit-protection`：命令执行时限保护验证。
+- `verify-data-migration`：数据迁移验证。
+- `verify-dev-box`：开发态业务端链路验证。
+- `verify-release-build`：正式成品构建验证。
+- `verify-release-publish`：发布预检与远端成品复核。
+- `verify-tool-plugin-update`：工具与插件首次安装和手动更新验证。

@@ -47,21 +47,44 @@ func TestListCandidatesReadsOneIndexPerKind(t *testing.T) {
 	}
 }
 
-func TestListCandidatesMarksMissingArtifactAndInvalidIndex(t *testing.T) {
+func TestListCandidatesReadsIndexContentWithoutRosterFilter(t *testing.T) {
 	fixture := newGitHubFixture(t)
 	fixture.addIndexVersion(types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "context7"}, "0.1.1")
+	// 索引里的发布物不在正式发布名册内：业务端不再按名册过滤，仍生成候选。
+	fixture.addIndexVersion(types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "third_party_tool"}, "0.2.0")
 	checker := fixture.checker(t)
 	records, err := checker.ListCandidates(context.Background(), types.ReleaseArtifactKindTool)
 	if err != nil {
 		t.Fatalf("ListCandidates() error = %v", err)
 	}
-	missing := findCandidateRecord(t, records, types.ReleaseArtifactKindTool, "zhihu_search")
-	if missing.Candidate != nil || missing.FailureReason == "" {
-		t.Fatalf("missing record = %#v", missing)
+	if len(records) != 2 {
+		t.Fatalf("records = %#v", records)
+	}
+	thirdParty := findCandidateRecord(t, records, types.ReleaseArtifactKindTool, "third_party_tool")
+	if thirdParty.Candidate == nil || thirdParty.Candidate.Version != "0.2.0" {
+		t.Fatalf("third-party record = %#v", thirdParty)
 	}
 	fixture.brokenKinds[types.ReleaseArtifactKindTool] = true
 	if _, err := checker.ListCandidates(context.Background(), types.ReleaseArtifactKindTool); err == nil {
 		t.Fatal("ListCandidates() with broken index error = nil")
+	}
+}
+
+func TestLatestCandidateReadsIndexWithoutRoster(t *testing.T) {
+	fixture := newGitHubFixture(t)
+	identity := types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "third_party_tool"}
+	fixture.addIndexVersion(identity, "0.2.0")
+	checker := fixture.checker(t)
+	candidate, err := checker.LatestCandidate(context.Background(), identity)
+	if err != nil {
+		t.Fatalf("LatestCandidate() error = %v", err)
+	}
+	if candidate.Version != "0.2.0" {
+		t.Fatalf("candidate = %#v", candidate)
+	}
+	missing := types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "missing_tool"}
+	if _, err := checker.LatestCandidate(context.Background(), missing); err == nil {
+		t.Fatal("LatestCandidate() with missing index entry error = nil")
 	}
 }
 
@@ -189,11 +212,11 @@ func repositoryForIndexPath(path string) string {
 
 func (f *githubFixture) repositoryFor(t *testing.T, kind string) string {
 	t.Helper()
-	catalog, err := releasecatalog.Load()
+	sources, err := releasecatalog.LoadSources()
 	if err != nil {
-		t.Fatalf("Load catalog error = %v", err)
+		t.Fatalf("LoadSources error = %v", err)
 	}
-	source, err := catalog.SourceFor(kind)
+	source, err := sources.SourceFor(kind)
 	if err != nil {
 		t.Fatalf("SourceFor() error = %v", err)
 	}

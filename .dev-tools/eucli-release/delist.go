@@ -31,11 +31,11 @@ func runDelist(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	catalog, identity, err := resolveDelistTarget(*target)
+	sources, identity, err := resolveDelistTarget(*target)
 	if err != nil {
 		return err
 	}
-	source, err := catalog.SourceFor(identity.Kind)
+	source, err := sources.SourceFor(identity.Kind)
 	if err != nil {
 		return err
 	}
@@ -58,18 +58,18 @@ func runDelist(ctx context.Context, args []string) error {
 }
 
 // resolveDelistTarget 解析下架目标：不经过发布白名单校验，白名单之外的旧发布物同样可以下架。
-func resolveDelistTarget(value string) (releasecatalog.Catalog, types.ReleaseArtifactIdentity, error) {
-	catalog, err := releasecatalog.Load()
+func resolveDelistTarget(value string) (releasecatalog.Sources, types.ReleaseArtifactIdentity, error) {
+	sources, err := releasecatalog.LoadSources()
 	if err != nil {
-		return releasecatalog.Catalog{}, types.ReleaseArtifactIdentity{}, err
+		return releasecatalog.Sources{}, types.ReleaseArtifactIdentity{}, err
 	}
 	kind, id, ok := strings.Cut(strings.TrimSpace(value), ":")
 	if !ok {
-		return releasecatalog.Catalog{}, types.ReleaseArtifactIdentity{}, fmt.Errorf("下架目标必须是 tool:<id> 或 plugin:<id>")
+		return releasecatalog.Sources{}, types.ReleaseArtifactIdentity{}, fmt.Errorf("下架目标必须是 tool:<id> 或 plugin:<id>")
 	}
 	identity := types.ReleaseArtifactIdentity{Kind: strings.TrimSpace(kind), ID: strings.TrimSpace(id)}
 	if err := releasecatalog.ValidateArtifactIdentity(identity); err != nil {
-		return releasecatalog.Catalog{}, types.ReleaseArtifactIdentity{}, fmt.Errorf("下架目标无效：%w", err)
+		return releasecatalog.Sources{}, types.ReleaseArtifactIdentity{}, fmt.Errorf("下架目标无效：%w", err)
 	}
-	return catalog, identity, nil
+	return sources, identity, nil
 }

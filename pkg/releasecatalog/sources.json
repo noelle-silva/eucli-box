@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "platform": "windows-x64",
+  "sourceRepository": "https://github.com/noelle-silva/eucli-box",
+  "sources": [
+    {
+      "kind": "tool",
+      "repository": "https://github.com/noelle-silva/eucli-box-ai-tools",
+      "ref": "main"
+    },
+    {
+      "kind": "plugin",
+      "repository": "https://github.com/noelle-silva/eucli-box-system-plugins",
+      "ref": "main"
+    }
+  ]
+}

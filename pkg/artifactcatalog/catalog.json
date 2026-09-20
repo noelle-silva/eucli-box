@@ -1,25 +1,11 @@
 {
   "schemaVersion": 1,
   "platform": "windows-x64",
-  "sourceRepository": "https://github.com/noelle-silva/eucli-box",
-  "sources": [
-    {
-      "kind": "tool",
-      "repository": "https://github.com/noelle-silva/eucli-box-ai-tools",
-      "ref": "main"
-    },
-    {
-      "kind": "plugin",
-      "repository": "https://github.com/noelle-silva/eucli-box-system-plugins",
-      "ref": "main"
-    }
-  ],
   "artifacts": [
     { "kind": "tool", "id": "context7" },
     { "kind": "tool", "id": "everything" },
     { "kind": "tool", "id": "file_editor" },
     { "kind": "tool", "id": "file_reader" },
-    { "kind": "tool", "id": "sci_calculator" },
     { "kind": "tool", "id": "shell_command" },
     { "kind": "tool", "id": "web_search" },
     { "kind": "tool", "id": "zhihu_search" },

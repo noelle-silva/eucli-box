@@ -423,11 +423,11 @@ func countRemoteByPrefix(releases []githubRelease, refs []string, tagPrefix stri
 
 func delistSource(t *testing.T, kind string) types.OfficialReleaseSource {
 	t.Helper()
-	catalog, err := releasecatalog.Load()
+	sources, err := releasecatalog.LoadSources()
 	if err != nil {
 		t.Fatal(err)
 	}
-	source, err := catalog.SourceFor(kind)
+	source, err := sources.SourceFor(kind)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,6 +8,7 @@ import (
 
 	"devtools/common/releasecredentials"
 	"devtools/common/toolruntime"
+	"eucli-box/pkg/artifactcatalog"
 	"eucli-box/pkg/releasecatalog"
 	"eucli-box/pkg/types"
 )
@@ -16,16 +17,20 @@ func repositoryRoot(value string) (string, error) {
 	return toolruntime.ValidateRepositoryRoot(value)
 }
 
-func resolveTarget(value string) (releasecatalog.Catalog, types.ReleaseArtifactIdentity, error) {
-	catalog, err := releasecatalog.Load()
+func resolveTarget(value string) (releasecatalog.Sources, types.ReleaseArtifactIdentity, error) {
+	sources, err := releasecatalog.LoadSources()
 	if err != nil {
-		return releasecatalog.Catalog{}, types.ReleaseArtifactIdentity{}, err
+		return releasecatalog.Sources{}, types.ReleaseArtifactIdentity{}, err
 	}
-	identity, err := catalog.ResolveTarget(value)
+	roster, err := artifactcatalog.Load()
 	if err != nil {
-		return releasecatalog.Catalog{}, types.ReleaseArtifactIdentity{}, err
+		return releasecatalog.Sources{}, types.ReleaseArtifactIdentity{}, err
 	}
-	return catalog, identity, nil
+	identity, err := roster.ResolveTarget(value)
+	if err != nil {
+		return releasecatalog.Sources{}, types.ReleaseArtifactIdentity{}, err
+	}
+	return sources, identity, nil
 }
 
 func writeJSONFile(path string, value any) error {

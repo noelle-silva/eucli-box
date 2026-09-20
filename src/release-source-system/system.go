@@ -50,7 +50,7 @@ type Config struct {
 type system struct {
 	boxVersion    string
 	checker       CandidateLister
-	catalog       releasecatalog.Catalog
+	sources       releasecatalog.Sources
 	tools         ToolSystem
 	plugins       PluginSystem
 	currentSource func() installsource.Kind
@@ -81,14 +81,14 @@ func NewSystemWithChecker(config Config, checker CandidateLister, tools ToolSyst
 	if err := release.ValidateVersion(boxVersion); err != nil {
 		return nil, fmt.Errorf("发行来源读取的业务端版本无效：%w", err)
 	}
-	catalog, err := releasecatalog.Load()
+	sources, err := releasecatalog.LoadSources()
 	if err != nil {
 		return nil, err
 	}
 	return &system{
 		boxVersion:    boxVersion,
 		checker:       checker,
-		catalog:       catalog,
+		sources:       sources,
 		tools:         tools,
 		plugins:       plugins,
 		currentSource: config.CurrentSource,
@@ -187,7 +187,7 @@ func (s *system) candidateFromReleaseCandidate(artifact types.ReleaseArtifactIde
 		ReleaseNotes:  source.ReleaseNotes,
 		DownloadSize:  source.SizeBytes,
 	}
-	if official, err := s.catalog.SourceFor(artifact.Kind); err == nil {
+	if official, err := s.sources.SourceFor(artifact.Kind); err == nil {
 		candidate.Source = official
 	}
 	if installed, ok := installedByIdentity[identityKey(artifact)]; ok {
@@ -218,7 +218,7 @@ func (s *system) installedOnlyCandidate(installed types.ArtifactInstallation, re
 		Status:         types.ReleaseCandidateStatusFailed,
 		FailureReason:  reason,
 	}
-	if official, err := s.catalog.SourceFor(installed.Artifact.Kind); err == nil {
+	if official, err := s.sources.SourceFor(installed.Artifact.Kind); err == nil {
 		candidate.Source = official
 	}
 	return candidate
@@ -235,7 +235,7 @@ func (s *system) failedArtifactCandidate(artifact types.ReleaseArtifactIdentity,
 		candidate.Installed = true
 		candidate.CurrentVersion = installed.Version
 	}
-	if official, err := s.catalog.SourceFor(artifact.Kind); err == nil {
+	if official, err := s.sources.SourceFor(artifact.Kind); err == nil {
 		candidate.Source = official
 	}
 	return candidate

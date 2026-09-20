@@ -6,19 +6,19 @@ import (
 	"eucli-box/pkg/types"
 )
 
-func TestLoadReturnsCompleteFixedCatalog(t *testing.T) {
-	catalog, err := Load()
+func TestLoadSourcesReturnsFixedOfficialSources(t *testing.T) {
+	sources, err := LoadSources()
 	if err != nil {
-		t.Fatalf("Load() error = %v", err)
+		t.Fatalf("LoadSources() error = %v", err)
 	}
-	if catalog.Platform != types.ReleasePlatformWindowsX64 || len(catalog.Sources) != 2 || len(catalog.Artifacts) != 11 {
-		t.Fatalf("catalog = %#v", catalog)
+	if sources.Platform != types.ReleasePlatformWindowsX64 || len(sources.Sources) != 2 {
+		t.Fatalf("sources = %#v", sources)
 	}
-	if catalog.SourceRepository != "https://github.com/noelle-silva/eucli-box" {
-		t.Fatalf("sourceRepository = %q", catalog.SourceRepository)
+	if sources.SourceRepository != "https://github.com/noelle-silva/eucli-box" {
+		t.Fatalf("sourceRepository = %q", sources.SourceRepository)
 	}
 	for _, kind := range []string{types.ReleaseArtifactKindTool, types.ReleaseArtifactKindPlugin} {
-		source, err := catalog.SourceFor(kind)
+		source, err := sources.SourceFor(kind)
 		if err != nil {
 			t.Fatalf("SourceFor(%s) error = %v", kind, err)
 		}
@@ -26,11 +26,11 @@ func TestLoadReturnsCompleteFixedCatalog(t *testing.T) {
 			t.Fatalf("source = %#v", source)
 		}
 	}
-	recordRepository, err := catalog.RecordRepository()
+	recordRepository, err := sources.RecordRepository()
 	if err != nil {
 		t.Fatalf("RecordRepository() error = %v", err)
 	}
-	if recordRepository != catalog.SourceRepository {
+	if recordRepository != sources.SourceRepository {
 		t.Fatalf("RecordRepository() = %q", recordRepository)
 	}
 }
@@ -50,18 +50,6 @@ func TestTagNameKeepsIndependentArtifactIdentity(t *testing.T) {
 		}
 		if got != test.want {
 			t.Fatalf("TagName(%#v) = %q, want %q", test.identity, got, test.want)
-		}
-	}
-}
-
-func TestResolveTargetRejectsNonReleaseArtifacts(t *testing.T) {
-	catalog, err := Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	for _, target := range []string{"eucli-box", "eucli-studio", "tool:missing", "plugin:../escape"} {
-		if _, err := catalog.ResolveTarget(target); err == nil {
-			t.Fatalf("ResolveTarget(%q) error = nil", target)
 		}
 	}
 }

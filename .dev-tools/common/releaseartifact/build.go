@@ -14,6 +14,7 @@ import (
 
 	"devtools/common/releaseasset"
 	"devtools/common/releaseops"
+	"eucli-box/pkg/artifactcatalog"
 	"eucli-box/pkg/release"
 	"eucli-box/pkg/releasecatalog"
 	"eucli-box/pkg/types"
@@ -52,11 +53,15 @@ func Build(ctx context.Context, options BuildOptions) (BuildResult, error) {
 	if runtime.GOOS != "windows" || runtime.GOARCH != "amd64" {
 		return BuildResult{}, fmt.Errorf("本期正式成品只能在 Windows x64 环境制作")
 	}
-	catalog, err := releasecatalog.Load()
+	sources, err := releasecatalog.LoadSources()
 	if err != nil {
 		return BuildResult{}, err
 	}
-	identity, err := catalog.ResolveTarget(options.Target)
+	roster, err := artifactcatalog.Load()
+	if err != nil {
+		return BuildResult{}, err
+	}
+	identity, err := roster.ResolveTarget(options.Target)
 	if err != nil {
 		return BuildResult{}, err
 	}
@@ -87,11 +92,11 @@ func Build(ctx context.Context, options BuildOptions) (BuildResult, error) {
 	} else if err := releaseops.Check(artifact); err != nil {
 		return BuildResult{}, fmt.Errorf("发布物完整检查失败：%w", err)
 	}
-	officialSource, err := catalog.SourceFor(identity.Kind)
+	officialSource, err := sources.SourceFor(identity.Kind)
 	if err != nil {
 		return BuildResult{}, err
 	}
-	sourceRepository, err := catalog.RecordRepository()
+	sourceRepository, err := sources.RecordRepository()
 	if err != nil {
 		return BuildResult{}, err
 	}

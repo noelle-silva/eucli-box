@@ -41,11 +41,11 @@ func runPublish(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	catalog, identity, err := resolveTarget(*target)
+	sources, identity, err := resolveTarget(*target)
 	if err != nil {
 		return err
 	}
-	source, err := catalog.SourceFor(identity.Kind)
+	source, err := sources.SourceFor(identity.Kind)
 	if err != nil {
 		return err
 	}

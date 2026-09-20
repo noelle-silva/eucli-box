@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"eucli-box/pkg/artifactcatalog"
 	"eucli-box/pkg/release"
 	"eucli-box/pkg/releasecatalog"
 	"eucli-box/pkg/types"
@@ -35,7 +36,8 @@ type Config struct {
 }
 
 type Publisher struct {
-	catalog    releasecatalog.Catalog
+	sources    releasecatalog.Sources
+	roster     artifactcatalog.Catalog
 	client     HTTPDoer
 	apiBaseURL string
 	token      string
@@ -58,7 +60,11 @@ type Result struct {
 }
 
 func New(config Config) (*Publisher, error) {
-	catalog, err := releasecatalog.Load()
+	sources, err := releasecatalog.LoadSources()
+	if err != nil {
+		return nil, err
+	}
+	roster, err := artifactcatalog.Load()
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +79,7 @@ func New(config Config) (*Publisher, error) {
 	if client == nil {
 		client = &http.Client{Timeout: requestTimeout}
 	}
-	return &Publisher{catalog: catalog, client: client, apiBaseURL: apiBaseURL, token: strings.TrimSpace(config.Token)}, nil
+	return &Publisher{sources: sources, roster: roster, client: client, apiBaseURL: apiBaseURL, token: strings.TrimSpace(config.Token)}, nil
 }
 
 func (p *Publisher) Publish(ctx context.Context, input PublishInput) (result Result, err error) {
@@ -171,10 +177,10 @@ func (p *Publisher) prepareInput(input PublishInput) (preparedInput, error) {
 	if !manifest.Source.Recorded {
 		return preparedInput{}, fmt.Errorf("未进入源码记录的成品不能正式发布")
 	}
-	if !p.catalog.Contains(manifest.Artifact) {
+	if !p.roster.Contains(manifest.Artifact) {
 		return preparedInput{}, fmt.Errorf("发布物不在正式白名单中")
 	}
-	source, err := p.catalog.SourceFor(manifest.Artifact.Kind)
+	source, err := p.sources.SourceFor(manifest.Artifact.Kind)
 	if err != nil {
 		return preparedInput{}, err
 	}

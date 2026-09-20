@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"devtools/common/releaseasset"
+	"eucli-box/pkg/artifactcatalog"
 	"eucli-box/pkg/releasecatalog"
 	"eucli-box/pkg/types"
 	"eucli-box/pkg/workspace"
@@ -38,11 +39,11 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	catalog, err := releasecatalog.Load()
+	roster, err := artifactcatalog.Load()
 	if err != nil {
 		return err
 	}
-	identity, err := catalog.ResolveTarget(*target)
+	identity, err := roster.ResolveTarget(*target)
 	if err != nil {
 		// 资产库按配方服务任意发布物；正式发行白名单未收录时，
 		// 允许按 kind:id 直接解析工具发布物，只要配方中存在对应项。

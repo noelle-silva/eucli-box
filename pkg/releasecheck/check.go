@@ -29,14 +29,14 @@ type Config struct {
 
 // Checker 按需读取官方统一版本索引；自身不保存任何检查结果。
 type Checker struct {
-	catalog      releasecatalog.Catalog
+	sources      releasecatalog.Sources
 	client       HTTPDoer
 	indexBaseURL string
 	downloadBase string
 }
 
 func New(config Config) (*Checker, error) {
-	catalog, err := releasecatalog.Load()
+	sources, err := releasecatalog.LoadSources()
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ func New(config Config) (*Checker, error) {
 		return nil, fmt.Errorf("发行来源读取超时不能为负数")
 	}
 	return &Checker{
-		catalog:      catalog,
+		sources:      sources,
 		client:       config.Client,
 		indexBaseURL: config.IndexBase,
 		downloadBase: config.DownloadBase,
@@ -75,29 +75,20 @@ type CandidateRecord struct {
 	FailureReason string
 }
 
-// ListCandidates 按分类读取该分类正式白名单内全部发布物的候选事实。
+// ListCandidates 按分类读取官方索引内该分类全部实际发布物的候选事实。
 // 每个分类只读取一次对应官方仓库的统一版本索引；
 // 不读取其他分类仓库，不列举 Release，不读取 Release 附属资料。
-// 读取成功的发布物给出完整候选；索引中缺该发布物、缺平台压缩包或地址无效的发布物按失败记录。
+// 索引里的发布物给出完整候选；缺平台压缩包或地址无效的发布物按失败记录。
 func (c *Checker) ListCandidates(ctx context.Context, kind string) ([]CandidateRecord, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	kind = strings.TrimSpace(kind)
-	whitelist := make([]types.ReleaseArtifactIdentity, 0, len(c.catalog.Artifacts))
-	for _, artifact := range c.catalog.Artifacts {
-		if artifact.Kind == kind {
-			whitelist = append(whitelist, artifact)
-		}
-	}
-	if len(whitelist) == 0 {
+	source, err := c.sources.SourceFor(kind)
+	if err != nil {
 		return []CandidateRecord{}, nil
 	}
-	source, err := c.catalog.SourceFor(kind)
-	if err != nil {
-		return nil, err
-	}
-	sourceRepository, err := c.catalog.RecordRepository()
+	sourceRepository, err := c.sources.RecordRepository()
 	if err != nil {
 		return nil, err
 	}
@@ -105,13 +96,16 @@ func (c *Checker) ListCandidates(ctx context.Context, kind string) ([]CandidateR
 	if err != nil {
 		return nil, err
 	}
-	records := make([]CandidateRecord, 0, len(whitelist))
-	for _, identity := range whitelist {
+	records := make([]CandidateRecord, 0, len(index.Artifacts))
+	for _, artifact := range index.Artifacts {
+		if artifact.Kind != kind {
+			continue
+		}
+		identity := types.ReleaseArtifactIdentity{Kind: artifact.Kind, ID: artifact.ID}
 		record := CandidateRecord{Artifact: identity}
 		version, ok := index.LatestVersion(identity)
 		if !ok {
-			record.FailureReason = fmt.Sprintf("%s 官方索引没有该发布物的正式版本", identity.ID)
-			records = append(records, record)
+			// 索引校验保证每个发布物至少有一条版本记录；防御性跳过不产生失败条目。
 			continue
 		}
 		pkg, ok := version.PackageFor(types.ReleasePlatformWindowsX64)
@@ -133,15 +127,13 @@ func (c *Checker) ListCandidates(ctx context.Context, kind string) ([]CandidateR
 }
 
 // LatestCandidate 读取单个发布物的最新候选，供安装与更新系统使用。
+// 只校验官方索引中的实际事实，不做任何发布物名册收录判断。
 func (c *Checker) LatestCandidate(ctx context.Context, identity types.ReleaseArtifactIdentity) (*ReleaseCandidate, error) {
-	if !c.catalog.Contains(identity) {
-		return nil, fmt.Errorf("发布物不在正式白名单中")
-	}
-	source, err := c.catalog.SourceFor(identity.Kind)
+	source, err := c.sources.SourceFor(identity.Kind)
 	if err != nil {
 		return nil, err
 	}
-	sourceRepository, err := c.catalog.RecordRepository()
+	sourceRepository, err := c.sources.RecordRepository()
 	if err != nil {
 		return nil, err
 	}

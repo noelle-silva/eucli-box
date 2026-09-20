@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 
+	"eucli-box/pkg/artifactcatalog"
 	"eucli-box/pkg/releasecatalog"
 )
 
@@ -12,12 +13,16 @@ func runList(args []string) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	catalog, err := releasecatalog.Load()
+	sources, err := releasecatalog.LoadSources()
 	if err != nil {
 		return err
 	}
-	for _, identity := range catalog.SortedArtifacts() {
-		source, err := catalog.SourceFor(identity.Kind)
+	roster, err := artifactcatalog.Load()
+	if err != nil {
+		return err
+	}
+	for _, identity := range roster.SortedArtifacts() {
+		source, err := sources.SourceFor(identity.Kind)
 		if err != nil {
 			return err
 		}

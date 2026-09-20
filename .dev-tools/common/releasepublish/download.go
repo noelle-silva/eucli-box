@@ -47,14 +47,14 @@ type DownloadResult struct {
 // 只下载该版本的一个目标压缩包并完成大小与 SHA-256 核对；
 // 不列举 Release、不读取 Release 附属资料。
 func (p *Publisher) DownloadPublished(ctx context.Context, identity types.ReleaseArtifactIdentity, version string, targetRoot string) (DownloadResult, error) {
-	if !p.catalog.Contains(identity) {
+	if !p.roster.Contains(identity) {
 		return DownloadResult{}, fmt.Errorf("发布物不在正式白名单中")
 	}
-	source, err := p.catalog.SourceFor(identity.Kind)
+	source, err := p.sources.SourceFor(identity.Kind)
 	if err != nil {
 		return DownloadResult{}, err
 	}
-	sourceRepository, err := p.catalog.RecordRepository()
+	sourceRepository, err := p.sources.RecordRepository()
 	if err != nil {
 		return DownloadResult{}, err
 	}

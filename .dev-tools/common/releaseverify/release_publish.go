@@ -12,6 +12,7 @@ import (
 	"devtools/common/releasecredentials"
 	"devtools/common/releaseops"
 	"devtools/common/releasepublish"
+	"eucli-box/pkg/artifactcatalog"
 	"eucli-box/pkg/releasecatalog"
 )
 
@@ -117,12 +118,12 @@ func runReleasePublishRemote(ctx context.Context, root string, paths runPaths, r
 		recorder.fail("读取远端复核凭据", err)
 		return
 	}
-	catalog, err := releasecatalog.Load()
+	roster, err := artifactcatalog.Load()
 	if err != nil {
-		recorder.fail("读取正式发布物清单", err)
+		recorder.fail("读取正式发布物名册", err)
 		return
 	}
-	artifacts := catalog.SortedArtifacts()
+	artifacts := roster.SortedArtifacts()
 	for index, identity := range artifacts {
 		target := releasecatalog.Target(identity)
 		fail := func(reason string, err error) {

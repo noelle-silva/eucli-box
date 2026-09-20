@@ -107,12 +107,12 @@ func TestUpdateIndexAppendsVersionRecord(t *testing.T) {
 	fixture.indexPayload = nil
 	fixture.indexSHA = ""
 	publisher := fixture.publisher(t)
-	catalog, err := releasecatalog.Load()
+	sources, err := releasecatalog.LoadSources()
 	if err != nil {
 		t.Fatal(err)
 	}
 	identity := types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "context7"}
-	source, err := catalog.SourceFor(identity.Kind)
+	source, err := sources.SourceFor(identity.Kind)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,12 +154,12 @@ func TestUpdateIndexRejectsDuplicateVersion(t *testing.T) {
 	fixture.indexPayload = nil
 	fixture.indexSHA = ""
 	publisher := fixture.publisher(t)
-	catalog, err := releasecatalog.Load()
+	sources, err := releasecatalog.LoadSources()
 	if err != nil {
 		t.Fatal(err)
 	}
 	identity := types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "context7"}
-	source, err := catalog.SourceFor(identity.Kind)
+	source, err := sources.SourceFor(identity.Kind)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -414,12 +414,12 @@ func (f *publishFixture) release() githubRelease {
 
 func testPublishInput(t *testing.T) PublishInput {
 	t.Helper()
-	catalog, err := releasecatalog.Load()
+	sources, err := releasecatalog.LoadSources()
 	if err != nil {
 		t.Fatal(err)
 	}
 	identity := types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "context7"}
-	source, err := catalog.SourceFor(identity.Kind)
+	source, err := sources.SourceFor(identity.Kind)
 	if err != nil {
 		t.Fatal(err)
 	}

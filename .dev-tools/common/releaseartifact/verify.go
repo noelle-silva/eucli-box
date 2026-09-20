@@ -222,9 +222,6 @@ func launchTool(ctx context.Context, directory string, environment string, temp 
 	case "shell_command":
 		arguments = `{"command":"printf release-verification","provider":"git-bash"}`
 		requireSuccess = true
-	case "sci_calculator":
-		arguments = `{"expression":"norm_cdf(0, 0, 1)"}`
-		requireSuccess = true
 	}
 	toolDataDir := filepath.Join(environment, "tool-data")
 	for _, path := range []string{toolDataDir, temp} {
@@ -232,13 +229,7 @@ func launchTool(ctx context.Context, directory string, environment string, temp 
 			return err
 		}
 	}
-	cmd.Env = replaceEnvironment(os.Environ(), map[string]string{
-		"TEMP": temp, "TMP": temp,
-		// 验收环境关闭 Python 字节码缓存：全新解包目录首次导入时并发生成 .pyc
-		// 会触发 scipy 等库的导入竞态（部分初始化循环导入），纯源码导入保持稳定。
-		"PYTHONDONTWRITEBYTECODE": "1",
-		"PYTHONPYCACHEPREFIX":     temp,
-	})
+	cmd.Env = replaceEnvironment(os.Environ(), map[string]string{"TEMP": temp, "TMP": temp})
 	cmd.Stdin = strings.NewReader(`{"actionId":"release-verification","toolName":"` + definition.ID + `","arguments":` + arguments + `,"userConfig":{},"defaultConfig":{},"toolBodyDirectory":"` + escapeJSON(directory) + `","toolDataDirectory":"` + escapeJSON(toolDataDir) + `","hostWorkingDirectory":"` + escapeJSON(directory) + `"}`)
 	return captureJSONProcess(cmd, filepath.Join(evidence, "tool.stdout.json"), filepath.Join(evidence, "tool.stderr.log"), requireSuccess)
 }

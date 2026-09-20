@@ -20,7 +20,6 @@ func TestCatalogDefinesFixedAssetsForReleaseArtifacts(t *testing.T) {
 	}{
 		{artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "everything"}, want: []string{"everything-root"}},
 		{artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "shell_command"}, want: []string{"command-analyzer-root", "git-bash-root", "nushell-root", "powershell-root"}},
-		{artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "sci_calculator"}, want: []string{"sci-calculator-python-runtime"}},
 	}
 	for _, testCase := range cases {
 		recipes := catalog.RecipesForArtifact(testCase.artifact)

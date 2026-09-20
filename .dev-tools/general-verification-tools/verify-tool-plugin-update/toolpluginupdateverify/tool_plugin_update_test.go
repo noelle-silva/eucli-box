@@ -562,8 +562,8 @@ func zipPayloadWithExtra(t *testing.T, payload map[string][]byte, extraName stri
 }
 
 // buildProbeTool 编译基础交接可用的探测程序。
-// tool-sleep-N：ActionID=sleep 时真实执行 N 秒；plugin：检测 sleep-marker.txt 后真实执行 35 秒；
-// persistent：忽略 stdin 关闭，进程不退出。
+// tool-sleep-N：ActionID=sleep 时真实执行 N 秒；plugin：检测 sleep-marker.txt 后真实执行 5 秒；
+// persistent：stdin 关闭即退出，与真实持久插件一致。
 func buildProbeTool(t *testing.T, kind string) []byte {
 	t.Helper()
 	var source string
@@ -616,7 +616,6 @@ import (
 	"encoding/json"
 	"net"
 	"os"
-	"time"
 )
 ` + probeControlPreamble() + `
 
@@ -632,8 +631,7 @@ func main() {
 	for {
 		var request map[string]any
 		if err := decoder.Decode(&request); err != nil {
-			time.Sleep(30 * time.Second)
-			continue
+			return
 		}
 		_ = encoder.Encode(map[string]any{"status": "success", "values": map[string]string{"value": "persistent"}})
 	}
@@ -666,7 +664,7 @@ func main() {
 	var in input
 	_ = json.NewDecoder(os.Stdin).Decode(&in)
 	if _, err := os.Stat(filepath.Join(in.PluginDataDirectory, "sleep-marker.txt")); err == nil {
-		time.Sleep(35 * time.Second)
+		time.Sleep(5 * time.Second)
 	}
 	_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"status": "success", "values": map[string]string{"value": "ok"}})
 }
@@ -903,6 +901,95 @@ func (b *boxProcess) dataJSON(status int, payload []byte) map[string]any {
 	return envelope.Data
 }
 
+// ---------- 异步任务等待 ----------
+
+// isTerminalArtifactStatus 判断安装状态是否已进入终态；
+// 运行中的阶段状态（下载/准备/切换等）不是终态。
+func isTerminalArtifactStatus(status string) bool {
+	switch status {
+	case types.ArtifactStatusNotInstalled, types.ArtifactStatusActive, types.ArtifactStatusUnavailable,
+		types.ArtifactStatusFailed, types.ArtifactStatusBlocked, types.ArtifactStatusCancelled:
+		return true
+	}
+	return false
+}
+
+// settleToolState 在动作受理后等待工具后台任务进入终态；受理即终态时直接返回。
+func settleToolState(t *testing.T, box *boxProcess, toolID string, accepted map[string]any) map[string]any {
+	t.Helper()
+	if status, _ := accepted["status"].(string); isTerminalArtifactStatus(status) {
+		return accepted
+	}
+	deadline := time.Now().Add(120 * time.Second)
+	for time.Now().Before(deadline) {
+		status, payload := box.call(http.MethodGet, "/api/tools/"+toolID+"/install-state", "")
+		if status < 200 || status >= 300 {
+			t.Fatalf("读取工具 %s 安装状态 HTTP %d：%s", toolID, status, payload)
+		}
+		state := box.dataJSON(status, payload)
+		if current, _ := state["status"].(string); isTerminalArtifactStatus(current) {
+			return state
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Fatalf("工具 %s 任务未在期限内进入终态", toolID)
+	return nil
+}
+
+// settlePluginState 在动作受理后等待插件后台任务进入终态；受理即终态时直接返回。
+func settlePluginState(t *testing.T, box *boxProcess, pluginID string, accepted map[string]any) map[string]any {
+	t.Helper()
+	if status, _ := accepted["status"].(string); isTerminalArtifactStatus(status) {
+		return accepted
+	}
+	deadline := time.Now().Add(120 * time.Second)
+	for time.Now().Before(deadline) {
+		status, payload := box.call(http.MethodGet, "/api/system-plugins/"+pluginID+"/install-state", "")
+		if status < 200 || status >= 300 {
+			t.Fatalf("读取插件 %s 安装状态 HTTP %d：%s", pluginID, status, payload)
+		}
+		state := box.dataJSON(status, payload)
+		if current, _ := state["status"].(string); isTerminalArtifactStatus(current) {
+			return state
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Fatalf("插件 %s 任务未在期限内进入终态", pluginID)
+	return nil
+}
+
+// writeSleepMarker 写插件 sleep marker，按需建立插件长期数据目录。
+func writeSleepMarker(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("建立插件数据目录：%v", err)
+	}
+	if err := os.WriteFile(path, []byte("sleep"), 0o644); err != nil {
+		t.Fatalf("写 sleep marker：%v", err)
+	}
+}
+
+// settleComponentToolState 等待组件级工具任务进入终态；受理即终态时直接返回。
+func settleComponentToolState(t *testing.T, system toolcalling.System, toolID string, accepted types.ArtifactInstallState) types.ArtifactInstallState {
+	t.Helper()
+	if isTerminalArtifactStatus(accepted.Status) {
+		return accepted
+	}
+	deadline := time.Now().Add(120 * time.Second)
+	for time.Now().Before(deadline) {
+		state, err := system.ToolInstallState(context.Background(), toolID)
+		if err != nil {
+			t.Fatalf("组件读取工具 %s 安装状态 error = %v", toolID, err)
+		}
+		if isTerminalArtifactStatus(state.Status) {
+			return state
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("组件工具 %s 任务未在期限内进入终态", toolID)
+	return types.ArtifactInstallState{}
+}
+
 // ---------- 目录快照 ----------
 
 func snapshotDir(root string) map[string]string {
@@ -1044,7 +1131,7 @@ func TestToolPluginUpdate(t *testing.T) {
 	server := newToolPluginUpdateServer(t)
 	makeToolCandidate(t, server, "context7", "0.1.0", false, false)
 	makePluginCandidate(t, server, "time-plugin", "0.1.0", types.SystemPluginLifecycleOnDemand, false, false)
-	makeToolCandidate(t, server, "sci_calculator", "0.1.0", false, true)
+	makeToolCandidate(t, server, "zhihu_search", "0.1.0", false, true)
 	makeToolCandidate(t, server, "web_search", "0.1.0", false, false)
 	makePluginCandidate(t, server, "weather-plugin", "0.1.0", types.SystemPluginLifecycleCachedHeartbeat, false, false)
 
@@ -1069,7 +1156,7 @@ func TestToolPluginUpdate(t *testing.T) {
 
 	// 步骤 5：安装一个工具，一次用户动作对应一次服务端操作，current.json 和版本目录存在。
 	status, payload = box.call(http.MethodPost, "/api/tools/context7/install", "{}")
-	state = box.dataJSON(status, payload)
+	state = settleToolState(t, box, "context7", box.dataJSON(status, payload))
 	if state["status"] != types.ArtifactStatusActive || state["currentVersion"] != "0.1.0" {
 		t.Fatalf("工具安装状态 = %#v（HTTP %d）", state, status)
 	}
@@ -1083,9 +1170,12 @@ func TestToolPluginUpdate(t *testing.T) {
 		t.Fatalf("工具版本目录缺失：%v", err)
 	}
 
+	// 步骤 5.1：官方索引中名册之外的工具仍可正常安装（业务端不再按发布名册过滤）。
+	verifyRosterFreeInstall(t, box, programRoot, server)
+
 	// 步骤 6：安装一个插件，核对 current.json、manifest、config 和 binary；长期数据目录独立。
 	status, payload = box.call(http.MethodPost, "/api/system-plugins/time-plugin/install", "{}")
-	state = box.dataJSON(status, payload)
+	state = settlePluginState(t, box, "time-plugin", box.dataJSON(status, payload))
 	if state["status"] != types.ArtifactStatusActive || state["currentVersion"] != "0.1.0" {
 		t.Fatalf("插件安装状态 = %#v（HTTP %d）", state, status)
 	}
@@ -1131,12 +1221,12 @@ func TestToolPluginUpdate(t *testing.T) {
 	makeToolCandidate(t, server, "context7", "0.1.1", false, false)
 	makePluginCandidate(t, server, "time-plugin", "0.1.1", types.SystemPluginLifecycleOnDemand, false, false)
 	status, payload = box.call(http.MethodPost, "/api/tools/context7/update", "{}")
-	state = box.dataJSON(status, payload)
+	state = settleToolState(t, box, "context7", box.dataJSON(status, payload))
 	if state["status"] != types.ArtifactStatusActive || state["currentVersion"] != "0.1.1" {
 		t.Fatalf("工具更新状态 = %#v（HTTP %d）", state, status)
 	}
 	status, payload = box.call(http.MethodPost, "/api/system-plugins/time-plugin/update", "{}")
-	state = box.dataJSON(status, payload)
+	state = settlePluginState(t, box, "time-plugin", box.dataJSON(status, payload))
 	if state["status"] != types.ArtifactStatusActive || state["currentVersion"] != "0.1.1" {
 		t.Fatalf("插件更新状态 = %#v（HTTP %d）", state, status)
 	}
@@ -1163,12 +1253,12 @@ func TestToolPluginUpdate(t *testing.T) {
 	compareDirSnapshots(t, "插件长期数据", pluginDataBefore, pluginDataAfter)
 
 	// 步骤 10：不适用工具和不适用插件在下载前拒绝。
-	status, payload = box.call(http.MethodPost, "/api/tools/sci_calculator/install", "{}")
+	status, payload = box.call(http.MethodPost, "/api/tools/zhihu_search/install", "{}")
 	state = box.dataJSON(status, payload)
 	if state["status"] != types.ArtifactStatusBlocked || state["error"].(map[string]any)["code"] != types.ArtifactErrorCompatibility {
 		t.Fatalf("不适用工具状态 = %#v", state)
 	}
-	if count := server.archiveRequestCount(types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "sci_calculator"}, "0.1.0"); count != 0 {
+	if count := server.archiveRequestCount(types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "zhihu_search"}, "0.1.0"); count != 0 {
 		t.Fatalf("不适用工具候选发生 %d 次下载", count)
 	}
 	makePluginCandidate(t, server, "system-info-plugin", "0.1.0", types.SystemPluginLifecycleOnDemand, false, true)
@@ -1180,15 +1270,20 @@ func TestToolPluginUpdate(t *testing.T) {
 	if count := server.archiveRequestCount(types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: "system-info-plugin"}, "0.1.0"); count != 0 {
 		t.Fatalf("不适用插件候选发生 %d 次下载", count)
 	}
-	if _, err := os.Stat(filepath.Join(programRoot, "ai-tools", "sci_calculator", "work")); err == nil {
+	if _, err := os.Stat(filepath.Join(programRoot, "ai-tools", "zhihu_search", "work")); err == nil {
 		t.Fatal("不适用工具产生了下载工作区")
 	}
 
 	// 步骤 11：启动长时间工具进程，尝试更新同一工具，确认 TOOL_ACTIVE 且下载没有开始。
 	component := newComponentToolSystem(t, envDir, programRoot, server)
 	makeToolCandidateWithSleep(t, server, "shell_command", "0.1.0", false, false, longActivitySleep)
-	if _, err := component.InstallTool(context.Background(), "shell_command"); err != nil {
+	installState, err := component.InstallTool(context.Background(), "shell_command")
+	if err != nil {
 		t.Fatalf("组件安装 shell_command error = %v", err)
+	}
+	installState = settleComponentToolState(t, component, "shell_command", installState)
+	if installState.Status != types.ArtifactStatusActive || installState.CurrentVersion != "0.1.0" {
+		t.Fatalf("组件安装 shell_command 状态 = %#v", installState)
 	}
 	makeToolCandidateWithSleep(t, server, "shell_command", "0.1.1", false, false, longActivitySleep)
 	before := server.archiveRequestCount(types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "shell_command"}, "0.1.1")
@@ -1222,10 +1317,10 @@ func TestToolPluginUpdate(t *testing.T) {
 	}
 	<-done
 
-	// 步骤 12：插件 on-demand、persistent 和 cached-heartbeat 活动阻止更新。
+	// 步骤 12：插件 on-demand 活动等待、persistent 生命周期切换与 cached-heartbeat 刷新收尾。
 	verifyPluginOnDemandActivity(t, box, boxData, server)
-	verifyPluginPersistentActivity(t, box, programRoot, server, boxData)
-	verifyPluginHeartbeatActivity(t, box, programRoot, server, boxData)
+	verifyPluginPersistentActivity(t, box, server)
+	verifyPluginHeartbeatActivity(t, box, boxData, server)
 
 	// 步骤 13：损坏摘要、损坏 ZIP、缺少身份文件、身份不一致和越界路径样例，当前版本不变且无半成品。
 	verifyBrokenCandidates(t, box, programRoot, server)
@@ -1234,8 +1329,9 @@ func TestToolPluginUpdate(t *testing.T) {
 	dataBeforeRestore := snapshotDir(filepath.Join(boxData, "tool-data", "context7"))
 	makeToolCandidate(t, server, "context7", "0.1.2", true, false)
 	status, payload = box.call(http.MethodPost, "/api/tools/context7/update", "{}")
-	state = box.dataJSON(status, payload)
-	if state["status"] != types.ArtifactStatusFailed || state["error"].(map[string]any)["code"] != types.ArtifactErrorProbeFailed {
+	state = settleToolState(t, box, "context7", box.dataJSON(status, payload))
+	errorData, _ := state["error"].(map[string]any)
+	if state["status"] != types.ArtifactStatusActive || errorData["code"] != types.ArtifactErrorProbeFailed {
 		t.Fatalf("交接失败状态 = %#v", state)
 	}
 	status, payload = box.call(http.MethodGet, "/api/tools/context7/install-state", "")
@@ -1287,24 +1383,22 @@ func TestToolPluginUpdate(t *testing.T) {
 	t.Log("工具插件更新隔离验证完成")
 }
 
-// verifyPluginOnDemandActivity 制造 on-demand 活动并确认活动结束前不下载、不切换。
+// verifyPluginOnDemandActivity 制造 on-demand 活动并确认活动结束前不下载、活动结束后更新完成。
 func verifyPluginOnDemandActivity(t *testing.T, box *boxProcess, boxData string, server *toolPluginUpdateServer) {
 	t.Helper()
 	marker := filepath.Join(datapaths.SystemPluginsDataDir(boxData), "time-plugin", "sleep-marker.txt")
-	if err := os.WriteFile(marker, []byte("sleep"), 0o644); err != nil {
-		t.Fatalf("写 sleep marker：%v", err)
-	}
+	writeSleepMarker(t, marker)
 	status, payload := box.call(http.MethodPost, "/api/placeholders/plugin-interfaces", `{"pluginId":"time-plugin","interfaceId":"value"}`)
 	if status < 200 || status >= 300 {
 		t.Fatalf("创建插件占位符 HTTP %d：%s", status, payload)
 	}
+	makePluginCandidate(t, server, "time-plugin", "0.1.2", types.SystemPluginLifecycleOnDemand, false, false)
 	previewDone := make(chan struct{})
 	go func() {
 		defer close(previewDone)
 		_, _ = box.call(http.MethodPost, "/api/placeholders/preview", `{"text":"{{demo value}}"}`)
 	}()
-	makePluginCandidate(t, server, "time-plugin", "0.1.2", types.SystemPluginLifecycleOnDemand, false, false)
-	// 等待预览解析真实开始（插件进入真实执行；执行受插件超时限制，超时后活动结束）。
+	// 等待预览解析真实开始（插件进入真实执行）。
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		status, payload := box.call(http.MethodGet, "/api/system-plugins/time-plugin", "")
@@ -1331,63 +1425,48 @@ func verifyPluginOnDemandActivity(t *testing.T, box *boxProcess, boxData string,
 	select {
 	case <-updateDone:
 	case <-time.After(60 * time.Second):
-		t.Fatal("on-demand 活动结束后更新未完成")
+		t.Fatal("on-demand 活动结束后更新未受理")
 	}
 	<-previewDone
-	state := box.dataJSON(updateStatus, updatePayload)
-	if state["currentVersion"] != "0.1.2" {
+	state := settlePluginState(t, box, "time-plugin", box.dataJSON(updateStatus, updatePayload))
+	if state["status"] != types.ArtifactStatusActive || state["currentVersion"] != "0.1.2" {
 		t.Fatalf("on-demand 活动结束后更新状态 = %#v（HTTP %d）", state, updateStatus)
 	}
 	_ = os.Remove(marker)
 }
 
-// verifyPluginPersistentActivity 制造 persistent 进程活动并确认更新被 PLUGIN_ACTIVE 拒绝。
-func verifyPluginPersistentActivity(t *testing.T, box *boxProcess, programRoot string, server *toolPluginUpdateServer, boxData string) {
+// verifyPluginPersistentActivity 确认 persistent 进程下更新能正常完成（停止旧进程、切换并恢复生命周期）。
+func verifyPluginPersistentActivity(t *testing.T, box *boxProcess, server *toolPluginUpdateServer) {
 	t.Helper()
 	makePluginCandidate(t, server, "weather-plugin", "0.1.1", types.SystemPluginLifecyclePersistent, false, false)
 	status, payload := box.call(http.MethodPost, "/api/system-plugins/weather-plugin/install", "{}")
-	state := box.dataJSON(status, payload)
-	if state["status"] != types.ArtifactStatusActive {
+	state := settlePluginState(t, box, "weather-plugin", box.dataJSON(status, payload))
+	if state["status"] != types.ArtifactStatusActive || state["currentVersion"] != "0.1.1" {
 		t.Fatalf("persistent 插件安装状态 = %#v（HTTP %d）", state, status)
 	}
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		status, payload = box.call(http.MethodGet, "/api/system-plugins/weather-plugin", "")
-		view := box.dataJSON(status, payload)
-		active, _ := view["active"].(bool)
-		if active {
-			break
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
 	makePluginCandidate(t, server, "weather-plugin", "0.1.2", types.SystemPluginLifecyclePersistent, false, false)
-	before := server.archiveRequestCount(types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: "weather-plugin"}, "0.1.2")
 	status, payload = box.call(http.MethodPost, "/api/system-plugins/weather-plugin/update", "{}")
-	state = box.dataJSON(status, payload)
-	if state["status"] != types.ArtifactStatusBlocked || state["error"].(map[string]any)["code"] != types.ArtifactErrorPluginActive {
-		t.Fatalf("persistent 活动状态 = %#v（HTTP %d）", state, status)
+	state = settlePluginState(t, box, "weather-plugin", box.dataJSON(status, payload))
+	if state["status"] != types.ArtifactStatusActive || state["currentVersion"] != "0.1.2" {
+		t.Fatalf("persistent 进程下更新状态 = %#v（HTTP %d）", state, status)
 	}
-	after := server.archiveRequestCount(types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: "weather-plugin"}, "0.1.2")
-	if after != before {
-		t.Fatalf("persistent 活动期间发生了下载：%d -> %d", before, after)
+	if count := server.archiveRequestCount(types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: "weather-plugin"}, "0.1.2"); count != 1 {
+		t.Fatalf("persistent 更新压缩包请求 %d 次", count)
 	}
 }
 
-// verifyPluginHeartbeatActivity 制造 cached-heartbeat 刷新活动并确认活动结束前不下载、不切换。
-func verifyPluginHeartbeatActivity(t *testing.T, box *boxProcess, programRoot string, server *toolPluginUpdateServer, boxData string) {
+// verifyPluginHeartbeatActivity 确认 cached-heartbeat 刷新活动结束后更新能正常完成（停止心跳、切换并重启心跳）。
+func verifyPluginHeartbeatActivity(t *testing.T, box *boxProcess, boxData string, server *toolPluginUpdateServer) {
 	t.Helper()
 	makePluginCandidate(t, server, "system-info-plugin", "0.1.1", types.SystemPluginLifecycleCachedHeartbeat, false, false)
 	status, payload := box.call(http.MethodPost, "/api/system-plugins/system-info-plugin/install", "{}")
-	state := box.dataJSON(status, payload)
-	if state["status"] != types.ArtifactStatusActive {
+	state := settlePluginState(t, box, "system-info-plugin", box.dataJSON(status, payload))
+	if state["status"] != types.ArtifactStatusActive || state["currentVersion"] != "0.1.1" {
 		t.Fatalf("heartbeat 插件安装状态 = %#v（HTTP %d）", state, status)
 	}
+	// 制造一次真实心跳刷新，确认刷新确实在运行。
 	marker := filepath.Join(datapaths.SystemPluginsDataDir(boxData), "system-info-plugin", "sleep-marker.txt")
-	if err := os.WriteFile(marker, []byte("sleep"), 0o644); err != nil {
-		t.Fatalf("写 heartbeat marker：%v", err)
-	}
-	makePluginCandidate(t, server, "system-info-plugin", "0.1.2", types.SystemPluginLifecycleCachedHeartbeat, false, false)
-	// 等待 ticker 触发一次真实刷新（插件进入真实执行）。
+	writeSleepMarker(t, marker)
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		status, payload := box.call(http.MethodGet, "/api/system-plugins/system-info-plugin", "")
@@ -1397,30 +1476,46 @@ func verifyPluginHeartbeatActivity(t *testing.T, box *boxProcess, programRoot st
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	before := server.archiveRequestCount(types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: "system-info-plugin"}, "0.1.2")
-	updateDone := make(chan struct{})
-	var updateStatus int
-	var updatePayload []byte
-	go func() {
-		defer close(updateDone)
-		updateStatus, updatePayload = box.call(http.MethodPost, "/api/system-plugins/system-info-plugin/update", "{}")
-	}()
-	// 刷新进行中：更新不能开始下载。
-	time.Sleep(2 * time.Second)
-	midway := server.archiveRequestCount(types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: "system-info-plugin"}, "0.1.2")
-	if midway != before {
-		t.Fatalf("heartbeat 活动期间发生了下载：%d -> %d", before, midway)
-	}
-	select {
-	case <-updateDone:
-	case <-time.After(60 * time.Second):
-		t.Fatal("heartbeat 活动结束后更新未完成")
-	}
-	state = box.dataJSON(updateStatus, updatePayload)
-	if state["currentVersion"] != "0.1.2" {
-		t.Fatalf("heartbeat 活动结束后更新状态 = %#v（HTTP %d）", state, updateStatus)
-	}
+	// 删除 marker，让当前刷新自然结束后活动归零。
 	_ = os.Remove(marker)
+	deadline = time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		status, payload := box.call(http.MethodGet, "/api/system-plugins/system-info-plugin", "")
+		view := box.dataJSON(status, payload)
+		if active, _ := view["active"].(bool); !active {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	makePluginCandidate(t, server, "system-info-plugin", "0.1.2", types.SystemPluginLifecycleCachedHeartbeat, false, false)
+	status, payload = box.call(http.MethodPost, "/api/system-plugins/system-info-plugin/update", "{}")
+	state = settlePluginState(t, box, "system-info-plugin", box.dataJSON(status, payload))
+	if state["status"] != types.ArtifactStatusActive || state["currentVersion"] != "0.1.2" {
+		t.Fatalf("heartbeat 刷新结束后的更新状态 = %#v（HTTP %d）", state, status)
+	}
+	if count := server.archiveRequestCount(types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: "system-info-plugin"}, "0.1.2"); count != 1 {
+		t.Fatalf("heartbeat 更新压缩包请求 %d 次", count)
+	}
+}
+
+// verifyRosterFreeInstall 验证官方索引中名册之外的工具仍可被商店展示并正常安装：
+// 业务端候选读取与安装都不再依赖任何内置发布名册。
+func verifyRosterFreeInstall(t *testing.T, box *boxProcess, programRoot string, server *toolPluginUpdateServer) {
+	t.Helper()
+	makeToolCandidate(t, server, "third_party_tool", "0.3.0", false, false)
+	_, payload := box.call(http.MethodGet, "/api/release-candidates?kind=tool", "")
+	results := findReleaseResults(t, payload)
+	if candidate := results["tool:third_party_tool"]; candidate == nil || candidate["updateAvailable"] != true {
+		t.Fatalf("名册外工具的发行候选 = %#v", candidate)
+	}
+	status, payload := box.call(http.MethodPost, "/api/tools/third_party_tool/install", "{}")
+	state := settleToolState(t, box, "third_party_tool", box.dataJSON(status, payload))
+	if state["status"] != types.ArtifactStatusActive || state["currentVersion"] != "0.3.0" {
+		t.Fatalf("名册外工具安装状态 = %#v（HTTP %d）", state, status)
+	}
+	if _, err := os.Stat(filepath.Join(programRoot, "ai-tools", "third_party_tool", "current.json")); err != nil {
+		t.Fatalf("名册外工具 current.json 缺失：%v", err)
+	}
 }
 
 // verifyBrokenCandidates 提供损坏摘要、损坏 ZIP、缺少身份文件、身份不一致和越界路径样例。
@@ -1432,7 +1527,7 @@ func verifyBrokenCandidates(t *testing.T, box *boxProcess, programRoot string, s
 	for index := range versions {
 		makeBrokenToolCandidate(t, server, identity.ID, versions[index], kinds[index])
 		status, payload := box.call(http.MethodPost, fmt.Sprintf("/api/tools/%s/install", identity.ID), "{}")
-		state := box.dataJSON(status, payload)
+		state := settleToolState(t, box, identity.ID, box.dataJSON(status, payload))
 		if state["status"] != types.ArtifactStatusFailed {
 			t.Fatalf("损坏样例 %s 状态 = %#v（HTTP %d）", kinds[index], state, status)
 		}
@@ -1551,7 +1646,7 @@ func TestToolPluginUpdateExperience(t *testing.T) {
 
 	// 用户点击一次"安装"：不需要填写地址、下载地址或版本号。
 	status, payload := box.call(http.MethodPost, "/api/tools/context7/install", "{}")
-	state := box.dataJSON(status, payload)
+	state := settleToolState(t, box, "context7", box.dataJSON(status, payload))
 	if state["status"] != types.ArtifactStatusActive || state["currentVersion"] != "0.1.0" {
 		t.Fatalf("一次安装动作状态 = %#v（HTTP %d）", state, status)
 	}
@@ -1569,7 +1664,7 @@ func TestToolPluginUpdateExperience(t *testing.T) {
 	// 用户点击一次"更新"：页面显示更新阶段并最终显示新版可用。
 	makeToolCandidate(t, server, "context7", "0.1.1", false, false)
 	status, payload = box.call(http.MethodPost, "/api/tools/context7/update", "{}")
-	state = box.dataJSON(status, payload)
+	state = settleToolState(t, box, "context7", box.dataJSON(status, payload))
 	if state["status"] != types.ArtifactStatusActive || state["currentVersion"] != "0.1.1" {
 		t.Fatalf("一次更新动作状态 = %#v（HTTP %d）", state, status)
 	}

@@ -18,9 +18,6 @@ import (
 //go:embed notices/git-bash.md
 var gitBashNotice []byte
 
-//go:embed notices/python-science.md
-var pythonScienceNotice []byte
-
 //go:embed notices/powershell.md
 var powershellNotice []byte
 
@@ -103,8 +100,6 @@ func PrepareRequired(ctx context.Context, options PrepareOptions) (map[string]st
 		switch recipe.Kind {
 		case "git-bash":
 			err = prepareGitBash(ctx, recipe, inputs, staging, tempRoot)
-		case "python-science":
-			err = preparePythonScience(recipe, inputs, staging)
 		case "powershell":
 			err = prepareSingleZip(recipe, inputs, staging, powershellNotice)
 		case "nushell":
@@ -248,36 +243,6 @@ func prepareGitBash(ctx context.Context, recipe Recipe, inputs map[string]string
 		}
 	}
 	if err := os.WriteFile(filepath.Join(target, "THIRD_PARTY_NOTICES.md"), gitBashNotice, 0o644); err != nil {
-		return err
-	}
-	return validatePinnedFiles(target, recipe.RequiredFiles)
-}
-
-func preparePythonScience(recipe Recipe, inputs map[string]string, target string) error {
-	python := inputs["python-3.11.5-embed-amd64.zip"]
-	if python == "" {
-		return fmt.Errorf("Python 固定输入不完整")
-	}
-	if err := extractZip(python, target); err != nil {
-		return fmt.Errorf("解开 Python 嵌入环境失败：%w", err)
-	}
-	sitePackages := filepath.Join(target, "Lib", "site-packages")
-	if err := os.MkdirAll(sitePackages, 0o755); err != nil {
-		return err
-	}
-	for _, input := range recipe.Inputs {
-		if !strings.HasSuffix(strings.ToLower(input.Name), ".whl") {
-			continue
-		}
-		if err := extractZip(inputs[input.Name], sitePackages); err != nil {
-			return fmt.Errorf("解开 Python 固定依赖 %s 失败：%w", input.Name, err)
-		}
-	}
-	pth := "python311.zip\n.\nLib\nLib/site-packages\nimport site\n"
-	if err := os.WriteFile(filepath.Join(target, "python311._pth"), []byte(pth), 0o644); err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(target, "THIRD_PARTY_NOTICES.md"), pythonScienceNotice, 0o644); err != nil {
 		return err
 	}
 	return validatePinnedFiles(target, recipe.RequiredFiles)

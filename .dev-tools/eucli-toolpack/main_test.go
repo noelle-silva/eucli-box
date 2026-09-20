@@ -17,7 +17,9 @@ func TestRunBuildsShellCommandIntoAbsoluteDataDir(t *testing.T) {
 	dataDir := filepath.Join(t.TempDir(), "runtime-data")
 	gitBashRoot := filepath.Join(t.TempDir(), "git-bash-root")
 	writeFixtureFile(t, filepath.Join(gitBashRoot, "bin", "bash.exe"))
-	if err := run(context.Background(), []string{"-tool", "shell_command", "-data-dir", dataDir, "-asset-root", "git-bash-root=" + gitBashRoot}); err != nil {
+	analyzerRoot := filepath.Join(t.TempDir(), "command-analyzer-root")
+	writeFixtureFile(t, filepath.Join(analyzerRoot, "command-analyzer.exe"))
+	if err := run(context.Background(), []string{"-tool", "shell_command", "-data-dir", dataDir, "-asset-root", "git-bash-root=" + gitBashRoot, "-asset-root", "command-analyzer-root=" + analyzerRoot}); err != nil {
 		t.Fatalf("run() error = %v", err)
 	}
 	targetDir := filepath.Join(dataDir, "tool-bodies", "shell_command")
@@ -63,53 +65,20 @@ func TestRunBuildsShellCommandIntoAbsoluteDataDir(t *testing.T) {
 	}
 }
 
-func TestRunBuildsSciCalculatorWithBundledPythonRuntime(t *testing.T) {
+func TestRunRequiresExplicitAssetRootWhenRequested(t *testing.T) {
 	dataDir := filepath.Join(t.TempDir(), "runtime-data")
-	pythonRoot := filepath.Join(t.TempDir(), "python-runtime")
-	writeFixtureFile(t, filepath.Join(pythonRoot, "python.exe"))
-	if err := run(context.Background(), []string{"-tool", "sci_calculator", "-data-dir", dataDir, "-asset-root", "sci-calculator-python-runtime=" + pythonRoot}); err != nil {
-		t.Fatalf("run() error = %v", err)
-	}
-	targetDir := filepath.Join(dataDir, "tool-bodies", "sci_calculator")
-	assertFile(t, filepath.Join(targetDir, "config.json"))
-	assertFile(t, filepath.Join(targetDir, "runtime", "python", "python.exe"))
-	binaryRelPath := filepath.Join("binary", runtime.GOOS+"-"+runtime.GOARCH, executableName("sci_calculator"))
-	assertFile(t, filepath.Join(targetDir, binaryRelPath))
-	tool := readToolDefinitionFile(t, filepath.Join(targetDir, "definition.json"))
-	if tool.ID != "sci_calculator" || tool.Name != "SciCalculator" || tool.BodyDirectory != "." || tool.DefaultInvocationMode != types.ToolInvocationModeSync {
-		t.Fatalf("tool definition = %#v", tool)
-	}
-	if len(tool.Binaries) != 1 || tool.Binaries[0].Path != filepath.ToSlash(binaryRelPath) || filepath.IsAbs(tool.Binaries[0].Path) {
-		t.Fatalf("binaries = %#v", tool.Binaries)
-	}
-}
-
-func TestRunBuildsSciCalculatorWithoutBundledPythonRuntime(t *testing.T) {
-	dataDir := filepath.Join(t.TempDir(), "runtime-data")
-	if err := run(context.Background(), []string{"-tool", "sci_calculator", "-data-dir", dataDir}); err != nil {
-		t.Fatalf("run() error = %v", err)
-	}
-	targetDir := filepath.Join(dataDir, "tool-bodies", "sci_calculator")
-	assertFile(t, filepath.Join(targetDir, "config.json"))
-	if _, err := os.Stat(filepath.Join(targetDir, "runtime", "python", "python.exe")); !os.IsNotExist(err) {
-		t.Fatalf("bundled python stat error = %v, want not exist", err)
-	}
-}
-
-func TestRunRequiresExplicitSciCalculatorPythonRuntimeAsset(t *testing.T) {
-	dataDir := filepath.Join(t.TempDir(), "runtime-data")
-	if err := run(context.Background(), []string{"-tool", "sci_calculator", "-data-dir", dataDir, "-require-asset-root", "sci-calculator-python-runtime"}); err == nil {
+	if err := run(context.Background(), []string{"-tool", "shell_command", "-data-dir", dataDir, "-require-asset-root", "git-bash-root"}); err == nil {
 		t.Fatalf("run() error = nil, want required asset root error")
 	}
 }
 
-func TestRunRejectsSciCalculatorPythonRuntimeDirectoryExecutable(t *testing.T) {
+func TestRunRejectsAssetRootRequiredFileDirectory(t *testing.T) {
 	dataDir := filepath.Join(t.TempDir(), "runtime-data")
-	pythonRoot := filepath.Join(t.TempDir(), "python-runtime")
-	if err := os.MkdirAll(filepath.Join(pythonRoot, "python.exe"), 0o755); err != nil {
-		t.Fatalf("MkdirAll(python.exe directory) error = %v", err)
+	gitBashRoot := filepath.Join(t.TempDir(), "git-bash-root")
+	if err := os.MkdirAll(filepath.Join(gitBashRoot, "bin", "bash.exe"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(bin/bash.exe directory) error = %v", err)
 	}
-	if err := run(context.Background(), []string{"-tool", "sci_calculator", "-data-dir", dataDir, "-asset-root", "sci-calculator-python-runtime=" + pythonRoot}); err == nil {
+	if err := run(context.Background(), []string{"-tool", "shell_command", "-data-dir", dataDir, "-asset-root", "git-bash-root=" + gitBashRoot}); err == nil {
 		t.Fatalf("run() error = nil, want required file directory error")
 	}
 }
@@ -236,10 +205,14 @@ func TestCopyDeclaredAssetRootsRejectsEscapingRequiredFile(t *testing.T) {
 
 func TestRunRebuildsToolBodyWithoutChangingToolData(t *testing.T) {
 	dataDir := filepath.Join(t.TempDir(), "runtime-data")
-	settings := filepath.Join(dataDir, "tool-data", "sci_calculator", "settings.json")
+	settings := filepath.Join(dataDir, "tool-data", "shell_command", "settings.json")
 	writeFixtureFile(t, settings)
 
-	if err := run(context.Background(), []string{"-tool", "sci_calculator", "-data-dir", dataDir}); err != nil {
+	gitBashRoot := filepath.Join(t.TempDir(), "git-bash-root")
+	writeFixtureFile(t, filepath.Join(gitBashRoot, "bin", "bash.exe"))
+	analyzerRoot := filepath.Join(t.TempDir(), "command-analyzer-root")
+	writeFixtureFile(t, filepath.Join(analyzerRoot, "command-analyzer.exe"))
+	if err := run(context.Background(), []string{"-tool", "shell_command", "-data-dir", dataDir, "-asset-root", "git-bash-root=" + gitBashRoot, "-asset-root", "command-analyzer-root=" + analyzerRoot}); err != nil {
 		t.Fatalf("run() error = %v", err)
 	}
 	payload, err := os.ReadFile(settings)

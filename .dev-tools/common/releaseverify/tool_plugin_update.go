@@ -39,7 +39,7 @@ func VerifyToolPluginUpdate(ctx context.Context, repositoryRoot string, runRoot 
 
 	boxPath, err := prepareToolPluginUpdateBox(ctx, repositoryRoot, paths, recorder)
 	if err == nil {
-		runToolPluginUpdateVerification(ctx, repositoryRoot, paths, recorder, boxPath)
+		runToolPluginUpdateVerification(ctx, repositoryRoot, paths, recorder, boxPath, mode)
 	}
 
 	if dataErr == nil {
@@ -83,9 +83,9 @@ func prepareToolPluginUpdateBox(ctx context.Context, root string, paths runPaths
 	return boxPath, nil
 }
 
-func runToolPluginUpdateVerification(ctx context.Context, root string, paths runPaths, recorder *recorder, boxPath string) {
+func runToolPluginUpdateVerification(ctx context.Context, root string, paths runPaths, recorder *recorder, boxPath string, mode string) {
 	runTest := "^TestToolPluginUpdate$"
-	if strings.TrimSpace(os.Getenv("EUCLI_TOOL_PLUGIN_UPDATE_MODE")) == "experience" {
+	if mode == "experience" {
 		runTest = "^TestToolPluginUpdateExperience$"
 	}
 	command := struct {
@@ -102,7 +102,6 @@ func runToolPluginUpdateVerification(ctx context.Context, root string, paths run
 		env: map[string]string{
 			"EUCLI_TOOL_PLUGIN_UPDATE_RUN_ROOT": paths.root,
 			"EUCLI_TOOL_PLUGIN_UPDATE_BOX":      boxPath,
-			"EUCLI_TOOL_PLUGIN_UPDATE_MODE":     os.Getenv("EUCLI_TOOL_PLUGIN_UPDATE_MODE"),
 		},
 	}
 	if err := runCommandWithEnvironment(ctx, paths, command.name, command.workdir, command.command, command.env, command.args...); err != nil {

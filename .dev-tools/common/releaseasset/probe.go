@@ -35,17 +35,6 @@ func probe(ctx context.Context, root string, recipe Recipe) error {
 			return fmt.Errorf("Git Bash 固定命令核对失败：%w：%s", err, strings.TrimSpace(string(output)))
 		}
 		return nil
-	case "python-science":
-		script := "import numpy, scipy, sympy, mpmath; from scipy import stats; from scipy.integrate import quad; assert numpy.__version__ == '1.24.3'; assert scipy.__version__ == '1.11.1'; assert sympy.__version__ == '1.11.1'; assert mpmath.__version__ == '1.3.0'; assert abs(stats.norm.cdf(0)-0.5) < 1e-12; assert abs(quad(lambda x: x, 0, 1)[0]-0.5) < 1e-12; print('python-science-ok')"
-		cmd := exec.CommandContext(ctx, filepath.Join(root, "python.exe"), "-I", "-B", "-c", script)
-		cmd.Dir = root
-		cmd.Env = replaceEnvironment(os.Environ(), map[string]string{"PYTHONHOME": root, "PYTHONPATH": "", "PYTHONNOUSERSITE": "1", "PYTHONDONTWRITEBYTECODE": "1"})
-		hideProcessWindow(cmd)
-		output, err := cmd.CombinedOutput()
-		if err != nil || strings.TrimSpace(string(output)) != "python-science-ok" {
-			return fmt.Errorf("科学计算 Python 固定能力核对失败：%w：%s", err, strings.TrimSpace(string(output)))
-		}
-		return nil
 	case "powershell":
 		cmd := exec.CommandContext(ctx, filepath.Join(root, "pwsh.exe"), "-NoLogo", "-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()")
 		cmd.Dir = root

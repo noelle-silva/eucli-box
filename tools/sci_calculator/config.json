@@ -1,9 +1,0 @@
-{
-  "pythonEnv": "SCICALCULATOR_PYTHON",
-  "bundledPythonExecutable": "runtime/python/python.exe",
-  "defaultPythonExecutable": "python",
-  "limits": {
-    "maxOutputChars": 20000,
-    "maxExpressionChars": 10000
-  }
-}

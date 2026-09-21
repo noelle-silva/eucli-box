@@ -71,13 +71,20 @@ func sleepModelRetry(ctx context.Context, delay time.Duration) error {
 }
 
 func (s *system) callModelOnce(ctx context.Context, record *runRecord, request types.ModelRequest) (types.ModelResponse, error) {
+	record.modelTiming.begin(nowUTC())
 	if record.stream {
-		return s.callModelStream(ctx, record, request)
+		response, err := s.callModelStream(ctx, record, request)
+		if err != nil {
+			return types.ModelResponse{}, err
+		}
+		record.modelTiming.finish(nowUTC())
+		return response, nil
 	}
 	response, err := s.providers.Complete(ctx, request)
 	if err != nil {
 		return types.ModelResponse{}, runtimeProviderFailed("failed to complete model request", err)
 	}
+	record.modelTiming.finish(nowUTC())
 	return response, nil
 }
 
@@ -93,6 +100,7 @@ func (s *system) callModelStream(ctx context.Context, record *runRecord, request
 			if content == record.streamContent {
 				return nil
 			}
+			record.modelTiming.markContent(time.Now().UTC())
 			contentDelta := streamContentDelta(record.streamContent, content)
 			record.streamContent = content
 			_, hadAssistant := activeRunAssistant(record)
@@ -113,6 +121,7 @@ func (s *system) callModelStream(ctx context.Context, record *runRecord, request
 			if reasoning == record.streamReasoning && event.ReasoningSignature == record.streamReasoningSignature && event.ReasoningData == record.streamReasoningData {
 				return nil
 			}
+			record.modelTiming.markReasoning(time.Now().UTC())
 			record.streamReasoning = reasoning
 			record.streamReasoningSignature = event.ReasoningSignature
 			record.streamReasoningData = event.ReasoningData

@@ -487,6 +487,111 @@ func TestStartRunStreamCreatesAssistantAndPublishesDeltas(t *testing.T) {
 	}
 }
 
+func TestRunRecordsModelTimingForStreamingReply(t *testing.T) {
+	fakes := newRuntimeFakes()
+	const gap = 30 * time.Millisecond
+	fakes.provider.streamEventGap = gap
+	fakes.provider.streamEvents = []types.ModelStreamEvent{
+		{Type: types.ModelStreamEventReasoningDelta, ReasoningDelta: "想", Reasoning: "想", CreatedAt: time.Now().UTC()},
+		{Type: types.ModelStreamEventReasoningDelta, ReasoningDelta: "法", Reasoning: "想法", CreatedAt: time.Now().UTC()},
+		{Type: types.ModelStreamEventContentDelta, ContentDelta: "你", Content: "你", CreatedAt: time.Now().UTC()},
+		{Type: types.ModelStreamEventContentDelta, ContentDelta: "好", Content: "你好", CreatedAt: time.Now().UTC()},
+	}
+	fakes.provider.streamResponse = types.ModelResponse{ID: "stream-timing", Content: "你好", Reasoning: "想法"}
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hi", Stream: types.BoolPtr(true)})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("final = %#v", final)
+	}
+	session := fakes.storage.lastSession()
+	message := session.Messages[len(session.Messages)-1]
+	if message.Type != "assistant" {
+		t.Fatalf("last message = %#v", message)
+	}
+	gapMs := int64(gap / time.Millisecond)
+	if message.ModelDurationMs < gapMs {
+		t.Fatalf("modelDurationMs = %d, want >= %d", message.ModelDurationMs, gapMs)
+	}
+	reasoning := reasoningPartByType(message)
+	if reasoning == nil || reasoning.DurationMs < gapMs/2 {
+		t.Fatalf("reasoning duration = %#v, want >= %d", reasoning, gapMs/2)
+	}
+	text := textPartByType(message)
+	if text == nil || text.DurationMs < gapMs/2 {
+		t.Fatalf("text duration = %#v, want >= %d", text, gapMs/2)
+	}
+	if message.ModelDurationMs < reasoning.DurationMs || message.ModelDurationMs < text.DurationMs {
+		t.Fatalf("model duration %d should not be less than reasoning %d / text %d", message.ModelDurationMs, reasoning.DurationMs, text.DurationMs)
+	}
+}
+
+func TestRunRecordsModelDurationForNonStreamingReply(t *testing.T) {
+	fakes := newRuntimeFakes()
+	const delay = 40 * time.Millisecond
+	fakes.provider.completeDelay = delay
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "答", Reasoning: "想"}}
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hi"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("final = %#v", final)
+	}
+	session := fakes.storage.lastSession()
+	message := session.Messages[len(session.Messages)-1]
+	if message.ModelDurationMs < int64(delay/time.Millisecond)/2 {
+		t.Fatalf("modelDurationMs = %d, want >= %d", message.ModelDurationMs, int64(delay/time.Millisecond)/2)
+	}
+	// 非流式没有可依据的阶段跨度：思考与正文部件即使存在，耗时也保持为空。
+	if reasoning := reasoningPartByType(message); reasoning != nil && reasoning.DurationMs != 0 {
+		t.Fatalf("non-streaming reasoning duration = %#v, want empty", reasoning)
+	}
+	if text := textPartByType(message); text != nil && text.DurationMs != 0 {
+		t.Fatalf("non-streaming text duration = %#v, want empty", text)
+	}
+}
+
+func TestRunCopiesToolExecutionDurationIntoPartResult(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.completeDelay = 20 * time.Millisecond
+	fakes.provider.responses = []types.ModelResponse{
+		{ID: "m1", Content: "", ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader"}}},
+		{ID: "m2", Content: "完成"},
+	}
+	fakes.tool.executeResult = types.ToolResult{ID: "result-1", Status: types.ToolStatusSuccess, Content: "tool ok", DurationMs: 321, CreatedAt: time.Now().UTC()}
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use tool"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("final = %#v", final)
+	}
+	session := fakes.storage.lastSession()
+	var part *types.MessagePart
+	var toolMessage *types.Message
+	for index := range session.Messages {
+		if found := toolPartByCallID(session.Messages[index], "intent-1"); found != nil {
+			part = found
+			toolMessage = &session.Messages[index]
+			break
+		}
+	}
+	if part == nil || part.Result == nil || part.Result.DurationMs != 321 {
+		t.Fatalf("tool part result = %#v", part)
+	}
+	if toolMessage == nil || toolMessage.ModelDurationMs <= 0 {
+		t.Fatalf("tool round model duration = %#v", toolMessage)
+	}
+}
+
 func TestStartRunStreamPreferenceComesFromSessionFact(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.streamEvents = []types.ModelStreamEvent{
@@ -1797,6 +1902,15 @@ func reasoningPartByType(message types.Message) *types.MessagePart {
 	return nil
 }
 
+func textPartByType(message types.Message) *types.MessagePart {
+	for index := range message.Parts {
+		if message.Parts[index].Type == "text" {
+			return &message.Parts[index]
+		}
+	}
+	return nil
+}
+
 func completedToolPartCount(message types.Message) int {
 	count := 0
 	for _, part := range message.Parts {
@@ -2585,6 +2699,8 @@ type fakeRuntimeProvider struct {
 	streamErrors        []error
 	callBlocks          []chan struct{}
 	alwaysTool          bool
+	completeDelay       time.Duration
+	streamEventGap      time.Duration
 	calls               int
 	requests            []types.ModelRequest
 	block               chan struct{}
@@ -2592,6 +2708,13 @@ type fakeRuntimeProvider struct {
 }
 
 func (f *fakeRuntimeProvider) Complete(ctx context.Context, request types.ModelRequest) (types.ModelResponse, error) {
+	if f.completeDelay > 0 {
+		select {
+		case <-time.After(f.completeDelay):
+		case <-ctx.Done():
+			return types.ModelResponse{}, ctx.Err()
+		}
+	}
 	if f.block != nil {
 		select {
 		case <-f.block:
@@ -2672,6 +2795,7 @@ func (f *fakeRuntimeProvider) CompleteStream(ctx context.Context, request types.
 		events = append([]types.ModelStreamEvent(nil), f.streamEventsBatches[0]...)
 		f.streamEventsBatches = f.streamEventsBatches[1:]
 	}
+	eventGap := f.streamEventGap
 	response := f.streamResponse
 	if len(f.streamResponses) > 0 {
 		response = f.streamResponses[0]
@@ -2681,7 +2805,14 @@ func (f *fakeRuntimeProvider) CompleteStream(ctx context.Context, request types.
 		response = types.ModelResponse{ID: "default-stream", Content: "done"}
 	}
 	f.mu.Unlock()
-	for _, event := range events {
+	for index, event := range events {
+		if index > 0 && eventGap > 0 {
+			select {
+			case <-time.After(eventGap):
+			case <-ctx.Done():
+				return types.ModelResponse{}, ctx.Err()
+			}
+		}
 		if onEvent != nil {
 			if err := onEvent(event); err != nil {
 				return types.ModelResponse{}, err

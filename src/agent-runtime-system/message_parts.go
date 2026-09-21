@@ -233,5 +233,5 @@ func toolResultPart(result *types.ToolResult) *types.ToolPartResult {
 	for key, value := range result.Metadata {
 		metadata[key] = value
 	}
-	return &types.ToolPartResult{ID: result.ID, ActionID: result.ActionID, ToolName: result.ToolName, Status: result.Status, Content: result.Content, Metadata: metadata, Error: result.Error, CreatedAt: result.CreatedAt}
+	return &types.ToolPartResult{ID: result.ID, ActionID: result.ActionID, ToolName: result.ToolName, Status: result.Status, Content: result.Content, Metadata: metadata, Error: result.Error, DurationMs: result.DurationMs, CreatedAt: result.CreatedAt}
 }

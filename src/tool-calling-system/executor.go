@@ -57,6 +57,7 @@ func (s *system) ExecuteWithOutputUpdate(ctx context.Context, plan types.ToolRun
 	if err != nil {
 		return types.ToolResult{}, toolExecutionInvalid("failed to encode tool input", err)
 	}
+	startedAt := time.Now()
 	outcome := s.executeToolProcess(ctx, plan.Tool.ID, plan.Executable, plan.Tool.BodyDirectory, input, func(update types.ToolOutputUpdate) {
 		var relayed types.ToolOutputUpdate
 		relayed.CallID = plan.Action.ID
@@ -67,13 +68,21 @@ func (s *system) ExecuteWithOutputUpdate(ctx context.Context, plan types.ToolRun
 			onUpdate(relayed)
 		}
 	})
+	result := toolResultFromOutcome(plan, outcome)
+	result.DurationMs = time.Since(startedAt).Milliseconds()
+	return result, nil
+}
+
+// toolResultFromOutcome 把一次工具进程执行的真实终局翻译成统一的工具结果事实。
+// 它只翻译终局，不决定执行耗时——耗时由执行边界统一测量后写入。
+func toolResultFromOutcome(plan types.ToolRunPlan, outcome toolProcessOutcome) types.ToolResult {
 	switch outcome.FailureKind {
 	case "user_cancelled":
-		return toolCancelledResult(plan, "tool execution cancelled", outcome.FailureError), nil
+		return toolCancelledResult(plan, "tool execution cancelled", outcome.FailureError)
 	case "tool_unresponsive":
-		return toolFailureResult(plan, protocolFailureMessage("tool execution became unresponsive", outcome.FailureError), outcome.FailureKind, outcome.FailureError), nil
+		return toolFailureResult(plan, protocolFailureMessage("tool execution became unresponsive", outcome.FailureError), outcome.FailureKind, outcome.FailureError)
 	case "tool_protocol_failed":
-		return toolFailureResult(plan, protocolFailureMessage("tool control protocol failed", outcome.FailureError), outcome.FailureKind, outcome.FailureError), nil
+		return toolFailureResult(plan, protocolFailureMessage("tool control protocol failed", outcome.FailureError), outcome.FailureKind, outcome.FailureError)
 	}
 	if outcome.ExitError != nil {
 		message := outcome.ExitError.Error()
@@ -83,12 +92,12 @@ func (s *system) ExecuteWithOutputUpdate(ctx context.Context, plan types.ToolRun
 		if outcome.FailureError != nil {
 			message += ": " + outcome.FailureError.Error()
 		}
-		return failedResult(plan, message), nil
+		return failedResult(plan, message)
 	}
 	if outcome.FailureError != nil {
-		return failedResult(plan, "tool process failed: "+outcome.FailureError.Error()), nil
+		return failedResult(plan, "tool process failed: "+outcome.FailureError.Error())
 	}
-	return parseToolOutput(plan, outcome.Stdout), nil
+	return parseToolOutput(plan, outcome.Stdout)
 }
 
 // protocolFailureMessage 在协议层失败消息后附加可用的真实原因，

@@ -494,6 +494,58 @@ func TestSessionMessagePartsAreNormalized(t *testing.T) {
 	}
 }
 
+func TestSessionMessageTimingFieldsArePreserved(t *testing.T) {
+	system := newTestSystem(t)
+	now := time.Date(2026, 5, 30, 9, 30, 0, 0, time.UTC)
+	session := types.Session{
+		ID:        "session-timing",
+		RoleID:    "developer",
+		Title:     "Timing",
+		Status:    string(types.RunStatusCreated),
+		CreatedAt: now,
+		UpdatedAt: now,
+		Messages: []types.Message{{
+			ID:              "m1",
+			Type:            "assistant",
+			Content:         "回答",
+			BranchID:        "main",
+			ModelDurationMs: 4321,
+			CreatedAt:       now,
+			UpdatedAt:       now,
+			Parts: []types.MessagePart{
+				{Type: "reasoning", Text: "思考", DurationMs: 2345},
+				{Type: "text", Text: "回答", DurationMs: 1234},
+				{Type: "tool", CallID: "call-1", ToolName: "shell_command", State: "completed", Result: &types.ToolPartResult{ID: "result-1", ActionID: "call-1", ToolName: "shell_command", Status: types.ToolStatusSuccess, Content: "ok", DurationMs: 777}},
+			},
+		}},
+		LastActive: now,
+	}
+	if err := system.SaveSession(context.Background(), session); err != nil {
+		t.Fatalf("SaveSession() error = %v", err)
+	}
+	loaded, err := system.LoadSession(context.Background(), "developer", "session-timing")
+	if err != nil {
+		t.Fatalf("LoadSession() error = %v", err)
+	}
+	message := loaded.Messages[0]
+	if message.ModelDurationMs != 4321 {
+		t.Fatalf("modelDurationMs = %d", message.ModelDurationMs)
+	}
+	byType := map[string]types.MessagePart{}
+	for _, part := range message.Parts {
+		byType[part.Type] = part
+	}
+	if part, ok := byType["reasoning"]; !ok || part.DurationMs != 2345 {
+		t.Fatalf("reasoning part = %#v", byType["reasoning"])
+	}
+	if part, ok := byType["text"]; !ok || part.DurationMs != 1234 {
+		t.Fatalf("text part = %#v", byType["text"])
+	}
+	if part, ok := byType["tool"]; !ok || part.Result == nil || part.Result.DurationMs != 777 {
+		t.Fatalf("tool part = %#v", byType["tool"])
+	}
+}
+
 func TestSessionReasoningPartsAreNormalized(t *testing.T) {
 	system := newTestSystem(t)
 	now := time.Date(2026, 5, 30, 10, 0, 0, 0, time.UTC)

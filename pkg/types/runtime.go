@@ -21,6 +21,7 @@ type Message struct {
 	ToolName        string              `json:"toolName,omitempty"`
 	Reason          string              `json:"reason,omitempty"`
 	TokenEstimate   int                 `json:"tokenEstimate,omitempty"`
+	ModelDurationMs int64               `json:"modelDurationMs,omitempty"`
 	CreatedAt       time.Time           `json:"createdAt"`
 	UpdatedAt       time.Time           `json:"updatedAt"`
 }
@@ -63,22 +64,23 @@ type RunRetryInfo struct {
 }
 
 type MessagePart struct {
-	ID        string          `json:"id"`
-	Type      string          `json:"type"`
-	Text      string          `json:"text,omitempty"`
-	Source    string          `json:"source,omitempty"`
-	Signature string          `json:"signature,omitempty"`
-	Data      string          `json:"data,omitempty"`
-	Raw       string          `json:"raw,omitempty"`
-	CallID    string          `json:"callId,omitempty"`
-	ToolName  string          `json:"toolName,omitempty"`
-	Input     map[string]any  `json:"input,omitempty"`
-	State     string          `json:"state,omitempty"`
-	Decision  *ToolDecision   `json:"decision,omitempty"`
-	Result    *ToolPartResult `json:"result,omitempty"`
-	Display   map[string]any  `json:"display,omitempty"`
-	CreatedAt time.Time       `json:"createdAt,omitempty"`
-	UpdatedAt time.Time       `json:"updatedAt,omitempty"`
+	ID         string          `json:"id"`
+	Type       string          `json:"type"`
+	Text       string          `json:"text,omitempty"`
+	Source     string          `json:"source,omitempty"`
+	Signature  string          `json:"signature,omitempty"`
+	Data       string          `json:"data,omitempty"`
+	Raw        string          `json:"raw,omitempty"`
+	CallID     string          `json:"callId,omitempty"`
+	ToolName   string          `json:"toolName,omitempty"`
+	Input      map[string]any  `json:"input,omitempty"`
+	State      string          `json:"state,omitempty"`
+	Decision   *ToolDecision   `json:"decision,omitempty"`
+	Result     *ToolPartResult `json:"result,omitempty"`
+	Display    map[string]any  `json:"display,omitempty"`
+	DurationMs int64           `json:"durationMs,omitempty"`
+	CreatedAt  time.Time       `json:"createdAt,omitempty"`
+	UpdatedAt  time.Time       `json:"updatedAt,omitempty"`
 }
 
 func (part MessagePart) IsToolResultHidden() bool {
@@ -144,14 +146,15 @@ type ToolDecision struct {
 }
 
 type ToolPartResult struct {
-	ID        string         `json:"id"`
-	ActionID  string         `json:"actionId"`
-	ToolName  string         `json:"toolName"`
-	Status    ToolStatus     `json:"status"`
-	Content   string         `json:"content,omitempty"`
-	Metadata  map[string]any `json:"metadata,omitempty"`
-	Error     string         `json:"error,omitempty"`
-	CreatedAt time.Time      `json:"createdAt,omitempty"`
+	ID         string         `json:"id"`
+	ActionID   string         `json:"actionId"`
+	ToolName   string         `json:"toolName"`
+	Status     ToolStatus     `json:"status"`
+	Content    string         `json:"content,omitempty"`
+	Metadata   map[string]any `json:"metadata,omitempty"`
+	Error      string         `json:"error,omitempty"`
+	DurationMs int64          `json:"durationMs,omitempty"`
+	CreatedAt  time.Time      `json:"createdAt,omitempty"`
 }
 
 type MessageAttachment struct {

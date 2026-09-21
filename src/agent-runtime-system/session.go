@@ -267,6 +267,8 @@ func ensureRunAssistantMessage(record *runRecord) {
 		return
 	}
 	appendRunAssistantReply(record, "")
+	// 空正文的工具回合：助手消息在工具挂载时才诞生，本轮模型耗时在诞生点承接。
+	applyRunModelTiming(record)
 }
 
 func updateRunAssistantContent(record *runRecord, content string) {

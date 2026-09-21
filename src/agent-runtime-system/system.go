@@ -106,6 +106,7 @@ type runRecord struct {
 	streamReasoning             string
 	streamReasoningSignature    string
 	streamReasoningData         string
+	modelTiming                 modelCallTiming
 	commandName                 string
 	modelOverride               types.ModelCoordinate
 	modelOverridePersistPending bool

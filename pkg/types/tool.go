@@ -205,14 +205,15 @@ const (
 )
 
 type ToolResult struct {
-	ID        string         `json:"id"`
-	ActionID  string         `json:"actionId"`
-	ToolName  string         `json:"toolName"`
-	Status    ToolStatus     `json:"status"`
-	Content   string         `json:"content"`
-	Metadata  map[string]any `json:"metadata,omitempty"`
-	Error     string         `json:"error,omitempty"`
-	CreatedAt time.Time      `json:"createdAt"`
+	ID         string         `json:"id"`
+	ActionID   string         `json:"actionId"`
+	ToolName   string         `json:"toolName"`
+	Status     ToolStatus     `json:"status"`
+	Content    string         `json:"content"`
+	Metadata   map[string]any `json:"metadata,omitempty"`
+	Error      string         `json:"error,omitempty"`
+	DurationMs int64          `json:"durationMs,omitempty"`
+	CreatedAt  time.Time      `json:"createdAt"`
 }
 
 type ToolConfirmation struct {

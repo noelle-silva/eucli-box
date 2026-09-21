@@ -117,6 +117,31 @@ func main() { fmt.Print(`+"`"+`{"status":"success","content":"ok","metadata":{"s
 	}
 }
 
+func TestExecuteRecordsRealExecutionDuration(t *testing.T) {
+	executable := buildTool(t, `package main
+import (
+  "fmt"
+  "time"
+)
+func main() {
+  time.Sleep(120 * time.Millisecond)
+  fmt.Print(`+"`"+`{"status":"success","content":"ok"}`+"`"+`)
+}
+`)
+	tool := testTool(t, executable)
+	system := newTestToolSystem(t, &fakePermission{}, newFakeToolStorage(), Config{})
+	result, err := system.Execute(context.Background(), allowedPlan(tool, executable))
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if result.Status != types.ToolStatusSuccess {
+		t.Fatalf("result = %#v", result)
+	}
+	if result.DurationMs < 120 || result.DurationMs > 30_000 {
+		t.Fatalf("DurationMs = %d, want within [120, 30000]", result.DurationMs)
+	}
+}
+
 func TestExecutePassesSharedToolExecutionInput(t *testing.T) {
 	executable := buildTool(t, `package main
 import (

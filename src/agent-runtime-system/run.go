@@ -247,6 +247,9 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 		} else {
 			dropEmptyAssistantOutput(record)
 		}
+		if assistantOutputRecorded {
+			applyRunModelTiming(record)
+		}
 		assistantParent = record.messageParent
 		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, assistantParent.ID); err != nil {
 			s.failRun(context.Background(), record, record.session, err)

@@ -164,6 +164,8 @@ type SystemPluginSystem interface {
 	ListPlugins(ctx context.Context) ([]types.SystemPluginSummary, error)
 	LoadPlugin(ctx context.Context, pluginID string) (types.SystemPluginView, error)
 	SavePluginUserConfig(ctx context.Context, pluginID string, config types.SystemPluginUserConfig) (types.SystemPluginView, error)
+	EnablePlugin(ctx context.Context, pluginID string) (types.SystemPluginView, error)
+	DisablePlugin(ctx context.Context, pluginID string) (types.SystemPluginView, error)
 	AvailablePlaceholderInterfaces(ctx context.Context, library types.PlaceholderLibrary) ([]types.SystemPluginAvailablePlaceholderInterface, error)
 	CreatePlaceholderFromInterface(ctx context.Context, library types.PlaceholderLibrary, pluginID string, interfaceID string) (types.PlaceholderLibrary, error)
 	InstallPlugin(ctx context.Context, pluginID string) (types.ArtifactInstallState, error)

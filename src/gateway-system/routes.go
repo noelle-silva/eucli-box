@@ -157,6 +157,8 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("GET /api/system-plugins", s.authWrap(s.handleListSystemPlugins))
 	s.mux.HandleFunc("GET /api/system-plugins/{pluginID}", s.authWrap(s.handleLoadSystemPlugin))
 	s.mux.HandleFunc("PUT /api/system-plugins/{pluginID}/user-config", s.authWrap(s.handleSaveSystemPluginUserConfig))
+	s.mux.HandleFunc("PUT /api/system-plugins/{pluginID}/enable", s.authWrap(s.handleEnableSystemPlugin))
+	s.mux.HandleFunc("PUT /api/system-plugins/{pluginID}/disable", s.authWrap(s.handleDisableSystemPlugin))
 	s.mux.HandleFunc("GET /api/system-plugins/{pluginID}/install-state", s.authWrap(s.handlePluginInstallState))
 	s.mux.HandleFunc("POST /api/system-plugins/{pluginID}/install", s.authWrap(s.handleInstallPlugin))
 	s.mux.HandleFunc("POST /api/system-plugins/{pluginID}/update", s.authWrap(s.handleUpdatePlugin))

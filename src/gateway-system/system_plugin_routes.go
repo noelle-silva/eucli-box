@@ -48,6 +48,34 @@ func (s *system) handleSaveSystemPluginUserConfig(w http.ResponseWriter, r *http
 	writeData(w, http.StatusOK, plugin)
 }
 
+func (s *system) handleEnableSystemPlugin(w http.ResponseWriter, r *http.Request) {
+	pluginID, err := pathValue(r, "pluginID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	plugin, err := s.systemPlugins.EnablePlugin(r.Context(), pluginID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, plugin)
+}
+
+func (s *system) handleDisableSystemPlugin(w http.ResponseWriter, r *http.Request) {
+	pluginID, err := pathValue(r, "pluginID")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	plugin, err := s.systemPlugins.DisablePlugin(r.Context(), pluginID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, plugin)
+}
+
 func (s *system) handlePluginInstallState(w http.ResponseWriter, r *http.Request) {
 	pluginID, err := pathValue(r, "pluginID")
 	if err != nil {

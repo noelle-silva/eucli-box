@@ -868,6 +868,28 @@ func (f *fakeGatewaySystemPlugins) SavePluginUserConfig(ctx context.Context, plu
 	return view, nil
 }
 
+func (f *fakeGatewaySystemPlugins) EnablePlugin(ctx context.Context, pluginID string) (types.SystemPluginView, error) {
+	if f.views == nil {
+		f.views = map[string]types.SystemPluginView{}
+	}
+	view := f.views[pluginID]
+	view.ID = pluginID
+	view.Enabled = true
+	f.views[pluginID] = view
+	return view, nil
+}
+
+func (f *fakeGatewaySystemPlugins) DisablePlugin(ctx context.Context, pluginID string) (types.SystemPluginView, error) {
+	if f.views == nil {
+		f.views = map[string]types.SystemPluginView{}
+	}
+	view := f.views[pluginID]
+	view.ID = pluginID
+	view.Enabled = false
+	f.views[pluginID] = view
+	return view, nil
+}
+
 func (f *fakeGatewaySystemPlugins) AvailablePlaceholderInterfaces(ctx context.Context, library types.PlaceholderLibrary) ([]types.SystemPluginAvailablePlaceholderInterface, error) {
 	return nil, nil
 }

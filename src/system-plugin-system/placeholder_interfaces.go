@@ -29,7 +29,7 @@ func (s *system) AvailablePlaceholderInterfaces(ctx context.Context, library typ
 			if _, ok := existing[key]; ok {
 				continue
 			}
-			out = append(out, types.SystemPluginAvailablePlaceholderInterface{PluginID: record.manifest.ID, PluginName: record.manifest.Name, InterfaceID: item.ID, InterfaceDescription: item.Description, PlaceholderName: record.effectiveName(item)})
+			out = append(out, types.SystemPluginAvailablePlaceholderInterface{PluginID: record.manifest.ID, PluginName: record.manifest.Name, InterfaceID: item.ID, InterfaceDescription: item.Description, PlaceholderName: record.effectiveName(item), Disabled: !record.enabled})
 		}
 	}
 	return out, nil

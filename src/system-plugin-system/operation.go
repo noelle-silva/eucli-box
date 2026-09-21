@@ -454,9 +454,10 @@ func (s *system) stopPluginLifecycles(ctx context.Context, pluginID string) erro
 }
 
 // restorePluginLifecycle 切换、失败恢复或取消后，按当前版本重新发现并恢复对应生命周期。
+// 停用中的插件不恢复：更新完成后保持停用。
 func (s *system) restorePluginLifecycle(ctx context.Context, pluginID string) {
 	record, err := s.findRecord(ctx, pluginID)
-	if err != nil || record.status != types.SystemPluginStatusActive {
+	if err != nil || record.status != types.SystemPluginStatusActive || !record.enabled {
 		return
 	}
 	switch record.manifest.LifecycleType {

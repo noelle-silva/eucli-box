@@ -53,7 +53,7 @@ func (s *system) SavePluginUserConfig(ctx context.Context, pluginID string, conf
 	if err := writeJSONFile(ctx, path, config); err != nil {
 		return types.SystemPluginView{}, err
 	}
-	if record.manifest.LifecycleType == types.SystemPluginLifecycleCachedHeartbeat {
+	if record.manifest.LifecycleType == types.SystemPluginLifecycleCachedHeartbeat && record.enabled {
 		s.clearCachedValues(record.manifest.ID)
 		if err := s.refreshCachedPlugin(ctx, record.manifest.ID); err != nil {
 			s.setFailure(record.manifest.ID, err.Error())
@@ -68,6 +68,49 @@ func (s *system) userConfigFile(pluginID string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(directory, "config.json"), nil
+}
+
+// pluginState 是插件的用户可控启停状态；state.json 不存在表示默认启用。
+type pluginState struct {
+	Enabled bool `json:"enabled"`
+}
+
+func (s *system) loadPluginState(ctx context.Context, pluginID string) (pluginState, error) {
+	path, err := s.pluginStateFile(pluginID)
+	if err != nil {
+		return pluginState{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return pluginState{}, pluginReadFailed("read cancelled", err)
+	}
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return pluginState{Enabled: true}, nil
+		}
+		return pluginState{}, pluginReadFailed("failed to read system plugin state", err)
+	}
+	state := pluginState{Enabled: true}
+	if err := json.Unmarshal(payload, &state); err != nil {
+		return pluginState{}, pluginReadFailed("failed to decode system plugin state", err)
+	}
+	return state, nil
+}
+
+func (s *system) savePluginState(ctx context.Context, pluginID string, state pluginState) error {
+	path, err := s.pluginStateFile(pluginID)
+	if err != nil {
+		return err
+	}
+	return writeJSONFile(ctx, path, state)
+}
+
+func (s *system) pluginStateFile(pluginID string) (string, error) {
+	directory, err := s.pluginDataDirectory(pluginID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(directory, "state.json"), nil
 }
 
 func (s *system) pluginDataDirectory(pluginID string) (string, error) {

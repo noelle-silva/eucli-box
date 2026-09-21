@@ -63,6 +63,7 @@ type SystemPluginView struct {
 	InstallPhase          string                                 `json:"installPhase,omitempty"`
 	OperationID           string                                 `json:"operationId,omitempty"`
 	Active                bool                                   `json:"active,omitempty"`
+	Enabled               bool                                   `json:"enabled"`
 	DefaultConfig         map[string]any                         `json:"defaultConfig,omitempty"`
 	UserConfig            map[string]any                         `json:"userConfig,omitempty"`
 	ConfigSchema          map[string]any                         `json:"configSchema,omitempty"`
@@ -86,6 +87,7 @@ type SystemPluginSummary struct {
 	InstallPhase          string                `json:"installPhase,omitempty"`
 	OperationID           string                `json:"operationId,omitempty"`
 	Active                bool                  `json:"active,omitempty"`
+	Enabled               bool                  `json:"enabled"`
 }
 
 type SystemPluginAvailablePlaceholderInterface struct {
@@ -94,6 +96,7 @@ type SystemPluginAvailablePlaceholderInterface struct {
 	InterfaceID          string `json:"interfaceId"`
 	InterfaceDescription string `json:"interfaceDescription"`
 	PlaceholderName      string `json:"placeholderName"`
+	Disabled             bool   `json:"disabled,omitempty"`
 }
 
 type SystemPluginCreatePlaceholderRequest struct {

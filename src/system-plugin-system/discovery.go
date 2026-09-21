@@ -25,6 +25,7 @@ type pluginRecord struct {
 	compatibility types.CompatibilityStatus
 	status        string
 	statusMessage string
+	enabled       bool
 }
 
 func (s *system) ListPlugins(ctx context.Context) ([]types.SystemPluginSummary, error) {
@@ -49,6 +50,7 @@ func (s *system) ListPlugins(ctx context.Context) ([]types.SystemPluginSummary, 
 			CurrentVersion:        record.manifest.Version,
 			InstallStatus:         s.installStatusFor(record),
 			Active:                s.activityFor(record.manifest.ID).state().Active,
+			Enabled:               record.enabled,
 		})
 	}
 	return summaries, nil
@@ -185,6 +187,7 @@ func (s *system) buildRecord(ctx context.Context, manifest types.SystemPluginMan
 		directory:     directory,
 		compatibility: release.AssessEucliBoxCompatibility(manifest.Version, s.boxVersion, manifest.EucliBoxCompatibility),
 		status:        types.SystemPluginStatusActive,
+		enabled:       true,
 	}
 	if err := validateManifestCore(manifest); err != nil {
 		record.markUnavailable("系统插件声明无效：" + err.Error())
@@ -211,6 +214,12 @@ func (s *system) buildRecord(ctx context.Context, manifest types.SystemPluginMan
 			record.markUnavailable(err.Error())
 		} else {
 			record.userConfig = userConfig
+		}
+		state, err := s.loadPluginState(ctx, manifest.ID)
+		if err != nil {
+			record.markUnavailable(err.Error())
+		} else {
+			record.enabled = state.Enabled
 		}
 	}
 	if executable, err := selectExecutable(directory, manifest.Binaries); err != nil {
@@ -341,6 +350,7 @@ func (r pluginRecord) view() types.SystemPluginView {
 		StatusMessage:         r.statusMessage,
 		Installed:             true,
 		CurrentVersion:        r.manifest.Version,
+		Enabled:               r.enabled,
 		DefaultConfig:         copyMap(r.defaultConfig),
 		UserConfig:            copyMap(r.userConfig.UserConfig),
 		ConfigSchema:          copyMap(r.manifest.ConfigSchema),
@@ -373,6 +383,7 @@ func unavailablePluginRecord(sourceID string, directory string, reason string, b
 		compatibility: types.CompatibilityStatus{Reason: reason, CurrentEucliBoxVersion: boxVersion},
 		status:        types.SystemPluginStatusUnavailable,
 		statusMessage: reason,
+		enabled:       true,
 	}
 }
 

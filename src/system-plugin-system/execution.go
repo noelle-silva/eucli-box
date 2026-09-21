@@ -61,9 +61,15 @@ func (s *system) ResolvePlaceholderValues(ctx context.Context) ([]types.SystemPl
 }
 
 func (s *system) resolveRecordValues(ctx context.Context, record pluginRecord) ([]types.SystemPluginPlaceholderValue, []types.PlaceholderProblem) {
-	if record.status != types.SystemPluginStatusActive {
+	disabled, blocked := s.acquireServing(record)
+	if disabled {
+		return nil, pluginDisabledProblems(record)
+	}
+	if blocked != "" {
+		s.setFailure(record.manifest.ID, blocked)
 		return nil, pluginProblems(record)
 	}
+	defer s.releaseServing(record.manifest.ID)
 	if record.manifest.LifecycleType == types.SystemPluginLifecycleCachedHeartbeat {
 		resolved, ok := s.cachedValuesForRecord(record)
 		if !ok {
@@ -72,13 +78,7 @@ func (s *system) resolveRecordValues(ctx context.Context, record pluginRecord) (
 		}
 		return resolved, nil
 	}
-	activity := s.activityFor(record.manifest.ID)
-	if blocked := activity.acquire(); blocked != "" {
-		s.setFailure(record.manifest.ID, blocked)
-		return nil, pluginProblems(record)
-	}
 	resolved, err := s.resolveRecord(ctx, record)
-	activity.release()
 	if err != nil {
 		s.setFailure(record.manifest.ID, err.Error())
 		return nil, pluginProblems(record)
@@ -303,9 +303,17 @@ func (s *system) dropPersistentProcess(pluginID string) {
 }
 
 func pluginProblems(record pluginRecord) []types.PlaceholderProblem {
+	return pluginProblemsOfType(record, types.PlaceholderProblemPluginFailed)
+}
+
+func pluginDisabledProblems(record pluginRecord) []types.PlaceholderProblem {
+	return pluginProblemsOfType(record, types.PlaceholderProblemPluginDisabled)
+}
+
+func pluginProblemsOfType(record pluginRecord, problemType string) []types.PlaceholderProblem {
 	problems := make([]types.PlaceholderProblem, 0, len(record.manifest.PlaceholderInterfaces))
 	for _, item := range record.manifest.PlaceholderInterfaces {
-		problems = append(problems, types.PlaceholderProblem{Name: record.effectiveName(item), Type: types.PlaceholderProblemPluginFailed})
+		problems = append(problems, types.PlaceholderProblem{Name: record.effectiveName(item), Type: problemType})
 	}
 	return problems
 }

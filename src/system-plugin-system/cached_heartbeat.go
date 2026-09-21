@@ -53,11 +53,6 @@ func (s *system) stopCachedHeartbeat(ctx context.Context, pluginID string) error
 }
 
 func (s *system) refreshCachedPlugin(ctx context.Context, pluginID string) error {
-	activity := s.activityFor(pluginID)
-	if blocked := activity.acquire(); blocked != "" {
-		return pluginExecutionFailed(blocked, nil)
-	}
-	defer activity.release()
 	records, err := s.discover(ctx)
 	if err != nil {
 		return err
@@ -72,7 +67,15 @@ func (s *system) refreshCachedPlugin(ctx context.Context, pluginID string) error
 		if record.executable == "" {
 			return pluginExecutionFailed(nonEmpty(record.statusMessage, "system plugin executable is unavailable"), nil)
 		}
+		disabled, blocked := s.acquireServing(record)
+		if disabled {
+			return pluginExecutionFailed("system plugin is disabled", nil)
+		}
+		if blocked != "" {
+			return pluginExecutionFailed(blocked, nil)
+		}
 		values, err := s.resolveRecord(ctx, record)
+		s.releaseServing(record.manifest.ID)
 		if err != nil {
 			return err
 		}

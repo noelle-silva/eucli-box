@@ -14,6 +14,7 @@ import (
 // 更新期间同时承载运行任务的事实：取消句柄、任务基座、阶段、下载进度与结束信号。
 type pluginActivity struct {
 	mu             sync.Mutex
+	lifecycleMu    sync.Mutex
 	activeRequests int
 	updating       bool
 	operationID    string
@@ -24,6 +25,15 @@ type pluginActivity struct {
 	baseVersion    string
 	baseInstalled  bool
 	done           chan struct{}
+}
+
+// tryBeginLifecycle 尝试开始一次插件启停动作；同一插件同时只允许一个启停动作。
+func (a *pluginActivity) tryBeginLifecycle() bool {
+	return a.lifecycleMu.TryLock()
+}
+
+func (a *pluginActivity) endLifecycle() {
+	a.lifecycleMu.Unlock()
 }
 
 func (a *pluginActivity) ensureChanged() {

@@ -6,6 +6,7 @@ const (
 	PlaceholderProblemCycleReference = "cycle_reference"
 	PlaceholderProblemDuplicateName  = "duplicate_name"
 	PlaceholderProblemPluginFailed   = "plugin_failed"
+	PlaceholderProblemPluginDisabled = "plugin_disabled"
 
 	PlaceholderSourceSystemPlugin = "system_plugin"
 )

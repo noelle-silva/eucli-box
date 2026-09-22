@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -14,277 +13,218 @@ import (
 
 func TestDisablePluginPausesAndEnableResumesResolution(t *testing.T) {
 	root := t.TempDir()
-	dataDir := filepath.Join(root, "data")
-	pluginDir := writeTestPlugin(t, root, "switch-plugin", `{"status":"success","values":{"value":"on"}}`)
-	writeTestManifest(t, pluginDir, testPluginManifest("switch-plugin", "开关插件", types.SystemPluginLifecycleOnDemand))
-	created, err := NewSystem(Config{SourceDir: root, DataDir: dataDir, Timeout: testPluginTimeout()})
+	directory := writeTestPlugin(t, root, testPluginSpec{
+		manifest: testManifest("switch-plugin", "开关插件", onDemandHosting()),
+		behavior: map[string]any{"responseFile": "response.json"},
+	})
+	if err := os.WriteFile(filepath.Join(directory, "response.json"), []byte(`{"status":"success","values":{"value":"on"}}`), 0o644); err != nil {
+		t.Fatalf("Write response error = %v", err)
+	}
+	system := newTestSystem(t, root)
+
+	values, problems := system.ResolvePlaceholderValues(context.Background(), []types.SystemPluginPlaceholderSource{testSource("switch-plugin", "value", "value")})
+	if len(problems) != 0 || len(values) != 1 || values[0].Value != "on" {
+		t.Fatalf("values = %#v, problems = %#v", values, problems)
+	}
+	if _, err := system.DisablePlugin(context.Background(), "switch-plugin"); err != nil {
+		t.Fatalf("DisablePlugin() error = %v", err)
+	}
+	plugins, err := system.ListPlugins(context.Background())
 	if err != nil {
-		t.Fatalf("NewSystem() error = %v", err)
+		t.Fatalf("ListPlugins() error = %v", err)
 	}
-	t.Cleanup(func() { _ = created.Shutdown(context.Background()) })
-
-	plugins, err := created.ListPlugins(context.Background())
-	if err != nil || len(plugins) != 1 || !plugins[0].Enabled {
-		t.Fatalf("ListPlugins() = %#v, err = %v", plugins, err)
+	if len(plugins) != 1 || plugins[0].Enabled {
+		t.Fatalf("ListPlugins() = %#v", plugins)
 	}
-
-	view, err := created.DisablePlugin(context.Background(), "switch-plugin")
-	if err != nil || view.Enabled {
-		t.Fatalf("DisablePlugin() view = %#v, err = %v", view, err)
+	statePayload, err := os.ReadFile(filepath.Join(root, "data", "switch-plugin", "state.json"))
+	if err != nil || !strings.Contains(string(statePayload), `"enabled": false`) {
+		t.Fatalf("state file = %q, error = %v", string(statePayload), err)
 	}
-	payload, err := os.ReadFile(filepath.Join(dataDir, "switch-plugin", "state.json"))
-	if err != nil || !strings.Contains(string(payload), `"enabled": false`) {
-		t.Fatalf("state.json = %q, err = %v", string(payload), err)
+	if err := os.WriteFile(filepath.Join(directory, "response.json"), []byte(`{"status":"success","values":{"value":"off"}}`), 0o644); err != nil {
+		t.Fatalf("Rewrite response error = %v", err)
 	}
-
-	// 停用后修改插件响应：再次解析必须既不取值也不执行插件，而是明确上报已停用。
-	writeTestPluginResponse(t, pluginDir, `{"status":"success","values":{"value":"off"}}`)
-	values, problems := created.ResolvePlaceholderValues(context.Background())
-	if len(values) != 0 {
-		t.Fatalf("ResolvePlaceholderValues() values = %#v", values)
+	values, problems = system.ResolvePlaceholderValues(context.Background(), []types.SystemPluginPlaceholderSource{testSource("switch-plugin", "value", "value")})
+	if len(values) != 0 || len(problems) != 1 || problems[0].Type != types.PlaceholderProblemPluginDisabled {
+		t.Fatalf("disabled values = %#v, problems = %#v", values, problems)
 	}
-	if len(problems) != 1 || problems[0].Type != types.PlaceholderProblemPluginDisabled {
-		t.Fatalf("ResolvePlaceholderValues() problems = %#v", problems)
+	if _, err := system.EnablePlugin(context.Background(), "switch-plugin"); err != nil {
+		t.Fatalf("EnablePlugin() error = %v", err)
 	}
-
-	view, err = created.EnablePlugin(context.Background(), "switch-plugin")
-	if err != nil || !view.Enabled {
-		t.Fatalf("EnablePlugin() view = %#v, err = %v", view, err)
-	}
-	values, problems = created.ResolvePlaceholderValues(context.Background())
+	values, problems = system.ResolvePlaceholderValues(context.Background(), []types.SystemPluginPlaceholderSource{testSource("switch-plugin", "value", "value")})
 	if len(problems) != 0 || len(values) != 1 || values[0].Value != "off" {
-		t.Fatalf("ResolvePlaceholderValues() after enable values = %#v, problems = %#v", values, problems)
+		t.Fatalf("enabled values = %#v, problems = %#v", values, problems)
 	}
 }
 
 func TestDisabledStatePersistsAcrossRestart(t *testing.T) {
 	root := t.TempDir()
-	dataDir := filepath.Join(root, "data")
-	pluginDir := writeTestPlugin(t, root, "switch-plugin", `{"status":"success","values":{"value":"on"}}`)
-	writeTestManifest(t, pluginDir, testPluginManifest("switch-plugin", "开关插件", types.SystemPluginLifecycleOnDemand))
-	first, err := NewSystem(Config{SourceDir: root, DataDir: dataDir, Timeout: testPluginTimeout()})
-	if err != nil {
-		t.Fatalf("NewSystem() error = %v", err)
-	}
-	if _, err := first.DisablePlugin(context.Background(), "switch-plugin"); err != nil {
+	writeTestPlugin(t, root, testPluginSpec{
+		manifest: testManifest("persist-plugin", "持久开关插件", onDemandHosting()),
+		behavior: map[string]any{"values": map[string]string{"value": "must-not-run"}},
+	})
+	system := newTestSystem(t, root)
+	if _, err := system.DisablePlugin(context.Background(), "persist-plugin"); err != nil {
 		t.Fatalf("DisablePlugin() error = %v", err)
 	}
-	if err := first.Shutdown(context.Background()); err != nil {
+	if err := system.Shutdown(context.Background()); err != nil {
 		t.Fatalf("Shutdown() error = %v", err)
 	}
-
-	second, err := NewSystem(Config{SourceDir: root, DataDir: dataDir, Timeout: testPluginTimeout()})
-	if err != nil {
-		t.Fatalf("NewSystem() restart error = %v", err)
-	}
-	t.Cleanup(func() { _ = second.Shutdown(context.Background()) })
-	plugins, err := second.ListPlugins(context.Background())
-	if err != nil || len(plugins) != 1 || plugins[0].Enabled {
-		t.Fatalf("ListPlugins() after restart = %#v, err = %v", plugins, err)
-	}
-	values, problems := second.ResolvePlaceholderValues(context.Background())
+	restarted := newTestSystem(t, root)
+	values, problems := restarted.ResolvePlaceholderValues(context.Background(), []types.SystemPluginPlaceholderSource{testSource("persist-plugin", "value", "value")})
 	if len(values) != 0 || len(problems) != 1 || problems[0].Type != types.PlaceholderProblemPluginDisabled {
-		t.Fatalf("ResolvePlaceholderValues() after restart values = %#v, problems = %#v", values, problems)
+		t.Fatalf("values = %#v, problems = %#v", values, problems)
 	}
 }
 
-func TestDisableCachedHeartbeatPluginClearsCachedValues(t *testing.T) {
+func TestDisablePluginStopsResidentSessionAndStartSkipsDisabled(t *testing.T) {
 	root := t.TempDir()
-	dataDir := filepath.Join(root, "data")
-	pluginDir := writeTestPlugin(t, root, "cached-switch", `{"status":"success","values":{"value":"initial"}}`)
-	manifest := testPluginManifest("cached-switch", "缓存开关插件", types.SystemPluginLifecycleCachedHeartbeat)
-	manifest["heartbeatIntervalMs"] = 3600000
-	writeTestManifest(t, pluginDir, manifest)
-	created, err := NewSystem(Config{SourceDir: root, DataDir: dataDir, Timeout: testPluginTimeout()})
-	if err != nil {
-		t.Fatalf("NewSystem() error = %v", err)
-	}
-	if err := created.Start(context.Background()); err != nil {
+	writeTestPlugin(t, root, testPluginSpec{
+		manifest: testManifest("resident-switch", "常驻开关插件", residentHosting(types.SystemPluginStartBoot)),
+		behavior: map[string]any{"values": map[string]string{"value": "resident"}},
+	})
+	system := newTestSystem(t, root)
+	if err := system.Start(context.Background()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	t.Cleanup(func() { _ = created.Shutdown(context.Background()) })
-	values, problems := created.ResolvePlaceholderValues(context.Background())
-	if len(problems) != 0 || len(values) != 1 || values[0].Value != "initial" {
-		t.Fatalf("cached values before disable = %#v, problems = %#v", values, problems)
+	if !waitForSessionCount(system, "resident-switch", 1) {
+		t.Fatalf("常驻会话没有被拉起")
 	}
-
-	if _, err := created.DisablePlugin(context.Background(), "cached-switch"); err != nil {
+	real := realSystemOf(system)
+	real.mu.Lock()
+	instance := real.residents["resident-switch"]
+	real.mu.Unlock()
+	if instance == nil {
+		t.Fatalf("resident session missing")
+	}
+	if _, err := system.DisablePlugin(context.Background(), "resident-switch"); err != nil {
 		t.Fatalf("DisablePlugin() error = %v", err)
 	}
-	values, problems = created.ResolvePlaceholderValues(context.Background())
-	if len(values) != 0 || len(problems) != 1 || problems[0].Type != types.PlaceholderProblemPluginDisabled {
-		t.Fatalf("cached values after disable = %#v, problems = %#v", values, problems)
+	if !waitForSessionCount(system, "resident-switch", 0) {
+		t.Fatalf("停用后会话仍然存在")
 	}
-	writeTestPluginResponse(t, pluginDir, `{"status":"success","values":{"value":"changed"}}`)
-
-	// 重启后必须跳过停用插件：不得刷新缓存，也不得产生新值。
-	second, err := NewSystem(Config{SourceDir: root, DataDir: dataDir, Timeout: testPluginTimeout()})
-	if err != nil {
-		t.Fatalf("NewSystem() restart error = %v", err)
+	select {
+	case <-instance.done:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("停用后进程没有真实退出")
 	}
-	if err := second.Start(context.Background()); err != nil {
-		t.Fatalf("Start() restart error = %v", err)
-	}
-	t.Cleanup(func() { _ = second.Shutdown(context.Background()) })
-	values, problems = second.ResolvePlaceholderValues(context.Background())
-	if len(values) != 0 || len(problems) != 1 || problems[0].Type != types.PlaceholderProblemPluginDisabled {
-		t.Fatalf("cached values after restart = %#v, problems = %#v", values, problems)
-	}
-}
-
-func TestDisablePluginStopsPersistentProcessAndStartSkipsDisabled(t *testing.T) {
-	root := t.TempDir()
-	dataDir := filepath.Join(root, "data")
-	writeTestBinaryPlugin(t, root, "persistent-switch", types.SystemPluginLifecyclePersistent)
-	created, err := NewSystem(Config{SourceDir: root, DataDir: dataDir, Timeout: testPluginTimeout()})
-	if err != nil {
-		t.Fatalf("NewSystem() error = %v", err)
-	}
-	real := created.(*system)
-	real.updateWaitTimeout = 5 * time.Second
-	if err := created.Start(context.Background()); err != nil {
-		t.Fatalf("Start() error = %v", err)
-	}
-	t.Cleanup(func() { _ = created.Shutdown(context.Background()) })
-	real.mu.Lock()
-	process := real.persistent["persistent-switch"]
-	real.mu.Unlock()
-	if process == nil {
-		t.Fatal("persistent process did not start before disable")
-	}
-
-	if _, err := created.DisablePlugin(context.Background(), "persistent-switch"); err != nil {
-		t.Fatalf("DisablePlugin() error = %v", err)
-	}
-	real.mu.Lock()
-	_, registered := real.persistent["persistent-switch"]
-	real.mu.Unlock()
-	if registered {
-		t.Fatal("persistent process is still registered after disable")
-	}
-	if process.cmd.ProcessState == nil {
-		t.Fatal("persistent process did not exit after disable")
-	}
-	values, problems := created.ResolvePlaceholderValues(context.Background())
-	if len(values) != 0 || len(problems) != 1 || problems[0].Type != types.PlaceholderProblemPluginDisabled {
-		t.Fatalf("values after disable = %#v, problems = %#v", values, problems)
-	}
-	if err := created.Shutdown(context.Background()); err != nil {
+	if err := system.Shutdown(context.Background()); err != nil {
 		t.Fatalf("Shutdown() error = %v", err)
 	}
-
-	// 重启后必须跳过停用插件，不启动长驻进程。
-	second, err := NewSystem(Config{SourceDir: root, DataDir: dataDir, Timeout: testPluginTimeout()})
-	if err != nil {
-		t.Fatalf("NewSystem() restart error = %v", err)
+	restarted := newTestSystem(t, root)
+	if err := restarted.Start(context.Background()); err != nil {
+		t.Fatalf("restarted Start() error = %v", err)
 	}
-	if err := second.Start(context.Background()); err != nil {
-		t.Fatalf("Start() restart error = %v", err)
-	}
-	t.Cleanup(func() { _ = second.Shutdown(context.Background()) })
-	realSecond := second.(*system)
-	realSecond.mu.Lock()
-	_, registered = realSecond.persistent["persistent-switch"]
-	realSecond.mu.Unlock()
-	if registered {
-		t.Fatal("disabled persistent plugin must not start after restart")
+	if hasResidentSession(restarted, "resident-switch") {
+		t.Fatalf("停用插件在重启后被拉起")
 	}
 }
 
 func TestDisableAndEnableRejectedWhileUpdating(t *testing.T) {
 	root := t.TempDir()
-	pluginDir := writeTestPlugin(t, root, "switch-plugin", `{"status":"success","values":{"value":"on"}}`)
-	writeTestManifest(t, pluginDir, testPluginManifest("switch-plugin", "开关插件", types.SystemPluginLifecycleOnDemand))
-	created, err := NewSystem(Config{SourceDir: root, DataDir: filepath.Join(root, "data"), Timeout: testPluginTimeout()})
-	if err != nil {
-		t.Fatalf("NewSystem() error = %v", err)
-	}
-	t.Cleanup(func() { _ = created.Shutdown(context.Background()) })
-	real := created.(*system)
-	activity := real.activityFor("switch-plugin")
-	if blocked := activity.beginUpdate("test-operation", func() {}, time.Second); blocked != "" {
-		t.Fatalf("beginUpdate() blocked = %q", blocked)
+	writeTestPlugin(t, root, testPluginSpec{manifest: testManifest("busy-plugin", "忙碌插件", onDemandHosting())})
+	system := newTestSystem(t, root)
+	real := realSystemOf(system)
+	activity := real.activityFor("busy-plugin")
+	if code := activity.beginUpdate("operation-test", func() {}, time.Second); code != "" {
+		t.Fatalf("beginUpdate() = %q", code)
 	}
 	defer func() {
 		activity.endUpdate()
 		activity.finishUpdate()
 	}()
-
-	if _, err := created.DisablePlugin(context.Background(), "switch-plugin"); err == nil {
-		t.Fatal("DisablePlugin() must be rejected while updating")
+	if _, err := system.DisablePlugin(context.Background(), "busy-plugin"); err == nil {
+		t.Fatalf("expected DisablePlugin to be rejected while updating")
 	}
-	if _, err := created.EnablePlugin(context.Background(), "switch-plugin"); err == nil {
-		t.Fatal("EnablePlugin() must be rejected while updating")
+	if _, err := system.EnablePlugin(context.Background(), "busy-plugin"); err == nil {
+		t.Fatalf("expected EnablePlugin to be rejected while updating")
 	}
 }
 
 func TestAvailablePlaceholderInterfacesMarksDisabledPlugins(t *testing.T) {
 	root := t.TempDir()
-	pluginDir := writeTestPlugin(t, root, "switch-plugin", `{"status":"success","values":{"value":"on"}}`)
-	writeTestManifest(t, pluginDir, testPluginManifest("switch-plugin", "开关插件", types.SystemPluginLifecycleOnDemand))
-	created, err := NewSystem(Config{SourceDir: root, DataDir: filepath.Join(root, "data"), Timeout: testPluginTimeout()})
-	if err != nil {
-		t.Fatalf("NewSystem() error = %v", err)
-	}
-	t.Cleanup(func() { _ = created.Shutdown(context.Background()) })
-	if _, err := created.DisablePlugin(context.Background(), "switch-plugin"); err != nil {
+	writeTestPlugin(t, root, testPluginSpec{manifest: testManifest("marks-plugin", "标记插件", onDemandHosting())})
+	system := newTestSystem(t, root)
+	if _, err := system.DisablePlugin(context.Background(), "marks-plugin"); err != nil {
 		t.Fatalf("DisablePlugin() error = %v", err)
 	}
-	interfaces, err := created.AvailablePlaceholderInterfaces(context.Background(), types.PlaceholderLibrary{})
+	interfaces, err := system.AvailablePlaceholderInterfaces(context.Background(), types.PlaceholderLibrary{})
 	if err != nil {
 		t.Fatalf("AvailablePlaceholderInterfaces() error = %v", err)
 	}
-	if len(interfaces) != 1 || !interfaces[0].Disabled {
-		t.Fatalf("AvailablePlaceholderInterfaces() = %#v", interfaces)
+	if len(interfaces) != 1 || !interfaces[0].Disabled || interfaces[0].InterfaceID != "value" {
+		t.Fatalf("interfaces = %#v", interfaces)
 	}
 }
 
-func TestSavePluginUserConfigOnDisabledCachedPluginDoesNotRefresh(t *testing.T) {
+func TestSavePluginUserConfigOnDisabledResidentPluginDoesNotNotify(t *testing.T) {
 	root := t.TempDir()
-	pluginDir := writeTestPlugin(t, root, "cached-switch", `{"status":"success","values":{"value":"initial"}}`)
-	manifest := testPluginManifest("cached-switch", "缓存开关插件", types.SystemPluginLifecycleCachedHeartbeat)
-	manifest["heartbeatIntervalMs"] = 3600000
-	writeTestManifest(t, pluginDir, manifest)
-	created, err := NewSystem(Config{SourceDir: root, DataDir: filepath.Join(root, "data"), Timeout: testPluginTimeout()})
-	if err != nil {
-		t.Fatalf("NewSystem() error = %v", err)
+	track := filepath.Join(root, "track.jsonl")
+	writeTestPlugin(t, root, testPluginSpec{
+		manifest: testManifest("quiet-plugin", "静默插件", residentHosting(types.SystemPluginStartBoot)),
+		behavior: map[string]any{"trackFile": track},
+	})
+	if err := os.MkdirAll(filepath.Join(root, "data", "quiet-plugin"), 0o755); err != nil {
+		t.Fatalf("Mkdir state dir error = %v", err)
 	}
-	t.Cleanup(func() { _ = created.Shutdown(context.Background()) })
-	if _, err := created.DisablePlugin(context.Background(), "cached-switch"); err != nil {
-		t.Fatalf("DisablePlugin() error = %v", err)
+	if err := os.WriteFile(filepath.Join(root, "data", "quiet-plugin", "state.json"), []byte("{\"enabled\":false}\n"), 0o644); err != nil {
+		t.Fatalf("Write state error = %v", err)
 	}
-	writeTestPluginResponse(t, pluginDir, `{"status":"success","values":{"value":"changed"}}`)
-	if _, err := created.SavePluginUserConfig(context.Background(), "cached-switch", types.SystemPluginUserConfig{UserConfig: map[string]any{"note": "x"}}); err != nil {
+	system := newTestSystem(t, root)
+	if _, err := system.SavePluginUserConfig(context.Background(), "quiet-plugin", types.SystemPluginUserConfig{UserConfig: map[string]any{"mode": "fast"}}); err != nil {
 		t.Fatalf("SavePluginUserConfig() error = %v", err)
 	}
-	real := created.(*system)
-	real.mu.Lock()
-	_, cached := real.cachedValues["cached-switch"]
-	real.mu.Unlock()
-	if cached {
-		t.Fatal("disabled cached plugin must not refresh cached values on config save")
+	time.Sleep(200 * time.Millisecond)
+	if len(readTrackEntries(t, track)) != 0 {
+		t.Fatalf("停用插件不应收到配置通知：%#v", readTrackEntries(t, track))
 	}
 }
 
-func writeTestBinaryPlugin(t *testing.T, root string, pluginID string, lifecycle string) string {
-	t.Helper()
-	pluginDir := filepath.Join(root, pluginID)
-	if err := os.MkdirAll(pluginDir, 0o755); err != nil {
-		t.Fatalf("Mkdir plugin dir error = %v", err)
+// 启动时机是托管参数：随启动的常驻插件在 Start 时拉起，惰性常驻与按需插件不预启动。
+func TestStartLaunchesBootResidentPluginsOnly(t *testing.T) {
+	root := t.TempDir()
+	writeTestPlugin(t, root, testPluginSpec{
+		manifest: testManifest("boot-plugin", "随启动插件", residentHosting(types.SystemPluginStartBoot)),
+		behavior: map[string]any{"values": map[string]string{"value": "boot"}},
+	})
+	writeTestPlugin(t, root, testPluginSpec{
+		manifest: testManifest("lazy-plugin", "惰性常驻插件", residentHosting(types.SystemPluginStartLazy)),
+		behavior: map[string]any{"values": map[string]string{"value": "lazy"}},
+	})
+	writeTestPlugin(t, root, testPluginSpec{
+		manifest: testManifest("demand-plugin", "按需插件", onDemandHosting()),
+		behavior: map[string]any{"values": map[string]string{"value": "demand"}},
+	})
+	system := newTestSystem(t, root)
+	if err := system.Start(context.Background()); err != nil {
+		t.Fatalf("Start() error = %v", err)
 	}
-	executable := "plugin"
-	if runtime.GOOS == "windows" {
-		executable = "plugin.exe"
+	if !waitForSessionCount(system, "boot-plugin", 1) {
+		t.Fatalf("随启动插件没有被拉起")
 	}
-	if err := os.WriteFile(filepath.Join(pluginDir, executable), buildPluginBinary(t, lifecycle), 0o755); err != nil {
-		t.Fatalf("Write plugin binary error = %v", err)
+	if hasResidentSession(system, "lazy-plugin") || hasResidentSession(system, "demand-plugin") {
+		t.Fatalf("非随启动插件被预启动了")
 	}
-	manifest := testPluginManifest(pluginID, "二进制插件", lifecycle)
-	manifest["binaries"] = []map[string]string{{
-		"goos":   runtime.GOOS,
-		"goarch": runtime.GOARCH,
-		"path":   executable,
-	}}
-	writeTestManifest(t, pluginDir, manifest)
-	return pluginDir
+}
+
+// 惰性常驻插件首次使用时启动，之后复用同一条通道。
+func TestLazyResidentPluginStartsOnFirstUseAndIsReused(t *testing.T) {
+	root := t.TempDir()
+	track := filepath.Join(root, "track.jsonl")
+	writeTestPlugin(t, root, testPluginSpec{
+		manifest: testManifest("lazy-resident", "惰性常驻", residentHosting(types.SystemPluginStartLazy)),
+		behavior: map[string]any{"trackFile": track, "values": map[string]string{"value": "lazy"}},
+	})
+	system := newTestSystem(t, root)
+	for index := 0; index < 2; index++ {
+		values, problems := system.ResolvePlaceholderValues(context.Background(), []types.SystemPluginPlaceholderSource{testSource("lazy-resident", "value", "value")})
+		if len(problems) != 0 || len(values) != 1 {
+			t.Fatalf("values = %#v, problems = %#v", values, problems)
+		}
+	}
+	if len(trackEntriesOfKind(t, track, "hello")) != 1 {
+		t.Fatalf("常驻通道没有被复用：%#v", readTrackEntries(t, track))
+	}
+	if len(trackEntriesOfKind(t, track, "invoke")) != 2 {
+		t.Fatalf("调用次数 = %#v", readTrackEntries(t, track))
+	}
 }

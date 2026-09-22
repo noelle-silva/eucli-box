@@ -53,11 +53,10 @@ func (s *system) SavePluginUserConfig(ctx context.Context, pluginID string, conf
 	if err := writeJSONFile(ctx, path, config); err != nil {
 		return types.SystemPluginView{}, err
 	}
-	if record.manifest.LifecycleType == types.SystemPluginLifecycleCachedHeartbeat && record.enabled {
-		s.clearCachedValues(record.manifest.ID)
-		if err := s.refreshCachedPlugin(ctx, record.manifest.ID); err != nil {
-			s.setFailure(record.manifest.ID, err.Error())
-		}
+	if record.enabled {
+		updated := record
+		updated.userConfig = config
+		s.notifyRecordConfig(updated)
 	}
 	return s.LoadPlugin(ctx, record.manifest.ID)
 }
@@ -148,7 +147,7 @@ func normalizeUserConfig(config types.SystemPluginUserConfig) types.SystemPlugin
 
 func validateUserConfig(manifest types.SystemPluginManifest, config types.SystemPluginUserConfig) error {
 	knownInterfaces := map[string]struct{}{}
-	for _, item := range manifest.PlaceholderInterfaces {
+	for _, item := range manifestPlaceholderInterfaces(manifest) {
 		knownInterfaces[item.ID] = struct{}{}
 	}
 	for interfaceID := range config.PlaceholderNameOverrides {

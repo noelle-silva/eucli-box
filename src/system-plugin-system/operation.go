@@ -1,18 +1,17 @@
 package systemplugin
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"eucli-box/pkg/release"
 	"eucli-box/pkg/releasecheck"
+	"eucli-box/pkg/systemplugin"
 	"eucli-box/pkg/types"
 	"eucli-box/pkg/utils"
 )
@@ -192,14 +191,10 @@ func (s *system) PluginActivity(ctx context.Context, pluginID string) (types.Art
 
 func (s *system) pluginActiveReason(pluginID string) string {
 	s.mu.Lock()
-	process := s.persistent[pluginID]
-	heartbeat := s.heartbeats[pluginID]
+	process := s.residents[pluginID]
 	s.mu.Unlock()
 	if process != nil {
-		return "插件 persistent 进程仍在运行"
-	}
-	if heartbeat != nil {
-		return "插件心跳刷新仍在运行"
+		return "插件常驻进程仍在运行"
 	}
 	return ""
 }
@@ -434,49 +429,31 @@ func (s *system) restoreVersion(ctx context.Context, pluginID string, store rele
 	return nil
 }
 
-// stopPluginLifecycles 停止 persistent 进程和 cached-heartbeat ticker，等待真实结束。
+// stopPluginLifecycles 停机插件的常驻通道；停机有界，超时强制终止后继续推进更新。
 func (s *system) stopPluginLifecycles(ctx context.Context, pluginID string) error {
-	s.mu.Lock()
-	process := s.persistent[pluginID]
-	delete(s.persistent, pluginID)
-	s.mu.Unlock()
-	if process != nil {
-		stopCtx, cancel := context.WithTimeout(ctx, s.updateWaitTimeout)
-		defer cancel()
-		if err := process.stopGracefully(stopCtx); err != nil {
-			return pluginExecutionFailed("persistent process did not stop in time", err)
-		}
-	}
-	if err := s.stopCachedHeartbeat(ctx, pluginID); err != nil {
-		return err
-	}
-	return nil
+	stopCtx, cancel := context.WithTimeout(ctx, s.updateWaitTimeout)
+	defer cancel()
+	return s.stopResidentSession(stopCtx, pluginID)
 }
 
-// restorePluginLifecycle 切换、失败恢复或取消后，按当前版本重新发现并恢复对应生命周期。
-// 停用中的插件不恢复：更新完成后保持停用。
+// restorePluginLifecycle 切换、失败恢复或取消后，按当前版本重新发现并恢复托管形态。
+// 按需插件没有需要恢复的运行态；停用中的插件不恢复：更新完成后保持停用。
 func (s *system) restorePluginLifecycle(ctx context.Context, pluginID string) {
 	record, err := s.findRecord(ctx, pluginID)
 	if err != nil || record.status != types.SystemPluginStatusActive || !record.enabled {
 		return
 	}
-	switch record.manifest.LifecycleType {
-	case types.SystemPluginLifecyclePersistent:
-		if _, err := s.ensurePersistentProcess(ctx, record); err != nil {
-			s.setFailure(pluginID, err.Error())
-		}
-	case types.SystemPluginLifecycleCachedHeartbeat:
-		if err := s.refreshCachedPlugin(ctx, pluginID); err != nil {
-			s.setFailure(pluginID, err.Error())
-		}
-		s.startCachedHeartbeat(pluginID, time.Duration(record.manifest.HeartbeatIntervalMs)*time.Millisecond)
+	if !record.manifest.Hosting.Resident {
+		return
+	}
+	if _, err := s.ensureResidentSession(ctx, record); err != nil {
+		s.setFailure(pluginID, err.Error())
 	}
 }
 
-// probePlugin 对新版本执行基础交接：resolve_placeholders、空接口和空配置。
-// 它只验证程序能够启动、读取标准输入并返回符合统一交接协议的结构化结果；
-// 不执行真实外部任务，不要求模型密钥，不检查插件特有的业务内容
-// （插件对空配置返回结构化失败同样证明交接链路可用）。
+// probePlugin 对新版本执行基础交接：按真实控制通道完成身份与能力握手，
+// 若插件声明了占位符能力则再完成一次空接口、空配置的能力调用。
+// 它只验证交接链路可用，不要求插件业务成功（对空配置返回结构化失败同样通过）。
 // 不得把用户占位符数据写入验证工作区。
 func (s *system) probePlugin(ctx context.Context, prepared release.PreparedProgram, probeDataDir string) error {
 	manifestPath := filepath.Join(prepared.Directory, "manifest.json")
@@ -488,72 +465,34 @@ func (s *system) probePlugin(ctx context.Context, prepared release.PreparedProgr
 	if err := json.Unmarshal(payload, &manifest); err != nil {
 		return pluginExecutionInvalid("plugin manifest is invalid for probe", err)
 	}
-	if manifest.LifecycleType == types.SystemPluginLifecycleCachedHeartbeat {
-		if err := os.MkdirAll(probeDataDir, 0o755); err != nil {
-			return pluginExecutionInvalid("failed to prepare probe data directory", err)
-		}
+	manifest = normalizeManifest(manifest)
+	if err := validateManifestCore(manifest); err != nil {
+		return pluginExecutionInvalid("plugin manifest is invalid for probe: "+err.Error(), err)
 	}
 	executable, err := selectExecutable(prepared.Directory, manifest.Binaries)
 	if err != nil {
 		return pluginExecutionInvalid("failed to select probe executable", err)
 	}
-	if err := os.MkdirAll(probeDataDir, 0o755); err != nil {
-		return pluginExecutionInvalid("failed to prepare probe data directory", err)
-	}
-	request := types.SystemPluginPlaceholderRequest{
-		Action:                pluginPlaceholderAction,
-		PluginID:              manifest.ID,
-		PlaceholderInterfaces: []types.SystemPluginPlaceholderInterfaceView{},
-		UserConfig:            map[string]any{},
-		DefaultConfig:         map[string]any{},
-		PluginDirectory:       prepared.Directory,
-		PluginDataDirectory:   probeDataDir,
-		HostWorkingDirectory:  probeDataDir,
+	record := pluginRecord{
+		manifest:      manifest,
+		directory:     prepared.Directory,
+		dataDirectory: probeDataDir,
+		executable:    executable,
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
-	if manifest.LifecycleType == types.SystemPluginLifecyclePersistent {
-		// persistent 插件按长驻方式交接：启动进程、请求一次并验证响应，然后强制终止探针进程。
-		process, err := s.startPersistentProcess(probeCtx, pluginRecord{
-			manifest:  manifest,
-			directory: prepared.Directory,
-			executable: executable,
-		})
-		if err != nil {
-			return err
-		}
-		response, requestErr := process.request(probeCtx, request)
-		stopErr := process.forceStopAndWait(probeCtx)
-		if requestErr != nil {
-			return pluginExecutionInvalid("plugin probe request failed: "+requestErr.Error(), requestErr)
-		}
-		if stopErr != nil {
-			return pluginExecutionInvalid("plugin probe process did not stop: "+stopErr.Error(), stopErr)
-		}
-		_ = response
-		return nil
-	}
-	input, err := json.Marshal(request)
+	instance, err := s.startRecordSession(record)
 	if err != nil {
-		return pluginExecutionInvalid("failed to encode probe input", err)
+		return pluginExecutionInvalid("plugin probe handshake failed: "+err.Error(), err)
 	}
-	cmd := exec.CommandContext(probeCtx, executable)
-	cmd.Dir = prepared.Directory
-	cmd.Stdin = bytes.NewReader(input)
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		message := err.Error()
-		if stderr.Len() > 0 {
-			message = message + ": " + stderr.String()
+	defer instance.kill()
+	if len(record.placeholderInterfaces()) > 0 {
+		if _, err := instance.invoke(probeCtx, systemplugin.CapabilityPlaceholderValues, nil); err != nil {
+			return pluginExecutionInvalid("plugin probe invoke failed: "+err.Error(), err)
 		}
-		return pluginExecutionInvalid("plugin probe failed: "+message, err)
 	}
-	var response types.SystemPluginPlaceholderResponse
-	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &response); err != nil {
-		return pluginExecutionInvalid("plugin probe output is not valid json", err)
+	if err := instance.stop(probeCtx); err != nil {
+		return pluginExecutionInvalid("plugin probe process did not stop: "+err.Error(), err)
 	}
 	return nil
 }

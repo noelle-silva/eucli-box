@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -19,58 +18,9 @@ import (
 
 	"eucli-box/pkg/release"
 	"eucli-box/pkg/releasecheck"
+	"eucli-box/pkg/systemplugin"
 	"eucli-box/pkg/types"
 )
-
-const onDemandPluginSource = `
-package main
-
-import (
-	"encoding/json"
-	"os"
-	"path/filepath"
-	"time"
-)
-
-type input struct {
-	Action              string            ` + "`json:\"action\"`" + `
-	PluginID            string            ` + "`json:\"pluginId\"`" + `
-	PluginDataDirectory string            ` + "`json:\"pluginDataDirectory\"`" + `
-}
-
-func main() {
-	var in input
-	_ = json.NewDecoder(os.Stdin).Decode(&in)
-	if in.Action == "sleep" {
-		time.Sleep(2 * time.Second)
-	}
-	if _, err := os.Stat(filepath.Join(in.PluginDataDirectory, "sleep-marker.txt")); err == nil {
-		time.Sleep(2 * time.Second)
-	}
-	_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"status": "success", "values": map[string]string{"value": in.PluginID + "-value"}})
-}
-`
-
-const persistentPluginSource = `
-package main
-
-import (
-	"encoding/json"
-	"os"
-)
-
-func main() {
-	decoder := json.NewDecoder(os.Stdin)
-	encoder := json.NewEncoder(os.Stdout)
-	for {
-		var request map[string]any
-		if err := decoder.Decode(&request); err != nil {
-			return
-		}
-		_ = encoder.Encode(map[string]any{"status": "success", "values": map[string]string{"value": "persistent-value"}})
-	}
-}
-`
 
 type fakePluginCandidates struct {
 	candidates map[string]*releasecheck.ReleaseCandidate
@@ -139,37 +89,38 @@ func newPluginOperationFixture(t *testing.T) *pluginOperationFixture {
 	return fixture
 }
 
-func (f *pluginOperationFixture) markSleep(pluginID string) {
+// makePluginCandidate 用桩插件组装一个托管候选：清单、行为、二进制与发行资料。
+func (f *pluginOperationFixture) makePluginCandidate(id string, version string, hosting types.SystemPluginHosting, brokenBinary bool, behavior map[string]any) {
 	f.t.Helper()
-	dataDir := filepath.Join(f.dataRoot, "system-plugins", pluginID)
-	if err := os.MkdirAll(dataDir, 0o755); err != nil {
-		f.t.Fatalf("mkdir data: %v", err)
+	binaryPayload, err := os.ReadFile(stubExecutable)
+	if err != nil {
+		f.t.Fatalf("read stub executable: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dataDir, "sleep-marker.txt"), []byte("sleep"), 0o644); err != nil {
-		f.t.Fatalf("write marker: %v", err)
-	}
-}
-
-func (f *pluginOperationFixture) makePluginCandidate(id string, version string, lifecycle string, brokenBinary bool) {
-	f.t.Helper()
-	binaryPayload := buildPluginBinary(f.t, lifecycle)
 	if brokenBinary {
 		binaryPayload = []byte("not an executable")
+	}
+	if behavior == nil {
+		behavior = map[string]any{"values": map[string]string{"value": id + "-value"}}
+	}
+	behaviorPayload, err := json.MarshalIndent(behavior, "", "  ")
+	if err != nil {
+		f.t.Fatalf("marshal behavior: %v", err)
 	}
 	contentDir := f.t.TempDir()
 	binaryPath := filepath.ToSlash(filepath.Join("binary", id+".exe"))
 	manifest := types.SystemPluginManifest{
+		ProtocolVersion:       systemplugin.ProtocolVersion,
 		ID:                    id,
 		Name:                  "Demo " + id,
 		Description:           "demo plugin",
 		Version:               version,
 		EucliBoxCompatibility: types.EucliBoxCompatibility{MinimumVersion: "0.1.0", MaximumVersionExclusive: "0.2.0"},
-		LifecycleType:         lifecycle,
+		Hosting:               hosting,
 		Binaries:              []types.SystemPluginBinary{{GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Path: binaryPath}},
-		PlaceholderInterfaces: []types.SystemPluginPlaceholderInterface{{ID: "value", DefaultName: "demo value", Description: "demo"}},
-	}
-	if lifecycle == types.SystemPluginLifecycleCachedHeartbeat {
-		manifest.HeartbeatIntervalMs = 60
+		Capabilities: []types.SystemPluginCapability{{
+			Type:       systemplugin.CapabilityPlaceholderValues,
+			Interfaces: []types.SystemPluginPlaceholderInterface{{ID: "value", DefaultName: "demo value", Description: "demo"}},
+		}},
 	}
 	manifestPayload, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -177,6 +128,7 @@ func (f *pluginOperationFixture) makePluginCandidate(id string, version string, 
 	}
 	files := map[string][]byte{
 		"manifest.json": manifestPayload,
+		"stub.json":     behaviorPayload,
 		binaryPath:      binaryPayload,
 		"config.json":   []byte("{}\n"),
 		"README.md":     []byte("# " + id + "\n"),
@@ -360,33 +312,6 @@ func isTerminalArtifactStatus(status string) bool {
 	return false
 }
 
-func buildPluginBinary(t *testing.T, lifecycle string) []byte {
-	t.Helper()
-	source := onDemandPluginSource
-	if lifecycle == types.SystemPluginLifecyclePersistent {
-		source = persistentPluginSource
-	}
-	dir := t.TempDir()
-	sourceFile := filepath.Join(dir, "main.go")
-	if err := os.WriteFile(sourceFile, []byte(source), 0o644); err != nil {
-		t.Fatalf("write source: %v", err)
-	}
-	exe := filepath.Join(dir, "plugin")
-	if runtime.GOOS == "windows" {
-		exe += ".exe"
-	}
-	cmd := exec.Command("go", "build", "-o", exe, sourceFile)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("go build plugin failed: %v\n%s", err, output)
-	}
-	payload, err := os.ReadFile(exe)
-	if err != nil {
-		t.Fatalf("read plugin binary: %v", err)
-	}
-	return payload
-}
-
 func zipPluginBytes(t *testing.T, root string) []byte {
 	t.Helper()
 	output, err := os.CreateTemp(t.TempDir(), "plugin-*.zip")
@@ -450,9 +375,22 @@ func (f *pluginOperationFixture) assertWorkRootEmpty(t *testing.T, pluginID stri
 	}
 }
 
+// waitResidentSession 等待插件的常驻通道被托管层建立。
+func (f *pluginOperationFixture) waitResidentSession(t *testing.T, pluginID string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if hasResidentSession(f.system, pluginID) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("resident session for %s did not start in time", pluginID)
+}
+
 func TestInstallPluginCompletesAndBecomesActive(t *testing.T) {
 	fixture := newPluginOperationFixture(t)
-	fixture.makePluginCandidate("demo", "0.1.0", types.SystemPluginLifecycleOnDemand, false)
+	fixture.makePluginCandidate("demo", "0.1.0", onDemandHosting(), false, nil)
 	state := fixture.installPluginAndWait(t, "demo")
 	if state.Status != types.ArtifactStatusActive || state.CurrentVersion != "0.1.0" || !state.Installed {
 		t.Fatalf("state = %#v", state)
@@ -464,7 +402,7 @@ func TestInstallPluginCompletesAndBecomesActive(t *testing.T) {
 	if len(plugins) != 1 || plugins[0].ID != "demo" || !plugins[0].Installed {
 		t.Fatalf("plugins = %#v", plugins)
 	}
-	values, problems := fixture.system.ResolvePlaceholderValues(context.Background())
+	values, problems := fixture.system.ResolvePlaceholderValues(context.Background(), []types.SystemPluginPlaceholderSource{testSource("demo", "value", "demo value")})
 	if len(problems) != 0 || len(values) != 1 || values[0].Value != "demo-value" {
 		t.Fatalf("values = %#v problems = %#v", values, problems)
 	}
@@ -472,10 +410,10 @@ func TestInstallPluginCompletesAndBecomesActive(t *testing.T) {
 
 func TestUpdatePluginClearsStaleFailureAfterSwitch(t *testing.T) {
 	fixture := newPluginOperationFixture(t)
-	fixture.makePluginCandidate("demo", "0.1.0", types.SystemPluginLifecycleOnDemand, false)
+	fixture.makePluginCandidate("demo", "0.1.0", onDemandHosting(), false, nil)
 	fixture.installPluginAndWait(t, "demo")
 	fixture.realSystem.setFailure("demo", "旧版本的失败记录")
-	fixture.makePluginCandidate("demo", "0.1.1", types.SystemPluginLifecycleOnDemand, false)
+	fixture.makePluginCandidate("demo", "0.1.1", onDemandHosting(), false, nil)
 	state := fixture.updatePluginAndWait(t, "demo")
 	if state.Status != types.ArtifactStatusActive || state.CurrentVersion != "0.1.1" {
 		t.Fatalf("state = %#v", state)
@@ -494,7 +432,7 @@ func TestUpdatePluginClearsStaleFailureAfterSwitch(t *testing.T) {
 
 func TestInstallPluginRejectsIncompatibleCandidateBeforeDownload(t *testing.T) {
 	fixture := newPluginOperationFixture(t)
-	fixture.makePluginCandidate("demo", "0.1.0", types.SystemPluginLifecycleOnDemand, false)
+	fixture.makePluginCandidate("demo", "0.1.0", onDemandHosting(), false, nil)
 	compatibility := types.EucliBoxCompatibility{MinimumVersion: "0.5.0", MaximumVersionExclusive: "0.6.0"}
 	fixture.candidates.candidates["demo"].Compatibility = &compatibility
 	state, err := fixture.system.InstallPlugin(context.Background(), "demo")
@@ -511,9 +449,9 @@ func TestInstallPluginRejectsIncompatibleCandidateBeforeDownload(t *testing.T) {
 
 func TestUpdatePluginRestoresPreviousVersionOnProbeFailure(t *testing.T) {
 	fixture := newPluginOperationFixture(t)
-	fixture.makePluginCandidate("demo", "0.1.0", types.SystemPluginLifecycleOnDemand, false)
+	fixture.makePluginCandidate("demo", "0.1.0", onDemandHosting(), false, nil)
 	fixture.installPluginAndWait(t, "demo")
-	fixture.makePluginCandidate("demo", "0.1.1", types.SystemPluginLifecycleOnDemand, true)
+	fixture.makePluginCandidate("demo", "0.1.1", onDemandHosting(), true, nil)
 	state := fixture.updatePluginAndWait(t, "demo")
 	if state.Status != types.ArtifactStatusActive || state.Error.Code != types.ArtifactErrorProbeFailed {
 		t.Fatalf("state = %#v", state)
@@ -530,7 +468,7 @@ func TestUpdatePluginRestoresPreviousVersionOnProbeFailure(t *testing.T) {
 // TestInstallPluginReclaimsWorkDirOnSuccess 验证操作进入成功终态后本轮工作目录立即回收。
 func TestInstallPluginReclaimsWorkDirOnSuccess(t *testing.T) {
 	fixture := newPluginOperationFixture(t)
-	fixture.makePluginCandidate("demo", "0.1.0", types.SystemPluginLifecycleOnDemand, false)
+	fixture.makePluginCandidate("demo", "0.1.0", onDemandHosting(), false, nil)
 	state := fixture.installPluginAndWait(t, "demo")
 	if state.Status != types.ArtifactStatusActive {
 		t.Fatalf("state = %#v", state)
@@ -544,9 +482,9 @@ func TestInstallPluginReclaimsWorkDirOnSuccess(t *testing.T) {
 // TestUpdatePluginReclaimsWorkDirOnProbeFailure 验证失败终态同样回收工作目录，失败记录保留供状态展示。
 func TestUpdatePluginReclaimsWorkDirOnProbeFailure(t *testing.T) {
 	fixture := newPluginOperationFixture(t)
-	fixture.makePluginCandidate("demo", "0.1.0", types.SystemPluginLifecycleOnDemand, false)
+	fixture.makePluginCandidate("demo", "0.1.0", onDemandHosting(), false, nil)
 	fixture.installPluginAndWait(t, "demo")
-	fixture.makePluginCandidate("demo", "0.1.1", types.SystemPluginLifecycleOnDemand, true)
+	fixture.makePluginCandidate("demo", "0.1.1", onDemandHosting(), true, nil)
 	state := fixture.updatePluginAndWait(t, "demo")
 	if state.Status != types.ArtifactStatusActive || state.Error.Code != types.ArtifactErrorProbeFailed {
 		t.Fatalf("state = %#v", state)
@@ -582,7 +520,7 @@ func TestPluginOperationSweepsStaleWorkDirs(t *testing.T) {
 		t.Fatalf("write unrelated file: %v", err)
 	}
 
-	fixture.makePluginCandidate("demo", "0.1.0", types.SystemPluginLifecycleOnDemand, false)
+	fixture.makePluginCandidate("demo", "0.1.0", onDemandHosting(), false, nil)
 	fixture.installPluginAndWait(t, "demo")
 
 	if _, err := os.Stat(staleDir); !errors.Is(err, os.ErrNotExist) {
@@ -598,16 +536,30 @@ func TestPluginOperationSweepsStaleWorkDirs(t *testing.T) {
 
 func TestUpdatePluginBlockedByOnDemandActivity(t *testing.T) {
 	fixture := newPluginOperationFixture(t)
-	fixture.makePluginCandidate("demo", "0.1.0", types.SystemPluginLifecycleOnDemand, false)
+	fixture.makePluginCandidate("demo", "0.1.0", onDemandHosting(), false, nil)
 	fixture.installPluginAndWait(t, "demo")
-	fixture.makePluginCandidate("demo", "0.1.1", types.SystemPluginLifecycleOnDemand, false)
-	fixture.markSleep("demo")
+	// 让当前已装版本的每次取值变慢，制造真实的活动窗口。
+	installedBehavior := map[string]any{"invokeDelayMs": 1500, "values": map[string]string{"value": "slow-value"}}
+	behaviorPayload, err := json.MarshalIndent(installedBehavior, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal installed behavior: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fixture.sourceDir, "demo", "versions", "0.1.0", "stub.json"), behaviorPayload, 0o644); err != nil {
+		t.Fatalf("write installed behavior: %v", err)
+	}
+	fixture.makePluginCandidate("demo", "0.1.1", onDemandHosting(), false, nil)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_, _ = fixture.system.ResolvePlaceholderValues(context.Background())
+		_, _ = fixture.system.ResolvePlaceholderValues(context.Background(), []types.SystemPluginPlaceholderSource{testSource("demo", "value", "demo value")})
 	}()
-	time.Sleep(300 * time.Millisecond)
+	deadline := time.Now().Add(5 * time.Second)
+	for fixture.realSystem.activityFor("demo").state().ActiveRequests == 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("解析活动没有开始")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	state, err := fixture.system.UpdatePlugin(context.Background(), "demo")
 	if err != nil {
 		t.Fatalf("UpdatePlugin() error = %v", err)
@@ -618,25 +570,25 @@ func TestUpdatePluginBlockedByOnDemandActivity(t *testing.T) {
 	<-done
 }
 
-func TestUpdatePluginStopsPersistentProcessAndRestarts(t *testing.T) {
+func TestUpdatePluginStopsResidentSessionAndRestarts(t *testing.T) {
 	fixture := newPluginOperationFixture(t)
-	fixture.makePluginCandidate("demo", "0.1.0", types.SystemPluginLifecyclePersistent, false)
+	fixture.makePluginCandidate("demo", "0.1.0", residentHosting(types.SystemPluginStartBoot), false, nil)
 	if err := fixture.system.Start(context.Background()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
 	fixture.installPluginAndWait(t, "demo")
-	fixture.waitPersistentProcess(t, "demo")
-	fixture.makePluginCandidate("demo", "0.1.1", types.SystemPluginLifecyclePersistent, false)
+	fixture.waitResidentSession(t, "demo")
+	fixture.makePluginCandidate("demo", "0.1.1", residentHosting(types.SystemPluginStartBoot), false, nil)
 	state := fixture.updatePluginAndWait(t, "demo")
 	if state.Status != types.ArtifactStatusActive || state.CurrentVersion != "0.1.1" {
 		t.Fatalf("state = %#v", state)
 	}
-	fixture.waitPersistentProcess(t, "demo")
+	fixture.waitResidentSession(t, "demo")
 }
 
 func TestPluginInstallStateRecoversInterruptedSwitch(t *testing.T) {
 	fixture := newPluginOperationFixture(t)
-	fixture.makePluginCandidate("demo", "0.1.0", types.SystemPluginLifecycleOnDemand, false)
+	fixture.makePluginCandidate("demo", "0.1.0", onDemandHosting(), false, nil)
 	fixture.installPluginAndWait(t, "demo")
 	record, err := release.NewOperationRecord("interrupted-op", types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: "demo"}, release.OperationActionUpdate, "0.1.1", filepath.Join(fixture.sourceDir, "demo", "work", "interrupted-op"))
 	if err != nil {
@@ -656,25 +608,9 @@ func TestPluginInstallStateRecoversInterruptedSwitch(t *testing.T) {
 	}
 }
 
-// waitPersistentProcess 等待插件的 persistent 进程被生命周期恢复启动。
-func (f *pluginOperationFixture) waitPersistentProcess(t *testing.T, pluginID string) {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		f.realSystem.mu.Lock()
-		process := f.realSystem.persistent[pluginID]
-		f.realSystem.mu.Unlock()
-		if process != nil {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatalf("persistent process for %s did not start in time", pluginID)
-}
-
 func TestPluginActivityReportsOnDemand(t *testing.T) {
 	fixture := newPluginOperationFixture(t)
-	fixture.makePluginCandidate("demo", "0.1.0", types.SystemPluginLifecycleOnDemand, false)
+	fixture.makePluginCandidate("demo", "0.1.0", onDemandHosting(), false, nil)
 	fixture.installPluginAndWait(t, "demo")
 	activity, err := fixture.system.PluginActivity(context.Background(), "demo")
 	if err != nil {
@@ -689,7 +625,7 @@ func TestPluginActivityReportsOnDemand(t *testing.T) {
 // 不再等待整个下载与切换流程结束。
 func TestInstallPluginReturnsRunningStateImmediately(t *testing.T) {
 	fixture := newPluginOperationFixture(t)
-	fixture.makePluginCandidate("demo", "0.1.0", types.SystemPluginLifecycleOnDemand, false)
+	fixture.makePluginCandidate("demo", "0.1.0", onDemandHosting(), false, nil)
 	fixture.holdDownloads()
 	state, err := fixture.system.InstallPlugin(context.Background(), "demo")
 	if err != nil {
@@ -711,7 +647,7 @@ func TestInstallPluginReturnsRunningStateImmediately(t *testing.T) {
 // TestPluginInstallProgressReported 验证下载阶段的已下载字节与总量被状态查询上报。
 func TestPluginInstallProgressReported(t *testing.T) {
 	fixture := newPluginOperationFixture(t)
-	fixture.makePluginCandidate("demo", "0.1.0", types.SystemPluginLifecycleOnDemand, false)
+	fixture.makePluginCandidate("demo", "0.1.0", onDemandHosting(), false, nil)
 	fixture.setSlowDownload(6, 30*time.Millisecond)
 	if _, err := fixture.system.InstallPlugin(context.Background(), "demo"); err != nil {
 		t.Fatalf("InstallPlugin() error = %v", err)
@@ -748,7 +684,7 @@ func TestPluginInstallProgressReported(t *testing.T) {
 // 工作目录清理干净，且同一条目可重新安装成功。
 func TestCancelPluginOperationDuringDownload(t *testing.T) {
 	fixture := newPluginOperationFixture(t)
-	fixture.makePluginCandidate("demo", "0.1.0", types.SystemPluginLifecycleOnDemand, false)
+	fixture.makePluginCandidate("demo", "0.1.0", onDemandHosting(), false, nil)
 	fixture.holdDownloads()
 	state, err := fixture.system.InstallPlugin(context.Background(), "demo")
 	if err != nil {
@@ -776,10 +712,10 @@ func TestCancelPluginOperationDuringDownload(t *testing.T) {
 // TestCancelPluginOperationRejectedAfterSwitch 验证进入切换阶段后拒绝取消。
 func TestCancelPluginOperationRejectedAfterSwitch(t *testing.T) {
 	fixture := newPluginOperationFixture(t)
-	fixture.makePluginCandidate("demo", "0.1.0", types.SystemPluginLifecycleOnDemand, false)
+	fixture.makePluginCandidate("demo", "0.1.0", onDemandHosting(), false, nil)
 	fixture.installPluginAndWait(t, "demo")
 	activity := fixture.realSystem.activityFor("demo")
-	if code := activity.beginUpdate("manual-switch-op", nil, fixture.realSystem.updateWaitTimeout); code != "" {
+	if code := activity.beginUpdate("manual-switch-op", func() {}, fixture.realSystem.updateWaitTimeout); code != "" {
 		t.Fatalf("beginUpdate() = %s", code)
 	}
 	defer activity.endUpdate()
@@ -797,7 +733,7 @@ func TestCancelPluginOperationRejectedAfterSwitch(t *testing.T) {
 // 请求 context 取消后，后台安装继续推进到成功终态。
 func TestInstallPluginContinuesAfterRequestContextCancelled(t *testing.T) {
 	fixture := newPluginOperationFixture(t)
-	fixture.makePluginCandidate("demo", "0.1.0", types.SystemPluginLifecycleOnDemand, false)
+	fixture.makePluginCandidate("demo", "0.1.0", onDemandHosting(), false, nil)
 	fixture.setSlowDownload(4, 20*time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
 	if _, err := fixture.system.InstallPlugin(ctx, "demo"); err != nil {
@@ -813,8 +749,8 @@ func TestInstallPluginContinuesAfterRequestContextCancelled(t *testing.T) {
 // TestConcurrentInstallsOfDifferentPlugins 验证不同插件的安装各自独立、可同时进行。
 func TestConcurrentInstallsOfDifferentPlugins(t *testing.T) {
 	fixture := newPluginOperationFixture(t)
-	fixture.makePluginCandidate("alpha", "0.1.0", types.SystemPluginLifecycleOnDemand, false)
-	fixture.makePluginCandidate("beta", "0.1.0", types.SystemPluginLifecycleOnDemand, false)
+	fixture.makePluginCandidate("alpha", "0.1.0", onDemandHosting(), false, nil)
+	fixture.makePluginCandidate("beta", "0.1.0", onDemandHosting(), false, nil)
 	fixture.holdDownloads()
 	if _, err := fixture.system.InstallPlugin(context.Background(), "alpha"); err != nil {
 		t.Fatalf("InstallPlugin(alpha) error = %v", err)
@@ -836,12 +772,12 @@ func TestConcurrentInstallsOfDifferentPlugins(t *testing.T) {
 // 运行中的任务与落盘的终态记录。
 func TestListPluginOperationsReturnsRunningAndTerminal(t *testing.T) {
 	fixture := newPluginOperationFixture(t)
-	fixture.makePluginCandidate("demo", "0.1.0", types.SystemPluginLifecycleOnDemand, false)
+	fixture.makePluginCandidate("demo", "0.1.0", onDemandHosting(), false, nil)
 	fixture.installPluginAndWait(t, "demo")
-	fixture.makePluginCandidate("demo", "0.1.1", types.SystemPluginLifecycleOnDemand, true)
+	fixture.makePluginCandidate("demo", "0.1.1", onDemandHosting(), true, nil)
 	fixture.updatePluginAndWait(t, "demo")
 
-	fixture.makePluginCandidate("slow", "0.1.0", types.SystemPluginLifecycleOnDemand, false)
+	fixture.makePluginCandidate("slow", "0.1.0", onDemandHosting(), false, nil)
 	fixture.holdDownloads()
 	if _, err := fixture.system.InstallPlugin(context.Background(), "slow"); err != nil {
 		t.Fatalf("InstallPlugin(slow) error = %v", err)
@@ -870,7 +806,7 @@ func TestListPluginOperationsReturnsRunningAndTerminal(t *testing.T) {
 // 且不会误触中断恢复清理运行中的工作目录。
 func TestInstallPluginRejectsDuplicateWhileRunning(t *testing.T) {
 	fixture := newPluginOperationFixture(t)
-	fixture.makePluginCandidate("demo", "0.1.0", types.SystemPluginLifecycleOnDemand, false)
+	fixture.makePluginCandidate("demo", "0.1.0", onDemandHosting(), false, nil)
 	fixture.holdDownloads()
 	first, err := fixture.system.InstallPlugin(context.Background(), "demo")
 	if err != nil {
@@ -893,5 +829,3 @@ func TestInstallPluginRejectsDuplicateWhileRunning(t *testing.T) {
 		t.Fatalf("state = %#v", terminal)
 	}
 }
-
-var _ = strings.TrimSpace

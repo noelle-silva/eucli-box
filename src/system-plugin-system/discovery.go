@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"eucli-box/pkg/release"
+	"eucli-box/pkg/systemplugin"
 	"eucli-box/pkg/types"
 )
 
@@ -29,12 +30,16 @@ type pluginRecord struct {
 }
 
 func (s *system) ListPlugins(ctx context.Context) ([]types.SystemPluginSummary, error) {
-	records, err := s.discover(ctx)
+	index, err := s.discover(ctx)
 	if err != nil {
 		return nil, err
 	}
-	summaries := make([]types.SystemPluginSummary, 0, len(records))
-	for _, record := range records {
+	summaries := make([]types.SystemPluginSummary, 0, len(index.records))
+	for _, record := range index.records {
+		statusMessage := record.statusMessage
+		if failure := s.getFailure(record.manifest.ID); failure != "" && record.status == types.SystemPluginStatusActive {
+			statusMessage = failure
+		}
 		summaries = append(summaries, types.SystemPluginSummary{
 			ID:                    record.manifest.ID,
 			SourceID:              record.sourceID,
@@ -43,9 +48,9 @@ func (s *system) ListPlugins(ctx context.Context) ([]types.SystemPluginSummary, 
 			Version:               record.manifest.Version,
 			EucliBoxCompatibility: record.manifest.EucliBoxCompatibility,
 			Compatibility:         record.compatibility,
-			LifecycleType:         record.manifest.LifecycleType,
+			Hosting:               record.manifest.Hosting,
 			Status:                record.status,
-			StatusMessage:         record.statusMessage,
+			StatusMessage:         statusMessage,
 			Installed:             true,
 			CurrentVersion:        record.manifest.Version,
 			InstallStatus:         s.installStatusFor(record),
@@ -57,24 +62,56 @@ func (s *system) ListPlugins(ctx context.Context) ([]types.SystemPluginSummary, 
 }
 
 func (s *system) LoadPlugin(ctx context.Context, pluginID string) (types.SystemPluginView, error) {
-	record, err := s.findRecord(ctx, pluginID)
+	index, err := s.discover(ctx)
 	if err != nil {
 		return types.SystemPluginView{}, err
 	}
+	record, ok := index.find(pluginID)
+	if !ok {
+		return types.SystemPluginView{}, pluginInvalid("system plugin was not found", nil)
+	}
 	view := record.view()
+	if failure := s.getFailure(record.manifest.ID); failure != "" && record.status == types.SystemPluginStatusActive {
+		view.StatusMessage = failure
+	}
 	view.Active = s.activityFor(record.locatorID()).state().Active
 	view.InstallStatus = s.installStatusFor(record)
 	return view, nil
 }
 
-func (s *system) discover(ctx context.Context) ([]pluginRecord, error) {
+func (s *system) discover(ctx context.Context) (*pluginIndex, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, pluginReadFailed("read cancelled", err)
 	}
+	var (
+		records []pluginRecord
+		err     error
+	)
 	if s.managedPrograms() {
-		return s.discoverManaged(ctx)
+		records, err = s.discoverManaged(ctx)
+	} else {
+		records, err = s.discoverDev(ctx)
 	}
-	return s.discoverDev(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return buildPluginIndex(records), nil
+}
+
+func (s *system) findRecord(ctx context.Context, pluginID string) (pluginRecord, error) {
+	pluginID = strings.TrimSpace(pluginID)
+	if pluginID == "" {
+		return pluginRecord{}, pluginInvalid("system plugin id is required", nil)
+	}
+	index, err := s.discover(ctx)
+	if err != nil {
+		return pluginRecord{}, err
+	}
+	record, ok := index.find(pluginID)
+	if !ok {
+		return pluginRecord{}, pluginInvalid("system plugin was not found", nil)
+	}
+	return record, nil
 }
 
 // discoverDev 是普通开发启动的插件发现：扫描 SourceDir 一级子目录。
@@ -99,9 +136,7 @@ func (s *system) discoverDev(ctx context.Context) ([]pluginRecord, error) {
 			records = append(records, record)
 		}
 	}
-	sort.SliceStable(records, func(i, j int) bool {
-		return records[i].displayName() < records[j].displayName()
-	})
+	sortRecords(records)
 	return records, nil
 }
 
@@ -142,10 +177,14 @@ func (s *system) discoverManaged(ctx context.Context) ([]pluginRecord, error) {
 			records = append(records, record)
 		}
 	}
-	sort.SliceStable(records, func(i, j int) bool {
+	sortRecords(records)
+	return records, nil
+}
+
+func sortRecords(records []pluginRecord) {
+	sort.SliceStable(records, func(i int, j int) bool {
 		return records[i].displayName() < records[j].displayName()
 	})
-	return records, nil
 }
 
 func (s *system) loadRecord(ctx context.Context, directory string, sourceID string) (pluginRecord, bool) {
@@ -209,17 +248,17 @@ func (s *system) buildRecord(ctx context.Context, manifest types.SystemPluginMan
 		record.defaultConfig = defaultConfig
 	}
 	if manifest.ID != "" {
-		userConfig, err := s.loadUserConfig(ctx, manifest.ID)
-		if err != nil {
-			record.markUnavailable(err.Error())
-		} else {
-			record.userConfig = userConfig
-		}
 		state, err := s.loadPluginState(ctx, manifest.ID)
 		if err != nil {
 			record.markUnavailable(err.Error())
 		} else {
 			record.enabled = state.Enabled
+		}
+		userConfig, err := s.loadUserConfig(ctx, manifest.ID)
+		if err != nil {
+			record.markUnavailable(err.Error())
+		} else {
+			record.userConfig = userConfig
 		}
 	}
 	if executable, err := selectExecutable(directory, manifest.Binaries); err != nil {
@@ -227,27 +266,7 @@ func (s *system) buildRecord(ctx context.Context, manifest types.SystemPluginMan
 	} else {
 		record.executable = executable
 	}
-	if failure := s.getFailure(manifest.ID); failure != "" {
-		record.markUnavailable(failure)
-	}
 	return record
-}
-
-func (s *system) findRecord(ctx context.Context, pluginID string) (pluginRecord, error) {
-	pluginID = strings.TrimSpace(pluginID)
-	if pluginID == "" {
-		return pluginRecord{}, pluginInvalid("system plugin id is required", nil)
-	}
-	records, err := s.discover(ctx)
-	if err != nil {
-		return pluginRecord{}, err
-	}
-	for _, record := range records {
-		if record.locatorID() == pluginID {
-			return record, nil
-		}
-	}
-	return pluginRecord{}, pluginInvalid("system plugin was not found", nil)
 }
 
 func normalizeManifest(manifest types.SystemPluginManifest) types.SystemPluginManifest {
@@ -255,21 +274,30 @@ func normalizeManifest(manifest types.SystemPluginManifest) types.SystemPluginMa
 	manifest.Name = strings.TrimSpace(manifest.Name)
 	manifest.Description = strings.TrimSpace(manifest.Description)
 	manifest.Version = strings.TrimSpace(manifest.Version)
-	manifest.LifecycleType = strings.TrimSpace(manifest.LifecycleType)
+	manifest.Hosting.Start = strings.TrimSpace(manifest.Hosting.Start)
+	manifest.Hosting.Restart = strings.TrimSpace(manifest.Hosting.Restart)
 	for index := range manifest.Binaries {
 		manifest.Binaries[index].GOOS = strings.TrimSpace(manifest.Binaries[index].GOOS)
 		manifest.Binaries[index].GOARCH = strings.TrimSpace(manifest.Binaries[index].GOARCH)
 		manifest.Binaries[index].Path = strings.TrimSpace(manifest.Binaries[index].Path)
 	}
-	for index := range manifest.PlaceholderInterfaces {
-		manifest.PlaceholderInterfaces[index].ID = strings.TrimSpace(manifest.PlaceholderInterfaces[index].ID)
-		manifest.PlaceholderInterfaces[index].DefaultName = strings.TrimSpace(manifest.PlaceholderInterfaces[index].DefaultName)
-		manifest.PlaceholderInterfaces[index].Description = strings.TrimSpace(manifest.PlaceholderInterfaces[index].Description)
+	for capabilityIndex := range manifest.Capabilities {
+		capability := &manifest.Capabilities[capabilityIndex]
+		capability.Type = strings.TrimSpace(capability.Type)
+		for interfaceIndex := range capability.Interfaces {
+			item := &capability.Interfaces[interfaceIndex]
+			item.ID = strings.TrimSpace(item.ID)
+			item.DefaultName = strings.TrimSpace(item.DefaultName)
+			item.Description = strings.TrimSpace(item.Description)
+		}
 	}
 	return manifest
 }
 
 func validateManifestCore(manifest types.SystemPluginManifest) error {
+	if manifest.ProtocolVersion != systemplugin.ProtocolVersion {
+		return pluginInvalid("system plugin protocolVersion is not supported", nil)
+	}
 	if manifest.ID == "" {
 		return pluginInvalid("system plugin manifest id is required", nil)
 	}
@@ -279,27 +307,43 @@ func validateManifestCore(manifest types.SystemPluginManifest) error {
 	if manifest.Description == "" {
 		return pluginInvalid("system plugin manifest description is required", nil)
 	}
-	if manifest.LifecycleType != types.SystemPluginLifecyclePersistent && manifest.LifecycleType != types.SystemPluginLifecycleOnDemand && manifest.LifecycleType != types.SystemPluginLifecycleCachedHeartbeat {
-		return pluginInvalid("system plugin lifecycleType must be persistent, on-demand, or cached-heartbeat", nil)
+	if manifest.Hosting.Start != types.SystemPluginStartBoot && manifest.Hosting.Start != types.SystemPluginStartLazy {
+		return pluginInvalid("system plugin hosting start must be boot or lazy", nil)
 	}
-	if manifest.LifecycleType == types.SystemPluginLifecycleCachedHeartbeat && manifest.HeartbeatIntervalMs <= 0 {
-		return pluginInvalid("cached-heartbeat system plugin heartbeatIntervalMs must be positive", nil)
+	if manifest.Hosting.Restart != types.SystemPluginRestartOnFailure && manifest.Hosting.Restart != types.SystemPluginRestartNever {
+		return pluginInvalid("system plugin hosting restart must be on-failure or never", nil)
 	}
-	if manifest.LifecycleType != types.SystemPluginLifecycleCachedHeartbeat && manifest.HeartbeatIntervalMs < 0 {
-		return pluginInvalid("system plugin heartbeatIntervalMs cannot be negative", nil)
+	if manifest.Hosting.StopTimeoutMs <= 0 {
+		return pluginInvalid("system plugin hosting stopTimeoutMs must be positive", nil)
+	}
+	if !manifest.Hosting.Resident && manifest.Hosting.Start != types.SystemPluginStartLazy {
+		return pluginInvalid("system plugin hosting start must be lazy when the plugin is not resident", nil)
 	}
 	if len(manifest.Binaries) == 0 {
 		return pluginInvalid("system plugin manifest must declare at least one binary", nil)
 	}
-	seenInterfaces := map[string]struct{}{}
-	for _, item := range manifest.PlaceholderInterfaces {
-		if item.ID == "" || item.DefaultName == "" {
-			return pluginInvalid("system plugin placeholder interface id and defaultName are required", nil)
+	seenCapabilities := map[string]struct{}{}
+	for _, capability := range manifest.Capabilities {
+		if capability.Type == "" {
+			return pluginInvalid("system plugin capability type is required", nil)
 		}
-		if _, ok := seenInterfaces[item.ID]; ok {
-			return pluginInvalid("system plugin placeholder interface id must be unique", nil)
+		if _, ok := seenCapabilities[capability.Type]; ok {
+			return pluginInvalid("system plugin capability type must be unique", nil)
 		}
-		seenInterfaces[item.ID] = struct{}{}
+		seenCapabilities[capability.Type] = struct{}{}
+		if capability.Type == systemplugin.CapabilityPlaceholderValues && len(capability.Interfaces) == 0 {
+			return pluginInvalid("system plugin placeholder-values capability must declare at least one interface", nil)
+		}
+		seenInterfaces := map[string]struct{}{}
+		for _, item := range capability.Interfaces {
+			if item.ID == "" || item.DefaultName == "" {
+				return pluginInvalid("system plugin capability interface id and defaultName are required", nil)
+			}
+			if _, ok := seenInterfaces[item.ID]; ok {
+				return pluginInvalid("system plugin capability interface id must be unique", nil)
+			}
+			seenInterfaces[item.ID] = struct{}{}
+		}
 	}
 	return nil
 }
@@ -345,7 +389,7 @@ func (r pluginRecord) view() types.SystemPluginView {
 		Version:               r.manifest.Version,
 		EucliBoxCompatibility: r.manifest.EucliBoxCompatibility,
 		Compatibility:         r.compatibility,
-		LifecycleType:         r.manifest.LifecycleType,
+		Hosting:               r.manifest.Hosting,
 		Status:                r.status,
 		StatusMessage:         r.statusMessage,
 		Installed:             true,
@@ -370,7 +414,7 @@ func (s *system) installStatusFor(record pluginRecord) string {
 	return types.ArtifactStatusUnavailable
 }
 
-// managedPrograms 表示插件程序由外部程序根目录托管（阶段四受托运行模式）。
+// managedPrograms 表示插件程序由外部程序根目录托管（受托运行模式）。
 func (s *system) managedPrograms() bool {
 	return s.programRoot != ""
 }
@@ -409,9 +453,49 @@ func (r pluginRecord) displayName() string {
 	return r.sourceID
 }
 
+// placeholderInterfaces 返回插件声明的占位符接口；未声明该能力时为空。
+func (r pluginRecord) placeholderInterfaces() []types.SystemPluginPlaceholderInterface {
+	return manifestPlaceholderInterfaces(r.manifest)
+}
+
+// manifestPlaceholderInterfaces 从清单能力中取占位符接口声明。
+func manifestPlaceholderInterfaces(manifest types.SystemPluginManifest) []types.SystemPluginPlaceholderInterface {
+	for _, capability := range manifest.Capabilities {
+		if capability.Type == systemplugin.CapabilityPlaceholderValues {
+			return capability.Interfaces
+		}
+	}
+	return nil
+}
+
+// declaredPlaceholderInterface 返回插件声明的某个占位符接口。
+func (r pluginRecord) declaredPlaceholderInterface(interfaceID string) (types.SystemPluginPlaceholderInterface, bool) {
+	interfaceID = strings.TrimSpace(interfaceID)
+	for _, item := range r.placeholderInterfaces() {
+		if item.ID == interfaceID {
+			return item, true
+		}
+	}
+	return types.SystemPluginPlaceholderInterface{}, false
+}
+
+// wireCapabilities 把清单能力转换为握手声明：只交换类型与接口标识。
+func (r pluginRecord) wireCapabilities() []systemplugin.Capability {
+	out := make([]systemplugin.Capability, 0, len(r.manifest.Capabilities))
+	for _, capability := range r.manifest.Capabilities {
+		interfaces := make([]string, 0, len(capability.Interfaces))
+		for _, item := range capability.Interfaces {
+			interfaces = append(interfaces, item.ID)
+		}
+		out = append(out, systemplugin.Capability{Type: capability.Type, Interfaces: interfaces})
+	}
+	return out
+}
+
 func (r pluginRecord) interfaceViews() []types.SystemPluginPlaceholderInterfaceView {
-	out := make([]types.SystemPluginPlaceholderInterfaceView, 0, len(r.manifest.PlaceholderInterfaces))
-	for _, item := range r.manifest.PlaceholderInterfaces {
+	declared := r.placeholderInterfaces()
+	out := make([]types.SystemPluginPlaceholderInterfaceView, 0, len(declared))
+	for _, item := range declared {
 		out = append(out, types.SystemPluginPlaceholderInterfaceView{ID: item.ID, DefaultName: item.DefaultName, EffectiveName: r.effectiveName(item), Description: item.Description})
 	}
 	return out

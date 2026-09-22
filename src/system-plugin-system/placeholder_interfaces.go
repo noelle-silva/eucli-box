@@ -9,7 +9,7 @@ import (
 )
 
 func (s *system) AvailablePlaceholderInterfaces(ctx context.Context, library types.PlaceholderLibrary) ([]types.SystemPluginAvailablePlaceholderInterface, error) {
-	records, err := s.discover(ctx)
+	index, err := s.discover(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -20,11 +20,11 @@ func (s *system) AvailablePlaceholderInterfaces(ctx context.Context, library typ
 		}
 	}
 	out := []types.SystemPluginAvailablePlaceholderInterface{}
-	for _, record := range records {
+	for _, record := range index.records {
 		if record.status != types.SystemPluginStatusActive {
 			continue
 		}
-		for _, item := range record.manifest.PlaceholderInterfaces {
+		for _, item := range record.placeholderInterfaces() {
 			key := record.manifest.ID + "\x00" + item.ID
 			if _, ok := existing[key]; ok {
 				continue
@@ -49,7 +49,7 @@ func (s *system) CreatePlaceholderFromInterface(ctx context.Context, library typ
 			return library, nil
 		}
 	}
-	for _, item := range record.manifest.PlaceholderInterfaces {
+	for _, item := range record.placeholderInterfaces() {
 		if item.ID != interfaceID {
 			continue
 		}

@@ -1,55 +1,48 @@
 package systemplugin
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
-	"io"
-	"os"
-	"os/exec"
 	"strings"
 	"sync"
-	"time"
 
+	"eucli-box/pkg/systemplugin"
 	"eucli-box/pkg/types"
 )
 
-const pluginPlaceholderAction = "resolve_placeholders"
-
-type persistentProcess struct {
-	cmd     *exec.Cmd
-	stdin   io.WriteCloser
-	stdout  *json.Decoder
-	timeout time.Duration
-	mu      sync.Mutex
+// placeholderSourceGroup 是一次定向派发的分组：同一插件的被引用接口合并成一次调用。
+type placeholderSourceGroup struct {
+	pluginID string
+	sources  []types.SystemPluginPlaceholderSource
 }
 
-func (s *system) ResolvePlaceholderValues(ctx context.Context) ([]types.SystemPluginPlaceholderValue, []types.PlaceholderProblem) {
-	records, err := s.discover(ctx)
+// ResolvePlaceholderValues 按来源点名取值：只联系被引用占位符的所属插件与接口，
+// 未引用的插件不做任何调用。不同插件之间并行，单插件失败不阻断其他插件。
+func (s *system) ResolvePlaceholderValues(ctx context.Context, sources []types.SystemPluginPlaceholderSource) ([]types.SystemPluginPlaceholderValue, []types.PlaceholderProblem) {
+	index, err := s.discover(ctx)
 	if err != nil {
 		return nil, nil
 	}
-	type recordResult struct {
-		index    int
+	groups := groupPlaceholderSources(sources)
+	type groupResult struct {
+		position int
 		values   []types.SystemPluginPlaceholderValue
 		problems []types.PlaceholderProblem
 	}
-	results := make(chan recordResult, len(records))
+	results := make(chan groupResult, len(groups))
 	var wait sync.WaitGroup
-	for index, record := range records {
+	for position, group := range groups {
 		wait.Add(1)
-		go func(index int, record pluginRecord) {
+		go func(position int, group placeholderSourceGroup) {
 			defer wait.Done()
-			values, problems := s.resolveRecordValues(ctx, record)
-			results <- recordResult{index: index, values: values, problems: problems}
-		}(index, record)
+			values, problems := s.resolveGroup(ctx, index, group)
+			results <- groupResult{position: position, values: values, problems: problems}
+		}(position, group)
 	}
 	wait.Wait()
 	close(results)
-	ordered := make([]recordResult, len(records))
+	ordered := make([]groupResult, len(groups))
 	for result := range results {
-		ordered[result.index] = result
+		ordered[result.position] = result
 	}
 	values := []types.SystemPluginPlaceholderValue{}
 	problems := []types.PlaceholderProblem{}
@@ -60,262 +53,142 @@ func (s *system) ResolvePlaceholderValues(ctx context.Context) ([]types.SystemPl
 	return values, problems
 }
 
-func (s *system) resolveRecordValues(ctx context.Context, record pluginRecord) ([]types.SystemPluginPlaceholderValue, []types.PlaceholderProblem) {
+// PlaceholderSourceProblems 只做静态事实核对：所属缺失、接口未声明、插件停用或不可用；
+// 不启动任何插件进程，不产生真实调用。
+func (s *system) PlaceholderSourceProblems(ctx context.Context, sources []types.SystemPluginPlaceholderSource) []types.PlaceholderProblem {
+	index, err := s.discover(ctx)
+	if err != nil {
+		return nil
+	}
+	problems := []types.PlaceholderProblem{}
+	for _, source := range sources {
+		pluginID := strings.TrimSpace(source.PluginID)
+		interfaceID := strings.TrimSpace(source.InterfaceID)
+		if pluginID == "" || interfaceID == "" {
+			continue
+		}
+		record, ok := index.find(pluginID)
+		if !ok {
+			problems = append(problems, types.PlaceholderProblem{Name: source.Name, Type: types.PlaceholderProblemPluginFailed})
+			continue
+		}
+		item, declared := record.declaredPlaceholderInterface(interfaceID)
+		if !declared {
+			problems = append(problems, types.PlaceholderProblem{Name: source.Name, Type: types.PlaceholderProblemPluginFailed})
+			continue
+		}
+		switch {
+		case !record.enabled:
+			problems = append(problems, types.PlaceholderProblem{Name: record.effectiveName(item), Type: types.PlaceholderProblemPluginDisabled})
+		case record.status != types.SystemPluginStatusActive:
+			problems = append(problems, types.PlaceholderProblem{Name: record.effectiveName(item), Type: types.PlaceholderProblemPluginFailed})
+		}
+	}
+	return problems
+}
+
+func groupPlaceholderSources(sources []types.SystemPluginPlaceholderSource) []placeholderSourceGroup {
+	groupPositions := map[string]int{}
+	groups := []placeholderSourceGroup{}
+	seen := map[string]struct{}{}
+	for _, source := range sources {
+		pluginID := strings.TrimSpace(source.PluginID)
+		interfaceID := strings.TrimSpace(source.InterfaceID)
+		if pluginID == "" || interfaceID == "" {
+			continue
+		}
+		key := placeholderOwnerKey(pluginID, interfaceID)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		position, ok := groupPositions[pluginID]
+		if !ok {
+			position = len(groups)
+			groupPositions[pluginID] = position
+			groups = append(groups, placeholderSourceGroup{pluginID: pluginID})
+		}
+		groups[position].sources = append(groups[position].sources, types.SystemPluginPlaceholderSource{PluginID: pluginID, InterfaceID: interfaceID, Name: strings.TrimSpace(source.Name)})
+	}
+	return groups
+}
+
+func (s *system) resolveGroup(ctx context.Context, index *pluginIndex, group placeholderSourceGroup) ([]types.SystemPluginPlaceholderValue, []types.PlaceholderProblem) {
+	record, ok := index.find(group.pluginID)
+	if !ok {
+		return nil, failedProblemsForSources(group.sources)
+	}
+	requested := make([]types.SystemPluginPlaceholderSource, 0, len(group.sources))
+	problems := []types.PlaceholderProblem{}
+	for _, source := range group.sources {
+		if _, declared := record.declaredPlaceholderInterface(source.InterfaceID); !declared {
+			problems = append(problems, types.PlaceholderProblem{Name: source.Name, Type: types.PlaceholderProblemPluginFailed})
+			continue
+		}
+		requested = append(requested, source)
+	}
+	if len(requested) == 0 {
+		return nil, problems
+	}
 	disabled, blocked := s.acquireServing(record)
 	if disabled {
-		return nil, pluginDisabledProblems(record)
+		return nil, append(problems, problemsForSources(record, requested, types.PlaceholderProblemPluginDisabled)...)
 	}
 	if blocked != "" {
 		s.setFailure(record.manifest.ID, blocked)
-		return nil, pluginProblems(record)
+		return nil, append(problems, problemsForSources(record, requested, types.PlaceholderProblemPluginFailed)...)
 	}
 	defer s.releaseServing(record.manifest.ID)
-	if record.manifest.LifecycleType == types.SystemPluginLifecycleCachedHeartbeat {
-		resolved, ok := s.cachedValuesForRecord(record)
-		if !ok {
-			s.setFailure(record.manifest.ID, "cached system plugin value is not ready")
-			return nil, pluginProblems(record)
-		}
-		return resolved, nil
+
+	interfaceIDs := make([]string, 0, len(requested))
+	for _, source := range requested {
+		interfaceIDs = append(interfaceIDs, source.InterfaceID)
 	}
-	resolved, err := s.resolveRecord(ctx, record)
+	message, err := s.invokeCapability(ctx, record, systemplugin.CapabilityPlaceholderValues, interfaceIDs)
 	if err != nil {
 		s.setFailure(record.manifest.ID, err.Error())
-		return nil, pluginProblems(record)
+		return nil, append(problems, problemsForSources(record, requested, types.PlaceholderProblemPluginFailed)...)
+	}
+	if message.Status != systemplugin.StatusSuccess {
+		s.setFailure(record.manifest.ID, nonEmpty(message.Error, "系统插件返回失败状态"))
+		return nil, append(problems, problemsForSources(record, requested, types.PlaceholderProblemPluginFailed)...)
 	}
 	s.setFailure(record.manifest.ID, "")
-	return resolved, nil
-}
-
-func (s *system) resolveRecord(ctx context.Context, record pluginRecord) ([]types.SystemPluginPlaceholderValue, error) {
-	request, err := s.requestForRecord(record)
-	if err != nil {
-		return nil, err
-	}
-	var response types.SystemPluginPlaceholderResponse
-	if record.manifest.LifecycleType == types.SystemPluginLifecyclePersistent {
-		process, err := s.ensurePersistentProcess(ctx, record)
-		if err != nil {
-			return nil, err
-		}
-		response, err = process.request(ctx, request)
-		if err != nil {
-			s.dropPersistentProcess(record.manifest.ID)
-			return nil, err
-		}
-	} else {
-		response, err = s.requestOnDemand(ctx, record, request)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if response.Status != "success" {
-		return nil, pluginExecutionFailed(nonEmpty(response.Error, "system plugin returned failed status"), nil)
-	}
-	out := make([]types.SystemPluginPlaceholderValue, 0, len(record.manifest.PlaceholderInterfaces))
-	for _, item := range record.manifest.PlaceholderInterfaces {
-		value, ok := response.Values[item.ID]
+	values := make([]types.SystemPluginPlaceholderValue, 0, len(requested))
+	for _, source := range requested {
+		value, ok := message.Values[source.InterfaceID]
 		if !ok {
 			continue
 		}
-		out = append(out, types.SystemPluginPlaceholderValue{PluginID: record.manifest.ID, InterfaceID: item.ID, Name: record.effectiveName(item), Value: value})
+		item, _ := record.declaredPlaceholderInterface(source.InterfaceID)
+		values = append(values, types.SystemPluginPlaceholderValue{
+			PluginID:    record.manifest.ID,
+			InterfaceID: source.InterfaceID,
+			Name:        record.effectiveName(item),
+			Value:       value,
+		})
 	}
-	return out, nil
+	return values, problems
 }
 
-func (s *system) requestForRecord(record pluginRecord) (types.SystemPluginPlaceholderRequest, error) {
-	hostWorkingDirectory, err := os.Getwd()
-	if err != nil {
-		return types.SystemPluginPlaceholderRequest{}, pluginExecutionFailed("failed to resolve host working directory", err)
-	}
-	if strings.TrimSpace(record.dataDirectory) == "" {
-		return types.SystemPluginPlaceholderRequest{}, pluginExecutionFailed("system plugin data directory is unavailable", nil)
-	}
-	if err := os.MkdirAll(record.dataDirectory, 0o755); err != nil {
-		return types.SystemPluginPlaceholderRequest{}, pluginExecutionFailed("failed to create system plugin data directory", err)
-	}
-	return types.SystemPluginPlaceholderRequest{
-		Action:                pluginPlaceholderAction,
-		PluginID:              record.manifest.ID,
-		PlaceholderInterfaces: record.interfaceViews(),
-		UserConfig:            copyMap(record.userConfig.UserConfig),
-		DefaultConfig:         copyMap(record.defaultConfig),
-		PluginDirectory:       record.directory,
-		PluginDataDirectory:   record.dataDirectory,
-		HostWorkingDirectory:  hostWorkingDirectory,
-	}, nil
-}
-
-func (s *system) requestOnDemand(ctx context.Context, record pluginRecord, request types.SystemPluginPlaceholderRequest) (types.SystemPluginPlaceholderResponse, error) {
-	input, err := json.Marshal(request)
-	if err != nil {
-		return types.SystemPluginPlaceholderResponse{}, pluginExecutionFailed("failed to encode system plugin request", err)
-	}
-	pluginCtx, cancel := context.WithTimeout(ctx, s.timeout)
-	defer cancel()
-	cmd := exec.CommandContext(pluginCtx, record.executable)
-	cmd.Dir = record.directory
-	cmd.Stdin = bytes.NewReader(input)
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err = cmd.Run()
-	if errors.Is(pluginCtx.Err(), context.DeadlineExceeded) {
-		return types.SystemPluginPlaceholderResponse{}, pluginExecutionFailed("system plugin execution timed out", nil)
-	}
-	if err != nil {
-		return types.SystemPluginPlaceholderResponse{}, pluginExecutionFailed(nonEmpty(stderr.String(), err.Error()), err)
-	}
-	var response types.SystemPluginPlaceholderResponse
-	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &response); err != nil {
-		return types.SystemPluginPlaceholderResponse{}, pluginExecutionFailed("system plugin output is not valid json", err)
-	}
-	return response, nil
-}
-
-func (s *system) ensurePersistentProcess(ctx context.Context, record pluginRecord) (*persistentProcess, error) {
-	s.mu.Lock()
-	if process := s.persistent[record.manifest.ID]; process != nil {
-		s.mu.Unlock()
-		return process, nil
-	}
-	s.mu.Unlock()
-	process, err := s.startPersistentProcess(ctx, record)
-	if err != nil {
-		return nil, err
-	}
-	s.mu.Lock()
-	if existing := s.persistent[record.manifest.ID]; existing != nil {
-		s.mu.Unlock()
-		process.close(context.Background())
-		return existing, nil
-	}
-	s.persistent[record.manifest.ID] = process
-	s.mu.Unlock()
-	return process, nil
-}
-
-func (s *system) startPersistentProcess(ctx context.Context, record pluginRecord) (*persistentProcess, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, pluginExecutionFailed("system plugin startup cancelled", err)
-	}
-	cmd := exec.Command(record.executable)
-	cmd.Dir = record.directory
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, pluginExecutionFailed("failed to open system plugin stdin", err)
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		_ = stdin.Close()
-		return nil, pluginExecutionFailed("failed to open system plugin stdout", err)
-	}
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Start(); err != nil {
-		_ = stdin.Close()
-		return nil, pluginExecutionFailed(nonEmpty(stderr.String(), "failed to start system plugin"), err)
-	}
-	return &persistentProcess{cmd: cmd, stdin: stdin, stdout: json.NewDecoder(stdout), timeout: s.timeout}, nil
-}
-
-func (p *persistentProcess) request(ctx context.Context, request types.SystemPluginPlaceholderRequest) (types.SystemPluginPlaceholderResponse, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if err := ctx.Err(); err != nil {
-		return types.SystemPluginPlaceholderResponse{}, pluginExecutionFailed("system plugin request cancelled", err)
-	}
-	if err := json.NewEncoder(p.stdin).Encode(request); err != nil {
-		return types.SystemPluginPlaceholderResponse{}, pluginExecutionFailed("failed to write system plugin request", err)
-	}
-	type result struct {
-		response types.SystemPluginPlaceholderResponse
-		err      error
-	}
-	done := make(chan result, 1)
-	go func() {
-		var response types.SystemPluginPlaceholderResponse
-		err := p.stdout.Decode(&response)
-		done <- result{response: response, err: err}
-	}()
-	select {
-	case <-ctx.Done():
-		return types.SystemPluginPlaceholderResponse{}, pluginExecutionFailed("system plugin request cancelled", ctx.Err())
-	case item := <-done:
-		if item.err != nil {
-			return types.SystemPluginPlaceholderResponse{}, pluginExecutionFailed("failed to read system plugin response", item.err)
+func problemsForSources(record pluginRecord, sources []types.SystemPluginPlaceholderSource, problemType string) []types.PlaceholderProblem {
+	out := make([]types.PlaceholderProblem, 0, len(sources))
+	for _, source := range sources {
+		name := strings.TrimSpace(source.Name)
+		if item, ok := record.declaredPlaceholderInterface(source.InterfaceID); ok {
+			name = record.effectiveName(item)
 		}
-		return item.response, nil
-	case <-time.After(p.timeout):
-		return types.SystemPluginPlaceholderResponse{}, pluginExecutionFailed("system plugin request timed out", nil)
+		out = append(out, types.PlaceholderProblem{Name: name, Type: problemType})
 	}
+	return out
 }
 
-// stopGracefully 关闭输入并等待进程真实退出；只关闭管道但进程仍存在不算结束。
-func (p *persistentProcess) stopGracefully(ctx context.Context) error {
-	_ = p.stdin.Close()
-	done := make(chan struct{})
-	go func() {
-		_ = p.cmd.Wait()
-		close(done)
-	}()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-done:
-		return nil
+func failedProblemsForSources(sources []types.SystemPluginPlaceholderSource) []types.PlaceholderProblem {
+	out := make([]types.PlaceholderProblem, 0, len(sources))
+	for _, source := range sources {
+		out = append(out, types.PlaceholderProblem{Name: strings.TrimSpace(source.Name), Type: types.PlaceholderProblemPluginFailed})
 	}
-}
-
-// forceStopAndWait 仅在明确的停止超时后使用，仍必须等待真实退出并返回结果。
-func (p *persistentProcess) forceStopAndWait(ctx context.Context) error {
-	_ = p.stdin.Close()
-	if p.cmd.Process != nil {
-		_ = p.cmd.Process.Kill()
-	}
-	done := make(chan struct{})
-	go func() {
-		_ = p.cmd.Wait()
-		close(done)
-	}()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-done:
-		return nil
-	}
-}
-
-// close 只保留全局关闭或错误丢弃语义；不能把“已经关闭管道”报告为活动结束。
-func (p *persistentProcess) close(ctx context.Context) {
-	_ = p.forceStopAndWait(ctx)
-}
-
-func (s *system) dropPersistentProcess(pluginID string) {
-	s.mu.Lock()
-	process := s.persistent[pluginID]
-	delete(s.persistent, pluginID)
-	s.mu.Unlock()
-	if process != nil {
-		process.close(context.Background())
-	}
-}
-
-func pluginProblems(record pluginRecord) []types.PlaceholderProblem {
-	return pluginProblemsOfType(record, types.PlaceholderProblemPluginFailed)
-}
-
-func pluginDisabledProblems(record pluginRecord) []types.PlaceholderProblem {
-	return pluginProblemsOfType(record, types.PlaceholderProblemPluginDisabled)
-}
-
-func pluginProblemsOfType(record pluginRecord, problemType string) []types.PlaceholderProblem {
-	problems := make([]types.PlaceholderProblem, 0, len(record.manifest.PlaceholderInterfaces))
-	for _, item := range record.manifest.PlaceholderInterfaces {
-		problems = append(problems, types.PlaceholderProblem{Name: record.effectiveName(item), Type: problemType})
-	}
-	return problems
+	return out
 }
 
 func nonEmpty(values ...string) string {

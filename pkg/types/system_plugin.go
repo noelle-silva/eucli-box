@@ -1,9 +1,13 @@
 package types
 
 const (
-	SystemPluginLifecyclePersistent      = "persistent"
-	SystemPluginLifecycleOnDemand        = "on-demand"
-	SystemPluginLifecycleCachedHeartbeat = "cached-heartbeat"
+	// 托管参数：启动时机。
+	SystemPluginStartBoot = "boot"
+	SystemPluginStartLazy = "lazy"
+
+	// 托管参数：崩溃重启策略。
+	SystemPluginRestartOnFailure = "on-failure"
+	SystemPluginRestartNever     = "never"
 
 	SystemPluginStatusActive      = "active"
 	SystemPluginStatusUnavailable = "unavailable"
@@ -21,17 +25,31 @@ type SystemPluginPlaceholderInterface struct {
 	Description string `json:"description"`
 }
 
+// SystemPluginCapability 是插件在清单中声明的能力；占位符取值是第一种能力。
+type SystemPluginCapability struct {
+	Type       string                             `json:"type"`
+	Interfaces []SystemPluginPlaceholderInterface `json:"interfaces,omitempty"`
+}
+
+// SystemPluginHosting 是插件的托管参数：启动时机、常驻、崩溃重启、限时停机。
+type SystemPluginHosting struct {
+	Start         string `json:"start"`
+	Resident      bool   `json:"resident"`
+	Restart       string `json:"restart"`
+	StopTimeoutMs int64  `json:"stopTimeoutMs"`
+}
+
 type SystemPluginManifest struct {
-	ID                    string                             `json:"id"`
-	Name                  string                             `json:"name"`
-	Description           string                             `json:"description"`
-	Version               string                             `json:"version"`
-	EucliBoxCompatibility EucliBoxCompatibility              `json:"eucliBoxCompatibility"`
-	LifecycleType         string                             `json:"lifecycleType"`
-	HeartbeatIntervalMs   int64                              `json:"heartbeatIntervalMs,omitempty"`
-	Binaries              []SystemPluginBinary               `json:"binaries"`
-	ConfigSchema          map[string]any                     `json:"configSchema,omitempty"`
-	PlaceholderInterfaces []SystemPluginPlaceholderInterface `json:"placeholderInterfaces"`
+	ProtocolVersion       int                      `json:"protocolVersion"`
+	ID                    string                   `json:"id"`
+	Name                  string                   `json:"name"`
+	Description           string                   `json:"description"`
+	Version               string                   `json:"version"`
+	EucliBoxCompatibility EucliBoxCompatibility    `json:"eucliBoxCompatibility"`
+	Hosting               SystemPluginHosting      `json:"hosting"`
+	Binaries              []SystemPluginBinary     `json:"binaries"`
+	ConfigSchema          map[string]any           `json:"configSchema,omitempty"`
+	Capabilities          []SystemPluginCapability `json:"capabilities,omitempty"`
 }
 
 type SystemPluginUserConfig struct {
@@ -54,7 +72,7 @@ type SystemPluginView struct {
 	Version               string                                 `json:"version"`
 	EucliBoxCompatibility EucliBoxCompatibility                  `json:"eucliBoxCompatibility"`
 	Compatibility         CompatibilityStatus                    `json:"compatibility"`
-	LifecycleType         string                                 `json:"lifecycleType"`
+	Hosting               SystemPluginHosting                    `json:"hosting"`
 	Status                string                                 `json:"status"`
 	StatusMessage         string                                 `json:"statusMessage,omitempty"`
 	Installed             bool                                   `json:"installed,omitempty"`
@@ -78,7 +96,7 @@ type SystemPluginSummary struct {
 	Version               string                `json:"version"`
 	EucliBoxCompatibility EucliBoxCompatibility `json:"eucliBoxCompatibility"`
 	Compatibility         CompatibilityStatus   `json:"compatibility"`
-	LifecycleType         string                `json:"lifecycleType"`
+	Hosting               SystemPluginHosting   `json:"hosting"`
 	Status                string                `json:"status"`
 	StatusMessage         string                `json:"statusMessage,omitempty"`
 	Installed             bool                  `json:"installed,omitempty"`
@@ -104,26 +122,17 @@ type SystemPluginCreatePlaceholderRequest struct {
 	InterfaceID string `json:"interfaceId"`
 }
 
+// SystemPluginPlaceholderSource 是一次按来源点名的取值请求：
+// 只向该接口的所属插件发起调用，未引用的插件与接口不会被联系。
+type SystemPluginPlaceholderSource struct {
+	PluginID    string `json:"pluginId"`
+	InterfaceID string `json:"interfaceId"`
+	Name        string `json:"name,omitempty"`
+}
+
 type SystemPluginPlaceholderValue struct {
 	PluginID    string `json:"pluginId"`
 	InterfaceID string `json:"interfaceId"`
 	Name        string `json:"name"`
 	Value       string `json:"value"`
-}
-
-type SystemPluginPlaceholderRequest struct {
-	Action                string                                 `json:"action"`
-	PluginID              string                                 `json:"pluginId"`
-	PlaceholderInterfaces []SystemPluginPlaceholderInterfaceView `json:"placeholderInterfaces"`
-	UserConfig            map[string]any                         `json:"userConfig,omitempty"`
-	DefaultConfig         map[string]any                         `json:"defaultConfig,omitempty"`
-	PluginDirectory       string                                 `json:"pluginDirectory"`
-	PluginDataDirectory   string                                 `json:"pluginDataDirectory"`
-	HostWorkingDirectory  string                                 `json:"hostWorkingDirectory"`
-}
-
-type SystemPluginPlaceholderResponse struct {
-	Status string            `json:"status"`
-	Values map[string]string `json:"values,omitempty"`
-	Error  string            `json:"error,omitempty"`
 }

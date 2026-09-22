@@ -169,7 +169,17 @@ func run() error {
 	log.Printf("[7/13] tool-calling-system     ✓")
 
 	pluginDataDir := datapaths.SystemPluginsDataDir(dataDir)
-	systemPluginSystem, err := systemplugin.NewSystem(systemplugin.Config{SourceDir: pluginSourceDir, DataDir: pluginDataDir, BoxVersion: boxRelease.Version, ProgramRoot: pluginSourceDir, Candidates: toolCandidates, HTTPClient: officialDoer})
+	systemPluginSystem, err := systemplugin.NewSystem(systemplugin.Config{
+		SourceDir:   pluginSourceDir,
+		DataDir:     pluginDataDir,
+		BoxVersion:  boxRelease.Version,
+		ProgramRoot: pluginSourceDir,
+		Candidates:  toolCandidates,
+		HTTPClient:  officialDoer,
+		OnEvent: func(pluginID string, event string, _ map[string]any) {
+			log.Printf("[system-plugin:%s] event %s", pluginID, event)
+		},
+	})
 	if err != nil {
 		return fmt.Errorf("start system plugin system: %w", err)
 	}

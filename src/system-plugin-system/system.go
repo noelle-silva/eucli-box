@@ -24,7 +24,8 @@ type System interface {
 	SavePluginUserConfig(ctx context.Context, pluginID string, config types.SystemPluginUserConfig) (types.SystemPluginView, error)
 	EnablePlugin(ctx context.Context, pluginID string) (types.SystemPluginView, error)
 	DisablePlugin(ctx context.Context, pluginID string) (types.SystemPluginView, error)
-	ResolvePlaceholderValues(ctx context.Context) ([]types.SystemPluginPlaceholderValue, []types.PlaceholderProblem)
+	ResolvePlaceholderValues(ctx context.Context, sources []types.SystemPluginPlaceholderSource) ([]types.SystemPluginPlaceholderValue, []types.PlaceholderProblem)
+	PlaceholderSourceProblems(ctx context.Context, sources []types.SystemPluginPlaceholderSource) []types.PlaceholderProblem
 	AvailablePlaceholderInterfaces(ctx context.Context, library types.PlaceholderLibrary) ([]types.SystemPluginAvailablePlaceholderInterface, error)
 	CreatePlaceholderFromInterface(ctx context.Context, library types.PlaceholderLibrary, pluginID string, interfaceID string) (types.PlaceholderLibrary, error)
 	Shutdown(ctx context.Context) error
@@ -37,14 +38,18 @@ type System interface {
 	PluginActivity(ctx context.Context, pluginID string) (types.ArtifactActivityState, error)
 }
 
+// EventObserver 接收插件主动上报的事件；事件不做持久化，由宿主自行决定去向。
+type EventObserver func(pluginID string, event string, payload map[string]any)
+
 type Config struct {
-	SourceDir  string
-	DataDir    string
-	Timeout    time.Duration
-	BoxVersion string
+	SourceDir   string
+	DataDir     string
+	Timeout     time.Duration
+	BoxVersion  string
 	ProgramRoot string
 	Candidates  releasecheck.CandidateReader
 	HTTPClient  release.HTTPDoer
+	OnEvent     EventObserver
 }
 
 type system struct {
@@ -55,15 +60,13 @@ type system struct {
 	programRoot string
 	candidates  releasecheck.CandidateReader
 	httpClient  release.HTTPDoer
+	onEvent     EventObserver
 
-	mu              sync.Mutex
-	persistent      map[string]*persistentProcess
-	cachedValues    map[string]cachedPlaceholderValues
-	heartbeatCancel context.CancelFunc
-	heartbeats      map[string]context.CancelFunc
-	heartbeatWait   sync.WaitGroup
-	failures        map[string]string
-	activities      map[string]*pluginActivity
+	mu                sync.Mutex
+	residents         map[string]*session
+	failures          map[string]string
+	activities        map[string]*pluginActivity
+	shuttingDown      bool
 	updateWaitTimeout time.Duration
 }
 
@@ -123,37 +126,29 @@ func NewSystem(config Config) (System, error) {
 		programRoot:       programRoot,
 		candidates:        config.Candidates,
 		httpClient:        config.HTTPClient,
-		persistent:        map[string]*persistentProcess{},
-		cachedValues:      map[string]cachedPlaceholderValues{},
-		heartbeats:        map[string]context.CancelFunc{},
+		onEvent:           config.OnEvent,
+		residents:         map[string]*session{},
 		failures:          map[string]string{},
 		activities:        map[string]*pluginActivity{},
 		updateWaitTimeout: defaultUpdateWaitTimeout,
 	}, nil
 }
 
+// Start 只拉起「随启动」的常驻插件；按需与惰性常驻插件在首次使用时才启动。
 func (s *system) Start(ctx context.Context) error {
-	records, err := s.discover(ctx)
+	index, err := s.discover(ctx)
 	if err != nil {
 		return err
 	}
-	for _, record := range records {
-		if record.status != types.SystemPluginStatusActive {
+	for _, record := range index.records {
+		if record.status != types.SystemPluginStatusActive || !record.enabled {
 			continue
 		}
-		if !record.enabled {
+		if !record.manifest.Hosting.Resident || record.manifest.Hosting.Start != types.SystemPluginStartBoot {
 			continue
 		}
-		switch record.manifest.LifecycleType {
-		case types.SystemPluginLifecyclePersistent:
-			if _, err := s.ensurePersistentProcess(ctx, record); err != nil {
-				s.setFailure(record.manifest.ID, err.Error())
-			}
-		case types.SystemPluginLifecycleCachedHeartbeat:
-			if err := s.refreshCachedPlugin(ctx, record.manifest.ID); err != nil {
-				s.setFailure(record.manifest.ID, err.Error())
-			}
-			s.startCachedHeartbeat(record.manifest.ID, time.Duration(record.manifest.HeartbeatIntervalMs)*time.Millisecond)
+		if _, err := s.ensureResidentSession(ctx, record); err != nil {
+			s.setFailure(record.manifest.ID, err.Error())
 		}
 	}
 	return nil
@@ -161,31 +156,9 @@ func (s *system) Start(ctx context.Context) error {
 
 func (s *system) Shutdown(ctx context.Context) error {
 	s.mu.Lock()
-	heartbeatCancel := s.heartbeatCancel
-	s.heartbeatCancel = nil
-	heartbeats := s.heartbeats
-	s.heartbeats = map[string]context.CancelFunc{}
-	processes := s.persistent
-	s.persistent = map[string]*persistentProcess{}
+	s.shuttingDown = true
 	s.mu.Unlock()
-	if heartbeatCancel != nil {
-		heartbeatCancel()
-	}
-	for _, cancel := range heartbeats {
-		cancel()
-	}
-	done := make(chan struct{})
-	go func() {
-		s.heartbeatWait.Wait()
-		close(done)
-	}()
-	select {
-	case <-ctx.Done():
-	case <-done:
-	}
-	for _, process := range processes {
-		process.close(ctx)
-	}
+	s.stopAllResident(ctx)
 	return nil
 }
 

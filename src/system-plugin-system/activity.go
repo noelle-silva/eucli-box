@@ -10,7 +10,7 @@ import (
 )
 
 // pluginActivity 维护单个插件的活动计数和更新闸门；
-// 覆盖 on-demand、persistent 请求和 cached-heartbeat 刷新，不以缓存值存在代表插件仍在运行。
+// 覆盖按需与常驻插件的真实能力调用，不以进程存在代表插件仍在工作。
 // 更新期间同时承载运行任务的事实：取消句柄、任务基座、阶段、下载进度与结束信号。
 type pluginActivity struct {
 	mu             sync.Mutex

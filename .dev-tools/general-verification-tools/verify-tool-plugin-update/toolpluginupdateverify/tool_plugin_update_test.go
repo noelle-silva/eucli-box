@@ -28,6 +28,7 @@ import (
 	"eucli-box/pkg/release"
 	"eucli-box/pkg/releasecatalog"
 	"eucli-box/pkg/releasecheck"
+	"eucli-box/pkg/systemplugin"
 	"eucli-box/pkg/types"
 	datastorage "eucli-box/src/data-storage-system"
 	toolcalling "eucli-box/src/tool-calling-system"
@@ -49,7 +50,6 @@ type toolPluginUpdateCandidate struct {
 	incompatible  bool
 	brokenArchive bool
 	brokenBinary  bool
-	lifecycle     string
 }
 
 type toolPluginUpdateServer struct {
@@ -379,13 +379,19 @@ func makeBrokenToolCandidate(t *testing.T, server *toolPluginUpdateServer, id st
 	})
 }
 
-func makePluginCandidate(t *testing.T, server *toolPluginUpdateServer, id string, version string, lifecycle string, brokenBinary bool, incompatible bool) {
+// onDemandPluginHosting 是按需插件托管参数：惰性启动、非长驻、限时停机。
+func onDemandPluginHosting() types.SystemPluginHosting {
+	return types.SystemPluginHosting{Start: types.SystemPluginStartLazy, Resident: false, Restart: types.SystemPluginRestartNever, StopTimeoutMs: 3000}
+}
+
+// residentPluginHosting 是常驻插件托管参数：随启动、崩溃重启、限时停机。
+func residentPluginHosting() types.SystemPluginHosting {
+	return types.SystemPluginHosting{Start: types.SystemPluginStartBoot, Resident: true, Restart: types.SystemPluginRestartOnFailure, StopTimeoutMs: 5000}
+}
+
+func makePluginCandidate(t *testing.T, server *toolPluginUpdateServer, id string, version string, hosting types.SystemPluginHosting, brokenBinary bool, incompatible bool) {
 	t.Helper()
-	probeKind := "plugin"
-	if lifecycle == types.SystemPluginLifecyclePersistent {
-		probeKind = "persistent"
-	}
-	executable := buildProbeTool(t, probeKind)
+	executable := buildProbeTool(t, "plugin")
 	if brokenBinary {
 		executable = []byte("not an executable")
 	}
@@ -395,17 +401,18 @@ func makePluginCandidate(t *testing.T, server *toolPluginUpdateServer, id string
 	}
 	binaryPath := filepath.ToSlash(filepath.Join("binary", id+".exe"))
 	manifest := types.SystemPluginManifest{
+		ProtocolVersion:       systemplugin.ProtocolVersion,
 		ID:                    id,
 		Name:                  "Demo " + id,
 		Description:           "demo plugin",
 		Version:               version,
 		EucliBoxCompatibility: compatibility,
-		LifecycleType:         lifecycle,
+		Hosting:               hosting,
 		Binaries:              []types.SystemPluginBinary{{GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Path: binaryPath}},
-		PlaceholderInterfaces: []types.SystemPluginPlaceholderInterface{{ID: "value", DefaultName: "demo value", Description: "demo"}},
-	}
-	if lifecycle == types.SystemPluginLifecycleCachedHeartbeat {
-		manifest.HeartbeatIntervalMs = 60
+		Capabilities: []types.SystemPluginCapability{{
+			Type:       systemplugin.CapabilityPlaceholderValues,
+			Interfaces: []types.SystemPluginPlaceholderInterface{{ID: "value", DefaultName: "demo value", Description: "demo"}},
+		}},
 	}
 	manifestJSON, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -433,7 +440,6 @@ func makePluginCandidate(t *testing.T, server *toolPluginUpdateServer, id string
 		archiveBytes: archiveBytes,
 		brokenBinary: brokenBinary,
 		incompatible: incompatible,
-		lifecycle:    lifecycle,
 	})
 }
 
@@ -562,8 +568,8 @@ func zipPayloadWithExtra(t *testing.T, payload map[string][]byte, extraName stri
 }
 
 // buildProbeTool 编译基础交接可用的探测程序。
-// tool-sleep-N：ActionID=sleep 时真实执行 N 秒；plugin：检测 sleep-marker.txt 后真实执行 5 秒；
-// persistent：stdin 关闭即退出，与真实持久插件一致。
+// tool-sleep-N：ActionID=sleep 时真实执行 N 秒；plugin：系统插件控制通道的新协议桩，
+// 取值时检测 sleep-marker.txt 后真实执行 5 秒。
 func buildProbeTool(t *testing.T, kind string) []byte {
 	t.Helper()
 	var source string
@@ -609,66 +615,8 @@ func main() {
 	_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"status": "success", "content": "ok"})
 }
 `, probeControlPreamble(), sleepSeconds)
-	case kind == "persistent":
-		source = `package main
-
-import (
-	"encoding/json"
-	"net"
-	"os"
-)
-` + probeControlPreamble() + `
-
-func main() {
-	stopControl, err := admitControl()
-	if err != nil {
-		_, _ = os.Stdout.WriteString(` + "`" + `{"status":"failed","content":"control denied"}` + "`" + `)
-		os.Exit(3)
-	}
-	defer stopControl()
-	decoder := json.NewDecoder(os.Stdin)
-	encoder := json.NewEncoder(os.Stdout)
-	for {
-		var request map[string]any
-		if err := decoder.Decode(&request); err != nil {
-			return
-		}
-		_ = encoder.Encode(map[string]any{"status": "success", "values": map[string]string{"value": "persistent"}})
-	}
-}
-`
 	default:
-		source = `package main
-
-import (
-	"encoding/json"
-	"net"
-	"os"
-	"path/filepath"
-	"time"
-)
-` + probeControlPreamble() + `
-
-type input struct {
-	Action              string            ` + "`json:\"action\"`" + `
-	PluginDataDirectory string            ` + "`json:\"pluginDataDirectory\"`" + `
-}
-
-func main() {
-	stopControl, err := admitControl()
-	if err != nil {
-		_, _ = os.Stdout.WriteString(` + "`" + `{"status":"failed","content":"control denied"}` + "`" + `)
-		os.Exit(3)
-	}
-	defer stopControl()
-	var in input
-	_ = json.NewDecoder(os.Stdin).Decode(&in)
-	if _, err := os.Stat(filepath.Join(in.PluginDataDirectory, "sleep-marker.txt")); err == nil {
-		time.Sleep(5 * time.Second)
-	}
-	_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"status": "success", "values": map[string]string{"value": "ok"}})
-}
-`
+		source = pluginProbeSource
 	}
 	dir := t.TempDir()
 	sourceFile := filepath.Join(dir, "main.go")
@@ -687,6 +635,63 @@ func main() {
 	}
 	return payload
 }
+
+// pluginProbeSource 是系统插件控制通道的独立最小实现：握手、取值、心跳与停机。
+// 它不依赖业务端代码，用于反向校验控制通道协议。
+const pluginProbeSource = `package main
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"time"
+)
+
+type probeMessage struct {
+	ProtocolVersion int               ` + "`json:\"protocolVersion\"`" + `
+	Type            string            ` + "`json:\"type\"`" + `
+	RequestID       string            ` + "`json:\"requestId,omitempty\"`" + `
+	Sequence        uint64            ` + "`json:\"sequence,omitempty\"`" + `
+	PluginID        string            ` + "`json:\"pluginId,omitempty\"`" + `
+	DataDirectory   string            ` + "`json:\"dataDirectory,omitempty\"`" + `
+	Capabilities    []probeCapability ` + "`json:\"capabilities,omitempty\"`" + `
+	Capability      string            ` + "`json:\"capability,omitempty\"`" + `
+	Status          string            ` + "`json:\"status,omitempty\"`" + `
+	Values          map[string]string ` + "`json:\"values,omitempty\"`" + `
+}
+
+type probeCapability struct {
+	Type       string   ` + "`json:\"type\"`" + `
+	Interfaces []string ` + "`json:\"interfaces,omitempty\"`" + `
+}
+
+func main() {
+	decoder := json.NewDecoder(os.Stdin)
+	encoder := json.NewEncoder(os.Stdout)
+	var hello probeMessage
+	if err := decoder.Decode(&hello); err != nil {
+		os.Exit(3)
+	}
+	_ = encoder.Encode(probeMessage{ProtocolVersion: hello.ProtocolVersion, Type: "ready", PluginID: hello.PluginID, Capabilities: []probeCapability{{Type: "placeholder-values", Interfaces: []string{"value"}}}})
+	for {
+		var incoming probeMessage
+		if err := decoder.Decode(&incoming); err != nil {
+			return
+		}
+		switch incoming.Type {
+		case "invoke":
+			if _, err := os.Stat(filepath.Join(hello.DataDirectory, "sleep-marker.txt")); err == nil {
+				time.Sleep(5 * time.Second)
+			}
+			_ = encoder.Encode(probeMessage{ProtocolVersion: hello.ProtocolVersion, Type: "result", RequestID: incoming.RequestID, Status: "success", Values: map[string]string{"value": "ok"}})
+		case "ping":
+			_ = encoder.Encode(probeMessage{ProtocolVersion: hello.ProtocolVersion, Type: "pong", Sequence: incoming.Sequence})
+		case "stop":
+			return
+		}
+	}
+}
+`
 
 // probeControlPreamble 是探针程序的控制通道接入片段：解析宿主注入的控制环境后连接、
 // 握手并保持心跳；不满足控制环境时不接入，直接返回空停止函数。
@@ -1130,10 +1135,10 @@ func TestToolPluginUpdate(t *testing.T) {
 	// 步骤 3：隔离官方来源服务器，准备一个工具和一个插件的正式候选。
 	server := newToolPluginUpdateServer(t)
 	makeToolCandidate(t, server, "context7", "0.1.0", false, false)
-	makePluginCandidate(t, server, "time-plugin", "0.1.0", types.SystemPluginLifecycleOnDemand, false, false)
+	makePluginCandidate(t, server, "time-plugin", "0.1.0", onDemandPluginHosting(), false, false)
 	makeToolCandidate(t, server, "zhihu_search", "0.1.0", false, true)
 	makeToolCandidate(t, server, "web_search", "0.1.0", false, false)
-	makePluginCandidate(t, server, "weather-plugin", "0.1.0", types.SystemPluginLifecycleCachedHeartbeat, false, false)
+	makePluginCandidate(t, server, "weather-plugin", "0.1.0", residentPluginHosting(), false, false)
 
 	box := startBox(t, boxPath, envDir, server.url())
 
@@ -1219,7 +1224,7 @@ func TestToolPluginUpdate(t *testing.T) {
 
 	// 步骤 8：同一工具和同一插件的高版本候选，分别执行单项更新；其他发布物版本不变。
 	makeToolCandidate(t, server, "context7", "0.1.1", false, false)
-	makePluginCandidate(t, server, "time-plugin", "0.1.1", types.SystemPluginLifecycleOnDemand, false, false)
+	makePluginCandidate(t, server, "time-plugin", "0.1.1", onDemandPluginHosting(), false, false)
 	status, payload = box.call(http.MethodPost, "/api/tools/context7/update", "{}")
 	state = settleToolState(t, box, "context7", box.dataJSON(status, payload))
 	if state["status"] != types.ArtifactStatusActive || state["currentVersion"] != "0.1.1" {
@@ -1261,7 +1266,7 @@ func TestToolPluginUpdate(t *testing.T) {
 	if count := server.archiveRequestCount(types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "zhihu_search"}, "0.1.0"); count != 0 {
 		t.Fatalf("不适用工具候选发生 %d 次下载", count)
 	}
-	makePluginCandidate(t, server, "system-info-plugin", "0.1.0", types.SystemPluginLifecycleOnDemand, false, true)
+	makePluginCandidate(t, server, "system-info-plugin", "0.1.0", onDemandPluginHosting(), false, true)
 	status, payload = box.call(http.MethodPost, "/api/system-plugins/system-info-plugin/install", "{}")
 	state = box.dataJSON(status, payload)
 	if state["status"] != types.ArtifactStatusBlocked || state["error"].(map[string]any)["code"] != types.ArtifactErrorCompatibility {
@@ -1317,10 +1322,10 @@ func TestToolPluginUpdate(t *testing.T) {
 	}
 	<-done
 
-	// 步骤 12：插件 on-demand 活动等待、persistent 生命周期切换与 cached-heartbeat 刷新收尾。
+	// 步骤 12：插件 on-demand 活动等待、常驻插件安装/更新与常驻活动收尾。
 	verifyPluginOnDemandActivity(t, box, boxData, server)
 	verifyPluginPersistentActivity(t, box, server)
-	verifyPluginHeartbeatActivity(t, box, boxData, server)
+	verifyPluginResidentActivity(t, box, boxData, server)
 
 	// 步骤 13：损坏摘要、损坏 ZIP、缺少身份文件、身份不一致和越界路径样例，当前版本不变且无半成品。
 	verifyBrokenCandidates(t, box, programRoot, server)
@@ -1392,7 +1397,7 @@ func verifyPluginOnDemandActivity(t *testing.T, box *boxProcess, boxData string,
 	if status < 200 || status >= 300 {
 		t.Fatalf("创建插件占位符 HTTP %d：%s", status, payload)
 	}
-	makePluginCandidate(t, server, "time-plugin", "0.1.2", types.SystemPluginLifecycleOnDemand, false, false)
+	makePluginCandidate(t, server, "time-plugin", "0.1.2", onDemandPluginHosting(), false, false)
 	previewDone := make(chan struct{})
 	go func() {
 		defer close(previewDone)
@@ -1438,13 +1443,13 @@ func verifyPluginOnDemandActivity(t *testing.T, box *boxProcess, boxData string,
 // verifyPluginPersistentActivity 确认 persistent 进程下更新能正常完成（停止旧进程、切换并恢复生命周期）。
 func verifyPluginPersistentActivity(t *testing.T, box *boxProcess, server *toolPluginUpdateServer) {
 	t.Helper()
-	makePluginCandidate(t, server, "weather-plugin", "0.1.1", types.SystemPluginLifecyclePersistent, false, false)
+	makePluginCandidate(t, server, "weather-plugin", "0.1.1", residentPluginHosting(), false, false)
 	status, payload := box.call(http.MethodPost, "/api/system-plugins/weather-plugin/install", "{}")
 	state := settlePluginState(t, box, "weather-plugin", box.dataJSON(status, payload))
 	if state["status"] != types.ArtifactStatusActive || state["currentVersion"] != "0.1.1" {
 		t.Fatalf("persistent 插件安装状态 = %#v（HTTP %d）", state, status)
 	}
-	makePluginCandidate(t, server, "weather-plugin", "0.1.2", types.SystemPluginLifecyclePersistent, false, false)
+	makePluginCandidate(t, server, "weather-plugin", "0.1.2", residentPluginHosting(), false, false)
 	status, payload = box.call(http.MethodPost, "/api/system-plugins/weather-plugin/update", "{}")
 	state = settlePluginState(t, box, "weather-plugin", box.dataJSON(status, payload))
 	if state["status"] != types.ArtifactStatusActive || state["currentVersion"] != "0.1.2" {
@@ -1455,18 +1460,33 @@ func verifyPluginPersistentActivity(t *testing.T, box *boxProcess, server *toolP
 	}
 }
 
-// verifyPluginHeartbeatActivity 确认 cached-heartbeat 刷新活动结束后更新能正常完成（停止心跳、切换并重启心跳）。
-func verifyPluginHeartbeatActivity(t *testing.T, box *boxProcess, boxData string, server *toolPluginUpdateServer) {
+// verifyPluginResidentActivity 确认常驻插件在真实调用活动结束后更新能正常完成
+// （等待活动、限时停机、切换并重新拉起常驻通道）。
+func verifyPluginResidentActivity(t *testing.T, box *boxProcess, boxData string, server *toolPluginUpdateServer) {
 	t.Helper()
-	makePluginCandidate(t, server, "system-info-plugin", "0.1.1", types.SystemPluginLifecycleCachedHeartbeat, false, false)
+	makePluginCandidate(t, server, "system-info-plugin", "0.1.1", residentPluginHosting(), false, false)
 	status, payload := box.call(http.MethodPost, "/api/system-plugins/system-info-plugin/install", "{}")
 	state := settlePluginState(t, box, "system-info-plugin", box.dataJSON(status, payload))
 	if state["status"] != types.ArtifactStatusActive || state["currentVersion"] != "0.1.1" {
-		t.Fatalf("heartbeat 插件安装状态 = %#v（HTTP %d）", state, status)
+		t.Fatalf("常驻插件安装状态 = %#v（HTTP %d）", state, status)
 	}
-	// 制造一次真实心跳刷新，确认刷新确实在运行。
+	// 系统信息插件与时间插件的默认占位符名相同，先改名以避免占位符空间重名。
+	status, payload = box.call(http.MethodPut, "/api/system-plugins/system-info-plugin/user-config", `{"userConfig":{},"placeholderNameOverrides":{"value":"resident value"}}`)
+	if status != 200 {
+		t.Fatalf("常驻插件接口改名 HTTP %d：%s", status, payload)
+	}
+	status, payload = box.call(http.MethodPost, "/api/placeholders/plugin-interfaces", `{"pluginId":"system-info-plugin","interfaceId":"value"}`)
+	if status < 200 || status >= 300 {
+		t.Fatalf("创建常驻插件占位符 HTTP %d：%s", status, payload)
+	}
+	// 制造一次真实调用活动：桩插件在读取到 sleep-marker 时会真实停顿 5 秒。
 	marker := filepath.Join(datapaths.SystemPluginsDataDir(boxData), "system-info-plugin", "sleep-marker.txt")
 	writeSleepMarker(t, marker)
+	previewDone := make(chan struct{})
+	go func() {
+		defer close(previewDone)
+		_, _ = box.call(http.MethodPost, "/api/placeholders/preview", `{"text":"{{resident value}}"}`)
+	}()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		status, payload := box.call(http.MethodGet, "/api/system-plugins/system-info-plugin", "")
@@ -1476,26 +1496,35 @@ func verifyPluginHeartbeatActivity(t *testing.T, box *boxProcess, boxData string
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	// 删除 marker，让当前刷新自然结束后活动归零。
-	_ = os.Remove(marker)
-	deadline = time.Now().Add(20 * time.Second)
-	for time.Now().Before(deadline) {
-		status, payload := box.call(http.MethodGet, "/api/system-plugins/system-info-plugin", "")
-		view := box.dataJSON(status, payload)
-		if active, _ := view["active"].(bool); !active {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
+	makePluginCandidate(t, server, "system-info-plugin", "0.1.2", residentPluginHosting(), false, false)
+	before := server.archiveRequestCount(types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: "system-info-plugin"}, "0.1.2")
+	updateDone := make(chan struct{})
+	var updateStatus int
+	var updatePayload []byte
+	go func() {
+		defer close(updateDone)
+		updateStatus, updatePayload = box.call(http.MethodPost, "/api/system-plugins/system-info-plugin/update", "{}")
+	}()
+	// 活动进行中：更新不能开始下载。
+	time.Sleep(2 * time.Second)
+	midway := server.archiveRequestCount(types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: "system-info-plugin"}, "0.1.2")
+	if midway != before {
+		t.Fatalf("常驻插件活动期间发生了下载：%d -> %d", before, midway)
 	}
-	makePluginCandidate(t, server, "system-info-plugin", "0.1.2", types.SystemPluginLifecycleCachedHeartbeat, false, false)
-	status, payload = box.call(http.MethodPost, "/api/system-plugins/system-info-plugin/update", "{}")
-	state = settlePluginState(t, box, "system-info-plugin", box.dataJSON(status, payload))
+	select {
+	case <-updateDone:
+	case <-time.After(60 * time.Second):
+		t.Fatal("常驻插件活动结束后更新未受理")
+	}
+	<-previewDone
+	state = settlePluginState(t, box, "system-info-plugin", box.dataJSON(updateStatus, updatePayload))
 	if state["status"] != types.ArtifactStatusActive || state["currentVersion"] != "0.1.2" {
-		t.Fatalf("heartbeat 刷新结束后的更新状态 = %#v（HTTP %d）", state, status)
+		t.Fatalf("常驻插件活动结束后更新状态 = %#v（HTTP %d）", state, updateStatus)
 	}
 	if count := server.archiveRequestCount(types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: "system-info-plugin"}, "0.1.2"); count != 1 {
-		t.Fatalf("heartbeat 更新压缩包请求 %d 次", count)
+		t.Fatalf("常驻插件更新压缩包请求 %d 次", count)
 	}
+	_ = os.Remove(marker)
 }
 
 // verifyRosterFreeInstall 验证官方索引中名册之外的工具仍可被商店展示并正常安装：

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"eucli-box/pkg/release"
+	"eucli-box/pkg/systemplugin"
 	"eucli-box/pkg/types"
 )
 
@@ -234,11 +235,134 @@ func launchTool(ctx context.Context, directory string, environment string, temp 
 	return captureJSONProcess(cmd, filepath.Join(evidence, "tool.stdout.json"), filepath.Join(evidence, "tool.stderr.log"), requireSuccess)
 }
 
+// launchPlugin 对插件执行真实交接验收：启动进程、完成身份与能力握手、
+// 完成一次空接口能力调用，并按限时停机退出。插件对空配置返回结构化失败同样通过。
 func launchPlugin(ctx context.Context, directory string, id string, evidence string) error {
+	manifestPayload, err := os.ReadFile(filepath.Join(directory, "manifest.json"))
+	if err != nil {
+		return err
+	}
+	var manifest types.SystemPluginManifest
+	if err := json.Unmarshal(manifestPayload, &manifest); err != nil {
+		return fmt.Errorf("插件身份声明无效：%w", err)
+	}
+	expected := make([]systemplugin.Capability, 0, len(manifest.Capabilities))
+	for _, capability := range manifest.Capabilities {
+		interfaces := make([]string, 0, len(capability.Interfaces))
+		for _, item := range capability.Interfaces {
+			interfaces = append(interfaces, item.ID)
+		}
+		expected = append(expected, systemplugin.Capability{Type: capability.Type, Interfaces: interfaces})
+	}
+	dataDirectory, err := os.MkdirTemp("", "eucli-plugin-verify-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dataDirectory)
 	cmd := exec.CommandContext(ctx, filepath.Join(directory, "binary", id+".exe"))
 	cmd.Dir = directory
-	cmd.Stdin = strings.NewReader(`{"action":"resolve_placeholders","pluginId":"` + escapeJSON(id) + `","placeholderInterfaces":[],"userConfig":{},"defaultConfig":{}}`)
-	return captureJSONProcess(cmd, filepath.Join(evidence, "plugin.stdout.json"), filepath.Join(evidence, "plugin.stderr.log"), false)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		_ = stdin.Close()
+		return err
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("进程启动验收失败：%w", err)
+	}
+	encoder := json.NewEncoder(stdin)
+	decoder := json.NewDecoder(stdout)
+	fail := func(cause error) error {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		_ = cmd.Wait()
+		writeEvidence(evidence, map[string]any{"status": "failed", "error": cause.Error()}, stderr.Bytes())
+		return cause
+	}
+	hello := systemplugin.NewMessage(systemplugin.MessageHello)
+	hello.PluginID = id
+	hello.DataDirectory = dataDirectory
+	if err := encoder.Encode(hello); err != nil {
+		return fail(fmt.Errorf("插件控制通道写入失败：%w", err))
+	}
+	ready, err := readMessageWithContext(ctx, decoder)
+	if err != nil {
+		return fail(fmt.Errorf("插件未完成握手：%w", err))
+	}
+	if err := systemplugin.ValidateReady(ready, id, expected); err != nil {
+		return fail(fmt.Errorf("插件握手校验失败：%w", err))
+	}
+	record := map[string]any{"status": "passed", "ready": ready}
+	if len(manifestPlaceholderInterfaces(manifest)) > 0 {
+		invoke := systemplugin.NewMessage(systemplugin.MessageInvoke)
+		invoke.RequestID = "release-verification"
+		invoke.Capability = systemplugin.CapabilityPlaceholderValues
+		if err := encoder.Encode(invoke); err != nil {
+			return fail(fmt.Errorf("插件能力调用写入失败：%w", err))
+		}
+		result, err := readMessageWithContext(ctx, decoder)
+		if err != nil {
+			return fail(fmt.Errorf("插件没有返回能力结果：%w", err))
+		}
+		if result.Type != systemplugin.MessageResult || result.RequestID != invoke.RequestID {
+			return fail(fmt.Errorf("插件返回了不符合协议的能力结果"))
+		}
+		record["result"] = result
+	}
+	_ = encoder.Encode(systemplugin.NewMessage(systemplugin.MessageStop))
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		<-done
+	}
+	writeEvidence(evidence, record, stderr.Bytes())
+	return nil
+}
+
+func manifestPlaceholderInterfaces(manifest types.SystemPluginManifest) []types.SystemPluginPlaceholderInterface {
+	for _, capability := range manifest.Capabilities {
+		if capability.Type == systemplugin.CapabilityPlaceholderValues {
+			return capability.Interfaces
+		}
+	}
+	return nil
+}
+
+func readMessageWithContext(ctx context.Context, decoder *json.Decoder) (systemplugin.Message, error) {
+	type readResult struct {
+		message systemplugin.Message
+		err     error
+	}
+	result := make(chan readResult, 1)
+	go func() {
+		message, err := systemplugin.Read(decoder)
+		result <- readResult{message: message, err: err}
+	}()
+	select {
+	case item := <-result:
+		return item.message, item.err
+	case <-ctx.Done():
+		return systemplugin.Message{}, ctx.Err()
+	}
+}
+
+func writeEvidence(evidence string, record map[string]any, stderr []byte) {
+	payload, err := json.MarshalIndent(record, "", "  ")
+	if err == nil {
+		_ = os.WriteFile(filepath.Join(evidence, "plugin.stdout.json"), payload, 0o644)
+	}
+	_ = os.WriteFile(filepath.Join(evidence, "plugin.stderr.log"), stderr, 0o644)
 }
 
 func captureJSONProcess(cmd *exec.Cmd, stdoutPath string, stderrPath string, requireSuccess bool) error {

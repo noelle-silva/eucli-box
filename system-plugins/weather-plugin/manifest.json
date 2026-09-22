@@ -1,14 +1,19 @@
 {
+  "protocolVersion": 1,
   "id": "weather-plugin",
   "name": "天气信息插件",
   "description": "通过和风天气提供详细天气报告和当前天气简报",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "eucliBoxCompatibility": {
     "minimumVersion": "0.1.0",
     "maximumVersionExclusive": "0.2.0"
   },
-  "lifecycleType": "cached-heartbeat",
-  "heartbeatIntervalMs": 1800000,
+  "hosting": {
+    "start": "boot",
+    "resident": true,
+    "restart": "on-failure",
+    "stopTimeoutMs": 10000
+  },
   "binaries": [
     {
       "goos": "windows",
@@ -62,16 +67,21 @@
       }
     }
   },
-  "placeholderInterfaces": [
+  "capabilities": [
     {
-      "id": "weather-detail",
-      "defaultName": "weather_detail",
-      "description": "详细天气信息"
-    },
-    {
-      "id": "weather-brief",
-      "defaultName": "weather_Brief",
-      "description": "当前天气简报"
+      "type": "placeholder-values",
+      "interfaces": [
+        {
+          "id": "weather-detail",
+          "defaultName": "weather_detail",
+          "description": "详细天气信息"
+        },
+        {
+          "id": "weather-brief",
+          "defaultName": "weather_Brief",
+          "description": "当前天气简报"
+        }
+      ]
     }
   ]
 }

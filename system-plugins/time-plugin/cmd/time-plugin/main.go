@@ -1,20 +1,23 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 	_ "time/tzdata"
+
+	"eucli-box/pkg/systemplugin"
+	"eucli-box/pkg/systemplugin/pluginrun"
 )
 
 const (
-	actionResolvePlaceholders = "resolve_placeholders"
-	currentTimeInterfaceID    = "current-time"
-	defaultFormat             = "2006-01-02 15:04:05"
-	defaultTimezone           = "Asia/Shanghai"
-	localTimezone             = "Local"
+	currentTimeInterfaceID = "current-time"
+	defaultFormat          = "2006-01-02 15:04:05"
+	defaultTimezone        = "Asia/Shanghai"
+	localTimezone          = "Local"
 )
 
 var allowedFormats = map[string]struct{}{
@@ -34,44 +37,54 @@ var allowedTimezones = map[string]struct{}{
 	"America/New_York": {},
 }
 
-type request struct {
-	Action        string         `json:"action"`
-	UserConfig    map[string]any `json:"userConfig"`
-	DefaultConfig map[string]any `json:"defaultConfig"`
-}
-
-type response struct {
-	Status string            `json:"status"`
-	Values map[string]string `json:"values,omitempty"`
-	Error  string            `json:"error,omitempty"`
-}
-
 type pluginConfig struct {
 	Format   string
 	Timezone string
 }
 
+type timeProvider struct {
+	mu        sync.Mutex
+	config    pluginConfig
+	configErr error
+}
+
 func main() {
-	var req request
-	if err := json.NewDecoder(os.Stdin).Decode(&req); err != nil {
-		write(response{Status: "failed", Error: "输入不是有效 JSON"})
-		return
+	if err := pluginrun.Serve(pluginrun.Options{
+		PluginID:     "time-plugin",
+		Capabilities: []systemplugin.Capability{{Type: systemplugin.CapabilityPlaceholderValues, Interfaces: []string{currentTimeInterfaceID}}},
+		Placeholder:  &timeProvider{},
+	}); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-	if req.Action != actionResolvePlaceholders {
-		write(response{Status: "failed", Error: "不支持的插件动作"})
-		return
-	}
-	config, err := loadConfig(req.DefaultConfig, req.UserConfig)
-	if err != nil {
-		write(response{Status: "failed", Error: err.Error()})
-		return
+}
+
+func (p *timeProvider) Configure(config pluginrun.Config) {
+	loaded, err := loadConfig(config.DefaultConfig, config.UserConfig)
+	p.mu.Lock()
+	p.config = loaded
+	p.configErr = err
+	p.mu.Unlock()
+}
+
+func (p *timeProvider) ResolvePlaceholders(_ context.Context, interfaceIDs []string) (map[string]string, error) {
+	p.mu.Lock()
+	config, configErr := p.config, p.configErr
+	p.mu.Unlock()
+	if configErr != nil {
+		return nil, configErr
 	}
 	location, err := loadLocation(config.Timezone)
 	if err != nil {
-		write(response{Status: "failed", Error: err.Error()})
-		return
+		return nil, err
 	}
-	write(response{Status: "success", Values: map[string]string{currentTimeInterfaceID: time.Now().In(location).Format(config.Format)}})
+	values := map[string]string{}
+	for _, interfaceID := range interfaceIDs {
+		if interfaceID == currentTimeInterfaceID {
+			values[interfaceID] = time.Now().In(location).Format(config.Format)
+		}
+	}
+	return values, nil
 }
 
 func loadConfig(defaultConfig map[string]any, userConfig map[string]any) (pluginConfig, error) {
@@ -116,8 +129,4 @@ func loadLocation(name string) (*time.Location, error) {
 		return nil, fmt.Errorf("无法加载时区 %q", name)
 	}
 	return location, nil
-}
-
-func write(resp response) {
-	_ = json.NewEncoder(os.Stdout).Encode(resp)
 }

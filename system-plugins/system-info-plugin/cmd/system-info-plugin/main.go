@@ -1,31 +1,20 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"os"
 	"os/user"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
+
+	"eucli-box/pkg/systemplugin"
+	"eucli-box/pkg/systemplugin/pluginrun"
 )
 
-const (
-	actionResolvePlaceholders = "resolve_placeholders"
-	systemInfoInterfaceID     = "current-system-info"
-)
-
-type request struct {
-	Action        string         `json:"action"`
-	UserConfig    map[string]any `json:"userConfig"`
-	DefaultConfig map[string]any `json:"defaultConfig"`
-}
-
-type response struct {
-	Status string            `json:"status"`
-	Values map[string]string `json:"values,omitempty"`
-	Error  string            `json:"error,omitempty"`
-}
+const systemInfoInterfaceID = "current-system-info"
 
 type pluginConfig struct {
 	IncludeHostname           bool
@@ -33,25 +22,42 @@ type pluginConfig struct {
 	IncludeEnvironmentSummary bool
 }
 
-func main() {
-	var req request
-	if err := json.NewDecoder(os.Stdin).Decode(&req); err != nil {
-		write(response{Status: "failed", Error: "输入不是有效 JSON"})
-		return
-	}
-	if req.Action != actionResolvePlaceholders {
-		write(response{Status: "failed", Error: "不支持的插件动作"})
-		return
-	}
-	config := loadConfig(req.DefaultConfig, req.UserConfig)
-	write(response{Status: "success", Values: map[string]string{systemInfoInterfaceID: formatSystemInfo(config)}})
+type systemInfoProvider struct {
+	mu     sync.Mutex
+	config pluginConfig
 }
 
-func loadConfig(defaultConfig map[string]any, userConfig map[string]any) pluginConfig {
-	config := pluginConfig{IncludeHostname: true, IncludeUsername: false, IncludeEnvironmentSummary: true}
-	applyConfigMap(&config, defaultConfig)
-	applyConfigMap(&config, userConfig)
-	return config
+func main() {
+	if err := pluginrun.Serve(pluginrun.Options{
+		PluginID:     "system-info-plugin",
+		Capabilities: []systemplugin.Capability{{Type: systemplugin.CapabilityPlaceholderValues, Interfaces: []string{systemInfoInterfaceID}}},
+		Placeholder:  &systemInfoProvider{},
+	}); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func (p *systemInfoProvider) Configure(config pluginrun.Config) {
+	loaded := pluginConfig{IncludeHostname: true, IncludeUsername: false, IncludeEnvironmentSummary: true}
+	applyConfigMap(&loaded, config.DefaultConfig)
+	applyConfigMap(&loaded, config.UserConfig)
+	p.mu.Lock()
+	p.config = loaded
+	p.mu.Unlock()
+}
+
+func (p *systemInfoProvider) ResolvePlaceholders(_ context.Context, interfaceIDs []string) (map[string]string, error) {
+	p.mu.Lock()
+	config := p.config
+	p.mu.Unlock()
+	values := map[string]string{}
+	for _, interfaceID := range interfaceIDs {
+		if interfaceID == systemInfoInterfaceID {
+			values[interfaceID] = formatSystemInfo(config)
+		}
+	}
+	return values, nil
 }
 
 func applyConfigMap(config *pluginConfig, source map[string]any) {
@@ -105,8 +111,4 @@ func environmentSummary() []string {
 		items = append(items, "处理器等级："+value)
 	}
 	return items
-}
-
-func write(resp response) {
-	_ = json.NewEncoder(os.Stdout).Encode(resp)
 }

@@ -65,6 +65,12 @@ type ToolBinary struct {
 	Path   string `json:"path"`
 }
 
+// ToolRequestKindWarmup marks a tool request as a warm-up: the host asks the
+// tool to prepare itself; no user arguments are executed. An empty request
+// kind is the ordinary execution request, so execution payloads carry no
+// request-kind field at all.
+const ToolRequestKindWarmup = "warmup"
+
 type ToolExecutionInput struct {
 	ActionID             string         `json:"actionId"`
 	ToolName             string         `json:"toolName"`
@@ -72,9 +78,15 @@ type ToolExecutionInput struct {
 	UserConfig           map[string]any `json:"userConfig"`
 	DefaultConfig        map[string]any `json:"defaultConfig"`
 	ToolBodyDirectory    string         `json:"toolBodyDirectory"`
-	ToolDataDirectory        string         `json:"toolDataDirectory"`
-	HostWorkingDirectory     string         `json:"hostWorkingDirectory"`
-	TimeoutMs                int64          `json:"timeoutMs,omitempty"`
+	ToolDataDirectory    string         `json:"toolDataDirectory"`
+	HostWorkingDirectory string         `json:"hostWorkingDirectory"`
+	TimeoutMs            int64          `json:"timeoutMs,omitempty"`
+	RequestKind          string         `json:"requestKind,omitempty"`
+}
+
+// IsToolWarmupRequest reports whether a tool input is a warm-up request.
+func IsToolWarmupRequest(input ToolExecutionInput) bool {
+	return input.RequestKind == ToolRequestKindWarmup
 }
 
 type ToolExecutionOutput struct {

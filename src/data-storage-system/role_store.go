@@ -44,7 +44,7 @@ func (s *system) ListRoles(ctx context.Context) ([]types.RoleSummary, error) {
 	}
 	summaries := make([]types.RoleSummary, 0, len(roles))
 	for _, role := range roles {
-		summaries = append(summaries, types.RoleSummary{ID: role.ID, Name: role.Name, Avatar: role.Avatar, UpdatedAt: role.UpdatedAt})
+		summaries = append(summaries, types.RoleSummary{ID: role.ID, Name: role.Name, UpdatedAt: role.UpdatedAt})
 	}
 	sort.Slice(summaries, func(i, j int) bool { return summaries[i].ID < summaries[j].ID })
 	return summaries, nil

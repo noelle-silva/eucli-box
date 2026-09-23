@@ -144,7 +144,7 @@ func (f *fakeRoleStorage) LoadRole(ctx context.Context, roleID string) (types.Ro
 func (f *fakeRoleStorage) ListRoles(ctx context.Context) ([]types.RoleSummary, error) {
 	summaries := make([]types.RoleSummary, 0, len(f.roles))
 	for _, role := range f.roles {
-		summaries = append(summaries, types.RoleSummary{ID: role.ID, Name: role.Name, Avatar: role.Avatar, UpdatedAt: role.UpdatedAt})
+		summaries = append(summaries, types.RoleSummary{ID: role.ID, Name: role.Name, UpdatedAt: role.UpdatedAt})
 	}
 	return summaries, nil
 }

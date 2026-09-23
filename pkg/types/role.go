@@ -36,34 +36,31 @@ type ModelConfig struct {
 }
 
 type Role struct {
-	ID          string          `json:"id"`
-	Name        string          `json:"name"`
-	Avatar      string          `json:"avatar"`
-	Description string          `json:"description"`
-	Prompts     []PromptMessage `json:"prompts"`
-	ModelConfig ModelConfig     `json:"modelConfig"`
-	ToolPolicy  ToolPolicy      `json:"toolPolicy"`
-	HookPromptPresetID string   `json:"hookPromptPresetId,omitempty"`
-	CreatedAt   time.Time       `json:"createdAt"`
-	UpdatedAt   time.Time       `json:"updatedAt"`
+	ID                 string          `json:"id"`
+	Name               string          `json:"name"`
+	Description        string          `json:"description"`
+	Prompts            []PromptMessage `json:"prompts"`
+	ModelConfig        ModelConfig     `json:"modelConfig"`
+	ToolPolicy         ToolPolicy      `json:"toolPolicy"`
+	HookPromptPresetID string          `json:"hookPromptPresetId,omitempty"`
+	CreatedAt          time.Time       `json:"createdAt"`
+	UpdatedAt          time.Time       `json:"updatedAt"`
 }
 
 type RoleSummary struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
-	Avatar    string    `json:"avatar"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 type RoleContext struct {
-	RoleID      string           `json:"roleId"`
-	RoleName    string           `json:"roleName"`
-	Avatar      string           `json:"avatar"`
-	Prompts     []PromptMessage  `json:"prompts"`
-	ModelConfig ModelConfig      `json:"modelConfig"`
-	Messages    []Message        `json:"messages"`
-	ToolPolicy  ToolPolicy       `json:"toolPolicy"`
-	HookPromptPresetID string    `json:"hookPromptPresetId,omitempty"`
-	Tools       []ToolDefinition `json:"tools,omitempty"`
-	NativeTools []ToolDefinition `json:"nativeTools,omitempty"`
+	RoleID             string           `json:"roleId"`
+	RoleName           string           `json:"roleName"`
+	Prompts            []PromptMessage  `json:"prompts"`
+	ModelConfig        ModelConfig      `json:"modelConfig"`
+	Messages           []Message        `json:"messages"`
+	ToolPolicy         ToolPolicy       `json:"toolPolicy"`
+	HookPromptPresetID string           `json:"hookPromptPresetId,omitempty"`
+	Tools              []ToolDefinition `json:"tools,omitempty"`
+	NativeTools        []ToolDefinition `json:"nativeTools,omitempty"`
 }

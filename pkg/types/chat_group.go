@@ -11,7 +11,6 @@ type ChatGroupRandomConfig struct {
 type ChatGroup struct {
 	ID              string                `json:"id"`
 	Name            string                `json:"name"`
-	Avatar          string                `json:"avatar"`
 	Prompt          string                `json:"prompt,omitempty"`
 	Mode            string                `json:"mode"`
 	MemberRoleIDs   []string              `json:"memberRoleIds"`
@@ -24,6 +23,5 @@ type ChatGroup struct {
 type ChatGroupSummary struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
-	Avatar    string    `json:"avatar"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }

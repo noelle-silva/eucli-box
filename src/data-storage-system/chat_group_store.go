@@ -58,7 +58,7 @@ func (s *system) ListChatGroups(ctx context.Context) ([]types.ChatGroupSummary, 
 		if err != nil {
 			return nil, err
 		}
-		summaries = append(summaries, types.ChatGroupSummary{ID: group.ID, Name: group.Name, Avatar: group.Avatar, UpdatedAt: group.UpdatedAt})
+		summaries = append(summaries, types.ChatGroupSummary{ID: group.ID, Name: group.Name, UpdatedAt: group.UpdatedAt})
 	}
 	sort.Slice(summaries, func(i, j int) bool { return summaries[i].ID < summaries[j].ID })
 	return summaries, nil
@@ -91,10 +91,6 @@ func normalizeChatGroupForStorage(group types.ChatGroup, now time.Time) (types.C
 	group.Name = strings.Join(strings.Fields(group.Name), " ")
 	if group.Name == "" {
 		group.Name = "未命名群组"
-	}
-	group.Avatar = strings.TrimSpace(group.Avatar)
-	if group.Avatar == "" {
-		group.Avatar = "群"
 	}
 	group.Prompt = strings.TrimSpace(group.Prompt)
 	if strings.TrimSpace(group.Mode) == "random" {

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	apperrors "eucli-box/pkg/errors"
 	"eucli-box/pkg/datapaths"
+	apperrors "eucli-box/pkg/errors"
 	"eucli-box/pkg/types"
 )
 
@@ -28,7 +28,7 @@ func TestInitializeCreatesStorageLayout(t *testing.T) {
 
 func TestSaveLoadListAndDeleteRole(t *testing.T) {
 	system := newTestSystem(t)
-	role := types.Role{ID: "developer", Name: "Developer", Avatar: "avatar.png", UpdatedAt: time.Date(2026, 5, 30, 10, 0, 0, 0, time.UTC)}
+	role := types.Role{ID: "developer", Name: "Developer", UpdatedAt: time.Date(2026, 5, 30, 10, 0, 0, 0, time.UTC)}
 	if err := system.SaveRole(context.Background(), role); err != nil {
 		t.Fatalf("SaveRole() error = %v", err)
 	}

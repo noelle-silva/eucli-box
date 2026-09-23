@@ -1402,7 +1402,7 @@ func (f *fakeGatewayGroups) LoadChatGroup(ctx context.Context, groupID string) (
 func (f *fakeGatewayGroups) ListChatGroups(ctx context.Context) ([]types.ChatGroupSummary, error) {
 	groups := make([]types.ChatGroupSummary, 0, len(f.groups))
 	for _, group := range f.groups {
-		groups = append(groups, types.ChatGroupSummary{ID: group.ID, Name: group.Name, Avatar: group.Avatar, UpdatedAt: group.UpdatedAt})
+		groups = append(groups, types.ChatGroupSummary{ID: group.ID, Name: group.Name, UpdatedAt: group.UpdatedAt})
 	}
 	return groups, nil
 }

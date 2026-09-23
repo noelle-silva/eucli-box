@@ -30,7 +30,6 @@ func (s *system) BuildContext(ctx context.Context, roleID string, session types.
 	return types.RoleContext{
 		RoleID:             role.ID,
 		RoleName:           role.Name,
-		Avatar:             role.Avatar,
 		Prompts:            sortedPrompts(role.Prompts),
 		ModelConfig:        role.ModelConfig,
 		Messages:           cloneMessages(session.Messages),
@@ -52,7 +51,6 @@ func (s *system) buildWorkspaceContext(ctx context.Context, role types.Role, ses
 	return types.RoleContext{
 		RoleID:             role.ID,
 		RoleName:           role.Name,
-		Avatar:             role.Avatar,
 		Prompts:            workspaceContextPrompts(workspace, role),
 		ModelConfig:        role.ModelConfig,
 		Messages:           cloneMessages(session.Messages),
@@ -99,7 +97,6 @@ func (s *system) buildGroupContext(ctx context.Context, role types.Role, session
 	return types.RoleContext{
 		RoleID:             role.ID,
 		RoleName:           role.Name,
-		Avatar:             role.Avatar,
 		Prompts:            groupContextPrompts(group, role),
 		ModelConfig:        role.ModelConfig,
 		Messages:           messages,

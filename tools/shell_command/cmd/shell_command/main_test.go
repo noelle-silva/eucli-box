@@ -63,10 +63,45 @@ func TestExecutableMarksInvalidProviderOutput(t *testing.T) {
 	t.Logf("invalid utf8 command output: %s", result.Content)
 }
 
-// TestExecutableWarmupRequestSkipsCommandExecution 验证预热请求：工具识别预热
-// 请求并回报成功，不执行命令、不触碰 Provider，命令参数完全被忽略。
-func TestExecutableWarmupRequestSkipsCommandExecution(t *testing.T) {
+// TestExecutableWarmupRunsAnalyzerAndDefaultShell 验证真实热身：工具加载命令
+// 分析器，并拉起默认 Provider 的 shell 执行固定无害命令；用户命令不被执行。
+func TestExecutableWarmupRunsAnalyzerAndDefaultShell(t *testing.T) {
 	fixture := newExecutableFixture(t)
+	trace := filepath.Join(t.TempDir(), "shell-trace.txt")
+	result := fixture.runInputEnv(t, types.ToolExecutionInput{
+		ActionID:             "warmup-test",
+		ToolName:             "shell_command",
+		Arguments:            map[string]any{"command": "print-utf8"},
+		ToolBodyDirectory:    fixture.toolDir,
+		ToolDataDirectory:    fixture.toolDir,
+		HostWorkingDirectory: fixture.hostDir,
+		RequestKind:          types.ToolRequestKindWarmup,
+	}, map[string]string{"FAKE_PROVIDER_TRACE": trace})
+	if result.Status != types.ToolStatusSuccess {
+		t.Fatalf("warmup status = %s, error = %s", result.Status, result.Error)
+	}
+	if result.Metadata["warmup"] != true || result.Metadata["provider"] != "git-bash" {
+		t.Fatalf("warmup metadata = %#v", result.Metadata)
+	}
+	payload, err := os.ReadFile(trace)
+	if err != nil {
+		t.Fatalf("default shell was not launched: ReadFile(%s) error = %v", trace, err)
+	}
+	if got := strings.TrimSpace(string(payload)); got != "exit 0" {
+		t.Fatalf("default shell saw %q, want only the warmup command", got)
+	}
+	if strings.Contains(result.Content, "中文-ok") {
+		t.Fatalf("warmup must not run the requested command: %q", result.Content)
+	}
+}
+
+// TestExecutableWarmupFailsWithoutAnalyzer 验证预热真实依赖命令分析器：
+// 分析器缺失时预热如实失败，而不是静默成功。
+func TestExecutableWarmupFailsWithoutAnalyzer(t *testing.T) {
+	fixture := newExecutableFixture(t)
+	if err := os.RemoveAll(filepath.Join(fixture.toolDir, "analyzer")); err != nil {
+		t.Fatalf("RemoveAll(analyzer) error = %v", err)
+	}
 	result := fixture.runInput(t, types.ToolExecutionInput{
 		ActionID:             "warmup-test",
 		ToolName:             "shell_command",
@@ -76,14 +111,11 @@ func TestExecutableWarmupRequestSkipsCommandExecution(t *testing.T) {
 		HostWorkingDirectory: fixture.hostDir,
 		RequestKind:          types.ToolRequestKindWarmup,
 	})
-	if result.Status != types.ToolStatusSuccess {
-		t.Fatalf("warmup status = %s, error = %s", result.Status, result.Error)
+	if result.Status != types.ToolStatusFailed {
+		t.Fatalf("warmup status = %s, want failed", result.Status)
 	}
-	if result.Metadata["warmup"] != true {
-		t.Fatalf("warmup metadata = %#v", result.Metadata)
-	}
-	if strings.Contains(result.Content, "中文-ok") {
-		t.Fatalf("warmup must not run the requested command: %q", result.Content)
+	if !strings.Contains(result.Error, "command analyzer") {
+		t.Fatalf("warmup error = %q, want analyzer cause", result.Error)
 	}
 }
 
@@ -160,6 +192,11 @@ func (f executableFixture) run(t *testing.T, arguments map[string]any) types.Too
 
 func (f executableFixture) runInput(t *testing.T, input types.ToolExecutionInput) types.ToolExecutionOutput {
 	t.Helper()
+	return f.runInputEnv(t, input, nil)
+}
+
+func (f executableFixture) runInputEnv(t *testing.T, input types.ToolExecutionInput, extraEnv map[string]string) types.ToolExecutionOutput {
+	t.Helper()
 	payload, err := json.Marshal(input)
 	if err != nil {
 		t.Fatalf("Marshal(input) error = %v", err)
@@ -167,6 +204,9 @@ func (f executableFixture) runInput(t *testing.T, input types.ToolExecutionInput
 	cmd := exec.Command(f.executable)
 	cmd.Stdin = bytes.NewReader(payload)
 	cmd.Env = append(os.Environ(), "LANG=legacy", "LC_ALL=legacy", "PYTHONIOENCODING=gbk")
+	for key, value := range extraEnv {
+		cmd.Env = append(cmd.Env, key+"="+value)
+	}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("shell_command executable failed: %v\n%s", err, output)
@@ -258,6 +298,12 @@ func main() {
 	case "invalid-utf8":
 		_, _ = os.Stdout.Write([]byte{0xff, 'o', 'k'})
 	default:
+		if trace := os.Getenv("FAKE_PROVIDER_TRACE"); trace != "" {
+			if file, err := os.OpenFile(trace, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+				_, _ = file.WriteString(command + "\n")
+				_ = file.Close()
+			}
+		}
 		fmt.Print(command)
 	}
 }

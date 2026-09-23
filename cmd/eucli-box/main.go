@@ -166,6 +166,9 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("start tool calling system: %w", err)
 	}
+	if err := toolSystem.StartWarmup(ctx); err != nil {
+		return fmt.Errorf("start tool warmup scheduler: %w", err)
+	}
 	log.Printf("[7/13] tool-calling-system     ✓")
 
 	pluginDataDir := datapaths.SystemPluginsDataDir(dataDir)
@@ -247,6 +250,9 @@ func run() error {
 	accessSystem.Shutdown(shutdownCtx)
 	if err := gatewaySystem.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("shutdown gateway system: %w", err)
+	}
+	if err := toolSystem.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("shutdown tool calling system: %w", err)
 	}
 	if err := systemPluginSystem.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("shutdown system plugin system: %w", err)

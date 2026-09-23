@@ -23,14 +23,19 @@ func toolWarmupEnabled(tool types.ToolDefinition) bool {
 	return false
 }
 
-// warmupTool 对单个工具执行一次预热：按正式执行同样的进程交接方式启动工具，
-// 但发送的是预热请求，由工具自己完成热身动作；返回本次预热的真实耗时。
-// 它不经过权限、意图与用户调用记录，只服务宿主自己的缓存保热。
+// warmupTool 按工具 ID 执行一次预热：加载工具定义后交给预热执行。
 func (s *system) warmupTool(ctx context.Context, toolID string) (time.Duration, error) {
 	tool, err := s.LoadTool(ctx, toolID)
 	if err != nil {
 		return 0, err
 	}
+	return s.warmupDefinedTool(ctx, tool)
+}
+
+// warmupDefinedTool 对单个工具执行一次预热：按正式执行同样的进程交接方式启动工具，
+// 但发送的是预热请求，由工具自己完成热身动作；返回本次预热的真实耗时。
+// 它不经过权限、意图与用户调用记录，只服务宿主自己的缓存保热。
+func (s *system) warmupDefinedTool(ctx context.Context, tool types.ToolDefinition) (time.Duration, error) {
 	if tool.Status == types.ToolAvailabilityUnavailable {
 		return 0, toolExecutionInvalid("tool is unavailable for warmup: "+tool.StatusMessage, nil)
 	}

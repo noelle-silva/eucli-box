@@ -32,6 +32,9 @@ type System interface {
 	ListToolOperations(ctx context.Context) ([]types.ArtifactInstallState, error)
 	ToolActivity(ctx context.Context, toolID string) (types.ArtifactActivityState, error)
 	StopToolExecution(ctx context.Context, toolID string) (types.ToolStopResult, error)
+
+	StartWarmup(ctx context.Context) error
+	Shutdown(ctx context.Context) error
 }
 
 type PermissionSystem interface {
@@ -50,6 +53,7 @@ type StorageSystem interface {
 type Config struct {
 	ToolWatchdogTimeout      time.Duration
 	ToolWatchdogPingInterval time.Duration
+	ToolWarmupInterval       time.Duration
 	BoxVersion               string
 	ProgramRoot              string
 	Candidates               releasecheck.CandidateReader
@@ -57,13 +61,16 @@ type Config struct {
 }
 
 type system struct {
-	config            Config
-	boxVersion        string
-	permission        PermissionSystem
-	storage           StorageSystem
-	activities        map[string]*toolActivity
-	activeExecutions  map[string]map[*toolRunContext]struct{}
-	mu                sync.Mutex
+	config           Config
+	boxVersion       string
+	permission       PermissionSystem
+	storage          StorageSystem
+	activities       map[string]*toolActivity
+	activeExecutions map[string]map[*toolRunContext]struct{}
+	mu               sync.Mutex
+	warmupMu         sync.Mutex
+	warmupCancel     context.CancelFunc
+	warmupDone       chan struct{}
 }
 
 // toolRunContext cancels one tool execution from a user-facing stop action.
@@ -86,6 +93,9 @@ func NewSystem(config Config, permission PermissionSystem, storage StorageSystem
 	}
 	if config.ToolWatchdogPingInterval >= config.ToolWatchdogTimeout {
 		return nil, toolInvalid("tool watchdog ping interval must be less than watchdog timeout", nil)
+	}
+	if config.ToolWarmupInterval <= 0 {
+		config.ToolWarmupInterval = 15 * time.Minute
 	}
 	boxVersion := strings.TrimSpace(config.BoxVersion)
 	if boxVersion == "" {

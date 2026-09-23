@@ -112,7 +112,21 @@ func runWarmup(ctx context.Context, cancel context.CancelFunc, input types.ToolE
 		}()
 		serveDone = done
 	}
-	return shellcommand.Warmup(ctx, input), client, cancel, serveDone
+	return warmupTool(ctx, input), client, cancel, serveDone
+}
+
+// warmupTool 组合热身动作：先运行一次无害分析以真实加载命令分析器，
+// 再拉起默认 Provider 的 shell 执行一次无害命令；任一步失败都让预热如实失败。
+func warmupTool(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
+	analyzer, err := newCommandAnalyzer(input.ToolBodyDirectory)
+	if err != nil {
+		return failedOutput("warmup command analyzer failed", err)
+	}
+	providerID, _ := shellcommand.WarmupProviderID(input)
+	if _, err := analyzer.analyze(ctx, shellcommand.WarmupCommand, providerID, ""); err != nil {
+		return failedOutput("warmup command analysis failed", err)
+	}
+	return shellcommand.Warmup(ctx, input)
 }
 
 // analyzeRequestedCommand runs the unified command analyzer over the requested

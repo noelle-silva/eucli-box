@@ -47,6 +47,10 @@ func run() (types.ToolExecutionOutput, *toolcontrol.Client, context.CancelFunc, 
 	}
 	executionCtx, executionCancel := context.WithCancel(context.Background())
 
+	if types.IsToolWarmupRequest(input) {
+		return runWarmup(executionCtx, executionCancel, input)
+	}
+
 	analysis, err := analyzeRequestedCommand(input)
 	if err != nil {
 		executionCancel()
@@ -87,6 +91,28 @@ func run() (types.ToolExecutionOutput, *toolcontrol.Client, context.CancelFunc, 
 	}
 	attachAnalysis(output, analysis)
 	return output, client, executionCancel, serveDone
+}
+
+// runWarmup handles a host warm-up request: it never analyzes or executes any
+// user command, and only attaches the control channel (when the host provides
+// one) before reporting the tool's warm-up outcome.
+func runWarmup(ctx context.Context, cancel context.CancelFunc, input types.ToolExecutionInput) (types.ToolExecutionOutput, *toolcontrol.Client, context.CancelFunc, <-chan struct{}) {
+	noopCancel := func() {}
+	client, err := toolcontrol.AdoptControl(ctx)
+	if err != nil {
+		cancel()
+		return toolcontrol.ControlFailedOutput(err), client, noopCancel, nil
+	}
+	var serveDone <-chan struct{}
+	if client != nil {
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			_ = client.Serve(ctx)
+		}()
+		serveDone = done
+	}
+	return shellcommand.Warmup(ctx, input), client, cancel, serveDone
 }
 
 // analyzeRequestedCommand runs the unified command analyzer over the requested

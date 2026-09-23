@@ -63,6 +63,30 @@ func TestExecutableMarksInvalidProviderOutput(t *testing.T) {
 	t.Logf("invalid utf8 command output: %s", result.Content)
 }
 
+// TestExecutableWarmupRequestSkipsCommandExecution 验证预热请求：工具识别预热
+// 请求并回报成功，不执行命令、不触碰 Provider，命令参数完全被忽略。
+func TestExecutableWarmupRequestSkipsCommandExecution(t *testing.T) {
+	fixture := newExecutableFixture(t)
+	result := fixture.runInput(t, types.ToolExecutionInput{
+		ActionID:             "warmup-test",
+		ToolName:             "shell_command",
+		Arguments:            map[string]any{"command": "print-utf8"},
+		ToolBodyDirectory:    fixture.toolDir,
+		ToolDataDirectory:    fixture.toolDir,
+		HostWorkingDirectory: fixture.hostDir,
+		RequestKind:          types.ToolRequestKindWarmup,
+	})
+	if result.Status != types.ToolStatusSuccess {
+		t.Fatalf("warmup status = %s, error = %s", result.Status, result.Error)
+	}
+	if result.Metadata["warmup"] != true {
+		t.Fatalf("warmup metadata = %#v", result.Metadata)
+	}
+	if strings.Contains(result.Content, "中文-ok") {
+		t.Fatalf("warmup must not run the requested command: %q", result.Content)
+	}
+}
+
 type executableFixture struct {
 	executable string
 	toolDir    string
@@ -131,7 +155,11 @@ func installFixtureAnalyzer(t *testing.T, toolDir string) {
 
 func (f executableFixture) run(t *testing.T, arguments map[string]any) types.ToolExecutionOutput {
 	t.Helper()
-	input := types.ToolExecutionInput{ActionID: "action-test", ToolName: "shell_command", Arguments: arguments, ToolBodyDirectory: f.toolDir, ToolDataDirectory: f.toolDir, HostWorkingDirectory: f.hostDir}
+	return f.runInput(t, types.ToolExecutionInput{ActionID: "action-test", ToolName: "shell_command", Arguments: arguments, ToolBodyDirectory: f.toolDir, ToolDataDirectory: f.toolDir, HostWorkingDirectory: f.hostDir})
+}
+
+func (f executableFixture) runInput(t *testing.T, input types.ToolExecutionInput) types.ToolExecutionOutput {
+	t.Helper()
 	payload, err := json.Marshal(input)
 	if err != nil {
 		t.Fatalf("Marshal(input) error = %v", err)

@@ -288,7 +288,7 @@ func TestSaveSessionPreservesAsyncToolResultMessageType(t *testing.T) {
 	}
 }
 
-func TestSaveSessionMessageAttachmentStoresImagesAndText(t *testing.T) {
+func TestSaveSessionMessageAttachmentStoresImages(t *testing.T) {
 	system := newTestSystem(t)
 	session := types.Session{ID: "session-1", RoleID: "developer", Title: "Attachments"}
 	if err := system.SaveSession(context.Background(), session); err != nil {
@@ -312,12 +312,8 @@ func TestSaveSessionMessageAttachmentStoresImagesAndText(t *testing.T) {
 		t.Fatalf("loaded image = %q want %q", loaded, imageDataURL)
 	}
 
-	text, err := system.SaveSessionMessageAttachment(context.Background(), "developer", "session-1", types.RunAttachment{Kind: "md", Name: "note.md", Text: "# hello", FullLen: 7, SendLen: 7, SendPct: 100})
-	if err != nil {
-		t.Fatalf("SaveSessionMessageAttachment(text) error = %v", err)
-	}
-	if text.Kind != "md" || text.Lang != "markdown" || text.Text != "# hello" || text.Path != "" {
-		t.Fatalf("text attachment = %#v", text)
+	if _, err := system.SaveSessionMessageAttachment(context.Background(), "developer", "session-1", types.RunAttachment{Kind: "md", Name: "note.md"}); err == nil {
+		t.Fatalf("SaveSessionMessageAttachment(text) error = nil, want error")
 	}
 }
 

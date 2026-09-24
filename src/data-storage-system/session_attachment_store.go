@@ -7,13 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"unicode/utf8"
 
 	"eucli-box/pkg/types"
 	"eucli-box/pkg/utils"
 )
-
-const maxMessageAttachmentTextRunes = 10_000_000
 
 var sessionAttachmentAllowedImageMIMEs = map[string]string{"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
 
@@ -44,11 +41,10 @@ func (s *system) saveSessionMessageAttachment(ctx context.Context, scope session
 		return types.MessageAttachment{}, err
 	}
 
-	kind := normalizeMessageAttachmentKind(attachment.Kind)
-	if kind == "image" {
-		return s.saveSessionImageAttachment(ctx, scope, sessionID, attachment)
+	if !isImageAttachmentKind(attachment.Kind) {
+		return types.MessageAttachment{}, storageInvalid("message attachment must be an image", nil)
 	}
-	return normalizeTextMessageAttachment(attachment, kind)
+	return s.saveSessionImageAttachment(ctx, scope, sessionID, attachment)
 }
 
 func (s *system) saveSessionImageAttachment(ctx context.Context, scope sessionScope, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
@@ -69,32 +65,6 @@ func (s *system) saveSessionImageAttachment(ctx context.Context, scope sessionSc
 		return types.MessageAttachment{}, storageWriteFailed("failed to write session image attachment", err)
 	}
 	return types.MessageAttachment{ID: attachmentID, Kind: "image", Name: normalizeAttachmentName(attachment.Name, "图片"), Mime: image.Mime, Path: sessionAttachmentRelPath(scope, sessionID, attachmentID, fileName)}, nil
-}
-
-func normalizeTextMessageAttachment(attachment types.RunAttachment, kind string) (types.MessageAttachment, error) {
-	text := strings.TrimSpace(attachment.Text)
-	if text == "" {
-		return types.MessageAttachment{}, storageInvalid("message file attachment text is required", nil)
-	}
-	if utf8.RuneCountInString(text) > maxMessageAttachmentTextRunes {
-		return types.MessageAttachment{}, storageInvalid("message file attachment text is too large", nil)
-	}
-	fullLen := attachment.FullLen
-	if fullLen <= 0 {
-		fullLen = utf8.RuneCountInString(text)
-	}
-	sendLen := attachment.SendLen
-	if sendLen <= 0 || sendLen > fullLen {
-		sendLen = utf8.RuneCountInString(text)
-	}
-	sendPct := attachment.SendPct
-	if sendPct <= 0 {
-		sendPct = 100
-	}
-	if sendPct > 100 {
-		sendPct = 100
-	}
-	return types.MessageAttachment{ID: utils.NewID("att"), Kind: kind, Name: normalizeAttachmentName(attachment.Name, "文件"), Mime: strings.TrimSpace(attachment.Mime), Lang: normalizeAttachmentLang(attachment.Lang, kind), Text: text, FullLen: fullLen, SendLen: sendLen, SendPct: sendPct}, nil
 }
 
 func (s *system) LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error) {
@@ -205,21 +175,8 @@ func sessionAttachmentRelPath(scope sessionScope, sessionID string, attachmentID
 	return filepath.ToSlash(filepath.Join("sessions", "roles", scope.ID, sessionID, "attachments", attachmentID, fileName))
 }
 
-func normalizeMessageAttachmentKind(kind string) string {
-	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "image":
-		return "image"
-	case "md", "markdown":
-		return "md"
-	case "pdf":
-		return "pdf"
-	case "docx":
-		return "docx"
-	case "ppt", "pptx":
-		return "ppt"
-	default:
-		return "txt"
-	}
+func isImageAttachmentKind(kind string) bool {
+	return strings.EqualFold(strings.TrimSpace(kind), "image")
 }
 
 func normalizeAttachmentName(name string, fallback string) string {
@@ -232,15 +189,4 @@ func normalizeAttachmentName(name string, fallback string) string {
 		return strings.TrimSpace(string(runes[:160]))
 	}
 	return name
-}
-
-func normalizeAttachmentLang(lang string, kind string) string {
-	lang = strings.TrimSpace(lang)
-	if lang != "" {
-		return lang
-	}
-	if kind == "md" {
-		return "markdown"
-	}
-	return "text"
 }

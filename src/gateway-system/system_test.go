@@ -124,13 +124,13 @@ func TestBusinessRouteRejectsIncompatibleClient(t *testing.T) {
 func TestStartRunRouteAcceptsAttachmentsOnlyMessage(t *testing.T) {
 	fakes := newGatewayFakes()
 	system := newTestGateway(t, fakes)
-	req := httptest.NewRequest(http.MethodPost, "/api/runs", strings.NewReader(`{"roleId":"developer","attachments":[{"kind":"txt","name":"note.txt","text":"hello","fullLen":5,"sendLen":5,"sendPct":100}]}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/runs", strings.NewReader(`{"roleId":"developer","attachments":[{"kind":"image","name":"shot.png","dataUrl":"data:image/png;base64,iVBORw0KGgo="}]}`))
 	rec := httptest.NewRecorder()
 	system.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	if fakes.runtime.started.Message != "" || len(fakes.runtime.started.Attachments) != 1 || fakes.runtime.started.Attachments[0].Name != "note.txt" {
+	if fakes.runtime.started.Message != "" || len(fakes.runtime.started.Attachments) != 1 || fakes.runtime.started.Attachments[0].Name != "shot.png" {
 		t.Fatalf("started = %#v", fakes.runtime.started)
 	}
 }

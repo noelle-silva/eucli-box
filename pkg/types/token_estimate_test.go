@@ -10,14 +10,14 @@ func TestEstimateMessageTokenCountDoesNotDoubleCountTextPart(t *testing.T) {
 	}
 }
 
-func TestEstimateMessageTokenCountIncludesTextAttachment(t *testing.T) {
+func TestEstimateMessageTokenCountIgnoresImageAttachments(t *testing.T) {
 	message := Message{
 		Content:     "abcd",
-		Attachments: []MessageAttachment{{Kind: "txt", Text: "abcdefgh"}, {Kind: "image", Path: "sessions/role/session/attachments/att/image.png"}},
+		Attachments: []MessageAttachment{{Kind: "image", Path: "sessions/role/session/attachments/att/image.png"}},
 	}
 
-	if got := EstimateMessageTokenCount(message); got != 3 {
-		t.Fatalf("token estimate = %d, want 3", got)
+	if got := EstimateMessageTokenCount(message); got != 1 {
+		t.Fatalf("token estimate = %d, want 1", got)
 	}
 }
 

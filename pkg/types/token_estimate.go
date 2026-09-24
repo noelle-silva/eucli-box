@@ -36,13 +36,6 @@ func EstimateMessageTokenCount(message Message) int {
 		}
 	}
 
-	for _, attachment := range message.Attachments {
-		if strings.TrimSpace(attachment.Kind) == "image" {
-			continue
-		}
-		chars += utf8.RuneCountInString(strings.TrimSpace(attachment.Text))
-	}
-
 	if chars <= 0 {
 		return 0
 	}

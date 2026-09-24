@@ -158,16 +158,11 @@ type ToolPartResult struct {
 }
 
 type MessageAttachment struct {
-	ID      string `json:"id"`
-	Kind    string `json:"kind"`
-	Name    string `json:"name"`
-	Mime    string `json:"mime,omitempty"`
-	Path    string `json:"path,omitempty"`
-	Lang    string `json:"lang,omitempty"`
-	Text    string `json:"text,omitempty"`
-	FullLen int    `json:"fullLen,omitempty"`
-	SendLen int    `json:"sendLen,omitempty"`
-	SendPct int    `json:"sendPct,omitempty"`
+	ID   string `json:"id"`
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+	Mime string `json:"mime,omitempty"`
+	Path string `json:"path,omitempty"`
 }
 
 type RunAttachment struct {
@@ -175,11 +170,6 @@ type RunAttachment struct {
 	Name    string `json:"name"`
 	Mime    string `json:"mime,omitempty"`
 	DataURL string `json:"dataUrl,omitempty"`
-	Lang    string `json:"lang,omitempty"`
-	Text    string `json:"text,omitempty"`
-	FullLen int    `json:"fullLen,omitempty"`
-	SendLen int    `json:"sendLen,omitempty"`
-	SendPct int    `json:"sendPct,omitempty"`
 }
 
 type Session struct {

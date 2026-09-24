@@ -386,6 +386,9 @@ func normalizeSessionMessageAttachments(attachments []types.MessageAttachment) [
 	result := make([]types.MessageAttachment, 0, len(attachments))
 	seen := map[string]struct{}{}
 	for _, attachment := range attachments {
+		if !isImageAttachmentKind(attachment.Kind) {
+			continue
+		}
 		attachment.ID = strings.TrimSpace(attachment.ID)
 		if attachment.ID == "" {
 			attachment.ID = utils.NewID("att")
@@ -395,46 +398,13 @@ func normalizeSessionMessageAttachments(attachments []types.MessageAttachment) [
 		}
 		seen[attachment.ID] = struct{}{}
 
-		kind := normalizeMessageAttachmentKind(attachment.Kind)
-		if kind == "image" {
-			attachment.Path = filepathToSlashTrimmed(attachment.Path)
-			if attachment.Path == "" {
-				continue
-			}
-			attachment.Kind = "image"
-			attachment.Name = normalizeAttachmentName(attachment.Name, "图片")
-			attachment.Mime = strings.TrimSpace(attachment.Mime)
-			attachment.Lang = ""
-			attachment.Text = ""
-			attachment.FullLen = 0
-			attachment.SendLen = 0
-			attachment.SendPct = 0
-			result = append(result, attachment)
+		attachment.Path = filepathToSlashTrimmed(attachment.Path)
+		if attachment.Path == "" {
 			continue
 		}
-
-		attachment.Text = strings.TrimSpace(attachment.Text)
-		if attachment.Text == "" {
-			continue
-		}
-		attachment.Kind = kind
-		attachment.Name = normalizeAttachmentName(attachment.Name, "文件")
+		attachment.Kind = "image"
+		attachment.Name = normalizeAttachmentName(attachment.Name, "图片")
 		attachment.Mime = strings.TrimSpace(attachment.Mime)
-		attachment.Path = ""
-		attachment.Lang = normalizeAttachmentLang(attachment.Lang, kind)
-		textLen := len([]rune(attachment.Text))
-		if attachment.FullLen <= 0 {
-			attachment.FullLen = textLen
-		}
-		if attachment.SendLen <= 0 || attachment.SendLen > attachment.FullLen {
-			attachment.SendLen = textLen
-		}
-		if attachment.SendPct <= 0 {
-			attachment.SendPct = 100
-		}
-		if attachment.SendPct > 100 {
-			attachment.SendPct = 100
-		}
 		result = append(result, attachment)
 	}
 	return result

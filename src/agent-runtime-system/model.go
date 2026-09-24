@@ -200,10 +200,7 @@ func (s *system) resolvePromptPlaceholders(ctx context.Context, messages []types
 
 func (s *system) runtimeMessageToPrompt(ctx context.Context, message types.Message, index int) (types.PromptMessage, error) {
 	role := message.Type
-	content, err := s.messagePromptContent(ctx, message)
-	if err != nil {
-		return types.PromptMessage{}, err
-	}
+	content := message.Content
 	switch message.Type {
 	case "user", "assistant":
 	case types.MessageTypeSystemControl:
@@ -243,45 +240,6 @@ func cloneMessageParts(parts []types.MessagePart) []types.MessagePart {
 	return result
 }
 
-func (s *system) messagePromptContent(ctx context.Context, message types.Message) (string, error) {
-	content := message.Content
-	blocks := []string{}
-	for _, attachment := range message.Attachments {
-		if attachment.Kind == "image" || strings.TrimSpace(attachment.Text) == "" {
-			continue
-		}
-		name := strings.TrimSpace(attachment.Name)
-		if name == "" {
-			name = "文件"
-		}
-		lang := strings.TrimSpace(attachment.Lang)
-		if lang == "" {
-			lang = "text"
-		}
-		fullLen := attachment.FullLen
-		if fullLen <= 0 {
-			fullLen = len([]rune(attachment.Text))
-		}
-		sendLen := attachment.SendLen
-		if sendLen <= 0 {
-			sendLen = len([]rune(attachment.Text))
-		}
-		sendPct := attachment.SendPct
-		if sendPct <= 0 {
-			sendPct = 100
-		}
-		blocks = append(blocks, fmt.Sprintf("附件：%s（发送 %d%%：%d/%d 字符）\n```%s\n%s\n```", name, sendPct, sendLen, fullLen, lang, escapePromptFence(attachment.Text)))
-	}
-	if len(blocks) == 0 {
-		return content, nil
-	}
-	extra := strings.Join(blocks, "\n\n")
-	if strings.TrimSpace(content) == "" {
-		return extra, nil
-	}
-	return strings.TrimSpace(content) + "\n\n" + extra, nil
-}
-
 func (s *system) promptImagesForMessage(ctx context.Context, message types.Message) ([]types.PromptImage, error) {
 	images := []types.PromptImage{}
 	for _, attachment := range message.Attachments {
@@ -297,6 +255,3 @@ func (s *system) promptImagesForMessage(ctx context.Context, message types.Messa
 	return images, nil
 }
 
-func escapePromptFence(value string) string {
-	return strings.ReplaceAll(value, "```", "``\u200b`")
-}

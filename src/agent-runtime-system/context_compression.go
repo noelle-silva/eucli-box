@@ -238,17 +238,14 @@ func contextCompressionTranscript(messages []types.Message) string {
 			content = strings.TrimSpace(message.Reason)
 		}
 		for _, attachment := range message.Attachments {
-			name := strings.TrimSpace(attachment.Name)
-			if name == "" {
-				name = "附件"
-			}
-			if attachment.Kind == "image" {
-				content += "\n[图片附件：" + name + "]"
+			if attachment.Kind != "image" {
 				continue
 			}
-			if strings.TrimSpace(attachment.Text) != "" {
-				content += "\n[文本附件：" + name + "]\n" + strings.TrimSpace(attachment.Text)
+			name := strings.TrimSpace(attachment.Name)
+			if name == "" {
+				name = "图片"
 			}
+			content += "\n[图片附件：" + name + "]"
 		}
 		if content == "" {
 			content = "（空消息）"

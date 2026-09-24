@@ -61,7 +61,7 @@ func TestStartRunSavesAttachmentsAndPassesThemToModel(t *testing.T) {
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
 	system := newTestRuntime(t, fakes, Config{})
 	imageDataURL := "data:image/png;base64,iVBORw0KGgo="
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Attachments: []types.RunAttachment{{Kind: "image", Name: "shot.png", DataURL: imageDataURL}, {Kind: "md", Name: "note.md", Lang: "markdown", Text: "# hello", FullLen: 7, SendLen: 7, SendPct: 100}}})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Attachments: []types.RunAttachment{{Kind: "image", Name: "shot.png", DataURL: imageDataURL}}})
 	if err != nil {
 		t.Fatalf("StartRun() error = %v", err)
 	}
@@ -70,15 +70,15 @@ func TestStartRunSavesAttachmentsAndPassesThemToModel(t *testing.T) {
 		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
 	}
 	session := fakes.storage.lastSession()
-	if len(session.Messages) != 2 || len(session.Messages[0].Attachments) != 2 {
+	if len(session.Messages) != 2 || len(session.Messages[0].Attachments) != 1 {
 		t.Fatalf("messages = %#v", session.Messages)
 	}
 	request := fakes.provider.lastRequest()
 	if len(request.Messages) != 1 || len(request.Messages[0].Images) != 1 || request.Messages[0].Images[0].DataURL != imageDataURL {
 		t.Fatalf("model request messages = %#v", request.Messages)
 	}
-	if !strings.Contains(request.Messages[0].Content, "附件：note.md") || !strings.Contains(request.Messages[0].Content, "# hello") {
-		t.Fatalf("prompt content = %q", request.Messages[0].Content)
+	if request.Messages[0].Content != "" {
+		t.Fatalf("prompt content = %q, want empty", request.Messages[0].Content)
 	}
 }
 
@@ -2595,34 +2595,34 @@ func (f *fakeRuntimeStorage) updateMessageContent(t *testing.T, roleID string, s
 func (f *fakeRuntimeStorage) SaveSessionMessageAttachment(ctx context.Context, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if attachment.Kind == "image" {
-		path := "sessions/roles/" + roleID + "/" + sessionID + "/attachments/att-image/image.png"
-		f.images[path] = attachment.DataURL
-		return types.MessageAttachment{ID: "att-image", Kind: "image", Name: attachment.Name, Mime: "image/png", Path: path}, nil
+	if attachment.Kind != "image" {
+		return types.MessageAttachment{}, errors.New("unsupported attachment kind")
 	}
-	return types.MessageAttachment{ID: "att-text", Kind: attachment.Kind, Name: attachment.Name, Lang: attachment.Lang, Text: attachment.Text, FullLen: attachment.FullLen, SendLen: attachment.SendLen, SendPct: attachment.SendPct}, nil
+	path := "sessions/roles/" + roleID + "/" + sessionID + "/attachments/att-image/image.png"
+	f.images[path] = attachment.DataURL
+	return types.MessageAttachment{ID: "att-image", Kind: "image", Name: attachment.Name, Mime: "image/png", Path: path}, nil
 }
 
 func (f *fakeRuntimeStorage) SaveGroupSessionMessageAttachment(ctx context.Context, groupID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if attachment.Kind == "image" {
-		path := "sessions/groups/" + groupID + "/" + sessionID + "/attachments/att-image/image.png"
-		f.images[path] = attachment.DataURL
-		return types.MessageAttachment{ID: "att-image", Kind: "image", Name: attachment.Name, Mime: "image/png", Path: path}, nil
+	if attachment.Kind != "image" {
+		return types.MessageAttachment{}, errors.New("unsupported attachment kind")
 	}
-	return types.MessageAttachment{ID: "att-text", Kind: attachment.Kind, Name: attachment.Name, Lang: attachment.Lang, Text: attachment.Text, FullLen: attachment.FullLen, SendLen: attachment.SendLen, SendPct: attachment.SendPct}, nil
+	path := "sessions/groups/" + groupID + "/" + sessionID + "/attachments/att-image/image.png"
+	f.images[path] = attachment.DataURL
+	return types.MessageAttachment{ID: "att-image", Kind: "image", Name: attachment.Name, Mime: "image/png", Path: path}, nil
 }
 
 func (f *fakeRuntimeStorage) SaveWorkspaceSessionMessageAttachment(ctx context.Context, workspaceID string, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if attachment.Kind == "image" {
-		path := "sessions/workspaces/" + workspaceID + "/" + roleID + "/" + sessionID + "/attachments/att-image/image.png"
-		f.images[path] = attachment.DataURL
-		return types.MessageAttachment{ID: "att-image", Kind: "image", Name: attachment.Name, Mime: "image/png", Path: path}, nil
+	if attachment.Kind != "image" {
+		return types.MessageAttachment{}, errors.New("unsupported attachment kind")
 	}
-	return types.MessageAttachment{ID: "att-text", Kind: attachment.Kind, Name: attachment.Name, Lang: attachment.Lang, Text: attachment.Text, FullLen: attachment.FullLen, SendLen: attachment.SendLen, SendPct: attachment.SendPct}, nil
+	path := "sessions/workspaces/" + workspaceID + "/" + roleID + "/" + sessionID + "/attachments/att-image/image.png"
+	f.images[path] = attachment.DataURL
+	return types.MessageAttachment{ID: "att-image", Kind: "image", Name: attachment.Name, Mime: "image/png", Path: path}, nil
 }
 
 func (f *fakeRuntimeStorage) LoadWorkspace(ctx context.Context, workspaceID string) (types.Workspace, error) {

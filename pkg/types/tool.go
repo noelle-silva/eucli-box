@@ -11,42 +11,45 @@ const (
 )
 
 type ToolDefinition struct {
-	ID                        string                  `json:"id"`
-	Name                      string                  `json:"name"`
-	Description               string                  `json:"description"`
-	Version                   string                  `json:"version"`
-	EucliBoxCompatibility     EucliBoxCompatibility   `json:"eucliBoxCompatibility"`
-	Compatibility             CompatibilityStatus     `json:"compatibility"`
-	Status                    string                  `json:"status,omitempty"`
-	StatusMessage             string                  `json:"statusMessage,omitempty"`
-	PromptDescription         string                  `json:"promptDescription,omitempty"`
-	PromptDescriptionOverride string                  `json:"promptDescriptionOverride,omitempty"`
-	DefaultInvocationMode     ToolInvocationMode `json:"defaultInvocationMode,omitempty"`
-	Type                      string             `json:"type"`
-	InputSchema               map[string]any     `json:"inputSchema,omitempty"`
-	UserConfigSchema          map[string]any     `json:"userConfigSchema,omitempty"`
-	UserConfig                map[string]any     `json:"userConfig,omitempty"`
-	DefaultConfig             map[string]any     `json:"defaultConfig,omitempty"`
-	BodyDirectory             string             `json:"bodyDirectory,omitempty"`
-	DataDirectory             string             `json:"dataDirectory,omitempty"`
-	Binaries                  []ToolBinary       `json:"binaries,omitempty"`
-	CreatedAt                 time.Time          `json:"createdAt"`
-	UpdatedAt                 time.Time          `json:"updatedAt"`
+	ID                        string                `json:"id"`
+	Name                      string                `json:"name"`
+	Description               string                `json:"description"`
+	Version                   string                `json:"version"`
+	EucliBoxCompatibility     EucliBoxCompatibility `json:"eucliBoxCompatibility"`
+	Compatibility             CompatibilityStatus   `json:"compatibility"`
+	Status                    string                `json:"status,omitempty"`
+	StatusMessage             string                `json:"statusMessage,omitempty"`
+	PromptDescription         string                `json:"promptDescription,omitempty"`
+	PromptDescriptionOverride string                `json:"promptDescriptionOverride,omitempty"`
+	DefaultInvocationMode     ToolInvocationMode    `json:"defaultInvocationMode,omitempty"`
+	Type                      string                `json:"type"`
+	Capabilities              []ToolCapability      `json:"capabilities,omitempty"`
+	InputSchema               map[string]any        `json:"inputSchema,omitempty"`
+	UserConfigSchema          map[string]any        `json:"userConfigSchema,omitempty"`
+	UserConfig                map[string]any        `json:"userConfig,omitempty"`
+	CapabilityGrants          map[string]bool       `json:"capabilityGrants,omitempty"`
+	DefaultConfig             map[string]any        `json:"defaultConfig,omitempty"`
+	BodyDirectory             string                `json:"bodyDirectory,omitempty"`
+	DataDirectory             string                `json:"dataDirectory,omitempty"`
+	Binaries                  []ToolBinary          `json:"binaries,omitempty"`
+	CreatedAt                 time.Time             `json:"createdAt"`
+	UpdatedAt                 time.Time             `json:"updatedAt"`
 }
 
 // ToolOutputUpdate is a live output progress for one tool call, relayed by the
 // tool over the control channel during execution.
 type ToolOutputUpdate struct {
-	CallID  string `json:"callId"`
+	CallID   string `json:"callId"`
 	ToolName string `json:"toolName,omitempty"`
-	Bytes   uint64 `json:"bytes"`
-	Preview string `json:"preview"`
+	Bytes    uint64 `json:"bytes"`
+	Preview  string `json:"preview"`
 }
 
 type ToolUserSettings struct {
-	UserConfig                map[string]any `json:"userConfig"`
-	PromptDescriptionOverride string         `json:"promptDescriptionOverride,omitempty"`
-	UpdatedAt                 time.Time      `json:"updatedAt,omitempty"`
+	UserConfig                map[string]any  `json:"userConfig"`
+	PromptDescriptionOverride string          `json:"promptDescriptionOverride,omitempty"`
+	CapabilityGrants          map[string]bool `json:"capabilityGrants,omitempty"`
+	UpdatedAt                 time.Time       `json:"updatedAt,omitempty"`
 }
 
 func ToolPromptDescription(tool ToolDefinition) string {
@@ -72,16 +75,17 @@ type ToolBinary struct {
 const ToolRequestKindWarmup = "warmup"
 
 type ToolExecutionInput struct {
-	ActionID             string         `json:"actionId"`
-	ToolName             string         `json:"toolName"`
-	Arguments            map[string]any `json:"arguments"`
-	UserConfig           map[string]any `json:"userConfig"`
-	DefaultConfig        map[string]any `json:"defaultConfig"`
-	ToolBodyDirectory    string         `json:"toolBodyDirectory"`
-	ToolDataDirectory    string         `json:"toolDataDirectory"`
-	HostWorkingDirectory string         `json:"hostWorkingDirectory"`
-	TimeoutMs            int64          `json:"timeoutMs,omitempty"`
-	RequestKind          string         `json:"requestKind,omitempty"`
+	ActionID             string                `json:"actionId"`
+	ToolName             string                `json:"toolName"`
+	Arguments            map[string]any        `json:"arguments"`
+	UserConfig           map[string]any        `json:"userConfig"`
+	DefaultConfig        map[string]any        `json:"defaultConfig"`
+	ToolBodyDirectory    string                `json:"toolBodyDirectory"`
+	ToolDataDirectory    string                `json:"toolDataDirectory"`
+	HostWorkingDirectory string                `json:"hostWorkingDirectory"`
+	Workspace            *ToolWorkspaceContext `json:"workspace,omitempty"`
+	TimeoutMs            int64                 `json:"timeoutMs,omitempty"`
+	RequestKind          string                `json:"requestKind,omitempty"`
 }
 
 // IsToolWarmupRequest reports whether a tool input is a warm-up request.
@@ -170,9 +174,20 @@ type ToolAction struct {
 	CreatedAt      time.Time          `json:"createdAt"`
 }
 
+// ToolRunScope 是一次工具执行的会话身份：能力服务以此访问会话资源。
+type ToolRunScope struct {
+	RoleID      string `json:"roleId,omitempty"`
+	GroupID     string `json:"groupId,omitempty"`
+	WorkspaceID string `json:"workspaceId,omitempty"`
+	SessionID   string `json:"sessionId,omitempty"`
+}
+
 type ToolRunPlan struct {
-	ID             string              `json:"id"`
+	ID string `json:"id"`
+	// RoleID 是权限裁决的主体标识（与 Scope.RoleID 同源的历史字段）；
+	// 执行身份与能力服务一律以 Scope 为唯一来源。
 	RoleID         string              `json:"roleId,omitempty"`
+	Scope          ToolRunScope        `json:"scope,omitempty"`
 	Action         ToolAction          `json:"action"`
 	Tool           ToolDefinition      `json:"tool"`
 	InvocationMode ToolInvocationMode  `json:"invocationMode,omitempty"`
@@ -217,15 +232,16 @@ const (
 )
 
 type ToolResult struct {
-	ID         string         `json:"id"`
-	ActionID   string         `json:"actionId"`
-	ToolName   string         `json:"toolName"`
-	Status     ToolStatus     `json:"status"`
-	Content    string         `json:"content"`
-	Metadata   map[string]any `json:"metadata,omitempty"`
-	Error      string         `json:"error,omitempty"`
-	DurationMs int64          `json:"durationMs,omitempty"`
-	CreatedAt  time.Time      `json:"createdAt"`
+	ID                  string              `json:"id"`
+	ActionID            string              `json:"actionId"`
+	ToolName            string              `json:"toolName"`
+	Status              ToolStatus          `json:"status"`
+	Content             string              `json:"content"`
+	Metadata            map[string]any      `json:"metadata,omitempty"`
+	Error               string              `json:"error,omitempty"`
+	ProducedAttachments []MessageAttachment `json:"producedAttachments,omitempty"`
+	DurationMs          int64               `json:"durationMs,omitempty"`
+	CreatedAt           time.Time           `json:"createdAt"`
 }
 
 type ToolConfirmation struct {

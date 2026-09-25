@@ -17,6 +17,9 @@ type Config struct {
 	PingInterval time.Duration
 	// OnOutputUpdate relays accepted output updates to the host when set.
 	OnOutputUpdate func(update OutputUpdate)
+	// OnCapabilityRequest serves runtime capability requests from the tool.
+	// The host is the passive side: it only answers what the tool asks.
+	OnCapabilityRequest func(ctx context.Context, request CapabilityRequest) CapabilityResult
 }
 
 type FailureKind string
@@ -31,15 +34,17 @@ type Server struct {
 	config   Config
 	token    string
 
-	mu              sync.Mutex
-	conn            net.Conn
-	decoder         *json.Decoder
-	encoder         *json.Encoder
-	writeMu         sync.Mutex
-	closeOnce       sync.Once
-	outputUpdates   uint64
-	outputUpdateC   chan OutputUpdate
-	outputUpdateStop chan struct{}
+	mu                 sync.Mutex
+	conn               net.Conn
+	decoder            *json.Decoder
+	encoder            *json.Encoder
+	writeMu            sync.Mutex
+	closeOnce          sync.Once
+	outputUpdates      uint64
+	capabilityRequests uint64
+	capabilitySlots    chan struct{}
+	outputUpdateC      chan OutputUpdate
+	outputUpdateStop   chan struct{}
 }
 
 func NewServer(config Config) (*Server, error) {
@@ -61,10 +66,11 @@ func NewServer(config Config) (*Server, error) {
 		return nil, fmt.Errorf("listen for tool control: %w", err)
 	}
 	return &Server{
-		listener:        listener,
-		config:          config,
-		token:           token,
-		outputUpdateC:   make(chan OutputUpdate, 64),
+		listener:         listener,
+		config:           config,
+		token:            token,
+		capabilitySlots:  make(chan struct{}, MaxCapabilityConcurrency),
+		outputUpdateC:    make(chan OutputUpdate, 64),
 		outputUpdateStop: make(chan struct{}),
 	}, nil
 }
@@ -196,24 +202,32 @@ func (s *Server) Watch(ctx context.Context) <-chan FailureKind {
 					fail(FailureProtocol)
 					return
 				}
-			if message.message.Type == MessageOutputUpdate {
-				if err := validateOutputUpdate(message.message, s.token); err != nil {
-					fail(FailureProtocol)
-					return
-				}
-				s.mu.Lock()
-				if s.outputUpdates < MaxOutputUpdates {
-					s.outputUpdates++
-				}
-				s.mu.Unlock()
-				if s.config.OnOutputUpdate != nil && message.message.Update != nil {
-					select {
-					case s.outputUpdateC <- *message.message.Update:
-					default:
+				if message.message.Type == MessageCapabilityRequest {
+					if err := validateCapabilityRequest(message.message, s.token); err != nil {
+						fail(FailureProtocol)
+						return
 					}
+					s.serveCapabilityRequest(ctx, message.message)
+					continue
 				}
-				continue
-			}
+				if message.message.Type == MessageOutputUpdate {
+					if err := validateOutputUpdate(message.message, s.token); err != nil {
+						fail(FailureProtocol)
+						return
+					}
+					s.mu.Lock()
+					if s.outputUpdates < MaxOutputUpdates {
+						s.outputUpdates++
+					}
+					s.mu.Unlock()
+					if s.config.OnOutputUpdate != nil && message.message.Update != nil {
+						select {
+						case s.outputUpdateC <- *message.message.Update:
+						default:
+						}
+					}
+					continue
+				}
 				if err := validatePong(message.message, s.token, pendingSequence); err != nil || pendingSequence == 0 {
 					fail(FailureProtocol)
 					return
@@ -226,6 +240,53 @@ func (s *Server) Watch(ctx context.Context) <-chan FailureKind {
 		}
 	}()
 	return result
+}
+
+// serveCapabilityRequest 在受控范围内响应一次能力请求：
+// 总请求数超过上限时直接回执失败；并发处理数超过上限时在队列中等待，
+// 不阻塞心跳与输出更新，也不丢弃请求；执行结束通道关闭时写入失败被忽略。
+func (s *Server) serveCapabilityRequest(ctx context.Context, request Message) {
+	handler := s.config.OnCapabilityRequest
+	s.mu.Lock()
+	overLimit := s.capabilityRequests >= MaxCapabilityRequests
+	if !overLimit {
+		s.capabilityRequests++
+	}
+	s.mu.Unlock()
+	if overLimit {
+		s.writeCapabilityResult(request, CapabilityResult{Status: CapabilityStatusFailed, Error: "capability request limit exceeded"})
+		return
+	}
+	go func() {
+		select {
+		case s.capabilitySlots <- struct{}{}:
+			defer func() { <-s.capabilitySlots }()
+		case <-ctx.Done():
+			return
+		}
+		result := CapabilityResult{Status: CapabilityStatusFailed, Error: "capability request handler is not available"}
+		if handler != nil {
+			result = handler(ctx, CapabilityRequest{Capability: request.Capability, Access: request.Access, Payload: request.Payload})
+		}
+		s.writeCapabilityResult(request, result)
+	}()
+}
+
+func (s *Server) writeCapabilityResult(request Message, result CapabilityResult) {
+	if result.Status == "" {
+		result.Status = CapabilityStatusSuccess
+	}
+	var payload json.RawMessage
+	if result.Payload != nil {
+		encoded, err := json.Marshal(result.Payload)
+		if err != nil {
+			result.Status = CapabilityStatusFailed
+			result.Error = "capability response payload is invalid"
+		} else {
+			payload = encoded
+		}
+	}
+	_ = s.write(Message{Version: ProtocolVersion, Type: MessageCapabilityResponse, Token: s.token, RequestID: request.RequestID, Capability: request.Capability, Access: request.Access, Status: result.Status, Error: result.Error, Payload: payload})
 }
 
 func (s *Server) Close() error {

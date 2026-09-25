@@ -2,7 +2,7 @@
   "id": "file_reader",
   "name": "file_reader",
   "description": "使用相对路径或绝对路径查看文件内容、列出目录条目、通配匹配路径以及按正则搜索文本。",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "eucliBoxCompatibility": {
     "minimumVersion": "0.1.0",
     "maximumVersionExclusive": "0.2.0"
@@ -10,6 +10,14 @@
   "promptDescription": "使用 file_reader 查看受限文本文件与目录内容。它是一个只读文本文件工具，必须提供一个 action：read、list、glob 或 grep。相对路径从 e-b 宿主运行位置解析；绝对路径允许指向当前项目外的位置，前提是运行进程具有操作系统权限。本工具只读取文本文件，会拒绝二进制内容、危险空字节、超过 maxFileBytes 的文件，以及超过配置限制的输出（上限按 UTF-8 字节计）。每个成功结果末尾都有一条 [file_reader] 信息条，说明本次返回的关键事实；输出过长时正文会截断，信息条始终保留（信息条占用同一份输出预算）。read：使用 path 读取文件或目录，可选 offset 和 limit（必须为正数）；文件输出带行号，信息条给出 hash、totalLines、返回行数与续读用的 nextOffset（行过长被截短时标记 lineTruncated=true，行数不变），hash 可直接用于 file_editor 的 expectedHash。list：使用 path 列出目录条目，可选 showHidden；信息条给出条目总数与续读位置。glob：使用 path 和 pattern 查找路径；* 和 ? 不跨目录层，** 跨层且 **/ 可匹配零层，不带斜杠的模式只匹配搜索根一层（全深度请写 **/*.go）；结果按路径排序。grep：使用 path 和正则 query 搜索文本；include 过滤文件（不带斜杠时按文件名跨全部层匹配，带斜杠时按相对路径匹配），ignoreCase 忽略大小写，showHidden 包含隐藏路径；信息条会报告无法读取而被跳过的文件数量。带 BOM 的 UTF-8/UTF-16 文件会正确解码；无法识别的非 UTF-8 内容会以 � 替换并在正文顶部给出警告，元数据记录 invalidUTF8 与替换数量。",
   "defaultInvocationMode": "sync",
   "type": "local",
+  "capabilities": [
+    {
+      "id": "workspace",
+      "access": "read",
+      "name": "工作区路径",
+      "description": "获取当前工作区的注册目录，并按工作区范围校验路径参数。"
+    }
+  ],
   "bodyDirectory": ".",
   "userConfigSchema": {
     "type": "object",

@@ -34,7 +34,7 @@ func Warmup(ctx context.Context, input types.ToolExecutionInput) types.ToolExecu
 	if err != nil {
 		return failure("select shell_command provider", err, map[string]any{"provider": effectiveProviderName(config, providerID)})
 	}
-	workdir, err := resolveWorkdir(input.HostWorkingDirectory, "")
+	workdir, err := resolveWorkdir(types.ToolPathBaseDirectory(input), "")
 	if err != nil {
 		return failure("resolve shell_command workdir", err, map[string]any{"provider": provider.Config.ID})
 	}

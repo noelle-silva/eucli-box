@@ -31,6 +31,37 @@ func TestExecuteRunsBundledProviderCommand(t *testing.T) {
 	}
 }
 
+// TestExecuteWorkdirUsesWorkspaceBase 验证工作区注入时，
+// 缺省与相对 workdir 都以工作区首个注册目录为基准。
+func TestExecuteWorkdirUsesWorkspaceBase(t *testing.T) {
+	fixture := newShellCommandFixture(t)
+	workspaceDir := t.TempDir()
+	workspace := &types.ToolWorkspaceContext{ID: "w1", Name: "工作区", Directories: []types.WorkspaceDirectory{{Path: workspaceDir, Alias: "work"}}}
+
+	result := Execute(context.Background(), types.ToolExecutionInput{
+		Arguments:            map[string]any{"command": "print", "workdir": "."},
+		ToolBodyDirectory:    fixture.toolDir,
+		HostWorkingDirectory: fixture.hostDir,
+		Workspace:            workspace,
+	})
+	if result.Status != types.ToolStatusSuccess {
+		t.Fatalf("status = %s, error = %s", result.Status, result.Error)
+	}
+	if result.Metadata["workdir"] != workspaceDir {
+		t.Fatalf("relative workdir base = %v, want %s", result.Metadata["workdir"], workspaceDir)
+	}
+
+	result = Execute(context.Background(), types.ToolExecutionInput{
+		Arguments:            map[string]any{"command": "print"},
+		ToolBodyDirectory:    fixture.toolDir,
+		HostWorkingDirectory: fixture.hostDir,
+		Workspace:            workspace,
+	})
+	if result.Status != types.ToolStatusSuccess || result.Metadata["workdir"] != workspaceDir {
+		t.Fatalf("default workdir result = %#v", result)
+	}
+}
+
 func TestExecuteReturnsFailureWithProcessMetadata(t *testing.T) {
 	fixture := newShellCommandFixture(t)
 	result := Execute(context.Background(), types.ToolExecutionInput{

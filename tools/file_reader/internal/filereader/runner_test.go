@@ -36,6 +36,29 @@ func TestReadReturnsLineWindowAndHash(t *testing.T) {
 	}
 }
 
+// TestRelativePathUsesWorkspaceBase 验证工作区注入时，相对路径以工作区
+// 首个注册目录为基准解析，宿主目录不再参与。
+func TestRelativePathUsesWorkspaceBase(t *testing.T) {
+	hostDir := t.TempDir()
+	workspaceDir := t.TempDir()
+	writeTestFile(t, filepath.Join(workspaceDir, "target.txt"), "workspace-content\n")
+
+	output := Execute(context.Background(), types.ToolExecutionInput{
+		ActionID:             "test-action",
+		ToolName:             "file_reader",
+		Arguments:            map[string]any{"action": "read", "path": "target.txt"},
+		DefaultConfig:        map[string]any{},
+		HostWorkingDirectory: hostDir,
+		Workspace:            &types.ToolWorkspaceContext{ID: "w1", Name: "工作区", Directories: []types.WorkspaceDirectory{{Path: workspaceDir, Alias: "work"}}},
+	})
+	if output.Status != types.ToolStatusSuccess {
+		t.Fatalf("status = %s, error = %s", output.Status, output.Error)
+	}
+	if !strings.Contains(output.Content, "workspace-content") {
+		t.Fatalf("content = %q", output.Content)
+	}
+}
+
 func TestReadAbsolutePathOutsideBase(t *testing.T) {
 	root := t.TempDir()
 	outside := t.TempDir()

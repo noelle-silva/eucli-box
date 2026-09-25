@@ -19,7 +19,7 @@ func Execute(ctx context.Context, input types.ToolExecutionInput) types.ToolExec
 	if err != nil {
 		return failure("load file_reader config", err, nil)
 	}
-	policy, err := newPathPolicy(input.HostWorkingDirectory)
+	policy, err := newPathPolicy(types.ToolPathBaseDirectory(input))
 	if err != nil {
 		return failure("resolve file_reader base directory", err, nil)
 	}

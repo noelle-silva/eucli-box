@@ -32,7 +32,7 @@ func ExecuteWithOutputHook(ctx context.Context, input types.ToolExecutionInput, 
 	if err != nil {
 		return failure("select shell_command provider", err, map[string]any{"provider": effectiveProviderName(config, request.Provider)})
 	}
-	workdir, err := resolveWorkdir(input.HostWorkingDirectory, request.Workdir)
+	workdir, err := resolveWorkdir(types.ToolPathBaseDirectory(input), request.Workdir)
 	if err != nil {
 		return failure("resolve shell_command workdir", err, map[string]any{"provider": provider.Config.ID})
 	}

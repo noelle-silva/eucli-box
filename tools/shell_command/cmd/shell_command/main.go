@@ -1,4 +1,4 @@
-﻿package main
+package main
 
 import (
 	"bytes"
@@ -154,7 +154,8 @@ func analyzeRequestedCommand(input types.ToolExecutionInput) (map[string]any, er
 	if value, ok := input.Arguments["workdir"].(string); ok {
 		workdir = value
 	}
-	return analyzer.analyze(context.Background(), command, provider, workdir)
+	// 分析器与实际执行共用同一工作目录基准，影响路径判断才不会张冠李戴。
+	return analyzer.analyze(context.Background(), command, provider, shellcommand.AnalyzerWorkdir(input, workdir))
 }
 
 // attachAnalysis merges the analysis report into the tool result metadata.

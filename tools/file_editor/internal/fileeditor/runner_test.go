@@ -49,6 +49,35 @@ func TestWriteAndEditAbsolutePathOutsideBase(t *testing.T) {
 	}
 }
 
+// TestRelativeWriteUsesWorkspaceBase 验证工作区注入时，相对路径写入
+// 落在工作区首个注册目录下，宿主目录不参与。
+func TestRelativeWriteUsesWorkspaceBase(t *testing.T) {
+	hostDir := t.TempDir()
+	workspaceDir := t.TempDir()
+
+	output := Execute(context.Background(), types.ToolExecutionInput{
+		ActionID:             "test-action",
+		ToolName:             "file_editor",
+		Arguments:            map[string]any{"action": "write", "path": "inside.txt", "content": "workspace-write\n"},
+		DefaultConfig:        map[string]any{},
+		HostWorkingDirectory: hostDir,
+		Workspace:            &types.ToolWorkspaceContext{ID: "w1", Name: "工作区", Directories: []types.WorkspaceDirectory{{Path: workspaceDir, Alias: "work"}}},
+	})
+	if output.Status != types.ToolStatusSuccess {
+		t.Fatalf("status = %s, error = %s", output.Status, output.Error)
+	}
+	data, err := os.ReadFile(filepath.Join(workspaceDir, "inside.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "workspace-write\n" {
+		t.Fatalf("workspace write content = %q", string(data))
+	}
+	if _, err := os.Stat(filepath.Join(hostDir, "inside.txt")); err == nil {
+		t.Fatal("relative write must not land in host working directory")
+	}
+}
+
 func TestRelativeWriteWorksThroughSymlinkBaseDirectory(t *testing.T) {
 	realRoot := t.TempDir()
 	linkRoot := filepath.Join(t.TempDir(), "linked-root")

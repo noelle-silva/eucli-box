@@ -54,7 +54,7 @@ type ProviderSystem interface {
 
 type ToolSystem interface {
 	NormalizeIntent(ctx context.Context, intent types.ToolIntent) (types.ToolAction, error)
-	Prepare(ctx context.Context, roleID string, workspaceID string, action types.ToolAction) (types.ToolRunPlan, error)
+	Prepare(ctx context.Context, scope types.ToolRunScope, action types.ToolAction) (types.ToolRunPlan, error)
 	ApplyConfirmation(ctx context.Context, plan types.ToolRunPlan, confirmation types.ToolConfirmation) (types.ToolRunPlan, error)
 	Execute(ctx context.Context, plan types.ToolRunPlan) (types.ToolResult, error)
 	ExecuteWithOutputUpdate(ctx context.Context, plan types.ToolRunPlan, onUpdate func(update types.ToolOutputUpdate)) (types.ToolResult, error)

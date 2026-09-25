@@ -35,7 +35,8 @@ func (s *system) handleToolIntents(ctx context.Context, record *runRecord, inten
 		if entries[index].HasResult {
 			continue
 		}
-		plan, err := s.tools.Prepare(ctx, record.roleID, record.workspaceID, entries[index].Action)
+		scope := types.ToolRunScope{RoleID: record.roleID, GroupID: record.groupID, WorkspaceID: record.workspaceID, SessionID: record.session.ID}
+		plan, err := s.tools.Prepare(ctx, scope, entries[index].Action)
 		if err != nil {
 			if isToolContextCancelled(err) {
 				return nil, err

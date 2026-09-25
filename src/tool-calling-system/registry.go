@@ -66,6 +66,13 @@ func (s *system) SaveToolUserSettings(ctx context.Context, toolID string, settin
 	if strings.TrimSpace(toolID) == "" {
 		return types.ToolDefinition{}, toolInvalid("tool id is required", nil)
 	}
+	current, err := s.LoadTool(ctx, toolID)
+	if err != nil {
+		return types.ToolDefinition{}, err
+	}
+	if err := validateToolCapabilityGrants(current, settings.CapabilityGrants); err != nil {
+		return types.ToolDefinition{}, err
+	}
 	tool, err := s.storage.SaveToolUserSettings(ctx, toolID, settings)
 	if err != nil {
 		return types.ToolDefinition{}, toolStorageFailed("failed to save tool user settings", err)
@@ -115,11 +122,44 @@ func validateToolCore(tool types.ToolDefinition) error {
 	if tool.Type != "local" && tool.Type != "network" {
 		return toolInvalid("tool type must be local or network", nil)
 	}
+	if err := validateToolCapabilities(tool.Capabilities); err != nil {
+		return err
+	}
 	if strings.TrimSpace(tool.BodyDirectory) == "" {
 		return toolInvalid("tool body directory is required", nil)
 	}
 	if len(tool.Binaries) == 0 {
 		return toolInvalid("tool must declare at least one platform binary", nil)
+	}
+	return nil
+}
+
+// validateToolCapabilities 校验能力声明：宿主与打包器共用同一标准判定。
+func validateToolCapabilities(capabilities []types.ToolCapability) error {
+	if err := types.ValidateToolCapabilities(capabilities); err != nil {
+		return toolInvalid(err.Error(), err)
+	}
+	return nil
+}
+
+// validateToolCapabilityGrants 只接受工具自己声明过的能力授权项；
+// 未声明能力的授权请求一律拒绝，防止越权写入不存在的授权。
+func validateToolCapabilityGrants(tool types.ToolDefinition, grants map[string]bool) error {
+	for key := range grants {
+		normalized := strings.TrimSpace(key)
+		if normalized == "" {
+			continue
+		}
+		declared := false
+		for _, capability := range tool.Capabilities {
+			if types.ToolCapabilityGrantKey(capability.ID, capability.Access) == normalized {
+				declared = true
+				break
+			}
+		}
+		if !declared {
+			return toolInvalid("tool capability grant is not declared by the tool: "+normalized, nil)
+		}
 	}
 	return nil
 }

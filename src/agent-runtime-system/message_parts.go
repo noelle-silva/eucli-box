@@ -172,12 +172,38 @@ func upsertRunToolPart(record *runRecord, action types.ToolAction, state string,
 			continue
 		}
 		upsertMessageToolPart(&record.session.Messages[index], action, callID, state, decision, result, now)
+		appendRunMessageAttachments(&record.session.Messages[index], result)
 		record.session.Messages[index].UpdatedAt = now
 		record.messageParent = record.session.Messages[index]
 		record.lastMessageID = record.messageParent.ID
 		record.session.UpdatedAt = now
 		record.session.LastActive = now
 		return
+	}
+}
+
+// appendRunMessageAttachments 把工具运行期由宿主代写完成的产出附件
+// 挂到当前回复消息上；附件标识去重，重复回执不产生重复附件。
+func appendRunMessageAttachments(message *types.Message, result *types.ToolResult) {
+	if message == nil || result == nil || len(result.ProducedAttachments) == 0 {
+		return
+	}
+	seen := map[string]struct{}{}
+	for _, attachment := range message.Attachments {
+		if id := strings.TrimSpace(attachment.ID); id != "" {
+			seen[id] = struct{}{}
+		}
+	}
+	for _, attachment := range result.ProducedAttachments {
+		id := strings.TrimSpace(attachment.ID)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		message.Attachments = append(message.Attachments, attachment)
 	}
 }
 

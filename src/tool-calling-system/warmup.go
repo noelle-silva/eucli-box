@@ -73,7 +73,7 @@ func (s *system) warmupDefinedTool(ctx context.Context, tool types.ToolDefinitio
 		return 0, toolExecutionInvalid("failed to encode warmup input", err)
 	}
 	startedAt := time.Now()
-	outcome := s.executeToolProcess(ctx, tool.ID, executable, tool.BodyDirectory, input, nil)
+	outcome := s.executeToolProcess(ctx, tool.ID, executable, tool.BodyDirectory, input, nil, nil)
 	duration := time.Since(startedAt)
 	if err := toolWarmupOutcomeError(outcome); err != nil {
 		return duration, err

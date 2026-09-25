@@ -113,7 +113,7 @@ func (p *toolProcess) terminateTree() error {
 	return terminateToolProcessTree(p.cmd.Process.Pid)
 }
 
-func (s *system) executeToolProcess(ctx context.Context, toolID string, executable string, workdir string, input []byte, onToolUpdate func(update types.ToolOutputUpdate)) toolProcessOutcome {
+func (s *system) executeToolProcess(ctx context.Context, toolID string, executable string, workdir string, input []byte, capabilities *capabilitySession, onToolUpdate func(update types.ToolOutputUpdate)) toolProcessOutcome {
 	execCtx, execCancel := context.WithCancel(ctx)
 	runCtx := &toolRunContext{cancel: execCancel}
 	s.registerExecution(toolID, runCtx)
@@ -124,6 +124,9 @@ func (s *system) executeToolProcess(ctx context.Context, toolID string, executab
 		serverConfig.OnOutputUpdate = func(update toolcontrol.OutputUpdate) {
 			onToolUpdate(types.ToolOutputUpdate{Bytes: update.Bytes, Preview: update.Preview})
 		}
+	}
+	if capabilities != nil {
+		serverConfig.OnCapabilityRequest = capabilities.handle
 	}
 	control, err := toolcontrol.NewServer(serverConfig)
 	if err != nil {

@@ -792,6 +792,7 @@ func TestSaveToolUserSettingsPreservesToolDefinition(t *testing.T) {
 			},
 		},
 		DefaultConfig: map[string]any{"provider": "git-bash"},
+		Capabilities:  []types.ToolCapability{{ID: types.ToolCapabilityWorkspace, Access: types.ToolCapabilityAccessRead, Name: "工作区路径"}},
 		UserConfig:    map[string]any{"timeoutMs": float64(1000)},
 		Binaries:      []types.ToolBinary{{GOOS: "windows", GOARCH: "amd64", Path: "binary/windows-amd64/shell_command.exe"}},
 	}
@@ -799,7 +800,7 @@ func TestSaveToolUserSettingsPreservesToolDefinition(t *testing.T) {
 		t.Fatalf("SaveTool() error = %v", err)
 	}
 
-	updated, err := system.SaveToolUserSettings(context.Background(), tool.ID, types.ToolUserSettings{UserConfig: map[string]any{"timeoutMs": float64(2000)}, PromptDescriptionOverride: "Use shell carefully"})
+	updated, err := system.SaveToolUserSettings(context.Background(), tool.ID, types.ToolUserSettings{UserConfig: map[string]any{"timeoutMs": float64(2000)}, PromptDescriptionOverride: "Use shell carefully", CapabilityGrants: map[string]bool{types.ToolCapabilityGrantKey(types.ToolCapabilityWorkspace, types.ToolCapabilityAccessRead): true}})
 	if err != nil {
 		t.Fatalf("SaveToolUserSettings() error = %v", err)
 	}
@@ -808,6 +809,12 @@ func TestSaveToolUserSettingsPreservesToolDefinition(t *testing.T) {
 	}
 	if updated.PromptDescriptionOverride != "Use shell carefully" {
 		t.Fatalf("promptDescriptionOverride = %q", updated.PromptDescriptionOverride)
+	}
+	if !updated.CapabilityGrants[types.ToolCapabilityGrantKey(types.ToolCapabilityWorkspace, types.ToolCapabilityAccessRead)] {
+		t.Fatalf("capabilityGrants = %#v", updated.CapabilityGrants)
+	}
+	if len(updated.Capabilities) != 1 || updated.Capabilities[0].ID != types.ToolCapabilityWorkspace || updated.Capabilities[0].Name != "工作区路径" {
+		t.Fatalf("capabilities = %#v", updated.Capabilities)
 	}
 	if updated.Name != tool.Name || updated.Description != tool.Description || updated.DefaultInvocationMode != tool.DefaultInvocationMode || updated.Type != tool.Type || updated.DefaultConfig["provider"] != "git-bash" || len(updated.Binaries) != 1 || updated.UserConfigSchema["type"] != "object" {
 		t.Fatalf("tool definition was not preserved: %#v", updated)

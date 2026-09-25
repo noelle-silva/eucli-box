@@ -2901,7 +2901,7 @@ func (f *fakeRuntimeTools) NormalizeIntent(ctx context.Context, intent types.Too
 	return types.ToolAction{ID: intent.ID, ToolName: intent.ToolName, Arguments: intent.Arguments, InvocationMode: intent.InvocationMode, Raw: intent.Raw}, nil
 }
 
-func (f *fakeRuntimeTools) Prepare(ctx context.Context, roleID string, workspaceID string, action types.ToolAction) (types.ToolRunPlan, error) {
+func (f *fakeRuntimeTools) Prepare(ctx context.Context, scope types.ToolRunScope, action types.ToolAction) (types.ToolRunPlan, error) {
 	if f.prepareErr != nil {
 		return types.ToolRunPlan{}, f.prepareErr
 	}
@@ -2922,7 +2922,7 @@ func (f *fakeRuntimeTools) Prepare(ctx context.Context, roleID string, workspace
 	} else if decision.Status == types.PermissionStatusNeedsConfirmation {
 		planStatus = types.ToolPlanStatusNeedsConfirmation
 	}
-	return types.ToolRunPlan{ID: "plan-1", Action: action, Tool: types.ToolDefinition{ID: action.ToolName, Name: action.ToolName, Description: "tool", Type: "local"}, InvocationMode: action.InvocationMode, Decision: decision, PlanStatus: planStatus}, nil
+	return types.ToolRunPlan{ID: "plan-1", RoleID: scope.RoleID, Scope: scope, Action: action, Tool: types.ToolDefinition{ID: action.ToolName, Name: action.ToolName, Description: "tool", Type: "local"}, InvocationMode: action.InvocationMode, Decision: decision, PlanStatus: planStatus}, nil
 }
 
 func (f *fakeRuntimeTools) ApplyConfirmation(ctx context.Context, plan types.ToolRunPlan, confirmation types.ToolConfirmation) (types.ToolRunPlan, error) {

@@ -52,7 +52,7 @@ func main() { fmt.Print(`+"`"+`{"status":"success","content":"ok","metadata":{}}
 	storage := newFakeToolStorage()
 	storage.tools[tool.ID] = tool
 	system := newTestToolSystem(t, &fakePermission{decision: types.PermissionDecision{ID: "d1", ActionID: "a1", ToolName: tool.Name, Status: types.PermissionStatusDenied, Reason: "blocked"}}, storage, Config{})
-	plan, err := system.Prepare(context.Background(), "developer", "", types.ToolAction{ID: "a1", ToolName: tool.Name})
+	plan, err := system.Prepare(context.Background(), types.ToolRunScope{RoleID: "developer"}, types.ToolAction{ID: "a1", ToolName: tool.Name})
 	if err != nil {
 		t.Fatalf("Prepare() error = %v", err)
 	}
@@ -70,7 +70,7 @@ func main() {}
 	storage.tools[tool.ID] = tool
 	system := newTestToolSystem(t, &fakePermission{decision: types.PermissionDecision{Status: types.PermissionStatusAllowed}}, storage, Config{})
 
-	_, err := system.Prepare(context.Background(), "developer", "", types.ToolAction{ID: "a1", ToolName: tool.Name})
+	_, err := system.Prepare(context.Background(), types.ToolRunScope{RoleID: "developer"}, types.ToolAction{ID: "a1", ToolName: tool.Name})
 	assertAppErrorCode(t, err, "tool.invalid_request")
 }
 
@@ -78,7 +78,7 @@ func TestPrepareRejectsInvalidActionInvocationMode(t *testing.T) {
 	storage := newFakeToolStorage()
 	system := newTestToolSystem(t, &fakePermission{}, storage, Config{})
 
-	_, err := system.Prepare(context.Background(), "developer", "", types.ToolAction{ID: "a1", ToolName: "file-reader", InvocationMode: "later"})
+	_, err := system.Prepare(context.Background(), types.ToolRunScope{RoleID: "developer"}, types.ToolAction{ID: "a1", ToolName: "file-reader", InvocationMode: "later"})
 	assertAppErrorCode(t, err, "tool.invalid_request")
 }
 
@@ -259,7 +259,7 @@ func main() {}
 	storage := newFakeToolStorage()
 	storage.tools[tool.ID] = tool
 	system := newTestToolSystem(t, &fakePermission{decision: types.PermissionDecision{Status: types.PermissionStatusAllowed}}, storage, Config{})
-	_, err := system.Prepare(context.Background(), "developer", "", types.ToolAction{ID: "a1", ToolName: tool.Name})
+	_, err := system.Prepare(context.Background(), types.ToolRunScope{RoleID: "developer"}, types.ToolAction{ID: "a1", ToolName: tool.Name})
 	assertAppErrorCode(t, err, "tool.not_found")
 }
 
@@ -270,14 +270,12 @@ func TestWorkspaceFenceAllowsRegisteredPath(t *testing.T) {
 import "fmt"
 func main() { fmt.Print(`+"`"+`{"status":"success","content":"ok","metadata":{}}`+"`"+`) }
 `))
-	tool.ID = "file_operator"
-	tool.Name = "file_operator"
 	storage := newFakeToolStorage()
 	storage.tools[tool.ID] = tool
 	storage.workspaces["workspace-1"] = types.Workspace{ID: "workspace-1", Name: "Workspace", Directories: []types.WorkspaceDirectory{{Path: hostDir, Alias: "host"}}}
 	system := newTestToolSystem(t, &fakePermission{decision: types.PermissionDecision{ID: "d1", ActionID: "a1", ToolName: tool.Name, Status: types.PermissionStatusAllowed}}, storage, Config{})
 
-	plan, err := system.Prepare(context.Background(), "developer", "workspace-1", types.ToolAction{ID: "a1", ToolName: tool.Name, Arguments: map[string]any{"action": "read", "path": "inside.txt"}})
+	plan, err := system.Prepare(context.Background(), types.ToolRunScope{RoleID: "developer", WorkspaceID: "workspace-1"}, types.ToolAction{ID: "a1", ToolName: tool.Name, Arguments: map[string]any{"action": "read", "path": "inside.txt"}})
 	if err != nil {
 		t.Fatalf("Prepare() error = %v", err)
 	}
@@ -333,21 +331,20 @@ func main() { time.Sleep(30 * time.Second) }
 	}
 }
 
-func TestWorkspaceFenceRequiresConfirmationForOutsidePath(t *testing.T) {	hostDir := t.TempDir()
+func TestWorkspaceFenceRequiresConfirmationForOutsidePath(t *testing.T) {
+	hostDir := t.TempDir()
 	outsideDir := t.TempDir()
 	t.Chdir(hostDir)
 	tool := testTool(t, buildTool(t, `package main
 import "fmt"
 func main() { fmt.Print(`+"`"+`{"status":"success","content":"ok","metadata":{}}`+"`"+`) }
 `))
-	tool.ID = "file_operator"
-	tool.Name = "file_operator"
 	storage := newFakeToolStorage()
 	storage.tools[tool.ID] = tool
 	storage.workspaces["workspace-1"] = types.Workspace{ID: "workspace-1", Name: "Workspace", Directories: []types.WorkspaceDirectory{{Path: hostDir, Alias: "host"}}}
 	system := newTestToolSystem(t, &fakePermission{decision: types.PermissionDecision{ID: "d1", ActionID: "a1", ToolName: tool.Name, Status: types.PermissionStatusAllowed}}, storage, Config{})
 
-	plan, err := system.Prepare(context.Background(), "developer", "workspace-1", types.ToolAction{ID: "a1", ToolName: tool.Name, Arguments: map[string]any{"action": "read", "path": filepath.Join(outsideDir, "outside.txt")}})
+	plan, err := system.Prepare(context.Background(), types.ToolRunScope{RoleID: "developer", WorkspaceID: "workspace-1"}, types.ToolAction{ID: "a1", ToolName: tool.Name, Arguments: map[string]any{"action": "read", "path": filepath.Join(outsideDir, "outside.txt")}})
 	if err != nil {
 		t.Fatalf("Prepare() error = %v", err)
 	}
@@ -367,15 +364,13 @@ func TestWorkspaceFenceApprovalContinuesToRoleConfirmation(t *testing.T) {
 import "fmt"
 func main() { fmt.Print(`+"`"+`{"status":"success","content":"ok","metadata":{}}`+"`"+`) }
 `))
-	tool.ID = "file_operator"
-	tool.Name = "file_operator"
 	storage := newFakeToolStorage()
 	storage.tools[tool.ID] = tool
 	storage.workspaces["workspace-1"] = types.Workspace{ID: "workspace-1", Name: "Workspace", Directories: []types.WorkspaceDirectory{{Path: hostDir, Alias: "host"}}}
 	permissions := &fakePermission{decision: types.PermissionDecision{ID: "role-decision", ActionID: "a1", ToolName: tool.Name, Status: types.PermissionStatusNeedsConfirmation}}
 	system := newTestToolSystem(t, permissions, storage, Config{})
 
-	plan, err := system.Prepare(context.Background(), "developer", "workspace-1", types.ToolAction{ID: "a1", ToolName: tool.Name, Arguments: map[string]any{"action": "read", "path": filepath.Join(outsideDir, "outside.txt")}})
+	plan, err := system.Prepare(context.Background(), types.ToolRunScope{RoleID: "developer", WorkspaceID: "workspace-1"}, types.ToolAction{ID: "a1", ToolName: tool.Name, Arguments: map[string]any{"action": "read", "path": filepath.Join(outsideDir, "outside.txt")}})
 	if err != nil {
 		t.Fatalf("Prepare() error = %v", err)
 	}
@@ -439,6 +434,8 @@ func testTool(t *testing.T, executable string) types.ToolDefinition {
 		EucliBoxCompatibility: types.EucliBoxCompatibility{MinimumVersion: "0.1.0", MaximumVersionExclusive: "0.2.0"},
 		DefaultInvocationMode: types.ToolInvocationModeSync,
 		Type:                  "local",
+		Capabilities:          []types.ToolCapability{{ID: types.ToolCapabilityWorkspace, Access: types.ToolCapabilityAccessRead, Name: "工作区路径"}},
+		InputSchema:           map[string]any{"type": "object", "properties": map[string]any{"path": map[string]any{"type": "string", "format": "filepath"}}},
 		BodyDirectory:         dir,
 		DataDirectory:         filepath.Join(dir, "data"),
 		Binaries:              []types.ToolBinary{{GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Path: filepath.Base(executable)}},
@@ -564,12 +561,17 @@ func (f *fakePermission) ApplyConfirmation(ctx context.Context, decision types.P
 }
 
 type fakeToolStorage struct {
-	tools      map[string]types.ToolDefinition
-	workspaces map[string]types.Workspace
+	tools       map[string]types.ToolDefinition
+	workspaces  map[string]types.Workspace
+	roles       map[string]types.Role
+	groups      map[string]types.ChatGroup
+	sessions    map[string]types.Session
+	attachments map[string]types.RunAttachment
+	images      map[string]string
 }
 
 func newFakeToolStorage() *fakeToolStorage {
-	return &fakeToolStorage{tools: map[string]types.ToolDefinition{}, workspaces: map[string]types.Workspace{}}
+	return &fakeToolStorage{tools: map[string]types.ToolDefinition{}, workspaces: map[string]types.Workspace{}, roles: map[string]types.Role{}, groups: map[string]types.ChatGroup{}, sessions: map[string]types.Session{}, attachments: map[string]types.RunAttachment{}, images: map[string]string{}}
 }
 
 func (f *fakeToolStorage) SaveTool(ctx context.Context, tool types.ToolDefinition) error {
@@ -610,6 +612,77 @@ func (f *fakeToolStorage) LoadWorkspace(ctx context.Context, workspaceID string)
 		return types.Workspace{}, errors.New("workspace missing")
 	}
 	return workspace, nil
+}
+
+func (f *fakeToolStorage) LoadRole(ctx context.Context, roleID string) (types.Role, error) {
+	role, ok := f.roles[roleID]
+	if !ok {
+		return types.Role{}, errors.New("role missing")
+	}
+	return role, nil
+}
+
+func (f *fakeToolStorage) LoadChatGroup(ctx context.Context, groupID string) (types.ChatGroup, error) {
+	group, ok := f.groups[groupID]
+	if !ok {
+		return types.ChatGroup{}, errors.New("group missing")
+	}
+	return group, nil
+}
+
+func (f *fakeToolStorage) LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error) {
+	session, ok := f.sessions[sessionID]
+	if !ok {
+		return types.Session{}, errors.New("session missing")
+	}
+	return session, nil
+}
+
+func (f *fakeToolStorage) LoadGroupSession(ctx context.Context, groupID string, sessionID string) (types.Session, error) {
+	session, ok := f.sessions[sessionID]
+	if !ok {
+		return types.Session{}, errors.New("session missing")
+	}
+	return session, nil
+}
+
+func (f *fakeToolStorage) LoadWorkspaceSession(ctx context.Context, workspaceID string, roleID string, sessionID string) (types.Session, error) {
+	session, ok := f.sessions[sessionID]
+	if !ok {
+		return types.Session{}, errors.New("session missing")
+	}
+	return session, nil
+}
+
+func (f *fakeToolStorage) SaveSessionMessageAttachment(ctx context.Context, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
+	return f.saveAttachment("roles", roleID, sessionID, attachment)
+}
+
+func (f *fakeToolStorage) SaveGroupSessionMessageAttachment(ctx context.Context, groupID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
+	return f.saveAttachment("groups", groupID, sessionID, attachment)
+}
+
+func (f *fakeToolStorage) SaveWorkspaceSessionMessageAttachment(ctx context.Context, workspaceID string, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
+	return f.saveAttachment("workspaces/"+workspaceID, roleID, sessionID, attachment)
+}
+
+func (f *fakeToolStorage) saveAttachment(scope string, scopeID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
+	if !strings.HasPrefix(attachment.DataURL, "data:image/") {
+		return types.MessageAttachment{}, errors.New("attachment must be an image data url")
+	}
+	id := fmt.Sprintf("att-%d", len(f.attachments)+1)
+	path := "sessions/" + scope + "/" + scopeID + "/" + sessionID + "/attachments/" + id + "/image.png"
+	f.attachments[path] = attachment
+	f.images[path] = attachment.DataURL
+	return types.MessageAttachment{ID: id, Kind: "image", Name: attachment.Name, Mime: "image/png", Path: path}, nil
+}
+
+func (f *fakeToolStorage) LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error) {
+	dataURL, ok := f.images[relPath]
+	if !ok {
+		return "", errors.New("attachment image missing")
+	}
+	return dataURL, nil
 }
 
 func assertAppErrorCode(t *testing.T, err error, code string) {

@@ -16,7 +16,7 @@ import (
 
 type System interface {
 	NormalizeIntent(ctx context.Context, intent types.ToolIntent) (types.ToolAction, error)
-	Prepare(ctx context.Context, roleID string, workspaceID string, action types.ToolAction) (types.ToolRunPlan, error)
+	Prepare(ctx context.Context, scope types.ToolRunScope, action types.ToolAction) (types.ToolRunPlan, error)
 	ApplyConfirmation(ctx context.Context, plan types.ToolRunPlan, confirmation types.ToolConfirmation) (types.ToolRunPlan, error)
 	Execute(ctx context.Context, plan types.ToolRunPlan) (types.ToolResult, error)
 	ExecuteWithOutputUpdate(ctx context.Context, plan types.ToolRunPlan, onUpdate func(update types.ToolOutputUpdate)) (types.ToolResult, error)
@@ -48,6 +48,15 @@ type StorageSystem interface {
 	ListTools(ctx context.Context) ([]types.ToolSummary, error)
 	SaveToolUserSettings(ctx context.Context, toolID string, settings types.ToolUserSettings) (types.ToolDefinition, error)
 	LoadWorkspace(ctx context.Context, workspaceID string) (types.Workspace, error)
+	LoadRole(ctx context.Context, roleID string) (types.Role, error)
+	LoadChatGroup(ctx context.Context, groupID string) (types.ChatGroup, error)
+	LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error)
+	LoadGroupSession(ctx context.Context, groupID string, sessionID string) (types.Session, error)
+	LoadWorkspaceSession(ctx context.Context, workspaceID string, roleID string, sessionID string) (types.Session, error)
+	SaveSessionMessageAttachment(ctx context.Context, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
+	SaveGroupSessionMessageAttachment(ctx context.Context, groupID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
+	SaveWorkspaceSessionMessageAttachment(ctx context.Context, workspaceID string, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
+	LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error)
 }
 
 type Config struct {

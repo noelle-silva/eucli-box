@@ -64,6 +64,7 @@ func (s *system) LoadTool(ctx context.Context, toolID string) (types.ToolDefinit
 	tool.DataDirectory = dataDirectory
 	tool.UserConfig = copyToolMap(settings.UserConfig)
 	tool.PromptDescriptionOverride = settings.PromptDescriptionOverride
+	tool.CapabilityGrants = copyToolCapabilityGrants(settings.CapabilityGrants)
 	if settings.UpdatedAt.After(tool.UpdatedAt) {
 		tool.UpdatedAt = settings.UpdatedAt
 	}
@@ -175,6 +176,7 @@ func (s *system) SaveToolUserSettings(ctx context.Context, toolID string, settin
 	}
 	settings.UserConfig = copyToolMap(settings.UserConfig)
 	settings.PromptDescriptionOverride = strings.TrimSpace(settings.PromptDescriptionOverride)
+	settings.CapabilityGrants = copyToolCapabilityGrants(settings.CapabilityGrants)
 	settings.UpdatedAt = time.Now().UTC()
 	target, err := s.paths.toolUserSettingsFile(id)
 	if err != nil {
@@ -280,7 +282,28 @@ func (s *system) loadToolUserSettings(ctx context.Context, toolID string) (types
 	}
 	settings.UserConfig = copyToolMap(settings.UserConfig)
 	settings.PromptDescriptionOverride = strings.TrimSpace(settings.PromptDescriptionOverride)
+	settings.CapabilityGrants = copyToolCapabilityGrants(settings.CapabilityGrants)
 	return settings, nil
+}
+
+// copyToolCapabilityGrants 归一化能力授权表：只保留明确为 true 的授权项；
+// 空表归一为 nil，保证落盘内容只表达已授权的能力。
+func copyToolCapabilityGrants(grants map[string]bool) map[string]bool {
+	if len(grants) == 0 {
+		return nil
+	}
+	out := map[string]bool{}
+	for key, granted := range grants {
+		key = strings.TrimSpace(key)
+		if key == "" || !granted {
+			continue
+		}
+		out[key] = true
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (s *system) resolveToolBodyDirectory(toolID string, directory string) (string, error) {

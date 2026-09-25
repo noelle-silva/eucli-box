@@ -23,12 +23,17 @@ type workspaceFenceDirectory struct {
 	Absolute  string
 }
 
-func (s *system) evaluateWorkspaceFence(ctx context.Context, workspaceID string, tool types.ToolDefinition, action types.ToolAction) (*types.ToolWorkspaceFence, error) {
-	workspaceID = strings.TrimSpace(workspaceID)
+// evaluateWorkspaceFence 只对声明了工作区能力的工具评估路径围栏；
+// 路径候选统一来自工具自身对路径类参数的声明，不存在按工具名开的小灶。
+func (s *system) evaluateWorkspaceFence(ctx context.Context, scope types.ToolRunScope, tool types.ToolDefinition, action types.ToolAction) (*types.ToolWorkspaceFence, error) {
+	workspaceID := strings.TrimSpace(scope.WorkspaceID)
 	if workspaceID == "" {
 		return nil, nil
 	}
-	candidates, err := workspaceFencePathCandidates(tool, action)
+	if !types.ToolDeclaresCapability(tool, types.ToolCapabilityWorkspace, types.ToolCapabilityAccessRead) {
+		return nil, nil
+	}
+	candidates, err := schemaWorkspacePathCandidates(tool, action)
 	if err != nil {
 		return nil, err
 	}
@@ -61,63 +66,8 @@ func (s *system) evaluateWorkspaceFence(ctx context.Context, workspaceID string,
 	return fence, nil
 }
 
-func workspaceFencePathCandidates(tool types.ToolDefinition, action types.ToolAction) ([]workspaceFencePathCandidate, error) {
-	if isToolNamed(tool, "file_operator") {
-		return fileOperatorWorkspacePathCandidates(action)
-	}
-	if isToolNamed(tool, "shell_command") {
-		return shellCommandWorkspacePathCandidates(tool, action)
-	}
-	return schemaWorkspacePathCandidates(tool, action)
-}
-
-func isToolNamed(tool types.ToolDefinition, name string) bool {
-	return tool.ID == name || tool.Name == name
-}
-
-func fileOperatorWorkspacePathCandidates(action types.ToolAction) ([]workspaceFencePathCandidate, error) {
-	actionName, err := stringWorkspaceArgument(action.Arguments, "action", true)
-	if err != nil {
-		return nil, err
-	}
-	switch strings.ToLower(strings.TrimSpace(actionName)) {
-	case "read", "write", "edit":
-		path, err := stringWorkspaceArgument(action.Arguments, "path", true)
-		if err != nil {
-			return nil, err
-		}
-		return []workspaceFencePathCandidate{{Argument: "path", RawPath: path}}, nil
-	case "list", "glob", "grep":
-		path, err := stringWorkspaceArgument(action.Arguments, "path", false)
-		if err != nil {
-			return nil, err
-		}
-		if strings.TrimSpace(path) == "" {
-			path = "."
-		}
-		return []workspaceFencePathCandidate{{Argument: "path", RawPath: path}}, nil
-	case "apply_patch":
-		patchText, err := stringWorkspaceArgument(action.Arguments, "patchText", true)
-		if err != nil {
-			return nil, err
-		}
-		return patchTextWorkspacePathCandidates(patchText)
-	default:
-		return nil, nil
-	}
-}
-
-func shellCommandWorkspacePathCandidates(tool types.ToolDefinition, action types.ToolAction) ([]workspaceFencePathCandidate, error) {
-	workdir, _, err := effectiveStringWorkspaceArgument(tool, action, "workdir", false)
-	if err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(workdir) == "" {
-		workdir = "."
-	}
-	return []workspaceFencePathCandidate{{Argument: "workdir", RawPath: workdir}}, nil
-}
-
+// schemaWorkspacePathCandidates 从工具调用参数中提取所有被声明为
+// 文件路径（format=filepath）的路径候选；这是路径识别的唯一来源。
 func schemaWorkspacePathCandidates(tool types.ToolDefinition, action types.ToolAction) ([]workspaceFencePathCandidate, error) {
 	argumentNames := filepathSchemaArgumentNames(tool.InputSchema)
 	candidates := make([]workspaceFencePathCandidate, 0, len(argumentNames))
@@ -181,17 +131,6 @@ func effectiveStringWorkspaceArgument(tool types.ToolDefinition, action types.To
 	return "", false, nil
 }
 
-func stringWorkspaceArgument(arguments map[string]any, key string, required bool) (string, error) {
-	value, ok := arguments[key]
-	if !ok || value == nil {
-		if required {
-			return "", toolInvalid("workspace filepath argument is required", nil)
-		}
-		return "", nil
-	}
-	return workspaceArgumentStringValue(value, key, required)
-}
-
 func workspaceArgumentStringValue(value any, key string, required bool) (string, error) {
 	text, ok := value.(string)
 	if !ok {
@@ -201,63 +140,6 @@ func workspaceArgumentStringValue(value any, key string, required bool) (string,
 		return "", toolInvalid("workspace filepath argument is required", nil)
 	}
 	return text, nil
-}
-
-func patchTextWorkspacePathCandidates(patchText string) ([]workspaceFencePathCandidate, error) {
-	lines := splitWorkspacePatchLines(patchText)
-	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "*** Begin Patch" {
-		return nil, toolInvalid("workspace patch text must start with begin marker", nil)
-	}
-	candidates := []workspaceFencePathCandidate{}
-	inFileSection := false
-	foundEnd := false
-	for index := 1; index < len(lines); index++ {
-		line := lines[index]
-		if strings.TrimSpace(line) == "*** End Patch" {
-			foundEnd = true
-			break
-		}
-		if path, ok := patchWorkspaceHeaderPath(line); ok {
-			if strings.TrimSpace(path) == "" {
-				return nil, toolInvalid("workspace patch path is required", nil)
-			}
-			candidates = append(candidates, workspaceFencePathCandidate{Argument: "patchText", RawPath: path})
-			inFileSection = true
-			continue
-		}
-		if strings.HasPrefix(line, "*** Move to: ") {
-			if !inFileSection {
-				return nil, toolInvalid("workspace patch move target appeared before a file header", nil)
-			}
-			path := strings.TrimSpace(strings.TrimPrefix(line, "*** Move to: "))
-			if path == "" {
-				return nil, toolInvalid("workspace patch move target is required", nil)
-			}
-			candidates = append(candidates, workspaceFencePathCandidate{Argument: "patchText", RawPath: path})
-		}
-	}
-	if !foundEnd {
-		return nil, toolInvalid("workspace patch text must end with end marker", nil)
-	}
-	if len(candidates) == 0 {
-		return nil, toolInvalid("workspace patch text must contain file operations", nil)
-	}
-	return candidates, nil
-}
-
-func splitWorkspacePatchLines(text string) []string {
-	text = strings.ReplaceAll(text, "\r\n", "\n")
-	text = strings.ReplaceAll(text, "\r", "\n")
-	return strings.Split(text, "\n")
-}
-
-func patchWorkspaceHeaderPath(line string) (string, bool) {
-	for _, prefix := range []string{"*** Add File: ", "*** Delete File: ", "*** Update File: "} {
-		if strings.HasPrefix(line, prefix) {
-			return strings.TrimSpace(strings.TrimPrefix(line, prefix)), true
-		}
-	}
-	return "", false
 }
 
 func normalizeWorkspaceFenceDirectories(directories []types.WorkspaceDirectory) ([]workspaceFenceDirectory, error) {

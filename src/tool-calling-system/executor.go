@@ -53,12 +53,19 @@ func (s *system) ExecuteWithOutputUpdate(ctx context.Context, plan types.ToolRun
 		return types.ToolResult{}, toolExecutionInvalid("failed to resolve host working directory", err)
 	}
 	timeoutMs := requestedTimeoutMs(plan.Action.Arguments)
-	input, err := json.Marshal(types.ToolExecutionInput{ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Arguments: plan.Action.Arguments, UserConfig: plan.Tool.UserConfig, DefaultConfig: plan.Tool.DefaultConfig, ToolBodyDirectory: plan.Tool.BodyDirectory, ToolDataDirectory: plan.Tool.DataDirectory, HostWorkingDirectory: hostWorkingDirectory, TimeoutMs: timeoutMs})
+	executionInput := types.ToolExecutionInput{ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Arguments: plan.Action.Arguments, UserConfig: plan.Tool.UserConfig, DefaultConfig: plan.Tool.DefaultConfig, ToolBodyDirectory: plan.Tool.BodyDirectory, ToolDataDirectory: plan.Tool.DataDirectory, HostWorkingDirectory: hostWorkingDirectory, TimeoutMs: timeoutMs}
+	workspace, err := s.workspaceContextForTool(ctx, plan)
+	if err != nil {
+		return types.ToolResult{}, err
+	}
+	executionInput.Workspace = workspace
+	input, err := json.Marshal(executionInput)
 	if err != nil {
 		return types.ToolResult{}, toolExecutionInvalid("failed to encode tool input", err)
 	}
 	startedAt := time.Now()
-	outcome := s.executeToolProcess(ctx, plan.Tool.ID, plan.Executable, plan.Tool.BodyDirectory, input, func(update types.ToolOutputUpdate) {
+	capabilities := newCapabilitySession(plan, s.storage)
+	outcome := s.executeToolProcess(ctx, plan.Tool.ID, plan.Executable, plan.Tool.BodyDirectory, input, capabilities, func(update types.ToolOutputUpdate) {
 		var relayed types.ToolOutputUpdate
 		relayed.CallID = plan.Action.ID
 		relayed.ToolName = plan.Action.ToolName
@@ -69,8 +76,28 @@ func (s *system) ExecuteWithOutputUpdate(ctx context.Context, plan types.ToolRun
 		}
 	})
 	result := toolResultFromOutcome(plan, outcome)
+	// 产出附件随结果返回：附件在写入时已由宿主校验与落盘，
+	// 即使本次执行随后失败，已完成的附件仍是有效产物。
+	result.ProducedAttachments = capabilities.attachments()
 	result.DurationMs = time.Since(startedAt).Milliseconds()
 	return result, nil
+}
+
+// workspaceContextForTool 只对声明了工作区能力的工具注入工作区路径值；
+// 未声明的工具拿不到这个值，也永远不会收到该字段。
+func (s *system) workspaceContextForTool(ctx context.Context, plan types.ToolRunPlan) (*types.ToolWorkspaceContext, error) {
+	if !types.ToolDeclaresCapability(plan.Tool, types.ToolCapabilityWorkspace, types.ToolCapabilityAccessRead) {
+		return nil, nil
+	}
+	workspaceID := strings.TrimSpace(plan.Scope.WorkspaceID)
+	if workspaceID == "" {
+		return nil, nil
+	}
+	workspace, err := s.storage.LoadWorkspace(ctx, workspaceID)
+	if err != nil {
+		return nil, toolStorageFailed("failed to load workspace for tool runtime", err)
+	}
+	return &types.ToolWorkspaceContext{ID: workspace.ID, Name: workspace.Name, Directories: workspace.Directories}, nil
 }
 
 // toolResultFromOutcome 把一次工具进程执行的真实终局翻译成统一的工具结果事实。
@@ -139,7 +166,8 @@ func requestedTimeoutMs(arguments map[string]any) int64 {
 	}
 }
 
-func validatePlan(plan types.ToolRunPlan) error {	if plan.Tool.ID == "" {
+func validatePlan(plan types.ToolRunPlan) error {
+	if plan.Tool.ID == "" {
 		return toolExecutionInvalid("tool plan is missing tool definition", nil)
 	}
 	if plan.Action.ID == "" || plan.Action.ToolName == "" {

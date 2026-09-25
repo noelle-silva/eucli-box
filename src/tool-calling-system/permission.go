@@ -9,10 +9,15 @@ import (
 	"eucli-box/pkg/utils"
 )
 
-func (s *system) Prepare(ctx context.Context, roleID string, workspaceID string, action types.ToolAction) (types.ToolRunPlan, error) {
-	if strings.TrimSpace(roleID) == "" {
+func (s *system) Prepare(ctx context.Context, scope types.ToolRunScope, action types.ToolAction) (types.ToolRunPlan, error) {
+	roleID := strings.TrimSpace(scope.RoleID)
+	if roleID == "" {
 		return types.ToolRunPlan{}, toolInvalid("role id is required", nil)
 	}
+	scope.RoleID = roleID
+	scope.GroupID = strings.TrimSpace(scope.GroupID)
+	scope.WorkspaceID = strings.TrimSpace(scope.WorkspaceID)
+	scope.SessionID = strings.TrimSpace(scope.SessionID)
 	if err := validateAction(action); err != nil {
 		return types.ToolRunPlan{}, err
 	}
@@ -24,30 +29,30 @@ func (s *system) Prepare(ctx context.Context, roleID string, workspaceID string,
 		return types.ToolRunPlan{}, err
 	}
 	if tool.Status == types.ToolAvailabilityUnavailable {
-		return unavailableToolPlan(roleID, action, tool), nil
+		return unavailableToolPlan(scope, action, tool), nil
 	}
-	fence, err := s.evaluateWorkspaceFence(ctx, workspaceID, tool, action)
+	fence, err := s.evaluateWorkspaceFence(ctx, scope, tool, action)
 	if err != nil {
 		return types.ToolRunPlan{}, err
 	}
 	if fence != nil && fence.RequiresConfirmation {
 		decision := workspaceFenceDecision(action, fence)
-		return types.ToolRunPlan{ID: utils.NewID("tool-plan"), RoleID: roleID, Action: action, Tool: tool, InvocationMode: resolveInvocationMode(action, tool), Decision: decision, WorkspaceFence: fence, PlanStatus: types.ToolPlanStatusNeedsConfirmation, CreatedAt: time.Now().UTC()}, nil
+		return types.ToolRunPlan{ID: utils.NewID("tool-plan"), RoleID: scope.RoleID, Scope: scope, Action: action, Tool: tool, InvocationMode: resolveInvocationMode(action, tool), Decision: decision, WorkspaceFence: fence, PlanStatus: types.ToolPlanStatusNeedsConfirmation, CreatedAt: time.Now().UTC()}, nil
 	}
 	decision, err := s.permission.Decide(ctx, roleID, action)
 	if err != nil {
 		return types.ToolRunPlan{}, toolPermissionFailed("failed to decide tool permission", err)
 	}
-	return s.planFromDecision(roleID, action, tool, decision, fence)
+	return s.planFromDecision(scope, action, tool, decision, fence)
 }
 
-func (s *system) planFromDecision(roleID string, action types.ToolAction, tool types.ToolDefinition, decision types.PermissionDecision, fence *types.ToolWorkspaceFence) (types.ToolRunPlan, error) {
+func (s *system) planFromDecision(scope types.ToolRunScope, action types.ToolAction, tool types.ToolDefinition, decision types.PermissionDecision, fence *types.ToolWorkspaceFence) (types.ToolRunPlan, error) {
 	invocationMode := resolveInvocationMode(action, tool)
 	switch decision.Status {
 	case types.PermissionStatusDenied:
-		return types.ToolRunPlan{ID: utils.NewID("tool-plan"), RoleID: roleID, Action: action, Tool: tool, InvocationMode: invocationMode, Decision: decision, WorkspaceFence: fence, PlanStatus: types.ToolPlanStatusDenied, CreatedAt: time.Now().UTC()}, nil
+		return types.ToolRunPlan{ID: utils.NewID("tool-plan"), RoleID: scope.RoleID, Scope: scope, Action: action, Tool: tool, InvocationMode: invocationMode, Decision: decision, WorkspaceFence: fence, PlanStatus: types.ToolPlanStatusDenied, CreatedAt: time.Now().UTC()}, nil
 	case types.PermissionStatusNeedsConfirmation:
-		return types.ToolRunPlan{ID: utils.NewID("tool-plan"), RoleID: roleID, Action: action, Tool: tool, InvocationMode: invocationMode, Decision: decision, WorkspaceFence: fence, PlanStatus: types.ToolPlanStatusNeedsConfirmation, CreatedAt: time.Now().UTC()}, nil
+		return types.ToolRunPlan{ID: utils.NewID("tool-plan"), RoleID: scope.RoleID, Scope: scope, Action: action, Tool: tool, InvocationMode: invocationMode, Decision: decision, WorkspaceFence: fence, PlanStatus: types.ToolPlanStatusNeedsConfirmation, CreatedAt: time.Now().UTC()}, nil
 	case types.PermissionStatusAllowed:
 	default:
 		return types.ToolRunPlan{}, toolPermissionFailed("unexpected permission status", nil)
@@ -59,16 +64,16 @@ func (s *system) planFromDecision(roleID string, action types.ToolAction, tool t
 	if err != nil {
 		return types.ToolRunPlan{}, err
 	}
-	return types.ToolRunPlan{ID: utils.NewID("tool-plan"), RoleID: roleID, Action: action, Tool: tool, InvocationMode: invocationMode, Decision: decision, WorkspaceFence: fence, PlanStatus: types.ToolPlanStatusReady, Executable: executable, CreatedAt: time.Now().UTC()}, nil
+	return types.ToolRunPlan{ID: utils.NewID("tool-plan"), RoleID: scope.RoleID, Scope: scope, Action: action, Tool: tool, InvocationMode: invocationMode, Decision: decision, WorkspaceFence: fence, PlanStatus: types.ToolPlanStatusReady, Executable: executable, CreatedAt: time.Now().UTC()}, nil
 }
 
-func unavailableToolPlan(roleID string, action types.ToolAction, tool types.ToolDefinition) types.ToolRunPlan {
+func unavailableToolPlan(scope types.ToolRunScope, action types.ToolAction, tool types.ToolDefinition) types.ToolRunPlan {
 	reason := strings.TrimSpace(tool.StatusMessage)
 	if reason == "" {
 		reason = "工具当前不可用"
 	}
 	decision := types.PermissionDecision{ID: utils.NewID("tool-decision"), ActionID: action.ID, ToolName: action.ToolName, Status: types.PermissionStatusDenied, Reason: reason, CreatedAt: time.Now().UTC()}
-	return types.ToolRunPlan{ID: utils.NewID("tool-plan"), RoleID: roleID, Action: action, Tool: tool, InvocationMode: resolveInvocationMode(action, tool), Decision: decision, PlanStatus: types.ToolPlanStatusDenied, CreatedAt: time.Now().UTC()}
+	return types.ToolRunPlan{ID: utils.NewID("tool-plan"), RoleID: scope.RoleID, Scope: scope, Action: action, Tool: tool, InvocationMode: resolveInvocationMode(action, tool), Decision: decision, PlanStatus: types.ToolPlanStatusDenied, CreatedAt: time.Now().UTC()}
 }
 
 func resolveInvocationMode(action types.ToolAction, tool types.ToolDefinition) types.ToolInvocationMode {
@@ -86,7 +91,7 @@ func (s *system) ApplyConfirmation(ctx context.Context, plan types.ToolRunPlan, 
 		return types.ToolRunPlan{}, toolInvalid("confirmation decision id does not match plan", nil)
 	}
 	if !confirmation.Approved {
-		return types.ToolRunPlan{ID: plan.ID, RoleID: plan.RoleID, Action: plan.Action, Tool: plan.Tool, InvocationMode: plan.InvocationMode, Decision: types.PermissionDecision{ID: plan.Decision.ID, ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Status: types.PermissionStatusDenied, Reason: confirmationReason(confirmation), Details: plan.Decision.Details, CreatedAt: time.Now().UTC()}, WorkspaceFence: plan.WorkspaceFence, PlanStatus: types.ToolPlanStatusDenied, CreatedAt: time.Now().UTC()}, nil
+		return types.ToolRunPlan{ID: plan.ID, RoleID: plan.RoleID, Scope: plan.Scope, Action: plan.Action, Tool: plan.Tool, InvocationMode: plan.InvocationMode, Decision: types.PermissionDecision{ID: plan.Decision.ID, ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Status: types.PermissionStatusDenied, Reason: confirmationReason(confirmation), Details: plan.Decision.Details, CreatedAt: time.Now().UTC()}, WorkspaceFence: plan.WorkspaceFence, PlanStatus: types.ToolPlanStatusDenied, CreatedAt: time.Now().UTC()}, nil
 	}
 	if isWorkspaceFenceDecision(plan.Decision) {
 		if strings.TrimSpace(plan.RoleID) == "" {
@@ -99,7 +104,7 @@ func (s *system) ApplyConfirmation(ctx context.Context, plan types.ToolRunPlan, 
 		if err != nil {
 			return types.ToolRunPlan{}, toolPermissionFailed("failed to decide tool permission", err)
 		}
-		return s.planFromDecision(plan.RoleID, plan.Action, plan.Tool, decision, plan.WorkspaceFence)
+		return s.planFromDecision(plan.Scope, plan.Action, plan.Tool, decision, plan.WorkspaceFence)
 	}
 	decision, err := s.permission.ApplyConfirmation(ctx, plan.Decision, confirmation)
 	if err != nil {
@@ -116,7 +121,7 @@ func (s *system) ApplyConfirmation(ctx context.Context, plan types.ToolRunPlan, 
 		plan.CreatedAt = time.Now().UTC()
 		return plan, nil
 	}
-	return s.planFromDecision(plan.RoleID, plan.Action, plan.Tool, decision, plan.WorkspaceFence)
+	return s.planFromDecision(plan.Scope, plan.Action, plan.Tool, decision, plan.WorkspaceFence)
 }
 
 func confirmationReason(confirmation types.ToolConfirmation) string {

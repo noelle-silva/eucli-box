@@ -52,9 +52,15 @@ func (s *system) evaluateWorkspaceFence(ctx context.Context, scope types.ToolRun
 	if err != nil {
 		return nil, toolInvalid("failed to resolve host working directory", err)
 	}
+	// 解析基准与工具侧一致：工作区注册目录存在时以首个目录为基准，
+	// 否则退回宿主工作目录，保证围栏与工具对相对路径的理解相同。
+	baseDirectory := hostWorkingDirectory
+	if len(directories) > 0 {
+		baseDirectory = directories[0].Absolute
+	}
 	fence := &types.ToolWorkspaceFence{WorkspaceID: workspace.ID, RegisteredDirectories: workspace.Directories, Paths: make([]types.ToolWorkspaceFencePath, 0, len(candidates))}
 	for _, candidate := range candidates {
-		path, err := evaluateWorkspaceFencePath(hostWorkingDirectory, directories, candidate)
+		path, err := evaluateWorkspaceFencePath(baseDirectory, directories, candidate)
 		if err != nil {
 			return nil, err
 		}

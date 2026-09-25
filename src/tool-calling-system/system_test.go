@@ -263,8 +263,11 @@ func main() {}
 	assertAppErrorCode(t, err, "tool.not_found")
 }
 
-func TestWorkspaceFenceAllowsRegisteredPath(t *testing.T) {
+// TestWorkspaceFenceAllowsRelativePathFromWorkspaceBase 验证围栏与工具一致：
+// 相对路径以工作区首个注册目录为基准解析，宿主目录与之不同也不误判越界。
+func TestWorkspaceFenceAllowsRelativePathFromWorkspaceBase(t *testing.T) {
 	hostDir := t.TempDir()
+	workspaceDir := t.TempDir()
 	t.Chdir(hostDir)
 	tool := testTool(t, buildTool(t, `package main
 import "fmt"
@@ -272,7 +275,7 @@ func main() { fmt.Print(`+"`"+`{"status":"success","content":"ok","metadata":{}}
 `))
 	storage := newFakeToolStorage()
 	storage.tools[tool.ID] = tool
-	storage.workspaces["workspace-1"] = types.Workspace{ID: "workspace-1", Name: "Workspace", Directories: []types.WorkspaceDirectory{{Path: hostDir, Alias: "host"}}}
+	storage.workspaces["workspace-1"] = types.Workspace{ID: "workspace-1", Name: "Workspace", Directories: []types.WorkspaceDirectory{{Path: workspaceDir, Alias: "work"}}}
 	system := newTestToolSystem(t, &fakePermission{decision: types.PermissionDecision{ID: "d1", ActionID: "a1", ToolName: tool.Name, Status: types.PermissionStatusAllowed}}, storage, Config{})
 
 	plan, err := system.Prepare(context.Background(), types.ToolRunScope{RoleID: "developer", WorkspaceID: "workspace-1"}, types.ToolAction{ID: "a1", ToolName: tool.Name, Arguments: map[string]any{"action": "read", "path": "inside.txt"}})
@@ -282,8 +285,32 @@ func main() { fmt.Print(`+"`"+`{"status":"success","content":"ok","metadata":{}}
 	if plan.PlanStatus != types.ToolPlanStatusReady || plan.WorkspaceFence == nil || plan.WorkspaceFence.RequiresConfirmation {
 		t.Fatalf("plan = %#v", plan)
 	}
-	if len(plan.WorkspaceFence.Paths) != 1 || !plan.WorkspaceFence.Paths[0].WithinWorkspace {
+	if len(plan.WorkspaceFence.Paths) != 1 || !plan.WorkspaceFence.Paths[0].WithinWorkspace || plan.WorkspaceFence.Paths[0].MatchedDirectoryAlias != "work" {
 		t.Fatalf("fence paths = %#v", plan.WorkspaceFence.Paths)
+	}
+}
+
+// TestWorkspaceFenceRequiresConfirmationForRelativeEscape 验证相对路径
+// 从工作区基准向上逃逸时仍然进入确认流程。
+func TestWorkspaceFenceRequiresConfirmationForRelativeEscape(t *testing.T) {
+	hostDir := t.TempDir()
+	workspaceDir := t.TempDir()
+	t.Chdir(hostDir)
+	tool := testTool(t, buildTool(t, `package main
+import "fmt"
+func main() { fmt.Print(`+"`"+`{"status":"success","content":"ok","metadata":{}}`+"`"+`) }
+`))
+	storage := newFakeToolStorage()
+	storage.tools[tool.ID] = tool
+	storage.workspaces["workspace-1"] = types.Workspace{ID: "workspace-1", Name: "Workspace", Directories: []types.WorkspaceDirectory{{Path: workspaceDir, Alias: "work"}}}
+	system := newTestToolSystem(t, &fakePermission{decision: types.PermissionDecision{ID: "d1", ActionID: "a1", ToolName: tool.Name, Status: types.PermissionStatusAllowed}}, storage, Config{})
+
+	plan, err := system.Prepare(context.Background(), types.ToolRunScope{RoleID: "developer", WorkspaceID: "workspace-1"}, types.ToolAction{ID: "a1", ToolName: tool.Name, Arguments: map[string]any{"action": "read", "path": filepath.Join("..", "outside.txt")}})
+	if err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	if plan.PlanStatus != types.ToolPlanStatusNeedsConfirmation || plan.WorkspaceFence == nil || !plan.WorkspaceFence.RequiresConfirmation {
+		t.Fatalf("plan = %#v", plan)
 	}
 }
 

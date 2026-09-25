@@ -92,6 +92,20 @@ type ToolWorkspaceContext struct {
 	Directories []WorkspaceDirectory `json:"directories,omitempty"`
 }
 
+// ToolPathBaseDirectory 是工具解析相对路径（含命令行工作目录）的基准：
+// 工作区上下文存在且注册了目录时，以首个目录为基准；否则退回宿主工作目录。
+// 宿主围栏以同一基准判断路径是否出圈，两端尺子保持一致。
+func ToolPathBaseDirectory(input ToolExecutionInput) string {
+	if input.Workspace != nil {
+		for _, directory := range input.Workspace.Directories {
+			if base := strings.TrimSpace(directory.Path); base != "" {
+				return base
+			}
+		}
+	}
+	return strings.TrimSpace(input.HostWorkingDirectory)
+}
+
 // 会话动态状态（活值）的标准键；含义由宿主声明。
 const (
 	SessionStateKeyCurrentTime          = "current-time"

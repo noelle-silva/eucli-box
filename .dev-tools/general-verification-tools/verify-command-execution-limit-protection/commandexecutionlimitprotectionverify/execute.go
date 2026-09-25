@@ -129,6 +129,42 @@ func (f *fakeToolStorage) LoadWorkspace(ctx context.Context, workspaceID string)
 	return types.Workspace{ID: workspaceID}, nil
 }
 
+func (f *fakeToolStorage) LoadRole(ctx context.Context, roleID string) (types.Role, error) {
+	return types.Role{}, fmt.Errorf("role %s not found", roleID)
+}
+
+func (f *fakeToolStorage) LoadChatGroup(ctx context.Context, groupID string) (types.ChatGroup, error) {
+	return types.ChatGroup{}, fmt.Errorf("group %s not found", groupID)
+}
+
+func (f *fakeToolStorage) LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error) {
+	return types.Session{}, fmt.Errorf("session %s not found", sessionID)
+}
+
+func (f *fakeToolStorage) LoadGroupSession(ctx context.Context, groupID string, sessionID string) (types.Session, error) {
+	return types.Session{}, fmt.Errorf("session %s not found", sessionID)
+}
+
+func (f *fakeToolStorage) LoadWorkspaceSession(ctx context.Context, workspaceID string, roleID string, sessionID string) (types.Session, error) {
+	return types.Session{}, fmt.Errorf("session %s not found", sessionID)
+}
+
+func (f *fakeToolStorage) SaveSessionMessageAttachment(ctx context.Context, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
+	return types.MessageAttachment{}, fmt.Errorf("attachment storage is not available")
+}
+
+func (f *fakeToolStorage) SaveGroupSessionMessageAttachment(ctx context.Context, groupID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
+	return types.MessageAttachment{}, fmt.Errorf("attachment storage is not available")
+}
+
+func (f *fakeToolStorage) SaveWorkspaceSessionMessageAttachment(ctx context.Context, workspaceID string, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
+	return types.MessageAttachment{}, fmt.Errorf("attachment storage is not available")
+}
+
+func (f *fakeToolStorage) LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error) {
+	return "", fmt.Errorf("attachment %s not found", relPath)
+}
+
 func buildFixture(ctx context.Context, root string, run *toolkit.VerificationRun) (fixture, error) {
 	toolDir := filepath.Join(run.Work, "tool")
 	if err := os.MkdirAll(toolDir, 0o755); err != nil {

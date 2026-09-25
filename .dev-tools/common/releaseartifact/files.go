@@ -247,8 +247,11 @@ func validateToolPackage(directory string, id string, expectedVersion string) er
 	if err := json.Unmarshal(payload, &definition); err != nil {
 		return fmt.Errorf("工具 definition.json 无效：%w", err)
 	}
-	if definition.ID != id || definition.BodyDirectory != "." || definition.DataDirectory != "" || len(definition.UserConfig) != 0 || definition.PromptDescriptionOverride != "" {
+	if definition.ID != id || definition.BodyDirectory != "." || definition.DataDirectory != "" || len(definition.UserConfig) != 0 || len(definition.CapabilityGrants) != 0 || definition.PromptDescriptionOverride != "" {
 		return fmt.Errorf("工具成品混入用户资料或运行期路径")
+	}
+	if err := types.ValidateToolCapabilities(definition.Capabilities); err != nil {
+		return fmt.Errorf("工具能力声明无效：%w", err)
 	}
 	if strings.TrimSpace(definition.Version) != strings.TrimSpace(expectedVersion) {
 		return fmt.Errorf("工具定义版本与成品版本不一致：%s != %s", definition.Version, expectedVersion)

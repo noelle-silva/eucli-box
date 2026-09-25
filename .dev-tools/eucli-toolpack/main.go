@@ -231,6 +231,7 @@ func buildTool(ctx context.Context, repoRoot string, dataDir string, source tool
 	definition.BodyDirectory = "."
 	definition.DataDirectory = ""
 	definition.UserConfig = nil
+	definition.CapabilityGrants = nil
 	definition.PromptDescriptionOverride = ""
 	definition.Compatibility = types.CompatibilityStatus{}
 	definition.Status = ""
@@ -639,6 +640,9 @@ func readToolDefinition(source toolSource) (types.ToolDefinition, error) {
 	definition.DefaultInvocationMode = types.CleanToolInvocationMode(definition.DefaultInvocationMode)
 	if definition.Type != "local" {
 		return types.ToolDefinition{}, fmt.Errorf("tool %s type must be local", source.ID)
+	}
+	if err := types.ValidateToolCapabilities(definition.Capabilities); err != nil {
+		return types.ToolDefinition{}, fmt.Errorf("tool %s capabilities: %w", source.ID, err)
 	}
 	if err := validateReleaseMetadata(definition.Version, definition.EucliBoxCompatibility); err != nil {
 		return types.ToolDefinition{}, fmt.Errorf("tool %s release metadata: %w", source.ID, err)

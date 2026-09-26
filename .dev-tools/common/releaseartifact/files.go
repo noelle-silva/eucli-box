@@ -253,6 +253,9 @@ func validateToolPackage(directory string, id string, expectedVersion string) er
 	if err := types.ValidateToolCapabilities(definition.Capabilities); err != nil {
 		return fmt.Errorf("工具能力声明无效：%w", err)
 	}
+	if types.HasDeclaredCapabilityGrantFlags(definition.Capabilities) {
+		return fmt.Errorf("工具能力声明不得包含授权要求字段")
+	}
 	if strings.TrimSpace(definition.Version) != strings.TrimSpace(expectedVersion) {
 		return fmt.Errorf("工具定义版本与成品版本不一致：%s != %s", definition.Version, expectedVersion)
 	}

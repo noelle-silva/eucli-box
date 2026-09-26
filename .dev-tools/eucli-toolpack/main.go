@@ -644,6 +644,9 @@ func readToolDefinition(source toolSource) (types.ToolDefinition, error) {
 	if err := types.ValidateToolCapabilities(definition.Capabilities); err != nil {
 		return types.ToolDefinition{}, fmt.Errorf("tool %s capabilities: %w", source.ID, err)
 	}
+	if types.HasDeclaredCapabilityGrantFlags(definition.Capabilities) {
+		return types.ToolDefinition{}, fmt.Errorf("tool %s must not declare capability grant requirements", source.ID)
+	}
 	if err := validateReleaseMetadata(definition.Version, definition.EucliBoxCompatibility); err != nil {
 		return types.ToolDefinition{}, fmt.Errorf("tool %s release metadata: %w", source.ID, err)
 	}

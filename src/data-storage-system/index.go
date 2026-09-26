@@ -53,6 +53,9 @@ func (s *system) RebuildIndexes(ctx context.Context) error {
 	if err := s.rebuildAllSessionIndexes(ctx); err != nil {
 		return err
 	}
+	if err := s.rebuildRequestRecordIndex(ctx); err != nil {
+		return err
+	}
 	return rebuildRecycleIndex(ctx, s.paths)
 }
 

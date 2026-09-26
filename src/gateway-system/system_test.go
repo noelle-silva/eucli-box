@@ -773,7 +773,7 @@ func newTestGateway(t *testing.T, fakes *gatewayFakes) System {
 	if fakes.installSource != nil {
 		source = fakes.installSource
 	}
-	system, err := NewSystem(Config{Addr: "127.0.0.1:0", InstallSource: source}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseSource)
+	system, err := NewSystem(Config{Addr: "127.0.0.1:0", InstallSource: source}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseSource, fakes.requestRecords)
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -781,25 +781,26 @@ func newTestGateway(t *testing.T, fakes *gatewayFakes) System {
 }
 
 type gatewayFakes struct {
-	runtime       *fakeGatewayRuntime
-	roles         *fakeGatewayRoles
-	groups        *fakeGatewayGroups
-	workspaces    *fakeGatewayWorkspaces
-	providers     *fakeGatewayProviders
-	tools         *fakeGatewayTools
-	sessions      *fakeGatewaySessions
-	stickers      *fakeGatewayStickers
-	hooks         *fakeGatewayHooks
-	placeholders  *fakeGatewayPlaceholders
-	systemPlugins *fakeGatewaySystemPlugins
-	assist        *fakeGatewayAssist
-	releaseSource *fakeGatewayReleaseSource
-	installSource *fakeGatewayInstallSource
+	runtime        *fakeGatewayRuntime
+	roles          *fakeGatewayRoles
+	groups         *fakeGatewayGroups
+	workspaces     *fakeGatewayWorkspaces
+	providers      *fakeGatewayProviders
+	tools          *fakeGatewayTools
+	sessions       *fakeGatewaySessions
+	stickers       *fakeGatewayStickers
+	hooks          *fakeGatewayHooks
+	placeholders   *fakeGatewayPlaceholders
+	systemPlugins  *fakeGatewaySystemPlugins
+	assist         *fakeGatewayAssist
+	releaseSource  *fakeGatewayReleaseSource
+	requestRecords *fakeGatewayRequestRecords
+	installSource  *fakeGatewayInstallSource
 }
 
 func newGatewayFakes() *gatewayFakes {
 	stickers := newFakeGatewayStickers()
-	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), groups: newFakeGatewayGroups(), workspaces: newFakeGatewayWorkspaces(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, hooks: &fakeGatewayHooks{}, placeholders: &fakeGatewayPlaceholders{}, systemPlugins: &fakeGatewaySystemPlugins{}, assist: &fakeGatewayAssist{stickers: stickers}, releaseSource: &fakeGatewayReleaseSource{}, installSource: newFakeGatewayInstallSource()}
+	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), groups: newFakeGatewayGroups(), workspaces: newFakeGatewayWorkspaces(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, hooks: &fakeGatewayHooks{}, placeholders: &fakeGatewayPlaceholders{}, systemPlugins: &fakeGatewaySystemPlugins{}, assist: &fakeGatewayAssist{stickers: stickers}, releaseSource: &fakeGatewayReleaseSource{}, requestRecords: newFakeGatewayRequestRecords(), installSource: newFakeGatewayInstallSource()}
 }
 
 type fakeGatewayInstallSource struct {
@@ -823,6 +824,41 @@ func (f *fakeGatewayInstallSource) Set(_ context.Context, kind installsource.Kin
 	f.sets = append(f.sets, kind)
 	f.current = kind
 	return kind, nil
+}
+
+type fakeGatewayRequestRecords struct {
+	config  types.RequestRecordConfig
+	records []types.RequestRecord
+}
+
+func newFakeGatewayRequestRecords() *fakeGatewayRequestRecords {
+	return &fakeGatewayRequestRecords{config: types.RequestRecordConfig{Limit: types.RequestRecordLimitDefault}}
+}
+
+func (f *fakeGatewayRequestRecords) LoadRequestRecordConfig(ctx context.Context) (types.RequestRecordConfig, error) {
+	return f.config, nil
+}
+
+func (f *fakeGatewayRequestRecords) SaveRequestRecordConfig(ctx context.Context, config types.RequestRecordConfig) (types.RequestRecordConfig, error) {
+	f.config = config
+	return f.config, nil
+}
+
+func (f *fakeGatewayRequestRecords) ListRequestRecords(ctx context.Context) ([]types.RequestRecordSummary, error) {
+	summaries := make([]types.RequestRecordSummary, 0, len(f.records))
+	for _, record := range f.records {
+		summaries = append(summaries, types.RequestRecordSummary{ID: record.ID, CreatedAt: record.CreatedAt, Method: record.Method, URL: record.URL, Status: record.ResponseStatus, DurationMs: record.DurationMs, Error: record.Error})
+	}
+	return summaries, nil
+}
+
+func (f *fakeGatewayRequestRecords) LoadRequestRecord(ctx context.Context, recordID string) (types.RequestRecord, error) {
+	for _, record := range f.records {
+		if record.ID == recordID {
+			return record, nil
+		}
+	}
+	return types.RequestRecord{}, errors.New("request record was not found")
 }
 
 type fakeGatewayReleaseSource struct {

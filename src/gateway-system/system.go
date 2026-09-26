@@ -77,6 +77,13 @@ type ProviderSystem interface {
 	RefreshModels(ctx context.Context, providerID string) ([]types.ModelInfo, error)
 }
 
+type RequestRecordSystem interface {
+	LoadRequestRecordConfig(ctx context.Context) (types.RequestRecordConfig, error)
+	SaveRequestRecordConfig(ctx context.Context, config types.RequestRecordConfig) (types.RequestRecordConfig, error)
+	ListRequestRecords(ctx context.Context) ([]types.RequestRecordSummary, error)
+	LoadRequestRecord(ctx context.Context, recordID string) (types.RequestRecord, error)
+}
+
 type ToolSystem interface {
 	SaveTool(ctx context.Context, tool types.ToolDefinition) error
 	LoadTool(ctx context.Context, toolID string) (types.ToolDefinition, error)
@@ -228,32 +235,33 @@ type Config struct {
 }
 
 type system struct {
-	config        Config
-	boxRelease    types.EucliBoxRelease
-	runtime       RuntimeSystem
-	roles         RoleSystem
-	groups        ChatGroupSystem
-	workspaces    WorkspaceSystem
-	providers     ProviderSystem
-	tools         ToolSystem
-	sessions      SessionSystem
-	stickers      StickerSystem
-	hooks         HookPromptSystem
-	placeholders  PlaceholderSystem
-	systemPlugins SystemPluginSystem
-	assist        AIAssistSystem
-	releaseSource ReleaseSourceSystem
-	access        AccessSystem
-	mux           *http.ServeMux
-	server        *http.Server
-	upgrader      websocket.Upgrader
-	endpoint      string
+	config         Config
+	boxRelease     types.EucliBoxRelease
+	runtime        RuntimeSystem
+	roles          RoleSystem
+	groups         ChatGroupSystem
+	workspaces     WorkspaceSystem
+	providers      ProviderSystem
+	tools          ToolSystem
+	sessions       SessionSystem
+	stickers       StickerSystem
+	hooks          HookPromptSystem
+	placeholders   PlaceholderSystem
+	systemPlugins  SystemPluginSystem
+	assist         AIAssistSystem
+	releaseSource  ReleaseSourceSystem
+	requestRecords RequestRecordSystem
+	access         AccessSystem
+	mux            *http.ServeMux
+	server         *http.Server
+	upgrader       websocket.Upgrader
+	endpoint       string
 
 	wsMu        sync.Mutex
 	connections map[*websocket.Conn]struct{}
 }
 
-func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups ChatGroupSystem, workspaces WorkspaceSystem, providers ProviderSystem, tools ToolSystem, sessions SessionSystem, stickers StickerSystem, hooks HookPromptSystem, placeholders PlaceholderSystem, systemPlugins SystemPluginSystem, assist AIAssistSystem, releaseSource ReleaseSourceSystem) (System, error) {
+func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups ChatGroupSystem, workspaces WorkspaceSystem, providers ProviderSystem, tools ToolSystem, sessions SessionSystem, stickers StickerSystem, hooks HookPromptSystem, placeholders PlaceholderSystem, systemPlugins SystemPluginSystem, assist AIAssistSystem, releaseSource ReleaseSourceSystem, requestRecords RequestRecordSystem) (System, error) {
 	if runtime == nil {
 		return nil, gatewayInvalid("runtime system dependency is required", nil)
 	}
@@ -293,6 +301,9 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups Ch
 	if releaseSource == nil {
 		return nil, gatewayInvalid("release source system dependency is required", nil)
 	}
+	if requestRecords == nil {
+		return nil, gatewayInvalid("request record system dependency is required", nil)
+	}
 	if strings.TrimSpace(config.Addr) == "" {
 		return nil, gatewayInvalid("gateway listen address is required", nil)
 	}
@@ -322,25 +333,26 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups Ch
 	}
 	boxRelease.Version = boxVersion
 	s := &system{
-		config:        config,
-		boxRelease:    boxRelease,
-		runtime:       runtime,
-		roles:         roles,
-		groups:        groups,
-		workspaces:    workspaces,
-		providers:     providers,
-		tools:         tools,
-		sessions:      sessions,
-		stickers:      stickers,
-		hooks:         hooks,
-		assist:        assist,
-		releaseSource: releaseSource,
-		placeholders:  placeholders,
-		systemPlugins: systemPlugins,
-		access:        config.Access,
-		mux:           http.NewServeMux(),
-		upgrader:      websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
-		connections:   map[*websocket.Conn]struct{}{},
+		config:         config,
+		boxRelease:     boxRelease,
+		runtime:        runtime,
+		roles:          roles,
+		groups:         groups,
+		workspaces:     workspaces,
+		providers:      providers,
+		tools:          tools,
+		sessions:       sessions,
+		stickers:       stickers,
+		hooks:          hooks,
+		assist:         assist,
+		releaseSource:  releaseSource,
+		requestRecords: requestRecords,
+		placeholders:   placeholders,
+		systemPlugins:  systemPlugins,
+		access:         config.Access,
+		mux:            http.NewServeMux(),
+		upgrader:       websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
+		connections:    map[*websocket.Conn]struct{}{},
 	}
 	s.registerRoutes()
 	s.server = &http.Server{Addr: config.Addr, Handler: s.mux, ReadTimeout: config.ReadTimeout, WriteTimeout: config.WriteTimeout}

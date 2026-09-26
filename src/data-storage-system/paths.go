@@ -33,7 +33,7 @@ func newPaths(root string, toolBodiesRoot string) (paths, error) {
 }
 
 func (p paths) baseDirs() []string {
-	return []string{p.root, p.sessionsRoot(), p.sessionRolesRoot(), p.sessionGroupsRoot(), p.sessionWorkspacesRoot(), p.rolesRoot(), p.groupsRoot(), p.workspacesRoot(), p.providersRoot(), p.toolProgramsRoot(), p.toolDataRoot(), p.stickersRoot(), p.recycleRoot(), p.metaRoot()}
+	return []string{p.root, p.sessionsRoot(), p.sessionRolesRoot(), p.sessionGroupsRoot(), p.sessionWorkspacesRoot(), p.rolesRoot(), p.groupsRoot(), p.workspacesRoot(), p.providersRoot(), p.toolProgramsRoot(), p.toolDataRoot(), p.stickersRoot(), p.recycleRoot(), p.requestRecordsRoot(), p.metaRoot()}
 }
 
 func (p paths) sessionsRoot() string     { return datapaths.SessionsDir(p.root) }
@@ -56,6 +56,10 @@ func (p paths) toolDataRoot() string { return datapaths.ToolDataDir(p.root) }
 func (p paths) stickersRoot() string { return filepath.Join(p.root, datapaths.RelStickersDir) }
 func (p paths) recycleRoot() string  { return filepath.Join(p.root, datapaths.RelRecycleDir) }
 func (p paths) metaRoot() string     { return datapaths.MetaDir(p.root) }
+
+func (p paths) requestRecordsRoot() string {
+	return datapaths.RequestRecordsDir(p.root)
+}
 
 func (p paths) sessionFavoritesFile() string {
 	return filepath.Join(p.sessionsRoot(), "favorites.json")
@@ -91,6 +95,10 @@ func (p paths) modelGroupsFile() string {
 
 func (p paths) hookPromptLibraryFile() string {
 	return datapaths.HookPromptsFile(p.root)
+}
+
+func (p paths) requestRecordConfigFile() string {
+	return datapaths.RequestRecordFile(p.root)
 }
 
 func (p paths) roleDir(roleID string) (string, error) {

@@ -115,6 +115,11 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("DELETE /api/providers/{providerID}", s.authWrap(s.handleDeleteProvider))
 	s.mux.HandleFunc("POST /api/providers/{providerID}/models/refresh", s.authWrap(s.handleRefreshProviderModels))
 
+	s.mux.HandleFunc("GET /api/request-records", s.authWrap(s.handleListRequestRecords))
+	s.mux.HandleFunc("GET /api/request-records/config", s.authWrap(s.handleLoadRequestRecordConfig))
+	s.mux.HandleFunc("PUT /api/request-records/config", s.authWrap(s.handleSaveRequestRecordConfig))
+	s.mux.HandleFunc("GET /api/request-records/{recordID}", s.authWrap(s.handleLoadRequestRecord))
+
 	s.mux.HandleFunc("GET /api/tools", s.authWrap(s.handleListTools))
 	s.mux.HandleFunc("GET /api/tools/work-directory", s.authWrap(s.handleLoadToolWorkDirectory))
 	s.mux.HandleFunc("PUT /api/tools/work-directory", s.authWrap(s.handleSaveToolWorkDirectory))

@@ -33,6 +33,7 @@ import (
 	networkrequest "eucli-box/src/network-request-system"
 	permission "eucli-box/src/permission-system"
 	placeholdersystem "eucli-box/src/placeholder-system"
+	requestrecord "eucli-box/src/request-record-system"
 	releasesourcesystem "eucli-box/src/release-source-system"
 	roleprompt "eucli-box/src/role-prompt-system"
 	systemplugin "eucli-box/src/system-plugin-system"
@@ -144,7 +145,13 @@ func run() error {
 	}
 	log.Printf("[2.6/13] candidate reader %s (install-source: %s)", programStatusLabel(programsRoot), sourceState.Current())
 
-	providerSystem, err := modelprovider.NewSystem(modelprovider.Config{}, networkSystem, storageSystem)
+	requestRecordSystem, err := requestrecord.NewSystem(networkSystem, storageSystem)
+	if err != nil {
+		return fmt.Errorf("start request record system: %w", err)
+	}
+	log.Printf("[3.5/13] request-record-system    ✓")
+
+	providerSystem, err := modelprovider.NewSystem(modelprovider.Config{}, requestRecordSystem, storageSystem)
 	if err != nil {
 		return fmt.Errorf("start model provider system: %w", err)
 	}
@@ -226,7 +233,7 @@ func run() error {
 		return fmt.Errorf("准备启动配置画像失败：%w", err)
 	}
 	gatewayConfig := gateway.Config{Addr: profile.ListenAddr(), Key: profile.Key, BoxVersion: boxRelease.Version, Access: accessSystem, InstallSource: sourceState}
-	gatewaySystem, err := gateway.NewSystem(gatewayConfig, runtimeSystem, roleSystem, storageSystem, storageSystem, providerSystem, toolSystem, storageSystem, storageSystem, storageSystem, placeholderSystem, systemPluginSystem, assistSystem, releaseSourceSystem)
+	gatewaySystem, err := gateway.NewSystem(gatewayConfig, runtimeSystem, roleSystem, storageSystem, storageSystem, providerSystem, toolSystem, storageSystem, storageSystem, storageSystem, placeholderSystem, systemPluginSystem, assistSystem, releaseSourceSystem, requestRecordSystem)
 	if err != nil {
 		return fmt.Errorf("start gateway system: %w", err)
 	}

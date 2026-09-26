@@ -54,6 +54,12 @@ type System interface {
 	LoadHookPromptLibrary(ctx context.Context) (types.HookPromptLibrary, error)
 	SaveHookPromptLibrary(ctx context.Context, library types.HookPromptLibrary) (types.HookPromptLibrary, error)
 
+	LoadRequestRecordConfig(ctx context.Context) (types.RequestRecordConfig, error)
+	SaveRequestRecordConfig(ctx context.Context, config types.RequestRecordConfig) (types.RequestRecordConfig, error)
+	AppendRequestRecord(ctx context.Context, record types.RequestRecord) (types.RequestRecord, error)
+	ListRequestRecords(ctx context.Context) ([]types.RequestRecordSummary, error)
+	LoadRequestRecord(ctx context.Context, recordID string) (types.RequestRecord, error)
+
 	SaveRole(ctx context.Context, role types.Role) error
 	LoadRole(ctx context.Context, roleID string) (types.Role, error)
 	ListRoles(ctx context.Context) ([]types.RoleSummary, error)
@@ -122,8 +128,9 @@ type Config struct {
 }
 
 type system struct {
-	paths     paths
-	sessionMu sync.Mutex
+	paths           paths
+	sessionMu       sync.Mutex
+	requestRecordMu sync.Mutex
 }
 
 func NewSystem(config Config) (System, error) {

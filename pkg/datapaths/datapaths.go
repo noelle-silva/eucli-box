@@ -22,6 +22,7 @@ const (
 	RelToolWorkDirectoryFile  = ".meta/tool-work-directory.json"
 	RelModelGroupsFile        = ".meta/model-groups.json"
 	RelHookPromptsFile        = ".meta/hook-prompts.json"
+	RelRequestRecordFile      = ".meta/request-record.json"
 	RelSessionsDir            = "sessions"
 	RelSessionRolesDir        = "sessions/roles"
 	RelSessionGroupsDir       = "sessions/groups"
@@ -32,6 +33,7 @@ const (
 	RelProvidersDir           = "providers"
 	RelStickersDir            = "stickers"
 	RelRecycleDir             = "recycle"
+	RelRequestRecordsDir      = "request-records"
 	RelToolDataDir            = "tool-data"
 	RelToolBodiesDir          = "tool-bodies"
 	RelSystemPluginsDataDir   = "system-plugins-data"
@@ -130,6 +132,16 @@ func ModelGroupsFile(root string) string {
 // HookPromptsFile 返回 Hook 提示词库文件。
 func HookPromptsFile(root string) string {
 	return Join(root, RelHookPromptsFile)
+}
+
+// RequestRecordFile 返回模型请求记录配置文件。
+func RequestRecordFile(root string) string {
+	return Join(root, RelRequestRecordFile)
+}
+
+// RequestRecordsDir 返回模型请求记录数据目录。
+func RequestRecordsDir(root string) string {
+	return Join(root, RelRequestRecordsDir)
 }
 
 // SessionRolesDir 返回角色会话存储目录。

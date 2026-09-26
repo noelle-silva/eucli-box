@@ -33,6 +33,43 @@ func TestStartRunRoute(t *testing.T) {
 	}
 }
 
+// TestToolWorkDirectoryRoutes 验证工具默认工作目录配置的读取与保存路由。
+func TestToolWorkDirectoryRoutes(t *testing.T) {
+	system := newTestGateway(t, newGatewayFakes())
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/tools/work-directory", nil)
+	getRec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("GET status = %d body=%s", getRec.Code, getRec.Body.String())
+	}
+	var loadResponse struct {
+		Data types.ToolWorkDirectoryConfig `json:"data"`
+	}
+	if err := json.Unmarshal(getRec.Body.Bytes(), &loadResponse); err != nil {
+		t.Fatalf("decode GET response error = %v", err)
+	}
+	if loadResponse.Data.Directory != types.DefaultToolWorkDirectory() {
+		t.Fatalf("default directory = %q", loadResponse.Data.Directory)
+	}
+
+	putReq := httptest.NewRequest(http.MethodPut, "/api/tools/work-directory", strings.NewReader(`{"directory":"E:\\work\\ai-tools"}`))
+	putRec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(putRec, putReq)
+	if putRec.Code != http.StatusOK {
+		t.Fatalf("PUT status = %d body=%s", putRec.Code, putRec.Body.String())
+	}
+	var saveResponse struct {
+		Data types.ToolWorkDirectoryConfig `json:"data"`
+	}
+	if err := json.Unmarshal(putRec.Body.Bytes(), &saveResponse); err != nil {
+		t.Fatalf("decode PUT response error = %v", err)
+	}
+	if saveResponse.Data.Directory != `E:\work\ai-tools` {
+		t.Fatalf("saved directory = %q", saveResponse.Data.Directory)
+	}
+}
+
 func TestReleaseRouteReturnsVersionAndClientCompatibility(t *testing.T) {
 	system := newTestGateway(t, newGatewayFakes())
 	req := httptest.NewRequest(http.MethodGet, "/api/release", nil)
@@ -1511,6 +1548,15 @@ func (f *fakeGatewayTools) SaveToolUserSettings(ctx context.Context, toolID stri
 	tool.PromptDescriptionOverride = settings.PromptDescriptionOverride
 	f.tools[toolID] = tool
 	return tool, nil
+}
+
+func (f *fakeGatewayTools) LoadToolWorkDirectoryConfig(ctx context.Context) (types.ToolWorkDirectoryConfig, error) {
+	return types.ToolWorkDirectoryConfig{Directory: types.DefaultToolWorkDirectory()}, nil
+}
+
+func (f *fakeGatewayTools) SaveToolWorkDirectoryConfig(ctx context.Context, config types.ToolWorkDirectoryConfig) (types.ToolWorkDirectoryConfig, error) {
+	config.Directory = types.NormalizeToolWorkDirectory(config.Directory)
+	return config, nil
 }
 
 func (f *fakeGatewayTools) InstallTool(ctx context.Context, toolID string) (types.ArtifactInstallState, error) {

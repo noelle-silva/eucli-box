@@ -116,6 +116,8 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("POST /api/providers/{providerID}/models/refresh", s.authWrap(s.handleRefreshProviderModels))
 
 	s.mux.HandleFunc("GET /api/tools", s.authWrap(s.handleListTools))
+	s.mux.HandleFunc("GET /api/tools/work-directory", s.authWrap(s.handleLoadToolWorkDirectory))
+	s.mux.HandleFunc("PUT /api/tools/work-directory", s.authWrap(s.handleSaveToolWorkDirectory))
 	s.mux.HandleFunc("POST /api/tools", s.authWrap(s.handleSaveTool))
 	s.mux.HandleFunc("GET /api/tools/{toolID}", s.authWrap(s.handleLoadTool))
 	s.mux.HandleFunc("PUT /api/tools/{toolID}/user-config", s.authWrap(s.handleSaveToolUserSettings))

@@ -108,6 +108,8 @@ type System interface {
 	SaveInstallSource(ctx context.Context, kind installsource.Kind) error
 	LoadModelRequestConfig(ctx context.Context) (types.ModelRequestConfig, error)
 	SaveModelRequestConfig(ctx context.Context, config types.ModelRequestConfig) (types.ModelRequestConfig, error)
+	LoadToolWorkDirectoryConfig(ctx context.Context) (types.ToolWorkDirectoryConfig, error)
+	SaveToolWorkDirectoryConfig(ctx context.Context, config types.ToolWorkDirectoryConfig) (types.ToolWorkDirectoryConfig, error)
 	LoadModelGroups(ctx context.Context) ([]types.ModelGroup, error)
 	SaveModelGroups(ctx context.Context, groups []types.ModelGroup) ([]types.ModelGroup, error)
 

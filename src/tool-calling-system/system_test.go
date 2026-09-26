@@ -588,13 +588,14 @@ func (f *fakePermission) ApplyConfirmation(ctx context.Context, decision types.P
 }
 
 type fakeToolStorage struct {
-	tools       map[string]types.ToolDefinition
-	workspaces  map[string]types.Workspace
-	roles       map[string]types.Role
-	groups      map[string]types.ChatGroup
-	sessions    map[string]types.Session
-	attachments map[string]types.RunAttachment
-	images      map[string]string
+	tools         map[string]types.ToolDefinition
+	workspaces    map[string]types.Workspace
+	roles         map[string]types.Role
+	groups        map[string]types.ChatGroup
+	sessions      map[string]types.Session
+	attachments   map[string]types.RunAttachment
+	images        map[string]string
+	workDirectory string
 }
 
 func newFakeToolStorage() *fakeToolStorage {
@@ -639,6 +640,19 @@ func (f *fakeToolStorage) LoadWorkspace(ctx context.Context, workspaceID string)
 		return types.Workspace{}, errors.New("workspace missing")
 	}
 	return workspace, nil
+}
+
+func (f *fakeToolStorage) LoadToolWorkDirectoryConfig(ctx context.Context) (types.ToolWorkDirectoryConfig, error) {
+	if f.workDirectory == "" {
+		return types.ToolWorkDirectoryConfig{Directory: types.DefaultToolWorkDirectory()}, nil
+	}
+	return types.ToolWorkDirectoryConfig{Directory: f.workDirectory}, nil
+}
+
+func (f *fakeToolStorage) SaveToolWorkDirectoryConfig(ctx context.Context, config types.ToolWorkDirectoryConfig) (types.ToolWorkDirectoryConfig, error) {
+	config.Directory = types.NormalizeToolWorkDirectory(config.Directory)
+	f.workDirectory = config.Directory
+	return config, nil
 }
 
 func (f *fakeToolStorage) LoadRole(ctx context.Context, roleID string) (types.Role, error) {

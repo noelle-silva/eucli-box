@@ -24,6 +24,8 @@ type System interface {
 	LoadTool(ctx context.Context, toolID string) (types.ToolDefinition, error)
 	ListTools(ctx context.Context) ([]types.ToolSummary, error)
 	SaveToolUserSettings(ctx context.Context, toolID string, settings types.ToolUserSettings) (types.ToolDefinition, error)
+	LoadToolWorkDirectoryConfig(ctx context.Context) (types.ToolWorkDirectoryConfig, error)
+	SaveToolWorkDirectoryConfig(ctx context.Context, config types.ToolWorkDirectoryConfig) (types.ToolWorkDirectoryConfig, error)
 
 	InstallTool(ctx context.Context, toolID string) (types.ArtifactInstallState, error)
 	UpdateTool(ctx context.Context, toolID string) (types.ArtifactInstallState, error)
@@ -47,6 +49,8 @@ type StorageSystem interface {
 	LoadTool(ctx context.Context, toolID string) (types.ToolDefinition, error)
 	ListTools(ctx context.Context) ([]types.ToolSummary, error)
 	SaveToolUserSettings(ctx context.Context, toolID string, settings types.ToolUserSettings) (types.ToolDefinition, error)
+	LoadToolWorkDirectoryConfig(ctx context.Context) (types.ToolWorkDirectoryConfig, error)
+	SaveToolWorkDirectoryConfig(ctx context.Context, config types.ToolWorkDirectoryConfig) (types.ToolWorkDirectoryConfig, error)
 	LoadWorkspace(ctx context.Context, workspaceID string) (types.Workspace, error)
 	LoadRole(ctx context.Context, roleID string) (types.Role, error)
 	LoadChatGroup(ctx context.Context, groupID string) (types.ChatGroup, error)

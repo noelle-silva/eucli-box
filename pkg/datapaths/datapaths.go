@@ -19,6 +19,7 @@ const (
 	RelChatTitleNamingFile    = ".meta/chat-title-naming.json"
 	RelContextCompressionFile = ".meta/context-compression.json"
 	RelModelRequestFile       = ".meta/model-request.json"
+	RelToolWorkDirectoryFile  = ".meta/tool-work-directory.json"
 	RelModelGroupsFile        = ".meta/model-groups.json"
 	RelHookPromptsFile        = ".meta/hook-prompts.json"
 	RelSessionsDir            = "sessions"
@@ -114,6 +115,11 @@ func ContextCompressionFile(root string) string {
 // ModelRequestFile 返回模型请求配置文件。
 func ModelRequestFile(root string) string {
 	return Join(root, RelModelRequestFile)
+}
+
+// ToolWorkDirectoryFile 返回工具默认工作目录配置文件。
+func ToolWorkDirectoryFile(root string) string {
+	return Join(root, RelToolWorkDirectoryFile)
 }
 
 // ModelGroupsFile 返回模型组配置文件。

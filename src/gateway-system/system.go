@@ -82,6 +82,8 @@ type ToolSystem interface {
 	LoadTool(ctx context.Context, toolID string) (types.ToolDefinition, error)
 	ListTools(ctx context.Context) ([]types.ToolSummary, error)
 	SaveToolUserSettings(ctx context.Context, toolID string, settings types.ToolUserSettings) (types.ToolDefinition, error)
+	LoadToolWorkDirectoryConfig(ctx context.Context) (types.ToolWorkDirectoryConfig, error)
+	SaveToolWorkDirectoryConfig(ctx context.Context, config types.ToolWorkDirectoryConfig) (types.ToolWorkDirectoryConfig, error)
 	InstallTool(ctx context.Context, toolID string) (types.ArtifactInstallState, error)
 	UpdateTool(ctx context.Context, toolID string) (types.ArtifactInstallState, error)
 	ToolInstallState(ctx context.Context, toolID string) (types.ArtifactInstallState, error)

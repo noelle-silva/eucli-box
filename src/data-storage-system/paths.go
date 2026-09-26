@@ -36,11 +36,11 @@ func (p paths) baseDirs() []string {
 	return []string{p.root, p.sessionsRoot(), p.sessionRolesRoot(), p.sessionGroupsRoot(), p.sessionWorkspacesRoot(), p.rolesRoot(), p.groupsRoot(), p.workspacesRoot(), p.providersRoot(), p.toolProgramsRoot(), p.toolDataRoot(), p.stickersRoot(), p.recycleRoot(), p.metaRoot()}
 }
 
-func (p paths) sessionsRoot() string   { return datapaths.SessionsDir(p.root) }
-func (p paths) rolesRoot() string      { return filepath.Join(p.root, datapaths.RelRolesDir) }
-func (p paths) groupsRoot() string     { return filepath.Join(p.root, datapaths.RelGroupsDir) }
-func (p paths) workspacesRoot() string { return filepath.Join(p.root, datapaths.RelWorkspacesDir) }
-func (p paths) providersRoot() string  { return filepath.Join(p.root, datapaths.RelProvidersDir) }
+func (p paths) sessionsRoot() string     { return datapaths.SessionsDir(p.root) }
+func (p paths) rolesRoot() string        { return filepath.Join(p.root, datapaths.RelRolesDir) }
+func (p paths) groupsRoot() string       { return filepath.Join(p.root, datapaths.RelGroupsDir) }
+func (p paths) workspacesRoot() string   { return filepath.Join(p.root, datapaths.RelWorkspacesDir) }
+func (p paths) providersRoot() string    { return filepath.Join(p.root, datapaths.RelProvidersDir) }
 func (p paths) toolProgramsRoot() string { return p.toolBodiesRoot }
 
 // managedToolPrograms 表示工具程序由外部程序根目录托管（阶段四受托运行模式）。
@@ -52,10 +52,10 @@ func (p paths) managedToolPrograms() bool {
 func (p paths) toolProgramRoot(toolID string) (string, error) {
 	return p.safeJoin(p.toolBodiesRoot, toolID)
 }
-func (p paths) toolDataRoot() string   { return datapaths.ToolDataDir(p.root) }
-func (p paths) stickersRoot() string   { return filepath.Join(p.root, datapaths.RelStickersDir) }
-func (p paths) recycleRoot() string    { return filepath.Join(p.root, datapaths.RelRecycleDir) }
-func (p paths) metaRoot() string       { return datapaths.MetaDir(p.root) }
+func (p paths) toolDataRoot() string { return datapaths.ToolDataDir(p.root) }
+func (p paths) stickersRoot() string { return filepath.Join(p.root, datapaths.RelStickersDir) }
+func (p paths) recycleRoot() string  { return filepath.Join(p.root, datapaths.RelRecycleDir) }
+func (p paths) metaRoot() string     { return datapaths.MetaDir(p.root) }
 
 func (p paths) sessionFavoritesFile() string {
 	return filepath.Join(p.sessionsRoot(), "favorites.json")
@@ -79,6 +79,10 @@ func (p paths) contextCompressionConfigFile() string {
 
 func (p paths) modelRequestConfigFile() string {
 	return datapaths.ModelRequestFile(p.root)
+}
+
+func (p paths) toolWorkDirectoryConfigFile() string {
+	return datapaths.ToolWorkDirectoryFile(p.root)
 }
 
 func (p paths) modelGroupsFile() string {

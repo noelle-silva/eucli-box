@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"os"
 	"strings"
 	"time"
 
@@ -54,9 +53,9 @@ func (s *system) warmupDefinedTool(ctx context.Context, tool types.ToolDefinitio
 		return 0, toolExecutionInvalid(blocked, nil)
 	}
 	defer activity.release()
-	hostWorkingDirectory, err := os.Getwd()
+	workDirectory, err := s.toolWorkDirectory(ctx)
 	if err != nil {
-		return 0, toolExecutionInvalid("failed to resolve host working directory", err)
+		return 0, err
 	}
 	input, err := json.Marshal(types.ToolExecutionInput{
 		ActionID:             "warmup",
@@ -66,7 +65,7 @@ func (s *system) warmupDefinedTool(ctx context.Context, tool types.ToolDefinitio
 		DefaultConfig:        tool.DefaultConfig,
 		ToolBodyDirectory:    tool.BodyDirectory,
 		ToolDataDirectory:    tool.DataDirectory,
-		HostWorkingDirectory: hostWorkingDirectory,
+		HostWorkingDirectory: workDirectory,
 		RequestKind:          types.ToolRequestKindWarmup,
 	})
 	if err != nil {

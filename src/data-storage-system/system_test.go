@@ -919,3 +919,37 @@ func assertAppErrorCode(t *testing.T, err error, code string) {
 		t.Fatalf("code = %s, want %s", appErr.Code, code)
 	}
 }
+
+// TestToolWorkDirectoryConfigDefaultsAndRoundTrips 验证工具默认工作目录配置：
+// 未设置时回默认目录，保存后可读回，清空保存再回默认。
+func TestToolWorkDirectoryConfigDefaultsAndRoundTrips(t *testing.T) {
+	system := newTestSystem(t)
+	loaded, err := system.LoadToolWorkDirectoryConfig(context.Background())
+	if err != nil {
+		t.Fatalf("LoadToolWorkDirectoryConfig() error = %v", err)
+	}
+	if loaded.Directory != types.DefaultToolWorkDirectory() {
+		t.Fatalf("default directory = %q, want %q", loaded.Directory, types.DefaultToolWorkDirectory())
+	}
+
+	custom := filepath.Join(t.TempDir(), "tool-work")
+	saved, err := system.SaveToolWorkDirectoryConfig(context.Background(), types.ToolWorkDirectoryConfig{Directory: custom})
+	if err != nil {
+		t.Fatalf("SaveToolWorkDirectoryConfig() error = %v", err)
+	}
+	reloaded, err := system.LoadToolWorkDirectoryConfig(context.Background())
+	if err != nil {
+		t.Fatalf("LoadToolWorkDirectoryConfig() error = %v", err)
+	}
+	if reloaded.Directory != saved.Directory {
+		t.Fatalf("reloaded directory = %q, want %q", reloaded.Directory, saved.Directory)
+	}
+
+	reset, err := system.SaveToolWorkDirectoryConfig(context.Background(), types.ToolWorkDirectoryConfig{})
+	if err != nil {
+		t.Fatalf("SaveToolWorkDirectoryConfig(reset) error = %v", err)
+	}
+	if reset.Directory != types.DefaultToolWorkDirectory() {
+		t.Fatalf("reset directory = %q, want default %q", reset.Directory, types.DefaultToolWorkDirectory())
+	}
+}

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"os"
 	"strings"
 	"time"
 
@@ -48,12 +47,14 @@ func (s *system) ExecuteWithOutputUpdate(ctx context.Context, plan types.ToolRun
 		return types.ToolResult{}, toolExecutionInvalid(blocked, nil)
 	}
 	defer activity.release()
-	hostWorkingDirectory, err := os.Getwd()
+	// 工具的工作目录 = 配置的默认工作目录：无工作区会话下工具在此干活，
+	// 有工作区的会话由注入的工作区路径优先覆盖，绝不落入部署目录。
+	workDirectory, err := s.toolWorkDirectory(ctx)
 	if err != nil {
-		return types.ToolResult{}, toolExecutionInvalid("failed to resolve host working directory", err)
+		return types.ToolResult{}, err
 	}
 	timeoutMs := requestedTimeoutMs(plan.Action.Arguments)
-	executionInput := types.ToolExecutionInput{ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Arguments: plan.Action.Arguments, UserConfig: plan.Tool.UserConfig, DefaultConfig: plan.Tool.DefaultConfig, ToolBodyDirectory: plan.Tool.BodyDirectory, ToolDataDirectory: plan.Tool.DataDirectory, HostWorkingDirectory: hostWorkingDirectory, TimeoutMs: timeoutMs}
+	executionInput := types.ToolExecutionInput{ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Arguments: plan.Action.Arguments, UserConfig: plan.Tool.UserConfig, DefaultConfig: plan.Tool.DefaultConfig, ToolBodyDirectory: plan.Tool.BodyDirectory, ToolDataDirectory: plan.Tool.DataDirectory, HostWorkingDirectory: workDirectory, TimeoutMs: timeoutMs}
 	workspace, err := s.workspaceContextForTool(ctx, plan)
 	if err != nil {
 		return types.ToolResult{}, err

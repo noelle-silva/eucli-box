@@ -182,6 +182,29 @@ func (s *system) handleSaveModelRequestConfig(w http.ResponseWriter, r *http.Req
 	writeData(w, http.StatusOK, saved)
 }
 
+func (s *system) handleLoadToolWorkDirectory(w http.ResponseWriter, r *http.Request) {
+	config, err := s.tools.LoadToolWorkDirectoryConfig(r.Context())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, config)
+}
+
+func (s *system) handleSaveToolWorkDirectory(w http.ResponseWriter, r *http.Request) {
+	config, err := decodeJSON[types.ToolWorkDirectoryConfig](r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	saved, err := s.tools.SaveToolWorkDirectoryConfig(r.Context(), config)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, saved)
+}
+
 func (s *system) handleLoadModelGroups(w http.ResponseWriter, r *http.Request) {
 	groups, err := s.providers.LoadModelGroups(r.Context())
 	if err != nil {

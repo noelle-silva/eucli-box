@@ -23,10 +23,15 @@ func (s *system) SaveTool(ctx context.Context, tool types.ToolDefinition) error 
 	tool.BodyDirectory = "."
 	tool.DataDirectory = ""
 	tool.UserConfig = nil
+	tool.CapabilityGrants = nil
 	tool.PromptDescriptionOverride = ""
 	tool.Compatibility = types.CompatibilityStatus{}
 	tool.Status = ""
 	tool.StatusMessage = ""
+	// 能力列表的授权要求是宿主派生的运行时视图，不得随定义落盘。
+	for index := range tool.Capabilities {
+		tool.Capabilities[index].GrantRequired = false
+	}
 	target, err := s.paths.toolBodyDefinitionFile(tool.ID)
 	if err != nil {
 		return err

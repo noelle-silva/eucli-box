@@ -25,6 +25,41 @@ type ToolCapability struct {
 	Access      string `json:"access"`
 	Name        string `json:"name,omitempty"`
 	Description string `json:"description,omitempty"`
+	// GrantRequired 是宿主派生的运行时视图字段：该项能力是否需要用户授权。
+	// 工具清单不得自行声明（打包与成品校验会拒绝），仅供协议消费方渲染。
+	GrantRequired bool `json:"grantRequired,omitempty"`
+}
+
+// ToolCapabilityGrantRequired 判定一项标准能力是否需要用户授权：
+// 注入类能力（宿主启动时主动提供的工作环境事实，如工作区路径）不需要授权；
+// 索取类能力（工具运行中主动索取的宿主资源）由用户授权开关把关。
+func ToolCapabilityGrantRequired(id string, access string) bool {
+	return strings.TrimSpace(id) != ToolCapabilityWorkspace
+}
+
+// DecorateToolCapabilities 生成带运行时视图的能力列表：按标准能力性质
+// 派生"是否需要用户授权"，供设置界面与协议消费方渲染，工具声明原样复制。
+func DecorateToolCapabilities(capabilities []ToolCapability) []ToolCapability {
+	if len(capabilities) == 0 {
+		return nil
+	}
+	out := make([]ToolCapability, len(capabilities))
+	copy(out, capabilities)
+	for index := range out {
+		out[index].GrantRequired = ToolCapabilityGrantRequired(out[index].ID, out[index].Access)
+	}
+	return out
+}
+
+// HasDeclaredCapabilityGrantFlags 报告清单中是否出现工具自行声明的授权要求；
+// 授权要求由宿主按标准能力性质派生，工具不得越权声明。
+func HasDeclaredCapabilityGrantFlags(capabilities []ToolCapability) bool {
+	for _, capability := range capabilities {
+		if capability.GrantRequired {
+			return true
+		}
+	}
+	return false
 }
 
 // ToolCapabilityGrantKey 是授权项在工具用户设置中的稳定键。

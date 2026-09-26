@@ -142,8 +142,8 @@ func validateToolCapabilities(capabilities []types.ToolCapability) error {
 	return nil
 }
 
-// validateToolCapabilityGrants 只接受工具自己声明过的能力授权项；
-// 未声明能力的授权请求一律拒绝，防止越权写入不存在的授权。
+// validateToolCapabilityGrants 只接受工具自己声明过的、且确实需要用户
+// 授权的能力项；未声明能力与注入类能力（无需授权）的授权请求一律拒绝。
 func validateToolCapabilityGrants(tool types.ToolDefinition, grants map[string]bool) error {
 	for key := range grants {
 		normalized := strings.TrimSpace(key)
@@ -152,10 +152,14 @@ func validateToolCapabilityGrants(tool types.ToolDefinition, grants map[string]b
 		}
 		declared := false
 		for _, capability := range tool.Capabilities {
-			if types.ToolCapabilityGrantKey(capability.ID, capability.Access) == normalized {
-				declared = true
-				break
+			if types.ToolCapabilityGrantKey(capability.ID, capability.Access) != normalized {
+				continue
 			}
+			if !types.ToolCapabilityGrantRequired(capability.ID, capability.Access) {
+				return toolInvalid("tool capability does not require a user grant: "+normalized, nil)
+			}
+			declared = true
+			break
 		}
 		if !declared {
 			return toolInvalid("tool capability grant is not declared by the tool: "+normalized, nil)
@@ -200,6 +204,7 @@ func cleanExecutablePath(tool types.ToolDefinition, executable string) (string, 
 }
 
 func (s *system) annotateTool(tool types.ToolDefinition) types.ToolDefinition {
+	tool.Capabilities = types.DecorateToolCapabilities(tool.Capabilities)
 	status := release.AssessEucliBoxCompatibility(tool.Version, s.boxVersion, tool.EucliBoxCompatibility)
 	if err := validateToolCore(tool); err != nil {
 		status = types.CompatibilityStatus{Reason: "工具本体资料无效：" + err.Error(), CurrentEucliBoxVersion: s.boxVersion, RequiredEucliBoxCompatibility: tool.EucliBoxCompatibility}

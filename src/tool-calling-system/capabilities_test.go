@@ -154,12 +154,12 @@ func TestSessionStateReadReturnsDeclaredValues(t *testing.T) {
 	}
 }
 
+// TestReadWorkspaceReturnsRegisteredDirectories 验证注入类能力（工作区路径）
+// 无需任何用户授权：宿主随执行主动提供的是工作环境事实，不设授权开关。
 func TestReadWorkspaceReturnsRegisteredDirectories(t *testing.T) {
 	storage := newFakeToolStorage()
 	storage.workspaces["workspace-1"] = types.Workspace{ID: "workspace-1", Name: "工作区", Directories: []types.WorkspaceDirectory{{Path: "C:/work", Alias: "work"}}}
-	tool := capabilityTestTool()
-	tool.CapabilityGrants[types.ToolCapabilityGrantKey(types.ToolCapabilityWorkspace, types.ToolCapabilityAccessRead)] = true
-	plan := capabilityTestPlan(storage, tool)
+	plan := capabilityTestPlan(storage, capabilityTestTool())
 	plan.Scope.WorkspaceID = "workspace-1"
 	session := newCapabilitySession(plan, storage)
 
@@ -262,6 +262,22 @@ func main() {}
 	_, err := system.SaveToolUserSettings(context.Background(), tool.ID, types.ToolUserSettings{
 		UserConfig:       map[string]any{},
 		CapabilityGrants: map[string]bool{types.ToolCapabilityGrantKey(types.ToolCapabilitySessionAttachments, types.ToolCapabilityAccessRead): true},
+	})
+	assertAppErrorCode(t, err, "tool.invalid_request")
+}
+
+// TestSaveToolUserSettingsRejectsInjectedCapabilityGrant 验证注入类能力
+// 不接受用户授权：工作区路径随执行自动提供，不存在可授权的开关。
+func TestSaveToolUserSettingsRejectsInjectedCapabilityGrant(t *testing.T) {
+	storage := newFakeToolStorage()
+	tool := testTool(t, buildTool(t, `package main
+func main() {}
+`))
+	storage.tools[tool.ID] = tool
+	system := newTestToolSystem(t, &fakePermission{}, storage, Config{})
+	_, err := system.SaveToolUserSettings(context.Background(), tool.ID, types.ToolUserSettings{
+		UserConfig:       map[string]any{},
+		CapabilityGrants: map[string]bool{types.ToolCapabilityGrantKey(types.ToolCapabilityWorkspace, types.ToolCapabilityAccessRead): true},
 	})
 	assertAppErrorCode(t, err, "tool.invalid_request")
 }

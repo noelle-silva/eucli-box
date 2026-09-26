@@ -45,7 +45,9 @@ func (c *capabilitySession) handle(ctx context.Context, request toolcontrol.Capa
 	if !types.ToolDeclaresCapability(c.plan.Tool, capability, access) {
 		return capabilityFailed("工具未声明此能力：" + capability + ":" + access)
 	}
-	if !types.ToolCapabilityGranted(c.plan.Tool, capability, access) {
+	// 授权只把关工具主动索取的宿主资源；注入类能力（如工作区路径）
+	// 是宿主随执行主动提供的工作环境事实，不设用户授权。
+	if types.ToolCapabilityGrantRequired(capability, access) && !types.ToolCapabilityGranted(c.plan.Tool, capability, access) {
 		return capabilityDenied()
 	}
 	switch {

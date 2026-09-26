@@ -159,6 +159,62 @@ func TestCreateSessionCreatesCanonicalSession(t *testing.T) {
 	assertFile(t, filepath.Join(system.paths.root, "sessions", "roles", "developer", session.ID, "data.json"))
 }
 
+func TestWorkspaceSessionLifecycleKeepsPureWorkspaceIdentity(t *testing.T) {
+	system := newTestSystem(t)
+	ctx := context.Background()
+	session, err := system.CreateWorkspaceSession(ctx, "workspace-1", "developer", "Workspace chat")
+	if err != nil {
+		t.Fatalf("CreateWorkspaceSession() error = %v", err)
+	}
+	if session.WorkspaceID != "workspace-1" || session.RoleID != "developer" {
+		t.Fatalf("session identity = workspaceId:%q roleId:%q", session.WorkspaceID, session.RoleID)
+	}
+	assertFile(t, filepath.Join(system.paths.root, "sessions", "workspaces", "workspace-1", "developer", session.ID, "data.json"))
+
+	sessions, err := system.ListWorkspaceSessions(ctx, "workspace-1", "developer")
+	if err != nil {
+		t.Fatalf("ListWorkspaceSessions() error = %v", err)
+	}
+	if len(sessions) != 1 || sessions[0].ID != session.ID || sessions[0].WorkspaceID != "workspace-1" || sessions[0].RoleID != "developer" {
+		t.Fatalf("sessions = %#v", sessions)
+	}
+
+	now := time.Now().UTC()
+	message := types.Message{ID: "message-1", Type: "user", Content: "你好", BranchID: "main", CreatedAt: now, UpdatedAt: now}
+	session.Messages = []types.Message{message}
+	session.UpdatedAt = now
+	session.LastActive = now
+	if err := system.SaveSession(ctx, session); err != nil {
+		t.Fatalf("SaveSession() error = %v", err)
+	}
+
+	if _, err := system.UpdateWorkspaceSessionMessage(ctx, "workspace-1", "developer", session.ID, message.ID, types.SessionMessagePatch{Content: ptrString("你好呀")}); err != nil {
+		t.Fatalf("UpdateWorkspaceSessionMessage() error = %v", err)
+	}
+	loaded, err := system.LoadWorkspaceSession(ctx, "workspace-1", "developer", session.ID)
+	if err != nil {
+		t.Fatalf("LoadWorkspaceSession() error = %v", err)
+	}
+	if len(loaded.Messages) != 1 || loaded.Messages[0].Content != "你好呀" {
+		t.Fatalf("loaded messages = %#v", loaded.Messages)
+	}
+	assertFile(t, filepath.Join(system.paths.root, "sessions", "workspaces", "workspace-1", "index.json"))
+	assertFile(t, filepath.Join(system.paths.root, "sessions", "workspaces", "workspace-1", "developer", "index.json"))
+
+	if _, err := system.UpdateWorkspaceSessionSettings(ctx, "workspace-1", "developer", session.ID, types.SessionSettingsPatch{StreamEnabled: types.BoolPtr(false)}); err != nil {
+		t.Fatalf("UpdateWorkspaceSessionSettings() error = %v", err)
+	}
+	if _, err := system.UpdateWorkspaceSessionTitle(ctx, "workspace-1", "developer", session.ID, "改个标题"); err != nil {
+		t.Fatalf("UpdateWorkspaceSessionTitle() error = %v", err)
+	}
+	if _, err := system.DeleteWorkspaceSessionMessage(ctx, "workspace-1", "developer", session.ID, message.ID); err != nil {
+		t.Fatalf("DeleteWorkspaceSessionMessage() error = %v", err)
+	}
+	if err := system.DeleteWorkspaceSession(ctx, "workspace-1", "developer", session.ID); err != nil {
+		t.Fatalf("DeleteWorkspaceSession() error = %v", err)
+	}
+}
+
 func TestUpdateSessionSettingsChangesOnlySessionMetadata(t *testing.T) {
 	system := newTestSystem(t)
 	now := time.Date(2026, 6, 10, 9, 0, 0, 0, time.UTC)

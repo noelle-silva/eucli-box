@@ -36,9 +36,7 @@ func groupSessionScope(groupID string) sessionScope {
 }
 
 func workspaceSessionScope(workspaceID string, roleID string) sessionScope {
-	workspaceID = strings.TrimSpace(workspaceID)
-	roleID = strings.TrimSpace(roleID)
-	return sessionScope{Kind: sessionScopeWorkspace, ID: workspaceID + "/" + roleID, WorkspaceID: workspaceID, RoleID: roleID}
+	return sessionScope{Kind: sessionScopeWorkspace, WorkspaceID: strings.TrimSpace(workspaceID), RoleID: strings.TrimSpace(roleID)}
 }
 
 func sessionScopeFromSession(session types.Session) (sessionScope, error) {
@@ -57,9 +55,6 @@ func sessionScopeFromSession(session types.Session) (sessionScope, error) {
 	if workspaceID != "" {
 		if roleID == "" {
 			return sessionScope{}, storageInvalid("workspace session roleId is required", nil)
-		}
-		if _, err := cleanID(roleID); err != nil {
-			return sessionScope{}, err
 		}
 		return cleanSessionScope(workspaceSessionScope(workspaceID, roleID))
 	}
@@ -80,7 +75,6 @@ func cleanSessionScope(scope sessionScope) (sessionScope, error) {
 		if _, err := cleanID(scope.RoleID); err != nil {
 			return sessionScope{}, err
 		}
-		scope.ID = scope.WorkspaceID + "/" + scope.RoleID
 		return scope, nil
 	}
 	if _, err := cleanID(scope.ID); err != nil {
@@ -166,15 +160,12 @@ func (s *system) CreateWorkspaceSession(ctx context.Context, workspaceID string,
 	if err != nil {
 		return types.Session{}, err
 	}
-	if _, err := cleanID(roleID); err != nil {
-		return types.Session{}, err
-	}
 	sessionTitle := strings.TrimSpace(title)
 	if sessionTitle == "" {
 		sessionTitle = types.DefaultSessionTitle
 	}
 	now := time.Now().UTC()
-	session := types.Session{ID: utils.NewID("session"), WorkspaceID: scope.ID, RoleID: strings.TrimSpace(roleID), Title: normalizeSessionTitle(sessionTitle), Status: string(types.RunStatusCreated), Messages: []types.Message{}, CreatedAt: now, UpdatedAt: now, LastActive: now}
+	session := types.Session{ID: utils.NewID("session"), WorkspaceID: scope.WorkspaceID, RoleID: scope.RoleID, Title: normalizeSessionTitle(sessionTitle), Status: string(types.RunStatusCreated), Messages: []types.Message{}, CreatedAt: now, UpdatedAt: now, LastActive: now}
 	if err := s.SaveSession(ctx, session); err != nil {
 		return types.Session{}, err
 	}
@@ -199,7 +190,7 @@ func (s *system) createSession(ctx context.Context, scope sessionScope, title st
 	if scope.Kind == sessionScopeGroup {
 		session.GroupID = scope.ID
 	} else if scope.Kind == sessionScopeWorkspace {
-		session.WorkspaceID = scope.ID
+		session.WorkspaceID = scope.WorkspaceID
 	} else {
 		session.RoleID = scope.ID
 	}

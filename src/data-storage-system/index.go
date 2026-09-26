@@ -134,7 +134,7 @@ func (s *system) rebuildSessionIndexesForScope(ctx context.Context, scope sessio
 		return s.rebuildGroupSessionIndexes(ctx, scope.ID)
 	}
 	if scope.Kind == sessionScopeWorkspace {
-		return s.rebuildWorkspaceSessionIndexes(ctx, scope.ID)
+		return s.rebuildWorkspaceSessionIndexes(ctx, scope.WorkspaceID)
 	}
 	return s.rebuildSessionIndexes(ctx, scope.ID)
 }

@@ -129,6 +129,15 @@ func (f *fakeToolStorage) LoadWorkspace(ctx context.Context, workspaceID string)
 	return types.Workspace{ID: workspaceID}, nil
 }
 
+func (f *fakeToolStorage) LoadToolWorkDirectoryConfig(ctx context.Context) (types.ToolWorkDirectoryConfig, error) {
+	return types.ToolWorkDirectoryConfig{Directory: types.DefaultToolWorkDirectory()}, nil
+}
+
+func (f *fakeToolStorage) SaveToolWorkDirectoryConfig(ctx context.Context, config types.ToolWorkDirectoryConfig) (types.ToolWorkDirectoryConfig, error) {
+	config.Directory = types.NormalizeToolWorkDirectory(config.Directory)
+	return config, nil
+}
+
 func (f *fakeToolStorage) LoadRole(ctx context.Context, roleID string) (types.Role, error) {
 	return types.Role{}, fmt.Errorf("role %s not found", roleID)
 }

@@ -26,6 +26,8 @@ type keyRecordUpdate func(record *types.PersistentKey)
 
 // PersistentKeyManager 管理全部长期 Key 记录：创建、启停、有效期、查看、核对和删除。
 // 记录只保存 DPAPI 加密内容，完整 Key 不进入日志和界面以外的位置。
+// 记录文件损坏时进入「记录不可用」状态：本体照常启动，读取如实报错；
+// 新建一条长期 Key 即完成记录重建。
 type PersistentKeyManager struct {
 	dataDir string
 	protect secretProtector
@@ -33,6 +35,7 @@ type PersistentKeyManager struct {
 
 	mu          sync.Mutex
 	keys        []types.PersistentKey
+	problem     error
 	connections map[string]map[io.Closer]struct{}
 }
 
@@ -48,7 +51,8 @@ func NewPersistentKeyManager(dataDir string) (*PersistentKeyManager, error) {
 	}
 	config, err := readPersistentKeys(dataDir)
 	if err != nil {
-		return nil, err
+		manager.problem = err
+		return manager, nil
 	}
 	manager.keys = config.Keys
 	return manager, nil
@@ -68,6 +72,9 @@ func (m *PersistentKeyManager) List(ctx context.Context) ([]types.PersistentKeyV
 	defer m.mu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if m.problem != nil {
+		return nil, m.problemLocked()
 	}
 	views := make([]types.PersistentKeyView, 0, len(m.keys))
 	for _, key := range m.keys {
@@ -114,6 +121,11 @@ func (m *PersistentKeyManager) Create(ctx context.Context, name string, expiresA
 // Reveal 解密指定长期 Key 并返回完整明文；找不到记录时明确失败。
 func (m *PersistentKeyManager) Reveal(ctx context.Context, id string) (string, error) {
 	m.mu.Lock()
+	if m.problem != nil {
+		problem := m.problemLocked()
+		m.mu.Unlock()
+		return "", problem
+	}
 	key, ok := findKey(m.keys, id)
 	m.mu.Unlock()
 	if !ok {
@@ -168,10 +180,13 @@ func (m *PersistentKeyManager) Delete(ctx context.Context, id string) error {
 	})
 }
 
-// HasValidKey 判断是否存在至少一个启用且未过期的长期 Key。
+// HasValidKey 判断是否存在至少一个启用且未过期的长期 Key；记录不可用时返回 false。
 func (m *PersistentKeyManager) HasValidKey() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.problem != nil {
+		return false
+	}
 	for _, key := range m.keys {
 		if key.Enabled && !keyExpired(key, m.now()) {
 			return true
@@ -189,6 +204,9 @@ func (m *PersistentKeyManager) VerifyKey(ctx context.Context, providedKey string
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.problem != nil {
+		return types.PersistentKeyVerifyResult{Valid: false}
+	}
 	now := m.now()
 	for index := range m.keys {
 		key := &m.keys[index]
@@ -262,15 +280,25 @@ func (m *PersistentKeyManager) updateLocked(ctx context.Context, targetID *strin
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	// 新建记录允许在不可用状态下重建；其余修改必须先有可用记录。
+	if m.problem != nil && targetID != nil {
+		return m.problemLocked()
+	}
 	mutate(&m.keys)
 	config := types.PersistentKeysConfig{Keys: m.keys}
 	if err := writePersistentKeys(m.dataDir, config); err != nil {
 		return err
 	}
+	m.problem = nil
 	if targetID != nil {
 		m.terminateConnectionsLocked(*targetID)
 	}
 	return nil
+}
+
+// problemLocked 返回记录不可用的错误（调用方持有锁）。
+func (m *PersistentKeyManager) problemLocked() error {
+	return fmt.Errorf("长期 Key 记录不可用：%w", m.problem)
 }
 
 func (m *PersistentKeyManager) keyExistsLocked(id string) bool {

@@ -923,6 +923,20 @@ func newTestSystem(t *testing.T) *system {
 	return system
 }
 
+func TestInitializeToleratesCorruptDomainData(t *testing.T) {
+	system := newTestSystem(t)
+	brokenDir := filepath.Join(system.paths.rolesRoot(), "broken-role")
+	if err := os.MkdirAll(brokenDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(brokenDir, "data.json"), []byte("not-json"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if err := system.Initialize(context.Background()); err != nil {
+		t.Fatalf("Initialize() error = %v, want nil（索引重建不阻断启动）", err)
+	}
+}
+
 func ptrString(value string) *string { return &value }
 
 func mustTestMessage(t *testing.T, messages []types.Message, messageID string) types.Message {

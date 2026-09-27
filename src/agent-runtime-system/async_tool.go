@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"reflect"
 	"strings"
 	"time"
@@ -188,10 +189,13 @@ func (s *system) loadTaskSession(ctx context.Context, task types.AsyncToolTask) 
 	return s.storage.LoadSession(ctx, task.RoleID, task.SessionID)
 }
 
-func (s *system) recoverPersistedAsyncToolTasks(ctx context.Context) error {
+// recoverPersistedAsyncToolTasks 在启动时恢复上次进程遗留的异步工具任务。
+// 这是启动维护动作，不是启动关键：任何一条数据读取失败只记录日志并跳过，
+// 不阻断本体启动；相关会话读取时会如实报错。
+func (s *system) recoverPersistedAsyncToolTasks(ctx context.Context) {
 	roles, err := s.storage.ListRoles(ctx)
 	if err != nil {
-		return runtimeStorageFailed("failed to list roles for async tool recovery", err)
+		log.Printf("agent-runtime-system: 异步任务恢复跳过角色清单：%v", err)
 	}
 	for _, role := range roles {
 		roleID := strings.TrimSpace(role.ID)
@@ -200,18 +204,19 @@ func (s *system) recoverPersistedAsyncToolTasks(ctx context.Context) error {
 		}
 		sessions, err := s.storage.ListSessions(ctx, roleID)
 		if err != nil {
-			return runtimeStorageFailed("failed to list role sessions for async tool recovery", err)
+			log.Printf("agent-runtime-system: 异步任务恢复跳过角色 %s 的会话清单：%v", roleID, err)
+			continue
 		}
 		for _, summary := range sessions {
 			if err := s.recoverPersistedAsyncToolSession(ctx, types.AsyncToolTask{RoleID: roleID, SessionID: summary.ID}); err != nil {
-				return err
+				log.Printf("agent-runtime-system: 异步任务恢复跳过会话 %s/%s：%v", roleID, summary.ID, err)
 			}
 		}
 	}
 
 	groups, err := s.storage.ListChatGroups(ctx)
 	if err != nil {
-		return runtimeStorageFailed("failed to list groups for async tool recovery", err)
+		log.Printf("agent-runtime-system: 异步任务恢复跳过群组清单：%v", err)
 	}
 	for _, group := range groups {
 		groupID := strings.TrimSpace(group.ID)
@@ -220,18 +225,19 @@ func (s *system) recoverPersistedAsyncToolTasks(ctx context.Context) error {
 		}
 		sessions, err := s.storage.ListGroupSessions(ctx, groupID)
 		if err != nil {
-			return runtimeStorageFailed("failed to list group sessions for async tool recovery", err)
+			log.Printf("agent-runtime-system: 异步任务恢复跳过群组 %s 的会话清单：%v", groupID, err)
+			continue
 		}
 		for _, summary := range sessions {
 			if err := s.recoverPersistedAsyncToolSession(ctx, types.AsyncToolTask{GroupID: groupID, SessionID: summary.ID}); err != nil {
-				return err
+				log.Printf("agent-runtime-system: 异步任务恢复跳过群组会话 %s/%s：%v", groupID, summary.ID, err)
 			}
 		}
 	}
 
 	workspaces, err := s.storage.ListWorkspaces(ctx)
 	if err != nil {
-		return runtimeStorageFailed("failed to list workspaces for async tool recovery", err)
+		log.Printf("agent-runtime-system: 异步任务恢复跳过工作区清单：%v", err)
 	}
 	for _, workspace := range workspaces {
 		workspaceID := strings.TrimSpace(workspace.ID)
@@ -245,16 +251,16 @@ func (s *system) recoverPersistedAsyncToolTasks(ctx context.Context) error {
 			}
 			sessions, err := s.storage.ListWorkspaceSessions(ctx, workspaceID, roleID)
 			if err != nil {
-				return runtimeStorageFailed("failed to list workspace sessions for async tool recovery", err)
+				log.Printf("agent-runtime-system: 异步任务恢复跳过工作区 %s/角色 %s 的会话清单：%v", workspaceID, roleID, err)
+				continue
 			}
 			for _, summary := range sessions {
 				if err := s.recoverPersistedAsyncToolSession(ctx, types.AsyncToolTask{RoleID: roleID, WorkspaceID: workspaceID, SessionID: summary.ID}); err != nil {
-					return err
+					log.Printf("agent-runtime-system: 异步任务恢复跳过工作区会话 %s/%s/%s：%v", workspaceID, roleID, summary.ID, err)
 				}
 			}
 		}
 	}
-	return nil
 }
 
 func (s *system) recoverPersistedAsyncToolSession(ctx context.Context, locator types.AsyncToolTask) error {

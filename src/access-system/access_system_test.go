@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -54,6 +55,56 @@ func newTestPortManager(t *testing.T, dataDir string, keys *PersistentKeyManager
 		t.Fatalf("NewPersistentPortManager() error = %v", err)
 	}
 	return manager
+}
+
+func TestKeyManagerCorruptionRecoversByCreate(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	target := persistentKeysPath(dir)
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(target, []byte("not-json"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	manager := newTestKeyManager(t, dir)
+	if _, err := manager.List(ctx); err == nil {
+		t.Fatal("List() error = nil, want 记录不可用")
+	}
+	if err := manager.SetEnabled(ctx, "missing", false); err == nil {
+		t.Fatal("SetEnabled() error = nil, want 记录不可用")
+	}
+	if _, err := manager.Create(ctx, "重建钥匙", nil); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	views, err := manager.List(ctx)
+	if err != nil || len(views) != 1 || views[0].Name != "重建钥匙" {
+		t.Fatalf("List() = %#v err = %v", views, err)
+	}
+}
+
+func TestPortManagerCorruptionRecoversByAddPort(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	keys := newTestKeyManager(t, dir)
+	target := persistentPortsPath(dir)
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(target, []byte("not-json"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	manager := newTestPortManager(t, dir, keys)
+	if _, err := manager.List(ctx); err == nil {
+		t.Fatal("List() error = nil, want 记录不可用")
+	}
+	if _, err := manager.AddPort(ctx, "重建端口", 18999); err != nil {
+		t.Fatalf("AddPort() error = %v", err)
+	}
+	ports, err := manager.List(ctx)
+	if err != nil || len(ports) != 1 || ports[0].Name != "重建端口" {
+		t.Fatalf("List() = %#v err = %v", ports, err)
+	}
 }
 
 func TestKeyManagerCreateAndRevealRoundTrip(t *testing.T) {

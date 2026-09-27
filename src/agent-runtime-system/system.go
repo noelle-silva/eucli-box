@@ -145,9 +145,8 @@ func NewSystem(config Config, storage StorageSystem, roles RoleSystem, providers
 		config.MaxParallelTools = 4
 	}
 	runtime := &system{config: config, storage: storage, roles: roles, providers: providers, tools: tools, placeholders: placeholders, runs: map[string]*runRecord{}, subscribers: map[chan types.RunEvent]struct{}{}, asyncTasks: map[string]types.AsyncToolTask{}, asyncContinuations: map[asyncContinuationKey]struct{}{}}
-	if err := runtime.recoverPersistedAsyncToolTasks(context.Background()); err != nil {
-		return nil, err
-	}
+	// 异步任务恢复是启动维护动作，不是启动关键：坏数据只记录日志并跳过，不阻断启动。
+	runtime.recoverPersistedAsyncToolTasks(context.Background())
 	return runtime, nil
 }
 

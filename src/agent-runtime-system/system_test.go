@@ -2062,6 +2062,18 @@ func newTestRuntime(t *testing.T, fakes *runtimeFakes, config Config) System {
 	return system
 }
 
+func TestNewSystemToleratesAsyncRecoveryFailure(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.storage.listRolesErr = errors.New("角色数据损坏")
+	system, err := NewSystem(Config{}, fakes.storage, fakes.roles, fakes.provider, fakes.tool, fakes.placeholders)
+	if err != nil {
+		t.Fatalf("NewSystem() error = %v, want nil（恢复失败不阻断启动）", err)
+	}
+	if system == nil {
+		t.Fatal("NewSystem() = nil")
+	}
+}
+
 func waitRun(t *testing.T, system System, runID string) types.RunState {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -2223,6 +2235,7 @@ type fakeRuntimeStorage struct {
 	images            map[string]string
 	hookLibrary       types.HookPromptLibrary
 	compressionConfig types.ContextCompressionConfig
+	listRolesErr      error
 }
 
 func newFakeRuntimeStorage() *fakeRuntimeStorage {
@@ -2467,6 +2480,9 @@ func (f *fakeRuntimeStorage) LoadWorkspaceSession(ctx context.Context, workspace
 func (f *fakeRuntimeStorage) ListRoles(ctx context.Context) ([]types.RoleSummary, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.listRolesErr != nil {
+		return nil, f.listRolesErr
+	}
 	ids := map[string]struct{}{}
 	for _, session := range f.sessions {
 		if strings.TrimSpace(session.RoleID) != "" && strings.TrimSpace(session.GroupID) == "" {

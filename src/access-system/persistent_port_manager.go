@@ -22,6 +22,8 @@ type keyValidityChecker interface {
 
 // PersistentPortManager 管理全部长期端口记录及其真实监听：
 // 期望启用时尝试开放监听，维护实际状态和失败原因，业务端退出时全部关闭。
+// 记录文件损坏时进入「记录不可用」状态：本体照常启动，读取如实报错；
+// 新建一条长期端口即完成记录重建。
 type PersistentPortManager struct {
 	dataDir string
 	keys    keyValidityChecker
@@ -34,6 +36,7 @@ type PersistentPortManager struct {
 
 	mu      sync.Mutex
 	ports   []types.PersistentPort
+	problem error
 	servers map[string]*http.Server
 }
 
@@ -48,7 +51,8 @@ func NewPersistentPortManager(dataDir string, keys keyValidityChecker) (*Persist
 	}
 	config, err := readPersistentPorts(dataDir)
 	if err != nil {
-		return nil, err
+		manager.problem = err
+		return manager, nil
 	}
 	manager.ports = config.Ports
 	return manager, nil
@@ -74,6 +78,9 @@ func (m *PersistentPortManager) List(ctx context.Context) ([]types.PersistentPor
 	defer m.mu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if m.problem != nil {
+		return nil, m.problemLocked()
 	}
 	result := make([]types.PersistentPort, 0, len(m.ports))
 	result = append(result, m.ports...)
@@ -122,6 +129,9 @@ func (m *PersistentPortManager) EnablePort(ctx context.Context, id string) (type
 	if err := ctx.Err(); err != nil {
 		return types.PersistentPort{}, err
 	}
+	if m.problem != nil {
+		return types.PersistentPort{}, m.problemLocked()
+	}
 	index, ok := m.findPortLocked(id)
 	if !ok {
 		return types.PersistentPort{}, fmt.Errorf("长期端口不存在")
@@ -149,6 +159,9 @@ func (m *PersistentPortManager) DisablePort(ctx context.Context, id string) (typ
 	if err := ctx.Err(); err != nil {
 		return types.PersistentPort{}, err
 	}
+	if m.problem != nil {
+		return types.PersistentPort{}, m.problemLocked()
+	}
 	index, ok := m.findPortLocked(id)
 	if !ok {
 		return types.PersistentPort{}, fmt.Errorf("长期端口不存在")
@@ -169,6 +182,9 @@ func (m *PersistentPortManager) DeletePort(ctx context.Context, id string) error
 	defer m.mu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if m.problem != nil {
+		return m.problemLocked()
 	}
 	index, ok := m.findPortLocked(id)
 	if !ok {
@@ -212,9 +228,18 @@ func (m *PersistentPortManager) Shutdown(ctx context.Context) {
 	}
 }
 
-// saveLocked 持久化当前端口记录（调用方持有锁）。
+// saveLocked 持久化当前端口记录（调用方持有锁）；成功即视为记录已重建。
 func (m *PersistentPortManager) saveLocked(ctx context.Context) error {
-	return writePersistentPorts(m.dataDir, types.PersistentPortsConfig{Ports: m.ports})
+	if err := writePersistentPorts(m.dataDir, types.PersistentPortsConfig{Ports: m.ports}); err != nil {
+		return err
+	}
+	m.problem = nil
+	return nil
+}
+
+// problemLocked 返回记录不可用的错误（调用方持有锁）。
+func (m *PersistentPortManager) problemLocked() error {
+	return fmt.Errorf("长期端口记录不可用：%w", m.problem)
 }
 
 func (m *PersistentPortManager) findPortLocked(id string) (int, bool) {

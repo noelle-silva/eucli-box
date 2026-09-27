@@ -3,7 +3,11 @@
 // 任何系统都通过本包获取路径，不自行拼接数据区路径。
 package datapaths
 
-import "path/filepath"
+import (
+	"path/filepath"
+
+	"eucli-box/pkg/types"
+)
 
 // 数据区相对路径常量（一律以 / 分隔，基准为数据根目录）。
 // 目录与文件的事实命名只在出现于本列表。
@@ -13,7 +17,8 @@ const (
 	RelVersionFile            = ".meta/version.json"
 	RelServiceProfileFile     = "service-profile.json"
 	RelPlaceholdersFile       = ".meta/placeholders.json"
-	RelInstallSourceFile      = ".meta/install-source.json"
+	RelInstallSourceToolFile   = ".meta/install-source-tool.json"
+	RelInstallSourcePluginFile = ".meta/install-source-plugin.json"
 	RelStickerNamingFile      = ".meta/sticker-naming.json"
 	RelMermaidFixFile         = ".meta/mermaid-fix.json"
 	RelChatTitleNamingFile    = ".meta/chat-title-naming.json"
@@ -89,9 +94,16 @@ func PlaceholdersFile(root string) string {
 	return Join(root, RelPlaceholdersFile)
 }
 
-// InstallSourceFile 返回安装来源状态文件。
-func InstallSourceFile(root string) string {
-	return Join(root, RelInstallSourceFile)
+// InstallSourceFile 返回某类别安装来源状态文件；未知类别返回空字符串。
+func InstallSourceFile(root string, kind string) string {
+	switch kind {
+	case types.ReleaseArtifactKindTool:
+		return Join(root, RelInstallSourceToolFile)
+	case types.ReleaseArtifactKindPlugin:
+		return Join(root, RelInstallSourcePluginFile)
+	default:
+		return ""
+	}
 }
 
 // StickerNamingFile 返回贴纸命名配置文件。

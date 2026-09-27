@@ -285,26 +285,34 @@ type ShelvesView struct {
 }
 
 // CandidateSelector 按当前选择转发候选读取：
-// 官方 → 官方读取器；货架 → 按货架路径现场构造货架读取器（每次读取都按最新注册表解析）。
+// 官方 → 官方读取器；货架 → 按货架路径现场构造本类别的货架读取器（每次读取都按最新注册表解析）。
 // 配置不可用或货架不可用时如实报错，绝不回退官方、不换其他货架。
 type CandidateSelector struct {
 	state    *State
 	official releasecheck.CandidateReader
+	kind     string
 }
 
-// NewCandidateSelector 构造候选选择器。
-func NewCandidateSelector(state *State, official releasecheck.CandidateReader) (*CandidateSelector, error) {
+// NewCandidateSelector 构造某类别的候选选择器；只服务该类别的发布物。
+func NewCandidateSelector(state *State, official releasecheck.CandidateReader, kind string) (*CandidateSelector, error) {
 	if state == nil {
 		return nil, fmt.Errorf("安装来源状态不能为空")
 	}
 	if official == nil {
 		return nil, fmt.Errorf("官方候选读取器不能为空")
 	}
-	return &CandidateSelector{state: state, official: official}, nil
+	kind = strings.TrimSpace(kind)
+	if kind != types.ReleaseArtifactKindTool && kind != types.ReleaseArtifactKindPlugin {
+		return nil, fmt.Errorf("候选选择器不支持发布物类别 %q", kind)
+	}
+	return &CandidateSelector{state: state, official: official, kind: kind}, nil
 }
 
 // LatestCandidate 按当前来源读取候选。
 func (s *CandidateSelector) LatestCandidate(ctx context.Context, identity types.ReleaseArtifactIdentity) (*releasecheck.ReleaseCandidate, error) {
+	if strings.TrimSpace(identity.Kind) != s.kind {
+		return nil, fmt.Errorf("候选选择器类别 %q 不服务发布物类别 %q", s.kind, identity.Kind)
+	}
 	if problem := s.state.Problem(); problem != "" {
 		return nil, fmt.Errorf("安装来源配置不可用：%s", problem)
 	}
@@ -316,7 +324,7 @@ func (s *CandidateSelector) LatestCandidate(ctx context.Context, identity types.
 	if !ok {
 		return nil, fmt.Errorf("当前商店来源 %q 不是已注册货架", source)
 	}
-	reader, err := releasecheck.NewLocalSourceReader(shelf.Path)
+	reader, err := releasecheck.NewLocalSourceReader(shelf.Path, s.kind)
 	if err != nil {
 		return nil, fmt.Errorf("货架 %q 不可用：%w", shelf.Name, err)
 	}

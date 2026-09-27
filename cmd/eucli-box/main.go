@@ -121,30 +121,25 @@ func run() error {
 	}
 	log.Printf("[3/13] data-storage-system     ✓  (%s)", dataDir)
 
-	// 安装来源配置是商店偏好，不是启动关键配置：损坏时进入「配置不可用」状态，
-	// 本体照常启动，商店相关读取如实报错，重新设置来源或注册货架即可重建。
-	var sourceState *installsource.State
-	loaded, loadErr := storageSystem.LoadInstallSource(ctx)
-	switch {
-	case loadErr == nil:
-		sourceState = installsource.NewState(loaded, storageSystem)
-	case errors.Is(loadErr, os.ErrNotExist):
-		sourceState = installsource.NewState(installsource.DefaultConfig(), storageSystem)
-	default:
-		sourceState = installsource.NewStateUnavailable(loadErr, storageSystem)
-	}
-	if problem := sourceState.Problem(); problem != "" {
-		log.Printf("安装来源配置不可用：%s（本体继续启动，商店相关读取会如实报错，重新设置来源或注册货架即可修复）", problem)
-	}
-	toolCandidates, err := installsource.NewCandidateSelector(sourceState, officialChecker)
+	// 安装来源配置按发布物类别各自独立：每类一份配置与货架注册表，互不牵连；
+	// 某类配置损坏时该类进入「配置不可用」状态，本体照常启动，重新设置即可重建。
+	toolSourceState, err := loadInstallSourceState(ctx, storageSystem, types.ReleaseArtifactKindTool)
 	if err != nil {
 		return err
 	}
-	sourceLabel := sourceState.CurrentSource()
-	if sourceLabel == "" {
-		sourceLabel = "unavailable"
+	pluginSourceState, err := loadInstallSourceState(ctx, storageSystem, types.ReleaseArtifactKindPlugin)
+	if err != nil {
+		return err
 	}
-	log.Printf("[2.6/13] candidate reader %s (install-source: %s)", programStatusLabel(programsRoot), sourceLabel)
+	toolCandidates, err := installsource.NewCandidateSelector(toolSourceState, officialChecker, types.ReleaseArtifactKindTool)
+	if err != nil {
+		return err
+	}
+	pluginCandidates, err := installsource.NewCandidateSelector(pluginSourceState, officialChecker, types.ReleaseArtifactKindPlugin)
+	if err != nil {
+		return err
+	}
+	log.Printf("[2.6/13] candidate reader %s (tool-source: %s, plugin-source: %s)", programStatusLabel(programsRoot), installSourceLabel(toolSourceState), installSourceLabel(pluginSourceState))
 
 	requestRecordSystem, err := requestrecord.NewSystem(networkSystem, storageSystem)
 	if err != nil {
@@ -185,7 +180,7 @@ func run() error {
 		DataDir:     pluginDataDir,
 		BoxVersion:  boxRelease.Version,
 		ProgramRoot: pluginSourceDir,
-		Candidates:  toolCandidates,
+		Candidates:  pluginCandidates,
 		HTTPClient:  officialDoer,
 		OnEvent: func(pluginID string, event string, _ map[string]any) {
 			log.Printf("[system-plugin:%s] event %s", pluginID, event)
@@ -217,7 +212,13 @@ func run() error {
 	}
 	log.Printf("[11/13] ai-assist-system        ✓")
 
-	releaseSourceSystem, err := releasesourcesystem.NewSystemWithChecker(releasesourcesystem.Config{BoxVersion: boxRelease.Version, CurrentSource: sourceState.CurrentSource, SourceProblem: sourceState.Problem, ShelfPath: sourceState.ShelfPath}, officialChecker, toolSystem, systemPluginSystem)
+	releaseSourceSystem, err := releasesourcesystem.NewSystemWithChecker(releasesourcesystem.Config{
+		BoxVersion: boxRelease.Version,
+		States: map[string]releasesourcesystem.SourceState{
+			types.ReleaseArtifactKindTool:   toolSourceState,
+			types.ReleaseArtifactKindPlugin: pluginSourceState,
+		},
+	}, officialChecker, toolSystem, systemPluginSystem)
 	if err != nil {
 		return fmt.Errorf("start release source system: %w", err)
 	}
@@ -233,7 +234,16 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("准备启动配置画像失败：%w", err)
 	}
-	gatewayConfig := gateway.Config{Addr: profile.ListenAddr(), Key: profile.Key, BoxVersion: boxRelease.Version, Access: accessSystem, InstallSource: sourceState}
+	gatewayConfig := gateway.Config{
+		Addr:       profile.ListenAddr(),
+		Key:        profile.Key,
+		BoxVersion: boxRelease.Version,
+		Access:     accessSystem,
+		InstallSources: map[string]gateway.InstallSourceSystem{
+			types.ReleaseArtifactKindTool:   toolSourceState,
+			types.ReleaseArtifactKindPlugin: pluginSourceState,
+		},
+	}
 	gatewaySystem, err := gateway.NewSystem(gatewayConfig, runtimeSystem, roleSystem, storageSystem, storageSystem, providerSystem, toolSystem, storageSystem, storageSystem, storageSystem, placeholderSystem, systemPluginSystem, assistSystem, releaseSourceSystem, requestRecordSystem)
 	if err != nil {
 		return fmt.Errorf("start gateway system: %w", err)
@@ -266,6 +276,37 @@ func run() error {
 		return fmt.Errorf("shutdown system plugin system: %w", err)
 	}
 	return nil
+}
+
+// loadInstallSourceState 加载某类别安装来源状态：文件缺失按默认形态，损坏进入「配置不可用」。
+func loadInstallSourceState(ctx context.Context, storage datastorage.System, kind string) (*installsource.State, error) {
+	store, err := storage.InstallSourceStore(kind)
+	if err != nil {
+		return nil, fmt.Errorf("准备安装来源存储（%s）失败：%w", kind, err)
+	}
+	loaded, loadErr := store.LoadInstallSource(ctx)
+	var state *installsource.State
+	switch {
+	case loadErr == nil:
+		state = installsource.NewState(loaded, store)
+	case errors.Is(loadErr, os.ErrNotExist):
+		state = installsource.NewState(installsource.DefaultConfig(), store)
+	default:
+		state = installsource.NewStateUnavailable(loadErr, store)
+	}
+	if problem := state.Problem(); problem != "" {
+		log.Printf("安装来源配置不可用（%s）：%s（本体继续启动，商店相关读取会如实报错，重新设置来源或注册货架即可修复）", kind, problem)
+	}
+	return state, nil
+}
+
+// installSourceLabel 返回来源选择标签；配置不可用时显示 unavailable。
+func installSourceLabel(state *installsource.State) string {
+	label := state.CurrentSource()
+	if label == "" {
+		return "unavailable"
+	}
+	return label
 }
 
 func envOrDefault(key string, fallback string) string {

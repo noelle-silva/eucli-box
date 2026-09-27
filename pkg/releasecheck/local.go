@@ -100,15 +100,19 @@ func validateLocalManifest(manifest types.ReleaseManifest, identity types.Releas
 	return nil
 }
 
-// LocalSourceReader 从货架按发布物构造候选；货架按
-// ai-tools/<id>/<version>/ 与 system-plugins/<id>/<version>/ 组织，
-// 版本目录内放货品清单与压缩包。
+// LocalSourceReader 从单类别货架按发布物构造候选；货架根下直接是
+// <id>/<version>/，版本目录内放货品清单与压缩包。
 type LocalSourceReader struct {
 	root string
+	kind string
 }
 
-// NewLocalSourceReader 构造货架候选读取器。
-func NewLocalSourceReader(packageRoot string) (*LocalSourceReader, error) {
+// NewLocalSourceReader 构造单类别货架候选读取器。
+func NewLocalSourceReader(packageRoot string, kind string) (*LocalSourceReader, error) {
+	kind = strings.TrimSpace(kind)
+	if kind != types.ReleaseArtifactKindTool && kind != types.ReleaseArtifactKindPlugin {
+		return nil, fmt.Errorf("货架不支持发布物类别 %q", kind)
+	}
 	root, err := filepath.Abs(strings.TrimSpace(packageRoot))
 	if err != nil || strings.TrimSpace(packageRoot) == "" {
 		return nil, errors.New("货架路径无效")
@@ -120,12 +124,14 @@ func NewLocalSourceReader(packageRoot string) (*LocalSourceReader, error) {
 	if !info.IsDir() {
 		return nil, errors.New("货架路径不是目录")
 	}
-	return &LocalSourceReader{root: root}, nil
+	return &LocalSourceReader{root: root, kind: kind}, nil
 }
 
-// LatestCandidate 读取目标发布物在货架上的最高版本候选；
-// 只读取与本发布物同名的货架目录（ai-tools 对应工具，system-plugins 对应插件）。
+// LatestCandidate 读取目标发布物在货架上的最高版本候选；只服务本货架类别。
 func (s *LocalSourceReader) LatestCandidate(ctx context.Context, identity types.ReleaseArtifactIdentity) (*ReleaseCandidate, error) {
+	if err := s.validateIdentity(identity); err != nil {
+		return nil, err
+	}
 	candidates, err := s.localCandidates(ctx, identity)
 	if err != nil {
 		return nil, err
@@ -153,11 +159,7 @@ func (s *LocalSourceReader) localCandidates(ctx context.Context, identity types.
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	shelfDir, err := shelfDirectory(identity.Kind)
-	if err != nil {
-		return nil, err
-	}
-	versionsDir := filepath.Join(s.root, shelfDir, identity.ID)
+	versionsDir := filepath.Join(s.root, identity.ID)
 	entries, err := os.ReadDir(versionsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -183,15 +185,12 @@ func (s *LocalSourceReader) localCandidates(ctx context.Context, identity types.
 	return result, nil
 }
 
-func shelfDirectory(kind string) (string, error) {
-	switch strings.TrimSpace(kind) {
-	case types.ReleaseArtifactKindTool:
-		return "ai-tools", nil
-	case types.ReleaseArtifactKindPlugin:
-		return "system-plugins", nil
-	default:
-		return "", fmt.Errorf("货架不支持发布物类别 %q", kind)
+// validateIdentity 拒绝不属于本货架类别的发布物。
+func (s *LocalSourceReader) validateIdentity(identity types.ReleaseArtifactIdentity) error {
+	if strings.TrimSpace(identity.Kind) != s.kind {
+		return fmt.Errorf("货架类别 %q 不服务发布物类别 %q", s.kind, identity.Kind)
 	}
+	return nil
 }
 
 // locateLocalArtifact 在版本目录内定位唯一的 zip 与清单对。
@@ -235,54 +234,45 @@ type LocalShelf interface {
 	List(ctx context.Context) ([]LocalShelfItem, error)
 }
 
-// List 枚举货架上拥有有效候选的全部货品，每个货品给出最高版本候选。
+// List 枚举货架上本类别拥有有效候选的全部货品，每个货品给出最高版本候选。
 func (s *LocalSourceReader) List(ctx context.Context) ([]LocalShelfItem, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	entries, err := os.ReadDir(s.root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []LocalShelfItem{}, nil
+		}
+		return nil, err
+	}
 	items := make([]LocalShelfItem, 0)
-	for _, kind := range []string{types.ReleaseArtifactKindTool, types.ReleaseArtifactKindPlugin} {
-		shelfDir, err := shelfDirectory(kind)
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		identity := types.ReleaseArtifactIdentity{Kind: s.kind, ID: entry.Name()}
+		candidates, err := s.localCandidates(ctx, identity)
 		if err != nil {
 			return nil, err
 		}
-		entries, err := os.ReadDir(filepath.Join(s.root, shelfDir))
+		if len(candidates) == 0 {
+			continue
+		}
+		sort.SliceStable(candidates, func(i int, j int) bool {
+			left, leftErr := release.CompareVersions(candidates[i].version, candidates[j].version)
+			if leftErr != nil {
+				return candidates[i].version < candidates[j].version
+			}
+			return left > 0
+		})
+		candidate, err := localCandidate(ctx, identity, candidates[0])
 		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, err
+			continue
 		}
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				continue
-			}
-			identity := types.ReleaseArtifactIdentity{Kind: kind, ID: entry.Name()}
-			candidates, err := s.localCandidates(ctx, identity)
-			if err != nil {
-				return nil, err
-			}
-			if len(candidates) == 0 {
-				continue
-			}
-			sort.SliceStable(candidates, func(i int, j int) bool {
-				left, leftErr := release.CompareVersions(candidates[i].version, candidates[j].version)
-				if leftErr != nil {
-					return candidates[i].version < candidates[j].version
-				}
-				return left > 0
-			})
-			candidate, err := localCandidate(ctx, identity, candidates[0])
-			if err != nil {
-				continue
-			}
-			items = append(items, LocalShelfItem{Artifact: identity, Candidate: candidate})
-		}
+		items = append(items, LocalShelfItem{Artifact: identity, Candidate: candidate})
 	}
 	sort.Slice(items, func(i int, j int) bool {
-		if items[i].Artifact.Kind != items[j].Artifact.Kind {
-			return items[i].Artifact.Kind < items[j].Artifact.Kind
-		}
 		return items[i].Artifact.ID < items[j].Artifact.ID
 	})
 	return items, nil

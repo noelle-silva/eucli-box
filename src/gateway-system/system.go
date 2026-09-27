@@ -197,8 +197,8 @@ type ReleaseSourceSystem interface {
 	ListCandidates(ctx context.Context, kind string) (types.ArtifactCandidateList, error)
 }
 
-// InstallSourceSystem 是安装来源状态的网关视图：来源选择与货架注册表的读写。
-// Problem 非空表示来源配置不可用，读取接口照常应答并携带原因，写入接口可完成重建。
+// InstallSourceSystem 是某类别安装来源状态的网关视图：来源选择与货架注册表的读写。
+// Problem 非空表示该类别来源配置不可用，读取接口照常应答并携带原因，写入接口可完成重建。
 type InstallSourceSystem interface {
 	CurrentSource() string
 	Problem() string
@@ -207,6 +207,15 @@ type InstallSourceSystem interface {
 	AddShelf(ctx context.Context, name string, path string) ([]installsource.Shelf, error)
 	UpdateShelf(ctx context.Context, name string, newName *string, newPath *string) ([]installsource.Shelf, error)
 	RemoveShelf(ctx context.Context, name string) ([]installsource.Shelf, error)
+}
+
+// installSourceFor 按发布物类别取来源状态视图；未装配或未知类别时返回 false。
+func (s *system) installSourceFor(kind string) (InstallSourceSystem, bool) {
+	if s.config.InstallSources == nil {
+		return nil, false
+	}
+	source, ok := s.config.InstallSources[strings.TrimSpace(kind)]
+	return source, ok && source != nil
 }
 
 // AccessSystem 是业务端长期访问能力的网关视图：
@@ -231,13 +240,13 @@ type AccessSystem interface {
 }
 
 type Config struct {
-	Addr          string
-	Key           string
-	BoxVersion    string
-	ReadTimeout   time.Duration
-	WriteTimeout  time.Duration
-	Access        AccessSystem
-	InstallSource InstallSourceSystem
+	Addr           string
+	Key            string
+	BoxVersion     string
+	ReadTimeout    time.Duration
+	WriteTimeout   time.Duration
+	Access         AccessSystem
+	InstallSources map[string]InstallSourceSystem
 }
 
 type system struct {

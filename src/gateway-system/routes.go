@@ -31,13 +31,13 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("GET /api/artifact-installations", s.authWrap(s.handleArtifactInstallations))
 	s.mux.HandleFunc("GET /api/artifact-operations", s.authWrap(s.handleArtifactOperations))
 	s.mux.HandleFunc("GET /api/release-candidates", s.authWrap(s.handleReleaseCandidates))
-	if s.config.InstallSource != nil {
-		s.mux.HandleFunc("GET /api/install-source", s.authWrap(s.handleInstallSource))
-		s.mux.HandleFunc("PUT /api/install-source", s.authWrap(s.handleSetInstallSource))
-		s.mux.HandleFunc("GET /api/shelves", s.authWrap(s.handleListShelves))
-		s.mux.HandleFunc("POST /api/shelves", s.authWrap(s.handleAddShelf))
-		s.mux.HandleFunc("PATCH /api/shelves", s.authWrap(s.handleUpdateShelf))
-		s.mux.HandleFunc("DELETE /api/shelves", s.authWrap(s.handleRemoveShelf))
+	if len(s.config.InstallSources) > 0 {
+		s.mux.HandleFunc("GET /api/install-source/{kind}", s.authWrap(s.handleInstallSource))
+		s.mux.HandleFunc("PUT /api/install-source/{kind}", s.authWrap(s.handleSetInstallSource))
+		s.mux.HandleFunc("GET /api/shelves/{kind}", s.authWrap(s.handleListShelves))
+		s.mux.HandleFunc("POST /api/shelves/{kind}", s.authWrap(s.handleAddShelf))
+		s.mux.HandleFunc("PATCH /api/shelves/{kind}", s.authWrap(s.handleUpdateShelf))
+		s.mux.HandleFunc("DELETE /api/shelves/{kind}", s.authWrap(s.handleRemoveShelf))
 	}
 
 	s.registerAccessRoutes()

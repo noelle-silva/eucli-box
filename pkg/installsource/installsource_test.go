@@ -278,7 +278,7 @@ func (s *stubCandidate) LatestCandidate(context.Context, types.ReleaseArtifactId
 func TestCandidateSelectorForwardsOfficial(t *testing.T) {
 	official := &stubCandidate{}
 	state := NewState(DefaultConfig(), nil)
-	selector, err := NewCandidateSelector(state, official)
+	selector, err := NewCandidateSelector(state, official, types.ReleaseArtifactKindTool)
 	if err != nil {
 		t.Fatalf("NewCandidateSelector() error = %v", err)
 	}
@@ -293,7 +293,7 @@ func TestCandidateSelectorForwardsOfficial(t *testing.T) {
 func TestCandidateSelectorShelfUnavailableFailsFast(t *testing.T) {
 	official := &stubCandidate{}
 	state := NewState(Config{Source: "甲", Shelves: []Shelf{{Name: "甲", Path: filepath.Join(t.TempDir(), "missing")}}}, nil)
-	selector, err := NewCandidateSelector(state, official)
+	selector, err := NewCandidateSelector(state, official, types.ReleaseArtifactKindTool)
 	if err != nil {
 		t.Fatalf("NewCandidateSelector() error = %v", err)
 	}
@@ -310,7 +310,7 @@ func TestCandidateSelectorPropagatesOfficialError(t *testing.T) {
 	expected := errors.New("network down")
 	official := &stubCandidate{err: expected}
 	state := NewState(DefaultConfig(), nil)
-	selector, err := NewCandidateSelector(state, official)
+	selector, err := NewCandidateSelector(state, official, types.ReleaseArtifactKindTool)
 	if err != nil {
 		t.Fatalf("NewCandidateSelector() error = %v", err)
 	}
@@ -323,7 +323,7 @@ func TestCandidateSelectorPropagatesOfficialError(t *testing.T) {
 func TestCandidateSelectorProblemConfigFailsFast(t *testing.T) {
 	official := &stubCandidate{}
 	state := NewStateUnavailable(errors.New("旧格式无法识别"), nil)
-	selector, err := NewCandidateSelector(state, official)
+	selector, err := NewCandidateSelector(state, official, types.ReleaseArtifactKindTool)
 	if err != nil {
 		t.Fatalf("NewCandidateSelector() error = %v", err)
 	}
@@ -337,11 +337,30 @@ func TestCandidateSelectorProblemConfigFailsFast(t *testing.T) {
 }
 
 func TestNewCandidateSelectorValidation(t *testing.T) {
-	if _, err := NewCandidateSelector(nil, &stubCandidate{}); err == nil {
+	if _, err := NewCandidateSelector(nil, &stubCandidate{}, types.ReleaseArtifactKindTool); err == nil {
 		t.Fatal("NewCandidateSelector(nil state) error = nil")
 	}
 	state := NewState(DefaultConfig(), nil)
-	if _, err := NewCandidateSelector(state, nil); err == nil {
+	if _, err := NewCandidateSelector(state, nil, types.ReleaseArtifactKindTool); err == nil {
 		t.Fatal("NewCandidateSelector(nil official) error = nil")
+	}
+	if _, err := NewCandidateSelector(state, &stubCandidate{}, "盒"); err == nil {
+		t.Fatal("NewCandidateSelector(unknown kind) error = nil")
+	}
+}
+
+func TestCandidateSelectorRejectsForeignKind(t *testing.T) {
+	official := &stubCandidate{}
+	state := NewState(DefaultConfig(), nil)
+	selector, err := NewCandidateSelector(state, official, types.ReleaseArtifactKindTool)
+	if err != nil {
+		t.Fatalf("NewCandidateSelector() error = %v", err)
+	}
+	_, err = selector.LatestCandidate(context.Background(), types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: "time-plugin"})
+	if err == nil || !strings.Contains(err.Error(), "不服务发布物类别") {
+		t.Fatalf("LatestCandidate(plugin) error = %v, want foreign kind rejection", err)
+	}
+	if official.called != 0 {
+		t.Fatalf("official called = %d, want 0", official.called)
 	}
 }

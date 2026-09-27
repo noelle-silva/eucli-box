@@ -39,25 +39,28 @@ type CandidateLister interface {
 	ListCandidates(ctx context.Context, kind string) ([]releasecheck.CandidateRecord, error)
 }
 
-// Config 是发行来源读取的装配事实；CurrentSource 为 nil 表示始终使用官方源，
-// SourceProblem 非空表示来源配置不可用；ShelfPath 按货架名字给出已注册货架的路径。
+// SourceState 是某类别安装来源的只读视图：当前选择、不可用原因、货架路径。
+type SourceState interface {
+	CurrentSource() string
+	Problem() string
+	ShelfPath(name string) (string, bool)
+}
+
+// Config 是发行来源读取的装配事实；States 按发布物类别给出该类别的来源状态，
+// 缺少某类别的状态时按始终使用官方源处理。
 type Config struct {
-	BoxVersion    string
-	IndexBase     string
-	CurrentSource func() string
-	SourceProblem func() string
-	ShelfPath     func(name string) (string, bool)
+	BoxVersion string
+	IndexBase  string
+	States     map[string]SourceState
 }
 
 type system struct {
-	boxVersion    string
-	checker       CandidateLister
-	sources       releasecatalog.Sources
-	tools         ToolSystem
-	plugins       PluginSystem
-	currentSource func() string
-	sourceProblem func() string
-	shelfPath     func(name string) (string, bool)
+	boxVersion string
+	checker    CandidateLister
+	sources    releasecatalog.Sources
+	tools      ToolSystem
+	plugins    PluginSystem
+	states     map[string]SourceState
 }
 
 // NewSystem 创建发行来源读取系统：装配官方候选读取器，并持有工具与插件状态读取能力。
@@ -89,14 +92,12 @@ func NewSystemWithChecker(config Config, checker CandidateLister, tools ToolSyst
 		return nil, err
 	}
 	return &system{
-		boxVersion:    boxVersion,
-		checker:       checker,
-		sources:       sources,
-		tools:         tools,
-		plugins:       plugins,
-		currentSource: config.CurrentSource,
-		sourceProblem: config.SourceProblem,
-		shelfPath:     config.ShelfPath,
+		boxVersion: boxVersion,
+		checker:    checker,
+		sources:    sources,
+		tools:      tools,
+		plugins:    plugins,
+		states:     config.States,
 	}, nil
 }
 
@@ -119,10 +120,10 @@ func (s *system) ListCandidates(ctx context.Context, kind string) (types.Artifac
 	}
 
 	var candidates []types.ArtifactReleaseCandidate
-	sourceName := s.currentSourceName()
+	sourceName := s.currentSourceName(kind)
 	switch {
-	case s.sourceProblemText() != "":
-		candidates = []types.ArtifactReleaseCandidate{s.failedArtifactCandidate(types.ReleaseArtifactIdentity{Kind: kind, ID: kind}, installedByIdentity, "安装来源配置不可用："+s.sourceProblemText())}
+	case s.sourceProblemText(kind) != "":
+		candidates = []types.ArtifactReleaseCandidate{s.failedArtifactCandidate(types.ReleaseArtifactIdentity{Kind: kind, ID: kind}, installedByIdentity, "安装来源配置不可用："+s.sourceProblemText(kind))}
 	case sourceName == "":
 		candidates = []types.ArtifactReleaseCandidate{s.failedArtifactCandidate(types.ReleaseArtifactIdentity{Kind: kind, ID: kind}, installedByIdentity, "安装来源配置不可用")}
 	case sourceName != installsource.OfficialSource:
@@ -136,7 +137,7 @@ func (s *system) ListCandidates(ctx context.Context, kind string) (types.Artifac
 		}
 		return candidates[i].Artifact.ID < candidates[j].Artifact.ID
 	})
-	return types.ArtifactCandidateList{SourceKind: s.sourceKind(), Candidates: candidates}, nil
+	return types.ArtifactCandidateList{SourceKind: s.currentSourceName(kind), Candidates: candidates}, nil
 }
 
 // supportsKind 判断分类在当前来源下是否可读；本体不参与发行候选。
@@ -157,8 +158,8 @@ func (s *system) officialCandidates(ctx context.Context, kind string, installed 
 }
 
 func (s *system) localCandidates(ctx context.Context, kind string, installed []types.ArtifactInstallation, installedByIdentity map[string]types.ArtifactInstallation) []types.ArtifactReleaseCandidate {
-	source := s.currentSourceName()
-	reader, err := s.shelfReader(source)
+	source := s.currentSourceName(kind)
+	reader, err := s.shelfReader(kind, source)
 	if err != nil {
 		return []types.ArtifactReleaseCandidate{s.failedArtifactCandidate(types.ReleaseArtifactIdentity{Kind: kind, ID: kind}, installedByIdentity, err.Error())}
 	}
@@ -182,16 +183,17 @@ func (s *system) localCandidates(ctx context.Context, kind string, installed []t
 	return candidates
 }
 
-// shelfReader 按当前选择的货架路径现场构造货架读取器；路径失效时如实报错，不回退官方。
-func (s *system) shelfReader(name string) (releasecheck.LocalShelf, error) {
-	if s.shelfPath == nil {
+// shelfReader 按当前选择的货架路径现场构造该类别的货架读取器；路径失效时如实报错，不回退官方。
+func (s *system) shelfReader(kind string, name string) (releasecheck.LocalShelf, error) {
+	state := s.states[kind]
+	if state == nil {
 		return nil, fmt.Errorf("货架来源未装配")
 	}
-	path, ok := s.shelfPath(name)
+	path, ok := state.ShelfPath(name)
 	if !ok {
 		return nil, fmt.Errorf("当前商店来源 %q 不是已注册货架", name)
 	}
-	reader, err := releasecheck.NewLocalSourceReader(path)
+	reader, err := releasecheck.NewLocalSourceReader(path, kind)
 	if err != nil {
 		return nil, fmt.Errorf("货架 %q 不可用：%w", name, err)
 	}
@@ -321,24 +323,22 @@ func (s *system) installedArtifacts(ctx context.Context) []types.ArtifactInstall
 	return installed
 }
 
-// currentSourceName 返回当前来源名字；未装配时按官方源处理，空字符串表示来源配置不可用。
-func (s *system) currentSourceName() string {
-	if s.currentSource == nil {
+// currentSourceName 返回该类别的当前来源名字；未装配时按官方源处理，空字符串表示来源配置不可用。
+func (s *system) currentSourceName(kind string) string {
+	state := s.states[kind]
+	if state == nil {
 		return installsource.OfficialSource
 	}
-	return strings.TrimSpace(s.currentSource())
+	return strings.TrimSpace(state.CurrentSource())
 }
 
-// sourceProblemText 返回来源配置不可用的原因；空字符串表示配置正常。
-func (s *system) sourceProblemText() string {
-	if s.sourceProblem == nil {
+// sourceProblemText 返回该类别来源配置不可用的原因；空字符串表示配置正常。
+func (s *system) sourceProblemText(kind string) string {
+	state := s.states[kind]
+	if state == nil {
 		return ""
 	}
-	return strings.TrimSpace(s.sourceProblem())
-}
-
-func (s *system) sourceKind() string {
-	return s.currentSourceName()
+	return strings.TrimSpace(state.Problem())
 }
 
 func failedInstallation(kind string, reason string) types.ArtifactInstallation {

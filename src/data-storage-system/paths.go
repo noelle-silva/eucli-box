@@ -69,7 +69,13 @@ func (p paths) stickerNamingConfigFile() string {
 	return datapaths.StickerNamingFile(p.root)
 }
 
-func (p paths) installSourceFile() string { return datapaths.InstallSourceFile(p.root) }
+func (p paths) installSourceFile(kind string) (string, error) {
+	path := datapaths.InstallSourceFile(p.root, kind)
+	if path == "" {
+		return "", storageInvalid("unsupported install source kind "+kind, nil)
+	}
+	return path, nil
+}
 
 func (p paths) mermaidFixConfigFile() string { return datapaths.MermaidFixFile(p.root) }
 

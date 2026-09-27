@@ -111,8 +111,7 @@ type System interface {
 	SaveChatTitleNamingConfig(ctx context.Context, config types.ChatTitleNamingConfig) (types.ChatTitleNamingConfig, error)
 	LoadContextCompressionConfig(ctx context.Context) (types.ContextCompressionConfig, error)
 	SaveContextCompressionConfig(ctx context.Context, config types.ContextCompressionConfig) (types.ContextCompressionConfig, error)
-	LoadInstallSource(ctx context.Context) (installsource.Config, error)
-	SaveInstallSource(ctx context.Context, config installsource.Config) error
+	InstallSourceStore(kind string) (installsource.Store, error)
 	LoadModelRequestConfig(ctx context.Context) (types.ModelRequestConfig, error)
 	SaveModelRequestConfig(ctx context.Context, config types.ModelRequestConfig) (types.ModelRequestConfig, error)
 	LoadToolWorkDirectoryConfig(ctx context.Context) (types.ToolWorkDirectoryConfig, error)

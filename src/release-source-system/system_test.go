@@ -191,6 +191,42 @@ func TestListCandidatesReportUnavailableSourceConfig(t *testing.T) {
 	}
 }
 
+// TestCategoriesReadTheirOwnSourceState 验证工具与插件各自读取各自的来源与货架，互不干扰。
+func TestCategoriesReadTheirOwnSourceState(t *testing.T) {
+	toolShelf := t.TempDir()
+	pluginShelf := t.TempDir()
+	writeShelfEntry(t, toolShelf, types.ReleaseArtifactKindTool, "context7", "0.1.2")
+	writeShelfEntry(t, pluginShelf, types.ReleaseArtifactKindPlugin, "time-plugin", "0.1.5")
+	system := newTestSystem(t, testOptions{
+		currentSource:       "工具架",
+		shelves:             []installsource.Shelf{{Name: "工具架", Path: toolShelf}},
+		pluginCurrentSource: "插件架",
+		pluginShelves:       []installsource.Shelf{{Name: "插件架", Path: pluginShelf}},
+	})
+	toolList, err := system.ListCandidates(context.Background(), types.ReleaseArtifactKindTool)
+	if err != nil {
+		t.Fatalf("ListCandidates(tool) error = %v", err)
+	}
+	if toolList.SourceKind != "工具架" {
+		t.Fatalf("tool source kind = %q", toolList.SourceKind)
+	}
+	context7 := findCandidate(t, toolList, types.ReleaseArtifactKindTool, "context7")
+	if context7.LatestVersion != "0.1.2" {
+		t.Fatalf("context7 = %#v", context7)
+	}
+	pluginList, err := system.ListCandidates(context.Background(), types.ReleaseArtifactKindPlugin)
+	if err != nil {
+		t.Fatalf("ListCandidates(plugin) error = %v", err)
+	}
+	if pluginList.SourceKind != "插件架" {
+		t.Fatalf("plugin source kind = %q", pluginList.SourceKind)
+	}
+	timePlugin := findCandidate(t, pluginList, types.ReleaseArtifactKindPlugin, "time-plugin")
+	if timePlugin.LatestVersion != "0.1.5" {
+		t.Fatalf("time-plugin = %#v", timePlugin)
+	}
+}
+
 func TestListCandidatesRejectsBoxKind(t *testing.T) {
 	system := newTestSystem(t, testOptions{})
 	if _, err := system.ListCandidates(context.Background(), types.ReleaseArtifactKindBox); err == nil {
@@ -199,15 +235,35 @@ func TestListCandidatesRejectsBoxKind(t *testing.T) {
 }
 
 type testOptions struct {
-	boxVersion    string
-	currentSource string
-	sourceProblem string
-	tools         []types.ToolSummary
-	plugins       []types.SystemPluginSummary
-	toolErr       error
-	candidates    map[string][]releasecheck.CandidateRecord
-	candidateErr  map[string]error
-	shelves       []installsource.Shelf
+	boxVersion          string
+	currentSource       string
+	sourceProblem       string
+	pluginCurrentSource string
+	tools               []types.ToolSummary
+	plugins             []types.SystemPluginSummary
+	toolErr             error
+	candidates          map[string][]releasecheck.CandidateRecord
+	candidateErr        map[string]error
+	shelves             []installsource.Shelf
+	pluginShelves       []installsource.Shelf
+}
+
+// fakeSourceState 是某类别来源状态的测试替身。
+type fakeSourceState struct {
+	source  string
+	problem string
+	shelves []installsource.Shelf
+}
+
+func (f fakeSourceState) CurrentSource() string { return f.source }
+func (f fakeSourceState) Problem() string       { return f.problem }
+func (f fakeSourceState) ShelfPath(name string) (string, bool) {
+	for _, shelf := range f.shelves {
+		if shelf.Name == name {
+			return shelf.Path, true
+		}
+	}
+	return "", false
 }
 
 func newTestSystem(t *testing.T, options testOptions) System {
@@ -220,21 +276,21 @@ func newTestSystem(t *testing.T, options testOptions) System {
 	if currentSource == "" {
 		currentSource = installsource.OfficialSource
 	}
-	shelves := options.shelves
+	states := map[string]SourceState{
+		types.ReleaseArtifactKindTool: fakeSourceState{source: currentSource, problem: options.sourceProblem, shelves: options.shelves},
+	}
+	if options.pluginCurrentSource != "" || len(options.pluginShelves) > 0 {
+		pluginSource := options.pluginCurrentSource
+		if pluginSource == "" {
+			pluginSource = installsource.OfficialSource
+		}
+		states[types.ReleaseArtifactKindPlugin] = fakeSourceState{source: pluginSource, shelves: options.pluginShelves}
+	}
 	checker := &fakeCandidateLister{candidates: options.candidates, errors: options.candidateErr}
 	system, err := NewSystemWithChecker(
 		Config{
-			BoxVersion:    boxVersion,
-			CurrentSource: func() string { return currentSource },
-			SourceProblem: func() string { return options.sourceProblem },
-			ShelfPath: func(name string) (string, bool) {
-				for _, shelf := range shelves {
-					if shelf.Name == name {
-						return shelf.Path, true
-					}
-				}
-				return "", false
-			},
+			BoxVersion: boxVersion,
+			States:     states,
 		},
 		checker,
 		&fakeToolSystem{tools: options.tools, err: options.toolErr},

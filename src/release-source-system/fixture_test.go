@@ -102,14 +102,10 @@ func (f *releaseFixture) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(f.indexes[kind])
 }
 
-// writeShelfEntry 在货架根下按「类别/发布物/版本」摆放一份最小可用成品（zip + 清单）。
+// writeShelfEntry 在货架根下按「发布物/版本」摆放一份最小可用成品（zip + 清单）。
 func writeShelfEntry(t *testing.T, root string, kind string, id string, version string) {
 	t.Helper()
-	shelfDir := "ai-tools"
-	if kind == types.ReleaseArtifactKindPlugin {
-		shelfDir = "system-plugins"
-	}
-	versionDir := filepath.Join(root, shelfDir, id, version)
+	versionDir := filepath.Join(root, id, version)
 	if err := os.MkdirAll(versionDir, 0o755); err != nil {
 		t.Fatalf("mkdir shelf version dir: %v", err)
 	}

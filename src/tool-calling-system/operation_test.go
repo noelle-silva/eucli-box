@@ -336,8 +336,8 @@ func isTerminalArtifactStatus(status string) bool {
 func TestInstallToolFromLocalStore(t *testing.T) {
 	fixture := newToolOperationFixture(t)
 	fixture.makeToolCandidate("dev-demo", "0.1.1", false)
-	storeRoot := filepath.Join(t.TempDir(), "local-store")
-	versionDir := filepath.Join(storeRoot, "ai-tools", "dev-demo", "0.1.1")
+	storeRoot := filepath.Join(t.TempDir(), "shelf-root")
+	versionDir := filepath.Join(storeRoot, "dev-demo", "0.1.1")
 	if err := os.MkdirAll(versionDir, 0o755); err != nil {
 		t.Fatalf("mkdir version dir: %v", err)
 	}
@@ -373,7 +373,7 @@ func TestInstallToolFromLocalStore(t *testing.T) {
 		t.Fatalf("write manifest: %v", err)
 	}
 
-	reader, err := releasecheck.NewLocalSourceReader(storeRoot)
+	reader, err := releasecheck.NewLocalSourceReader(storeRoot, types.ReleaseArtifactKindTool)
 	if err != nil {
 		t.Fatalf("NewLocalSourceReader() error = %v", err)
 	}

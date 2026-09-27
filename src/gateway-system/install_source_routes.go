@@ -7,13 +7,32 @@ import (
 	"eucli-box/pkg/installsource"
 )
 
-// handleInstallSource 返回当前来源选择；配置不可用时携带原因照常应答。
-func (s *system) handleInstallSource(w http.ResponseWriter, r *http.Request) {
-	writeData(w, http.StatusOK, installsource.SourceView{Source: s.config.InstallSource.CurrentSource(), Problem: s.config.InstallSource.Problem()})
+// installSourceOrFail 按路径中的类别取来源状态视图；未知类别写出错误并返回 false。
+func (s *system) installSourceOrFail(w http.ResponseWriter, r *http.Request) (InstallSourceSystem, bool) {
+	kind := r.PathValue("kind")
+	source, ok := s.installSourceFor(kind)
+	if !ok {
+		writeError(w, gatewayInvalid("不支持的安装来源类别 "+kind, nil))
+		return nil, false
+	}
+	return source, true
 }
 
-// handleSetInstallSource 切换来源；只接受官方保留字或已注册货架。
+// handleInstallSource 返回该类别当前来源选择；配置不可用时携带原因照常应答。
+func (s *system) handleInstallSource(w http.ResponseWriter, r *http.Request) {
+	source, ok := s.installSourceOrFail(w, r)
+	if !ok {
+		return
+	}
+	writeData(w, http.StatusOK, installsource.SourceView{Source: source.CurrentSource(), Problem: source.Problem()})
+}
+
+// handleSetInstallSource 切换该类别来源；只接受官方保留字或该类已注册货架。
 func (s *system) handleSetInstallSource(w http.ResponseWriter, r *http.Request) {
+	source, ok := s.installSourceOrFail(w, r)
+	if !ok {
+		return
+	}
 	var body struct {
 		Source *string `json:"source"`
 	}
@@ -21,7 +40,7 @@ func (s *system) handleSetInstallSource(w http.ResponseWriter, r *http.Request) 
 		writeError(w, gatewayInvalid(`请求体必须是 {"source": "official" 或货架名字}`, nil))
 		return
 	}
-	next, err := s.config.InstallSource.SetSource(r.Context(), *body.Source)
+	next, err := source.SetSource(r.Context(), *body.Source)
 	if err != nil {
 		writeError(w, gatewayInvalid(err.Error(), nil))
 		return
@@ -29,13 +48,21 @@ func (s *system) handleSetInstallSource(w http.ResponseWriter, r *http.Request) 
 	writeData(w, http.StatusOK, installsource.SourceView{Source: next})
 }
 
-// handleListShelves 返回按注册顺序排列的货架注册表；配置不可用时携带原因照常应答。
+// handleListShelves 返回该类别按注册顺序排列的货架注册表；配置不可用时携带原因照常应答。
 func (s *system) handleListShelves(w http.ResponseWriter, r *http.Request) {
-	writeData(w, http.StatusOK, installsource.ShelvesView{Shelves: s.config.InstallSource.Shelves(), Problem: s.config.InstallSource.Problem()})
+	source, ok := s.installSourceOrFail(w, r)
+	if !ok {
+		return
+	}
+	writeData(w, http.StatusOK, installsource.ShelvesView{Shelves: source.Shelves(), Problem: source.Problem()})
 }
 
-// handleAddShelf 注册货架；名字与路径必须同时提供。
+// handleAddShelf 注册该类别货架；名字与路径必须同时提供。
 func (s *system) handleAddShelf(w http.ResponseWriter, r *http.Request) {
+	source, ok := s.installSourceOrFail(w, r)
+	if !ok {
+		return
+	}
 	var body struct {
 		Name *string `json:"name"`
 		Path *string `json:"path"`
@@ -44,7 +71,7 @@ func (s *system) handleAddShelf(w http.ResponseWriter, r *http.Request) {
 		writeError(w, gatewayInvalid("注册货架必须提供 name 与 path", nil))
 		return
 	}
-	shelves, err := s.config.InstallSource.AddShelf(r.Context(), *body.Name, *body.Path)
+	shelves, err := source.AddShelf(r.Context(), *body.Name, *body.Path)
 	if err != nil {
 		writeError(w, gatewayInvalid(err.Error(), nil))
 		return
@@ -54,6 +81,10 @@ func (s *system) handleAddShelf(w http.ResponseWriter, r *http.Request) {
 
 // handleUpdateShelf 改名 / 改路径；newName 与 newPath 至少提供一项。
 func (s *system) handleUpdateShelf(w http.ResponseWriter, r *http.Request) {
+	source, ok := s.installSourceOrFail(w, r)
+	if !ok {
+		return
+	}
 	var body struct {
 		Name    *string `json:"name"`
 		NewName *string `json:"newName"`
@@ -63,7 +94,7 @@ func (s *system) handleUpdateShelf(w http.ResponseWriter, r *http.Request) {
 		writeError(w, gatewayInvalid("改货架必须提供 name", nil))
 		return
 	}
-	shelves, err := s.config.InstallSource.UpdateShelf(r.Context(), *body.Name, body.NewName, body.NewPath)
+	shelves, err := source.UpdateShelf(r.Context(), *body.Name, body.NewName, body.NewPath)
 	if err != nil {
 		writeError(w, gatewayInvalid(err.Error(), nil))
 		return
@@ -73,6 +104,10 @@ func (s *system) handleUpdateShelf(w http.ResponseWriter, r *http.Request) {
 
 // handleRemoveShelf 删除货架。
 func (s *system) handleRemoveShelf(w http.ResponseWriter, r *http.Request) {
+	source, ok := s.installSourceOrFail(w, r)
+	if !ok {
+		return
+	}
 	var body struct {
 		Name *string `json:"name"`
 	}
@@ -80,7 +115,7 @@ func (s *system) handleRemoveShelf(w http.ResponseWriter, r *http.Request) {
 		writeError(w, gatewayInvalid("删除货架必须提供 name", nil))
 		return
 	}
-	shelves, err := s.config.InstallSource.RemoveShelf(r.Context(), *body.Name)
+	shelves, err := source.RemoveShelf(r.Context(), *body.Name)
 	if err != nil {
 		writeError(w, gatewayInvalid(err.Error(), nil))
 		return

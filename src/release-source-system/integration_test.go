@@ -16,7 +16,7 @@ func TestRealCheckerReadsIndexThroughNarrowInterface(t *testing.T) {
 	fixture.addIndexVersion(types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "web_search"}, "0.1.9")
 	checker := fixture.checker(t)
 	system, err := NewSystemWithChecker(
-		Config{BoxVersion: "0.1.0", CurrentSource: func() installsource.Kind { return installsource.KindOfficial }},
+		Config{BoxVersion: "0.1.0", CurrentSource: func() string { return installsource.OfficialSource }},
 		checker,
 		&fakeToolSystem{tools: []types.ToolSummary{
 			{ID: "context7", Version: "0.1.0", Status: types.ToolAvailabilityActive, EucliBoxCompatibility: compatibility("0.1.0", "0.2.0")},

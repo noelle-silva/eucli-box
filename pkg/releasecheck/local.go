@@ -17,8 +17,8 @@ import (
 	"eucli-box/pkg/types"
 )
 
-// LocalCandidate 从本地商店货架（programs/local-store）的货品清单与压缩包
-// 读取单个本地候选；货品与官方源使用同一货品格式。
+// LocalCandidate 从货架（用户注册的目录）的货品清单与压缩包
+// 读取单个货架候选；货品与官方源使用同一货品格式。
 type LocalCandidate struct {
 	ManifestPath string
 	ArchivePath  string
@@ -100,30 +100,30 @@ func validateLocalManifest(manifest types.ReleaseManifest, identity types.Releas
 	return nil
 }
 
-// LocalSourceReader 从本地商店货架按发布物构造候选；货架按
+// LocalSourceReader 从货架按发布物构造候选；货架按
 // ai-tools/<id>/<version>/ 与 system-plugins/<id>/<version>/ 组织，
 // 版本目录内放货品清单与压缩包。
 type LocalSourceReader struct {
 	root string
 }
 
-// NewLocalSourceReader 构造本地商店候选读取器。
+// NewLocalSourceReader 构造货架候选读取器。
 func NewLocalSourceReader(packageRoot string) (*LocalSourceReader, error) {
 	root, err := filepath.Abs(strings.TrimSpace(packageRoot))
 	if err != nil || strings.TrimSpace(packageRoot) == "" {
-		return nil, errors.New("本地商店货架根目录无效")
+		return nil, errors.New("货架路径无效")
 	}
 	info, err := os.Stat(root)
 	if err != nil {
-		return nil, fmt.Errorf("本地商店货架根目录读取失败：%w", err)
+		return nil, fmt.Errorf("货架路径读取失败：%w", err)
 	}
 	if !info.IsDir() {
-		return nil, errors.New("本地商店货架根目录不是目录")
+		return nil, errors.New("货架路径不是目录")
 	}
 	return &LocalSourceReader{root: root}, nil
 }
 
-// LatestCandidate 读取目标发布物的本地货架最高版本候选；
+// LatestCandidate 读取目标发布物在货架上的最高版本候选；
 // 只读取与本发布物同名的货架目录（ai-tools 对应工具，system-plugins 对应插件）。
 func (s *LocalSourceReader) LatestCandidate(ctx context.Context, identity types.ReleaseArtifactIdentity) (*ReleaseCandidate, error) {
 	candidates, err := s.localCandidates(ctx, identity)
@@ -131,7 +131,7 @@ func (s *LocalSourceReader) LatestCandidate(ctx context.Context, identity types.
 		return nil, err
 	}
 	if len(candidates) == 0 {
-		return nil, fmt.Errorf("本地商店货架没有目标发布物 %s 的候选成品", identity.ID)
+		return nil, fmt.Errorf("货架没有目标发布物 %s 的候选成品", identity.ID)
 	}
 	sort.SliceStable(candidates, func(i int, j int) bool {
 		left, leftErr := release.CompareVersions(candidates[i].version, candidates[j].version)
@@ -190,7 +190,7 @@ func shelfDirectory(kind string) (string, error) {
 	case types.ReleaseArtifactKindPlugin:
 		return "system-plugins", nil
 	default:
-		return "", fmt.Errorf("本地商店不支持发布物类别 %q", kind)
+		return "", fmt.Errorf("货架不支持发布物类别 %q", kind)
 	}
 }
 
@@ -229,7 +229,7 @@ type LocalShelfItem struct {
 	Candidate *ReleaseCandidate
 }
 
-// LocalShelf 是本地商店货架的只读能力：按发布物读候选，以及枚举全部货品。
+// LocalShelf 是货架的只读能力：按发布物读候选，以及枚举全部货品。
 type LocalShelf interface {
 	CandidateReader
 	List(ctx context.Context) ([]LocalShelfItem, error)
@@ -288,7 +288,7 @@ func (s *LocalSourceReader) List(ctx context.Context) ([]LocalShelfItem, error) 
 	return items, nil
 }
 
-// LocalSource 从已核对候选打包源事实；本地商店货品使用清单记录的真实来源事实。
+// LocalSource 从已核对候选打包源事实；货架货品使用清单记录的真实来源事实。
 func LocalSource(candidate *ReleaseCandidate) (release.ArtifactPackageSource, error) {
 	if candidate == nil {
 		return release.ArtifactPackageSource{}, errors.New("本地候选为空")

@@ -3,6 +3,8 @@ package releasesourcesystem
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,7 +71,7 @@ func TestListCandidatesComparesInstalledFacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListCandidates() error = %v", err)
 	}
-	if list.SourceKind != string(installsource.KindOfficial) {
+	if list.SourceKind != installsource.OfficialSource {
 		t.Fatalf("source kind = %q", list.SourceKind)
 	}
 	context7 := findCandidate(t, list, types.ReleaseArtifactKindTool, "context7")
@@ -128,13 +130,11 @@ func TestListCandidatesRejectsUnknownKind(t *testing.T) {
 }
 
 func TestLocalCandidatesReadShelfWithoutOfficialIndex(t *testing.T) {
-	shelfItem := releasecheck.LocalShelfItem{
-		Artifact:  types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "context7"},
-		Candidate: localCandidate(types.ReleaseArtifactKindTool, "context7", "0.1.2"),
-	}
+	shelfRoot := t.TempDir()
+	writeShelfEntry(t, shelfRoot, types.ReleaseArtifactKindTool, "context7", "0.1.2")
 	system := newTestSystem(t, testOptions{
-		currentSource: installsource.KindLocal,
-		shelf:         &fakeLocalShelf{items: []releasecheck.LocalShelfItem{shelfItem}},
+		currentSource: "甲",
+		shelves:       []installsource.Shelf{{Name: "甲", Path: shelfRoot}},
 		tools: []types.ToolSummary{
 			{ID: "context7", Version: "0.1.0", Status: types.ToolAvailabilityActive, EucliBoxCompatibility: compatibility("0.1.0", "0.2.0")},
 		},
@@ -143,7 +143,7 @@ func TestLocalCandidatesReadShelfWithoutOfficialIndex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListCandidates() error = %v", err)
 	}
-	if list.SourceKind != string(installsource.KindLocal) {
+	if list.SourceKind != "甲" {
 		t.Fatalf("source kind = %q", list.SourceKind)
 	}
 	context7 := findCandidate(t, list, types.ReleaseArtifactKindTool, "context7")
@@ -155,13 +155,38 @@ func TestLocalCandidatesReadShelfWithoutOfficialIndex(t *testing.T) {
 	}
 }
 
-func TestLocalCandidatesRequireActiveShelf(t *testing.T) {
-	system := newTestSystem(t, testOptions{currentSource: installsource.KindLocal})
+func TestLocalCandidatesReportUnavailableShelf(t *testing.T) {
+	system := newTestSystem(t, testOptions{
+		currentSource: "甲",
+		shelves:       []installsource.Shelf{{Name: "甲", Path: filepath.Join(t.TempDir(), "missing")}},
+	})
 	list, err := system.ListCandidates(context.Background(), types.ReleaseArtifactKindTool)
 	if err != nil {
 		t.Fatalf("ListCandidates() error = %v", err)
 	}
-	if len(list.Candidates) != 1 || list.Candidates[0].FailureReason == "" {
+	if len(list.Candidates) != 1 || !strings.Contains(list.Candidates[0].FailureReason, "货架 \"甲\" 不可用") {
+		t.Fatalf("candidates = %#v", list.Candidates)
+	}
+}
+
+func TestLocalCandidatesReportUnknownShelf(t *testing.T) {
+	system := newTestSystem(t, testOptions{currentSource: "失踪"})
+	list, err := system.ListCandidates(context.Background(), types.ReleaseArtifactKindTool)
+	if err != nil {
+		t.Fatalf("ListCandidates() error = %v", err)
+	}
+	if len(list.Candidates) != 1 || !strings.Contains(list.Candidates[0].FailureReason, "不是已注册货架") {
+		t.Fatalf("candidates = %#v", list.Candidates)
+	}
+}
+
+func TestListCandidatesReportUnavailableSourceConfig(t *testing.T) {
+	system := newTestSystem(t, testOptions{sourceProblem: "旧格式无法识别"})
+	list, err := system.ListCandidates(context.Background(), types.ReleaseArtifactKindTool)
+	if err != nil {
+		t.Fatalf("ListCandidates() error = %v", err)
+	}
+	if len(list.Candidates) != 1 || !strings.Contains(list.Candidates[0].FailureReason, "安装来源配置不可用：旧格式无法识别") {
 		t.Fatalf("candidates = %#v", list.Candidates)
 	}
 }
@@ -175,13 +200,14 @@ func TestListCandidatesRejectsBoxKind(t *testing.T) {
 
 type testOptions struct {
 	boxVersion    string
-	currentSource installsource.Kind
+	currentSource string
+	sourceProblem string
 	tools         []types.ToolSummary
 	plugins       []types.SystemPluginSummary
 	toolErr       error
 	candidates    map[string][]releasecheck.CandidateRecord
 	candidateErr  map[string]error
-	shelf         releasecheck.LocalShelf
+	shelves       []installsource.Shelf
 }
 
 func newTestSystem(t *testing.T, options testOptions) System {
@@ -192,11 +218,24 @@ func newTestSystem(t *testing.T, options testOptions) System {
 	}
 	currentSource := options.currentSource
 	if currentSource == "" {
-		currentSource = installsource.KindOfficial
+		currentSource = installsource.OfficialSource
 	}
+	shelves := options.shelves
 	checker := &fakeCandidateLister{candidates: options.candidates, errors: options.candidateErr}
 	system, err := NewSystemWithChecker(
-		Config{BoxVersion: boxVersion, CurrentSource: func() installsource.Kind { return currentSource }, LocalSource: options.shelf},
+		Config{
+			BoxVersion:    boxVersion,
+			CurrentSource: func() string { return currentSource },
+			SourceProblem: func() string { return options.sourceProblem },
+			ShelfPath: func(name string) (string, bool) {
+				for _, shelf := range shelves {
+					if shelf.Name == name {
+						return shelf.Path, true
+					}
+				}
+				return "", false
+			},
+		},
 		checker,
 		&fakeToolSystem{tools: options.tools, err: options.toolErr},
 		&fakePluginSystem{plugins: options.plugins},
@@ -238,18 +277,6 @@ type fakePluginSystem struct {
 
 func (f *fakePluginSystem) ListPlugins(context.Context) ([]types.SystemPluginSummary, error) {
 	return f.plugins, nil
-}
-
-type fakeLocalShelf struct {
-	items []releasecheck.LocalShelfItem
-}
-
-func (f *fakeLocalShelf) LatestCandidate(context.Context, types.ReleaseArtifactIdentity) (*releasecheck.ReleaseCandidate, error) {
-	return nil, fmt.Errorf("not used")
-}
-
-func (f *fakeLocalShelf) List(context.Context) ([]releasecheck.LocalShelfItem, error) {
-	return f.items, nil
 }
 
 func candidate(kind string, id string, version string) *releasecheck.ReleaseCandidate {

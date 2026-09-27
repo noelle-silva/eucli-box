@@ -804,26 +804,112 @@ func newGatewayFakes() *gatewayFakes {
 }
 
 type fakeGatewayInstallSource struct {
-	current installsource.Kind
+	source  string
+	problem string
+	shelves []installsource.Shelf
 	setErr  error
-	sets    []installsource.Kind
+	addErr  error
+	updErr  error
+	delErr  error
+	sets    []string
 }
 
 func newFakeGatewayInstallSource() *fakeGatewayInstallSource {
-	return &fakeGatewayInstallSource{current: installsource.KindOfficial}
+	return &fakeGatewayInstallSource{source: installsource.OfficialSource, shelves: []installsource.Shelf{}}
 }
 
-func (f *fakeGatewayInstallSource) Current() installsource.Kind {
-	return f.current
-}
-
-func (f *fakeGatewayInstallSource) Set(_ context.Context, kind installsource.Kind) (installsource.Kind, error) {
-	if f.setErr != nil {
-		return f.current, f.setErr
+func (f *fakeGatewayInstallSource) CurrentSource() string {
+	if f.problem != "" {
+		return ""
 	}
-	f.sets = append(f.sets, kind)
-	f.current = kind
-	return kind, nil
+	return f.source
+}
+
+func (f *fakeGatewayInstallSource) Problem() string {
+	return f.problem
+}
+
+func (f *fakeGatewayInstallSource) Shelves() []installsource.Shelf {
+	return append([]installsource.Shelf{}, f.shelves...)
+}
+
+func (f *fakeGatewayInstallSource) SetSource(_ context.Context, source string) (string, error) {
+	if f.setErr != nil {
+		return f.source, f.setErr
+	}
+	if f.problem != "" {
+		if source != installsource.OfficialSource {
+			return f.source, errors.New("安装来源配置不可用")
+		}
+		f.shelves = []installsource.Shelf{}
+		f.problem = ""
+	}
+	f.sets = append(f.sets, source)
+	f.source = source
+	return source, nil
+}
+
+func (f *fakeGatewayInstallSource) AddShelf(_ context.Context, name string, path string) ([]installsource.Shelf, error) {
+	if f.addErr != nil {
+		return f.Shelves(), f.addErr
+	}
+	if f.problem != "" {
+		f.shelves = []installsource.Shelf{}
+		f.problem = ""
+	}
+	f.shelves = append(f.shelves, installsource.Shelf{Name: name, Path: path})
+	return f.Shelves(), nil
+}
+
+func (f *fakeGatewayInstallSource) UpdateShelf(_ context.Context, name string, newName *string, newPath *string) ([]installsource.Shelf, error) {
+	if f.updErr != nil {
+		return f.Shelves(), f.updErr
+	}
+	if f.problem != "" {
+		return f.Shelves(), errors.New("安装来源配置不可用")
+	}
+	for index := range f.shelves {
+		if f.shelves[index].Name != name {
+			continue
+		}
+		if newName != nil {
+			if f.source == name {
+				f.source = *newName
+			}
+			f.shelves[index].Name = *newName
+		}
+		if newPath != nil {
+			f.shelves[index].Path = *newPath
+		}
+		return f.Shelves(), nil
+	}
+	return f.Shelves(), errors.New("货架不存在")
+}
+
+func (f *fakeGatewayInstallSource) RemoveShelf(_ context.Context, name string) ([]installsource.Shelf, error) {
+	if f.delErr != nil {
+		return f.Shelves(), f.delErr
+	}
+	if f.problem != "" {
+		return f.Shelves(), errors.New("安装来源配置不可用")
+	}
+	kept := make([]installsource.Shelf, 0, len(f.shelves))
+	found := false
+	for _, item := range f.shelves {
+		if item.Name == name {
+			found = true
+			continue
+		}
+		kept = append(kept, item)
+	}
+	if !found {
+		return f.Shelves(), errors.New("货架不存在")
+	}
+	f.shelves = kept
+	if f.source == name {
+		f.source = installsource.OfficialSource
+	}
+	return f.Shelves(), nil
 }
 
 type fakeGatewayRequestRecords struct {

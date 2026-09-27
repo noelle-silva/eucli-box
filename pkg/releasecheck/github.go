@@ -26,7 +26,7 @@ type ReleaseCandidate struct {
 	ArchiveURL       string
 	SizeBytes        int64
 	SHA256           string
-	// Local 标记候选来自本地商店货架（本地源）。
+	// Local 标记候选来自货架，取货使用本地文件复制。
 	Local bool
 }
 

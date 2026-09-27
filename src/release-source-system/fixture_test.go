@@ -1,9 +1,12 @@
 package releasesourcesystem
 
 import (
+	"archive/zip"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -97,4 +100,65 @@ func (f *releaseFixture) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	f.kindRequests[kind]++
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(f.indexes[kind])
+}
+
+// writeShelfEntry 在货架根下按「类别/发布物/版本」摆放一份最小可用成品（zip + 清单）。
+func writeShelfEntry(t *testing.T, root string, kind string, id string, version string) {
+	t.Helper()
+	shelfDir := "ai-tools"
+	if kind == types.ReleaseArtifactKindPlugin {
+		shelfDir = "system-plugins"
+	}
+	versionDir := filepath.Join(root, shelfDir, id, version)
+	if err := os.MkdirAll(versionDir, 0o755); err != nil {
+		t.Fatalf("mkdir shelf version dir: %v", err)
+	}
+	archiveName := kind + "-" + id + "_" + version + "_windows-x64.zip"
+	archivePath := filepath.Join(versionDir, archiveName)
+	writeDemoArchive(t, archivePath)
+	size, sha256, err := release.RecordForFile(archivePath)
+	if err != nil {
+		t.Fatalf("RecordForFile() error = %v", err)
+	}
+	productPayload := []byte(`{"demo":true}`)
+	manifest := types.ReleaseManifest{
+		SchemaVersion:  release.ReleaseManifestSchemaVersion,
+		Artifact:       types.ReleaseArtifactIdentity{Kind: kind, ID: id},
+		Version:        version,
+		Platform:       types.ReleasePlatformWindowsX64,
+		OfficialSource: "https://github.com/noelle-silva/eucli-box-ai-tools",
+		Compatibility:  &types.EucliBoxCompatibility{MinimumVersion: "0.1.0", MaximumVersionExclusive: "0.2.0"},
+		Source:         types.ReleaseSourceRecord{Repository: "https://github.com/noelle-silva/eucli-box", Commit: "0123456789abcdef0123456789abcdef01234567", Recorded: true},
+		TagName:        "v" + version,
+		Archive:        types.ReleaseFileRecord{Name: archiveName, Size: size, SHA256: sha256},
+		Files:          []types.ReleaseFileRecord{{Name: "release-product.json", Size: int64(len(productPayload)), SHA256: release.SHA256(productPayload)}},
+	}
+	payload, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal shelf manifest: %v", err)
+	}
+	manifestPath := filepath.Join(versionDir, strings.TrimSuffix(archiveName, ".zip")+".manifest.json")
+	if err := os.WriteFile(manifestPath, payload, 0o644); err != nil {
+		t.Fatalf("write shelf manifest: %v", err)
+	}
+}
+
+func writeDemoArchive(t *testing.T, target string) {
+	t.Helper()
+	output, err := os.Create(target)
+	if err != nil {
+		t.Fatalf("create shelf archive: %v", err)
+	}
+	defer output.Close()
+	writer := zip.NewWriter(output)
+	entry, err := writer.Create("release-product.json")
+	if err != nil {
+		t.Fatalf("zip create entry: %v", err)
+	}
+	if _, err := entry.Write([]byte(`{"demo":true}`)); err != nil {
+		t.Fatalf("zip write entry: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip close: %v", err)
+	}
 }

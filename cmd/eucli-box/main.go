@@ -71,7 +71,7 @@ func run() error {
 	programsRoot := filepath.Join(instanceRoot, "programs")
 	toolBodiesRoot := filepath.Join(programsRoot, "ai-tools")
 	pluginSourceDir := filepath.Join(programsRoot, "system-plugins")
-	programsDirs := []string{programsRoot, toolBodiesRoot, pluginSourceDir, filepath.Join(programsRoot, "local-store")}
+	programsDirs := []string{programsRoot, toolBodiesRoot, pluginSourceDir}
 	for _, directory := range programsDirs {
 		if err := os.MkdirAll(directory, 0o755); err != nil {
 			return fmt.Errorf("建立程序区 %s 失败：%w", directory, err)
@@ -121,29 +121,30 @@ func run() error {
 	}
 	log.Printf("[3/13] data-storage-system     ✓  (%s)", dataDir)
 
-	localStoreDir := envOrDefault("EUCLI_BOX_LOCAL_STORE", filepath.Join(programsRoot, "local-store"))
-	localCandidateReader, err := releasecheck.NewLocalSourceReader(localStoreDir)
-	if err != nil {
-		return fmt.Errorf("本地商店读取器不可用：%w", err)
-	}
-	initialSource := installsource.KindOfficial
+	// 安装来源配置是商店偏好，不是启动关键配置：损坏时进入「配置不可用」状态，
+	// 本体照常启动，商店相关读取如实报错，重新设置来源或注册货架即可重建。
+	var sourceState *installsource.State
 	loaded, loadErr := storageSystem.LoadInstallSource(ctx)
-	if loadErr != nil {
-		if !errors.Is(loadErr, os.ErrNotExist) {
-			return fmt.Errorf("读取安装来源配置失败：%w", loadErr)
-		}
-	} else {
-		initialSource = loaded
+	switch {
+	case loadErr == nil:
+		sourceState = installsource.NewState(loaded, storageSystem)
+	case errors.Is(loadErr, os.ErrNotExist):
+		sourceState = installsource.NewState(installsource.DefaultConfig(), storageSystem)
+	default:
+		sourceState = installsource.NewStateUnavailable(loadErr, storageSystem)
 	}
-	sourceState, err := installsource.NewState(initialSource, storageSystem)
+	if problem := sourceState.Problem(); problem != "" {
+		log.Printf("安装来源配置不可用：%s（本体继续启动，商店相关读取会如实报错，重新设置来源或注册货架即可修复）", problem)
+	}
+	toolCandidates, err := installsource.NewCandidateSelector(sourceState, officialChecker)
 	if err != nil {
 		return err
 	}
-	toolCandidates, err := installsource.NewCandidateSelector(sourceState.Current, officialChecker, localCandidateReader)
-	if err != nil {
-		return err
+	sourceLabel := sourceState.CurrentSource()
+	if sourceLabel == "" {
+		sourceLabel = "unavailable"
 	}
-	log.Printf("[2.6/13] candidate reader %s (install-source: %s)", programStatusLabel(programsRoot), sourceState.Current())
+	log.Printf("[2.6/13] candidate reader %s (install-source: %s)", programStatusLabel(programsRoot), sourceLabel)
 
 	requestRecordSystem, err := requestrecord.NewSystem(networkSystem, storageSystem)
 	if err != nil {
@@ -216,7 +217,7 @@ func run() error {
 	}
 	log.Printf("[11/13] ai-assist-system        ✓")
 
-	releaseSourceSystem, err := releasesourcesystem.NewSystemWithChecker(releasesourcesystem.Config{BoxVersion: boxRelease.Version, CurrentSource: sourceState.Current, LocalSource: localCandidateReader}, officialChecker, toolSystem, systemPluginSystem)
+	releaseSourceSystem, err := releasesourcesystem.NewSystemWithChecker(releasesourcesystem.Config{BoxVersion: boxRelease.Version, CurrentSource: sourceState.CurrentSource, SourceProblem: sourceState.Problem, ShelfPath: sourceState.ShelfPath}, officialChecker, toolSystem, systemPluginSystem)
 	if err != nil {
 		return fmt.Errorf("start release source system: %w", err)
 	}

@@ -39,12 +39,14 @@ type CandidateLister interface {
 	ListCandidates(ctx context.Context, kind string) ([]releasecheck.CandidateRecord, error)
 }
 
-// Config 是发行来源读取的装配事实；CurrentSource 为 nil 表示始终使用官方源。
+// Config 是发行来源读取的装配事实；CurrentSource 为 nil 表示始终使用官方源，
+// SourceProblem 非空表示来源配置不可用；ShelfPath 按货架名字给出已注册货架的路径。
 type Config struct {
 	BoxVersion    string
 	IndexBase     string
-	CurrentSource func() installsource.Kind
-	LocalSource   releasecheck.LocalShelf
+	CurrentSource func() string
+	SourceProblem func() string
+	ShelfPath     func(name string) (string, bool)
 }
 
 type system struct {
@@ -53,8 +55,9 @@ type system struct {
 	sources       releasecatalog.Sources
 	tools         ToolSystem
 	plugins       PluginSystem
-	currentSource func() installsource.Kind
-	localSource   releasecheck.LocalShelf
+	currentSource func() string
+	sourceProblem func() string
+	shelfPath     func(name string) (string, bool)
 }
 
 // NewSystem 创建发行来源读取系统：装配官方候选读取器，并持有工具与插件状态读取能力。
@@ -92,7 +95,8 @@ func NewSystemWithChecker(config Config, checker CandidateLister, tools ToolSyst
 		tools:         tools,
 		plugins:       plugins,
 		currentSource: config.CurrentSource,
-		localSource:   config.LocalSource,
+		sourceProblem: config.SourceProblem,
+		shelfPath:     config.ShelfPath,
 	}, nil
 }
 
@@ -102,7 +106,7 @@ func (s *system) ListInstallations(ctx context.Context) (types.ArtifactInstallat
 }
 
 // ListCandidates 按分类读取当前安装来源下的候选事实，并给出与已装事实的比对结论。
-// 官方源按分类读取一次统一版本索引；本地源读取本地商店货架，不读取官方索引。
+// 官方源按分类读取一次统一版本索引；货架来源按当前选择读取该货架，不读取官方索引。
 func (s *system) ListCandidates(ctx context.Context, kind string) (types.ArtifactCandidateList, error) {
 	kind = strings.TrimSpace(kind)
 	if !s.supportsKind(kind) {
@@ -115,9 +119,15 @@ func (s *system) ListCandidates(ctx context.Context, kind string) (types.Artifac
 	}
 
 	var candidates []types.ArtifactReleaseCandidate
-	if s.localMode() {
+	sourceName := s.currentSourceName()
+	switch {
+	case s.sourceProblemText() != "":
+		candidates = []types.ArtifactReleaseCandidate{s.failedArtifactCandidate(types.ReleaseArtifactIdentity{Kind: kind, ID: kind}, installedByIdentity, "安装来源配置不可用："+s.sourceProblemText())}
+	case sourceName == "":
+		candidates = []types.ArtifactReleaseCandidate{s.failedArtifactCandidate(types.ReleaseArtifactIdentity{Kind: kind, ID: kind}, installedByIdentity, "安装来源配置不可用")}
+	case sourceName != installsource.OfficialSource:
 		candidates = s.localCandidates(ctx, kind, installed, installedByIdentity)
-	} else {
+	default:
 		candidates = s.officialCandidates(ctx, kind, installed, installedByIdentity)
 	}
 	sort.Slice(candidates, func(i int, j int) bool {
@@ -147,12 +157,14 @@ func (s *system) officialCandidates(ctx context.Context, kind string, installed 
 }
 
 func (s *system) localCandidates(ctx context.Context, kind string, installed []types.ArtifactInstallation, installedByIdentity map[string]types.ArtifactInstallation) []types.ArtifactReleaseCandidate {
-	if s.localSource == nil {
-		return []types.ArtifactReleaseCandidate{s.failedArtifactCandidate(types.ReleaseArtifactIdentity{Kind: kind, ID: kind}, installedByIdentity, "本地商店未激活")}
-	}
-	items, err := s.localSource.List(ctx)
+	source := s.currentSourceName()
+	reader, err := s.shelfReader(source)
 	if err != nil {
-		return []types.ArtifactReleaseCandidate{s.failedArtifactCandidate(types.ReleaseArtifactIdentity{Kind: kind, ID: kind}, installedByIdentity, "读取本地商店货架失败："+err.Error())}
+		return []types.ArtifactReleaseCandidate{s.failedArtifactCandidate(types.ReleaseArtifactIdentity{Kind: kind, ID: kind}, installedByIdentity, err.Error())}
+	}
+	items, err := reader.List(ctx)
+	if err != nil {
+		return []types.ArtifactReleaseCandidate{s.failedArtifactCandidate(types.ReleaseArtifactIdentity{Kind: kind, ID: kind}, installedByIdentity, fmt.Sprintf("读取货架 %q 失败：%s", source, err.Error()))}
 	}
 	candidates := make([]types.ArtifactReleaseCandidate, 0)
 	for _, item := range items {
@@ -165,9 +177,25 @@ func (s *system) localCandidates(ctx context.Context, kind string, installed []t
 		if item.Artifact.Kind != kind || hasCandidateFor(candidates, item.Artifact) {
 			continue
 		}
-		candidates = append(candidates, s.installedOnlyCandidate(item, "本地商店货架没有该发布物的候选成品"))
+		candidates = append(candidates, s.installedOnlyCandidate(item, fmt.Sprintf("货架 %q 没有该发布物的候选成品", source)))
 	}
 	return candidates
+}
+
+// shelfReader 按当前选择的货架路径现场构造货架读取器；路径失效时如实报错，不回退官方。
+func (s *system) shelfReader(name string) (releasecheck.LocalShelf, error) {
+	if s.shelfPath == nil {
+		return nil, fmt.Errorf("货架来源未装配")
+	}
+	path, ok := s.shelfPath(name)
+	if !ok {
+		return nil, fmt.Errorf("当前商店来源 %q 不是已注册货架", name)
+	}
+	reader, err := releasecheck.NewLocalSourceReader(path)
+	if err != nil {
+		return nil, fmt.Errorf("货架 %q 不可用：%w", name, err)
+	}
+	return reader, nil
 }
 
 func (s *system) candidateFor(record releasecheck.CandidateRecord, installedByIdentity map[string]types.ArtifactInstallation) types.ArtifactReleaseCandidate {
@@ -293,15 +321,24 @@ func (s *system) installedArtifacts(ctx context.Context) []types.ArtifactInstall
 	return installed
 }
 
-func (s *system) localMode() bool {
-	return s.currentSource != nil && s.currentSource() == installsource.KindLocal
+// currentSourceName 返回当前来源名字；未装配时按官方源处理，空字符串表示来源配置不可用。
+func (s *system) currentSourceName() string {
+	if s.currentSource == nil {
+		return installsource.OfficialSource
+	}
+	return strings.TrimSpace(s.currentSource())
+}
+
+// sourceProblemText 返回来源配置不可用的原因；空字符串表示配置正常。
+func (s *system) sourceProblemText() string {
+	if s.sourceProblem == nil {
+		return ""
+	}
+	return strings.TrimSpace(s.sourceProblem())
 }
 
 func (s *system) sourceKind() string {
-	if s.localMode() {
-		return string(installsource.KindLocal)
-	}
-	return string(installsource.KindOfficial)
+	return s.currentSourceName()
 }
 
 func failedInstallation(kind string, reason string) types.ArtifactInstallation {

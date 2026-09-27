@@ -22,7 +22,7 @@ type ArtifactPackageSource struct {
 	ArchiveURL string
 	SizeBytes  int64
 	SHA256     string
-	// Local 标记来源来自本地商店货架（本地源），取货使用本地文件复制，
+	// Local 标记来源来自货架，取货使用本地文件复制，
 	// 其余核对保持完整。
 	Local bool
 }

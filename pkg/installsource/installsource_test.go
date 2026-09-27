@@ -3,7 +3,8 @@ package installsource
 import (
 	"context"
 	"errors"
-	"fmt"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"eucli-box/pkg/releasecheck"
@@ -11,115 +12,256 @@ import (
 )
 
 type fakeStore struct {
-	current  Kind
-	saved    Kind
+	config   Config
+	saved    Config
 	loadErr  error
 	saveErr  error
 	saveCall int
 }
 
-func (s *fakeStore) LoadInstallSource(context.Context) (Kind, error) {
+func (s *fakeStore) LoadInstallSource(context.Context) (Config, error) {
 	if s.loadErr != nil {
-		return "", s.loadErr
+		return Config{}, s.loadErr
 	}
-	return s.current, nil
+	return s.config.Clone(), nil
 }
 
-func (s *fakeStore) SaveInstallSource(_ context.Context, kind Kind) error {
+func (s *fakeStore) SaveInstallSource(_ context.Context, config Config) error {
 	s.saveCall++
 	if s.saveErr != nil {
 		return s.saveErr
 	}
-	s.saved = kind
+	s.saved = config.Clone()
 	return nil
 }
 
-func TestParseKind(t *testing.T) {
+func TestNormalizeConfigRejectsInvalidShapes(t *testing.T) {
 	cases := []struct {
-		input   string
-		want    Kind
-		wantErr bool
+		name    string
+		config  Config
+		wantErr string
 	}{
-		{input: "official", want: KindOfficial},
-		{input: "local", want: KindLocal},
-		{input: "  official  ", want: KindOfficial},
-		{input: "", wantErr: true},
-		{input: "internal", wantErr: true},
-		{input: "official; drop tables", wantErr: true},
+		{name: "缺少来源", config: Config{}, wantErr: "缺少来源选择"},
+		{name: "空货架名", config: Config{Source: OfficialSource, Shelves: []Shelf{{Name: "  ", Path: "D:/shelf"}}}, wantErr: "名字不能为空"},
+		{name: "保留字", config: Config{Source: OfficialSource, Shelves: []Shelf{{Name: "Official", Path: "D:/shelf"}}}, wantErr: "保留字"},
+		{name: "重名", config: Config{Source: OfficialSource, Shelves: []Shelf{{Name: "A", Path: "D:/a"}, {Name: "A", Path: "D:/b"}}}, wantErr: "重复"},
+		{name: "空路径", config: Config{Source: OfficialSource, Shelves: []Shelf{{Name: "A", Path: " "}}}, wantErr: "缺少路径"},
+		{name: "选择未知货架", config: Config{Source: "B", Shelves: []Shelf{{Name: "A", Path: "D:/a"}}}, wantErr: "不是已注册货架"},
 	}
 	for _, item := range cases {
-		kind, err := ParseKind(item.input)
-		if item.wantErr {
-			if err == nil {
-				t.Fatalf("ParseKind(%q) error = nil, want error", item.input)
+		t.Run(item.name, func(t *testing.T) {
+			if _, err := normalizeConfig(item.config); err == nil || !strings.Contains(err.Error(), item.wantErr) {
+				t.Fatalf("normalizeConfig() error = %v, want contains %q", err, item.wantErr)
 			}
-			continue
-		}
-		if err != nil {
-			t.Fatalf("ParseKind(%q) error = %v", item.input, err)
-		}
-		if kind != item.want {
-			t.Fatalf("ParseKind(%q) = %q, want %q", item.input, kind, item.want)
-		}
+		})
 	}
 }
 
-func TestNewStateInvalidInitial(t *testing.T) {
-	if _, err := NewState(Kind("whatever"), nil); err == nil {
-		t.Fatal("NewState() error = nil, want invalid initial error")
-	}
-}
-
-func TestStateSetPersistsAndUpdatesMemory(t *testing.T) {
-	store := &fakeStore{current: KindOfficial}
-	state, err := NewState(KindOfficial, store)
+func TestNormalizeConfigTrimsAndPreservesOrder(t *testing.T) {
+	normalized, err := normalizeConfig(Config{
+		Source:  "  货架甲  ",
+		Shelves: []Shelf{{Name: " 货架甲 ", Path: " D:/shelf-a "}, {Name: "货架乙", Path: "D:/shelf-b"}},
+	})
 	if err != nil {
-		t.Fatalf("NewState() error = %v", err)
+		t.Fatalf("normalizeConfig() error = %v", err)
 	}
-	next, err := state.Set(context.Background(), KindLocal)
-	if err != nil {
-		t.Fatalf("Set() error = %v", err)
+	if normalized.Source != "货架甲" || normalized.Shelves[0].Name != "货架甲" || normalized.Shelves[0].Path != "D:/shelf-a" {
+		t.Fatalf("normalized = %#v", normalized)
 	}
-	if next != KindLocal {
-		t.Fatalf("Set() = %q, want %q", next, KindLocal)
-	}
-	if store.saveCall != 1 || store.saved != KindLocal {
-		t.Fatalf("store save = %v/%q, want 1 call of %q", store.saveCall, store.saved, KindLocal)
-	}
-	if state.Current() != KindLocal {
-		t.Fatalf("Current() = %q, want %q", state.Current(), KindLocal)
+	if normalized.Shelves[1].Name != "货架乙" {
+		t.Fatalf("order = %#v", normalized.Shelves)
 	}
 }
 
-func TestStateSetInvalidKind(t *testing.T) {
-	state, err := NewState(KindOfficial, &fakeStore{})
-	if err != nil {
-		t.Fatalf("NewState() error = %v", err)
+func TestNewStateInvalidInitialEntersProblemMode(t *testing.T) {
+	state := NewState(Config{Source: "missing"}, nil)
+	if state.Problem() == "" {
+		t.Fatal("Problem() = empty, want invalid config problem")
 	}
-	if _, err := state.Set(context.Background(), Kind("internal")); err == nil {
-		t.Fatal("Set() error = nil, want invalid kind error")
+	if state.CurrentSource() != "" || len(state.Shelves()) != 0 {
+		t.Fatalf("unavailable state = %q/%#v", state.CurrentSource(), state.Shelves())
 	}
-	if state.Current() != KindOfficial {
-		t.Fatalf("Current() = %q, want %q (unchanged)", state.Current(), KindOfficial)
+	if _, ok := state.Shelf("any"); ok {
+		t.Fatal("Shelf() = ok in problem mode")
 	}
 }
 
-func TestStateSetPersistFailureKeepsCurrent(t *testing.T) {
+func TestSetSourceRepairsUnavailableConfig(t *testing.T) {
+	store := &fakeStore{}
+	state := NewState(DefaultConfig(), store)
+	if state.Problem() != "" {
+		t.Fatalf("Problem() = %q, want empty", state.Problem())
+	}
+	broken := NewStateUnavailable(errors.New("旧格式无法识别"), store)
+	if _, err := broken.SetSource(context.Background(), "旧货架"); err == nil {
+		t.Fatal("SetSource(shelf) in problem mode error = nil")
+	}
+	next, err := broken.SetSource(context.Background(), OfficialSource)
+	if err != nil {
+		t.Fatalf("SetSource(official) error = %v", err)
+	}
+	if next != OfficialSource || broken.Problem() != "" {
+		t.Fatalf("repaired source = %q problem = %q", next, broken.Problem())
+	}
+	if store.saveCall != 1 || store.saved.Source != OfficialSource || len(store.saved.Shelves) != 0 {
+		t.Fatalf("saved = %#v calls = %d", store.saved, store.saveCall)
+	}
+}
+
+func TestAddShelfRepairsUnavailableConfig(t *testing.T) {
+	state := NewStateUnavailable(errors.New("配置损坏"), nil)
+	shelves, err := state.AddShelf(context.Background(), "甲", "D:/a")
+	if err != nil {
+		t.Fatalf("AddShelf() error = %v", err)
+	}
+	if len(shelves) != 1 || shelves[0].Name != "甲" || state.Problem() != "" || state.CurrentSource() != OfficialSource {
+		t.Fatalf("shelves = %#v source = %q problem = %q", shelves, state.CurrentSource(), state.Problem())
+	}
+}
+
+func TestUpdateAndRemoveRejectUnavailableConfig(t *testing.T) {
+	newName := "乙"
+	state := NewStateUnavailable(errors.New("配置损坏"), nil)
+	if _, err := state.UpdateShelf(context.Background(), "甲", &newName, nil); err == nil || !strings.Contains(err.Error(), "配置不可用") {
+		t.Fatalf("UpdateShelf() error = %v", err)
+	}
+	if _, err := state.RemoveShelf(context.Background(), "甲"); err == nil || !strings.Contains(err.Error(), "配置不可用") {
+		t.Fatalf("RemoveShelf() error = %v", err)
+	}
+}
+
+func TestSetSourcePersistsAndUpdatesMemory(t *testing.T) {
+	store := &fakeStore{}
+	state := NewState(Config{Source: OfficialSource, Shelves: []Shelf{{Name: "A", Path: "D:/a"}}}, store)
+	next, err := state.SetSource(context.Background(), "A")
+	if err != nil {
+		t.Fatalf("SetSource() error = %v", err)
+	}
+	if next != "A" || state.CurrentSource() != "A" {
+		t.Fatalf("SetSource() = %q, current = %q", next, state.CurrentSource())
+	}
+	if store.saveCall != 1 || store.saved.Source != "A" {
+		t.Fatalf("store save = %v/%q, want 1 call of A", store.saveCall, store.saved.Source)
+	}
+}
+
+func TestSetSourceRejectsUnknownShelfAndReservedVariant(t *testing.T) {
+	state := NewState(Config{Source: OfficialSource, Shelves: []Shelf{{Name: "A", Path: "D:/a"}}}, nil)
+	if _, err := state.SetSource(context.Background(), "B"); err == nil {
+		t.Fatal("SetSource(unknown) error = nil")
+	}
+	if _, err := state.SetSource(context.Background(), "Official"); err == nil {
+		t.Fatal("SetSource(Official) error = nil")
+	}
+	if state.CurrentSource() != OfficialSource {
+		t.Fatalf("current = %q, want official", state.CurrentSource())
+	}
+}
+
+func TestSetSourcePersistFailureKeepsCurrent(t *testing.T) {
 	store := &fakeStore{saveErr: errors.New("disk full")}
-	state, err := NewState(KindOfficial, store)
+	state := NewState(Config{Source: OfficialSource, Shelves: []Shelf{{Name: "A", Path: "D:/a"}}}, store)
+	if _, err := state.SetSource(context.Background(), "A"); err == nil {
+		t.Fatal("SetSource() error = nil, want persist failure")
+	}
+	if state.CurrentSource() != OfficialSource {
+		t.Fatalf("current = %q, want official", state.CurrentSource())
+	}
+}
+
+func TestAddShelfKeepsOrderAndRejectsInvalid(t *testing.T) {
+	store := &fakeStore{}
+	state := NewState(DefaultConfig(), store)
+	if _, err := state.AddShelf(context.Background(), "甲", "D:/a"); err != nil {
+		t.Fatalf("AddShelf(甲) error = %v", err)
+	}
+	if _, err := state.AddShelf(context.Background(), "乙", "D:/b"); err != nil {
+		t.Fatalf("AddShelf(乙) error = %v", err)
+	}
+	shelves := state.Shelves()
+	if len(shelves) != 2 || shelves[0].Name != "甲" || shelves[1].Name != "乙" {
+		t.Fatalf("shelves = %#v", shelves)
+	}
+	if store.saved.Shelves[1].Path != "D:/b" {
+		t.Fatalf("saved = %#v", store.saved)
+	}
+	if _, err := state.AddShelf(context.Background(), "甲", "D:/c"); err == nil {
+		t.Fatal("AddShelf(duplicate) error = nil")
+	}
+	if _, err := state.AddShelf(context.Background(), "official", "D:/d"); err == nil {
+		t.Fatal("AddShelf(reserved) error = nil")
+	}
+	if _, err := state.AddShelf(context.Background(), "丙", " "); err == nil {
+		t.Fatal("AddShelf(empty path) error = nil")
+	}
+}
+
+func TestUpdateShelfRenameFollowsSelection(t *testing.T) {
+	store := &fakeStore{}
+	state := NewState(Config{Source: "甲", Shelves: []Shelf{{Name: "甲", Path: "D:/a"}, {Name: "乙", Path: "D:/b"}}}, store)
+	newName := "甲改"
+	shelves, err := state.UpdateShelf(context.Background(), "甲", &newName, nil)
 	if err != nil {
-		t.Fatalf("NewState() error = %v", err)
+		t.Fatalf("UpdateShelf() error = %v", err)
 	}
-	if _, err := state.Set(context.Background(), KindLocal); err == nil {
-		t.Fatal("Set() error = nil, want persist failure")
+	if shelves[0].Name != "甲改" || state.CurrentSource() != "甲改" {
+		t.Fatalf("shelves = %#v, source = %q", shelves, state.CurrentSource())
 	}
-	if state.Current() != KindOfficial {
-		t.Fatalf("Current() = %q, want %q (unchanged on persist failure)", state.Current(), KindOfficial)
+	if _, err := state.UpdateShelf(context.Background(), "乙", nil, nil); err == nil {
+		t.Fatal("UpdateShelf(no change) error = nil")
+	}
+	if _, err := state.UpdateShelf(context.Background(), "甲改", &newName, nil); err != nil {
+		t.Fatalf("UpdateShelf(same name) error = %v", err)
+	}
+	duplicate := "乙"
+	if _, err := state.UpdateShelf(context.Background(), "甲改", &duplicate, nil); err == nil {
+		t.Fatal("UpdateShelf(duplicate) error = nil")
+	}
+	if _, err := state.UpdateShelf(context.Background(), "失踪", &newName, nil); err == nil {
+		t.Fatal("UpdateShelf(unknown) error = nil")
+	}
+}
+
+func TestUpdateShelfPathKeepsSelection(t *testing.T) {
+	state := NewState(Config{Source: "甲", Shelves: []Shelf{{Name: "甲", Path: "D:/a"}}}, nil)
+	newPath := "D:/moved"
+	shelves, err := state.UpdateShelf(context.Background(), "甲", nil, &newPath)
+	if err != nil {
+		t.Fatalf("UpdateShelf() error = %v", err)
+	}
+	if shelves[0].Path != "D:/moved" || state.CurrentSource() != "甲" {
+		t.Fatalf("shelves = %#v, source = %q", shelves, state.CurrentSource())
+	}
+}
+
+func TestRemoveShelfSelectedFallsBackToOfficial(t *testing.T) {
+	state := NewState(Config{Source: "甲", Shelves: []Shelf{{Name: "甲", Path: "D:/a"}, {Name: "乙", Path: "D:/b"}}}, nil)
+	shelves, err := state.RemoveShelf(context.Background(), "甲")
+	if err != nil {
+		t.Fatalf("RemoveShelf() error = %v", err)
+	}
+	if len(shelves) != 1 || shelves[0].Name != "乙" {
+		t.Fatalf("shelves = %#v", shelves)
+	}
+	if state.CurrentSource() != OfficialSource {
+		t.Fatalf("source = %q, want official", state.CurrentSource())
+	}
+	if _, err := state.RemoveShelf(context.Background(), "失踪"); err == nil {
+		t.Fatal("RemoveShelf(unknown) error = nil")
+	}
+}
+
+func TestRemoveShelfKeepsUnrelatedSelection(t *testing.T) {
+	state := NewState(Config{Source: "甲", Shelves: []Shelf{{Name: "甲", Path: "D:/a"}, {Name: "乙", Path: "D:/b"}}}, nil)
+	if _, err := state.RemoveShelf(context.Background(), "乙"); err != nil {
+		t.Fatalf("RemoveShelf() error = %v", err)
+	}
+	if state.CurrentSource() != "甲" {
+		t.Fatalf("source = %q, want 甲", state.CurrentSource())
 	}
 }
 
 type stubCandidate struct {
-	kind      string
 	called    int
 	candidate *releasecheck.ReleaseCandidate
 	err       error
@@ -133,49 +275,42 @@ func (s *stubCandidate) LatestCandidate(context.Context, types.ReleaseArtifactId
 	return s.candidate, nil
 }
 
-func TestCandidateSelectorForwardsByCurrentState(t *testing.T) {
-	official := &stubCandidate{kind: "official"}
-	local := &stubCandidate{kind: "local"}
-	current := KindOfficial
-	selector, err := NewCandidateSelector(func() Kind { return current }, official, local)
+func TestCandidateSelectorForwardsOfficial(t *testing.T) {
+	official := &stubCandidate{}
+	state := NewState(DefaultConfig(), nil)
+	selector, err := NewCandidateSelector(state, official)
 	if err != nil {
 		t.Fatalf("NewCandidateSelector() error = %v", err)
 	}
-	identity := types.ReleaseArtifactIdentity{Kind: "tool", ID: "shell_command"}
-	if _, err := selector.LatestCandidate(context.Background(), identity); err != nil {
-		t.Fatalf("official LatestCandidate() error = %v", err)
+	if _, err := selector.LatestCandidate(context.Background(), types.ReleaseArtifactIdentity{Kind: "tool", ID: "shell_command"}); err != nil {
+		t.Fatalf("LatestCandidate() error = %v", err)
 	}
-	if official.called != 1 || local.called != 0 {
-		t.Fatalf("called official=%d local=%d, want 1/0", official.called, local.called)
-	}
-	current = KindLocal
-	if _, err := selector.LatestCandidate(context.Background(), identity); err != nil {
-		t.Fatalf("local LatestCandidate() error = %v", err)
-	}
-	if official.called != 1 || local.called != 1 {
-		t.Fatalf("called official=%d local=%d, want 1/1", official.called, local.called)
+	if official.called != 1 {
+		t.Fatalf("official called = %d, want 1", official.called)
 	}
 }
 
-func TestCandidateSelectorLocalMissingReaderFailsFast(t *testing.T) {
+func TestCandidateSelectorShelfUnavailableFailsFast(t *testing.T) {
 	official := &stubCandidate{}
-	selector, err := NewCandidateSelector(func() Kind { return KindLocal }, official, nil)
+	state := NewState(Config{Source: "甲", Shelves: []Shelf{{Name: "甲", Path: filepath.Join(t.TempDir(), "missing")}}}, nil)
+	selector, err := NewCandidateSelector(state, official)
 	if err != nil {
 		t.Fatalf("NewCandidateSelector() error = %v", err)
 	}
-	_, err = selector.LatestCandidate(context.Background(), types.ReleaseArtifactIdentity{Kind: "plugin", ID: "weather"})
-	if err == nil {
-		t.Fatal("LatestCandidate() error = nil, want local missing error")
+	_, err = selector.LatestCandidate(context.Background(), types.ReleaseArtifactIdentity{Kind: "tool", ID: "shell_command"})
+	if err == nil || !strings.Contains(err.Error(), "货架 \"甲\" 不可用") {
+		t.Fatalf("LatestCandidate() error = %v, want shelf unavailable", err)
 	}
 	if official.called != 0 {
-		t.Fatalf("official reader called %d times, want 0 (no fallback)", official.called)
+		t.Fatalf("official called = %d, want 0 (no fallback)", official.called)
 	}
 }
 
-func TestCandidateSelectorPropagatesReaderError(t *testing.T) {
+func TestCandidateSelectorPropagatesOfficialError(t *testing.T) {
 	expected := errors.New("network down")
 	official := &stubCandidate{err: expected}
-	selector, err := NewCandidateSelector(func() Kind { return KindOfficial }, official, nil)
+	state := NewState(DefaultConfig(), nil)
+	selector, err := NewCandidateSelector(state, official)
 	if err != nil {
 		t.Fatalf("NewCandidateSelector() error = %v", err)
 	}
@@ -185,24 +320,28 @@ func TestCandidateSelectorPropagatesReaderError(t *testing.T) {
 	}
 }
 
-func TestNewCandidateSelectorValidation(t *testing.T) {
-	if _, err := NewCandidateSelector(nil, &stubCandidate{}, nil); err == nil {
-		t.Fatal("NewCandidateSelector(nil current) error = nil, want error")
+func TestCandidateSelectorProblemConfigFailsFast(t *testing.T) {
+	official := &stubCandidate{}
+	state := NewStateUnavailable(errors.New("旧格式无法识别"), nil)
+	selector, err := NewCandidateSelector(state, official)
+	if err != nil {
+		t.Fatalf("NewCandidateSelector() error = %v", err)
 	}
-	if _, err := NewCandidateSelector(func() Kind { return KindOfficial }, nil, nil); err == nil {
-		t.Fatal("NewCandidateSelector(nil official) error = nil, want error")
+	_, err = selector.LatestCandidate(context.Background(), types.ReleaseArtifactIdentity{Kind: "tool", ID: "shell_command"})
+	if err == nil || !strings.Contains(err.Error(), "安装来源配置不可用") {
+		t.Fatalf("LatestCandidate() error = %v, want unavailable config", err)
+	}
+	if official.called != 0 {
+		t.Fatalf("official called = %d, want 0 (no fallback)", official.called)
 	}
 }
 
-func TestStateView(t *testing.T) {
-	state, err := NewState(KindOfficial, nil)
-	if err != nil {
-		t.Fatalf("NewState() error = %v", err)
+func TestNewCandidateSelectorValidation(t *testing.T) {
+	if _, err := NewCandidateSelector(nil, &stubCandidate{}); err == nil {
+		t.Fatal("NewCandidateSelector(nil state) error = nil")
 	}
-	if state.View().Kind != KindOfficial {
-		t.Fatalf("View() = %+v, want kind %q", state.View(), KindOfficial)
-	}
-	if got := fmt.Sprintf("%s", state.Current()); got != "official" {
-		t.Fatalf("String() = %q", got)
+	state := NewState(DefaultConfig(), nil)
+	if _, err := NewCandidateSelector(state, nil); err == nil {
+		t.Fatal("NewCandidateSelector(nil official) error = nil")
 	}
 }

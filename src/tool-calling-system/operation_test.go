@@ -331,7 +331,7 @@ func isTerminalArtifactStatus(status string) bool {
 	return false
 }
 
-// TestInstallToolFromLocalStore 验证本地商店候选读取器驱动的完整安装：
+// TestInstallToolFromLocalStore 验证货架候选读取器驱动的完整安装：
 // 本地货架成品 zip 经 AcquireAndValidatePackage（Local 放行）入程序区并激活。
 func TestInstallToolFromLocalStore(t *testing.T) {
 	fixture := newToolOperationFixture(t)

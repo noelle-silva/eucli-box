@@ -3,6 +3,7 @@ package datastorage
 import (
 	"context"
 	"errors"
+	"log"
 	"strings"
 	"sync"
 
@@ -110,8 +111,8 @@ type System interface {
 	SaveChatTitleNamingConfig(ctx context.Context, config types.ChatTitleNamingConfig) (types.ChatTitleNamingConfig, error)
 	LoadContextCompressionConfig(ctx context.Context) (types.ContextCompressionConfig, error)
 	SaveContextCompressionConfig(ctx context.Context, config types.ContextCompressionConfig) (types.ContextCompressionConfig, error)
-	LoadInstallSource(ctx context.Context) (installsource.Kind, error)
-	SaveInstallSource(ctx context.Context, kind installsource.Kind) error
+	LoadInstallSource(ctx context.Context) (installsource.Config, error)
+	SaveInstallSource(ctx context.Context, config installsource.Config) error
 	LoadModelRequestConfig(ctx context.Context) (types.ModelRequestConfig, error)
 	SaveModelRequestConfig(ctx context.Context, config types.ModelRequestConfig) (types.ModelRequestConfig, error)
 	LoadToolWorkDirectoryConfig(ctx context.Context) (types.ToolWorkDirectoryConfig, error)
@@ -160,5 +161,10 @@ func (s *system) Initialize(ctx context.Context) error {
 	if err := s.ensureSessionFavoritesFile(ctx); err != nil {
 		return err
 	}
-	return s.RebuildIndexes(ctx)
+	// 索引重建是启动维护动作，不是启动关键：任一领域的数据损坏不应阻断本体启动，
+	// 读取相关领域时会如实报错；重建未完成的原因记入业务端日志。
+	if err := s.RebuildIndexes(ctx); err != nil {
+		log.Printf("data-storage-system: 索引重建未完成（不阻断启动，相关读取会如实报错）：%v", err)
+	}
+	return nil
 }

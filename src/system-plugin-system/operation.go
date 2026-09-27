@@ -233,7 +233,7 @@ func (s *system) startPluginOperation(ctx context.Context, pluginID string, acti
 	// 候选与适用性判定在受理线程完成：失败与阻止在此同步返回，后台任务只负责执行。
 	candidate, err := s.candidates.LatestCandidate(ctx, identity)
 	if err != nil {
-		return s.operationState(identity, currentVersion, "", types.ArtifactStatusFailed, types.ArtifactPhaseCandidate, types.ArtifactErrorReleaseUnavailable, "读取官方候选失败："+err.Error())
+		return s.operationState(identity, currentVersion, "", types.ArtifactStatusFailed, types.ArtifactPhaseCandidate, types.ArtifactErrorReleaseUnavailable, "读取当前来源候选失败："+err.Error())
 	}
 	if candidate.Artifact != identity {
 		return s.operationState(identity, currentVersion, "", types.ArtifactStatusFailed, types.ArtifactPhaseCandidate, types.ArtifactErrorCandidateMismatch, "候选身份与目标插件不一致")

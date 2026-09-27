@@ -206,14 +206,21 @@ func TestDevBox(t *testing.T) {
 		}
 	})
 
-	t.Run("工具开发源标记为 development", func(t *testing.T) {
-		status, payload := box.call(http.MethodGet, "/api/install-source", "")
+	t.Run("工具与插件安装来源按类别各自可读", func(t *testing.T) {
+		status, payload := box.call(http.MethodGet, "/api/install-source/tool", "")
 		if status != http.StatusOK {
 			t.Fatalf("install-source status = %d body=%s", status, payload)
 		}
 		data := box.dataJSON(status, payload)
-		if fmt.Sprint(data["kind"]) != "development" {
-			t.Fatalf("install-source kind = %v，期望 development", data["kind"])
+		if fmt.Sprint(data["source"]) != "official" {
+			t.Fatalf("工具 install-source source = %v，期望 official", data["source"])
+		}
+		status, payload = box.call(http.MethodGet, "/api/install-source/plugin", "")
+		if status != http.StatusOK {
+			t.Fatalf("plugin install-source status = %d body=%s", status, payload)
+		}
+		if pluginData := box.dataJSON(status, payload); fmt.Sprint(pluginData["source"]) != "official" {
+			t.Fatalf("插件 install-source source = %v，期望 official", pluginData["source"])
 		}
 	})
 

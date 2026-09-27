@@ -31,6 +31,9 @@ type BuildOptions struct {
 	// VersionOverride 非空表示开发构建：按给定版本号（四段开发版本或三段版本）
 	// 制作成品，允许源码未完全记录，同版本再次构建直接覆盖旧成品。
 	VersionOverride string
+	// ShelfLayout 为 true 时成品目录直接以发布物 ID 命名（货架形态）：
+	// 输出根即某类货架根，成品落在 <输出根>/<id>/<版本>/。
+	ShelfLayout bool
 }
 
 type BuildResult struct {
@@ -239,7 +242,7 @@ func Build(ctx context.Context, options BuildOptions) (BuildResult, error) {
 			return result, fmt.Errorf("保存成品验收证据失败：%w", err)
 		}
 	}
-	outputDir := filepath.Join(outputRoot, outputDirectoryName(identity), artifactVersion)
+	outputDir := filepath.Join(outputRoot, outputDirectoryName(identity, options.ShelfLayout), artifactVersion)
 	if err := publishOutputDirectory(outputDir, []string{archivePath, manifestPath, notesPath}, devBuild); err != nil {
 		return result, err
 	}
@@ -488,8 +491,10 @@ func cloneCompatibility(value *types.EucliBoxCompatibility) *types.EucliBoxCompa
 	return &copy
 }
 
-func outputDirectoryName(identity types.ReleaseArtifactIdentity) string {
-	if identity.Kind == types.ReleaseArtifactKindBox {
+// outputDirectoryName 返回成品在输出根下的目录名：
+// 常规布局为 <kind>-<id>；本体与货架布局直接以发布物 ID 命名。
+func outputDirectoryName(identity types.ReleaseArtifactIdentity, shelfLayout bool) string {
+	if identity.Kind == types.ReleaseArtifactKindBox || shelfLayout {
 		return identity.ID
 	}
 	return identity.Kind + "-" + identity.ID

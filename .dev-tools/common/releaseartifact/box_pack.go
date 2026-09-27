@@ -79,7 +79,7 @@ func PackBox(ctx context.Context, options PackBoxOptions) (BuildResult, error) {
 		return BuildResult{}, err
 	}
 	identity := types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindBox, ID: types.ReleaseArtifactKindBox}
-	outputDir := filepath.Join(outputRoot, outputDirectoryName(identity), artifact.Version)
+	outputDir := filepath.Join(outputRoot, outputDirectoryName(identity, false), artifact.Version)
 	if err := publishOutputDirectory(outputDir, []string{archivePath}, true); err != nil {
 		return BuildResult{}, err
 	}

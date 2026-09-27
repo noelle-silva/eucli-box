@@ -1,5 +1,7 @@
-// eucli-store-sync 是本地商店的一键铺货入口：查询构建输出区当前最大开发尾号，
-// 取尾号加 1 生成新开发版本（未显式指定时），构建成品并复制入架。
+// eucli-store-sync 是本地商店的一键铺货入口：查询开发货架里该发布物当前最大开发尾号，
+// 取尾号加 1 生成新开发版本（未显式指定时），构建成品并直接以货架形态就地入库。
+// 开发货架根位于工具运行区输出区：output/ai-tools（工具）与 output/system-plugins（插件），
+// 业务端直接注册这两个根即可；构建完成即上架，不再有复制步骤。
 package main
 
 import (
@@ -8,7 +10,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -32,8 +33,6 @@ type options struct {
 	repoRoot   string
 	workRoot   string
 	outputRoot string
-	localStore string
-	skipCopy   bool
 }
 
 func run(ctx context.Context, args []string) error {
@@ -44,8 +43,6 @@ func run(ctx context.Context, args []string) error {
 	flags.StringVar(&opts.repoRoot, "repo-root", "", "repository root")
 	flags.StringVar(&opts.workRoot, "work-root", "", "build work root")
 	flags.StringVar(&opts.outputRoot, "output-root", "", "build output root")
-	flags.StringVar(&opts.localStore, "local-store", "", "local-store shelf root")
-	flags.BoolVar(&opts.skipCopy, "build-only", false, "only build, do not copy to the shelf")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -61,10 +58,6 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	storeRoot, err := shelfRoot(root, opts.localStore)
-	if err != nil {
-		return err
-	}
 	if err := toolruntime.ValidateWorkLocation(root, opts.workRoot, opts.outputRoot); err != nil {
 		return err
 	}
@@ -72,7 +65,12 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	buildVersion, err := resolveBuildVersion(outputRoot, identity, artifact.Version, opts.version)
+	shelfRoot, err := shelfRootFor(outputRoot, identity.Kind)
+	if err != nil {
+		return err
+	}
+	productRoot := filepath.Join(shelfRoot, identity.ID)
+	buildVersion, err := resolveBuildVersion(productRoot, artifact.Version, opts.version)
 	if err != nil {
 		return err
 	}
@@ -81,8 +79,9 @@ func run(ctx context.Context, args []string) error {
 		Root:            root,
 		Target:          string(releaseops.Kind(identity.Kind)) + ":" + identity.ID,
 		WorkRoot:        workRoot,
-		OutputRoot:      outputRoot,
+		OutputRoot:      shelfRoot,
 		EvidenceRoot:    evidenceRoot,
+		ShelfLayout:     true,
 		VersionOverride: buildVersion,
 	})
 	if err != nil {
@@ -92,10 +91,8 @@ func run(ctx context.Context, args []string) error {
 		return fmt.Errorf("写入本轮成绩单失败：%w", err)
 	}
 	fmt.Printf("eucli-store-sync: built %s\n", result.Manifest.Archive.Name)
-	if opts.skipCopy {
-		return nil
-	}
-	return runStoreCopy(ctx, root, outputRoot, storeRoot, opts.target)
+	fmt.Printf("eucli-store-sync: 已上架 %s\n", shelfRoot)
+	return nil
 }
 
 func parseTarget(target string) (types.ReleaseArtifactIdentity, error) {
@@ -113,15 +110,16 @@ func parseTarget(target string) (types.ReleaseArtifactIdentity, error) {
 	return types.ReleaseArtifactIdentity{Kind: kind, ID: id}, nil
 }
 
-func shelfRoot(root string, explicit string) (string, error) {
-	if strings.TrimSpace(explicit) != "" {
-		absolute, err := filepath.Abs(strings.TrimSpace(explicit))
-		if err != nil {
-			return "", fmt.Errorf("货架根无效：%w", err)
-		}
-		return absolute, nil
+// shelfRootFor 返回该类别的开发货架根：构建输出即货架，成品直接落在货架根里。
+func shelfRootFor(outputRoot string, kind string) (string, error) {
+	switch strings.TrimSpace(kind) {
+	case types.ReleaseArtifactKindTool:
+		return filepath.Join(outputRoot, "ai-tools"), nil
+	case types.ReleaseArtifactKindPlugin:
+		return filepath.Join(outputRoot, "system-plugins"), nil
+	default:
+		return "", fmt.Errorf("本地商店不支持发布物类别 %q（本体候选不上架）", kind)
 	}
-	return filepath.Join(root, ".dev-workspace", ".dev-runtime", "eucli-box", "programs", "local-store"), nil
 }
 
 func resolveRoots(root string, opts options) (string, string, string, error) {
@@ -146,24 +144,13 @@ func resolveRoots(root string, opts options) (string, string, string, error) {
 }
 
 // resolveBuildVersion 决定本次铺货版本：显式指定直接用；
-// 否则以构建输出区为单一事实源，在源码正式基线上取同基线最大开发尾号的下一号。
-func resolveBuildVersion(outputRoot string, identity types.ReleaseArtifactIdentity, sourceVersion string, explicit string) (string, error) {
+// 否则以该发布物在货架里的历史成品为单一事实源，取同基线最大开发尾号的下一号。
+func resolveBuildVersion(productRoot string, sourceVersion string, explicit string) (string, error) {
 	if strings.TrimSpace(explicit) != "" {
 		if err := release.ValidateVersion(strings.TrimSpace(explicit)); err != nil {
 			return "", fmt.Errorf("指定版本无效：%w", err)
 		}
 		return strings.TrimSpace(explicit), nil
 	}
-	return releaseartifact.NextDevelopmentVersion(outputRoot, identity, sourceVersion)
-}
-
-func runStoreCopy(ctx context.Context, root string, outputRoot string, storeRoot string, target string) error {
-	command := exec.CommandContext(ctx, "go", "run", "devtools/eucli-store-copy", "-from", outputRoot, "-to", storeRoot, "-target", target)
-	command.Dir = root
-	command.Stdout = os.Stdout
-	command.Stderr = os.Stderr
-	if err := command.Run(); err != nil {
-		return fmt.Errorf("复制入架失败：%w", err)
-	}
-	return nil
+	return releaseartifact.NextDevelopmentVersion(productRoot, sourceVersion)
 }

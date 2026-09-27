@@ -3,6 +3,7 @@ package requestrecord
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,6 +27,7 @@ func (f *fakeNetwork) DoStream(ctx context.Context, req types.HTTPRequest, onChu
 }
 
 type fakeStorage struct {
+	mu      sync.Mutex
 	config  types.RequestRecordConfig
 	records []types.RequestRecord
 }
@@ -40,6 +42,8 @@ func (f *fakeStorage) SaveRequestRecordConfig(ctx context.Context, config types.
 }
 
 func (f *fakeStorage) AppendRequestRecord(ctx context.Context, record types.RequestRecord) (types.RequestRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.records = append(f.records, record)
 	return record, nil
 }
@@ -50,6 +54,30 @@ func (f *fakeStorage) ListRequestRecords(ctx context.Context) ([]types.RequestRe
 
 func (f *fakeStorage) LoadRequestRecord(ctx context.Context, recordID string) (types.RequestRecord, error) {
 	return types.RequestRecord{}, nil
+}
+
+func (f *fakeStorage) recordCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.records)
+}
+
+func (f *fakeStorage) recordAt(index int) types.RequestRecord {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.records[index]
+}
+
+func waitForRecordCount(t *testing.T, storage *fakeStorage, count int) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if storage.recordCount() >= count {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %d records, got %d", count, storage.recordCount())
 }
 
 func TestRecordingNetworkRecordsRequestAndResponse(t *testing.T) {
@@ -64,10 +92,11 @@ func TestRecordingNetworkRecordsRequestAndResponse(t *testing.T) {
 	if _, err := system.Do(context.Background(), req); err != nil {
 		t.Fatalf("Do() error = %v", err)
 	}
-	if len(network.requests) != 1 || len(storage.records) != 1 {
-		t.Fatalf("requests = %d records = %d", len(network.requests), len(storage.records))
+	waitForRecordCount(t, storage, 1)
+	if len(network.requests) != 1 {
+		t.Fatalf("network requests = %d", len(network.requests))
 	}
-	record := storage.records[0]
+	record := storage.recordAt(0)
 	if record.Method != "POST" || record.URL != "https://api.example.com/v1/chat/completions" || record.Body != `{"model":"x"}` {
 		t.Fatalf("record request = %#v", record)
 	}
@@ -98,8 +127,9 @@ func TestRecordingDisabledForwardsWithoutRecording(t *testing.T) {
 	if len(network.requests) != 1 {
 		t.Fatalf("downstream requests = %d", len(network.requests))
 	}
-	if len(storage.records) != 0 {
-		t.Fatalf("records should be empty when disabled = %#v", storage.records)
+	time.Sleep(100 * time.Millisecond)
+	if storage.recordCount() != 0 {
+		t.Fatalf("records should be empty when disabled = %d", storage.recordCount())
 	}
 }
 
@@ -114,11 +144,10 @@ func TestRecordingStreamRecordsAndKeepsFailedRequest(t *testing.T) {
 	if _, err := system.DoStream(context.Background(), types.HTTPRequest{Method: "POST", URL: "https://api.example.com/v1/chat/completions"}, nil); !errors.Is(err, networkErr) {
 		t.Fatalf("DoStream() error = %v", err)
 	}
-	if len(storage.records) != 1 {
-		t.Fatalf("records = %d", len(storage.records))
-	}
-	if storage.records[0].Error != "connection refused" || storage.records[0].ResponseStatus != 0 {
-		t.Fatalf("failed record = %#v", storage.records[0])
+	waitForRecordCount(t, storage, 1)
+	record := storage.recordAt(0)
+	if record.Error != "connection refused" || record.ResponseStatus != 0 {
+		t.Fatalf("failed record = %#v", record)
 	}
 }
 

@@ -44,10 +44,8 @@ func TestRecordingNetworkAgainstHTTPTestServer(t *testing.T) {
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("response status = %d", response.StatusCode)
 	}
-	if len(storage.records) != 1 {
-		t.Fatalf("records = %d", len(storage.records))
-	}
-	record := storage.records[0]
+	waitForRecordCount(t, storage, 1)
+	record := storage.recordAt(0)
 	if record.Method != "GET" || record.URL != server.URL+"/v1/models" {
 		t.Fatalf("record request = %#v", record)
 	}

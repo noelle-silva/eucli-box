@@ -65,6 +65,7 @@ func TestRequestRecordConfigAndRingRotation(t *testing.T) {
 	assertNoFile(t, filepath.Join(system.paths.root, "request-records", "request-record-0", "data.json"))
 	assertNoFile(t, filepath.Join(system.paths.root, "request-records", "request-record-1", "data.json"))
 	assertFile(t, filepath.Join(system.paths.root, "request-records", "index.json"))
+	assertFile(t, filepath.Join(system.paths.root, "request-records", "request-record-4", "summary.json"))
 
 	record, err := system.LoadRequestRecord(ctx, "request-record-4")
 	if err != nil {
@@ -82,12 +83,43 @@ func TestRequestRecordIndexRebuilds(t *testing.T) {
 		t.Fatalf("AppendRequestRecord() error = %v", err)
 	}
 	indexPath := filepath.Join(system.paths.root, "request-records", "index.json")
+	summaryPath := filepath.Join(system.paths.root, "request-records", "request-record-1", "summary.json")
 	assertFile(t, indexPath)
+	assertFile(t, summaryPath)
 	if err := os.Remove(indexPath); err != nil {
 		t.Fatalf("Remove(index) error = %v", err)
+	}
+	if err := os.Remove(summaryPath); err != nil {
+		t.Fatalf("Remove(summary) error = %v", err)
 	}
 	if err := system.RebuildIndexes(ctx); err != nil {
 		t.Fatalf("RebuildIndexes() error = %v", err)
 	}
 	assertFile(t, indexPath)
+	assertFile(t, summaryPath)
+	records, err := system.ListRequestRecords(ctx)
+	if err != nil {
+		t.Fatalf("ListRequestRecords() error = %v", err)
+	}
+	if len(records) != 1 || records[0].ID != "request-record-1" {
+		t.Fatalf("records after rebuild = %#v", records)
+	}
+}
+
+func TestRequestRecordListUsesIndexWithoutReadingRecords(t *testing.T) {
+	system := newTestSystem(t)
+	ctx := context.Background()
+	if _, err := system.AppendRequestRecord(ctx, types.RequestRecord{ID: "request-record-1", CreatedAt: time.Now().UTC(), Method: "POST", URL: "https://api.example.com", Body: "{}"}); err != nil {
+		t.Fatalf("AppendRequestRecord() error = %v", err)
+	}
+	if err := os.RemoveAll(filepath.Join(system.paths.root, "request-records", "request-record-1")); err != nil {
+		t.Fatalf("RemoveAll(record) error = %v", err)
+	}
+	records, err := system.ListRequestRecords(ctx)
+	if err != nil {
+		t.Fatalf("ListRequestRecords() error = %v", err)
+	}
+	if len(records) != 1 || records[0].ID != "request-record-1" {
+		t.Fatalf("records = %#v", records)
+	}
 }

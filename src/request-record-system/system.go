@@ -3,6 +3,7 @@ package requestrecord
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -10,7 +11,11 @@ import (
 	"eucli-box/pkg/utils"
 )
 
-const redactedHeaderValue = "[REDACTED]"
+const (
+	redactedHeaderValue = "[REDACTED]"
+	recordQueueSize     = 64
+	recordWriteTimeout  = 30 * time.Second
+)
 
 var sensitiveRequestHeaders = map[string]struct{}{
 	"authorization":       {},
@@ -48,6 +53,7 @@ type StorageSystem interface {
 type system struct {
 	network NetworkSystem
 	storage StorageSystem
+	queue   chan types.RequestRecord
 }
 
 func NewSystem(network NetworkSystem, storage StorageSystem) (System, error) {
@@ -57,7 +63,18 @@ func NewSystem(network NetworkSystem, storage StorageSystem) (System, error) {
 	if storage == nil {
 		return nil, recordInvalid("storage system dependency is required", nil)
 	}
-	return &system{network: network, storage: storage}, nil
+	s := &system{network: network, storage: storage, queue: make(chan types.RequestRecord, recordQueueSize)}
+	go s.runRecordWorker()
+	return s, nil
+}
+
+// runRecordWorker 在后台顺序落盘记录；写盘失败不影响任何调用方。
+func (s *system) runRecordWorker() {
+	for record := range s.queue {
+		ctx, cancel := context.WithTimeout(context.Background(), recordWriteTimeout)
+		_, _ = s.storage.AppendRequestRecord(ctx, record)
+		cancel()
+	}
 }
 
 func (s *system) Do(ctx context.Context, req types.HTTPRequest) (types.HTTPResponse, error) {
@@ -66,7 +83,7 @@ func (s *system) Do(ctx context.Context, req types.HTTPRequest) (types.HTTPRespo
 		return s.network.Do(ctx, req)
 	}
 	response, doErr := s.network.Do(ctx, req)
-	s.appendRecord(ctx, req, response, doErr)
+	s.enqueueRecord(req, response, doErr)
 	return response, doErr
 }
 
@@ -76,7 +93,7 @@ func (s *system) DoStream(ctx context.Context, req types.HTTPRequest, onChunk ty
 		return s.network.DoStream(ctx, req, onChunk)
 	}
 	response, doErr := s.network.DoStream(ctx, req, onChunk)
-	s.appendRecord(ctx, req, response, doErr)
+	s.enqueueRecord(req, response, doErr)
 	return response, doErr
 }
 
@@ -99,8 +116,8 @@ func (s *system) LoadRequestRecord(ctx context.Context, recordID string) (types.
 	return s.storage.LoadRequestRecord(ctx, recordID)
 }
 
-// appendRecord 落盘一条记录；记录失败不影响模型请求主链路。
-func (s *system) appendRecord(ctx context.Context, req types.HTTPRequest, response types.HTTPResponse, doErr error) {
+// enqueueRecord 构建记录并放入后台写入队列；队列满时丢弃该条，绝不阻塞模型请求主链路。
+func (s *system) enqueueRecord(req types.HTTPRequest, response types.HTTPResponse, doErr error) {
 	record := types.RequestRecord{
 		ID:              utils.NewID("request-record"),
 		CreatedAt:       time.Now().UTC(),
@@ -116,7 +133,11 @@ func (s *system) appendRecord(ctx context.Context, req types.HTTPRequest, respon
 	if doErr != nil {
 		record.Error = doErr.Error()
 	}
-	_, _ = s.storage.AppendRequestRecord(context.WithoutCancel(ctx), record)
+	select {
+	case s.queue <- record:
+	default:
+		log.Printf("[request-record-system] record queue is full, dropping %s", record.ID)
+	}
 }
 
 func redactRequestHeaders(headers map[string]string) map[string]string {

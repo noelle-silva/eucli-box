@@ -47,6 +47,10 @@ func run() (types.ToolExecutionOutput, *toolcontrol.Client, context.CancelFunc, 
 	}
 	executionCtx, executionCancel := context.WithCancel(context.Background())
 
+	if input.RequestKind == migrationRequestKind {
+		return runDataMigration(executionCtx, input), nil, executionCancel, nil
+	}
+
 	if types.IsToolWarmupRequest(input) {
 		return runWarmup(executionCtx, executionCancel, input)
 	}

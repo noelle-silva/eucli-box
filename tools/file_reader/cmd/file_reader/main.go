@@ -32,6 +32,9 @@ func run() types.ToolExecutionOutput {
 	}
 	executionCtx, cancel := toolcontrol.ExecutionContext(input.TimeoutMs)
 	defer cancel()
+	if input.RequestKind == migrationRequestKind {
+		return runDataMigration(executionCtx, input)
+	}
 	client, err := toolcontrol.AdoptControl(executionCtx)
 	if err != nil {
 		return toolcontrol.ControlFailedOutput(err)

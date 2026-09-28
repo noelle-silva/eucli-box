@@ -13,7 +13,7 @@ import (
 const dataMigrationFlag = "--data-migration"
 
 // dataVersion 是插件当前声明的目标数据版本。
-const dataVersion = "1.0.0"
+const dataVersion = "1.2.0"
 
 // migrationResult 是数据迁移模式向宿主回报的结果事实。
 type migrationResult struct {

@@ -596,6 +596,7 @@ import (
 type input struct {
 	ActionID          string `+"`json:\"actionId\"`"+`
 	ToolDataDirectory string `+"`json:\"toolDataDirectory\"`"+`
+	RequestKind       string `+"`json:\"requestKind\"`"+`
 }
 
 func main() {
@@ -607,6 +608,14 @@ func main() {
 	defer stopControl()
 	var in input
 	_ = json.NewDecoder(os.Stdin).Decode(&in)
+	if in.RequestKind == "migration" {
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{
+			"status":   "success",
+			"content":  "unchanged",
+			"metadata": map[string]any{"migrationState": "data-unchanged", "from": "1.0.0", "to": "1.0.0"},
+		})
+		return
+	}
 	if in.ActionID == "sleep" {
 		_ = os.MkdirAll(in.ToolDataDirectory, 0o755)
 		_ = os.WriteFile(filepath.Join(in.ToolDataDirectory, "marker.txt"), []byte("running"), 0o644)
@@ -666,6 +675,10 @@ type probeCapability struct {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "--data-migration" {
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"status": "success", "migrationState": "data-unchanged", "from": "1.0.0", "to": "1.0.0"})
+		os.Exit(0)
+	}
 	decoder := json.NewDecoder(os.Stdin)
 	encoder := json.NewEncoder(os.Stdout)
 	var hello probeMessage
@@ -1064,6 +1077,7 @@ func newComponentToolSystem(t *testing.T, envDir string, programRoot string, ser
 	system, err := toolcalling.NewSystem(toolcalling.Config{
 		BoxVersion:  boxVersion,
 		ProgramRoot: toolProgramRoot,
+		DataRoot:    filepath.Join(envDir, "box-data"),
 		Candidates:  &serverCandidateReader{server: server},
 		HTTPClient:  server.client(),
 	}, &fakePermission{}, storage)

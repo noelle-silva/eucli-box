@@ -337,13 +337,21 @@ func (s *system) runPluginOperationAsync(ctx context.Context, pluginID string, a
 		return
 	}
 
+	s.advancePluginOperation(ctx, pluginID, identity, record, setPhase, currentVersion, validated)
+}
+
+// advancePluginOperation 推进一次插件操作的落地阶段（准备 → 探测 → 切换 → 刷新）。
+// 商店安装/更新与本地导入两条来路都汇集到这里；调用方负责租约释放、生命周期恢复与工作目录清理。
+func (s *system) advancePluginOperation(ctx context.Context, pluginID string, identity types.ReleaseArtifactIdentity, record release.OperationRecord, setPhase func(string), currentVersion string, validated release.ValidatedPackage) {
+	workDir := record.WorkDirectory
+
 	setPhase(types.ArtifactPhasePrepare)
 	store, err := s.pluginProgramStore(pluginID)
 	if err != nil {
 		s.finishOperation(pluginID, record, types.ArtifactPhasePrepare, types.ArtifactErrorPathInvalid, err.Error())
 		return
 	}
-	prepared, err := store.PrepareVersion(ctx, validated.Directory, source.Product, validated.Files)
+	prepared, err := store.PrepareVersion(ctx, validated.Directory, validated.Files)
 	if err != nil {
 		if ctx.Err() != nil {
 			s.finishOperationCancelled(pluginID, record, types.ArtifactPhasePrepare)
@@ -370,6 +378,7 @@ func (s *system) runPluginOperationAsync(ctx context.Context, pluginID string, a
 
 	// 进入切换瞬间起取消窗口关闭：当前版本开始变更，必须保证要么切成功、要么完整回滚。
 	setPhase(types.ArtifactPhaseSwitch)
+	stableCtx := context.WithoutCancel(ctx)
 	if err := store.Activate(stableCtx, prepared, currentVersion); err != nil {
 		restoreErr := s.restoreVersion(stableCtx, pluginID, store, currentVersion)
 		code := types.ArtifactErrorSwitchFailed

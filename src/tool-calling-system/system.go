@@ -28,6 +28,7 @@ type System interface {
 	SaveToolWorkDirectoryConfig(ctx context.Context, config types.ToolWorkDirectoryConfig) (types.ToolWorkDirectoryConfig, error)
 
 	InstallTool(ctx context.Context, toolID string) (types.ArtifactInstallState, error)
+	ImportToolPackage(ctx context.Context, archivePath string) (types.ArtifactInstallState, error)
 	UpdateTool(ctx context.Context, toolID string) (types.ArtifactInstallState, error)
 	ToolInstallState(ctx context.Context, toolID string) (types.ArtifactInstallState, error)
 	CancelToolOperation(ctx context.Context, toolID string) (types.ArtifactInstallState, error)

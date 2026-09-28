@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -1008,8 +1009,9 @@ func (f *fakeGatewayPlaceholders) DependencyTree(ctx context.Context, name strin
 }
 
 type fakeGatewaySystemPlugins struct {
-	plugins []types.SystemPluginSummary
-	views   map[string]types.SystemPluginView
+	plugins         []types.SystemPluginSummary
+	views           map[string]types.SystemPluginView
+	lastImportBytes []byte
 }
 
 func (f *fakeGatewaySystemPlugins) ListPlugins(ctx context.Context) ([]types.SystemPluginSummary, error) {
@@ -1066,6 +1068,13 @@ func (f *fakeGatewaySystemPlugins) CreatePlaceholderFromInterface(ctx context.Co
 
 func (f *fakeGatewaySystemPlugins) InstallPlugin(ctx context.Context, pluginID string) (types.ArtifactInstallState, error) {
 	return types.ArtifactInstallState{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: pluginID}, Status: types.ArtifactStatusActive, CurrentVersion: "0.1.0", Installed: true}, nil
+}
+
+func (f *fakeGatewaySystemPlugins) ImportPluginPackage(ctx context.Context, archivePath string) (types.ArtifactInstallState, error) {
+	if payload, err := os.ReadFile(archivePath); err == nil {
+		f.lastImportBytes = payload
+	}
+	return types.ArtifactInstallState{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: "imported"}, Status: types.ArtifactStatusPreparing}, nil
 }
 
 func (f *fakeGatewaySystemPlugins) UpdatePlugin(ctx context.Context, pluginID string) (types.ArtifactInstallState, error) {
@@ -1650,7 +1659,8 @@ func (f *fakeGatewayProviders) RefreshModels(ctx context.Context, providerID str
 }
 
 type fakeGatewayTools struct {
-	tools map[string]types.ToolDefinition
+	tools           map[string]types.ToolDefinition
+	lastImportBytes []byte
 }
 
 func newFakeGatewayTools() *fakeGatewayTools {
@@ -1690,6 +1700,13 @@ func (f *fakeGatewayTools) SaveToolWorkDirectoryConfig(ctx context.Context, conf
 
 func (f *fakeGatewayTools) InstallTool(ctx context.Context, toolID string) (types.ArtifactInstallState, error) {
 	return types.ArtifactInstallState{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: toolID}, Status: types.ArtifactStatusActive, CurrentVersion: "0.1.0", Installed: true}, nil
+}
+
+func (f *fakeGatewayTools) ImportToolPackage(ctx context.Context, archivePath string) (types.ArtifactInstallState, error) {
+	if payload, err := os.ReadFile(archivePath); err == nil {
+		f.lastImportBytes = payload
+	}
+	return types.ArtifactInstallState{Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "imported"}, Status: types.ArtifactStatusPreparing}, nil
 }
 
 func (f *fakeGatewayTools) UpdateTool(ctx context.Context, toolID string) (types.ArtifactInstallState, error) {

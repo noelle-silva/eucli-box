@@ -31,6 +31,7 @@ type System interface {
 	Shutdown(ctx context.Context) error
 
 	InstallPlugin(ctx context.Context, pluginID string) (types.ArtifactInstallState, error)
+	ImportPluginPackage(ctx context.Context, archivePath string) (types.ArtifactInstallState, error)
 	UpdatePlugin(ctx context.Context, pluginID string) (types.ArtifactInstallState, error)
 	PluginInstallState(ctx context.Context, pluginID string) (types.ArtifactInstallState, error)
 	CancelPluginOperation(ctx context.Context, pluginID string) (types.ArtifactInstallState, error)

@@ -332,13 +332,21 @@ func (s *system) runToolOperationAsync(ctx context.Context, toolID string, actio
 		return
 	}
 
+	s.advanceToolOperation(ctx, toolID, identity, record, setPhase, currentVersion, validated)
+}
+
+// advanceToolOperation 推进一次工具操作的落地阶段（准备 → 探测 → 切换 → 刷新）。
+// 商店安装/更新与本地导入两条来路都汇集到这里；调用方负责租约释放与工作目录清理。
+func (s *system) advanceToolOperation(ctx context.Context, toolID string, identity types.ReleaseArtifactIdentity, record release.OperationRecord, setPhase func(string), currentVersion string, validated release.ValidatedPackage) {
+	workDir := record.WorkDirectory
+
 	setPhase(types.ArtifactPhasePrepare)
 	store, err := s.toolProgramStore(toolID)
 	if err != nil {
 		s.finishOperation(toolID, record, types.ArtifactPhasePrepare, types.ArtifactErrorPathInvalid, err.Error())
 		return
 	}
-	prepared, err := store.PrepareVersion(ctx, validated.Directory, source.Product, validated.Files)
+	prepared, err := store.PrepareVersion(ctx, validated.Directory, validated.Files)
 	if err != nil {
 		if ctx.Err() != nil {
 			s.finishOperationCancelled(toolID, record, types.ArtifactPhasePrepare)

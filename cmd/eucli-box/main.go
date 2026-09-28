@@ -165,7 +165,7 @@ func run() error {
 	}
 	log.Printf("[6/13] permission-system       ✓")
 
-	toolSystem, err := toolcalling.NewSystem(toolcalling.Config{BoxVersion: boxRelease.Version, ProgramRoot: toolProgramRoot, Candidates: toolCandidates, HTTPClient: officialDoer}, permissionSystem, storageSystem)
+	toolSystem, err := toolcalling.NewSystem(toolcalling.Config{BoxVersion: boxRelease.Version, ProgramRoot: toolProgramRoot, DataRoot: dataDir, Candidates: toolCandidates, HTTPClient: officialDoer}, permissionSystem, storageSystem)
 	if err != nil {
 		return fmt.Errorf("start tool calling system: %w", err)
 	}

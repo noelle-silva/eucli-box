@@ -70,6 +70,7 @@ type Config struct {
 	ToolWarmupInterval       time.Duration
 	BoxVersion               string
 	ProgramRoot              string
+	DataRoot                 string
 	Candidates               releasecheck.CandidateReader
 	HTTPClient               release.HTTPDoer
 }
@@ -135,6 +136,16 @@ func NewSystem(config Config, permission PermissionSystem, storage StorageSystem
 			return nil, toolInvalid("program root is invalid", absErr)
 		}
 		config.ProgramRoot = absolute
+	}
+	dataRoot := strings.TrimSpace(config.DataRoot)
+	if dataRoot != "" {
+		absolute, absErr := filepath.Abs(dataRoot)
+		if absErr != nil {
+			return nil, toolInvalid("data root is invalid", absErr)
+		}
+		config.DataRoot = absolute
+	} else if config.ProgramRoot != "" {
+		return nil, toolInvalid("data root is required for managed tool programs", nil)
 	}
 	return &system{config: config, boxVersion: boxVersion, permission: permission, storage: storage, activities: map[string]*toolActivity{}, activeExecutions: map[string]map[*toolRunContext]struct{}{}}, nil
 }

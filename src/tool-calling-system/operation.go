@@ -371,6 +371,23 @@ func (s *system) advanceToolOperation(ctx context.Context, toolID string, identi
 		return
 	}
 
+	// 数据迁移关卡：以专门的迁移模式唤起新版本工具迁移它自己的数据；
+	// 只有数据未变化或迁移成功才允许进入切换，否则当前版本保持不变。
+	setPhase(types.ArtifactPhaseMigration)
+	dataDirectory, err := s.toolDataDirectory(toolID)
+	if err != nil {
+		s.finishOperation(toolID, record, types.ArtifactPhaseMigration, types.ArtifactErrorDataMigrationFailed, err.Error())
+		return
+	}
+	if err := s.migrateToolData(ctx, toolID, prepared, dataDirectory); err != nil {
+		if ctx.Err() != nil {
+			s.finishOperationCancelled(toolID, record, types.ArtifactPhaseMigration)
+			return
+		}
+		s.finishOperation(toolID, record, types.ArtifactPhaseMigration, types.ArtifactErrorDataMigrationFailed, "数据迁移未通过，不切换新版本："+err.Error())
+		return
+	}
+
 	// 进入切换瞬间起取消窗口关闭：当前版本开始变更，必须保证要么切成功、要么完整回滚。
 	setPhase(types.ArtifactPhaseSwitch)
 	stableCtx := context.WithoutCancel(ctx)
@@ -435,21 +452,7 @@ func (s *system) restoreVersion(ctx context.Context, toolID string, store releas
 // 不执行真实外部任务，不要求模型密钥，不检查工具特有的业务内容
 // （强参数工具对空参数返回结构化失败同样证明交接链路可用）。
 func (s *system) probeTool(ctx context.Context, prepared release.PreparedProgram, probeDataDir string) error {
-	definitionPath := filepath.Join(prepared.Directory, "definition.json")
-	payload, err := os.ReadFile(definitionPath)
-	if err != nil {
-		return toolExecutionInvalid("failed to read tool definition for probe", err)
-	}
-	var definition types.ToolDefinition
-	if err := json.Unmarshal(payload, &definition); err != nil {
-		return toolExecutionInvalid("tool definition is invalid for probe", err)
-	}
-	definition.BodyDirectory = prepared.Directory
-	executable, err := selectExecutable(definition)
-	if err != nil {
-		return toolExecutionInvalid("failed to select probe executable", err)
-	}
-	executable, err = cleanExecutablePath(types.ToolDefinition{BodyDirectory: prepared.Directory}, executable)
+	definition, executable, err := s.preparedToolExecutable(prepared)
 	if err != nil {
 		return err
 	}
@@ -496,6 +499,30 @@ func (s *system) probeTool(ctx context.Context, prepared release.PreparedProgram
 
 func (s *system) writeOperation(toolID string, record release.OperationRecord) error {
 	return release.WriteOperationRecord(s.toolOperationFile(toolID), record)
+}
+
+// preparedToolExecutable 读取准备完成的工具定义并解析出可执行文件；
+// 探测与数据迁移关卡共用同一解析口径。
+func (s *system) preparedToolExecutable(prepared release.PreparedProgram) (types.ToolDefinition, string, error) {
+	definitionPath := filepath.Join(prepared.Directory, "definition.json")
+	payload, err := os.ReadFile(definitionPath)
+	if err != nil {
+		return types.ToolDefinition{}, "", toolExecutionInvalid("failed to read prepared tool definition", err)
+	}
+	var definition types.ToolDefinition
+	if err := json.Unmarshal(payload, &definition); err != nil {
+		return types.ToolDefinition{}, "", toolExecutionInvalid("prepared tool definition is invalid", err)
+	}
+	definition.BodyDirectory = prepared.Directory
+	executable, err := selectExecutable(definition)
+	if err != nil {
+		return types.ToolDefinition{}, "", toolExecutionInvalid("failed to select prepared tool executable", err)
+	}
+	executable, err = cleanExecutablePath(types.ToolDefinition{BodyDirectory: prepared.Directory}, executable)
+	if err != nil {
+		return types.ToolDefinition{}, "", err
+	}
+	return definition, executable, nil
 }
 
 func (s *system) finishOperation(toolID string, record release.OperationRecord, phase string, code string, message string) {
@@ -659,7 +686,7 @@ func statusForPhase(phase string) string {
 		return types.ArtifactStatusVerifying
 	case types.ArtifactPhasePrepare:
 		return types.ArtifactStatusPreparing
-	case types.ArtifactPhaseProbe:
+	case types.ArtifactPhaseProbe, types.ArtifactPhaseMigration:
 		return types.ArtifactStatusStarting
 	case types.ArtifactPhaseSwitch, types.ArtifactPhaseRefresh:
 		return types.ArtifactStatusSwitching

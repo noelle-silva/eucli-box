@@ -35,6 +35,7 @@ import (
 type input struct {
 	ActionID          string ` + "`json:\"actionId\"`" + `
 	ToolDataDirectory string ` + "`json:\"toolDataDirectory\"`" + `
+	RequestKind       string ` + "`json:\"requestKind\"`" + `
 }
 
 func main() {
@@ -44,6 +45,14 @@ func main() {
 		_ = os.MkdirAll(in.ToolDataDirectory, 0o755)
 		_ = os.WriteFile(filepath.Join(in.ToolDataDirectory, "marker.txt"), []byte("running"), 0o644)
 		time.Sleep(2 * time.Second)
+	}
+	if in.RequestKind == "migration" {
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{
+			"status":   "success",
+			"content":  "migrated",
+			"metadata": map[string]any{"migrationState": "data-unchanged", "from": "1.0.0", "to": "1.0.0"},
+		})
+		return
 	}
 	_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"status": "success", "content": "ok"})
 }
@@ -103,6 +112,7 @@ func newToolOperationFixture(t *testing.T) *toolOperationFixture {
 	fixture.system, err = NewSystem(Config{
 		BoxVersion:  "0.1.0",
 		ProgramRoot: programRoot,
+		DataRoot:    dataRoot,
 		Candidates:  fixture.candidates,
 		HTTPClient:  fixture.server.Client(),
 	}, &fakePermission{}, storage)
@@ -116,7 +126,13 @@ func newToolOperationFixture(t *testing.T) *toolOperationFixture {
 // makeToolCandidate 构造工具成品并注册为官方候选；binary 为空字符串时写入损坏二进制。
 func (f *toolOperationFixture) makeToolCandidate(id string, version string, brokenBinary bool) {
 	f.t.Helper()
-	exe := buildTool(f.t, probeToolSource)
+	f.makeToolCandidateFromSource(id, version, probeToolSource, brokenBinary)
+}
+
+// makeToolCandidateFromSource 用指定替身源码构造工具成品并注册为官方候选。
+func (f *toolOperationFixture) makeToolCandidateFromSource(id string, version string, source string, brokenBinary bool) {
+	f.t.Helper()
+	exe := buildTool(f.t, source)
 	binaryPayload, err := os.ReadFile(exe)
 	if err != nil {
 		f.t.Fatalf("read binary: %v", err)
@@ -380,6 +396,7 @@ func TestInstallToolFromLocalStore(t *testing.T) {
 	devSystem, err := NewSystem(Config{
 		BoxVersion:  "0.1.0",
 		ProgramRoot: fixture.programRoot,
+		DataRoot:    fixture.dataRoot,
 		Candidates:  reader,
 		HTTPClient:  http.DefaultClient,
 	}, &fakePermission{}, fixture.realSystem.storage)

@@ -14,6 +14,9 @@ const (
 )
 
 func main() {
+	if isDataMigrationMode(os.Args[1:]) {
+		os.Exit(runDataMigration(os.Args[1:], os.Stdout))
+	}
 	if err := pluginrun.Serve(pluginrun.Options{
 		PluginID: "weather-plugin",
 		Capabilities: []systemplugin.Capability{{

@@ -28,6 +28,9 @@ type systemInfoProvider struct {
 }
 
 func main() {
+	if isDataMigrationMode(os.Args[1:]) {
+		os.Exit(runDataMigration(os.Args[1:], os.Stdout))
+	}
 	if err := pluginrun.Serve(pluginrun.Options{
 		PluginID:     "system-info-plugin",
 		Capabilities: []systemplugin.Capability{{Type: systemplugin.CapabilityPlaceholderValues, Interfaces: []string{systemInfoInterfaceID}}},

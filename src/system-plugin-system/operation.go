@@ -376,6 +376,28 @@ func (s *system) advancePluginOperation(ctx context.Context, pluginID string, id
 		return
 	}
 
+	// 数据迁移关卡：以专门的迁移模式唤起新版本插件迁移它自己的数据；
+	// 只有数据未变化或迁移成功才允许进入切换，否则当前版本保持不变。
+	setPhase(types.ArtifactPhaseMigration)
+	_, executable, err := s.preparedPluginProgram(prepared)
+	if err != nil {
+		s.finishOperation(pluginID, record, types.ArtifactPhaseMigration, types.ArtifactErrorDataMigrationFailed, err.Error())
+		return
+	}
+	dataDirectory, err := s.pluginDataDirectory(pluginID)
+	if err != nil {
+		s.finishOperation(pluginID, record, types.ArtifactPhaseMigration, types.ArtifactErrorDataMigrationFailed, err.Error())
+		return
+	}
+	if err := s.migratePluginData(executable, prepared.Directory, dataDirectory); err != nil {
+		if ctx.Err() != nil {
+			s.finishOperationCancelled(pluginID, record, types.ArtifactPhaseMigration)
+			return
+		}
+		s.finishOperation(pluginID, record, types.ArtifactPhaseMigration, types.ArtifactErrorDataMigrationFailed, "数据迁移未通过，不切换新版本："+err.Error())
+		return
+	}
+
 	// 进入切换瞬间起取消窗口关闭：当前版本开始变更，必须保证要么切成功、要么完整回滚。
 	setPhase(types.ArtifactPhaseSwitch)
 	stableCtx := context.WithoutCancel(ctx)
@@ -460,27 +482,37 @@ func (s *system) restorePluginLifecycle(ctx context.Context, pluginID string) {
 	}
 }
 
+// preparedPluginProgram 读取准备完成的插件清单并解析出可执行文件；
+// 探测与数据迁移关卡共用同一解析口径。
+func (s *system) preparedPluginProgram(prepared release.PreparedProgram) (types.SystemPluginManifest, string, error) {
+	manifestPath := filepath.Join(prepared.Directory, "manifest.json")
+	payload, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return types.SystemPluginManifest{}, "", pluginExecutionInvalid("failed to read prepared plugin manifest", err)
+	}
+	var manifest types.SystemPluginManifest
+	if err := json.Unmarshal(payload, &manifest); err != nil {
+		return types.SystemPluginManifest{}, "", pluginExecutionInvalid("prepared plugin manifest is invalid", err)
+	}
+	manifest = normalizeManifest(manifest)
+	if err := validateManifestCore(manifest); err != nil {
+		return types.SystemPluginManifest{}, "", pluginExecutionInvalid("prepared plugin manifest is invalid: "+err.Error(), err)
+	}
+	executable, err := selectExecutable(prepared.Directory, manifest.Binaries)
+	if err != nil {
+		return types.SystemPluginManifest{}, "", pluginExecutionInvalid("failed to select prepared plugin executable", err)
+	}
+	return manifest, executable, nil
+}
+
 // probePlugin 对新版本执行基础交接：按真实控制通道完成身份与能力握手，
 // 若插件声明了占位符能力则再完成一次空接口、空配置的能力调用。
 // 它只验证交接链路可用，不要求插件业务成功（对空配置返回结构化失败同样通过）。
 // 不得把用户占位符数据写入验证工作区。
 func (s *system) probePlugin(ctx context.Context, prepared release.PreparedProgram, probeDataDir string) error {
-	manifestPath := filepath.Join(prepared.Directory, "manifest.json")
-	payload, err := os.ReadFile(manifestPath)
+	manifest, executable, err := s.preparedPluginProgram(prepared)
 	if err != nil {
-		return pluginExecutionInvalid("failed to read plugin manifest for probe", err)
-	}
-	var manifest types.SystemPluginManifest
-	if err := json.Unmarshal(payload, &manifest); err != nil {
-		return pluginExecutionInvalid("plugin manifest is invalid for probe", err)
-	}
-	manifest = normalizeManifest(manifest)
-	if err := validateManifestCore(manifest); err != nil {
-		return pluginExecutionInvalid("plugin manifest is invalid for probe: "+err.Error(), err)
-	}
-	executable, err := selectExecutable(prepared.Directory, manifest.Binaries)
-	if err != nil {
-		return pluginExecutionInvalid("failed to select probe executable", err)
+		return err
 	}
 	record := pluginRecord{
 		manifest:      manifest,

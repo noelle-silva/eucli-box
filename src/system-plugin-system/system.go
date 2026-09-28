@@ -15,7 +15,10 @@ import (
 	"eucli-box/pkg/types"
 )
 
-const defaultUpdateWaitTimeout = 30 * time.Second
+const (
+	defaultUpdateWaitTimeout = 30 * time.Second
+	defaultMigrationTimeout  = 60 * time.Second
+)
 
 type System interface {
 	Start(ctx context.Context) error
@@ -43,14 +46,15 @@ type System interface {
 type EventObserver func(pluginID string, event string, payload map[string]any)
 
 type Config struct {
-	SourceDir   string
-	DataDir     string
-	Timeout     time.Duration
-	BoxVersion  string
-	ProgramRoot string
-	Candidates  releasecheck.CandidateReader
-	HTTPClient  release.HTTPDoer
-	OnEvent     EventObserver
+	SourceDir        string
+	DataDir          string
+	Timeout          time.Duration
+	MigrationTimeout time.Duration
+	BoxVersion       string
+	ProgramRoot      string
+	Candidates       releasecheck.CandidateReader
+	HTTPClient       release.HTTPDoer
+	OnEvent          EventObserver
 }
 
 type system struct {
@@ -69,6 +73,7 @@ type system struct {
 	activities        map[string]*pluginActivity
 	shuttingDown      bool
 	updateWaitTimeout time.Duration
+	migrationTimeout  time.Duration
 }
 
 func NewSystem(config Config) (System, error) {
@@ -93,6 +98,12 @@ func NewSystem(config Config) (System, error) {
 	}
 	if config.Timeout < 0 {
 		return nil, pluginInvalid("system plugin timeout cannot be negative", nil)
+	}
+	if config.MigrationTimeout == 0 {
+		config.MigrationTimeout = defaultMigrationTimeout
+	}
+	if config.MigrationTimeout < 0 {
+		return nil, pluginInvalid("system plugin migration timeout cannot be negative", nil)
 	}
 	boxVersion := strings.TrimSpace(config.BoxVersion)
 	if boxVersion == "" {
@@ -132,6 +143,7 @@ func NewSystem(config Config) (System, error) {
 		failures:          map[string]string{},
 		activities:        map[string]*pluginActivity{},
 		updateWaitTimeout: defaultUpdateWaitTimeout,
+		migrationTimeout:  config.MigrationTimeout,
 	}, nil
 }
 

@@ -50,6 +50,8 @@ type behavior struct {
 	Error          string            `json:"error"`
 	Values         map[string]string `json:"values"`
 	TrackFile      string            `json:"trackFile"`
+	MigrationState string            `json:"migrationState"`
+	MigrationFailure bool            `json:"migrationFailure"`
 	EmitEvent      *struct {
 		Name    string         `json:"name"`
 		Payload map[string]any `json:"payload"`
@@ -68,6 +70,9 @@ func main() {
 	workingDirectory, _ = os.Getwd()
 	if payload, err := os.ReadFile(filepath.Join(workingDirectory, "stub.json")); err == nil {
 		_ = json.Unmarshal(payload, &settings)
+	}
+	if len(os.Args) > 1 && os.Args[1] == "--data-migration" {
+		runDataMigrationMode()
 	}
 	if settings.CrashOnStart {
 		os.Exit(3)
@@ -136,8 +141,28 @@ func main() {
 	}
 }
 
-func handleInvoke(incoming message) {
-	if settings.CreateFile != "" {
+// runDataMigrationMode 是桩插件的数据迁移模式：不握手、不进常驻服务，
+// 按 stub.json 的行为向标准输出写结果 JSON 并退出；供宿主装载关卡反向校验。
+func runDataMigrationMode() {
+	dataDirectory := ""
+	if len(os.Args) > 2 {
+		dataDirectory = os.Args[2]
+	}
+	record(map[string]any{"kind": "data-migration", "dataDirectory": dataDirectory, "workingDirectory": workingDirectory})
+	if settings.MigrationFailure {
+		_, _ = os.Stderr.WriteString("stub migration failed\n")
+		os.Exit(1)
+	}
+	state := settings.MigrationState
+	if state == "" {
+		state = "data-unchanged"
+	}
+	encoder = json.NewEncoder(os.Stdout)
+	_ = encoder.Encode(map[string]any{"status": "success", "migrationState": state, "from": "1.0.0", "to": "1.0.0"})
+	os.Exit(0)
+}
+
+func handleInvoke(incoming message) {	if settings.CreateFile != "" {
 		_ = os.WriteFile(settings.CreateFile, []byte("ready"), 0o644)
 	}
 	for settings.WaitForFile != "" {

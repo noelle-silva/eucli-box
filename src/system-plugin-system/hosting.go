@@ -17,6 +17,11 @@ func (s *system) ensureResidentSession(ctx context.Context, record pluginRecord)
 		return existing, nil
 	}
 	s.mu.Unlock()
+	// 数据迁移关卡：常驻插件装载前先以专门的迁移模式让它迁移自己的数据，
+	// 只有数据未变化或迁移成功才允许进入常驻服务，否则本次启动失败。
+	if err := s.migratePluginData(record.executable, record.directory, record.dataDirectory); err != nil {
+		return nil, err
+	}
 	instance, err := s.startRecordSession(record)
 	if err != nil {
 		return nil, err

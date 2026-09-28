@@ -207,10 +207,19 @@ const (
 	ArtifactPhaseArchive      = "archive"
 	ArtifactPhasePackage      = "package"
 	ArtifactPhasePrepare      = "prepare"
+	ArtifactPhaseMigration    = "migration"
 	ArtifactPhaseSwitch       = "switch"
 	ArtifactPhaseProbe        = "probe"
 	ArtifactPhaseRestore      = "restore"
 	ArtifactPhaseRefresh      = "refresh"
+)
+
+// 发布物数据迁移的四态结果词表：与各发布物迁移模式回报的结果一致。
+const (
+	DataMigrationStateDataUnchanged  = "data-unchanged"
+	DataMigrationStateMigrated       = "migrated"
+	DataMigrationStateRecovered      = "recovered"
+	DataMigrationStateRecoveryFailed = "recovery-failed"
 )
 
 // 固定错误码：工具和插件后台、网关、客户端统一使用，不得各自造同义名称。
@@ -227,6 +236,7 @@ const (
 	ArtifactErrorPluginActive       = "PLUGIN_ACTIVE"
 	ArtifactErrorUpdateInProgress   = "ARTIFACT_UPDATE_IN_PROGRESS"
 	ArtifactErrorPrepareFailed      = "ARTIFACT_PREPARE_FAILED"
+	ArtifactErrorDataMigrationFailed = "ARTIFACT_DATA_MIGRATION_FAILED"
 	ArtifactErrorSwitchFailed       = "ARTIFACT_SWITCH_FAILED"
 	ArtifactErrorProbeFailed        = "ARTIFACT_PROBE_FAILED"
 	ArtifactErrorRestoreFailed      = "ARTIFACT_RESTORE_FAILED"

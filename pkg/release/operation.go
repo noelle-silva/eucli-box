@@ -121,7 +121,7 @@ func OperationPhaseIsPreSwitch(phase string) bool {
 	switch phase {
 	case types.ArtifactPhaseCandidate, types.ArtifactPhaseCompatibility, types.ArtifactPhaseActivity,
 		types.ArtifactPhaseDownload, types.ArtifactPhaseManifest, types.ArtifactPhaseArchive,
-		types.ArtifactPhasePackage, types.ArtifactPhasePrepare:
+		types.ArtifactPhasePackage, types.ArtifactPhasePrepare, types.ArtifactPhaseMigration:
 		return true
 	default:
 		return false
@@ -201,7 +201,8 @@ func validArtifactPhase(phase string) bool {
 	switch phase {
 	case types.ArtifactPhaseCandidate, types.ArtifactPhaseCompatibility, types.ArtifactPhaseActivity,
 		types.ArtifactPhaseDownload, types.ArtifactPhaseManifest, types.ArtifactPhaseArchive,
-		types.ArtifactPhasePackage, types.ArtifactPhasePrepare, types.ArtifactPhaseSwitch,
+		types.ArtifactPhasePackage, types.ArtifactPhasePrepare, types.ArtifactPhaseMigration,
+		types.ArtifactPhaseSwitch,
 		types.ArtifactPhaseProbe, types.ArtifactPhaseRestore, types.ArtifactPhaseRefresh:
 		return true
 	default:

@@ -22,9 +22,9 @@ func newTestProgramStore(t *testing.T) ProgramStore {
 	return store
 }
 
-func prepareTestVersion(t *testing.T, store ProgramStore, version string) (PreparedProgram, types.ReleaseProductRecord, []types.ReleaseFileRecord) {
+func prepareTestVersion(t *testing.T, store ProgramStore, version string) (PreparedProgram, []types.ReleaseFileRecord) {
 	t.Helper()
-	archivePath, manifest := makeTestToolArchive(t, "demo", version)
+	archivePath, _ := makeTestToolArchive(t, "demo", version)
 	extracted := filepath.Join(t.TempDir(), "extracted")
 	if err := EnsureEmptyDirectory(extracted); err != nil {
 		t.Fatalf("EnsureEmptyDirectory() error = %v", err)
@@ -36,12 +36,11 @@ func prepareTestVersion(t *testing.T, store ProgramStore, version string) (Prepa
 	if err != nil {
 		t.Fatalf("CollectFileRecords() error = %v", err)
 	}
-	product := productFromManifest(manifest)
-	prepared, err := store.PrepareVersion(context.Background(), extracted, product, files)
+	prepared, err := store.PrepareVersion(context.Background(), extracted, files)
 	if err != nil {
 		t.Fatalf("PrepareVersion() error = %v", err)
 	}
-	return prepared, product, files
+	return prepared, files
 }
 
 func TestProgramStoreRejectsForeignRoot(t *testing.T) {
@@ -59,7 +58,7 @@ func TestProgramStoreCurrentUnknownBeforeActivate(t *testing.T) {
 
 func TestProgramStorePrepareActivateAndCurrent(t *testing.T) {
 	store := newTestProgramStore(t)
-	prepared, _, _ := prepareTestVersion(t, store, "0.1.0")
+	prepared, _ := prepareTestVersion(t, store, "0.1.0")
 	if err := store.Activate(context.Background(), prepared, ""); err != nil {
 		t.Fatalf("Activate() error = %v", err)
 	}
@@ -74,11 +73,11 @@ func TestProgramStorePrepareActivateAndCurrent(t *testing.T) {
 
 func TestProgramStoreActivateRequiresPreviousMatch(t *testing.T) {
 	store := newTestProgramStore(t)
-	first, _, _ := prepareTestVersion(t, store, "0.1.0")
+	first, _ := prepareTestVersion(t, store, "0.1.0")
 	if err := store.Activate(context.Background(), first, ""); err != nil {
 		t.Fatalf("Activate(first) error = %v", err)
 	}
-	second, _, _ := prepareTestVersion(t, store, "0.1.1")
+	second, _ := prepareTestVersion(t, store, "0.1.1")
 	if err := store.Activate(context.Background(), second, "0.1.0"); err != nil {
 		t.Fatalf("Activate(second) error = %v", err)
 	}
@@ -86,7 +85,7 @@ func TestProgramStoreActivateRequiresPreviousMatch(t *testing.T) {
 	if current.Version != "0.1.1" {
 		t.Fatalf("current version = %s", current.Version)
 	}
-	third, _, _ := prepareTestVersion(t, store, "0.1.2")
+	third, _ := prepareTestVersion(t, store, "0.1.2")
 	if err := store.Activate(context.Background(), third, "0.1.0"); err == nil {
 		t.Fatal("Activate(third) with stale previous error = nil")
 	}
@@ -94,11 +93,11 @@ func TestProgramStoreActivateRequiresPreviousMatch(t *testing.T) {
 
 func TestProgramStoreRestoreRecoversPreviousVersion(t *testing.T) {
 	store := newTestProgramStore(t)
-	first, _, _ := prepareTestVersion(t, store, "0.1.0")
+	first, _ := prepareTestVersion(t, store, "0.1.0")
 	if err := store.Activate(context.Background(), first, ""); err != nil {
 		t.Fatalf("Activate(first) error = %v", err)
 	}
-	second, _, _ := prepareTestVersion(t, store, "0.1.1")
+	second, _ := prepareTestVersion(t, store, "0.1.1")
 	if err := store.Activate(context.Background(), second, "0.1.0"); err != nil {
 		t.Fatalf("Activate(second) error = %v", err)
 	}
@@ -126,11 +125,11 @@ func TestProgramStoreRestoreRejectsMissingVersion(t *testing.T) {
 
 func TestProgramStoreRejectsTamperedVersionDirectory(t *testing.T) {
 	store := newTestProgramStore(t)
-	first, _, _ := prepareTestVersion(t, store, "0.1.0")
+	first, _ := prepareTestVersion(t, store, "0.1.0")
 	if err := store.Activate(context.Background(), first, ""); err != nil {
 		t.Fatalf("Activate() error = %v", err)
 	}
-	if err := os.Remove(filepath.Join(first.Directory, "release-product.json")); err != nil {
+	if err := os.Remove(filepath.Join(first.Directory, "definition.json")); err != nil {
 		t.Fatalf("tamper: %v", err)
 	}
 	if _, err := store.Current(); err == nil {
@@ -142,7 +141,7 @@ func TestProgramStoreRejectsTamperedVersionDirectory(t *testing.T) {
 // 负载文件内容被改写不影响 Current——内容完整性属于落地校验，不属于读取事实。
 func TestProgramStoreCurrentIgnoresPayloadContent(t *testing.T) {
 	store := newTestProgramStore(t)
-	prepared, _, _ := prepareTestVersion(t, store, "0.1.0")
+	prepared, _ := prepareTestVersion(t, store, "0.1.0")
 	if err := store.Activate(context.Background(), prepared, ""); err != nil {
 		t.Fatalf("Activate() error = %v", err)
 	}
@@ -163,7 +162,7 @@ func TestProgramStoreCurrentIgnoresPayloadContent(t *testing.T) {
 // 启用前必须对照发行清单逐文件复核，负载被改写时拒绝启用。
 func TestProgramStoreActivateRejectsTamperedContent(t *testing.T) {
 	store := newTestProgramStore(t)
-	prepared, _, _ := prepareTestVersion(t, store, "0.1.0")
+	prepared, _ := prepareTestVersion(t, store, "0.1.0")
 	payloadPath := filepath.Join(prepared.Directory, "binary", "windows-amd64", "demo.exe")
 	if err := os.WriteFile(payloadPath, []byte("tampered-payload"), 0o644); err != nil {
 		t.Fatalf("tamper payload: %v", err)
@@ -175,7 +174,7 @@ func TestProgramStoreActivateRejectsTamperedContent(t *testing.T) {
 
 func TestProgramStoreRejectsReuseWithDifferentContent(t *testing.T) {
 	store := newTestProgramStore(t)
-	archivePath, manifest := makeTestToolArchive(t, "demo", "0.1.0")
+	archivePath, _ := makeTestToolArchive(t, "demo", "0.1.0")
 	extracted := filepath.Join(t.TempDir(), "extracted")
 	if err := EnsureEmptyDirectory(extracted); err != nil {
 		t.Fatalf("EnsureEmptyDirectory() error = %v", err)
@@ -187,17 +186,16 @@ func TestProgramStoreRejectsReuseWithDifferentContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CollectFileRecords() error = %v", err)
 	}
-	product := productFromManifest(manifest)
-	if _, err := store.PrepareVersion(context.Background(), extracted, product, files); err != nil {
+	if _, err := store.PrepareVersion(context.Background(), extracted, files); err != nil {
 		t.Fatalf("PrepareVersion() error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(extracted, "definition.json"), []byte(`{"different":true}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(extracted, "binary", "windows-amd64", "demo.exe"), []byte("different-payload"), 0o644); err != nil {
 		t.Fatalf("tamper source: %v", err)
 	}
 	if err := os.RemoveAll(filepath.Join(store.root, "versions", "0.1.0")); err != nil {
 		t.Fatalf("remove version: %v", err)
 	}
-	if _, err := store.PrepareVersion(context.Background(), extracted, product, files); err == nil {
+	if _, err := store.PrepareVersion(context.Background(), extracted, files); err == nil {
 		t.Fatal("PrepareVersion() with different content error = nil")
 	}
 }
@@ -214,16 +212,44 @@ func TestProgramStoreRejectsReparsePointPath(t *testing.T) {
 	if err := makeJunction(t, link, target); err != nil {
 		t.Skipf("cannot create junction: %v", err)
 	}
-	archivePath, manifest := makeTestToolArchive(t, "demo", "0.1.0")
+	archivePath, _ := makeTestToolArchive(t, "demo", "0.1.0")
 	extracted := filepath.Join(link, "extracted")
 	if err := EnsureEmptyDirectory(extracted); err == nil {
 		t.Fatal("EnsureEmptyDirectory() through junction error = nil")
 	}
 	store := newTestProgramStore(t)
-	if _, err := store.PrepareVersion(context.Background(), extracted, productFromManifest(manifest), nil); err == nil {
+	if _, err := store.PrepareVersion(context.Background(), extracted, nil); err == nil {
 		t.Fatal("PrepareVersion() through junction error = nil")
 	}
 	_ = archivePath
+}
+
+// TestProgramStoreAcceptsMinimalPackage 纯本地最小包（无发行资料）
+// 与官方包走同一条落地与读取主路。
+func TestProgramStoreAcceptsMinimalPackage(t *testing.T) {
+	store := newTestProgramStore(t)
+	root := buildMinimalToolContents(t, "demo", "0.1.0")
+	files, err := CollectFileRecords(root)
+	if err != nil {
+		t.Fatalf("CollectFileRecords() error = %v", err)
+	}
+	prepared, err := store.PrepareVersion(context.Background(), root, files)
+	if err != nil {
+		t.Fatalf("PrepareVersion() error = %v", err)
+	}
+	if prepared.Version != "0.1.0" {
+		t.Fatalf("prepared version = %s", prepared.Version)
+	}
+	if err := store.Activate(context.Background(), prepared, ""); err != nil {
+		t.Fatalf("Activate() error = %v", err)
+	}
+	current, err := store.Current()
+	if err != nil {
+		t.Fatalf("Current() error = %v", err)
+	}
+	if current.Version != "0.1.0" {
+		t.Fatalf("current version = %s", current.Version)
+	}
 }
 
 func makeJunction(t *testing.T, link string, target string) error {
@@ -252,7 +278,7 @@ func TestProgramStoreUnknownCurrentRefusesBadIdentity(t *testing.T) {
 
 func TestProgramStoreUnknownCurrentRefusesStaleDirectory(t *testing.T) {
 	store := newTestProgramStore(t)
-	prepared, _, _ := prepareTestVersion(t, store, "0.1.0")
+	prepared, _ := prepareTestVersion(t, store, "0.1.0")
 	if err := store.Activate(context.Background(), prepared, ""); err != nil {
 		t.Fatalf("Activate() error = %v", err)
 	}

@@ -37,6 +37,7 @@ type AcquirePackageOptions struct {
 }
 
 // AcquireAndValidatePackage 统一完成压缩包下载、大小与 SHA-256 核对、安全解包和包内核对。
+// 包内核对采用最小标准（定义文件与可执行文件），并核对身份与版本和候选一致。
 // 它不判断适用范围、不判断活动、不切换当前版本、不写当前版本记录。
 func AcquireAndValidatePackage(ctx context.Context, options AcquirePackageOptions) (ValidatedPackage, error) {
 	if ctx == nil {
@@ -78,9 +79,15 @@ func AcquireAndValidatePackage(ctx context.Context, options AcquirePackageOption
 	if err := ExtractArchive(ExtractArchiveOptions{ArchivePath: archiveTarget, TargetDir: options.ExtractedDir}); err != nil {
 		return ValidatedPackage{}, fmt.Errorf("解开压缩包失败：%w", err)
 	}
-	validated, err := ValidateExtractedPackage(ValidateExtractedPackageOptions{Directory: options.ExtractedDir, Product: options.Source.Product})
+	validated, err := ValidatePackageDirectory(ValidatePackageDirectoryOptions{Directory: options.ExtractedDir, Kind: options.Source.Artifact.Kind})
 	if err != nil {
 		return ValidatedPackage{}, fmt.Errorf("包内核对失败：%w", err)
+	}
+	if validated.Artifact != options.Source.Artifact {
+		return ValidatedPackage{}, fmt.Errorf("包内身份与候选身份不一致")
+	}
+	if validated.Version != strings.TrimSpace(options.Source.Product.Version) {
+		return ValidatedPackage{}, fmt.Errorf("包内版本与候选版本不一致")
 	}
 	return validated, nil
 }

@@ -166,7 +166,7 @@ func verifyProductContent(ctx context.Context, archivePath string, product types
 			return "", err
 		}
 	}
-	if _, err := release.ValidateExtractedPackage(release.ValidateExtractedPackageOptions{Directory: extracted, Product: product}); err != nil {
+	if err := validatePackageBoundary(extracted, product.Artifact); err != nil {
 		return "", fmt.Errorf("解包后的成品边界无效：%w", err)
 	}
 	if err := launchCheck(ctx, product.Artifact, extracted, environmentDir, tempDir, evidenceDir, timeout); err != nil {

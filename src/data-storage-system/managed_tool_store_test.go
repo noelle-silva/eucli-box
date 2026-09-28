@@ -37,20 +37,13 @@ func newManagedTestSystem(t *testing.T) (*system, string) {
 
 func installManagedTool(t *testing.T, programRoot string, id string, version string) {
 	t.Helper()
-	installManagedToolWithDefinitionVersion(t, programRoot, id, version, version)
-}
-
-// installManagedToolWithDefinitionVersion 允许包内定义版本与激活版本不同，
-// 用于验证运行期版本事实源统一到激活记录。
-func installManagedToolWithDefinitionVersion(t *testing.T, programRoot string, id string, version string, definitionVersion string) {
-	t.Helper()
 	contentDir := t.TempDir()
 	binaryPath := filepath.ToSlash(filepath.Join("binary", "windows-amd64", id+".exe"))
 	definition := types.ToolDefinition{
 		ID:                    id,
 		Name:                  "Demo " + id,
 		Description:           "demo tool",
-		Version:               definitionVersion,
+		Version:               version,
 		EucliBoxCompatibility: types.EucliBoxCompatibility{MinimumVersion: "0.1.0", MaximumVersionExclusive: "0.2.0"},
 		DefaultInvocationMode: "sync",
 		Type:                  "local",
@@ -76,22 +69,6 @@ func installManagedToolWithDefinitionVersion(t *testing.T, programRoot string, i
 			t.Fatalf("write %s: %v", path, err)
 		}
 	}
-	product := types.ReleaseProductRecord{
-		SchemaVersion:  release.ReleaseManifestSchemaVersion,
-		Artifact:       types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: id},
-		Version:        version,
-		Platform:       types.ReleasePlatformWindowsX64,
-		OfficialSource: "https://github.com/noelle-silva/eucli-box-ai-tools",
-		Compatibility:  &types.EucliBoxCompatibility{MinimumVersion: "0.1.0", MaximumVersionExclusive: "0.2.0"},
-		Source:         types.ReleaseSourceRecord{Repository: "https://github.com/noelle-silva/eucli-box", Commit: "0123456789abcdef0123456789abcdef01234567", Recorded: true},
-	}
-	productPayload, err := json.MarshalIndent(product, "", "  ")
-	if err != nil {
-		t.Fatalf("marshal product: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(contentDir, "release-product.json"), productPayload, 0o644); err != nil {
-		t.Fatalf("write product: %v", err)
-	}
 	fileRecords, err := release.CollectFileRecords(contentDir)
 	if err != nil {
 		t.Fatalf("collect files: %v", err)
@@ -100,7 +77,7 @@ func installManagedToolWithDefinitionVersion(t *testing.T, programRoot string, i
 	if err != nil {
 		t.Fatalf("NewProgramStore() error = %v", err)
 	}
-	prepared, err := store.PrepareVersion(context.Background(), contentDir, product, fileRecords)
+	prepared, err := store.PrepareVersion(context.Background(), contentDir, fileRecords)
 	if err != nil {
 		t.Fatalf("PrepareVersion() error = %v", err)
 	}
@@ -148,9 +125,56 @@ func TestManagedToolLoadsFromCurrentVersionDirectory(t *testing.T) {
 	}
 }
 
+// TestManagedToolVersionComesFromCurrentRecord 运行期版本以激活记录为唯一事实源：
+// 版本目录内身份定义的版本不参与展示，展示只认激活记录。
 func TestManagedToolVersionComesFromCurrentRecord(t *testing.T) {
 	system, programRoot := newManagedTestSystem(t)
-	installManagedToolWithDefinitionVersion(t, programRoot, "demo", "0.1.0.2", "0.1.0")
+	root := filepath.Join(programRoot, "demo")
+	versionDir := filepath.Join(root, "versions", "0.1.0.2")
+	binaryPath := filepath.ToSlash(filepath.Join("binary", "windows-amd64", "demo.exe"))
+	definition := types.ToolDefinition{
+		ID:                    "demo",
+		Name:                  "Demo",
+		Description:           "demo tool",
+		Version:               "0.1.0",
+		EucliBoxCompatibility: types.EucliBoxCompatibility{MinimumVersion: "0.1.0", MaximumVersionExclusive: "0.2.0"},
+		DefaultInvocationMode: "sync",
+		Type:                  "local",
+		BodyDirectory:         ".",
+		Binaries:              []types.ToolBinary{{GOOS: "windows", GOARCH: "amd64", Path: binaryPath}},
+	}
+	definitionPayload, err := json.MarshalIndent(definition, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal definition: %v", err)
+	}
+	contents := map[string][]byte{
+		"definition.json": definitionPayload,
+		binaryPath:        []byte("tool-binary"),
+	}
+	for name, payload := range contents {
+		path := filepath.Join(versionDir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", path, err)
+		}
+		if err := os.WriteFile(path, payload, 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+	record := map[string]any{
+		"schemaVersion":    1,
+		"artifact":         map[string]any{"kind": types.ReleaseArtifactKindTool, "id": "demo"},
+		"version":          "0.1.0.2",
+		"platform":         types.ReleasePlatformWindowsX64,
+		"programDirectory": versionDir,
+		"status":           "active",
+	}
+	recordPayload, err := json.Marshal(record)
+	if err != nil {
+		t.Fatalf("marshal current: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "current.json"), recordPayload, 0o644); err != nil {
+		t.Fatalf("write current: %v", err)
+	}
 	tools, err := system.ListTools(context.Background())
 	if err != nil {
 		t.Fatalf("ListTools() error = %v", err)

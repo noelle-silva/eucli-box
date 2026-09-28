@@ -65,6 +65,65 @@ func buildTestToolContents(t *testing.T, id string, version string) (string, []t
 	return root, files
 }
 
+// buildMinimalToolContents 生成一个纯本地工具包目录：
+// 只有工具定义文件与可执行文件，没有任何说明文档、更新记录或发行资料。
+func buildMinimalToolContents(t *testing.T, id string, version string) string {
+	t.Helper()
+	root := t.TempDir()
+	binaryPath := filepath.ToSlash(filepath.Join("binary", "windows-amd64", id+".exe"))
+	definition := types.ToolDefinition{
+		ID:                    id,
+		Name:                  "Demo " + id,
+		Description:           "demo tool",
+		Version:               version,
+		EucliBoxCompatibility: testCompatibility,
+		DefaultInvocationMode: "sync",
+		Type:                  "local",
+		BodyDirectory:         ".",
+		Binaries:              []types.ToolBinary{{GOOS: "windows", GOARCH: "amd64", Path: binaryPath}},
+	}
+	definitionPayload, err := json.MarshalIndent(definition, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal definition: %v", err)
+	}
+	contents := map[string][]byte{
+		"definition.json": definitionPayload,
+		binaryPath:        []byte("tool-binary"),
+	}
+	for name, payload := range contents {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", path, err)
+		}
+		if err := os.WriteFile(path, payload, 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+	return root
+}
+
+// rewriteToolDefinitionVersion 改写包内工具定义的版本字段。
+func rewriteToolDefinitionVersion(t *testing.T, root string, version string) {
+	t.Helper()
+	definitionPath := filepath.Join(root, "definition.json")
+	payload, err := os.ReadFile(definitionPath)
+	if err != nil {
+		t.Fatalf("read definition: %v", err)
+	}
+	var definition types.ToolDefinition
+	if err := json.Unmarshal(payload, &definition); err != nil {
+		t.Fatalf("decode definition: %v", err)
+	}
+	definition.Version = version
+	payload, err = json.MarshalIndent(definition, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal definition: %v", err)
+	}
+	if err := os.WriteFile(definitionPath, payload, 0o644); err != nil {
+		t.Fatalf("write definition: %v", err)
+	}
+}
+
 // productForTestTool 构造与 buildTestToolContents 对应的工具成品身份记录。
 func productForTestTool(id string, version string) types.ReleaseProductRecord {
 	return types.ReleaseProductRecord{

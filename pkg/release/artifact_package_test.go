@@ -77,11 +77,11 @@ func TestAcquireAndValidatePackageReturnsValidatedPackage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AcquireAndValidatePackage() error = %v", err)
 	}
-	if validated.Product.Artifact != fixture.product.Artifact || validated.Product.Version != "0.1.0" {
-		t.Fatalf("validated product = %#v", validated.Product)
+	if validated.Artifact != fixture.product.Artifact || validated.Version != "0.1.0" {
+		t.Fatalf("validated package = %#v", validated)
 	}
-	if _, err := os.Stat(filepath.Join(validated.Directory, "release-product.json")); err != nil {
-		t.Fatalf("missing release-product.json: %v", err)
+	if _, err := os.Stat(filepath.Join(validated.Directory, "definition.json")); err != nil {
+		t.Fatalf("missing definition.json: %v", err)
 	}
 }
 
@@ -91,41 +91,101 @@ func TestAcquireAndValidatePackageAcceptsDevelopmentVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AcquireAndValidatePackage() error = %v", err)
 	}
-	if validated.Product.Version != "0.1.0.2" {
-		t.Fatalf("validated version = %s", validated.Product.Version)
+	if validated.Version != "0.1.0.2" {
+		t.Fatalf("validated version = %s", validated.Version)
 	}
 }
 
-func TestValidateExtractedPackageRejectsToolDefinitionVersionMismatch(t *testing.T) {
-	root, _ := buildTestToolContents(t, "demo", "0.1.0.2")
-	definitionPath := filepath.Join(root, "definition.json")
-	payload, err := os.ReadFile(definitionPath)
+// TestValidatePackageDirectoryAcceptsMinimalToolPackage 最小标准：
+// 没有说明文档、更新记录、成品身份资料的工具包同样合法。
+func TestValidatePackageDirectoryAcceptsMinimalToolPackage(t *testing.T) {
+	root := buildMinimalToolContents(t, "demo", "0.1.0")
+	validated, err := ValidatePackageDirectory(ValidatePackageDirectoryOptions{Directory: root, Kind: types.ReleaseArtifactKindTool})
 	if err != nil {
-		t.Fatalf("read definition: %v", err)
+		t.Fatalf("ValidatePackageDirectory() error = %v", err)
 	}
-	var definition types.ToolDefinition
-	if err := json.Unmarshal(payload, &definition); err != nil {
-		t.Fatalf("decode definition: %v", err)
+	if validated.Artifact.ID != "demo" || validated.Version != "0.1.0" {
+		t.Fatalf("validated = %#v", validated)
 	}
-	definition.Version = "0.1.0"
-	payload, err = json.MarshalIndent(definition, "", "  ")
-	if err != nil {
-		t.Fatalf("marshal definition: %v", err)
-	}
-	if err := os.WriteFile(definitionPath, payload, 0o644); err != nil {
-		t.Fatalf("write definition: %v", err)
-	}
-	_, err = ValidateExtractedPackage(ValidateExtractedPackageOptions{Directory: root, Product: productForTestTool("demo", "0.1.0.2")})
-	if err == nil || !strings.Contains(err.Error(), "版本不一致") {
-		t.Fatalf("ValidateExtractedPackage() error = %v", err)
+	if len(validated.Files) != 2 {
+		t.Fatalf("files = %#v", validated.Files)
 	}
 }
 
-func TestValidatePluginPackageRejectsManifestVersionMismatch(t *testing.T) {
+func TestValidatePackageDirectoryRejectsMissingDefinition(t *testing.T) {
+	root := buildMinimalToolContents(t, "demo", "0.1.0")
+	if err := os.Remove(filepath.Join(root, "definition.json")); err != nil {
+		t.Fatalf("remove definition: %v", err)
+	}
+	_, err := ValidatePackageDirectory(ValidatePackageDirectoryOptions{Directory: root, Kind: types.ReleaseArtifactKindTool})
+	if err == nil || !strings.Contains(err.Error(), "工具定义文件") {
+		t.Fatalf("ValidatePackageDirectory() error = %v", err)
+	}
+}
+
+func TestValidatePackageDirectoryRejectsMissingBinary(t *testing.T) {
+	root := buildMinimalToolContents(t, "demo", "0.1.0")
+	if err := os.Remove(filepath.Join(root, "binary", "windows-amd64", "demo.exe")); err != nil {
+		t.Fatalf("remove binary: %v", err)
+	}
+	_, err := ValidatePackageDirectory(ValidatePackageDirectoryOptions{Directory: root, Kind: types.ReleaseArtifactKindTool})
+	if err == nil || !strings.Contains(err.Error(), "缺少必需文件") {
+		t.Fatalf("ValidatePackageDirectory() error = %v", err)
+	}
+}
+
+func TestValidatePackageDirectoryRejectsInvalidVersion(t *testing.T) {
+	root := buildMinimalToolContents(t, "demo", "0.1.0")
+	rewriteToolDefinitionVersion(t, root, "not-a-version")
+	_, err := ValidatePackageDirectory(ValidatePackageDirectoryOptions{Directory: root, Kind: types.ReleaseArtifactKindTool})
+	if err == nil || !strings.Contains(err.Error(), "版本无效") {
+		t.Fatalf("ValidatePackageDirectory() error = %v", err)
+	}
+}
+
+// TestValidatePackageDirectoryAcceptsMinimalPluginPackage 插件最小标准：
+// 身份声明、配置默认值与可执行文件即可，不要求任何说明文档或发行资料。
+func TestValidatePackageDirectoryAcceptsMinimalPluginPackage(t *testing.T) {
+	root := t.TempDir()
+	manifest := types.SystemPluginManifest{
+		ID:      "demo",
+		Name:    "Demo",
+		Version: "0.1.0",
+		Binaries: []types.SystemPluginBinary{
+			{GOOS: "windows", GOARCH: "amd64", Path: filepath.ToSlash(filepath.Join("binary", "demo.exe"))},
+		},
+	}
+	manifestPayload, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	files := map[string][]byte{
+		"manifest.json": manifestPayload,
+		"config.json":   []byte("{}"),
+		filepath.ToSlash(filepath.Join("binary", "demo.exe")): []byte("plugin-binary"),
+	}
+	for name, payload := range files {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(path, payload, 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	validated, err := ValidatePackageDirectory(ValidatePackageDirectoryOptions{Directory: root, Kind: types.ReleaseArtifactKindPlugin})
+	if err != nil {
+		t.Fatalf("ValidatePackageDirectory() error = %v", err)
+	}
+	if validated.Artifact.ID != "demo" || validated.Version != "0.1.0" {
+		t.Fatalf("validated = %#v", validated)
+	}
+}
+
+func TestValidatePackageDirectoryRejectsPluginWithoutConfig(t *testing.T) {
 	root := t.TempDir()
 	files := map[string]string{
-		"manifest.json": `{"id":"demo","version":"0.1.0"}`,
-		"config.json":   "{}",
+		"manifest.json": `{"id":"demo","version":"0.1.0","binaries":[{"goos":"windows","goarch":"amd64","path":"binary/demo.exe"}]}`,
 		filepath.ToSlash(filepath.Join("binary", "demo.exe")): "plugin-binary",
 	}
 	for name, payload := range files {
@@ -137,10 +197,9 @@ func TestValidatePluginPackageRejectsManifestVersionMismatch(t *testing.T) {
 			t.Fatalf("write %s: %v", name, err)
 		}
 	}
-	product := types.ReleaseProductRecord{Version: "0.1.0.1", Artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindPlugin, ID: "demo"}}
-	err := validatePluginPackage(root, product)
-	if err == nil || !strings.Contains(err.Error(), "版本不一致") {
-		t.Fatalf("validatePluginPackage() error = %v", err)
+	_, err := ValidatePackageDirectory(ValidatePackageDirectoryOptions{Directory: root, Kind: types.ReleaseArtifactKindPlugin})
+	if err == nil || !strings.Contains(err.Error(), "config.json") {
+		t.Fatalf("ValidatePackageDirectory() error = %v", err)
 	}
 }
 
@@ -205,7 +264,7 @@ func TestAcquireAndValidatePackageRejectsProductMismatch(t *testing.T) {
 	source := fixture.source()
 	source.Product.Version = "9.9.9"
 	_, err := fixture.acquire(t, source)
-	if err == nil || !strings.Contains(err.Error(), "包内核对失败") {
+	if err == nil || !strings.Contains(err.Error(), "包内版本与候选版本不一致") {
 		t.Fatalf("AcquireAndValidatePackage() error = %v", err)
 	}
 }

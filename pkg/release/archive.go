@@ -2,15 +2,12 @@ package release
 
 import (
 	"archive/zip"
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strings"
 
@@ -21,17 +18,6 @@ import (
 type ExtractArchiveOptions struct {
 	ArchivePath string
 	TargetDir   string
-}
-
-type ValidateExtractedPackageOptions struct {
-	Directory string
-	Product   types.ReleaseProductRecord
-}
-
-type ValidatedPackage struct {
-	Directory string
-	Product   types.ReleaseProductRecord
-	Files     []types.ReleaseFileRecord
 }
 
 func ExtractArchive(options ExtractArchiveOptions) error {
@@ -121,65 +107,6 @@ func CompareFileRecords(root string, expected []types.ReleaseFileRecord) ([]type
 	return actual, nil
 }
 
-func ValidateExtractedPackage(options ValidateExtractedPackageOptions) (ValidatedPackage, error) {
-	directory, err := existingDirectory(options.Directory)
-	if err != nil {
-		return ValidatedPackage{}, err
-	}
-	if err := ValidateReleaseProductRecord(options.Product); err != nil {
-		return ValidatedPackage{}, err
-	}
-	if err := validatePackageBoundary(directory); err != nil {
-		return ValidatedPackage{}, err
-	}
-	productPayload, err := os.ReadFile(filepath.Join(directory, "release-product.json"))
-	if err != nil {
-		return ValidatedPackage{}, fmt.Errorf("读取成品身份资料失败：%w", err)
-	}
-	product, err := DecodeReleaseProductRecord(productPayload)
-	if err != nil {
-		return ValidatedPackage{}, err
-	}
-	if err := validateExpectedProduct(options.Product, product); err != nil {
-		return ValidatedPackage{}, err
-	}
-	if err := validateExtractedExternalAssets(directory, product.ExternalAssets); err != nil {
-		return ValidatedPackage{}, err
-	}
-	if err := validateRequiredPackageFiles(directory, options.Product); err != nil {
-		return ValidatedPackage{}, err
-	}
-	files, err := CollectFileRecords(directory)
-	if err != nil {
-		return ValidatedPackage{}, err
-	}
-	return ValidatedPackage{Directory: directory, Product: product, Files: files}, nil
-}
-
-// validateExpectedProduct 核对包内身份资料与官方候选期望完全一致；
-// 外部附带内容以包内身份资料自身声明为准并单独自洽核对。
-func validateExpectedProduct(expected types.ReleaseProductRecord, actual types.ReleaseProductRecord) error {
-	if actual.Artifact != expected.Artifact {
-		return fmt.Errorf("包内身份资料与官方候选不一致")
-	}
-	if actual.Version != expected.Version || actual.Platform != expected.Platform || actual.OfficialSource != expected.OfficialSource {
-		return fmt.Errorf("包内身份资料与官方候选不一致")
-	}
-	if !reflect.DeepEqual(actual.Compatibility, expected.Compatibility) {
-		return fmt.Errorf("包内适用范围与官方候选不一致")
-	}
-	if actual.DataVersion != expected.DataVersion {
-		return fmt.Errorf("包内数据版本与官方候选不一致")
-	}
-	if actual.Source.Commit != expected.Source.Commit || actual.Source.Repository != expected.Source.Repository {
-		return fmt.Errorf("包内来源记录与官方候选不一致")
-	}
-	if expected.Source.Recorded && !actual.Source.Recorded {
-		return fmt.Errorf("包内来源必须与官方候选的记录状态一致")
-	}
-	return nil
-}
-
 func CollectFileRecords(root string) ([]types.ReleaseFileRecord, error) {
 	return collectFileRecords(root, "")
 }
@@ -240,157 +167,6 @@ func validatePackageBoundary(directory string) error {
 		}
 		if forbiddenPackagePath(name, externalRoots) {
 			return fmt.Errorf("成品包含禁止内容：%s", name)
-		}
-	}
-	return nil
-}
-
-func validateRequiredPackageFiles(directory string, product types.ReleaseProductRecord) error {
-	for _, name := range []string{"README.md", "CHANGELOG.md", "release-product.json"} {
-		if err := requireRegularFile(directory, name); err != nil {
-			return err
-		}
-	}
-	switch product.Artifact.Kind {
-	case types.ReleaseArtifactKindTool:
-		return validateToolPackage(directory, product)
-	case types.ReleaseArtifactKindPlugin:
-		return validatePluginPackage(directory, product)
-	default:
-		return fmt.Errorf("未知成品类别 %q", product.Artifact.Kind)
-	}
-}
-
-func validateToolPackage(directory string, product types.ReleaseProductRecord) error {
-	if err := requireRegularFile(directory, "definition.json"); err != nil {
-		return err
-	}
-	payload, err := os.ReadFile(filepath.Join(directory, "definition.json"))
-	if err != nil {
-		return err
-	}
-	var definition types.ToolDefinition
-	if err := json.Unmarshal(payload, &definition); err != nil {
-		return fmt.Errorf("工具 definition.json 无效：%w", err)
-	}
-	if definition.ID != product.Artifact.ID || definition.BodyDirectory != "." || definition.DataDirectory != "" || len(definition.UserConfig) != 0 || definition.PromptDescriptionOverride != "" {
-		return fmt.Errorf("工具成品混入用户资料或运行期路径")
-	}
-	if strings.TrimSpace(definition.Version) != strings.TrimSpace(product.Version) {
-		return fmt.Errorf("工具定义版本与成品身份版本不一致：%s != %s", definition.Version, product.Version)
-	}
-	if len(definition.Binaries) == 0 {
-		return fmt.Errorf("工具成品缺少可执行文件声明")
-	}
-	foundWindowsBinary := false
-	for _, binary := range definition.Binaries {
-		if binary.GOOS != "windows" || binary.GOARCH != "amd64" {
-			continue
-		}
-		foundWindowsBinary = true
-		if err := requireRegularFile(directory, binary.Path); err != nil {
-			return err
-		}
-	}
-	if !foundWindowsBinary {
-		return fmt.Errorf("工具成品缺少 Windows x64 可执行文件")
-	}
-	return nil
-}
-
-func validatePluginPackage(directory string, product types.ReleaseProductRecord) error {
-	for _, name := range []string{"manifest.json", "config.json", filepath.ToSlash(filepath.Join("binary", product.Artifact.ID+".exe"))} {
-		if err := requireRegularFile(directory, name); err != nil {
-			return err
-		}
-	}
-	payload, err := os.ReadFile(filepath.Join(directory, "manifest.json"))
-	if err != nil {
-		return err
-	}
-	var manifest types.SystemPluginManifest
-	if err := json.Unmarshal(payload, &manifest); err != nil {
-		return fmt.Errorf("插件 manifest.json 无效：%w", err)
-	}
-	if manifest.ID != product.Artifact.ID {
-		return fmt.Errorf("插件身份与目录目标不一致")
-	}
-	if strings.TrimSpace(manifest.Version) != strings.TrimSpace(product.Version) {
-		return fmt.Errorf("插件身份声明版本与成品身份版本不一致：%s != %s", manifest.Version, product.Version)
-	}
-	return nil
-}
-
-func requireRegularFile(root string, name string) error {
-	if _, err := safeArchivePath(name); err != nil {
-		return err
-	}
-	path := filepath.Join(root, filepath.FromSlash(name))
-	info, err := os.Stat(path)
-	if err != nil {
-		return fmt.Errorf("缺少必需文件 %s：%w", name, err)
-	}
-	if info.IsDir() {
-		return fmt.Errorf("必需文件 %s 实际是目录", name)
-	}
-	return nil
-}
-
-type externalManifest struct {
-	SchemaVersion int                       `json:"schemaVersion"`
-	Name          string                    `json:"name"`
-	Version       string                    `json:"version"`
-	Platform      string                    `json:"platform"`
-	Source        string                    `json:"source"`
-	Sources       []string                  `json:"sources"`
-	Inputs        []map[string]any          `json:"inputs,omitempty"`
-	Files         []types.ReleaseFileRecord `json:"files"`
-	TreeSHA256    string                    `json:"treeSha256"`
-}
-
-func validateExtractedExternalAssets(directory string, declared []types.ReleaseExternalAsset) error {
-	declaredPaths := map[string]types.ReleaseExternalAsset{}
-	for _, asset := range declared {
-		if err := validateExtractedPackagePath(asset.PackagePath); err != nil {
-			return fmt.Errorf("外部附带内容 %s 的位置无效：%w", asset.Name, err)
-		}
-		if _, exists := declaredPaths[asset.PackagePath]; exists {
-			return fmt.Errorf("外部附带内容位置重复：%s", asset.PackagePath)
-		}
-		declaredPaths[asset.PackagePath] = asset
-		root := filepath.Join(directory, filepath.FromSlash(asset.PackagePath))
-		manifestPath := filepath.Join(root, "vendor-manifest.json")
-		payload, err := os.ReadFile(manifestPath)
-		if err != nil {
-			return fmt.Errorf("外部附带内容 %s 缺少身份资料：%w", asset.Name, err)
-		}
-		var manifest externalManifest
-		decoder := json.NewDecoder(bytes.NewReader(payload))
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&manifest); err != nil {
-			return fmt.Errorf("外部附带内容 %s 身份资料无效：%w", asset.Name, err)
-		}
-		if manifest.SchemaVersion != 1 || manifest.Name != asset.Name || manifest.Version != asset.Version || manifest.Platform != types.ReleasePlatformWindowsX64 || manifest.Source != asset.Source || len(manifest.Files) != asset.FileCount || !strings.EqualFold(manifest.TreeSHA256, asset.TreeSHA256) {
-			return fmt.Errorf("外部附带内容 %s 身份资料不一致", asset.Name)
-		}
-		actual, err := collectFileRecords(root, "vendor-manifest.json")
-		if err != nil {
-			return err
-		}
-		if !reflect.DeepEqual(actual, SortedFileRecords(manifest.Files)) || treeSHA256(actual) != strings.ToLower(manifest.TreeSHA256) {
-			return fmt.Errorf("外部附带内容 %s 逐文件摘要不一致", asset.Name)
-		}
-	}
-	discovered, err := discoverExternalRoots(directory)
-	if err != nil {
-		return err
-	}
-	if len(discovered) != len(declaredPaths) {
-		return fmt.Errorf("成品外部附带内容数量与身份资料不一致")
-	}
-	for _, root := range discovered {
-		if _, ok := declaredPaths[root]; !ok {
-			return fmt.Errorf("成品包含未声明的外部附带内容：%s", root)
 		}
 	}
 	return nil
@@ -460,14 +236,6 @@ func forbiddenPackagePath(name string, externalRoots []string) bool {
 	return false
 }
 
-func treeSHA256(files []types.ReleaseFileRecord) string {
-	digest := sha256.New()
-	for _, file := range SortedFileRecords(files) {
-		_, _ = fmt.Fprintf(digest, "%s\x00%d\x00%s\n", file.Name, file.Size, strings.ToLower(file.SHA256))
-	}
-	return hex.EncodeToString(digest.Sum(nil))
-}
-
 func fileRecord(path string, name string) (types.ReleaseFileRecord, error) {
 	input, err := os.Open(path)
 	if err != nil {
@@ -506,11 +274,6 @@ func safeArchivePath(value string) (string, error) {
 		}
 	}
 	return name, nil
-}
-
-func validateExtractedPackagePath(value string) error {
-	_, err := safeArchivePath(value)
-	return err
 }
 
 func existingDirectory(value string) (string, error) {

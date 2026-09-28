@@ -61,19 +61,17 @@ func NewProgramStore(root string, identity types.ReleaseArtifactIdentity) (Progr
 }
 
 // PrepareVersion 把完整且已验证的目录复制到 versions/<version> 的新临时目录，再原子改名为正式版本目录。
-// 已存在同版本且内容资料一致时可以复用；内容不一致时直接失败，不覆盖。
-func (s ProgramStore) PrepareVersion(ctx context.Context, sourceDir string, product types.ReleaseProductRecord, files []types.ReleaseFileRecord) (PreparedProgram, error) {
-	if product.Artifact != s.identity {
-		return PreparedProgram{}, fmt.Errorf("产品记录身份与程序根目录身份不一致")
-	}
-	if err := ValidateReleaseProductRecord(product); err != nil {
+// 身份与版本从包内定义文件读取；已存在同版本且内容资料一致时可以复用，内容不一致时直接失败，不覆盖。
+func (s ProgramStore) PrepareVersion(ctx context.Context, sourceDir string, files []types.ReleaseFileRecord) (PreparedProgram, error) {
+	artifact, version, err := PackageIdentity(sourceDir, s.identity.Kind)
+	if err != nil {
 		return PreparedProgram{}, err
 	}
-	if err := ValidateVersion(product.Version); err != nil {
-		return PreparedProgram{}, fmt.Errorf("产品版本无效：%w", err)
+	if artifact != s.identity {
+		return PreparedProgram{}, fmt.Errorf("包身份与程序根目录身份不一致")
 	}
-	prepared := PreparedProgram{Version: product.Version, Files: append([]types.ReleaseFileRecord(nil), files...)}
-	prepared.Directory = s.versionDirectory(product.Version)
+	prepared := PreparedProgram{Version: version, Files: append([]types.ReleaseFileRecord(nil), files...)}
+	prepared.Directory = s.versionDirectory(version)
 	if existing, err := s.verifiedVersionDirectory(prepared.Directory, prepared.Files); err == nil {
 		prepared.Directory = existing
 		return prepared, nil
@@ -93,7 +91,7 @@ func (s ProgramStore) PrepareVersion(ctx context.Context, sourceDir string, prod
 	if err := EnsurePlainDirectory(versionsRoot); err != nil {
 		return PreparedProgram{}, err
 	}
-	temporary, err := os.MkdirTemp(versionsRoot, ".prepare-"+product.Version+"-*")
+	temporary, err := os.MkdirTemp(versionsRoot, ".prepare-"+version+"-*")
 	if err != nil {
 		return PreparedProgram{}, fmt.Errorf("建立版本准备临时目录失败：%w", err)
 	}
@@ -235,9 +233,9 @@ func (s ProgramStore) verifiedVersionDirectory(directory string, files []types.R
 	return directory, nil
 }
 
-// verifyVersionDirectoryIdentity 核对版本目录是存在的普通目录，且带一份与程序根目录一致的身份资料。
+// verifyVersionDirectoryIdentity 核对版本目录是存在的普通目录，且带一份与程序根目录一致的身份定义。
 //
-// 它只读取目录条目与 release-product.json：负载文件的全量摘要核对属于版本落地时刻
+// 它只读取目录条目与身份定义文件：负载文件的全量摘要核对属于版本落地时刻
 // （PrepareVersion / Activate），不属于读取事实。读取路径不得读取负载文件内容。
 func verifyVersionDirectoryIdentity(directory string, identity types.ReleaseArtifactIdentity) error {
 	directory, err := existingDirectory(directory)
@@ -251,16 +249,12 @@ func verifyVersionDirectoryIdentity(directory string, identity types.ReleaseArti
 	if len(entries) == 0 {
 		return fmt.Errorf("版本目录为空")
 	}
-	payload, err := os.ReadFile(filepath.Join(directory, "release-product.json"))
-	if err != nil {
-		return fmt.Errorf("版本目录缺少成品身份资料：%w", err)
-	}
-	product, err := DecodeReleaseProductRecord(payload)
+	packageIdentity, _, err := PackageIdentity(directory, identity.Kind)
 	if err != nil {
 		return err
 	}
-	if product.Artifact != identity {
-		return fmt.Errorf("版本目录成品身份与程序根目录不一致")
+	if packageIdentity != identity {
+		return fmt.Errorf("版本目录身份与程序根目录不一致")
 	}
 	return nil
 }

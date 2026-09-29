@@ -45,24 +45,31 @@ func loadConfig(bodyDir string) (Config, error) {
 	return config, nil
 }
 
-// effectiveMaxOutputChars 计算本次输出的字符上限：用户配置可下调，但不能突破随包静态上限。
+// effectiveMaxOutputChars 计算本次输出的字符上限：
+// 随包上限为底，用户配置可下调；调用参数可在当前上限内再下调。两者越界都快速失败。
 func effectiveMaxOutputChars(input types.ToolExecutionInput, config Config) (int, error) {
 	limit := config.Limits.MaxOutputChars
-	value, ok := input.UserConfig["maxOutputChars"]
-	if !ok || value == nil {
-		return limit, nil
+	if value, ok := input.UserConfig["maxOutputChars"]; ok && value != nil {
+		parsed, err := intValue(value, "maxOutputChars")
+		if err != nil {
+			return 0, errors.New("userConfig.maxOutputChars must be an integer")
+		}
+		if parsed < 1 || parsed > limit {
+			return 0, fmt.Errorf("userConfig.maxOutputChars must be between 1 and %d", limit)
+		}
+		limit = parsed
 	}
-	parsed, err := intValue(value, "maxOutputChars")
-	if err != nil {
-		return 0, errors.New("userConfig.maxOutputChars must be an integer")
+	if value, ok := input.Arguments["maxOutputChars"]; ok && value != nil {
+		parsed, err := intValue(value, "maxOutputChars")
+		if err != nil {
+			return 0, err
+		}
+		if parsed < 1 || parsed > limit {
+			return 0, fmt.Errorf("argument \"maxOutputChars\" must be between 1 and %d", limit)
+		}
+		limit = parsed
 	}
-	if parsed <= 0 {
-		return 0, fmt.Errorf("userConfig.maxOutputChars must be greater than zero")
-	}
-	if parsed > limit {
-		return 0, fmt.Errorf("userConfig.maxOutputChars must not exceed %d", limit)
-	}
-	return parsed, nil
+	return limit, nil
 }
 
 // repoEntry 是工具配置区注册的一个仓库条目：仓库 id（可含中文）、描述与对应访问钥匙。

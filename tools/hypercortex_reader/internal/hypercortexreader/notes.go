@@ -141,6 +141,9 @@ func runNoteRelations(ctx context.Context, input types.ToolExecutionInput) types
 	if err != nil {
 		return s.fail("parse note_relations request", err, nil)
 	}
+	if _, provided := argumentValue(input, "radius"); provided && radius < 1 {
+		return s.fail("parse note_relations request", fmt.Errorf("argument \"radius\" must be greater than zero"), nil)
+	}
 	direction, err := stringArg(input, "direction", false)
 	if err != nil {
 		return s.fail("parse note_relations request", err, nil)

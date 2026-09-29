@@ -431,6 +431,58 @@ func TestExecuteTruncatesOutputKeepingEnvelope(t *testing.T) {
 	}
 }
 
+func TestExecuteArgumentLowersOutputLimit(t *testing.T) {
+	longDescription := strings.Repeat("很长的简介内容", 80)
+	f := newFixture(t, map[string][]any{
+		"hypercortex.search.query": {map[string]any{
+			"kinds": []any{},
+			"items": []any{map[string]any{
+				"noteId":      "note-1",
+				"title":       "标题甲",
+				"description": longDescription,
+				"dir":         "Notes/2026-09/note-1",
+				"updatedAtMs": 2000,
+			}},
+		}},
+	})
+	f.setRepos(twoReposJSON(f.server.URL))
+
+	result := execute(t, f.input(map[string]any{"action": "search_notes", "query": "标题甲", "maxOutputChars": 120}))
+
+	requireSuccess(t, result)
+	if result.Metadata["truncated"] != true {
+		t.Fatalf("metadata = %#v", result.Metadata)
+	}
+	if !strings.Contains(result.Content, "truncated=true") || !strings.Contains(result.Content, "action=search_notes") {
+		t.Fatalf("content = %q", result.Content)
+	}
+}
+
+func TestExecuteRejectsArgumentAboveOutputLimit(t *testing.T) {
+	f := newFixture(t, nil)
+	f.setRepos(twoReposJSON(f.server.URL))
+
+	result := execute(t, f.input(map[string]any{"action": "search_notes", "maxOutputChars": 60000}))
+
+	requireFailure(t, result, "between 1 and 50000")
+	if calls := f.callList(); len(calls) != 0 {
+		t.Fatalf("calls = %#v", calls)
+	}
+}
+
+func TestExecuteNoteRelationsRejectsNonPositiveRadius(t *testing.T) {
+	f := newFixture(t, nil)
+	f.setRepos(twoReposJSON(f.server.URL))
+
+	for _, radius := range []any{0, -2} {
+		result := execute(t, f.input(map[string]any{"action": "note_relations", "noteId": "note-1", "radius": radius}))
+		requireFailure(t, result, "must be greater than zero")
+	}
+	if calls := f.callList(); len(calls) != 0 {
+		t.Fatalf("calls = %#v", calls)
+	}
+}
+
 func TestExecuteListFavoritesRendersTree(t *testing.T) {
 	f := newFixture(t, map[string][]any{
 		"hypercortex.favorites.tryLoad": {map[string]any{

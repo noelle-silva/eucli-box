@@ -68,18 +68,36 @@ func TestLoadRepoConfigRejectsInvalidPayloads(t *testing.T) {
 	}
 }
 
-func TestEffectiveMaxOutputCharsAllowsLowerUserBound(t *testing.T) {
+func TestEffectiveMaxOutputCharsAppliesUserAndArgument(t *testing.T) {
 	config := Config{Limits: LimitsConfig{MaxOutputChars: 50000}}
 	base := types.ToolExecutionInput{}
 	if limit, err := effectiveMaxOutputChars(base, config); err != nil || limit != 50000 {
-		t.Fatalf("limit = %d, err = %v", limit, err)
+		t.Fatalf("base limit = %d, err = %v", limit, err)
 	}
-	lowered := types.ToolExecutionInput{UserConfig: map[string]any{"maxOutputChars": 1000}}
-	if limit, err := effectiveMaxOutputChars(lowered, config); err != nil || limit != 1000 {
-		t.Fatalf("limit = %d, err = %v", limit, err)
+	userLowered := types.ToolExecutionInput{UserConfig: map[string]any{"maxOutputChars": 1000}}
+	if limit, err := effectiveMaxOutputChars(userLowered, config); err != nil || limit != 1000 {
+		t.Fatalf("user limit = %d, err = %v", limit, err)
 	}
-	exceeding := types.ToolExecutionInput{UserConfig: map[string]any{"maxOutputChars": 60000}}
-	if _, err := effectiveMaxOutputChars(exceeding, config); err == nil || !strings.Contains(err.Error(), "must not exceed") {
-		t.Fatalf("err = %v", err)
+	argumentLowered := types.ToolExecutionInput{
+		UserConfig: map[string]any{"maxOutputChars": 1000},
+		Arguments:  map[string]any{"maxOutputChars": 500},
+	}
+	if limit, err := effectiveMaxOutputChars(argumentLowered, config); err != nil || limit != 500 {
+		t.Fatalf("argument limit = %d, err = %v", limit, err)
+	}
+	exceedingUser := types.ToolExecutionInput{UserConfig: map[string]any{"maxOutputChars": 60000}}
+	if _, err := effectiveMaxOutputChars(exceedingUser, config); err == nil || !strings.Contains(err.Error(), "between 1 and 50000") {
+		t.Fatalf("user err = %v", err)
+	}
+	exceedingArgument := types.ToolExecutionInput{
+		UserConfig: map[string]any{"maxOutputChars": 1000},
+		Arguments:  map[string]any{"maxOutputChars": 2000},
+	}
+	if _, err := effectiveMaxOutputChars(exceedingArgument, config); err == nil || !strings.Contains(err.Error(), "between 1 and 1000") {
+		t.Fatalf("argument err = %v", err)
+	}
+	zeroArgument := types.ToolExecutionInput{Arguments: map[string]any{"maxOutputChars": 0}}
+	if _, err := effectiveMaxOutputChars(zeroArgument, config); err == nil || !strings.Contains(err.Error(), "between 1 and 50000") {
+		t.Fatalf("zero err = %v", err)
 	}
 }

@@ -58,6 +58,9 @@ func TestToolManifestMatchesImplementedActions(t *testing.T) {
 	if strings.Join(declaredConfig, ",") != strings.Join(expectedConfig, ",") {
 		t.Fatalf("declared user config = %v, expected = %v", declaredConfig, expectedConfig)
 	}
+	if _, ok := manifest.InputSchema.Properties["maxOutputChars"]; !ok {
+		t.Fatal("inputSchema must declare maxOutputChars")
+	}
 
 	configPath := filepath.Join("..", "..", "config.json")
 	configPayload, err := os.ReadFile(configPath)

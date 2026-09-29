@@ -557,8 +557,55 @@ func TestRunRecordsModelDurationForNonStreamingReply(t *testing.T) {
 	}
 }
 
-func TestRunCopiesToolExecutionDurationIntoPartResult(t *testing.T) {
+// TestRunCarriesProducedToolImagesIntoNextModelRequest 钉住生图闭环的下一轮请求：
+// 工具产出附件挂到助手消息并记录产出调用标识；下一轮组装时进入 ToolImages，
+// 不混入助手消息的普通图片通道。
+func TestRunCarriesProducedToolImagesIntoNextModelRequest(t *testing.T) {
 	fakes := newRuntimeFakes()
+	imageDataURL := "data:image/png;base64,iVBORw0KGgo="
+	fakes.provider.responses = []types.ModelResponse{
+		{ID: "m1", Content: "", ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "ai-image", Arguments: map[string]any{"prompt": "猫"}}}},
+		{ID: "m2", Content: "完成"},
+	}
+	fakes.tool.executeResult = types.ToolResult{
+		ID: "result-1", Status: types.ToolStatusSuccess, Content: "图片已生成",
+		ProducedAttachments: []types.MessageAttachment{{ID: "att-9", Kind: "image", Name: "生成图", Mime: "image/png", Path: "sessions/roles/developer/session-1/attachments/att-9/image.png"}},
+		CreatedAt:           time.Now().UTC(),
+	}
+	fakes.storage.images["sessions/roles/developer/session-1/attachments/att-9/image.png"] = imageDataURL
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "画一只猫"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("final = %#v", final)
+	}
+	requests := fakes.provider.requests
+	if len(requests) != 2 {
+		t.Fatalf("model requests = %d", len(requests))
+	}
+	second := requests[1]
+	var assistant *types.PromptMessage
+	for index := range second.Messages {
+		if second.Messages[index].Role == "assistant" && len(second.Messages[index].Parts) > 0 {
+			assistant = &second.Messages[index]
+			break
+		}
+	}
+	if assistant == nil {
+		t.Fatalf("second request has no assistant tool message: %#v", second.Messages)
+	}
+	if len(assistant.Images) != 0 {
+		t.Fatalf("assistant must not carry plain images: %#v", assistant.Images)
+	}
+	if len(assistant.ToolImages) != 1 || assistant.ToolImages[0].CallID != "intent-1" || assistant.ToolImages[0].AttachmentID != "att-9" {
+		t.Fatalf("assistant tool images = %#v", assistant.ToolImages)
+	}
+}
+
+func TestRunCopiesToolExecutionDurationIntoPartResult(t *testing.T) {	fakes := newRuntimeFakes()
 	fakes.provider.completeDelay = 20 * time.Millisecond
 	fakes.provider.responses = []types.ModelResponse{
 		{ID: "m1", Content: "", ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader"}}},
@@ -1690,6 +1737,69 @@ func TestRuntimeMessageToPromptTranslatesAsyncToolResultAsToolResult(t *testing.
 	}
 	if prompt.Role != "user" || !strings.Contains(prompt.Content, "Tool file-reader returned:") || !strings.Contains(prompt.Content, "异步任务 async-1") {
 		t.Fatalf("prompt = %#v", prompt)
+	}
+}
+
+// TestRuntimeMessageToPromptRoutesToolImagesToToolChannel 钉住工具产物图分流：
+// 助手消息的附件进入 ToolImages（跟随工具结果），用户消息附件仍走普通 Images。
+func TestRuntimeMessageToPromptRoutesToolImagesToToolChannel(t *testing.T) {
+	fakes := newRuntimeFakes()
+	system, ok := newTestRuntime(t, fakes, Config{}).(*system)
+	if !ok {
+		t.Fatalf("runtime system has unexpected type")
+	}
+	now := time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC)
+	attachment := types.MessageAttachment{ID: "att-9", Kind: "image", Name: "生成图", Mime: "image/png", Path: "sessions/roles/developer/session-1/attachments/att-9/image.png", CallID: "call-1"}
+	fakes.storage.images[attachment.Path] = "data:image/png;base64,iVBORw0KGgo="
+	assistantPrompt, err := system.runtimeMessageToPrompt(context.Background(), types.Message{
+		ID: "a1", Type: "assistant", Content: "画好了",
+		Parts:       []types.MessagePart{{Type: "tool", CallID: "call-1", ToolName: "ai-image", Result: &types.ToolPartResult{Status: types.ToolStatusSuccess, Content: "ok"}}},
+		Attachments: []types.MessageAttachment{attachment},
+		CreatedAt:   now, UpdatedAt: now,
+	}, 0)
+	if err != nil {
+		t.Fatalf("runtimeMessageToPrompt(assistant) error = %v", err)
+	}
+	if len(assistantPrompt.Images) != 0 {
+		t.Fatalf("assistant prompt must not carry plain images: %#v", assistantPrompt.Images)
+	}
+	if len(assistantPrompt.ToolImages) != 1 || assistantPrompt.ToolImages[0].CallID != "call-1" || assistantPrompt.ToolImages[0].AttachmentID != "att-9" {
+		t.Fatalf("assistant tool images = %#v", assistantPrompt.ToolImages)
+	}
+	userAttachment := types.MessageAttachment{ID: "att-10", Kind: "image", Name: "素材", Mime: "image/png", Path: "sessions/roles/developer/session-1/attachments/att-10/image.png"}
+	fakes.storage.images[userAttachment.Path] = "data:image/png;base64,iVBORw0KGgo="
+	userPrompt, err := system.runtimeMessageToPrompt(context.Background(), types.Message{
+		ID: "u1", Type: "user", Content: "看这个",
+		Attachments: []types.MessageAttachment{userAttachment},
+		CreatedAt:   now, UpdatedAt: now,
+	}, 1)
+	if err != nil {
+		t.Fatalf("runtimeMessageToPrompt(user) error = %v", err)
+	}
+	if len(userPrompt.Images) != 1 || len(userPrompt.ToolImages) != 0 {
+		t.Fatalf("user prompt images = %#v toolImages = %#v", userPrompt.Images, userPrompt.ToolImages)
+	}
+}
+
+// TestRuntimeMessageToPromptFailsUnpairedToolImage 钉住配对失败快速暴露：
+// 工具产物图配不到工具调用时明确失败，不静默丢弃。
+func TestRuntimeMessageToPromptFailsUnpairedToolImage(t *testing.T) {
+	fakes := newRuntimeFakes()
+	system, ok := newTestRuntime(t, fakes, Config{}).(*system)
+	if !ok {
+		t.Fatalf("runtime system has unexpected type")
+	}
+	now := time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC)
+	attachment := types.MessageAttachment{ID: "att-9", Kind: "image", Name: "生成图", Mime: "image/png", Path: "sessions/roles/developer/session-1/attachments/att-9/image.png", CallID: "call-missing"}
+	fakes.storage.images[attachment.Path] = "data:image/png;base64,iVBORw0KGgo="
+	_, err := system.runtimeMessageToPrompt(context.Background(), types.Message{
+		ID: "a1", Type: "assistant", Content: "画好了",
+		Parts:       []types.MessagePart{{Type: "tool", CallID: "call-1", ToolName: "ai-image", Result: &types.ToolPartResult{Status: types.ToolStatusSuccess, Content: "ok"}}},
+		Attachments: []types.MessageAttachment{attachment},
+		CreatedAt:   now, UpdatedAt: now,
+	}, 0)
+	if err == nil {
+		t.Fatal("unpaired tool image must fail")
 	}
 }
 

@@ -224,7 +224,41 @@ func (s *system) runtimeMessageToPrompt(ctx context.Context, message types.Messa
 	if err != nil {
 		return types.PromptMessage{}, err
 	}
-	return types.PromptMessage{ID: message.ID, Role: role, Content: content, Parts: cloneMessageParts(message.Parts), Images: images, Order: index, CreatedAt: message.CreatedAt, UpdatedAt: message.UpdatedAt}, nil
+	prompt := types.PromptMessage{ID: message.ID, Role: role, Content: content, Parts: cloneMessageParts(message.Parts), Order: index, CreatedAt: message.CreatedAt, UpdatedAt: message.UpdatedAt}
+	// 工具产物图不从助手消息的普通图片通道发出：它们跟随工具结果，
+	// 由协议适配层搬运（OpenAI 系补用户消息、Anthropic 系并入 tool_result）。
+	if message.Type == "assistant" {
+		if err := validateToolImagePairing(prompt.Parts, images); err != nil {
+			return types.PromptMessage{}, err
+		}
+		prompt.ToolImages = images
+	} else {
+		prompt.Images = promptImages(images)
+	}
+	return prompt, nil
+}
+
+// validateToolImagePairing 校验每张工具产物图都能配到该消息上的一次工具调用；
+// 配不上即快速失败，不静默丢弃。
+func validateToolImagePairing(parts []types.MessagePart, images []types.PromptToolImage) error {
+	if len(images) == 0 {
+		return nil
+	}
+	callIDs := map[string]struct{}{}
+	for _, part := range parts {
+		if part.Type != "tool" {
+			continue
+		}
+		if callID := strings.TrimSpace(part.CallID); callID != "" {
+			callIDs[callID] = struct{}{}
+		}
+	}
+	for _, image := range images {
+		if _, ok := callIDs[image.CallID]; !ok {
+			return runtimeInvalid("tool produced image cannot be paired with a tool call", nil)
+		}
+	}
+	return nil
 }
 
 func toolResultPromptContent(message types.Message, content string) string {
@@ -240,8 +274,8 @@ func cloneMessageParts(parts []types.MessagePart) []types.MessagePart {
 	return result
 }
 
-func (s *system) promptImagesForMessage(ctx context.Context, message types.Message) ([]types.PromptImage, error) {
-	images := []types.PromptImage{}
+func (s *system) promptImagesForMessage(ctx context.Context, message types.Message) ([]types.PromptToolImage, error) {
+	images := []types.PromptToolImage{}
 	for _, attachment := range message.Attachments {
 		if attachment.Kind != "image" || strings.TrimSpace(attachment.Path) == "" {
 			continue
@@ -250,8 +284,20 @@ func (s *system) promptImagesForMessage(ctx context.Context, message types.Messa
 		if err != nil {
 			return nil, runtimeStorageFailed("failed to load message image attachment", err)
 		}
-		images = append(images, types.PromptImage{DataURL: dataURL})
+		images = append(images, types.PromptToolImage{CallID: strings.TrimSpace(attachment.CallID), AttachmentID: strings.TrimSpace(attachment.ID), DataURL: dataURL})
 	}
 	return images, nil
+}
+
+// promptImages 把工具产物图片视图降为普通提示词图片（用户消息附件路径）。
+func promptImages(images []types.PromptToolImage) []types.PromptImage {
+	if len(images) == 0 {
+		return nil
+	}
+	out := make([]types.PromptImage, 0, len(images))
+	for _, image := range images {
+		out = append(out, types.PromptImage{DataURL: image.DataURL})
+	}
+	return out
 }
 

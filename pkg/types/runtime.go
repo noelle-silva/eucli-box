@@ -163,6 +163,8 @@ type MessageAttachment struct {
 	Name string `json:"name"`
 	Mime string `json:"mime,omitempty"`
 	Path string `json:"path,omitempty"`
+	// CallID 是产出该附件的工具调用标识；用户消息附件不带该值。
+	CallID string `json:"callId,omitempty"`
 }
 
 type RunAttachment struct {

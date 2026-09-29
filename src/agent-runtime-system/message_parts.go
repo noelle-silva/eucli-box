@@ -183,7 +183,8 @@ func upsertRunToolPart(record *runRecord, action types.ToolAction, state string,
 }
 
 // appendRunMessageAttachments 把工具运行期由宿主代写完成的产出附件
-// 挂到当前回复消息上；附件标识去重，重复回执不产生重复附件。
+// 挂到当前回复消息上；附件标识去重，重复回执不产生重复附件；
+// 附件记录产出它的工具调用标识，供发请求时与工具结果配对。
 func appendRunMessageAttachments(message *types.Message, result *types.ToolResult) {
 	if message == nil || result == nil || len(result.ProducedAttachments) == 0 {
 		return
@@ -203,6 +204,7 @@ func appendRunMessageAttachments(message *types.Message, result *types.ToolResul
 			continue
 		}
 		seen[id] = struct{}{}
+		attachment.CallID = strings.TrimSpace(result.ActionID)
 		message.Attachments = append(message.Attachments, attachment)
 	}
 }

@@ -25,13 +25,60 @@ func capabilityTestTool() types.ToolDefinition {
 			{ID: types.ToolCapabilityWorkspace, Access: types.ToolCapabilityAccessRead, Name: "工作区路径"},
 			{ID: types.ToolCapabilitySessionAttachments, Access: types.ToolCapabilityAccessRead, Name: "读取会话图片"},
 			{ID: types.ToolCapabilitySessionAttachments, Access: types.ToolCapabilityAccessWrite, Name: "写入会话图片"},
+			{ID: types.ToolCapabilitySessionAttachments, Access: types.ToolCapabilityAccessReference, Name: "引用会话图片"},
 			{ID: types.ToolCapabilitySessionState, Access: types.ToolCapabilityAccessRead, Name: "读取会话状态"},
 		},
 		CapabilityGrants: map[string]bool{
-			types.ToolCapabilityGrantKey(types.ToolCapabilitySessionAttachments, types.ToolCapabilityAccessRead):  true,
-			types.ToolCapabilityGrantKey(types.ToolCapabilitySessionAttachments, types.ToolCapabilityAccessWrite): true,
-			types.ToolCapabilityGrantKey(types.ToolCapabilitySessionState, types.ToolCapabilityAccessRead):        true,
+			types.ToolCapabilityGrantKey(types.ToolCapabilitySessionAttachments, types.ToolCapabilityAccessRead):      true,
+			types.ToolCapabilityGrantKey(types.ToolCapabilitySessionAttachments, types.ToolCapabilityAccessWrite):     true,
+			types.ToolCapabilityGrantKey(types.ToolCapabilitySessionAttachments, types.ToolCapabilityAccessReference): true,
+			types.ToolCapabilityGrantKey(types.ToolCapabilitySessionState, types.ToolCapabilityAccessRead):            true,
 		},
+	}
+}
+
+// TestSessionAttachmentReferenceDoesNotWriteFiles 钉住引用语义：
+// 引用既有附件不落盘、ID 不变、Path 不变，只把既有附件登记进本次产物。
+func TestSessionAttachmentReferenceDoesNotWriteFiles(t *testing.T) {
+	storage := newFakeToolStorage()
+	existing := types.MessageAttachment{ID: "att-9", Kind: "image", Name: "历史图", Mime: "image/png", Path: "sessions/roles/developer/session-1/attachments/att-9/image.png"}
+	storage.sessions["session-1"] = types.Session{ID: "session-1", Messages: []types.Message{{ID: "m1", Attachments: []types.MessageAttachment{existing}}}}
+	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestTool()), storage)
+
+	payload, _ := json.Marshal(types.SessionAttachmentReferenceRequest{AttachmentID: "att-9"})
+	result := session.handle(context.Background(), toolcontrol.CapabilityRequest{Capability: types.ToolCapabilitySessionAttachments, Access: types.ToolCapabilityAccessReference, Payload: payload})
+	if result.Status != toolcontrol.CapabilityStatusSuccess {
+		t.Fatalf("reference result = %#v", result)
+	}
+	produced := session.attachments()
+	if len(produced) != 1 {
+		t.Fatalf("produced attachments = %#v", produced)
+	}
+	if produced[0].ID != existing.ID || produced[0].Path != existing.Path {
+		t.Fatalf("reference must keep id and path unchanged, got %#v want %#v", produced[0], existing)
+	}
+	if len(storage.images) != 0 {
+		t.Fatalf("reference must not write files, images = %#v", storage.images)
+	}
+}
+
+// TestSessionAttachmentReferenceRequiresDeclarationAndGrant 钉住引用能力
+// 与读写能力同一把关：未声明或未授权一律拒绝。
+func TestSessionAttachmentReferenceRequiresDeclarationAndGrant(t *testing.T) {
+	storage := newFakeToolStorage()
+	tool := types.ToolDefinition{ID: "plain-tool", Name: "plain-tool"}
+	session := newCapabilitySession(capabilityTestPlan(storage, tool), storage)
+	payload, _ := json.Marshal(types.SessionAttachmentReferenceRequest{AttachmentID: "att-9"})
+	result := session.handle(context.Background(), toolcontrol.CapabilityRequest{Capability: types.ToolCapabilitySessionAttachments, Access: types.ToolCapabilityAccessReference, Payload: payload})
+	if result.Status != toolcontrol.CapabilityStatusFailed || !strings.Contains(result.Error, "未声明") {
+		t.Fatalf("undeclared reference result = %#v", result)
+	}
+
+	declared := types.ToolDefinition{ID: "image-worker", Name: "image-worker", Capabilities: []types.ToolCapability{{ID: types.ToolCapabilitySessionAttachments, Access: types.ToolCapabilityAccessReference, Name: "引用会话图片"}}}
+	session = newCapabilitySession(capabilityTestPlan(storage, declared), storage)
+	result = session.handle(context.Background(), toolcontrol.CapabilityRequest{Capability: types.ToolCapabilitySessionAttachments, Access: types.ToolCapabilityAccessReference, Payload: payload})
+	if result.Status != toolcontrol.CapabilityStatusDenied || result.Error != toolcontrol.CapabilityDeniedMessage {
+		t.Fatalf("ungranted reference result = %#v", result)
 	}
 }
 

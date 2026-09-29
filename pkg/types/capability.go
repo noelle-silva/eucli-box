@@ -13,10 +13,13 @@ const (
 	ToolCapabilitySessionState       = "session-state"
 )
 
-// 能力访问方式：声明与授权都以读、写显式分离。
+// 能力访问方式：声明与授权都以读、写、引用显式分离。
+// 引用表示把会话中已有的附件挂入本次工具结果（不落盘、ID 不变），
+// 与写入（产生一份新附件）是两种不同的动作。
 const (
-	ToolCapabilityAccessRead  = "read"
-	ToolCapabilityAccessWrite = "write"
+	ToolCapabilityAccessRead      = "read"
+	ToolCapabilityAccessWrite     = "write"
+	ToolCapabilityAccessReference = "reference"
 )
 
 // ToolCapability 是工具在清单中声明的单项能力。
@@ -74,7 +77,7 @@ func IsStandardToolCapability(id string, access string) bool {
 		return strings.TrimSpace(access) == ToolCapabilityAccessRead
 	case ToolCapabilitySessionAttachments:
 		access = strings.TrimSpace(access)
-		return access == ToolCapabilityAccessRead || access == ToolCapabilityAccessWrite
+		return access == ToolCapabilityAccessRead || access == ToolCapabilityAccessWrite || access == ToolCapabilityAccessReference
 	case ToolCapabilitySessionState:
 		return strings.TrimSpace(access) == ToolCapabilityAccessRead
 	default:
@@ -205,4 +208,11 @@ type SessionAttachmentData struct {
 type SessionAttachmentWriteRequest struct {
 	Name    string `json:"name"`
 	DataURL string `json:"dataUrl"`
+}
+
+// SessionAttachmentReferenceRequest 是会话附件引用的标准操作意图：
+// 工具只提交既有附件的逻辑标识，宿主把该附件挂入本次工具结果——
+// 不落盘、ID 不变、路径不变，只让它在本次回复处再出现一次。
+type SessionAttachmentReferenceRequest struct {
+	AttachmentID string `json:"attachmentId"`
 }

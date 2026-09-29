@@ -57,6 +57,8 @@ func (c *capabilitySession) handle(ctx context.Context, request toolcontrol.Capa
 		return c.readSessionAttachments(ctx, request.Payload)
 	case capability == types.ToolCapabilitySessionAttachments && access == types.ToolCapabilityAccessWrite:
 		return c.writeSessionAttachment(ctx, request.Payload)
+	case capability == types.ToolCapabilitySessionAttachments && access == types.ToolCapabilityAccessReference:
+		return c.referenceSessionAttachment(ctx, request.Payload)
 	case capability == types.ToolCapabilitySessionState && access == types.ToolCapabilityAccessRead:
 		return c.readSessionState(ctx, request.Payload)
 	default:
@@ -207,6 +209,32 @@ func (c *capabilitySession) writeSessionAttachment(ctx context.Context, payload 
 	c.produced = append(c.produced, saved)
 	c.mu.Unlock()
 	return capabilitySuccess(types.SessionAttachmentInfo{ID: saved.ID, Name: saved.Name, Mime: saved.Mime})
+}
+
+// referenceSessionAttachment 把会话中已有的附件挂入本次执行产物：
+// 只登记既有附件结构，不写文件、不换 ID、不改路径；
+// 原图仍在发送预算内时，上下文里出现两张相同图片属预期。
+func (c *capabilitySession) referenceSessionAttachment(ctx context.Context, payload json.RawMessage) toolcontrol.CapabilityResult {
+	var request types.SessionAttachmentReferenceRequest
+	if err := json.Unmarshal(payload, &request); err != nil {
+		return capabilityFailed("会话附件引用请求格式无效")
+	}
+	attachmentID := strings.TrimSpace(request.AttachmentID)
+	if attachmentID == "" {
+		return capabilityFailed("会话附件引用请求缺少附件标识")
+	}
+	session, err := c.loadSession(ctx)
+	if err != nil {
+		return capabilityFailed("读取会话失败：" + err.Error())
+	}
+	attachment, ok := findSessionAttachment(session, attachmentID)
+	if !ok {
+		return capabilityFailed("会话附件不存在：" + attachmentID)
+	}
+	c.mu.Lock()
+	c.produced = append(c.produced, attachment)
+	c.mu.Unlock()
+	return capabilitySuccess(types.SessionAttachmentInfo{ID: attachment.ID, Name: attachment.Name, Mime: attachment.Mime})
 }
 
 // reserveAttachmentBudget 预占写入预算；写入失败时按预占量原额退回。

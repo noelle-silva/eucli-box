@@ -25,6 +25,20 @@ func TestTruncateBodyKeepsShortTextWhole(t *testing.T) {
 	}
 }
 
+// 装行规则：整行入预算，装不下的行原样延后（不切残段）。
+func TestLinePackerDefersLinesThatDoNotFit(t *testing.T) {
+	packer := newLinePacker(10)
+	if !packer.tryAppend("短") || !packer.tryAppend("也短") {
+		t.Fatal("short lines must fit")
+	}
+	if packer.tryAppend("这一行很长很长超过预算") {
+		t.Fatal("long line must be deferred, not cut")
+	}
+	if packer.text() != "短\n也短" {
+		t.Fatalf("text = %q", packer.text())
+	}
+}
+
 // 信息条不计入正文预算、永久完整；正文按预算截断，总输出允许超出预算（正文＋信息条）。
 func TestComposeContentKeepsEnvelopeCompleteAndBodyWithinBudget(t *testing.T) {
 	body := strings.Repeat("正文内容很长\n", 40)

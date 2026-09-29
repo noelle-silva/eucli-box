@@ -8,3 +8,6 @@
 - note_relations 的显式半径改为必须大于零：0、负数与非整数直接报错；缺省不传仍为 1。
 - 正文预算重定：maxOutputChars 只约束正文；信息条不计入上限、永久完整；正文截断优先落在行边界。
 - read_note 支持按行续读：offset / limit（1 基全局行号，跨面连续），信息条回 nextOffset。
+- note_relations 支持分段读取：section（nodes / edges）+ limit / offset，信息条回该部分计数与 nextOffset。
+- note_relations 不带 section 时拒绝 limit / offset（不再静默忽略）；整体返回与分段模式的头部格式统一。
+- 截断规则描述与实现对齐（整行延后、仅首行超限才字符切），说明中补充「分段优先用 limit」。

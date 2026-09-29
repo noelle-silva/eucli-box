@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"unicode/utf8"
 
 	"eucli-box/pkg/types"
 )
@@ -161,7 +160,8 @@ func runReadNote(ctx context.Context, input types.ToolExecutionInput) types.Tool
 	return s.succeed(actionReadNote, body, facts, metadata)
 }
 
-// runNoteRelations 查看引用 / 被引用关系：关注笔记、半径与方向都是同一个接口的参数。
+// runNoteRelations 查看引用 / 被引用关系：关注笔记、半径与方向都是同一个接口的参数；
+// 大图可用 section（nodes / edges）单独翻节点表或边表，配合 limit / offset 分段读取。
 func runNoteRelations(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
 	s, err := openSession(input)
 	if err != nil {
@@ -182,6 +182,41 @@ func runNoteRelations(ctx context.Context, input types.ToolExecutionInput) types
 	if err != nil {
 		return s.fail("parse note_relations request", err, nil)
 	}
+	section, err := stringArg(input, "section", false)
+	if err != nil {
+		return s.fail("parse note_relations request", err, nil)
+	}
+	section = strings.ToLower(section)
+	offset, err := intArg(input, "offset")
+	if err != nil {
+		return s.fail("parse note_relations request", err, nil)
+	}
+	if _, provided := argumentValue(input, "offset"); provided && offset < 1 {
+		return s.fail("parse note_relations request", fmt.Errorf("argument \"offset\" must be greater than zero"), nil)
+	}
+	if offset < 1 {
+		offset = 1
+	}
+	limit, err := intArg(input, "limit")
+	if err != nil {
+		return s.fail("parse note_relations request", err, nil)
+	}
+	if _, provided := argumentValue(input, "limit"); provided && limit < 1 {
+		return s.fail("parse note_relations request", fmt.Errorf("argument \"limit\" must be greater than zero"), nil)
+	}
+	if section != "" && section != "nodes" && section != "edges" {
+		return s.fail("parse note_relations request", fmt.Errorf("argument \"section\" must be one of nodes, edges"), nil)
+	}
+	if section == "" {
+		// 分页参数只在分段模式下有意义：不带 section 时拒绝，避免「合法值被静默吞掉」。
+		if _, provided := argumentValue(input, "limit"); provided {
+			return s.fail("parse note_relations request", fmt.Errorf("argument \"limit\" requires section"), nil)
+		}
+		if _, provided := argumentValue(input, "offset"); provided {
+			return s.fail("parse note_relations request", fmt.Errorf("argument \"offset\" requires section"), nil)
+		}
+	}
+
 	params := map[string]any{"noteId": noteID}
 	setInt(params, "radius", radius)
 	setString(params, "direction", direction)
@@ -194,7 +229,99 @@ func runNoteRelations(ctx context.Context, input types.ToolExecutionInput) types
 		return s.fail("decode relations result", err, map[string]any{"noteId": noteID})
 	}
 	facts := []resultFact{intFact("nodes", len(result.Nodes)), intFact("edges", len(result.Edges))}
-	return s.succeed(actionNoteRelations, renderRelations(result, noteID, radius, direction), facts, map[string]any{"noteId": noteID})
+	metadata := map[string]any{"noteId": noteID, "nodes": len(result.Nodes), "edges": len(result.Edges)}
+	if section == "" {
+		return s.succeed(actionNoteRelations, renderRelations(result, noteID, radius, direction), facts, metadata)
+	}
+	entries, label := relationSectionEntries(result, section)
+	body, returned, nextOffset := renderRelationSection(s, noteID, radius, direction, entries, label, offset, limit)
+	return relationsSectionOutput(s, metadata, facts, section, body, returned, offset, nextOffset)
+}
+
+// relationSectionEntries 把节点表或边表渲染为条目行，并给出该部分的中文名。
+func relationSectionEntries(result refRelationResult, section string) ([]string, string) {
+	switch section {
+	case "nodes":
+		entries := make([]string, 0, len(result.Nodes))
+		for _, node := range result.Nodes {
+			entries = append(entries, fmt.Sprintf("- %s（距离 %d）", node.NoteID, node.Distance))
+		}
+		return entries, "节点"
+	default:
+		entries := make([]string, 0, len(result.Edges))
+		for _, edge := range result.Edges {
+			entries = append(entries, "- "+formatRelationEdge(edge))
+		}
+		return entries, "边"
+	}
+}
+
+// renderRelationSection 在正文预算内渲染分段窗口；返回正文、返回条数与下一条序号（无更多为 0）。
+func renderRelationSection(s session, noteID string, radius int, direction string, entries []string, label string, offset int, limit int) (string, int, int) {
+	total := len(entries)
+	windowEnd := total
+	if limit > 0 && offset+limit-1 < windowEnd {
+		windowEnd = offset + limit - 1
+	}
+	packer := newLinePacker(s.maxOutput)
+	header := relationsHeaderLines(noteID, radius, direction)
+	for _, line := range header {
+		if !packer.tryAppend(line) {
+			// 预算连头部都装不下：按行边界如实截断，并指示从本次起点续读。
+			body, _ := truncateBody(strings.Join(header, "\n"), s.maxOutput)
+			nextOffset := offset
+			if offset > total {
+				nextOffset = 0
+			}
+			return body, 0, nextOffset
+		}
+	}
+
+	returned := 0
+	lastIndex := offset - 1
+	if offset <= total {
+		end := windowEnd
+		if end > total {
+			end = total
+		}
+		if packer.tryAppend(fmt.Sprintf("### %s（共 %d）", label, total)) {
+			for index := offset; index <= end; index++ {
+				if !packer.tryAppend(entries[index-1]) {
+					break
+				}
+				returned++
+				lastIndex = index
+			}
+		}
+	} else {
+		packer.tryAppend("（没有更多内容）")
+	}
+	nextOffset := 0
+	if lastIndex < total {
+		nextOffset = lastIndex + 1
+	}
+	return packer.text(), returned, nextOffset
+}
+
+func relationsSectionOutput(s session, metadata map[string]any, facts []resultFact, section string, body string, returned int, offset int, nextOffset int) types.ToolExecutionOutput {
+	facts = append(facts, textFact("section", section), intFact("count", returned))
+	metadata["section"] = section
+	metadata["offset"] = offset
+	metadata["count"] = returned
+	if nextOffset > 0 {
+		facts = append(facts, intFact("nextOffset", nextOffset), textFact("truncated", "true"))
+		metadata["nextOffset"] = nextOffset
+		metadata["truncated"] = true
+	}
+	return s.succeed(actionNoteRelations, body, facts, metadata)
+}
+
+// relationRadiusLabel 渲染半径标签：缺省标注缺省值。
+func relationRadiusLabel(radius int) string {
+	if radius <= 0 {
+		return "1（缺省）"
+	}
+	return fmt.Sprintf("%d", radius)
 }
 
 // orderedFaceIDs 按面顺序给出全部面标识；顺序表缺项的面按标识排序补齐。
@@ -302,24 +429,11 @@ func renderNoteWindow(manifest noteManifest, sections []noteSection, total int, 
 	if limit > 0 && offset+limit-1 < windowEnd {
 		windowEnd = offset + limit - 1
 	}
-	out := []string{}
-	used := 0
-	tryAppend := func(line string) bool {
-		need := utf8.RuneCountInString(line)
-		if len(out) > 0 {
-			need++
-		}
-		if used+need > budget {
-			return false
-		}
-		out = append(out, line)
-		used += need
-		return true
-	}
+	packer := newLinePacker(budget)
 
 	headerLines := noteHeaderLines(manifest, dir, total, offset)
 	for _, line := range headerLines {
-		if !tryAppend(line) {
+		if !packer.tryAppend(line) {
 			// 预算连头部都装不下：按行边界如实截断，并指示从本次起点续读。
 			header, _ := truncateBody(strings.Join(headerLines, "\n"), budget)
 			return header, 0, offset
@@ -337,12 +451,12 @@ func renderNoteWindow(manifest noteManifest, sections []noteSection, total int, 
 		if interStart > interEnd {
 			continue
 		}
-		if !tryAppend(sectionHeader(section, len(sections), interStart > section.startLine)) {
+		if !packer.tryAppend(sectionHeader(section, len(sections), interStart > section.startLine)) {
 			break
 		}
 		full := true
 		for global := interStart; global <= interEnd; global++ {
-			if !tryAppend(section.lines[global-section.startLine]) {
+			if !packer.tryAppend(section.lines[global-section.startLine]) {
 				full = false
 				break
 			}
@@ -355,15 +469,15 @@ func renderNoteWindow(manifest noteManifest, sections []noteSection, total int, 
 	}
 
 	if total == 0 {
-		tryAppend("（没有可读的正文内容）")
+		packer.tryAppend("（没有可读的正文内容）")
 	} else if returned == 0 && offset > total {
-		tryAppend("（没有更多内容）")
+		packer.tryAppend("（没有更多内容）")
 	}
 	nextOffset := 0
 	if lastLine < total {
 		nextOffset = lastLine + 1
 	}
-	return strings.Join(out, "\n"), returned, nextOffset
+	return packer.text(), returned, nextOffset
 }
 
 // noteHeaderLines 给出笔记头部：从头读给完整信息；续读只给一行定位头，省正文预算。
@@ -404,32 +518,41 @@ func sectionHeader(section noteSection, totalFaces int, continued bool) string {
 	return fmt.Sprintf("### 面 %d/%d：%s（kind=%s，faceId=%s）%s", section.index, totalFaces, firstNonEmpty(face.Title, face.ID), face.Kind, face.ID, suffix)
 }
 
+// relationsHeaderLines 给出引用关系的统一头部：整体返回与分段模式共用同一格式。
+func relationsHeaderLines(noteID string, radius int, direction string) []string {
+	return []string{
+		"## 引用关系",
+		fmt.Sprintf("- 关注点：%s ｜ 半径：%s ｜ 方向：%s", noteID, relationRadiusLabel(radius), firstNonEmpty(direction, "both（缺省）")),
+	}
+}
+
 func renderRelations(result refRelationResult, noteID string, radius int, direction string) string {
 	var builder strings.Builder
-	builder.WriteString("## 引用关系\n\n")
-	fmt.Fprintf(&builder, "- 关注点：%s\n", noteID)
-	if radius > 0 {
-		fmt.Fprintf(&builder, "- 半径：%d\n", radius)
-	} else {
-		builder.WriteString("- 半径：1（缺省）\n")
+	for _, line := range relationsHeaderLines(noteID, radius, direction) {
+		builder.WriteString(line)
+		builder.WriteString("\n")
 	}
-	fmt.Fprintf(&builder, "- 方向：%s\n\n", firstNonEmpty(direction, "both（缺省）"))
-	fmt.Fprintf(&builder, "节点（%d）：\n", len(result.Nodes))
+	fmt.Fprintf(&builder, "### 节点（共 %d）\n", len(result.Nodes))
 	for _, node := range result.Nodes {
 		fmt.Fprintf(&builder, "- %s（距离 %d）\n", node.NoteID, node.Distance)
 	}
 	builder.WriteString("\n")
-	fmt.Fprintf(&builder, "边（%d）：\n", len(result.Edges))
+	fmt.Fprintf(&builder, "### 边（共 %d）\n", len(result.Edges))
 	for _, edge := range result.Edges {
-		from := edge.FromNoteID
-		if edge.FromFaceID != "" {
-			from += "（faceId=" + edge.FromFaceID + "）"
-		}
-		to := edge.ToNoteID
-		if edge.ToFaceID != "" {
-			to += "（faceId=" + edge.ToFaceID + "）"
-		}
-		fmt.Fprintf(&builder, "- %s → %s\n", from, to)
+		fmt.Fprintf(&builder, "- %s\n", formatRelationEdge(edge))
 	}
 	return builder.String()
+}
+
+// formatRelationEdge 渲染一条引用边：来源面带 → 目标笔记（可选目标面）。
+func formatRelationEdge(edge refRelationEdge) string {
+	from := edge.FromNoteID
+	if edge.FromFaceID != "" {
+		from += "（faceId=" + edge.FromFaceID + "）"
+	}
+	to := edge.ToNoteID
+	if edge.ToFaceID != "" {
+		to += "（faceId=" + edge.ToFaceID + "）"
+	}
+	return from + " → " + to
 }

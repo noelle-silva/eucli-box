@@ -434,12 +434,104 @@ func TestExecuteNoteRelationsOmitsOptionalDefaults(t *testing.T) {
 	result := execute(t, f.input(map[string]any{"action": "note_relations", "noteId": "note-1"}))
 
 	requireSuccess(t, result)
-	if !strings.Contains(result.Content, "半径：1（缺省）") || !strings.Contains(result.Content, "both（缺省）") {
-		t.Fatalf("content = %q", result.Content)
+	for _, fragment := range []string{"半径：1（缺省）", "both（缺省）", "### 节点（共 1）", "### 边（共 0）"} {
+		if !strings.Contains(result.Content, fragment) {
+			t.Fatalf("content missing %q: %q", fragment, result.Content)
+		}
 	}
 	calls := f.callList()
 	if len(calls) != 1 || len(calls[0].Params) != 1 || calls[0].Params["noteId"] != "note-1" {
 		t.Fatalf("calls = %#v", calls)
+	}
+}
+
+// 分页参数只在分段模式下有意义：不带 section 时传 limit / offset 直接拒绝，不静默吞掉。
+func TestExecuteNoteRelationsRejectsPagingWithoutSection(t *testing.T) {
+	f := newFixture(t, nil)
+	f.setRepos(twoReposJSON(f.server.URL))
+
+	for _, argument := range []string{"limit", "offset"} {
+		result := execute(t, f.input(map[string]any{"action": "note_relations", "noteId": "note-1", argument: 3}))
+		requireFailure(t, result, "requires section")
+	}
+	if calls := f.callList(); len(calls) != 0 {
+		t.Fatalf("calls = %#v", calls)
+	}
+}
+
+func TestExecuteNoteRelationsSectionPagination(t *testing.T) {
+	whole := map[string]any{
+		"nodes": []any{
+			map[string]any{"noteId": "n1", "distance": 0},
+			map[string]any{"noteId": "n2", "distance": 1},
+			map[string]any{"noteId": "n3", "distance": 1},
+			map[string]any{"noteId": "n4", "distance": 2},
+			map[string]any{"noteId": "n5", "distance": 2},
+			map[string]any{"noteId": "n6", "distance": 2},
+			map[string]any{"noteId": "n7", "distance": 2},
+			map[string]any{"noteId": "n8", "distance": 2},
+		},
+		"edges": []any{
+			map[string]any{"fromNoteId": "n1", "toNoteId": "n2"},
+			map[string]any{"fromNoteId": "n2", "toNoteId": "n3"},
+			map[string]any{"fromNoteId": "n3", "fromFaceId": "text", "toNoteId": "n4", "toFaceId": "html"},
+			map[string]any{"fromNoteId": "n4", "toNoteId": "n5"},
+			map[string]any{"fromNoteId": "n5", "toNoteId": "n6"},
+			map[string]any{"fromNoteId": "n6", "toNoteId": "n7"},
+			map[string]any{"fromNoteId": "n7", "toNoteId": "n8"},
+			map[string]any{"fromNoteId": "n8", "toNoteId": "n1"},
+		},
+	}
+	f := newFixture(t, map[string][]any{"hypercortex.refs.queryRelations": {whole, whole, whole}})
+	f.setRepos(twoReposJSON(f.server.URL))
+
+	// 边表窗口：第 2~4 条。
+	page := execute(t, f.input(map[string]any{"action": "note_relations", "noteId": "n1", "section": "edges", "offset": 2, "limit": 3}))
+	requireSuccess(t, page)
+	for _, fragment := range []string{"### 边（共 8）", "- n2 → n3", "n3（faceId=text） → n4（faceId=html）", "- n4 → n5", "section=edges", "count=3", "nextOffset=5"} {
+		if !strings.Contains(page.Content, fragment) {
+			t.Fatalf("page content missing %q: %q", fragment, page.Content)
+		}
+	}
+	if strings.Contains(page.Content, "- n1 → n2") || strings.Contains(page.Content, "- n5 → n6") {
+		t.Fatalf("page must only include the window: %q", page.Content)
+	}
+	if page.Metadata["count"] != 3 || page.Metadata["nextOffset"] != 5 || page.Metadata["truncated"] != true {
+		t.Fatalf("metadata = %#v", page.Metadata)
+	}
+
+	// 节点表整体（不带窗口）。
+	allNodes := execute(t, f.input(map[string]any{"action": "note_relations", "noteId": "n1", "section": "nodes"}))
+	requireSuccess(t, allNodes)
+	for _, fragment := range []string{"### 节点（共 8）", "- n1（距离 0）", "- n8（距离 2）"} {
+		if !strings.Contains(allNodes.Content, fragment) {
+			t.Fatalf("nodes content missing %q: %q", fragment, allNodes.Content)
+		}
+	}
+	if strings.Contains(allNodes.Content, "nextOffset") || strings.Contains(allNodes.Content, "- n1 → n2") {
+		t.Fatalf("nodes content = %q", allNodes.Content)
+	}
+
+	// 未知部分：快速失败，不发起调用。
+	invalid := execute(t, f.input(map[string]any{"action": "note_relations", "noteId": "n1", "section": "weird"}))
+	requireFailure(t, invalid, "must be one of nodes, edges")
+
+	// 预算截断的边界窗口：返回条数与 nextOffset 恒自洽，正文不超预算。
+	input := f.input(map[string]any{"action": "note_relations", "noteId": "n1", "section": "edges"})
+	input.UserConfig["maxOutputChars"] = 120
+	window := execute(t, input)
+	requireSuccess(t, window)
+	count, _ := window.Metadata["count"].(int)
+	next, _ := window.Metadata["nextOffset"].(int)
+	if count < 1 || next != count+1 || window.Metadata["truncated"] != true {
+		t.Fatalf("window metadata = %#v", window.Metadata)
+	}
+	index := strings.LastIndex(window.Content, "\n[hypercortex_reader]")
+	if index < 0 {
+		t.Fatalf("envelope missing: %q", window.Content)
+	}
+	if runes := len([]rune(window.Content[:index])); runes > 120 {
+		t.Fatalf("body runes = %d, want <= 120", runes)
 	}
 }
 

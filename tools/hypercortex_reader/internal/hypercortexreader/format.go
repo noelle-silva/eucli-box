@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // resultFact is one model-visible fact appended to a tool result.
@@ -60,8 +61,8 @@ func withFact(facts []resultFact, key string, value string) []resultFact {
 	return append(out, resultFact{Key: key, Value: value})
 }
 
-// truncateBody 在正文字符上限内截断：优先保留完整行（取预算内最后一个换行处），
-// 单行超预算时才按字符硬切；绝不越过上限。
+// truncateBody 在正文字符上限内截断：取预算内最后一个换行处（整行延后，不产生残段）；
+// 仅当预算内没有任何换行（首行本身就超限）时才按字符硬切；绝不越过上限。
 func truncateBody(text string, limit int) (string, bool) {
 	if limit <= 0 {
 		return "", strings.TrimRight(text, "\n") != ""
@@ -75,6 +76,35 @@ func truncateBody(text string, limit int) (string, bool) {
 		return strings.TrimRight(head[:cut], "\n"), true
 	}
 	return head, true
+}
+
+// linePacker 在字符预算内装行：整行入预算，装不下的行原样延后，不产生残段。
+type linePacker struct {
+	lines  []string
+	used   int
+	budget int
+}
+
+func newLinePacker(budget int) *linePacker {
+	return &linePacker{budget: budget}
+}
+
+// tryAppend 尝试装一行；预算不足时返回 false 且不改变已装内容。
+func (p *linePacker) tryAppend(line string) bool {
+	need := utf8.RuneCountInString(line)
+	if len(p.lines) > 0 {
+		need++
+	}
+	if p.used+need > p.budget {
+		return false
+	}
+	p.lines = append(p.lines, line)
+	p.used += need
+	return true
+}
+
+func (p *linePacker) text() string {
+	return strings.Join(p.lines, "\n")
 }
 
 // truncateRunes 按字符截断（不切断多字节字符），并报告是否发生截断。

@@ -60,11 +60,8 @@ func Build(ctx context.Context, options BuildOptions) (BuildResult, error) {
 	if err != nil {
 		return BuildResult{}, err
 	}
-	roster, err := artifactcatalog.Load()
-	if err != nil {
-		return BuildResult{}, err
-	}
-	identity, err := roster.ResolveTarget(options.Target)
+	devBuild := strings.TrimSpace(options.VersionOverride) != ""
+	identity, err := resolveBuildIdentity(options.Target, devBuild)
 	if err != nil {
 		return BuildResult{}, err
 	}
@@ -75,7 +72,6 @@ func Build(ctx context.Context, options BuildOptions) (BuildResult, error) {
 	if artifact.Kind == releaseops.KindBox {
 		return BuildResult{}, fmt.Errorf("业务端本体已退出正式成品制作，请使用本体打包")
 	}
-	devBuild := strings.TrimSpace(options.VersionOverride) != ""
 	artifactVersion := strings.TrimSpace(options.VersionOverride)
 	if artifactVersion == "" {
 		artifactVersion = artifact.Version
@@ -252,6 +248,28 @@ func Build(ctx context.Context, options BuildOptions) (BuildResult, error) {
 	result.ManifestPath = filepath.Join(outputDir, filepath.Base(manifestPath))
 	result.NotesPath = filepath.Join(outputDir, filepath.Base(notesPath))
 	return result, nil
+}
+
+// resolveBuildIdentity 解析构建目标身份：正式构建以名册为闸门（只有名册收录的
+// 发布物可正式制作）；开发构建（VersionOverride 非空）按 kind:id 直接解析，
+// 不查名册，让仓库内任意工具都能本地铺货。
+func resolveBuildIdentity(target string, devBuild bool) (types.ReleaseArtifactIdentity, error) {
+	if !devBuild {
+		roster, err := artifactcatalog.Load()
+		if err != nil {
+			return types.ReleaseArtifactIdentity{}, err
+		}
+		return roster.ResolveTarget(target)
+	}
+	kind, id, ok := strings.Cut(strings.TrimSpace(target), ":")
+	identity := types.ReleaseArtifactIdentity{Kind: strings.TrimSpace(kind), ID: strings.TrimSpace(id)}
+	if !ok {
+		return types.ReleaseArtifactIdentity{}, fmt.Errorf("开发构建目标必须是 tool:<id> 或 plugin:<id>")
+	}
+	if err := releasecatalog.ValidateArtifactIdentity(identity); err != nil {
+		return types.ReleaseArtifactIdentity{}, err
+	}
+	return identity, nil
 }
 
 func assemble(ctx context.Context, root string, workDir string, assembledDir string, artifact releaseops.Artifact, identity types.ReleaseArtifactIdentity, assetRoots map[string]string, sourceTime time.Time, artifactVersion string) error {

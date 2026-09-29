@@ -630,6 +630,20 @@ func TestProviderAndToolRoutes(t *testing.T) {
 		t.Fatalf("tool config status = %d body=%s", configRec.Code, configRec.Body.String())
 	}
 
+	// 配置区文件随保存请求提交，并在详情读取与保存响应中回执。
+	configFilesReq := httptest.NewRequest(http.MethodPut, "/api/tools/file-reader/user-config", strings.NewReader(`{"userConfig":{"limit":20},"configFiles":[{"path":"providers.json","content":"{\"defaultProvider\":\"demo\"}"}]}`))
+	configFilesRec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(configFilesRec, configFilesReq)
+	if configFilesRec.Code != http.StatusOK || !strings.Contains(configFilesRec.Body.String(), "providers.json") || !strings.Contains(configFilesRec.Body.String(), "defaultProvider") {
+		t.Fatalf("tool config files save status = %d body=%s", configFilesRec.Code, configFilesRec.Body.String())
+	}
+	loadToolReq := httptest.NewRequest(http.MethodGet, "/api/tools/file-reader", nil)
+	loadToolRec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(loadToolRec, loadToolReq)
+	if loadToolRec.Code != http.StatusOK || !strings.Contains(loadToolRec.Body.String(), "providers.json") {
+		t.Fatalf("tool load must carry configFiles: status = %d body=%s", loadToolRec.Code, loadToolRec.Body.String())
+	}
+
 	modelRequestConfigReq := httptest.NewRequest(http.MethodPut, "/api/providers/model-request-config", strings.NewReader(`{"listModelsTimeoutMs":30000,"completionTimeoutMs":180000,"streamIdleTimeoutMs":90000}`))
 	modelRequestConfigRec := httptest.NewRecorder()
 	system.Handler().ServeHTTP(modelRequestConfigRec, modelRequestConfigReq)
@@ -1685,8 +1699,36 @@ func (f *fakeGatewayTools) SaveToolUserSettings(ctx context.Context, toolID stri
 	tool := f.tools[toolID]
 	tool.UserConfig = settings.UserConfig
 	tool.PromptDescriptionOverride = settings.PromptDescriptionOverride
+	for _, write := range settings.ConfigFiles {
+		path := write.Path
+		if write.Deleted {
+			files := tool.ConfigFiles[:0]
+			for _, file := range tool.ConfigFiles {
+				if file.Path != path {
+					files = append(files, file)
+				}
+			}
+			tool.ConfigFiles = files
+			continue
+		}
+		replaced := false
+		for index := range tool.ConfigFiles {
+			if tool.ConfigFiles[index].Path == path {
+				tool.ConfigFiles[index].Content = write.Content
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			tool.ConfigFiles = append(tool.ConfigFiles, types.ToolConfigFile{Path: path, Content: write.Content})
+		}
+	}
 	f.tools[toolID] = tool
 	return tool, nil
+}
+
+func (f *fakeGatewayTools) LoadToolConfigFiles(ctx context.Context, toolID string) ([]types.ToolConfigFile, error) {
+	return f.tools[toolID].ConfigFiles, nil
 }
 
 func (f *fakeGatewayTools) LoadToolWorkDirectoryConfig(ctx context.Context) (types.ToolWorkDirectoryConfig, error) {

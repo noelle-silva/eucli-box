@@ -80,6 +80,18 @@ func (s *system) SaveToolUserSettings(ctx context.Context, toolID string, settin
 	return s.annotateTool(tool), nil
 }
 
+// LoadToolConfigFiles 读取工具配置区全部文件；宿主只做存取展示，不解释语义。
+func (s *system) LoadToolConfigFiles(ctx context.Context, toolID string) ([]types.ToolConfigFile, error) {
+	if strings.TrimSpace(toolID) == "" {
+		return nil, toolInvalid("tool id is required", nil)
+	}
+	files, err := s.storage.LoadToolConfigFiles(ctx, toolID)
+	if err != nil {
+		return nil, toolStorageFailed("failed to load tool config files", err)
+	}
+	return files, nil
+}
+
 func (s *system) resolveTool(ctx context.Context, toolName string) (types.ToolDefinition, error) {
 	summaries, err := s.ListTools(ctx)
 	if err != nil {

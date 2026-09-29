@@ -28,6 +28,8 @@ func (s *system) SaveTool(ctx context.Context, tool types.ToolDefinition) error 
 	tool.Compatibility = types.CompatibilityStatus{}
 	tool.Status = ""
 	tool.StatusMessage = ""
+	// 配置区文件是运行时读取视图，不得随工具定义落盘。
+	tool.ConfigFiles = nil
 	// 能力列表的授权要求是宿主派生的运行时视图，不得随定义落盘。
 	for index := range tool.Capabilities {
 		tool.Capabilities[index].GrantRequired = false
@@ -176,6 +178,11 @@ func (s *system) SaveToolUserSettings(ctx context.Context, toolID string, settin
 	if _, err := s.loadToolDefinition(ctx, id); err != nil {
 		return types.ToolDefinition{}, err
 	}
+	// 配置区文件写入意图先应用：文件内容落 config/ 文件区，不写进 settings.json。
+	if err := s.applyToolConfigFileWrites(ctx, id, settings.ConfigFiles); err != nil {
+		return types.ToolDefinition{}, err
+	}
+	settings.ConfigFiles = nil
 	if settings.UserConfig == nil {
 		settings.UserConfig = map[string]any{}
 	}

@@ -634,6 +634,14 @@ func (f *fakeToolStorage) SaveToolUserSettings(ctx context.Context, toolID strin
 	return tool, nil
 }
 
+func (f *fakeToolStorage) LoadToolConfigFiles(ctx context.Context, toolID string) ([]types.ToolConfigFile, error) {
+	tool, ok := f.tools[toolID]
+	if !ok {
+		return nil, errors.New("tool missing")
+	}
+	return tool.ConfigFiles, nil
+}
+
 func (f *fakeToolStorage) LoadWorkspace(ctx context.Context, workspaceID string) (types.Workspace, error) {
 	workspace, ok := f.workspaces[workspaceID]
 	if !ok {

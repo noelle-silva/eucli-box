@@ -279,6 +279,13 @@ func (s *system) handleLoadTool(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	// 配置区文件是设置页的读取视图：详情接口按需附带，失败即如实报错。
+	configFiles, err := s.tools.LoadToolConfigFiles(r.Context(), toolID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	tool.ConfigFiles = configFiles
 	writeData(w, http.StatusOK, tool)
 }
 
@@ -302,6 +309,13 @@ func (s *system) handleSaveToolUserSettings(w http.ResponseWriter, r *http.Reque
 		writeError(w, err)
 		return
 	}
+	// 保存响应回执最新配置区文件，让设置页与落盘事实一次对齐。
+	configFiles, err := s.tools.LoadToolConfigFiles(r.Context(), toolID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	tool.ConfigFiles = configFiles
 	writeData(w, http.StatusOK, tool)
 }
 

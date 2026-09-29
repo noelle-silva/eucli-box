@@ -92,6 +92,7 @@ type System interface {
 	LoadTool(ctx context.Context, toolID string) (types.ToolDefinition, error)
 	ListTools(ctx context.Context) ([]types.ToolSummary, error)
 	SaveToolUserSettings(ctx context.Context, toolID string, settings types.ToolUserSettings) (types.ToolDefinition, error)
+	LoadToolConfigFiles(ctx context.Context, toolID string) ([]types.ToolConfigFile, error)
 	DeleteTool(ctx context.Context, toolID string) error
 
 	CreateStickerCategory(ctx context.Context, categoryName string) (types.StickerCategory, error)

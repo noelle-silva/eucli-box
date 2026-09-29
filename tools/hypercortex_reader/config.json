@@ -1,0 +1,5 @@
+{
+  "limits": {
+    "maxOutputChars": 50000
+  }
+}

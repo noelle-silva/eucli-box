@@ -1,0 +1,139 @@
+{
+  "id": "hypercortex_reader",
+  "name": "hypercortex_reader",
+  "description": "只读访问 HyperCortex 知识库：搜索笔记与附件、读取笔记内容与引用关系、查看收藏夹、附件与回收站。",
+  "version": "0.1.0",
+  "eucliBoxCompatibility": {
+    "minimumVersion": "0.1.0",
+    "maximumVersionExclusive": "0.2.0"
+  },
+  "promptDescription": "使用 hypercortex_reader 只读访问 HyperCortex 知识库。必须提供一个 action：search_notes、read_note、note_relations、list_favorites、list_repos、search_assets、list_assets 或 list_trash。仓库通过工具设置页的用户配置注册：填写访问地址，并在「仓库条目」列表里增删条目，每条含仓库 id（可含中文）、描述与对应访问钥匙；动作可用可选参数 repo 指定条目 id，省略时使用配置的默认仓库；list_repos 列出已注册条目（仓库 id 与描述，不展示钥匙）。本工具只读：不创建、不修改、不删除任何内容。search_notes：搜索笔记。query 为关键词，省略时按更新时间倒序列出笔记；fields 选择匹配维度（title/description/tags/content 可自由组合，省略为全部）；faceKinds 限定正文匹配的面类型；folderId 限定在某个收藏夹（含嵌套子收藏夹）内搜索；updatedFromMs/updatedToMs 为更新时间范围（epoch 毫秒，取自结果中的 updatedAtMs）；limit 为返回条数、offset 为起始位置（结果恰好一页时信息条给出 nextOffset 续读）。结果含 noteId、dir、标题、简介、命中维度与面命中摘要。read_note：读取某篇笔记的完整内容。dir 为笔记包目录（来自搜索结果）；返回笔记自身信息（id、标题、简介、标签、时间、版本 updatedAtMs）与全部面的正文；版本值可在后续编辑该笔记时用作防覆盖版本标记。note_relations：查看引用 / 被引用关系。noteId 为关注笔记（来自搜索结果）；radius 为扩展半径（跳数，缺省 1）；direction 取 both（缺省）、outgoing（只看主动引用）或 incoming（只看被引用）；返回半径内节点与真实引用边。list_favorites：查看收藏夹结构与内容（收藏夹树、各收藏夹下的笔记 / 附件 / 子收藏夹），并返回收藏夹文档版本 updatedAtMs。list_repos：列出工具配置中注册的仓库条目（不展示钥匙），不访问 HyperCortex。search_assets：搜索附件。query 为关键词，省略时按过滤条件列出；fields 选择匹配维度（name/remark/tags 可自由组合）；kind 过滤附件类型（image/video/audio/document）；sizeFrom/sizeTo 过滤大小（字节）；updatedFromMs/updatedToMs 过滤更新时间；limit/offset 分页；结果含 assetId（写入笔记引用标记时使用的编号）、路径、标签、备注与时间。list_assets：查看附件清单 / 信息（完整列出，按修改时间倒序）。list_trash：查看回收站条目（只读；删除类动作不属于本工具）。",
+  "defaultInvocationMode": "sync",
+  "type": "local",
+  "bodyDirectory": ".",
+  "userConfigSchema": {
+    "type": "object",
+    "properties": {
+      "endpoint": {
+        "type": "string",
+        "title": "访问地址",
+        "description": "HyperCortex 设置页「外部访问管理」里显示的访问地址，例如 http://127.0.0.1:43210。"
+      },
+      "repos": {
+        "type": "array",
+        "title": "仓库条目",
+        "description": "注册可访问的仓库：每条含仓库 id、描述与该仓库的访问钥匙；一把访问钥匙只通一个仓库。",
+        "items": {
+          "type": "object",
+          "title": "仓库",
+          "properties": {
+            "id": {
+              "type": "string",
+              "title": "仓库 id",
+              "description": "动作里用 repo 参数引用的名字，可含中文。"
+            },
+            "description": {
+              "type": "string",
+              "title": "描述"
+            },
+            "key": {
+              "type": "string",
+              "title": "访问钥匙"
+            }
+          }
+        }
+      },
+      "defaultRepo": {
+        "type": "string",
+        "title": "默认仓库",
+        "description": "动作未指定 repo 参数时使用的仓库条目 id。"
+      },
+      "maxOutputChars": {
+        "type": "integer",
+        "title": "最大输出字符数",
+        "description": "单次调用返回内容的最大字符数（可下调，不能超过随包上限）；正文先截断，末尾信息条始终保留。"
+      }
+    },
+    "additionalProperties": false
+  },
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["search_notes", "read_note", "note_relations", "list_favorites", "list_repos", "search_assets", "list_assets", "list_trash"],
+        "description": "要执行的读取动作：search_notes、read_note、note_relations、list_favorites、list_repos、search_assets、list_assets 或 list_trash。"
+      },
+      "repo": {
+        "type": "string",
+        "description": "可选：工具配置中注册的仓库条目 id；省略时使用配置的默认条目。"
+      },
+      "query": {
+        "type": "string",
+        "description": "action=search_notes/search_assets 的关键词；省略时按更新时间倒序列出（笔记）或按过滤条件列出（附件）。"
+      },
+      "fields": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "匹配维度：search_notes 取 title/description/tags/content；search_assets 取 name/remark/tags；省略为全部。"
+      },
+      "faceKinds": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "action=search_notes 时限定正文匹配的面类型（取值见结果信息条中的 faceKinds）。"
+      },
+      "folderId": {
+        "type": "string",
+        "description": "action=search_notes 时限定在该收藏夹（含嵌套子收藏夹）所含笔记内搜索（收藏夹 id 来自 list_favorites）。"
+      },
+      "updatedFromMs": {
+        "type": "integer",
+        "description": "更新时间下限（epoch 毫秒，含）；取自结果的 updatedAtMs。"
+      },
+      "updatedToMs": {
+        "type": "integer",
+        "description": "更新时间上限（epoch 毫秒，含）；取自结果的 updatedAtMs。"
+      },
+      "limit": {
+        "type": "integer",
+        "description": "返回条数；省略时由 HyperCortex 取默认上限。"
+      },
+      "offset": {
+        "type": "integer",
+        "description": "起始位置（用于续读；见信息条中的 nextOffset）。"
+      },
+      "dir": {
+        "type": "string",
+        "description": "action=read_note 的笔记包目录（来自搜索结果的 dir）。"
+      },
+      "noteId": {
+        "type": "string",
+        "description": "action=note_relations 的关注笔记标识（来自搜索结果）。"
+      },
+      "radius": {
+        "type": "integer",
+        "description": "action=note_relations 的扩展半径（跳数）；省略为 1。"
+      },
+      "direction": {
+        "type": "string",
+        "enum": ["both", "outgoing", "incoming"],
+        "description": "action=note_relations 的关系方向：both（缺省，双向）、outgoing（只看主动引用）、incoming（只看被引用）。"
+      },
+      "kind": {
+        "type": "string",
+        "description": "action=search_assets 的附件类型过滤：image/video/audio/document。"
+      },
+      "sizeFrom": {
+        "type": "integer",
+        "description": "action=search_assets 的附件大小下限（字节）。"
+      },
+      "sizeTo": {
+        "type": "integer",
+        "description": "action=search_assets 的附件大小上限（字节）。"
+      }
+    },
+    "required": ["action"],
+    "additionalProperties": false
+  },
+  "binaries": []
+}

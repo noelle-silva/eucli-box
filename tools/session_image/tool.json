@@ -1,0 +1,34 @@
+{
+  "id": "session_image",
+  "name": "session_image",
+  "description": "会话图片读取工具：传入会话图片 ID，把该图片引用进当前会话，让模型能读取超出图片预算的历史图片。",
+  "version": "0.1.0",
+  "eucliBoxCompatibility": {
+    "minimumVersion": "0.1.0",
+    "maximumVersionExclusive": "0.2.0"
+  },
+  "promptDescription": "会话图片读取工具：传入会话图片 ID（imageId 必填），把该图片引用进当前会话。当历史图片超出会话图片预算、你只看到占位文字与图片 ID 时，用本工具按 ID 把图片取回阅读。图片不落盘、ID 不变，引用结果由宿主挂回本次回复。",
+  "defaultInvocationMode": "sync",
+  "type": "local",
+  "capabilities": [
+    {
+      "id": "session-attachments",
+      "access": "reference",
+      "name": "引用会话图片",
+      "description": "把会话中已有的图片按 ID 引用进本次回复，不落盘、ID 不变。"
+    }
+  ],
+  "bodyDirectory": ".",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "imageId": {
+        "type": "string",
+        "description": "要读取的会话图片 ID（占位文字中注明的图片 ID）。"
+      }
+    },
+    "required": ["imageId"],
+    "additionalProperties": false
+  },
+  "binaries": []
+}

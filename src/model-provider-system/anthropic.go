@@ -432,14 +432,16 @@ func anthropicToolResultBlocks(toolParts []types.MessagePart, toolImages []types
 			if strings.TrimSpace(image.CallID) != strings.TrimSpace(part.CallID) {
 				continue
 			}
+			content = append(content, map[string]any{"type": "text", "text": toolImageAnchorText(part.ToolName, image.CallID, image.AttachmentID)})
+			if placeholder := strings.TrimSpace(image.Placeholder); placeholder != "" {
+				content = append(content, map[string]any{"type": "text", "text": placeholder})
+				continue
+			}
 			parsed, err := parsePromptImageDataURL(image.DataURL)
 			if err != nil {
 				return nil, err
 			}
-			content = append(content,
-				map[string]any{"type": "text", "text": toolImageAnchorText(part.ToolName, image.CallID, image.AttachmentID)},
-				map[string]any{"type": "image", "source": map[string]any{"type": "base64", "media_type": parsed.MediaType, "data": parsed.Base64}},
-			)
+			content = append(content, map[string]any{"type": "image", "source": map[string]any{"type": "base64", "media_type": parsed.MediaType, "data": parsed.Base64}})
 		}
 		block := map[string]any{"type": "tool_result", "tool_use_id": part.CallID, "content": content}
 		if part.Result.Status != types.ToolStatusSuccess {
@@ -458,6 +460,10 @@ func anthropicMessageContent(message types.PromptMessage) (any, error) {
 		parts = append(parts, map[string]any{"type": "text", "text": message.Content})
 	}
 	for _, image := range message.Images {
+		if placeholder := strings.TrimSpace(image.Placeholder); placeholder != "" {
+			parts = append(parts, map[string]any{"type": "text", "text": placeholder})
+			continue
+		}
 		parsed, err := parsePromptImageDataURL(image.DataURL)
 		if err != nil {
 			return nil, err

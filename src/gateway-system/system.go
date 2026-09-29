@@ -35,6 +35,8 @@ type RuntimeSystem interface {
 	ListActiveRuns(ctx context.Context) ([]types.RunState, error)
 	ListAsyncToolTasks(ctx context.Context, query types.AsyncToolTaskQuery) ([]types.AsyncToolTask, error)
 	Subscribe(ctx context.Context) (<-chan types.RunEvent, func(), error)
+	LoadConversationImageConfig(ctx context.Context) (types.ConversationImageConfig, error)
+	SaveConversationImageConfig(ctx context.Context, config types.ConversationImageConfig) (types.ConversationImageConfig, error)
 }
 
 type RoleSystem interface {

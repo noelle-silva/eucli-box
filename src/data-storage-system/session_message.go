@@ -402,6 +402,7 @@ func normalizeSessionMessageAttachments(attachments []types.MessageAttachment) [
 		if attachment.Path == "" {
 			continue
 		}
+		attachment.PreviewPath = filepathToSlashTrimmed(attachment.PreviewPath)
 		attachment.Kind = "image"
 		attachment.Name = normalizeAttachmentName(attachment.Name, "图片")
 		attachment.Mime = strings.TrimSpace(attachment.Mime)

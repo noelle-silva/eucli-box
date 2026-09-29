@@ -14,6 +14,9 @@ import (
 
 var sessionAttachmentAllowedImageMIMEs = map[string]string{"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
 
+// sessionPreviewFileName 是小副本的固定文件名：与 image.* 同目录并列。
+const sessionPreviewFileName = "preview.jpg"
+
 func (s *system) SaveSessionMessageAttachment(ctx context.Context, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
 	return s.saveSessionMessageAttachment(ctx, roleSessionScope(roleID), sessionID, attachment)
 }
@@ -64,7 +67,42 @@ func (s *system) saveSessionImageAttachment(ctx context.Context, scope sessionSc
 	if err := writeSingleImageFile(ctx, dir, fileName, image); err != nil {
 		return types.MessageAttachment{}, storageWriteFailed("failed to write session image attachment", err)
 	}
-	return types.MessageAttachment{ID: attachmentID, Kind: "image", Name: normalizeAttachmentName(attachment.Name, "图片"), Mime: image.Mime, Path: sessionAttachmentRelPath(scope, sessionID, attachmentID, fileName)}, nil
+	previewPath := ""
+	config, err := s.LoadConversationImageConfig(ctx)
+	if err != nil {
+		return types.MessageAttachment{}, err
+	}
+	if config.MultiVersionEnabled {
+		preview, err := buildImagePreview(image.Payload)
+		if err != nil {
+			return types.MessageAttachment{}, storageWriteFailed("failed to build session image preview", err)
+		}
+		if err := writePreviewFile(ctx, dir, preview); err != nil {
+			return types.MessageAttachment{}, storageWriteFailed("failed to write session image preview", err)
+		}
+		previewPath = sessionAttachmentRelPath(scope, sessionID, attachmentID, sessionPreviewFileName)
+	}
+	return types.MessageAttachment{ID: attachmentID, Kind: "image", Name: normalizeAttachmentName(attachment.Name, "图片"), Mime: image.Mime, Path: sessionAttachmentRelPath(scope, sessionID, attachmentID, fileName), PreviewPath: previewPath}, nil
+}
+
+// LoadSessionAttachmentPreviewImage 读取会话附件的小副本 data URL；
+// 小副本不存在时如实失败，由调用方按原图回退语义处理。
+func (s *system) LoadSessionAttachmentPreviewImage(ctx context.Context, relPath string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", storageReadFailed("read cancelled", err)
+	}
+	imagePath, mime, err := s.sessionAttachmentImagePath(relPath)
+	if err != nil {
+		return "", err
+	}
+	payload, err := os.ReadFile(imagePath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", storageReadFailed("session attachment preview image does not exist", err)
+		}
+		return "", storageReadFailed("failed to read session attachment preview image", err)
+	}
+	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(payload), nil
 }
 
 func (s *system) LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error) {
@@ -133,7 +171,7 @@ func (s *system) sessionAttachmentImagePath(relPath string) (string, string, err
 	if err != nil {
 		return "", "", err
 	}
-	if !strings.HasPrefix(fileName, "image.") {
+	if !strings.HasPrefix(fileName, "image.") && fileName != sessionPreviewFileName {
 		return "", "", storageInvalid("session attachment image filename is invalid", nil)
 	}
 	mime, ok := imageMIMEFromExt(filepath.Ext(fileName))

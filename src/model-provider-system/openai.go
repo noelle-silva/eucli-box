@@ -359,10 +359,15 @@ func openAIMessages(messages []types.PromptMessage) ([]map[string]any, error) {
 
 // openAIToolImagesMessage 把工具产物图组装为一条用户消息：
 // 每张图前带锚点文字；图片只出现在这里，不出现在助手消息上。
+// 超出预算的图不发图片本体，只发锚点文字与占位文字。
 func openAIToolImagesMessage(toolParts []types.MessagePart, images []types.PromptToolImage) map[string]any {
 	items := []map[string]any{}
 	for _, image := range images {
 		items = append(items, map[string]any{"type": "text", "text": toolImageAnchorText(toolNameForCall(toolParts, image.CallID), image.CallID, image.AttachmentID)})
+		if placeholder := strings.TrimSpace(image.Placeholder); placeholder != "" {
+			items = append(items, map[string]any{"type": "text", "text": placeholder})
+			continue
+		}
 		items = append(items, map[string]any{"type": "image_url", "image_url": map[string]any{"url": image.DataURL}})
 	}
 	return map[string]any{"role": "user", "content": items}
@@ -390,6 +395,10 @@ func openAIMessageContent(message types.PromptMessage) any {
 		parts = append(parts, map[string]any{"type": "text", "text": message.Content})
 	}
 	for _, image := range message.Images {
+		if placeholder := strings.TrimSpace(image.Placeholder); placeholder != "" {
+			parts = append(parts, map[string]any{"type": "text", "text": placeholder})
+			continue
+		}
 		dataURL := strings.TrimSpace(image.DataURL)
 		if dataURL == "" {
 			continue

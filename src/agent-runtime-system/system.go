@@ -15,6 +15,8 @@ type System interface {
 	ListActiveRuns(ctx context.Context) ([]types.RunState, error)
 	ListAsyncToolTasks(ctx context.Context, query types.AsyncToolTaskQuery) ([]types.AsyncToolTask, error)
 	Subscribe(ctx context.Context) (<-chan types.RunEvent, func(), error)
+	LoadConversationImageConfig(ctx context.Context) (types.ConversationImageConfig, error)
+	SaveConversationImageConfig(ctx context.Context, config types.ConversationImageConfig) (types.ConversationImageConfig, error)
 }
 
 type StorageSystem interface {
@@ -33,8 +35,11 @@ type StorageSystem interface {
 	SaveGroupSessionMessageAttachment(ctx context.Context, groupID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
 	SaveWorkspaceSessionMessageAttachment(ctx context.Context, workspaceID string, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error)
 	LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error)
+	LoadSessionAttachmentPreviewImage(ctx context.Context, relPath string) (string, error)
 	LoadHookPromptLibrary(ctx context.Context) (types.HookPromptLibrary, error)
 	LoadContextCompressionConfig(ctx context.Context) (types.ContextCompressionConfig, error)
+	LoadConversationImageConfig(ctx context.Context) (types.ConversationImageConfig, error)
+	SaveConversationImageConfig(ctx context.Context, config types.ConversationImageConfig) (types.ConversationImageConfig, error)
 	LoadWorkspace(ctx context.Context, workspaceID string) (types.Workspace, error)
 }
 

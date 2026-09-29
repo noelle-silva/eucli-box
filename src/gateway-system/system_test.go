@@ -657,6 +657,20 @@ func TestProviderAndToolRoutes(t *testing.T) {
 	if modelRequestConfigRec.Code != http.StatusOK || !strings.Contains(modelRequestConfigRec.Body.String(), "180000") {
 		t.Fatalf("model request config load status = %d body=%s", modelRequestConfigRec.Code, modelRequestConfigRec.Body.String())
 	}
+
+	conversationImageReq := httptest.NewRequest(http.MethodGet, "/api/conversation-image/config", nil)
+	conversationImageRec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(conversationImageRec, conversationImageReq)
+	if conversationImageRec.Code != http.StatusOK || !strings.Contains(conversationImageRec.Body.String(), "multiVersionEnabled") {
+		t.Fatalf("conversation image config load status = %d body=%s", conversationImageRec.Code, conversationImageRec.Body.String())
+	}
+
+	conversationImageReq = httptest.NewRequest(http.MethodPut, "/api/conversation-image/config", strings.NewReader(`{"multiVersionEnabled":true,"originalBudgetEnabled":true,"originalBudgetCount":3,"historyBudgetEnabled":true,"historyBudgetCount":8}`))
+	conversationImageRec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(conversationImageRec, conversationImageReq)
+	if conversationImageRec.Code != http.StatusOK || !strings.Contains(conversationImageRec.Body.String(), `"historyBudgetCount":8`) {
+		t.Fatalf("conversation image config save status = %d body=%s", conversationImageRec.Code, conversationImageRec.Body.String())
+	}
 }
 
 func TestStickerRoutes(t *testing.T) {
@@ -1444,10 +1458,11 @@ func (f *fakeGatewaySessions) SaveSessionFavorites(ctx context.Context, favorite
 }
 
 type fakeGatewayRuntime struct {
-	mu          sync.Mutex
-	started     types.RunRequest
-	runs        map[string]types.RunState
-	subscribers []chan types.RunEvent
+	mu                sync.Mutex
+	started           types.RunRequest
+	runs              map[string]types.RunState
+	subscribers       []chan types.RunEvent
+	conversationImage types.ConversationImageConfig
 }
 
 func newFakeGatewayRuntime() *fakeGatewayRuntime {
@@ -1492,6 +1507,22 @@ func (f *fakeGatewayRuntime) ListActiveRuns(ctx context.Context) ([]types.RunSta
 
 func (f *fakeGatewayRuntime) ListAsyncToolTasks(ctx context.Context, query types.AsyncToolTaskQuery) ([]types.AsyncToolTask, error) {
 	return []types.AsyncToolTask{}, nil
+}
+
+func (f *fakeGatewayRuntime) LoadConversationImageConfig(ctx context.Context) (types.ConversationImageConfig, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.conversationImage == (types.ConversationImageConfig{}) {
+		return types.DefaultConversationImageConfig(), nil
+	}
+	return f.conversationImage, nil
+}
+
+func (f *fakeGatewayRuntime) SaveConversationImageConfig(ctx context.Context, config types.ConversationImageConfig) (types.ConversationImageConfig, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.conversationImage = types.NormalizeConversationImageConfig(config)
+	return f.conversationImage, nil
 }
 
 func (f *fakeGatewayRuntime) Subscribe(ctx context.Context) (<-chan types.RunEvent, func(), error) {

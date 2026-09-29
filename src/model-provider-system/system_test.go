@@ -614,6 +614,84 @@ func TestCompleteOpenAICarriesToolImagesInFollowupUserMessage(t *testing.T) {
 	}
 }
 
+// TestCompleteOpenAIRendersImagePlaceholderAsText 钉住占位渲染：
+// 超出图片预算的图片不发图片本体，只发锚点文字与占位文字。
+func TestCompleteOpenAIRendersImagePlaceholderAsText(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["openai-main"] = testOpenAIProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"done"}}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	_, err := system.Complete(context.Background(), types.ModelRequest{
+		Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"},
+		Messages: []types.PromptMessage{{
+			Role:    "assistant",
+			Content: "画好了",
+			Parts:   []types.MessagePart{{Type: "tool", CallID: "call-1", ToolName: "ai-image", Input: map[string]any{"prompt": "猫"}, Result: &types.ToolPartResult{Status: types.ToolStatusSuccess, Content: "图片已生成"}}},
+			ToolImages: []types.PromptToolImage{
+				{CallID: "call-1", AttachmentID: "att-9", Placeholder: "此图片超出此会话的图片预算上限，图片 ID：att-9"},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(network.lastRequest.Body, &body); err != nil {
+		t.Fatalf("request body is invalid json: %v", err)
+	}
+	messages := body["messages"].([]any)
+	followup := messages[2].(map[string]any)
+	items := followup["content"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("followup content = %#v", items)
+	}
+	placeholder := items[1].(map[string]any)
+	if placeholder["type"] != "text" || !strings.Contains(placeholder["text"].(string), "att-9") {
+		t.Fatalf("placeholder item = %#v", placeholder)
+	}
+	if strings.Contains(string(network.lastRequest.Body), "image_url") {
+		t.Fatalf("placeholder image must not be sent as image: %s", string(network.lastRequest.Body))
+	}
+}
+
+// TestCompleteOpenAIRendersUserImagePlaceholderAsText 钉住用户消息通道的
+// 占位渲染：超出预算的用户图片同样只发占位文字。
+func TestCompleteOpenAIRendersUserImagePlaceholderAsText(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["openai-main"] = testOpenAIProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"done"}}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	_, err := system.Complete(context.Background(), types.ModelRequest{
+		Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"},
+		Messages: []types.PromptMessage{{
+			Role:    "user",
+			Content: "看这个",
+			Images:  []types.PromptImage{{AttachmentID: "att-old", Placeholder: "此图片超出此会话的图片预算上限，图片 ID：att-old"}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(network.lastRequest.Body, &body); err != nil {
+		t.Fatalf("request body is invalid json: %v", err)
+	}
+	messages := body["messages"].([]any)
+	user := messages[0].(map[string]any)
+	items := user["content"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("user content = %#v", items)
+	}
+	if placeholder := items[1].(map[string]any); placeholder["type"] != "text" || !strings.Contains(placeholder["text"].(string), "att-old") {
+		t.Fatalf("placeholder item = %#v", placeholder)
+	}
+	if strings.Contains(string(network.lastRequest.Body), "image_url") {
+		t.Fatalf("placeholder image must not be sent as image: %s", string(network.lastRequest.Body))
+	}
+}
+
 func TestCompleteOpenAIUsesReasoningContentField(t *testing.T) {
 	// 思考记录必须走 reasoning_content 字段（协议专用），不得混入正文 content
 	storage := newFakeProviderStorage()

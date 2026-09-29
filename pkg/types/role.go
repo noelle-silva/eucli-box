@@ -17,7 +17,13 @@ type PromptMessage struct {
 }
 
 type PromptImage struct {
-	DataURL string `json:"dataUrl"`
+	// AttachmentID 是图片附件的逻辑标识；非空表示这张图来自会话附件，
+	// 图片预算机制按它定位与占位。
+	AttachmentID string `json:"attachmentId,omitempty"`
+	DataURL      string `json:"dataUrl"`
+	// Placeholder 非空时表示这张图不发送图片本体，只发送占位文字；
+	// 预算阶段设置，协议层渲染为文本块。
+	Placeholder string `json:"placeholder,omitempty"`
 }
 
 // PromptToolImage 是工具产物图片的提示词视图：调用标识用于配对，
@@ -26,6 +32,8 @@ type PromptToolImage struct {
 	CallID       string `json:"callId"`
 	AttachmentID string `json:"attachmentId"`
 	DataURL      string `json:"dataUrl"`
+	// Placeholder 非空时表示这张图不发送图片本体，只发送占位文字。
+	Placeholder string `json:"placeholder,omitempty"`
 }
 
 type ToolRunMode string

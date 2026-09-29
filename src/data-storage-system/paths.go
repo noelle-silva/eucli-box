@@ -91,6 +91,10 @@ func (p paths) modelRequestConfigFile() string {
 	return datapaths.ModelRequestFile(p.root)
 }
 
+func (p paths) conversationImageConfigFile() string {
+	return datapaths.ConversationImageFile(p.root)
+}
+
 func (p paths) toolWorkDirectoryConfigFile() string {
 	return datapaths.ToolWorkDirectoryFile(p.root)
 }

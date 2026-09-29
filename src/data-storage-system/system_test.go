@@ -351,7 +351,7 @@ func TestSaveSessionMessageAttachmentStoresImages(t *testing.T) {
 		t.Fatalf("SaveSession() error = %v", err)
 	}
 
-	imageDataURL := "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lz2YNgAAAABJRU5ErkJggg=="
+	imageDataURL := "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 	image, err := system.SaveSessionMessageAttachment(context.Background(), "developer", "session-1", types.RunAttachment{Kind: "image", Name: "shot.png", DataURL: imageDataURL})
 	if err != nil {
 		t.Fatalf("SaveSessionMessageAttachment(image) error = %v", err)

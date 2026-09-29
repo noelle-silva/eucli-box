@@ -1731,7 +1731,7 @@ func TestRuntimeMessageToPromptTranslatesAsyncToolResultAsToolResult(t *testing.
 		t.Fatalf("runtime system has unexpected type")
 	}
 	now := time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC)
-	prompt, err := system.runtimeMessageToPrompt(context.Background(), types.Message{ID: "m1", Type: types.MessageTypeAsyncToolResult, ToolName: "file-reader", Content: "以下是异步任务 async-1 的执行结果", CreatedAt: now, UpdatedAt: now}, 0)
+	prompt, err := system.runtimeMessageToPrompt(context.Background(), types.Message{ID: "m1", Type: types.MessageTypeAsyncToolResult, ToolName: "file-reader", Content: "以下是异步任务 async-1 的执行结果", CreatedAt: now, UpdatedAt: now}, 0, nil)
 	if err != nil {
 		t.Fatalf("runtimeMessageToPrompt() error = %v", err)
 	}
@@ -1756,7 +1756,7 @@ func TestRuntimeMessageToPromptRoutesToolImagesToToolChannel(t *testing.T) {
 		Parts:       []types.MessagePart{{Type: "tool", CallID: "call-1", ToolName: "ai-image", Result: &types.ToolPartResult{Status: types.ToolStatusSuccess, Content: "ok"}}},
 		Attachments: []types.MessageAttachment{attachment},
 		CreatedAt:   now, UpdatedAt: now,
-	}, 0)
+	}, 0, nil)
 	if err != nil {
 		t.Fatalf("runtimeMessageToPrompt(assistant) error = %v", err)
 	}
@@ -1772,7 +1772,7 @@ func TestRuntimeMessageToPromptRoutesToolImagesToToolChannel(t *testing.T) {
 		ID: "u1", Type: "user", Content: "看这个",
 		Attachments: []types.MessageAttachment{userAttachment},
 		CreatedAt:   now, UpdatedAt: now,
-	}, 1)
+	}, 1, nil)
 	if err != nil {
 		t.Fatalf("runtimeMessageToPrompt(user) error = %v", err)
 	}
@@ -1797,9 +1797,148 @@ func TestRuntimeMessageToPromptFailsUnpairedToolImage(t *testing.T) {
 		Parts:       []types.MessagePart{{Type: "tool", CallID: "call-1", ToolName: "ai-image", Result: &types.ToolPartResult{Status: types.ToolStatusSuccess, Content: "ok"}}},
 		Attachments: []types.MessageAttachment{attachment},
 		CreatedAt:   now, UpdatedAt: now,
-	}, 0)
+	}, 0, nil)
 	if err == nil {
 		t.Fatal("unpaired tool image must fail")
+	}
+}
+
+// TestConversationImagePlanAppliesBothBudgets 钉住图片预算叠加逻辑：
+// 历史预算决定保留张数（超出占位并注明 ID），原图预算决定保留者中
+// 最近的若干张用原图，其余用小副本。
+func TestConversationImagePlanAppliesBothBudgets(t *testing.T) {
+	fakes := newRuntimeFakes()
+	system, ok := newTestRuntime(t, fakes, Config{}).(*system)
+	if !ok {
+		t.Fatalf("runtime system has unexpected type")
+	}
+	fakes.storage.conversationImage = types.ConversationImageConfig{MultiVersionEnabled: true, OriginalBudgetEnabled: true, OriginalBudgetCount: 2, HistoryBudgetEnabled: true, HistoryBudgetCount: 3}
+	messages := []types.Message{}
+	for index := 0; index < 5; index++ {
+		id := "att-" + string(rune('a'+index))
+		messages = append(messages, types.Message{ID: "m" + id, Type: "user", Attachments: []types.MessageAttachment{{ID: id, Kind: "image", Name: "图", Mime: "image/png", Path: "sessions/roles/developer/session-1/attachments/" + id + "/image.png", PreviewPath: "sessions/roles/developer/session-1/attachments/" + id + "/preview.jpg"}}})
+	}
+	plan, err := system.buildConversationImagePlan(context.Background(), messages)
+	if err != nil {
+		t.Fatalf("buildConversationImagePlan() error = %v", err)
+	}
+	if decision := plan.decisionFor(0, 0); decision.Placeholder != "此图片超出此会话的图片预算上限，图片 ID：att-a" || decision.UsePreview {
+		t.Fatalf("oldest image decision = %#v", decision)
+	}
+	if decision := plan.decisionFor(1, 0); decision.Placeholder != "此图片超出此会话的图片预算上限，图片 ID：att-b" || decision.UsePreview {
+		t.Fatalf("second oldest image decision = %#v", decision)
+	}
+	if decision := plan.decisionFor(2, 0); decision.Placeholder != "" || !decision.UsePreview {
+		t.Fatalf("third image is kept but outside original budget, decision = %#v", decision)
+	}
+	if decision := plan.decisionFor(3, 0); decision.Placeholder != "" || decision.UsePreview {
+		t.Fatalf("fourth image is within original budget, decision = %#v", decision)
+	}
+	if decision := plan.decisionFor(4, 0); decision.Placeholder != "" || decision.UsePreview {
+		t.Fatalf("newest image must be sent as original, decision = %#v", decision)
+	}
+}
+
+// TestConversationImagePlanDisabledSwitches 钉住开关语义：
+// 多版本存图关闭时全部原图、预算不生效；预算单项关闭时对应限制不生效。
+func TestConversationImagePlanDisabledSwitches(t *testing.T) {
+	fakes := newRuntimeFakes()
+	system, ok := newTestRuntime(t, fakes, Config{}).(*system)
+	if !ok {
+		t.Fatalf("runtime system has unexpected type")
+	}
+	messages := []types.Message{}
+	for index := 0; index < 8; index++ {
+		id := "att-" + string(rune('a'+index))
+		messages = append(messages, types.Message{ID: "m" + id, Type: "user", Attachments: []types.MessageAttachment{{ID: id, Kind: "image", Name: "图", Mime: "image/png", Path: "sessions/roles/developer/session-1/attachments/" + id + "/image.png", PreviewPath: "sessions/roles/developer/session-1/attachments/" + id + "/preview.jpg"}}})
+	}
+
+	fakes.storage.conversationImage = types.ConversationImageConfig{MultiVersionEnabled: false}
+	plan, err := system.buildConversationImagePlan(context.Background(), messages)
+	if err != nil {
+		t.Fatalf("buildConversationImagePlan() error = %v", err)
+	}
+	for index := 0; index < len(messages); index++ {
+		if decision := plan.decisionFor(index, 0); decision.Placeholder != "" || decision.UsePreview {
+			t.Fatalf("multi-version disabled must send originals, index %d decision = %#v", index, decision)
+		}
+	}
+
+	fakes.storage.conversationImage = types.ConversationImageConfig{MultiVersionEnabled: true, OriginalBudgetEnabled: false, OriginalBudgetCount: 2, HistoryBudgetEnabled: true, HistoryBudgetCount: 6}
+	plan, err = system.buildConversationImagePlan(context.Background(), messages)
+	if err != nil {
+		t.Fatalf("buildConversationImagePlan() error = %v", err)
+	}
+	if decision := plan.decisionFor(0, 0); decision.Placeholder == "" {
+		t.Fatalf("history budget must still apply when original budget disabled, decision = %#v", decision)
+	}
+	if decision := plan.decisionFor(7, 0); !decision.UsePreview {
+		t.Fatalf("original budget disabled must send previews, decision = %#v", decision)
+	}
+}
+
+// TestConversationImagePlanCoversToolImages 钉住预算覆盖范围：
+// 工具产物图与用户图片统一计数，超出预算的工具图同样以占位替代。
+func TestConversationImagePlanCoversToolImages(t *testing.T) {
+	fakes := newRuntimeFakes()
+	system, ok := newTestRuntime(t, fakes, Config{}).(*system)
+	if !ok {
+		t.Fatalf("runtime system has unexpected type")
+	}
+	fakes.storage.conversationImage = types.ConversationImageConfig{MultiVersionEnabled: true, OriginalBudgetEnabled: false, OriginalBudgetCount: 2, HistoryBudgetEnabled: true, HistoryBudgetCount: 2}
+	attachment := func(id string) types.MessageAttachment {
+		return types.MessageAttachment{ID: id, Kind: "image", Name: "图", Mime: "image/png", Path: "sessions/roles/developer/session-1/attachments/" + id + "/image.png", PreviewPath: "sessions/roles/developer/session-1/attachments/" + id + "/preview.jpg"}
+	}
+	messages := []types.Message{
+		{ID: "u1", Type: "user", Attachments: []types.MessageAttachment{attachment("att-old")}},
+		{ID: "a1", Type: "assistant", Content: "画好了", Parts: []types.MessagePart{{Type: "tool", CallID: "call-1", ToolName: "ai-image", Result: &types.ToolPartResult{Status: types.ToolStatusSuccess, Content: "ok"}}}, Attachments: []types.MessageAttachment{{ID: "att-tool", Kind: "image", Name: "生成图", Mime: "image/png", Path: "sessions/roles/developer/session-1/attachments/att-tool/image.png", PreviewPath: "sessions/roles/developer/session-1/attachments/att-tool/preview.jpg", CallID: "call-1"}}},
+		{ID: "u2", Type: "user", Attachments: []types.MessageAttachment{attachment("att-new")}},
+	}
+	plan, err := system.buildConversationImagePlan(context.Background(), messages)
+	if err != nil {
+		t.Fatalf("buildConversationImagePlan() error = %v", err)
+	}
+	if decision := plan.decisionFor(0, 0); decision.Placeholder != "此图片超出此会话的图片预算上限，图片 ID：att-old" {
+		t.Fatalf("old user image decision = %#v", decision)
+	}
+	if decision := plan.decisionFor(1, 0); decision.Placeholder != "" || !decision.UsePreview {
+		t.Fatalf("tool image within budget must be sent as preview, decision = %#v", decision)
+	}
+	if decision := plan.decisionFor(2, 0); decision.Placeholder != "" || !decision.UsePreview {
+		t.Fatalf("newest user image decision = %#v", decision)
+	}
+}
+
+// TestModelMessagesApplyConversationImageBudget 钉住端到端组装：
+// 超预算图片在提示词消息上只留占位文字，不发图片本体。
+func TestModelMessagesApplyConversationImageBudget(t *testing.T) {
+	fakes := newRuntimeFakes()
+	system, ok := newTestRuntime(t, fakes, Config{}).(*system)
+	if !ok {
+		t.Fatalf("runtime system has unexpected type")
+	}
+	fakes.storage.conversationImage = types.ConversationImageConfig{MultiVersionEnabled: true, OriginalBudgetEnabled: false, OriginalBudgetCount: 1, HistoryBudgetEnabled: true, HistoryBudgetCount: 1}
+	oldAttachment := types.MessageAttachment{ID: "att-old", Kind: "image", Name: "旧图", Mime: "image/png", Path: "sessions/roles/developer/session-1/attachments/att-old/image.png", PreviewPath: "sessions/roles/developer/session-1/attachments/att-old/preview.jpg"}
+	newAttachment := types.MessageAttachment{ID: "att-new", Kind: "image", Name: "新图", Mime: "image/png", Path: "sessions/roles/developer/session-1/attachments/att-new/image.png", PreviewPath: "sessions/roles/developer/session-1/attachments/att-new/preview.jpg"}
+	fakes.storage.images[oldAttachment.PreviewPath] = "data:image/jpeg;base64,b2xk"
+	fakes.storage.images[newAttachment.PreviewPath] = "data:image/jpeg;base64,bmV3"
+	record := &runRecord{runID: "run-1"}
+	roleContext := types.RoleContext{Messages: []types.Message{
+		{ID: "u1", Type: "user", Content: "旧图", Attachments: []types.MessageAttachment{oldAttachment}},
+		{ID: "u2", Type: "user", Content: "新图", Attachments: []types.MessageAttachment{newAttachment}},
+	}}
+	messages, err := system.modelMessages(context.Background(), record, roleContext)
+	if err != nil {
+		t.Fatalf("modelMessages() error = %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("messages = %#v", messages)
+	}
+	if len(messages[0].Images) != 1 || messages[0].Images[0].Placeholder != "此图片超出此会话的图片预算上限，图片 ID：att-old" || messages[0].Images[0].DataURL != "" {
+		t.Fatalf("old image prompt = %#v", messages[0].Images)
+	}
+	if len(messages[1].Images) != 1 || messages[1].Images[0].Placeholder != "" || messages[1].Images[0].DataURL != "data:image/jpeg;base64,bmV3" {
+		t.Fatalf("new image prompt = %#v", messages[1].Images)
 	}
 }
 
@@ -2345,6 +2484,7 @@ type fakeRuntimeStorage struct {
 	images            map[string]string
 	hookLibrary       types.HookPromptLibrary
 	compressionConfig types.ContextCompressionConfig
+	conversationImage types.ConversationImageConfig
 	listRolesErr      error
 }
 
@@ -2359,7 +2499,21 @@ func newFakeRuntimeStorage() *fakeRuntimeStorage {
 			Temperature:          0.2,
 			UpdatedAt:            time.Now().UTC(),
 		},
+		conversationImage: types.DefaultConversationImageConfig(),
 	}
+}
+
+func (f *fakeRuntimeStorage) LoadConversationImageConfig(ctx context.Context) (types.ConversationImageConfig, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.conversationImage, nil
+}
+
+func (f *fakeRuntimeStorage) SaveConversationImageConfig(ctx context.Context, config types.ConversationImageConfig) (types.ConversationImageConfig, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.conversationImage = types.NormalizeConversationImageConfig(config)
+	return f.conversationImage, nil
 }
 
 func (f *fakeRuntimeStorage) LoadContextCompressionConfig(ctx context.Context) (types.ContextCompressionConfig, error) {
@@ -2759,6 +2913,16 @@ func (f *fakeRuntimeStorage) LoadWorkspace(ctx context.Context, workspaceID stri
 		return types.Workspace{}, errors.New("workspace missing")
 	}
 	return workspace, nil
+}
+
+func (f *fakeRuntimeStorage) LoadSessionAttachmentPreviewImage(ctx context.Context, relPath string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	dataURL := f.images[relPath]
+	if dataURL == "" {
+		return "", errors.New("preview image missing")
+	}
+	return dataURL, nil
 }
 
 func (f *fakeRuntimeStorage) LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error) {

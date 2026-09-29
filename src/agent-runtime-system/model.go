@@ -9,6 +9,38 @@ import (
 	"eucli-box/pkg/types"
 )
 
+// LoadConversationImageConfig 读取会话图片机制配置。
+func (s *system) LoadConversationImageConfig(ctx context.Context) (types.ConversationImageConfig, error) {
+	config, err := s.storage.LoadConversationImageConfig(ctx)
+	if err != nil {
+		return types.ConversationImageConfig{}, runtimeStorageFailed("failed to load conversation image config", err)
+	}
+	return config, nil
+}
+
+// SaveConversationImageConfig 保存会话图片机制配置；张数越界即拒绝。
+func (s *system) SaveConversationImageConfig(ctx context.Context, config types.ConversationImageConfig) (types.ConversationImageConfig, error) {
+	if err := validateConversationImageConfig(config); err != nil {
+		return types.ConversationImageConfig{}, err
+	}
+	saved, err := s.storage.SaveConversationImageConfig(ctx, config)
+	if err != nil {
+		return types.ConversationImageConfig{}, runtimeStorageFailed("failed to save conversation image config", err)
+	}
+	return saved, nil
+}
+
+// validateConversationImageConfig 校验图片预算张数在合法范围内。
+func validateConversationImageConfig(config types.ConversationImageConfig) error {
+	if config.OriginalBudgetCount < types.ConversationImageOriginalBudgetMin || config.OriginalBudgetCount > types.ConversationImageOriginalBudgetMax {
+		return runtimeInvalid("original budget count is out of range", nil)
+	}
+	if config.HistoryBudgetCount < types.ConversationImageHistoryBudgetMin || config.HistoryBudgetCount > types.ConversationImageHistoryBudgetMax {
+		return runtimeInvalid("history budget count is out of range", nil)
+	}
+	return nil
+}
+
 func (s *system) callModel(ctx context.Context, record *runRecord, roleContext types.RoleContext) (types.ModelResponse, error) {
 	messages, err := s.modelMessages(ctx, record, roleContext)
 	if err != nil {
@@ -170,11 +202,15 @@ func streamContentDelta(previous string, current string) string {
 }
 
 func (s *system) modelMessages(ctx context.Context, record *runRecord, roleContext types.RoleContext) ([]types.PromptMessage, error) {
+	imagePlan, err := s.buildConversationImagePlan(ctx, roleContext.Messages)
+	if err != nil {
+		return nil, err
+	}
 	messages := make([]types.PromptMessage, 0, len(roleContext.Prompts)+len(roleContext.Messages))
 	messages = append(messages, roleContext.Prompts...)
 	latestUserIndex := -1
 	for index, message := range roleContext.Messages {
-		prompt, err := s.runtimeMessageToPrompt(ctx, message, index)
+		prompt, err := s.runtimeMessageToPrompt(ctx, message, index, imagePlan)
 		if err != nil {
 			return nil, err
 		}
@@ -183,7 +219,7 @@ func (s *system) modelMessages(ctx context.Context, record *runRecord, roleConte
 		}
 		messages = append(messages, prompt)
 	}
-	messages, err := s.applyHookPromptPreset(ctx, record, roleContext, messages, latestUserIndex)
+	messages, err = s.applyHookPromptPreset(ctx, record, roleContext, messages, latestUserIndex)
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +234,7 @@ func (s *system) resolvePromptPlaceholders(ctx context.Context, messages []types
 	return out, nil
 }
 
-func (s *system) runtimeMessageToPrompt(ctx context.Context, message types.Message, index int) (types.PromptMessage, error) {
+func (s *system) runtimeMessageToPrompt(ctx context.Context, message types.Message, index int, imagePlan *conversationImagePlan) (types.PromptMessage, error) {
 	role := message.Type
 	content := message.Content
 	switch message.Type {
@@ -220,7 +256,7 @@ func (s *system) runtimeMessageToPrompt(ctx context.Context, message types.Messa
 	default:
 		role = "user"
 	}
-	images, err := s.promptImagesForMessage(ctx, message)
+	images, err := s.promptImagesForMessage(ctx, message, index, imagePlan)
 	if err != nil {
 		return types.PromptMessage{}, err
 	}
@@ -274,29 +310,51 @@ func cloneMessageParts(parts []types.MessagePart) []types.MessagePart {
 	return result
 }
 
-func (s *system) promptImagesForMessage(ctx context.Context, message types.Message) ([]types.PromptToolImage, error) {
+func (s *system) promptImagesForMessage(ctx context.Context, message types.Message, messageIndex int, imagePlan *conversationImagePlan) ([]types.PromptToolImage, error) {
 	images := []types.PromptToolImage{}
-	for _, attachment := range message.Attachments {
-		if attachment.Kind != "image" || strings.TrimSpace(attachment.Path) == "" {
+	for attachmentIndex, attachment := range messageImageAttachments(message) {
+		decision := imagePlan.decisionFor(messageIndex, attachmentIndex)
+		if decision.Placeholder != "" {
+			images = append(images, types.PromptToolImage{CallID: strings.TrimSpace(attachment.CallID), AttachmentID: strings.TrimSpace(attachment.ID), Placeholder: decision.Placeholder})
 			continue
 		}
-		dataURL, err := s.storage.LoadSessionAttachmentImage(ctx, attachment.Path)
+		dataURL, err := s.loadPromptImageDataURL(ctx, attachment, decision.UsePreview)
 		if err != nil {
-			return nil, runtimeStorageFailed("failed to load message image attachment", err)
+			return nil, err
 		}
 		images = append(images, types.PromptToolImage{CallID: strings.TrimSpace(attachment.CallID), AttachmentID: strings.TrimSpace(attachment.ID), DataURL: dataURL})
 	}
 	return images, nil
 }
 
-// promptImages 把工具产物图片视图降为普通提示词图片（用户消息附件路径）。
+// loadPromptImageDataURL 装载一张发往模型的图片：按决策读取小副本或原图；
+// 小副本缺失时如实回退原图（小副本只是发送优化，原图永远可用）。
+func (s *system) loadPromptImageDataURL(ctx context.Context, attachment types.MessageAttachment, usePreview bool) (string, error) {
+	if usePreview {
+		previewPath := strings.TrimSpace(attachment.PreviewPath)
+		if previewPath != "" {
+			dataURL, err := s.storage.LoadSessionAttachmentPreviewImage(ctx, previewPath)
+			if err == nil {
+				return dataURL, nil
+			}
+		}
+	}
+	dataURL, err := s.storage.LoadSessionAttachmentImage(ctx, attachment.Path)
+	if err != nil {
+		return "", runtimeStorageFailed("failed to load message image attachment", err)
+	}
+	return dataURL, nil
+}
+
+// promptImages 把工具产物图片视图降为普通提示词图片（用户消息附件路径）；
+// 附件标识与占位文字随视图保留，供预算机制与协议层使用。
 func promptImages(images []types.PromptToolImage) []types.PromptImage {
 	if len(images) == 0 {
 		return nil
 	}
 	out := make([]types.PromptImage, 0, len(images))
 	for _, image := range images {
-		out = append(out, types.PromptImage{DataURL: image.DataURL})
+		out = append(out, types.PromptImage{AttachmentID: image.AttachmentID, DataURL: image.DataURL, Placeholder: image.Placeholder})
 	}
 	return out
 }

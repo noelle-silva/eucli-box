@@ -163,6 +163,9 @@ type MessageAttachment struct {
 	Name string `json:"name"`
 	Mime string `json:"mime,omitempty"`
 	Path string `json:"path,omitempty"`
+	// PreviewPath 是小副本相对路径：发往模型的请求体默认使用它；
+	// 空值表示没有小副本（多版本存图关闭或未生成）。
+	PreviewPath string `json:"previewPath,omitempty"`
 	// CallID 是产出该附件的工具调用标识；用户消息附件不带该值。
 	CallID string `json:"callId,omitempty"`
 }

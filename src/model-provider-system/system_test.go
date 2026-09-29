@@ -553,6 +553,67 @@ func TestCompleteOpenAISendsStructuredToolHistory(t *testing.T) {
 	}
 }
 
+// TestCompleteOpenAICarriesToolImagesInFollowupUserMessage 钉住 OpenAI 系搬运：
+// 工具产物图不出现在助手消息上，而是跟在工具结果之后的一条用户消息里，
+// 每张图前带锚点文字。
+func TestCompleteOpenAICarriesToolImagesInFollowupUserMessage(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["openai-main"] = testOpenAIProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"done"}}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+	imageDataURL := "data:image/png;base64,iVBORw0KGgo="
+
+	_, err := system.Complete(context.Background(), types.ModelRequest{
+		Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"},
+		Messages: []types.PromptMessage{{
+			Role:    "assistant",
+			Content: "画好了",
+			Parts:   []types.MessagePart{{Type: "tool", CallID: "call-1", ToolName: "ai-image", Input: map[string]any{"prompt": "猫"}, Result: &types.ToolPartResult{Status: types.ToolStatusSuccess, Content: "图片已生成"}}},
+			ToolImages: []types.PromptToolImage{
+				{CallID: "call-1", AttachmentID: "att-9", DataURL: imageDataURL},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(network.lastRequest.Body, &body); err != nil {
+		t.Fatalf("request body is invalid json: %v", err)
+	}
+	messages := body["messages"].([]any)
+	if len(messages) != 3 {
+		t.Fatalf("messages = %#v body=%s", messages, string(network.lastRequest.Body))
+	}
+	assistant := messages[0].(map[string]any)
+	if _, ok := assistant["content"].([]any); ok {
+		t.Fatalf("assistant content must not carry images: %#v", assistant)
+	}
+	toolMessage := messages[1].(map[string]any)
+	if toolMessage["role"] != "tool" {
+		t.Fatalf("second message must be the tool result: %#v", toolMessage)
+	}
+	followup := messages[2].(map[string]any)
+	if followup["role"] != "user" {
+		t.Fatalf("third message must be the followup user message: %#v", followup)
+	}
+	items := followup["content"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("followup content = %#v", items)
+	}
+	anchor := items[0].(map[string]any)
+	if anchor["type"] != "text" || !strings.Contains(anchor["text"].(string), "ai-image") || !strings.Contains(anchor["text"].(string), "call-1") || !strings.Contains(anchor["text"].(string), "att-9") {
+		t.Fatalf("anchor text = %#v", anchor)
+	}
+	image := items[1].(map[string]any)
+	if image["type"] != "image_url" {
+		t.Fatalf("image item = %#v", image)
+	}
+	if url := image["image_url"].(map[string]any)["url"]; url != imageDataURL {
+		t.Fatalf("image url = %#v", url)
+	}
+}
+
 func TestCompleteOpenAIUsesReasoningContentField(t *testing.T) {
 	// 思考记录必须走 reasoning_content 字段（协议专用），不得混入正文 content
 	storage := newFakeProviderStorage()
@@ -707,6 +768,64 @@ func TestCompleteAnthropicSendsStructuredToolHistory(t *testing.T) {
 	toolResult := messages[1].(map[string]any)
 	if toolResult["role"] != "user" || !strings.Contains(string(network.lastRequest.Body), `"type":"tool_result"`) {
 		t.Fatalf("tool result message = %#v body=%s", toolResult, string(network.lastRequest.Body))
+	}
+}
+
+// TestCompleteAnthropicCarriesToolImagesInsideToolResult 钉住 Anthropic 系搬运：
+// 工具产物图并进对应 tool_result 块，锚点文字同款；不再被静默丢弃。
+func TestCompleteAnthropicCarriesToolImagesInsideToolResult(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["anthropic-main"] = testAnthropicProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"msg-1","content":[{"type":"text","text":"done"}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+	imageDataURL := "data:image/png;base64,iVBORw0KGgo="
+
+	_, err := system.Complete(context.Background(), types.ModelRequest{
+		Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"},
+		Messages: []types.PromptMessage{{
+			Role:    "assistant",
+			Content: "画好了",
+			Parts:   []types.MessagePart{{Type: "tool", CallID: "toolu-1", ToolName: "ai-image", Input: map[string]any{"prompt": "猫"}, Result: &types.ToolPartResult{Status: types.ToolStatusSuccess, Content: "图片已生成"}}},
+			ToolImages: []types.PromptToolImage{
+				{CallID: "toolu-1", AttachmentID: "att-9", DataURL: imageDataURL},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(network.lastRequest.Body, &body); err != nil {
+		t.Fatalf("request body is invalid json: %v", err)
+	}
+	messages := body["messages"].([]any)
+	if len(messages) != 2 {
+		t.Fatalf("messages = %#v body=%s", messages, string(network.lastRequest.Body))
+	}
+	toolResult := messages[1].(map[string]any)
+	blocks := toolResult["content"].([]any)
+	if len(blocks) != 1 {
+		t.Fatalf("tool result blocks = %#v", blocks)
+	}
+	block := blocks[0].(map[string]any)
+	if block["type"] != "tool_result" || block["tool_use_id"] != "toolu-1" {
+		t.Fatalf("tool result block = %#v", block)
+	}
+	content := block["content"].([]any)
+	if len(content) != 3 {
+		t.Fatalf("tool result content = %#v", content)
+	}
+	anchor := content[1].(map[string]any)
+	if anchor["type"] != "text" || !strings.Contains(anchor["text"].(string), "ai-image") || !strings.Contains(anchor["text"].(string), "toolu-1") || !strings.Contains(anchor["text"].(string), "att-9") {
+		t.Fatalf("anchor block = %#v", anchor)
+	}
+	image := content[2].(map[string]any)
+	if image["type"] != "image" {
+		t.Fatalf("image block = %#v", image)
+	}
+	source := image["source"].(map[string]any)
+	if source["type"] != "base64" || source["media_type"] != "image/png" || source["data"] != "iVBORw0KGgo=" {
+		t.Fatalf("image source = %#v", source)
 	}
 }
 

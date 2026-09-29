@@ -2,6 +2,7 @@ package modelprovider
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"eucli-box/pkg/types"
@@ -56,4 +57,25 @@ func toolResultText(part types.MessagePart) string {
 		return string(part.Result.Status)
 	}
 	return string(data)
+}
+
+// toolImageAnchorText 是工具产物图片的统一锚点文字：让模型明确这张图
+// 是哪个工具哪次调用返回的，不会误认成用户发来的素材。
+func toolImageAnchorText(toolName string, callID string, attachmentID string) string {
+	name := strings.TrimSpace(toolName)
+	if name == "" {
+		name = "tool"
+	}
+	return fmt.Sprintf("工具 %s（调用 %s）返回的图片附件 %s：", name, strings.TrimSpace(callID), strings.TrimSpace(attachmentID))
+}
+
+// toolNameForCall 取某次工具调用的工具名，用于锚点文字。
+func toolNameForCall(parts []types.MessagePart, callID string) string {
+	target := strings.TrimSpace(callID)
+	for _, part := range parts {
+		if strings.TrimSpace(part.CallID) == target {
+			return part.ToolName
+		}
+	}
+	return ""
 }

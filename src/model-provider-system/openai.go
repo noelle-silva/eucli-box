@@ -341,6 +341,11 @@ func openAIMessages(messages []types.PromptMessage) ([]map[string]any, error) {
 				}
 				converted = append(converted, map[string]any{"role": "tool", "tool_call_id": part.CallID, "content": toolResultText(part)})
 			}
+			// 工具产物图跟随工具结果之后：补一条用户消息装图，
+			// 图前带锚点文字，模型不会把它误认成用户发言。
+			if len(message.ToolImages) > 0 {
+				converted = append(converted, openAIToolImagesMessage(toolParts, message.ToolImages))
+			}
 			continue
 		}
 		if message.Role == "assistant" {
@@ -350,6 +355,17 @@ func openAIMessages(messages []types.PromptMessage) ([]map[string]any, error) {
 		}
 	}
 	return converted, nil
+}
+
+// openAIToolImagesMessage 把工具产物图组装为一条用户消息：
+// 每张图前带锚点文字；图片只出现在这里，不出现在助手消息上。
+func openAIToolImagesMessage(toolParts []types.MessagePart, images []types.PromptToolImage) map[string]any {
+	items := []map[string]any{}
+	for _, image := range images {
+		items = append(items, map[string]any{"type": "text", "text": toolImageAnchorText(toolNameForCall(toolParts, image.CallID), image.CallID, image.AttachmentID)})
+		items = append(items, map[string]any{"type": "image_url", "image_url": map[string]any{"url": image.DataURL}})
+	}
+	return map[string]any{"role": "user", "content": items}
 }
 
 func openAIAssistantMessage(message types.PromptMessage) map[string]any {

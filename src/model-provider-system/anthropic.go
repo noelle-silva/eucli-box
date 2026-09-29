@@ -356,7 +356,10 @@ func anthropicMessages(messages []types.PromptMessage) ([]map[string]any, string
 					return nil, "", err
 				}
 				converted = append(converted, map[string]any{"role": "assistant", "content": appendAnthropicReasoningContent(content, message)})
-				resultBlocks := anthropicToolResultBlocks(toolParts)
+				resultBlocks, err := anthropicToolResultBlocks(toolParts, message.ToolImages)
+				if err != nil {
+					return nil, "", err
+				}
 				if len(resultBlocks) > 0 {
 					converted = append(converted, map[string]any{"role": "user", "content": resultBlocks})
 				}
@@ -416,21 +419,36 @@ func anthropicAssistantToolContent(message types.PromptMessage, toolParts []type
 	return content, nil
 }
 
-func anthropicToolResultBlocks(toolParts []types.MessagePart) []map[string]any {
+// anthropicToolResultBlocks 组装工具结果块：结果文本 + 该次调用的产物图片
+// （锚点文字块 + 图片块），图片直接并进 tool_result，协议原生支持。
+func anthropicToolResultBlocks(toolParts []types.MessagePart, toolImages []types.PromptToolImage) ([]map[string]any, error) {
 	blocks := []map[string]any{}
 	for _, part := range toolParts {
 		if part.Result == nil {
 			continue
 		}
-		block := map[string]any{"type": "tool_result", "tool_use_id": part.CallID, "content": toolResultText(part)}
+		content := []map[string]any{{"type": "text", "text": toolResultText(part)}}
+		for _, image := range toolImages {
+			if strings.TrimSpace(image.CallID) != strings.TrimSpace(part.CallID) {
+				continue
+			}
+			parsed, err := parsePromptImageDataURL(image.DataURL)
+			if err != nil {
+				return nil, err
+			}
+			content = append(content,
+				map[string]any{"type": "text", "text": toolImageAnchorText(part.ToolName, image.CallID, image.AttachmentID)},
+				map[string]any{"type": "image", "source": map[string]any{"type": "base64", "media_type": parsed.MediaType, "data": parsed.Base64}},
+			)
+		}
+		block := map[string]any{"type": "tool_result", "tool_use_id": part.CallID, "content": content}
 		if part.Result.Status != types.ToolStatusSuccess {
 			block["is_error"] = true
 		}
 		blocks = append(blocks, block)
 	}
-	return blocks
+	return blocks, nil
 }
-
 func anthropicMessageContent(message types.PromptMessage) (any, error) {
 	if len(message.Images) == 0 {
 		return message.Content, nil

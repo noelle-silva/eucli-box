@@ -1,0 +1,81 @@
+{
+  "id": "ai-image",
+  "name": "ai-image",
+  "description": "多运营商 AI 画图工具：按配置的运营商与模型生成图片，支持内置通用协议与声明式适配文件，参考图取自会话图片，生成结果挂回会话。",
+  "version": "0.1.0",
+  "eucliBoxCompatibility": {
+    "minimumVersion": "0.1.0",
+    "maximumVersionExclusive": "0.2.0"
+  },
+  "promptDescription": "使用 ai-image 生成图片、查看会话图片与管理本工具自己的配置。必须提供一个 action：generate、session_images、config_list、config_read、config_write、config_delete 或 config_edit。generate：使用 prompt（必填）生成图片；可选 provider 选择运营商、model 覆盖模型、referenceImages 提供参考图（会话图片的附件 id 或 1 起始序号，或 data URL / base64 直接输入）、timeoutMs 设置请求时限。生成结果由宿主写回当前会话并作为图片附件挂到本次回复上。session_images：列出当前会话的图片附件（序号、id、名称），序号可直接用于 generate.referenceImages。配置管理动作直接读写本工具自己的配置区（工具数据目录下 config/ 子目录）：config_list 列出配置区文件；config_read 读取单个文件（file 参数为配置区相对路径），providers.json 的 apiKey 会打码为 ********；config_write 以 content 整份写入文件，providers.json 与 adapters/*.json 会按结构校验；config_edit 按 field 点分路径做字段级修改（value 设值、remove=true 删除，数组下标用数字），改后整体校验；config_delete 删除文件。providers.json 结构：defaultProvider 与 providers 数组，每个运营商含 id、name、enabled、baseUrl、apiKey、protocol（images、images-edits、chat 或 adapter）、adapter（protocol=adapter 时必填，指向适配文件名）、models、defaultModel、chatSystemPrompt。适配文件位于 config/adapters/<id>.json，为纯声明式 JSON：id 必须等于文件名，request 提供 method（默认 POST）、path（相对 baseUrl）、headers、json（JSON 体模板）或 form（multipart：fields 与 images 文件字段）二选一，response.imagePath 为点分取图路径。模板占位符：{{apiKey}}、{{model}}、{{prompt}} 可用于 path、headers、json 与 form 字符串；json 模板中整值 {{images}} 与 {{imagesBase64}} 分别展开为参考图 data URL 数组与 base64 数组；form.images.filename 可用 {{index}} 与 {{ext}}。配置写入时打码的 apiKey 会被保留为原真实 Key。配置的语义校验全部由本工具负责，宿主设置页只做存取展示。",
+  "defaultInvocationMode": "sync",
+  "type": "local",
+  "capabilities": [
+    {
+      "id": "session-attachments",
+      "access": "read",
+      "name": "读取会话图片",
+      "description": "列出并读取当前会话中的图片附件，用作生成参考图。"
+    },
+    {
+      "id": "session-attachments",
+      "access": "write",
+      "name": "写入会话图片",
+      "description": "把生成结果写入当前会话，由宿主代写并挂回本次回复。"
+    }
+  ],
+  "bodyDirectory": ".",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["generate", "session_images", "config_list", "config_read", "config_write", "config_delete", "config_edit"],
+        "description": "要执行的动作：generate、session_images、config_list、config_read、config_write、config_delete 或 config_edit。"
+      },
+      "prompt": {
+        "type": "string",
+        "description": "action=generate 时的提示词。"
+      },
+      "provider": {
+        "type": "string",
+        "description": "action=generate 时可选的运营商 id；省略时使用配置的 defaultProvider。"
+      },
+      "model": {
+        "type": "string",
+        "description": "action=generate 时可选的模型名，覆盖运营商的 defaultModel。"
+      },
+      "referenceImages": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "action=generate 时的参考图：会话图片的附件 id 或 1 起始序号，或 data URL / base64 直接输入。"
+      },
+      "timeoutMs": {
+        "type": "integer",
+        "description": "action=generate 时的请求时限（毫秒），缺省 120 秒。"
+      },
+      "file": {
+        "type": "string",
+        "description": "配置管理动作的文件路径（配置区相对路径，如 providers.json 或 adapters/my-adapter.json）。"
+      },
+      "content": {
+        "type": "string",
+        "description": "action=config_write 时写入的完整文件内容。"
+      },
+      "field": {
+        "type": "string",
+        "description": "action=config_edit 时的点分字段路径（如 providers.0.apiKey，数组下标用数字）。"
+      },
+      "value": {
+        "description": "action=config_edit 时写入的字段值（任意 JSON 值）。"
+      },
+      "remove": {
+        "type": "boolean",
+        "description": "action=config_edit 时删除 field 指向的字段。"
+      }
+    },
+    "required": ["action"],
+    "additionalProperties": false
+  },
+  "binaries": []
+}

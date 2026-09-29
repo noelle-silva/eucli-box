@@ -1,0 +1,339 @@
+package aiimage
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"eucli-box/pkg/toolcontrol"
+	"eucli-box/pkg/types"
+)
+
+// pngBase64 是一张 1x1 PNG 的 base64，用作图片数据夹具。
+const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+func pngDataURL() string {
+	return "data:image/png;base64," + pngBase64
+}
+
+// fakeSession 是会话能力服务的测试替身：按能力与访问方式应答。
+type fakeSession struct {
+	images      []sessionImage
+	written     []types.SessionAttachmentWriteRequest
+	listDenied  bool
+	writeDenied bool
+	readDataURL string
+}
+
+func (f *fakeSession) Request(_ context.Context, capability string, access string, payload any) (toolcontrol.CapabilityResult, error) {
+	switch {
+	case capability == types.ToolCapabilitySessionAttachments && access == types.ToolCapabilityAccessRead:
+		if f.listDenied {
+			return toolcontrol.CapabilityResult{Status: toolcontrol.CapabilityStatusDenied, Error: toolcontrol.CapabilityDeniedMessage}, nil
+		}
+		request, _ := payload.(types.SessionAttachmentsReadRequest)
+		if request.Operation == types.SessionAttachmentOperationRead {
+			dataURL := f.readDataURL
+			if dataURL == "" {
+				dataURL = pngDataURL()
+			}
+			return toolcontrol.CapabilityResult{Status: toolcontrol.CapabilityStatusSuccess, Payload: types.SessionAttachmentData{ID: request.AttachmentID, Name: "图片", Mime: "image/png", DataURL: dataURL}}, nil
+		}
+		attachments := make([]types.SessionAttachmentInfo, 0, len(f.images))
+		for _, image := range f.images {
+			attachments = append(attachments, types.SessionAttachmentInfo{ID: image.ID, Name: image.Name, Mime: image.Mime})
+		}
+		return toolcontrol.CapabilityResult{Status: toolcontrol.CapabilityStatusSuccess, Payload: types.SessionAttachmentsListResult{Attachments: attachments}}, nil
+	case capability == types.ToolCapabilitySessionAttachments && access == types.ToolCapabilityAccessWrite:
+		if f.writeDenied {
+			return toolcontrol.CapabilityResult{Status: toolcontrol.CapabilityStatusDenied, Error: toolcontrol.CapabilityDeniedMessage}, nil
+		}
+		request, _ := payload.(types.SessionAttachmentWriteRequest)
+		f.written = append(f.written, request)
+		return toolcontrol.CapabilityResult{Status: toolcontrol.CapabilityStatusSuccess, Payload: types.SessionAttachmentInfo{ID: "att-generated", Name: request.Name, Mime: "image/png"}}, nil
+	default:
+		return toolcontrol.CapabilityResult{Status: toolcontrol.CapabilityStatusFailed, Error: "unsupported capability"}, nil
+	}
+}
+
+func newInput(t *testing.T, arguments map[string]any) types.ToolExecutionInput {
+	t.Helper()
+	return types.ToolExecutionInput{
+		ActionID:          "test-action",
+		ToolName:          "ai-image",
+		Arguments:         arguments,
+		ToolDataDirectory: t.TempDir(),
+	}
+}
+
+func decodeOutput(t *testing.T, output types.ToolExecutionOutput) map[string]any {
+	t.Helper()
+	if output.Status != types.ToolStatusSuccess {
+		t.Fatalf("expected success, got %s: %s", output.Status, output.Error)
+	}
+	return output.Metadata
+}
+
+func writeProviders(t *testing.T, dataDir string, content string) {
+	t.Helper()
+	target := filepath.Join(dataDir, types.ToolConfigDirName, providersFileName)
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatalf("mkdir providers dir: %v", err)
+	}
+	if err := os.WriteFile(target, []byte(content), 0o644); err != nil {
+		t.Fatalf("write providers: %v", err)
+	}
+}
+
+func TestConfigActionsRoundTrip(t *testing.T) {
+	dataDir := t.TempDir()
+	withDataDir := func(arguments map[string]any) types.ToolExecutionInput {
+		input := newInput(t, arguments)
+		input.ToolDataDirectory = dataDir
+		return input
+	}
+	input := withDataDir(map[string]any{"action": actionConfigWrite, "file": "providers.json", "content": `{"defaultProvider":"demo","providers":[{"id":"demo","baseUrl":"https://example.com","apiKey":"sk-secret","protocol":"images","defaultModel":"m1"}]}`})
+	output := Execute(context.Background(), input, nil)
+	decodeOutput(t, output)
+
+	read := Execute(context.Background(), withDataDir(map[string]any{"action": actionConfigRead, "file": "providers.json"}), nil)
+	metadata := decodeOutput(t, read)
+	if metadata["masked"] != true {
+		t.Fatalf("providers read must be masked: %#v", metadata)
+	}
+	if strings.Contains(read.Content, "sk-secret") {
+		t.Fatalf("read content leaked apiKey: %s", read.Content)
+	}
+	if !strings.Contains(read.Content, maskedAPIKey) {
+		t.Fatalf("read content missing mask: %s", read.Content)
+	}
+
+	edit := Execute(context.Background(), withDataDir(map[string]any{"action": actionConfigEdit, "file": "providers.json", "field": "providers.0.name", "value": "示例"}), nil)
+	decodeOutput(t, edit)
+	read = Execute(context.Background(), withDataDir(map[string]any{"action": actionConfigRead, "file": "providers.json"}), nil)
+	if !strings.Contains(read.Content, "示例") {
+		t.Fatalf("edit not applied: %s", read.Content)
+	}
+	if strings.Contains(read.Content, "sk-secret") {
+		t.Fatalf("edit leaked apiKey: %s", read.Content)
+	}
+
+	list := Execute(context.Background(), withDataDir(map[string]any{"action": actionConfigList}), nil)
+	decodeOutput(t, list)
+	if !strings.Contains(list.Content, "providers.json") {
+		t.Fatalf("list missing providers.json: %s", list.Content)
+	}
+
+	remove := Execute(context.Background(), withDataDir(map[string]any{"action": actionConfigEdit, "file": "providers.json", "field": "providers.0.name", "remove": true}), nil)
+	decodeOutput(t, remove)
+
+	deleteOutput := Execute(context.Background(), withDataDir(map[string]any{"action": actionConfigDelete, "file": "providers.json"}), nil)
+	decodeOutput(t, deleteOutput)
+}
+
+func TestConfigWriteRejectsInvalidProviderConfig(t *testing.T) {
+	output := Execute(context.Background(), newInput(t, map[string]any{"action": actionConfigWrite, "file": "providers.json", "content": `{"providers":[{"id":"demo","baseUrl":"not-a-url","protocol":"images"}]}`}), nil)
+	if output.Status != types.ToolStatusFailed {
+		t.Fatalf("expected failure, got %s", output.Status)
+	}
+}
+
+func TestConfigWriteRejectsEscapingPath(t *testing.T) {
+	for _, path := range []string{"../escape.json", "a/../../b.json", "C:/abs.json", "/abs.json"} {
+		output := Execute(context.Background(), newInput(t, map[string]any{"action": actionConfigWrite, "file": path, "content": `{}`}), nil)
+		if output.Status != types.ToolStatusFailed {
+			t.Fatalf("path %q must fail, got %s", path, output.Status)
+		}
+	}
+}
+
+func TestAdapterValidationAndRendering(t *testing.T) {
+	valid := `{"id":"my-adapter","request":{"method":"POST","path":"/v1/generate","headers":{"Authorization":"Bearer {{apiKey}}"},"json":{"model":"{{model}}","prompt":"{{prompt}}","images":"{{images}}"}},"response":{"imagePath":"data.0.url"}}`
+	adapter, err := parseAdapterFile("my-adapter", valid)
+	if err != nil {
+		t.Fatalf("parse adapter: %v", err)
+	}
+	renderCtx := adapterRenderContext{APIKey: "k", Model: "m", Prompt: "p", Images: []promptImage{{DataURL: "data:image/png;base64,AA==", Base64: "AA=="}}}
+	rendered, err := renderAdapterJSON(adapter.Request.JSON, renderCtx)
+	if err != nil {
+		t.Fatalf("render adapter: %v", err)
+	}
+	text := string(rendered)
+	if !strings.Contains(text, `"m"`) || !strings.Contains(text, `"p"`) || !strings.Contains(text, "data:image/png;base64,AA==") {
+		t.Fatalf("rendered body wrong: %s", text)
+	}
+	if header := renderAdapterString(adapter.Request.Headers["Authorization"], renderCtx); header != "Bearer k" {
+		t.Fatalf("header placeholder not rendered: %s", header)
+	}
+
+	unknown := `{"id":"my-adapter","request":{"path":"/x","json":{"prompt":"{{unknown}}"}},"response":{"imagePath":"data.0.url"}}`
+	if _, err := parseAdapterFile("my-adapter", unknown); err == nil {
+		t.Fatal("unknown placeholder must fail")
+	}
+
+	mismatch := `{"id":"other","request":{"path":"/x","json":{}},"response":{"imagePath":"data.0.url"}}`
+	if _, err := parseAdapterFile("my-adapter", mismatch); err == nil {
+		t.Fatal("adapter id mismatch must fail")
+	}
+}
+
+func TestParseImageSourceVariants(t *testing.T) {
+	cases := []string{
+		`{"data":[{"url":"https://example.com/a.png"}]}`,
+		`{"images":["` + pngDataURL() + `"]}`,
+		`{"choices":[{"message":{"content":"` + pngDataURL() + `"}}]}`,
+		`{"data":[{"b64_json":"` + pngBase64 + `"}]}`,
+	}
+	for _, body := range cases {
+		source := extractImageFromResponse([]byte(body))
+		if source == "" {
+			t.Fatalf("no image source for %s", body)
+		}
+	}
+}
+
+func TestGenerateClosesLoopWithFakeProvider(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/images/generations" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if auth := r.Header.Get("Authorization"); auth != "Bearer sk-test" {
+			t.Fatalf("unexpected auth: %s", auth)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"url": pngDataURL()}}})
+	}))
+	defer server.Close()
+
+	input := newInput(t, map[string]any{"action": actionGenerate, "prompt": "一只猫"})
+	writeProviders(t, input.ToolDataDirectory, `{"defaultProvider":"demo","providers":[{"id":"demo","baseUrl":"`+server.URL+`","apiKey":"sk-test","protocol":"images","defaultModel":"m1"}]}`)
+	session := &fakeSession{}
+	output := Execute(context.Background(), input, session)
+	metadata := decodeOutput(t, output)
+	if metadata["provider"] != "demo" || metadata["protocol"] != protocolImages {
+		t.Fatalf("unexpected metadata: %#v", metadata)
+	}
+	if len(session.written) != 1 {
+		t.Fatalf("expected one session write, got %d", len(session.written))
+	}
+	if !strings.HasPrefix(session.written[0].DataURL, "data:image/png;base64,") {
+		t.Fatalf("written image is not a data url: %s", session.written[0].DataURL)
+	}
+}
+
+func TestGenerateUsesSessionReferenceImages(t *testing.T) {
+	received := make(chan string, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		body := string(raw)
+		received <- body
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"url": pngDataURL()}}})
+	}))
+	defer server.Close()
+
+	input := newInput(t, map[string]any{"action": actionGenerate, "prompt": "改成蓝色", "referenceImages": []any{"1"}})
+	writeProviders(t, input.ToolDataDirectory, `{"defaultProvider":"demo","providers":[{"id":"demo","baseUrl":"`+server.URL+`","apiKey":"sk-test","protocol":"chat","defaultModel":"m1"}]}`)
+	session := &fakeSession{images: []sessionImage{{ID: "att-1", Name: "原图"}}}
+	output := Execute(context.Background(), input, session)
+	decodeOutput(t, output)
+	body := <-received
+	if !strings.Contains(body, "image_url") {
+		t.Fatalf("chat request must carry reference image: %s", body)
+	}
+}
+
+func TestGenerateDeniedCapabilityPassesThrough(t *testing.T) {
+	input := newInput(t, map[string]any{"action": actionGenerate, "prompt": "一只猫", "referenceImages": []any{"1"}})
+	writeProviders(t, input.ToolDataDirectory, `{"defaultProvider":"demo","providers":[{"id":"demo","baseUrl":"https://example.com","apiKey":"sk-test","protocol":"images","defaultModel":"m1"}]}`)
+	session := &fakeSession{images: []sessionImage{{ID: "att-1", Name: "原图"}}, listDenied: true}
+	output := Execute(context.Background(), input, session)
+	if output.Status != types.ToolStatusFailed {
+		t.Fatalf("expected failure, got %s", output.Status)
+	}
+	if !strings.Contains(output.Error, toolcontrol.CapabilityDeniedMessage) {
+		t.Fatalf("denied message must pass through: %s", output.Error)
+	}
+}
+
+func TestSessionImagesListsAttachments(t *testing.T) {
+	session := &fakeSession{images: []sessionImage{{ID: "att-1", Name: "图一"}, {ID: "att-2", Name: "图二"}}}
+	output := Execute(context.Background(), newInput(t, map[string]any{"action": actionSessionImages}), session)
+	metadata := decodeOutput(t, output)
+	if metadata["count"] != 2 {
+		t.Fatalf("unexpected count: %#v", metadata)
+	}
+	if !strings.Contains(output.Content, "1. 图一") || !strings.Contains(output.Content, "2. 图二") {
+		t.Fatalf("unexpected content: %s", output.Content)
+	}
+}
+
+func TestSessionActionsFailWithoutHost(t *testing.T) {
+	for _, action := range []string{actionSessionImages, actionGenerate} {
+		arguments := map[string]any{"action": action}
+		if action == actionGenerate {
+			arguments["prompt"] = "x"
+		}
+		output := Execute(context.Background(), newInput(t, arguments), nil)
+		if output.Status != types.ToolStatusFailed {
+			t.Fatalf("action %s without host must fail", action)
+		}
+	}
+}
+
+func TestUnknownActionFails(t *testing.T) {
+	output := Execute(context.Background(), newInput(t, map[string]any{"action": "nope"}), nil)
+	if output.Status != types.ToolStatusFailed {
+		t.Fatalf("unknown action must fail, got %s", output.Status)
+	}
+}
+
+func TestAdapterProtocolEndToEnd(t *testing.T) {
+	received := make(chan string, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		body := string(raw)
+		received <- body
+		_ = json.NewEncoder(w).Encode(map[string]any{"result": map[string]any{"image_b64": pngBase64}})
+	}))
+	defer server.Close()
+
+	input := newInput(t, map[string]any{"action": actionConfigWrite, "file": "adapters/custom.json", "content": `{"id":"custom","request":{"path":"/custom","json":{"model":"{{model}}","prompt":"{{prompt}}"}},"response":{"imagePath":"result.image_b64"}}`})
+	decodeOutput(t, Execute(context.Background(), input, nil))
+	writeProviders(t, input.ToolDataDirectory, `{"defaultProvider":"demo","providers":[{"id":"demo","baseUrl":"`+server.URL+`","apiKey":"sk-test","protocol":"adapter","adapter":"custom","defaultModel":"m1"}]}`)
+
+	generate := newInput(t, map[string]any{"action": actionGenerate, "prompt": "一只猫"})
+	generate.ToolDataDirectory = input.ToolDataDirectory
+	session := &fakeSession{}
+	output := Execute(context.Background(), generate, session)
+	metadata := decodeOutput(t, output)
+	if metadata["protocol"] != protocolAdapter {
+		t.Fatalf("unexpected protocol: %#v", metadata)
+	}
+	body := <-received
+	if !strings.Contains(body, `"m1"`) || !strings.Contains(body, "一只猫") {
+		t.Fatalf("adapter request not rendered: %s", body)
+	}
+	if len(session.written) != 1 {
+		t.Fatalf("expected one session write")
+	}
+}
+
+func TestNormalizeImageInputAcceptsBareBase64(t *testing.T) {
+	image, err := normalizeImageInput(pngBase64)
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if image.Mime != "image/png" || image.DataURL != pngDataURL() {
+		t.Fatalf("unexpected image: %#v", image)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(image.Base64)
+	if err != nil || len(decoded) == 0 {
+		t.Fatalf("base64 invalid: %v", err)
+	}
+}

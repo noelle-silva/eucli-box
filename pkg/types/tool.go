@@ -31,9 +31,12 @@ type ToolDefinition struct {
 	DefaultConfig             map[string]any        `json:"defaultConfig,omitempty"`
 	BodyDirectory             string                `json:"bodyDirectory,omitempty"`
 	DataDirectory             string                `json:"dataDirectory,omitempty"`
-	Binaries                  []ToolBinary          `json:"binaries,omitempty"`
-	CreatedAt                 time.Time             `json:"createdAt"`
-	UpdatedAt                 time.Time             `json:"updatedAt"`
+	// ConfigFiles 是工具配置区文件的运行时读取视图，只由设置页读取链路填充，
+	// 不随工具定义落盘。
+	ConfigFiles []ToolConfigFile `json:"configFiles,omitempty"`
+	Binaries    []ToolBinary     `json:"binaries,omitempty"`
+	CreatedAt   time.Time        `json:"createdAt"`
+	UpdatedAt   time.Time        `json:"updatedAt"`
 }
 
 // ToolOutputUpdate is a live output progress for one tool call, relayed by the
@@ -49,7 +52,10 @@ type ToolUserSettings struct {
 	UserConfig                map[string]any  `json:"userConfig"`
 	PromptDescriptionOverride string          `json:"promptDescriptionOverride,omitempty"`
 	CapabilityGrants          map[string]bool `json:"capabilityGrants,omitempty"`
-	UpdatedAt                 time.Time       `json:"updatedAt,omitempty"`
+	// ConfigFiles 是随保存请求一起提交的配置区文件写入意图；
+	// 文件内容落 config/ 文件区，不写进 settings.json。
+	ConfigFiles []ToolConfigFileWrite `json:"configFiles,omitempty"`
+	UpdatedAt   time.Time             `json:"updatedAt,omitempty"`
 }
 
 func ToolPromptDescription(tool ToolDefinition) string {

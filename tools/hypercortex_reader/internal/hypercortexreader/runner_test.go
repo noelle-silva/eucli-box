@@ -277,7 +277,7 @@ func TestExecuteReadNoteReadsManifestAndAllFaces(t *testing.T) {
 		}},
 		"hypercortex.notes.loadFace": {
 			map[string]any{"id": "text", "noteId": "note-1", "face": map[string]any{"id": "text", "kind": "markdown", "title": "文本"}, "content": "文本正文", "exists": true, "updatedAtMs": 2000},
-			map[string]any{"id": "html", "noteId": "note-1", "face": map[string]any{"id": "html", "kind": "html", "title": "网页"}, "content": "<p>网页正文</p>", "exists": true, "updatedAtMs": 2000},
+			map[string]any{"id": "html", "noteId": "note-1", "face": map[string]any{"id": "html", "kind": "html", "title": "网页", "settings": map[string]any{"displayMode": "natural", "fixedScale": 0.8}}, "content": "<p>网页正文</p>", "exists": true, "updatedAtMs": 2000},
 		},
 	})
 	f.setRepos(twoReposJSON(f.server.URL))
@@ -285,7 +285,7 @@ func TestExecuteReadNoteReadsManifestAndAllFaces(t *testing.T) {
 	result := execute(t, f.input(map[string]any{"action": "read_note", "dir": "Notes/2026-09/note-1"}))
 
 	requireSuccess(t, result)
-	for _, fragment := range []string{"标题甲", "简介甲", "标签一、标签二", "版本（updatedAtMs）：2000", "文本正文", "<p>网页正文</p>", "面 1/2", "面 2/2"} {
+	for _, fragment := range []string{"标题甲", "简介甲", "标签一、标签二", "版本（updatedAtMs）：2000", "文本正文", "<p>网页正文</p>", "面 1/2", "面 2/2", "设置：displayMode=natural，fixedScale=0.8"} {
 		if !strings.Contains(result.Content, fragment) {
 			t.Fatalf("content %q missing %q", result.Content, fragment)
 		}

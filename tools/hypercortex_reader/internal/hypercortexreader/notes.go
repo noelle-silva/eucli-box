@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"eucli-box/pkg/types"
@@ -508,14 +509,65 @@ func noteHeaderLines(manifest noteManifest, dir string, total int, offset int) [
 	return lines
 }
 
-// sectionHeader 给出面段落头；续读窗口从面中间开始时标注「（续）」。
+// sectionHeader 给出面段落头；续读窗口从面中间开始时标注「（续）」；
+// 面设置非空时在同一行尾部附上设置内容，保证写入的面设置可被读回验证。
 func sectionHeader(section noteSection, totalFaces int, continued bool) string {
 	face := section.doc.Face
 	suffix := ""
 	if continued {
 		suffix = "（续）"
 	}
-	return fmt.Sprintf("### 面 %d/%d：%s（kind=%s，faceId=%s）%s", section.index, totalFaces, firstNonEmpty(face.Title, face.ID), face.Kind, face.ID, suffix)
+	header := fmt.Sprintf("### 面 %d/%d：%s（kind=%s，faceId=%s）%s", section.index, totalFaces, firstNonEmpty(face.Title, face.ID), face.Kind, face.ID, suffix)
+	if settings := renderFaceSettings(face.Settings); settings != "" {
+		header += " ｜ 设置：" + settings
+	}
+	return header
+}
+
+// renderFaceSettings 把面设置渲染为稳定顺序的单行文本；空设置返回空串。
+func renderFaceSettings(settings map[string]any) string {
+	if len(settings) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(settings))
+	for key := range settings {
+		if strings.TrimSpace(key) != "" {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, key+"="+settingValueText(settings[key]))
+	}
+	return strings.Join(parts, "，")
+}
+
+// settingValueText 把设置值渲染为紧凑文本；对象与数组以 JSON 原文呈现。
+func settingValueText(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return "null"
+	case string:
+		return oneLine(typed)
+	case bool:
+		if typed {
+			return "true"
+		}
+		return "false"
+	case float64:
+		return strconv.FormatFloat(typed, 'f', -1, 64)
+	case int:
+		return strconv.Itoa(typed)
+	case int64:
+		return strconv.FormatInt(typed, 10)
+	default:
+		raw, err := json.Marshal(typed)
+		if err != nil {
+			return fmt.Sprint(typed)
+		}
+		return string(raw)
+	}
 }
 
 // relationsHeaderLines 给出引用关系的统一头部：整体返回与分段模式共用同一格式。

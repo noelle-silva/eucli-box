@@ -125,10 +125,10 @@ func renderAssetItems(items []assetItem, query string) string {
 		return builder.String()
 	}
 	for index, item := range items {
-		fmt.Fprintf(&builder, "%d. %s（%s）\n", index+1, assetDisplayName(item), firstNonEmpty(item.Kind, "未知类型"))
+		fmt.Fprintf(&builder, "%d. %s\n", index+1, assetDisplayName(item))
 		fmt.Fprintf(&builder, "   assetId：%s ｜ 大小：%s\n", item.Name, displaySize(item.Size))
-		if strings.TrimSpace(item.Mime) != "" {
-			fmt.Fprintf(&builder, "   类型：%s\n", item.Mime)
+		if kindText := assetTypeText(item.Kind, item.Mime); kindText != "" {
+			fmt.Fprintf(&builder, "   类型：%s\n", kindText)
 		}
 		if strings.TrimSpace(item.RelPath) != "" {
 			fmt.Fprintf(&builder, "   路径：%s\n", item.RelPath)
@@ -150,4 +150,18 @@ func renderAssetItems(items []assetItem, query string) string {
 // assetDisplayName 给出附件的最优先展示名：显示名 → 来源名 → 系统编号文件名。
 func assetDisplayName(item assetItem) string {
 	return firstNonEmpty(item.DisplayName, item.SourceName, item.Name, item.AssetID)
+}
+
+// assetTypeText 渲染附件类型的统一文本（与写工具同款）：kind（mime）；缺失部分自动省略。
+func assetTypeText(kind string, mime string) string {
+	kindText := strings.TrimSpace(kind)
+	mimeText := strings.TrimSpace(mime)
+	switch {
+	case kindText != "" && mimeText != "":
+		return kindText + "（" + mimeText + "）"
+	case kindText != "":
+		return kindText
+	default:
+		return mimeText
+	}
 }

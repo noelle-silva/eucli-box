@@ -1,0 +1,191 @@
+{
+  "id": "hypercortex_writer",
+  "name": "hypercortex_writer",
+  "description": "写入 HyperCortex 知识库：新建与编辑笔记、调整面与元数据、上传附件、管理收藏夹内容。",
+  "version": "0.1.0",
+  "eucliBoxCompatibility": {
+    "minimumVersion": "0.1.0",
+    "maximumVersionExclusive": "0.2.0"
+  },
+  "promptDescription": "使用 hypercortex_writer 写入 HyperCortex 知识库。必须提供一个 action：list_face_kinds、create_note、write_note、patch_face、save_face_order、save_face_settings、delete_face、publish_version、update_note_metadata、upload_assets、update_asset_metadata、create_favorite_folder、update_favorite_folder、add_favorite_item、remove_favorite_item 或 move_favorite_item。仓库通过工具设置页的用户配置注册：填写访问地址，并在「仓库条目」列表里增删条目，每条含仓库 id（可含中文）、描述与对应访问钥匙；动作可用可选参数 repo 指定条目 id，省略时使用配置的默认仓库。写操作有防覆盖保险丝：先读到的版本值（updatedAtMs）在修改时作为 expectedVersion 传回，不一致会拒绝写入并回报当前版本；修改成功后信息条回传新版本。所有动作可选传 maxOutputChars 下调本次返回的正文上限（不能超过工具配置的上限）；信息条不计入该上限、永久完整。list_face_kinds：列出可用于新建笔记的面类型清单。create_note：新建空笔记。title 为标题，description、tags、faceKinds（面类型清单）可选。write_note：整篇写入一篇笔记：dir 与 noteId 定位笔记，title 必填，description、tags 可选；faces 提交要写的面内容（条目含 faceId、kind、content；未提交的面保持不变）；faceKinds 可补充新面。patch_face：在某个面里精确替换一段文本：dir、faceId、oldString 必填，newString 可为空串表示删除，replaceAll 可选。save_face_order：调整面顺序：dir 与 faceOrder（面 id 列表）必填，未列出的面自动补齐。save_face_settings：以补丁语义改某个面的设置：dir、faceId、settings 必填，settings 中值为 null 表示删除该设置项。delete_face：删面：dir、faceId 必填，mode 可选（trash 移入回收站可恢复，permanent 永久删除，缺省 trash）。publish_version：为笔记当前内容发布版本快照：dir、commitName 必填。update_note_metadata：改笔记的标题 / 简介 / 标签：dir 必填，title、description、tags 至少提供一个，只改提交的字段。upload_assets：上传本机文件为附件：files 为对象数组（条目含 path 与可选 displayName）；一次调用等待全部传完，返回每个附件的编号与引用标记，标记可直接写入笔记正文。update_asset_metadata：改附件的显示名 / 备注 / 标签：assetId 必填，ext 可选；三个可编辑字段为整组提交（未提供的字段按空处理），只想改一项时先读该附件再整组回填。create_favorite_folder：建收藏夹：title 必填，description、folderId（上级收藏夹，缺省为根）可选。update_favorite_folder：改收藏夹：folderId 必填，title、description 至少提供一个。add_favorite_item：把条目收进收藏夹：folderId、kind（note/asset/folder）、targetId 必填。remove_favorite_item：把条目移出收藏夹：folderId、kind、targetId 必填；只摘收藏引用，不删除对象本身。move_favorite_item：把条目挪到别的收藏夹：fromFolderId、toFolderId、kind、targetId 必填。删除笔记、删除附件、删除收藏夹不属于本工具。",
+  "defaultInvocationMode": "sync",
+  "type": "local",
+  "bodyDirectory": ".",
+  "userConfigSchema": {
+    "type": "object",
+    "properties": {
+      "endpoint": {
+        "type": "string",
+        "title": "访问地址",
+        "description": "HyperCortex 设置页「外部访问管理」里显示的访问地址，例如 http://127.0.0.1:43210。"
+      },
+      "repos": {
+        "type": "array",
+        "title": "仓库条目",
+        "description": "注册可访问的仓库：每条含仓库 id、描述与该仓库的访问钥匙；一把访问钥匙只通一个仓库。",
+        "items": {
+          "type": "object",
+          "title": "仓库",
+          "properties": {
+            "id": {
+              "type": "string",
+              "title": "仓库 id",
+              "description": "动作里用 repo 参数引用的名字，可含中文。"
+            },
+            "description": {
+              "type": "string",
+              "title": "描述"
+            },
+            "key": {
+              "type": "string",
+              "title": "访问钥匙"
+            }
+          }
+        }
+      },
+      "defaultRepo": {
+        "type": "string",
+        "title": "默认仓库",
+        "description": "动作未指定 repo 参数时使用的仓库条目 id。"
+      },
+      "maxOutputChars": {
+        "type": "integer",
+        "title": "最大输出字符数",
+        "description": "单次调用返回内容的最大字符数（可下调，不能超过随包上限）；正文先截断，末尾信息条始终保留。"
+      }
+    },
+    "additionalProperties": false
+  },
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["list_face_kinds", "create_note", "write_note", "patch_face", "save_face_order", "save_face_settings", "delete_face", "publish_version", "update_note_metadata", "upload_assets", "update_asset_metadata", "create_favorite_folder", "update_favorite_folder", "add_favorite_item", "remove_favorite_item", "move_favorite_item"],
+        "description": "要执行的写入动作；见工具说明中的逐动作参数。"
+      },
+      "repo": {
+        "type": "string",
+        "description": "可选：工具配置中注册的仓库条目 id；省略时使用配置的默认条目。"
+      },
+      "title": {
+        "type": "string",
+        "description": "create_note / write_note / update_note_metadata 的笔记标题；create_favorite_folder / update_favorite_folder 的收藏夹标题。"
+      },
+      "description": {
+        "type": "string",
+        "description": "笔记简介或收藏夹说明；仅提交时生效（空串表示清空）。"
+      },
+      "tags": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "update_note_metadata 的笔记标签（整表替换）；update_asset_metadata 的附件标签（整组提交，未提供按空处理）。"
+      },
+      "faceKinds": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "create_note / write_note 时补充创建的面类型（取值见 list_face_kinds）。"
+      },
+      "faces": {
+        "type": "array",
+        "items": { "type": "object" },
+        "description": "write_note 要写入的面内容清单；条目含 faceId（可选）、kind（面类型）与 content（正文）。"
+      },
+      "dir": {
+        "type": "string",
+        "description": "笔记包目录（来自读工具或创建结果）。"
+      },
+      "noteId": {
+        "type": "string",
+        "description": "笔记标识（write_note 必填；来自读工具或创建结果）。"
+      },
+      "faceId": {
+        "type": "string",
+        "description": "面标识（patch_face / save_face_settings / delete_face 使用）。"
+      },
+      "oldString": {
+        "type": "string",
+        "description": "patch_face 要被替换的精确旧文本（逐字一致，默认要求唯一）。"
+      },
+      "newString": {
+        "type": "string",
+        "description": "patch_face 的替换文本；空串表示删除旧文本。"
+      },
+      "replaceAll": {
+        "type": "boolean",
+        "description": "patch_face 时替换全部匹配，而不是要求 oldString 唯一。"
+      },
+      "faceOrder": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "save_face_order 提交的新面顺序（面 id 列表）；未列出的面自动补齐。"
+      },
+      "settings": {
+        "type": "object",
+        "description": "save_face_settings 的设置补丁；值为 null 表示删除该设置项。"
+      },
+      "mode": {
+        "type": "string",
+        "enum": ["trash", "permanent"],
+        "description": "delete_face 的删除方式：trash（缺省，移入回收站可恢复）或 permanent（永久删除）。"
+      },
+      "commitName": {
+        "type": "string",
+        "description": "publish_version 的提交名。"
+      },
+      "files": {
+        "type": "array",
+        "items": { "type": "object" },
+        "description": "upload_assets 要上传的本机文件清单；条目含 path（绝对或相对路径）与可选 displayName。"
+      },
+      "assetId": {
+        "type": "string",
+        "description": "update_asset_metadata 的附件编号（来自读工具或上传结果）。"
+      },
+      "ext": {
+        "type": "string",
+        "description": "update_asset_metadata 的附件扩展名（可选；编号与扩展名一起唯一定位附件）。"
+      },
+      "displayName": {
+        "type": "string",
+        "description": "update_asset_metadata 的附件显示名（整组提交，未提供按空处理）。"
+      },
+      "remark": {
+        "type": "string",
+        "description": "update_asset_metadata 的附件备注（整组提交，未提供按空处理）。"
+      },
+      "folderId": {
+        "type": "string",
+        "description": "收藏夹标识：create_favorite_folder 为上级收藏夹（缺省根），其余收藏夹动作为操作对象。"
+      },
+      "fromFolderId": {
+        "type": "string",
+        "description": "move_favorite_item 的来源收藏夹。"
+      },
+      "toFolderId": {
+        "type": "string",
+        "description": "move_favorite_item 的目标收藏夹。"
+      },
+      "kind": {
+        "type": "string",
+        "enum": ["note", "asset", "folder"],
+        "description": "add_favorite_item / remove_favorite_item / move_favorite_item 的条目类型。"
+      },
+      "targetId": {
+        "type": "string",
+        "description": "收藏条目的目标标识：kind=note 时为笔记 id，kind=asset 时为附件编号（含扩展名，如 abc.png），kind=folder 时为收藏夹 id。"
+      },
+      "expectedVersion": {
+        "type": "integer",
+        "description": "防覆盖版本标记：先读取时得到的 updatedAtMs；不一致时写入会被拒绝并回报当前版本。"
+      },
+      "maxOutputChars": {
+        "type": "integer",
+        "description": "可选：本次调用最多返回的正文字符数，可在工具配置的上限内下调；信息条不计入该上限、永久完整。"
+      }
+    },
+    "required": ["action"],
+    "additionalProperties": false
+  },
+  "binaries": []
+}

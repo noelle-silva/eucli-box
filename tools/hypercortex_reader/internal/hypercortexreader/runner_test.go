@@ -305,6 +305,123 @@ func TestExecuteReadNoteReadsManifestAndAllFaces(t *testing.T) {
 	}
 }
 
+func TestExecuteReadNotePaginatesByLines(t *testing.T) {
+	manifest := map[string]any{
+		"schemaVersion": 2,
+		"id":            "note-1",
+		"title":         "标题甲",
+		"faceOrder":     []any{"text", "html"},
+		"faces": map[string]any{
+			"text": map[string]any{"id": "text", "kind": "markdown", "title": "文本", "file": "text.md"},
+			"html": map[string]any{"id": "html", "kind": "html", "title": "网页", "file": "face.html"},
+		},
+	}
+	textFace := map[string]any{"id": "text", "noteId": "note-1", "face": map[string]any{"id": "text", "kind": "markdown", "title": "文本"}, "content": "甲行一\n甲行二\n甲行三", "exists": true}
+	htmlFace := map[string]any{"id": "html", "noteId": "note-1", "face": map[string]any{"id": "html", "kind": "html", "title": "网页"}, "content": "<p>乙行一</p>\n<p>乙行二</p>", "exists": true}
+	// 本用例连续执行四次动作，每次都会重新读取清单与两个面：按调用次数补齐响应。
+	f := newFixture(t, map[string][]any{
+		"hypercortex.notes.loadManifest": {manifest, manifest, manifest, manifest},
+		"hypercortex.notes.loadFace":     {textFace, htmlFace, textFace, htmlFace, textFace, htmlFace, textFace, htmlFace},
+	})
+	f.setRepos(twoReposJSON(f.server.URL))
+
+	// 从头读：5 行全给，无续读指示。
+	full := execute(t, f.input(map[string]any{"action": "read_note", "dir": "Notes/2026-09/note-1"}))
+	requireSuccess(t, full)
+	if !strings.Contains(full.Content, "- 正文：共 5 行") || strings.Contains(full.Content, "nextOffset") {
+		t.Fatalf("full content = %q", full.Content)
+	}
+	for _, fragment := range []string{"甲行一", "甲行三", "<p>乙行二</p>", "面 1/2", "面 2/2"} {
+		if !strings.Contains(full.Content, fragment) {
+			t.Fatalf("full content missing %q: %q", fragment, full.Content)
+		}
+	}
+
+	// 从第 2 行读 2 行：给甲行二、甲行三，并指示续读第 4 行。
+	part := execute(t, f.input(map[string]any{"action": "read_note", "dir": "Notes/2026-09/note-1", "offset": 2, "limit": 2}))
+	requireSuccess(t, part)
+	for _, fragment := range []string{"续读自第 2 行", "甲行二", "甲行三", "（续）", "nextOffset=4"} {
+		if !strings.Contains(part.Content, fragment) {
+			t.Fatalf("part content missing %q: %q", fragment, part.Content)
+		}
+	}
+	if strings.Contains(part.Content, "甲行一") || strings.Contains(part.Content, "乙行一") {
+		t.Fatalf("part must not include earlier lines: %q", part.Content)
+	}
+
+	// 跨面窗口：第 3~5 行覆盖甲行三与整个网页面，到末尾无续读。
+	crossed := execute(t, f.input(map[string]any{"action": "read_note", "dir": "Notes/2026-09/note-1", "offset": 3, "limit": 3}))
+	requireSuccess(t, crossed)
+	for _, fragment := range []string{"甲行三", "乙行一", "乙行二"} {
+		if !strings.Contains(crossed.Content, fragment) {
+			t.Fatalf("crossed content missing %q: %q", fragment, crossed.Content)
+		}
+	}
+	if strings.Contains(crossed.Content, "nextOffset") {
+		t.Fatalf("crossed must reach the end: %q", crossed.Content)
+	}
+
+	// 起点越界：明示没有更多内容。
+	beyond := execute(t, f.input(map[string]any{"action": "read_note", "dir": "Notes/2026-09/note-1", "offset": 99}))
+	requireSuccess(t, beyond)
+	if !strings.Contains(beyond.Content, "没有更多内容") {
+		t.Fatalf("beyond content = %q", beyond.Content)
+	}
+}
+
+func TestExecuteReadNoteRejectsNonPositiveOffsetAndLimit(t *testing.T) {
+	f := newFixture(t, nil)
+	f.setRepos(twoReposJSON(f.server.URL))
+
+	for _, argument := range []string{"offset", "limit"} {
+		result := execute(t, f.input(map[string]any{"action": "read_note", "dir": "Notes/2026-09/note-1", argument: 0}))
+		requireFailure(t, result, "must be greater than zero")
+	}
+	if calls := f.callList(); len(calls) != 0 {
+		t.Fatalf("calls = %#v", calls)
+	}
+}
+
+func TestExecuteReadNoteStopsAtBodyBudgetWithContinuation(t *testing.T) {
+	lines := make([]string, 0, 20)
+	for index := 1; index <= 20; index++ {
+		lines = append(lines, fmt.Sprintf("第 %02d 行内容", index))
+	}
+	f := newFixture(t, map[string][]any{
+		"hypercortex.notes.loadManifest": {map[string]any{
+			"schemaVersion": 2,
+			"id":            "note-1",
+			"title":         "长笔记",
+			"faceOrder":     []any{"text"},
+			"faces": map[string]any{
+				"text": map[string]any{"id": "text", "kind": "markdown", "title": "文本", "file": "text.md"},
+			},
+		}},
+		"hypercortex.notes.loadFace": {map[string]any{"id": "text", "noteId": "note-1", "face": map[string]any{"id": "text", "kind": "markdown", "title": "文本"}, "content": strings.Join(lines, "\n"), "exists": true}},
+	})
+	f.setRepos(twoReposJSON(f.server.URL))
+	input := f.input(map[string]any{"action": "read_note", "dir": "Notes/2026-09/note-1"})
+	input.UserConfig["maxOutputChars"] = 120
+
+	result := execute(t, input)
+
+	requireSuccess(t, result)
+	if result.Metadata["truncated"] != true || result.Metadata["nextOffset"] == nil {
+		t.Fatalf("metadata = %#v", result.Metadata)
+	}
+	index := strings.LastIndex(result.Content, "\n[hypercortex_reader]")
+	if index < 0 {
+		t.Fatalf("envelope missing: %q", result.Content)
+	}
+	if runes := len([]rune(result.Content[:index])); runes > 120 {
+		t.Fatalf("body runes = %d, want <= 120", runes)
+	}
+	next, _ := result.Metadata["nextOffset"].(int)
+	if next < 2 || next > 21 {
+		t.Fatalf("nextOffset = %v", result.Metadata["nextOffset"])
+	}
+}
+
 func TestExecuteNoteRelationsOmitsOptionalDefaults(t *testing.T) {
 	f := newFixture(t, map[string][]any{
 		"hypercortex.refs.queryRelations": {map[string]any{

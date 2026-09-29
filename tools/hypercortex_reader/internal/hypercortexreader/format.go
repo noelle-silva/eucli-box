@@ -33,12 +33,11 @@ func envelopeLine(action string, repoID string, facts []resultFact) string {
 	return strings.Join(parts, " ")
 }
 
-// composeContent joins payload and envelope, reserving room for the envelope
-// so the model-visible facts survive output truncation. The returned flag
-// reports whether the payload itself was cut.
+// composeContent 组合正文与信息条：预算只约束正文，信息条不计入预算、永久完整；
+// 正文按上限截断（优先落在行边界）；返回标志报告正文是否被截断。
 func composeContent(payload string, action string, repoID string, facts []resultFact, maxOutput int) (string, bool) {
 	envelope := envelopeLine(action, repoID, facts)
-	body, truncated := truncateWithin(payload, maxOutput-len([]rune(envelope))-1)
+	body, truncated := truncateBody(payload, maxOutput)
 	if truncated {
 		envelope = envelopeLine(action, repoID, withFact(facts, "truncated", "true"))
 	}
@@ -61,11 +60,21 @@ func withFact(facts []resultFact, key string, value string) []resultFact {
 	return append(out, resultFact{Key: key, Value: value})
 }
 
-func truncateWithin(text string, limit int) (string, bool) {
+// truncateBody 在正文字符上限内截断：优先保留完整行（取预算内最后一个换行处），
+// 单行超预算时才按字符硬切；绝不越过上限。
+func truncateBody(text string, limit int) (string, bool) {
 	if limit <= 0 {
 		return "", strings.TrimRight(text, "\n") != ""
 	}
-	return truncateRunes(text, limit)
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text, false
+	}
+	head := string(runes[:limit])
+	if cut := strings.LastIndexByte(head, '\n'); cut >= 0 {
+		return strings.TrimRight(head[:cut], "\n"), true
+	}
+	return head, true
 }
 
 // truncateRunes 按字符截断（不切断多字节字符），并报告是否发生截断。

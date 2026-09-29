@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"eucli-box/pkg/types"
 )
@@ -88,7 +89,8 @@ func runSearchNotes(ctx context.Context, input types.ToolExecutionInput) types.T
 	return s.succeed(actionSearchNotes, renderNoteSearch(result, query), facts, metadata)
 }
 
-// runReadNote 读取某篇笔记：笔记自身信息与全部面的正文。
+// runReadNote 读取某篇笔记：笔记自身信息与全部面的正文；
+// 支持按行续读：offset 为 1 基全局行号（跨面连续），limit 为本次最多返回的行数。
 func runReadNote(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
 	s, err := openSession(input)
 	if err != nil {
@@ -97,6 +99,23 @@ func runReadNote(ctx context.Context, input types.ToolExecutionInput) types.Tool
 	dir, err := stringArg(input, "dir", true)
 	if err != nil {
 		return s.fail("parse read_note request", err, nil)
+	}
+	offset, err := intArg(input, "offset")
+	if err != nil {
+		return s.fail("parse read_note request", err, nil)
+	}
+	if _, provided := argumentValue(input, "offset"); provided && offset < 1 {
+		return s.fail("parse read_note request", fmt.Errorf("argument \"offset\" must be greater than zero"), nil)
+	}
+	if offset < 1 {
+		offset = 1
+	}
+	limit, err := intArg(input, "limit")
+	if err != nil {
+		return s.fail("parse read_note request", err, nil)
+	}
+	if _, provided := argumentValue(input, "limit"); provided && limit < 1 {
+		return s.fail("parse read_note request", fmt.Errorf("argument \"limit\" must be greater than zero"), nil)
 	}
 	manifestRaw, err := s.client.call(ctx, "hypercortex.notes.loadManifest", map[string]any{"packageDir": dir})
 	if err != nil {
@@ -119,12 +138,27 @@ func runReadNote(ctx context.Context, input types.ToolExecutionInput) types.Tool
 		}
 		docs = append(docs, doc)
 	}
-	facts := []resultFact{intFact("faces", len(docs))}
-	metadata := map[string]any{"noteId": manifest.ID, "dir": dir, "faceCount": len(docs)}
+	sections, total := buildNoteSections(docs)
+	body, returned, nextOffset := renderNoteWindow(manifest, sections, total, dir, offset, limit, s.maxOutput)
+	facts := []resultFact{intFact("faces", len(docs)), intFact("lines", returned)}
+	if nextOffset > 0 {
+		facts = append(facts, intFact("nextOffset", nextOffset), textFact("truncated", "true"))
+	}
+	metadata := map[string]any{"noteId": manifest.ID, "dir": dir, "faceCount": len(docs), "lines": returned}
+	if offset > 1 {
+		metadata["offset"] = offset
+	}
+	if limit > 0 {
+		metadata["limit"] = limit
+	}
+	if nextOffset > 0 {
+		metadata["nextOffset"] = nextOffset
+		metadata["truncated"] = true
+	}
 	if manifest.UpdatedAtMs > 0 {
 		metadata["updatedAtMs"] = int64(manifest.UpdatedAtMs)
 	}
-	return s.succeed(actionReadNote, renderNote(manifest, docs, dir), facts, metadata)
+	return s.succeed(actionReadNote, body, facts, metadata)
 }
 
 // runNoteRelations 查看引用 / 被引用关系：关注笔记、半径与方向都是同一个接口的参数。
@@ -228,39 +262,146 @@ func renderNoteSearch(result noteSearchResult, query string) string {
 	return builder.String()
 }
 
-func renderNote(manifest noteManifest, docs []noteFaceDoc, dir string) string {
-	var builder strings.Builder
-	fmt.Fprintf(&builder, "## 笔记：%s\n\n", firstNonEmpty(manifest.Title, "未命名"))
-	fmt.Fprintf(&builder, "- id：%s\n", manifest.ID)
-	fmt.Fprintf(&builder, "- dir：%s\n", dir)
-	if stamp := displayTime(manifest.CreatedAtMs); stamp != "" {
-		fmt.Fprintf(&builder, "- 创建：%s", stamp)
-		if updated := displayTime(manifest.UpdatedAtMs); updated != "" {
-			fmt.Fprintf(&builder, " ｜ 更新：%s", updated)
-		}
-		builder.WriteString("\n")
-	}
-	if manifest.UpdatedAtMs > 0 {
-		fmt.Fprintf(&builder, "- 版本（updatedAtMs）：%d\n", int64(manifest.UpdatedAtMs))
-	}
-	if len(manifest.Tags) > 0 {
-		fmt.Fprintf(&builder, "- 标签：%s\n", strings.Join(manifest.Tags, "、"))
-	}
-	if description := strings.TrimSpace(manifest.Description); description != "" {
-		fmt.Fprintf(&builder, "- 简介：%s\n", oneLine(description))
-	}
-	builder.WriteString("\n")
+// noteSection 是续读视图中的一个面段落：正文按行拆分后全局连续编号。
+type noteSection struct {
+	index     int
+	doc       noteFaceDoc
+	lines     []string
+	startLine int
+}
+
+// buildNoteSections 把各面正文拆成连续行流：面顺序不变，行号跨面连续；返回行流与总行数。
+func buildNoteSections(docs []noteFaceDoc) ([]noteSection, int) {
+	sections := make([]noteSection, 0, len(docs))
+	line := 1
 	for index, doc := range docs {
-		face := doc.Face
-		fmt.Fprintf(&builder, "### 面 %d/%d：%s（kind=%s，faceId=%s）\n\n", index+1, len(docs), firstNonEmpty(face.Title, face.ID), face.Kind, face.ID)
-		if !doc.Exists {
-			builder.WriteString("（该面文件不存在）\n\n")
+		lines := contentLines(doc)
+		sections = append(sections, noteSection{index: index + 1, doc: doc, lines: lines, startLine: line})
+		line += len(lines)
+	}
+	return sections, line - 1
+}
+
+// contentLines 把面正文拆成行：统一换行，并去掉文件末尾换行产生的空尾行。
+func contentLines(doc noteFaceDoc) []string {
+	if !doc.Exists {
+		return nil
+	}
+	content := strings.ReplaceAll(doc.Content, "\r\n", "\n")
+	content = strings.TrimSuffix(content, "\n")
+	if content == "" {
+		return nil
+	}
+	return strings.Split(content, "\n")
+}
+
+// renderNoteWindow 渲染续读窗口：正文按行取 [offset, 窗口末]，并在正文预算内装行；
+// 信息条不计入预算、永久完整。返回正文、返回行数与下一行号（没有更多内容时为 0）。
+func renderNoteWindow(manifest noteManifest, sections []noteSection, total int, dir string, offset int, limit int, budget int) (string, int, int) {
+	windowEnd := total
+	if limit > 0 && offset+limit-1 < windowEnd {
+		windowEnd = offset + limit - 1
+	}
+	out := []string{}
+	used := 0
+	tryAppend := func(line string) bool {
+		need := utf8.RuneCountInString(line)
+		if len(out) > 0 {
+			need++
+		}
+		if used+need > budget {
+			return false
+		}
+		out = append(out, line)
+		used += need
+		return true
+	}
+
+	headerLines := noteHeaderLines(manifest, dir, total, offset)
+	for _, line := range headerLines {
+		if !tryAppend(line) {
+			// 预算连头部都装不下：按行边界如实截断，并指示从本次起点续读。
+			header, _ := truncateBody(strings.Join(headerLines, "\n"), budget)
+			return header, 0, offset
+		}
+	}
+
+	returned := 0
+	lastLine := offset - 1
+	for _, section := range sections {
+		if len(section.lines) == 0 {
 			continue
 		}
-		builder.WriteString(doc.Content)
-		builder.WriteString("\n\n")
+		interStart := max(offset, section.startLine)
+		interEnd := min(windowEnd, section.startLine+len(section.lines)-1)
+		if interStart > interEnd {
+			continue
+		}
+		if !tryAppend(sectionHeader(section, len(sections), interStart > section.startLine)) {
+			break
+		}
+		full := true
+		for global := interStart; global <= interEnd; global++ {
+			if !tryAppend(section.lines[global-section.startLine]) {
+				full = false
+				break
+			}
+			returned++
+			lastLine = global
+		}
+		if !full {
+			break
+		}
 	}
-	return builder.String()
+
+	if total == 0 {
+		tryAppend("（没有可读的正文内容）")
+	} else if returned == 0 && offset > total {
+		tryAppend("（没有更多内容）")
+	}
+	nextOffset := 0
+	if lastLine < total {
+		nextOffset = lastLine + 1
+	}
+	return strings.Join(out, "\n"), returned, nextOffset
+}
+
+// noteHeaderLines 给出笔记头部：从头读给完整信息；续读只给一行定位头，省正文预算。
+func noteHeaderLines(manifest noteManifest, dir string, total int, offset int) []string {
+	title := firstNonEmpty(manifest.Title, "未命名")
+	if offset > 1 {
+		return []string{fmt.Sprintf("## 笔记：%s（续读自第 %d 行）", title, offset)}
+	}
+	lines := []string{fmt.Sprintf("## 笔记：%s", title), ""}
+	lines = append(lines, "- id："+manifest.ID, "- dir："+dir)
+	if stamp := displayTime(manifest.CreatedAtMs); stamp != "" {
+		line := "- 创建：" + stamp
+		if updated := displayTime(manifest.UpdatedAtMs); updated != "" {
+			line += " ｜ 更新：" + updated
+		}
+		lines = append(lines, line)
+	}
+	if manifest.UpdatedAtMs > 0 {
+		lines = append(lines, fmt.Sprintf("- 版本（updatedAtMs）：%d", int64(manifest.UpdatedAtMs)))
+	}
+	if len(manifest.Tags) > 0 {
+		lines = append(lines, "- 标签："+strings.Join(manifest.Tags, "、"))
+	}
+	if description := strings.TrimSpace(manifest.Description); description != "" {
+		lines = append(lines, "- 简介："+oneLine(description))
+	}
+	lines = append(lines, fmt.Sprintf("- 正文：共 %d 行", total))
+	return lines
+}
+
+// sectionHeader 给出面段落头；续读窗口从面中间开始时标注「（续）」。
+func sectionHeader(section noteSection, totalFaces int, continued bool) string {
+	face := section.doc.Face
+	suffix := ""
+	if continued {
+		suffix = "（续）"
+	}
+	return fmt.Sprintf("### 面 %d/%d：%s（kind=%s，faceId=%s）%s", section.index, totalFaces, firstNonEmpty(face.Title, face.ID), face.Kind, face.ID, suffix)
 }
 
 func renderRelations(result refRelationResult, noteID string, radius int, direction string) string {

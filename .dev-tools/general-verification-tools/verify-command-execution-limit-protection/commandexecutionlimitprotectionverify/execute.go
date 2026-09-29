@@ -125,6 +125,10 @@ func (f *fakeToolStorage) SaveToolUserSettings(ctx context.Context, toolID strin
 	return types.ToolDefinition{}, nil
 }
 
+func (f *fakeToolStorage) LoadToolConfigFiles(ctx context.Context, toolID string) ([]types.ToolConfigFile, error) {
+	return nil, nil
+}
+
 func (f *fakeToolStorage) LoadWorkspace(ctx context.Context, workspaceID string) (types.Workspace, error) {
 	return types.Workspace{ID: workspaceID}, nil
 }

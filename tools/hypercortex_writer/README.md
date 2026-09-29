@@ -25,31 +25,36 @@
 ### 笔记
 
 - `list_face_kinds`：列出可用于新建笔记的面类型清单。
-- `create_note`：新建空笔记（标题必填，简介、标签、面类型清单可选）。
-- `write_note`：整篇写入（定位笔记、标题必填；`faces` 提交要写的面内容，未提交的面保持不变；可补新面）。
+- `create_note`：新建空笔记（标题必填，`noteDescription`、标签、面类型清单可选；非法面类型会直接报错）。
+- `write_note`：整篇写入一篇已有笔记（**不会创建新笔记**，笔记不存在会报错；新建请用 `create_note`；定位笔记、标题必填；`faces` 提交要写的面内容，未提交的面保持不变；可补新面）。
 - `patch_face`：在某个面里精确替换一段文本（`newString` 为空串表示删除，`replaceAll` 可选）。
 - `save_face_order`：调整面顺序（未列出的面自动补齐）。
 - `save_face_settings`：以补丁语义改某个面的设置（值为 null 表示删除该设置项）。
 - `delete_face`：删面（缺省移入回收站可恢复，`permanent` 永久删除）。
 - `publish_version`：为笔记当前内容发布具名版本快照。
-- `update_note_metadata`：改笔记的标题 / 简介 / 标签（只改提交的字段）。
+- `update_note_metadata`：改笔记的标题 / 简介 / 标签（只改提交的字段；简介参数为 `noteDescription`）。
 
 ### 附件
 
-- `upload_assets`：上传本机文件为附件（一次调用等待全部传完，返回附件编号与引用标记；标记可直接写入笔记正文）。
+- `upload_assets`：上传本机文件为附件（一次调用等待全部传完，返回附件编号与引用标记；标记可直接写入笔记正文；本机源文件不存在时会明确报错）。
 - `update_asset_metadata`：改附件的显示名 / 备注 / 标签（三个可编辑字段整组提交，未提供的字段按空处理；只想改一项时先读取该附件再整组回填）。
 
 ### 收藏夹
 
-- `create_favorite_folder`：建收藏夹。
+- `create_favorite_folder`：建收藏夹（说明参数为 `folderDescription`）。
 - `update_favorite_folder`：改收藏夹（标题 / 说明）。
 - `add_favorite_item`：把笔记 / 附件 / 子收藏夹收进收藏夹。
 - `remove_favorite_item`：把条目移出收藏夹（只摘收藏引用，不删除对象本身）。
 - `move_favorite_item`：把条目挪到别的收藏夹。
+
+## 参数命名说明
+
+本工具的简介 / 说明参数使用专属名称（`noteDescription` / `folderDescription`），避免与框架里作为「调用原因」的 `description` 惯例撞名。
 
 ## 输出与边界
 
 - 每次成功返回的正文末尾都有一条 `[hypercortex_writer]` 信息条，说明本次调用的关键事实（仓库、编号、版本、条数等）；信息条不计入输出上限、永久完整。
 - 正文超出上限时按行边界截断（仅当首行本身就超上限时才按字符切），信息条标注 `truncated=true`。
 - 正文上限由随包 `config.json` 声明，可在工具用户配置里下调；每次调用还可用可选入参 `maxOutputChars` 再下调（不能突破配置上限）。
+- 防覆盖保险丝 `expectedVersion` 是可选参数：不传则不校验；传了才会在版本不一致时拒绝写入。
 - 删除笔记、删除附件、删除收藏夹不属于本工具。

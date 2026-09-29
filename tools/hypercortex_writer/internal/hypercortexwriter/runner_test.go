@@ -220,11 +220,11 @@ func TestExecuteCreateNoteSendsInputAndRendersVersion(t *testing.T) {
 	f.setRepos(twoReposJSON(f.server.URL))
 
 	result := execute(t, f.input(map[string]any{
-		"action":      "create_note",
-		"title":       "新笔记",
-		"description": "简介",
-		"tags":        []any{"甲", "乙"},
-		"faceKinds":   []any{"markdown"},
+		"action":          "create_note",
+		"title":           "新笔记",
+		"noteDescription": "简介",
+		"tags":            []any{"甲", "乙"},
+		"faceKinds":       []any{"markdown"},
 	}))
 
 	requireSuccess(t, result)
@@ -252,7 +252,8 @@ func TestExecuteCreateNoteSendsInputAndRendersVersion(t *testing.T) {
 
 func TestExecuteWriteNoteSendsFacesAndExpectedVersion(t *testing.T) {
 	f := newFixture(t, map[string][]any{
-		"hypercortex.notes.saveFaces": {noteSavePayload("note-1", "Notes/2026-09/note-1", 1800)},
+		"hypercortex.notes.tryReadManifest": {noteSavePayload("note-1", "Notes/2026-09/note-1", 1700)["manifest"]},
+		"hypercortex.notes.saveFaces":       {noteSavePayload("note-1", "Notes/2026-09/note-1", 1800)},
 	})
 	f.setRepos(twoReposJSON(f.server.URL))
 
@@ -261,7 +262,7 @@ func TestExecuteWriteNoteSendsFacesAndExpectedVersion(t *testing.T) {
 		"dir":             "Notes/2026-09/note-1",
 		"noteId":          "note-1",
 		"title":           "标题",
-		"description":     "简介",
+		"noteDescription": "简介",
 		"expectedVersion": float64(1700),
 		"faces": []any{
 			map[string]any{"faceId": "text", "kind": "markdown", "content": "正文"},
@@ -270,10 +271,10 @@ func TestExecuteWriteNoteSendsFacesAndExpectedVersion(t *testing.T) {
 
 	requireSuccess(t, result)
 	calls := f.callList()
-	if len(calls) != 1 {
+	if len(calls) != 2 || calls[0].Method != "hypercortex.notes.tryReadManifest" || calls[1].Method != "hypercortex.notes.saveFaces" {
 		t.Fatalf("calls = %#v", calls)
 	}
-	params := calls[0].Params
+	params := calls[1].Params
 	if params["expectedVersion"] != float64(1700) {
 		t.Fatalf("expectedVersion = %#v", params["expectedVersion"])
 	}
@@ -312,6 +313,47 @@ func TestExecuteWriteNoteRejectsUnknownFaceFields(t *testing.T) {
 	if calls := f.callList(); len(calls) != 0 {
 		t.Fatalf("calls = %#v", calls)
 	}
+}
+
+// write_note 只更新已有笔记：目录不存在时快速失败，绝不静默创建新笔记。
+func TestExecuteWriteNoteRejectsMissingNote(t *testing.T) {
+	f := newFixture(t, map[string][]any{
+		"hypercortex.notes.tryReadManifest": {nil},
+	})
+	f.setRepos(twoReposJSON(f.server.URL))
+
+	result := execute(t, f.input(map[string]any{
+		"action": "write_note",
+		"dir":    "Notes/2026-09/ghost",
+		"noteId": "ghost",
+		"title":  "标题",
+	}))
+
+	requireFailure(t, result, "笔记不存在")
+	if !strings.Contains(result.Content, "create_note") {
+		t.Fatalf("failure should point to create_note: %q", result.Content)
+	}
+	calls := f.callList()
+	if len(calls) != 1 || calls[0].Method != "hypercortex.notes.tryReadManifest" {
+		t.Fatalf("save must not be called: %#v", calls)
+	}
+}
+
+// write_note 提交的 noteId 与目录归属不一致时快速失败。
+func TestExecuteWriteNoteRejectsOwnerMismatch(t *testing.T) {
+	f := newFixture(t, map[string][]any{
+		"hypercortex.notes.tryReadManifest": {noteSavePayload("owner-a", "Notes/2026-09/owner-a", 1700)["manifest"]},
+	})
+	f.setRepos(twoReposJSON(f.server.URL))
+
+	result := execute(t, f.input(map[string]any{
+		"action": "write_note",
+		"dir":    "Notes/2026-09/owner-a",
+		"noteId": "owner-b",
+		"title":  "标题",
+	}))
+
+	requireFailure(t, result, "归属不匹配")
 }
 
 func TestExecutePatchFaceKeepsRawText(t *testing.T) {
@@ -497,9 +539,9 @@ func TestExecuteUpdateNoteMetadataAllowsClearingDescription(t *testing.T) {
 	f.setRepos(twoReposJSON(f.server.URL))
 
 	result := execute(t, f.input(map[string]any{
-		"action":      "update_note_metadata",
-		"dir":         "d",
-		"description": "",
+		"action":          "update_note_metadata",
+		"dir":             "d",
+		"noteDescription": "",
 	}))
 
 	requireSuccess(t, result)
@@ -596,10 +638,10 @@ func TestExecuteCreateFavoriteFolder(t *testing.T) {
 	f.setRepos(twoReposJSON(f.server.URL))
 
 	result := execute(t, f.input(map[string]any{
-		"action":          "create_favorite_folder",
-		"title":           "新夹",
-		"description":     "说明",
-		"expectedVersion": float64(2900),
+		"action":            "create_favorite_folder",
+		"title":             "新夹",
+		"folderDescription": "说明",
+		"expectedVersion":   float64(2900),
 	}))
 
 	requireSuccess(t, result)

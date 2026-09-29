@@ -19,7 +19,7 @@ func runCreateNote(ctx context.Context, input types.ToolExecutionInput) types.To
 	if err != nil {
 		return s.fail("parse create_note request", err, nil)
 	}
-	description, err := stringArg(input, "description", false)
+	noteDescription, err := stringArg(input, "noteDescription", false)
 	if err != nil {
 		return s.fail("parse create_note request", err, nil)
 	}
@@ -34,7 +34,7 @@ func runCreateNote(ctx context.Context, input types.ToolExecutionInput) types.To
 
 	noteInput := map[string]any{}
 	setString(noteInput, "title", title)
-	setString(noteInput, "description", description)
+	setString(noteInput, "description", noteDescription)
 	setStringList(noteInput, "tags", tags)
 	setStringList(noteInput, "faceKinds", faceKinds)
 	raw, err := s.client.call(ctx, "hypercortex.notes.create", map[string]any{"input": noteInput})
@@ -74,7 +74,7 @@ func runWriteNote(ctx context.Context, input types.ToolExecutionInput) types.Too
 	if err != nil {
 		return s.fail("parse write_note request", err, nil)
 	}
-	description, err := stringArg(input, "description", false)
+	noteDescription, err := stringArg(input, "noteDescription", false)
 	if err != nil {
 		return s.fail("parse write_note request", err, nil)
 	}
@@ -96,8 +96,8 @@ func runWriteNote(ctx context.Context, input types.ToolExecutionInput) types.Too
 	}
 
 	noteInput := map[string]any{"id": noteID, "packageDir": dir, "title": title}
-	if _, ok := argumentValue(input, "description"); ok {
-		noteInput["description"] = description
+	if _, ok := argumentValue(input, "noteDescription"); ok {
+		noteInput["description"] = noteDescription
 	}
 	if _, ok := argumentValue(input, "tags"); ok {
 		noteInput["tags"] = tags
@@ -105,6 +105,17 @@ func runWriteNote(ctx context.Context, input types.ToolExecutionInput) types.Too
 	setStringList(noteInput, "faceKinds", faceKinds)
 	if len(faces) > 0 {
 		noteInput["faces"] = faces
+	}
+	// 防误建守卫：本动作只更新已有笔记；目录不存在时快速失败，绝不静默创建新笔记。
+	existing, err := s.readExistingManifest(ctx, dir)
+	if err != nil {
+		return s.fail("write note", err, map[string]any{"dir": dir})
+	}
+	if existing == nil {
+		return s.fail("write note", fmt.Errorf("笔记不存在：%s；本动作只更新已有笔记，如需新建请使用 create_note", dir), map[string]any{"dir": dir})
+	}
+	if existing.ID != "" && existing.ID != noteID {
+		return s.fail("write note", fmt.Errorf("笔记目录归属不匹配：%s 属于笔记 %s，提交的 noteId 是 %s", dir, existing.ID, noteID), map[string]any{"dir": dir, "noteId": noteID})
 	}
 	params := map[string]any{"input": noteInput}
 	setNumber(params, "expectedVersion", expectedVersion)
@@ -202,12 +213,12 @@ func runUpdateNoteMetadata(ctx context.Context, input types.ToolExecutionInput) 
 	if _, ok := argumentValue(input, "title"); ok {
 		metadata["title"] = title
 	}
-	if _, ok := argumentValue(input, "description"); ok {
-		description, err := stringArg(input, "description", false)
+	if _, ok := argumentValue(input, "noteDescription"); ok {
+		noteDescription, err := stringArg(input, "noteDescription", false)
 		if err != nil {
 			return s.fail("parse update_note_metadata request", err, nil)
 		}
-		metadata["description"] = description
+		metadata["description"] = noteDescription
 	}
 	if _, ok := argumentValue(input, "tags"); ok {
 		tags, err := stringListArg(input, "tags")
@@ -217,7 +228,7 @@ func runUpdateNoteMetadata(ctx context.Context, input types.ToolExecutionInput) 
 		metadata["tags"] = tags
 	}
 	if len(metadata) == 0 {
-		return s.fail("parse update_note_metadata request", fmt.Errorf("at least one of title, description, tags is required"), nil)
+		return s.fail("parse update_note_metadata request", fmt.Errorf("at least one of title, noteDescription, tags is required"), nil)
 	}
 	expectedVersion, err := numberArg(input, "expectedVersion")
 	if err != nil {
@@ -245,6 +256,22 @@ func runUpdateNoteMetadata(ctx context.Context, input types.ToolExecutionInput) 
 		metadataOut["noteId"] = result.Meta.ID
 	}
 	return s.succeed(actionUpdateNoteMetadata, renderUpdateNoteMetadata(dir, result), facts, metadataOut)
+}
+
+// readExistingManifest 试读笔记清单：笔记不存在返回 nil；其余错误如实返回。
+func (s session) readExistingManifest(ctx context.Context, dir string) (*noteManifest, error) {
+	raw, err := s.client.call(ctx, "hypercortex.notes.tryReadManifest", map[string]any{"packageDir": dir})
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var manifest noteManifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		return nil, err
+	}
+	return &manifest, nil
 }
 
 // noteFaceContentsArg 解析 write_note 提交的面内容清单：条目字段只允许 faceId / kind / content，

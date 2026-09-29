@@ -142,8 +142,8 @@ func renderUploadAssets(resources []resourceRef) string {
 	for index, resource := range resources {
 		fmt.Fprintf(&builder, "%d. %s\n", index+1, firstNonEmpty(resource.Name, resource.AssetID))
 		fmt.Fprintf(&builder, "   assetId：%s\n", resource.AssetID)
-		if resource.Ext != "" || resource.Kind != "" {
-			fmt.Fprintf(&builder, "   类型：%s%s\n", firstNonEmpty(resource.Kind, "未知"), extSuffix(resource.Ext))
+		if kindText := assetTypeText(resource.Kind, resource.Mime); kindText != "" {
+			fmt.Fprintf(&builder, "   类型：%s\n", kindText)
 		}
 		if resource.Marker != "" {
 			fmt.Fprintf(&builder, "   引用标记：%s\n", resource.Marker)
@@ -162,8 +162,8 @@ func renderAssetItem(heading string, item assetItem) string {
 	if name := firstNonEmpty(item.DisplayName, item.SourceName, item.Name); name != "" {
 		fmt.Fprintf(&builder, "- 显示名：%s\n", name)
 	}
-	if item.Kind != "" || item.Ext != "" {
-		fmt.Fprintf(&builder, "- 类型：%s%s\n", firstNonEmpty(item.Kind, "未知"), extSuffix(item.Ext))
+	if kindText := assetTypeText(item.Kind, item.Mime); kindText != "" {
+		fmt.Fprintf(&builder, "- 类型：%s\n", kindText)
 	}
 	if item.Size > 0 {
 		fmt.Fprintf(&builder, "- 大小：%s\n", displaySize(item.Size))
@@ -180,11 +180,16 @@ func renderAssetItem(heading string, item assetItem) string {
 	return builder.String()
 }
 
-// extSuffix 把扩展名渲染为带点后缀；空扩展名返回空串。
-func extSuffix(ext string) string {
-	trimmed := strings.TrimSpace(ext)
-	if trimmed == "" {
-		return ""
+// assetTypeText 渲染附件类型的统一文本（与读工具同款）：kind（mime）；缺失部分自动省略。
+func assetTypeText(kind string, mime string) string {
+	kindText := strings.TrimSpace(kind)
+	mimeText := strings.TrimSpace(mime)
+	switch {
+	case kindText != "" && mimeText != "":
+		return kindText + "（" + mimeText + "）"
+	case kindText != "":
+		return kindText
+	default:
+		return mimeText
 	}
-	return "." + strings.TrimPrefix(trimmed, ".")
 }

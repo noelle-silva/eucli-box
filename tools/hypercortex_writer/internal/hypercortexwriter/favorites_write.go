@@ -19,7 +19,7 @@ func runCreateFavoriteFolder(ctx context.Context, input types.ToolExecutionInput
 	if err != nil {
 		return s.fail("parse create_favorite_folder request", err, nil)
 	}
-	description, err := stringArg(input, "description", false)
+	folderDescription, err := stringArg(input, "folderDescription", false)
 	if err != nil {
 		return s.fail("parse create_favorite_folder request", err, nil)
 	}
@@ -33,7 +33,7 @@ func runCreateFavoriteFolder(ctx context.Context, input types.ToolExecutionInput
 	}
 
 	params := map[string]any{"title": title}
-	setString(params, "description", description)
+	setString(params, "description", folderDescription)
 	setString(params, "parentId", parentID)
 	setNumber(params, "expectedVersion", expectedVersion)
 	raw, err := s.client.call(ctx, "hypercortex.favorites.createFolder", params)
@@ -71,15 +71,15 @@ func runUpdateFavoriteFolder(ctx context.Context, input types.ToolExecutionInput
 		}
 		patch["title"] = title
 	}
-	if _, ok := argumentValue(input, "description"); ok {
-		description, err := stringArg(input, "description", false)
+	if _, ok := argumentValue(input, "folderDescription"); ok {
+		folderDescription, err := stringArg(input, "folderDescription", false)
 		if err != nil {
 			return s.fail("parse update_favorite_folder request", err, nil)
 		}
-		patch["description"] = description
+		patch["description"] = folderDescription
 	}
 	if len(patch) == 0 {
-		return s.fail("parse update_favorite_folder request", fmt.Errorf("at least one of title, description is required"), nil)
+		return s.fail("parse update_favorite_folder request", fmt.Errorf("at least one of title, folderDescription is required"), nil)
 	}
 	expectedVersion, err := numberArg(input, "expectedVersion")
 	if err != nil {

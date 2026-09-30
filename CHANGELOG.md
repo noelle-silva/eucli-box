@@ -1,5 +1,9 @@
 # 更新记录
 
+## 0.1.6 - 2026-10-01
+
+- 例行版本递增
+
 ## 未发布
 
 - everything 工具不再自带 Everything 发布物、权限管家、专属实例与保活机制：移除 `providers/everything/` 与全部打包资产声明、`authorize` / `index` 动作、权限管家与保护区引擎安装、工具专属运行实例与保活守卫；动作收口为单一搜索（删除 `action` 参数），配置收口为访问地址（endpoint）+ 访问钥匙（key）。工具改为通过 Everything 应用开放接口（本机 HTTP JSON-RPC + Bearer）执行搜索，`timeoutMs` 只作用于对应用的请求、不再打穿控制通道。发布链同步：删除 `everything-root` 发行资产配方与 Everything 专属的 `existing` 资产类别；工具升版 0.5.0。

@@ -141,6 +141,50 @@ func TestSessionsAreListedByLastActive(t *testing.T) {
 	}
 }
 
+func TestListSessionsCarriesLastMessagePreview(t *testing.T) {
+	system := newTestSystem(t)
+	now := time.Now().UTC()
+	session := types.Session{ID: "session-preview", RoleID: "developer", Title: "会话", LastActive: now, Messages: []types.Message{
+		{ID: "m1", Type: "user", Content: "第一句", BranchID: "main", CreatedAt: now, UpdatedAt: now},
+		{ID: "m2", Type: "assistant", Content: "最后一句话", BranchID: "main", CreatedAt: now, UpdatedAt: now},
+	}}
+	if err := system.SaveSession(context.Background(), session); err != nil {
+		t.Fatalf("SaveSession() error = %v", err)
+	}
+	sessions, err := system.ListSessions(context.Background(), "developer")
+	if err != nil {
+		t.Fatalf("ListSessions() error = %v", err)
+	}
+	if len(sessions) != 1 || sessions[0].LastMessagePreview != "最后一句话" {
+		t.Fatalf("sessions = %#v", sessions)
+	}
+}
+
+func TestSessionLastMessagePreview(t *testing.T) {
+	now := time.Now().UTC()
+	longText := strings.Repeat("很", 90)
+	cases := []struct {
+		name     string
+		messages []types.Message
+		want     string
+	}{
+		{name: "no messages", messages: nil, want: ""},
+		{name: "plain content", messages: []types.Message{{ID: "m", Type: "assistant", Content: "最后一句话", CreatedAt: now, UpdatedAt: now}}, want: "最后一句话"},
+		{name: "clamps long content", messages: []types.Message{{ID: "m", Type: "assistant", Content: longText, CreatedAt: now, UpdatedAt: now}}, want: strings.Repeat("很", 80) + "..."},
+		{name: "async tool result prefix", messages: []types.Message{{ID: "m", Type: types.MessageTypeAsyncToolResult, Content: "完成", CreatedAt: now, UpdatedAt: now}}, want: "异步工具返回：完成"},
+		{name: "text part fallback", messages: []types.Message{{ID: "m", Type: "assistant", Parts: []types.MessagePart{{ID: "p", Type: "text", Text: "部件文本"}}, CreatedAt: now, UpdatedAt: now}}, want: "部件文本"},
+		{name: "tool part fallback", messages: []types.Message{{ID: "m", Type: "assistant", Parts: []types.MessagePart{{ID: "p", Type: "tool", ToolName: "web_search"}}, CreatedAt: now, UpdatedAt: now}}, want: "工具调用：web_search"},
+		{name: "image attachment fallback", messages: []types.Message{{ID: "m", Type: "user", Attachments: []types.MessageAttachment{{ID: "a", Kind: "image", Name: "shot.png"}}, CreatedAt: now, UpdatedAt: now}}, want: "图片"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sessionLastMessagePreview(tc.messages); got != tc.want {
+				t.Fatalf("sessionLastMessagePreview() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestCreateSessionCreatesCanonicalSession(t *testing.T) {
 	system := newTestSystem(t)
 	session, err := system.CreateSession(context.Background(), "developer", "Fresh chat")

@@ -160,12 +160,8 @@ func (s *system) CreateWorkspaceSession(ctx context.Context, workspaceID string,
 	if err != nil {
 		return types.Session{}, err
 	}
-	sessionTitle := strings.TrimSpace(title)
-	if sessionTitle == "" {
-		sessionTitle = types.DefaultSessionTitle
-	}
 	now := time.Now().UTC()
-	session := types.Session{ID: utils.NewID("session"), WorkspaceID: scope.WorkspaceID, RoleID: scope.RoleID, Title: normalizeSessionTitle(sessionTitle), Status: string(types.RunStatusCreated), Messages: []types.Message{}, CreatedAt: now, UpdatedAt: now, LastActive: now}
+	session := types.Session{ID: utils.NewID("session"), WorkspaceID: scope.WorkspaceID, RoleID: scope.RoleID, Title: types.NormalizeSessionTitle(title), Status: string(types.RunStatusCreated), Messages: []types.Message{}, CreatedAt: now, UpdatedAt: now, LastActive: now}
 	if err := s.SaveSession(ctx, session); err != nil {
 		return types.Session{}, err
 	}
@@ -173,14 +169,10 @@ func (s *system) CreateWorkspaceSession(ctx context.Context, workspaceID string,
 }
 
 func (s *system) createSession(ctx context.Context, scope sessionScope, title string) (types.Session, error) {
-	sessionTitle := strings.TrimSpace(title)
-	if sessionTitle == "" {
-		sessionTitle = types.DefaultSessionTitle
-	}
 	now := time.Now().UTC()
 	session := types.Session{
 		ID:         utils.NewID("session"),
-		Title:      normalizeSessionTitle(sessionTitle),
+		Title:      types.NormalizeSessionTitle(title),
 		Status:     string(types.RunStatusCreated),
 		Messages:   []types.Message{},
 		CreatedAt:  now,
@@ -721,7 +713,7 @@ func (s *system) listSessions(ctx context.Context, scope sessionScope) ([]types.
 	summaries := make([]types.SessionSummary, 0, len(sessions))
 	for _, session := range sessions {
 		session = normalizeSessionForStorage(session, time.Now().UTC())
-		summaries = append(summaries, types.SessionSummary{ID: session.ID, RoleID: session.RoleID, GroupID: session.GroupID, WorkspaceID: session.WorkspaceID, Title: session.Title, Status: session.Status, UpdatedAt: session.UpdatedAt, LastActive: session.LastActive})
+		summaries = append(summaries, types.SessionSummary{ID: session.ID, RoleID: session.RoleID, GroupID: session.GroupID, WorkspaceID: session.WorkspaceID, Title: session.Title, LastMessagePreview: sessionLastMessagePreview(session.Messages), Status: session.Status, UpdatedAt: session.UpdatedAt, LastActive: session.LastActive})
 	}
 	sort.Slice(summaries, func(i, j int) bool {
 		return summaries[i].LastActive.After(summaries[j].LastActive)

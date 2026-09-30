@@ -37,7 +37,7 @@ func TestStartRunCompletesWithoutTool(t *testing.T) {
 	}
 }
 
-func TestStartRunUsesDefaultTitleForNewSession(t *testing.T) {
+func TestStartRunUsesFirstUserMessageAsSessionTitle(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
 	system := newTestRuntime(t, fakes, Config{})
@@ -48,11 +48,28 @@ func TestStartRunUsesDefaultTitleForNewSession(t *testing.T) {
 	}
 	waitRun(t, system, state.ID)
 	session := fakes.storage.lastSession()
-	if session.Title != types.DefaultSessionTitle {
-		t.Fatalf("session title = %q, want %q", session.Title, types.DefaultSessionTitle)
+	if session.Title != message {
+		t.Fatalf("session title = %q, want %q", session.Title, message)
 	}
 	if len(session.Messages) == 0 || session.Messages[0].Content != message {
 		t.Fatalf("messages = %#v", session.Messages)
+	}
+}
+
+func TestStartRunTruncatesLongFirstMessageTitle(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
+	system := newTestRuntime(t, fakes, Config{})
+	message := strings.Repeat("很长的标题", 30)
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: message})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	waitRun(t, system, state.ID)
+	session := fakes.storage.lastSession()
+	want := string([]rune(message)[:80])
+	if session.Title != want {
+		t.Fatalf("session title = %q, want %q", session.Title, want)
 	}
 }
 
@@ -72,6 +89,9 @@ func TestStartRunSavesAttachmentsAndPassesThemToModel(t *testing.T) {
 	session := fakes.storage.lastSession()
 	if len(session.Messages) != 2 || len(session.Messages[0].Attachments) != 1 {
 		t.Fatalf("messages = %#v", session.Messages)
+	}
+	if session.Title != types.DefaultSessionTitle {
+		t.Fatalf("session title = %q, want %q", session.Title, types.DefaultSessionTitle)
 	}
 	request := fakes.provider.lastRequest()
 	if len(request.Messages) != 1 || len(request.Messages[0].Images) != 1 || request.Messages[0].Images[0].DataURL != imageDataURL {

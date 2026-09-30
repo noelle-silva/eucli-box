@@ -1,8 +1,27 @@
 package types
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 const DefaultSessionTitle = "新聊天"
+
+const sessionTitleMaxRunes = 80
+
+// NormalizeSessionTitle 把任意文本规范为合法的会话标题：
+// 压缩空白、按上限截断、空文本回落默认标题。
+func NormalizeSessionTitle(title string) string {
+	title = strings.Join(strings.Fields(title), " ")
+	if title == "" {
+		return DefaultSessionTitle
+	}
+	runes := []rune(title)
+	if len(runes) > sessionTitleMaxRunes {
+		return strings.TrimSpace(string(runes[:sessionTitleMaxRunes]))
+	}
+	return title
+}
 
 const MessagePartDisplayHideResult = "hideResult"
 
@@ -240,14 +259,15 @@ type AsyncToolTaskQuery struct {
 }
 
 type SessionSummary struct {
-	ID          string    `json:"id"`
-	RoleID      string    `json:"roleId"`
-	GroupID     string    `json:"groupId,omitempty"`
-	WorkspaceID string    `json:"workspaceId,omitempty"`
-	Title       string    `json:"title"`
-	Status      string    `json:"status"`
-	UpdatedAt   time.Time `json:"updatedAt"`
-	LastActive  time.Time `json:"lastActive"`
+	ID                 string    `json:"id"`
+	RoleID             string    `json:"roleId"`
+	GroupID            string    `json:"groupId,omitempty"`
+	WorkspaceID        string    `json:"workspaceId,omitempty"`
+	Title              string    `json:"title"`
+	LastMessagePreview string    `json:"lastMessagePreview"`
+	Status             string    `json:"status"`
+	UpdatedAt          time.Time `json:"updatedAt"`
+	LastActive         time.Time `json:"lastActive"`
 }
 
 type RunStatus string

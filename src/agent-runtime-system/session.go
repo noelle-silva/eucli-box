@@ -40,13 +40,15 @@ func (s *system) loadOrCreateSession(ctx context.Context, request types.RunReque
 	if request.Stream != nil {
 		metadata = types.PutStreamEnabledSessionMetadata(metadata, *request.Stream)
 	}
+	// 新会话默认以用户发送的第一条消息为标题；无文本（如纯附件）时回落默认标题。
+	title := types.NormalizeSessionTitle(request.Message)
 	if groupID != "" {
-		return types.Session{ID: utils.NewID("session"), GroupID: groupID, Title: types.DefaultSessionTitle, Status: string(types.RunStatusCreated), Messages: []types.Message{}, Metadata: metadata, CreatedAt: now, UpdatedAt: now, LastActive: now}, nil
+		return types.Session{ID: utils.NewID("session"), GroupID: groupID, Title: title, Status: string(types.RunStatusCreated), Messages: []types.Message{}, Metadata: metadata, CreatedAt: now, UpdatedAt: now, LastActive: now}, nil
 	}
 	if workspaceID != "" {
-		return types.Session{ID: utils.NewID("session"), WorkspaceID: workspaceID, RoleID: request.RoleID, Title: types.DefaultSessionTitle, Status: string(types.RunStatusCreated), Messages: []types.Message{}, Metadata: metadata, CreatedAt: now, UpdatedAt: now, LastActive: now}, nil
+		return types.Session{ID: utils.NewID("session"), WorkspaceID: workspaceID, RoleID: request.RoleID, Title: title, Status: string(types.RunStatusCreated), Messages: []types.Message{}, Metadata: metadata, CreatedAt: now, UpdatedAt: now, LastActive: now}, nil
 	}
-	return types.Session{ID: utils.NewID("session"), RoleID: request.RoleID, Title: types.DefaultSessionTitle, Status: string(types.RunStatusCreated), Messages: []types.Message{}, Metadata: metadata, CreatedAt: now, UpdatedAt: now, LastActive: now}, nil
+	return types.Session{ID: utils.NewID("session"), RoleID: request.RoleID, Title: title, Status: string(types.RunStatusCreated), Messages: []types.Message{}, Metadata: metadata, CreatedAt: now, UpdatedAt: now, LastActive: now}, nil
 }
 
 func (s *system) recoverAsyncToolTasks(session types.Session) types.Session {

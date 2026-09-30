@@ -16,7 +16,7 @@ func normalizeSessionForStorage(session types.Session, now time.Time) types.Sess
 	session.RoleID = strings.TrimSpace(session.RoleID)
 	session.GroupID = strings.TrimSpace(session.GroupID)
 	session.WorkspaceID = strings.TrimSpace(session.WorkspaceID)
-	session.Title = normalizeSessionTitle(session.Title)
+	session.Title = types.NormalizeSessionTitle(session.Title)
 	if session.Status == "" {
 		session.Status = string(types.RunStatusCreated)
 	}
@@ -326,16 +326,49 @@ func textProjectionFromParts(parts []types.MessagePart) string {
 	return strings.Join(blocks, "\n\n")
 }
 
-func normalizeSessionTitle(title string) string {
-	title = strings.Join(strings.Fields(title), " ")
-	if title == "" {
-		return types.DefaultSessionTitle
+const sessionPreviewMaxRunes = 80
+
+// sessionLastMessagePreview 提取会话最后一条消息的列表摘要：
+// 消息内容优先，其次文本部件、工具调用、图片附件；压缩空白并按上限截断。
+func sessionLastMessagePreview(messages []types.Message) string {
+	if len(messages) == 0 {
+		return ""
 	}
-	runes := []rune(title)
-	if len(runes) > 80 {
-		return strings.TrimSpace(string(runes[:80]))
+	message := messages[len(messages)-1]
+	text := strings.TrimSpace(message.Content)
+	if text != "" && message.Type == types.MessageTypeAsyncToolResult {
+		text = "异步工具返回：" + text
 	}
-	return title
+	if text == "" {
+		text = sessionMessagePartPreview(message)
+	}
+	return clampSessionPreview(text)
+}
+
+func sessionMessagePartPreview(message types.Message) string {
+	for _, part := range message.Parts {
+		switch {
+		case strings.TrimSpace(part.Type) == "text" && strings.TrimSpace(part.Text) != "":
+			return part.Text
+		case strings.TrimSpace(part.Type) == "tool" && strings.TrimSpace(part.ToolName) != "":
+			return "工具调用：" + part.ToolName
+		}
+	}
+	for _, attachment := range message.Attachments {
+		if strings.TrimSpace(attachment.Kind) == "image" {
+			return "图片"
+		}
+	}
+	return ""
+}
+
+func clampSessionPreview(text string) string {
+	text = strings.Join(strings.Fields(text), " ")
+	runes := []rune(text)
+	if len(runes) > sessionPreviewMaxRunes {
+		return strings.TrimSpace(string(runes[:sessionPreviewMaxRunes])) + "..."
+	}
+	return text
 }
 
 func normalizeMessageType(messageType string) string {
@@ -447,7 +480,7 @@ func (s *system) updateSessionTitle(ctx context.Context, scope sessionScope, ses
 		return types.Session{}, err
 	}
 	now := time.Now().UTC()
-	session.Title = normalizeSessionTitle(title)
+	session.Title = types.NormalizeSessionTitle(title)
 	session.UpdatedAt = now
 	if session.LastActive.Before(now) {
 		session.LastActive = now

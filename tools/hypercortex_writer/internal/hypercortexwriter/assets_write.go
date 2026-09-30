@@ -14,7 +14,7 @@ import (
 func runUploadAssets(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
 	s, err := openSession(input)
 	if err != nil {
-		return failure("open hypercortex_writer session", err, nil)
+		return failure("open hypercortex_writer session", err, "", "", nil)
 	}
 	files, err := assetUploadFilesArg(input)
 	if err != nil {
@@ -50,7 +50,7 @@ func runUploadAssets(ctx context.Context, input types.ToolExecutionInput) types.
 func runUpdateAssetMetadata(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
 	s, err := openSession(input)
 	if err != nil {
-		return failure("open hypercortex_writer session", err, nil)
+		return failure("open hypercortex_writer session", err, "", "", nil)
 	}
 	assetID, err := stringArg(input, "assetId", true)
 	if err != nil {

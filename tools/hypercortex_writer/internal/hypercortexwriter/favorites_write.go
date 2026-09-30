@@ -13,7 +13,7 @@ import (
 func runCreateFavoriteFolder(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
 	s, err := openSession(input)
 	if err != nil {
-		return failure("open hypercortex_writer session", err, nil)
+		return failure("open hypercortex_writer session", err, "", "", nil)
 	}
 	title, err := stringArg(input, "title", true)
 	if err != nil {
@@ -57,7 +57,7 @@ func runCreateFavoriteFolder(ctx context.Context, input types.ToolExecutionInput
 func runUpdateFavoriteFolder(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
 	s, err := openSession(input)
 	if err != nil {
-		return failure("open hypercortex_writer session", err, nil)
+		return failure("open hypercortex_writer session", err, "", "", nil)
 	}
 	folderID, err := stringArg(input, "folderId", true)
 	if err != nil {
@@ -110,7 +110,7 @@ func runUpdateFavoriteFolder(ctx context.Context, input types.ToolExecutionInput
 func runAddFavoriteItem(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
 	s, err := openSession(input)
 	if err != nil {
-		return failure("open hypercortex_writer session", err, nil)
+		return failure("open hypercortex_writer session", err, "", "", nil)
 	}
 	folderID, err := stringArg(input, "folderId", true)
 	if err != nil {
@@ -153,7 +153,7 @@ func runAddFavoriteItem(ctx context.Context, input types.ToolExecutionInput) typ
 func runRemoveFavoriteItem(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
 	s, err := openSession(input)
 	if err != nil {
-		return failure("open hypercortex_writer session", err, nil)
+		return failure("open hypercortex_writer session", err, "", "", nil)
 	}
 	folderID, err := stringArg(input, "folderId", true)
 	if err != nil {
@@ -196,7 +196,7 @@ func runRemoveFavoriteItem(ctx context.Context, input types.ToolExecutionInput) 
 func runMoveFavoriteItem(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
 	s, err := openSession(input)
 	if err != nil {
-		return failure("open hypercortex_writer session", err, nil)
+		return failure("open hypercortex_writer session", err, "", "", nil)
 	}
 	fromFolderID, err := stringArg(input, "fromFolderId", true)
 	if err != nil {

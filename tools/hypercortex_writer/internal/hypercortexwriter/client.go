@@ -59,6 +59,10 @@ func (c *rpcClient) call(ctx context.Context, method string, params map[string]a
 		if message == "" {
 			message = fmt.Sprintf("HyperCortex 请求失败（HTTP %d）", response.StatusCode)
 		}
+		// 后端错误信封带机器可读错误码：原样透传给调用方。
+		if code, _ := envelope.Error["code"].(string); strings.TrimSpace(code) != "" {
+			return nil, coded(strings.TrimSpace(code), "%s", message)
+		}
 		return nil, errors.New(message)
 	}
 	return envelope.Result, nil

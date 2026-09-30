@@ -1,5 +1,13 @@
 # 更新记录
 
+## 0.1.2 - 2026-09-30
+
+- `save_face_settings` 回显保存后的实际设置（结果正文 + 信息条）：写入是否生效当场可验证；不被该面协议支持的设置项由静默丢弃改为直接报错（后端同步修复）。
+- `delete_face` 文案修正：回收站中的面需在 HyperCortex 界面侧的回收站恢复，工具集不提供恢复动作，不再写「（可恢复）」误导。
+- 失败结果同样带信息条：含动作、仓库、出错对象标识与机器可读错误码 `code`（如 `VERSION_CONFLICT` / `UNKNOWN_FACE_KIND` / `DUPLICATE_FAVORITE` / `PATH_ESCAPE`）。
+- 未知参数快速失败（不静默忽略）：废弃的旧参数名（如 `description`）不再被静默接受。
+- 文档补充：版本快照可用读工具的 `list_versions` / `read_version` 读回。
+
 ## 0.1.1 - 2026-09-30
 
 - 修复参数撞名：笔记简介改为 `noteDescription`、收藏夹说明改为 `folderDescription`，不再与框架「调用原因」的 `description` 惯例冲突（避免把调用原因写进用户数据）。

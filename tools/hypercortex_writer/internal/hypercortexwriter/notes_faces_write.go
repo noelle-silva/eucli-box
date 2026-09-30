@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 
 	"eucli-box/pkg/types"
@@ -13,35 +15,35 @@ import (
 func runListFaceKinds(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
 	config, err := loadConfig(input.ToolBodyDirectory)
 	if err != nil {
-		return failure("load hypercortex_writer config", err, nil)
+		return failure("load hypercortex_writer config", err, actionListFaceKinds, "", nil)
 	}
 	repos, err := loadRepoConfig(input)
 	if err != nil {
-		return failure("load repository configuration", err, nil)
+		return failure("load repository configuration", err, actionListFaceKinds, "", nil)
 	}
 	maxOutput, err := effectiveMaxOutputChars(input, config)
 	if err != nil {
-		return failure("load hypercortex_writer config", err, nil)
+		return failure("load hypercortex_writer config", err, actionListFaceKinds, "", nil)
 	}
 	selector, err := stringArg(input, "repo", false)
 	if err != nil {
-		return failure("parse list_face_kinds request", err, nil)
+		return failure("parse list_face_kinds request", err, actionListFaceKinds, "", nil)
 	}
 	entry, err := repos.resolve(selector)
 	if err != nil {
-		return failure("parse list_face_kinds request", err, nil)
+		return failure("parse list_face_kinds request", err, actionListFaceKinds, "", nil)
 	}
 	client, err := newRPCClient(repos.Endpoint, entry.Key)
 	if err != nil {
-		return failure("open hypercortex_writer session", err, nil)
+		return failure("open hypercortex_writer session", err, "", "", nil)
 	}
 	raw, err := client.call(ctx, "hypercortex.notes.listFacePlugins", map[string]any{})
 	if err != nil {
-		return failure("list face kinds", err, map[string]any{"repo": entry.ID})
+		return failure("list face kinds", err, actionListFaceKinds, entry.ID, nil)
 	}
 	kinds := []faceKindInfo{}
 	if err := json.Unmarshal(raw, &kinds); err != nil {
-		return failure("decode face kinds result", err, map[string]any{"repo": entry.ID})
+		return failure("decode face kinds result", err, actionListFaceKinds, entry.ID, nil)
 	}
 	facts := []resultFact{intFact("count", len(kinds))}
 	content, _ := composeContent(renderFaceKinds(kinds), actionListFaceKinds, entry.ID, facts, maxOutput)
@@ -60,7 +62,7 @@ func runListFaceKinds(ctx context.Context, input types.ToolExecutionInput) types
 func runSaveFaceOrder(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
 	s, err := openSession(input)
 	if err != nil {
-		return failure("open hypercortex_writer session", err, nil)
+		return failure("open hypercortex_writer session", err, "", "", nil)
 	}
 	dir, err := stringArg(input, "dir", true)
 	if err != nil {
@@ -102,7 +104,7 @@ func runSaveFaceOrder(ctx context.Context, input types.ToolExecutionInput) types
 func runSaveFaceSettings(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
 	s, err := openSession(input)
 	if err != nil {
-		return failure("open hypercortex_writer session", err, nil)
+		return failure("open hypercortex_writer session", err, "", "", nil)
 	}
 	dir, err := stringArg(input, "dir", true)
 	if err != nil {
@@ -135,20 +137,26 @@ func runSaveFaceSettings(ctx context.Context, input types.ToolExecutionInput) ty
 		return s.fail("decode save face settings result", err, nil)
 	}
 	version := noteResultVersion(result)
+	// 回显保存后该面的实际设置：写入侧与读取侧使用同一渲染，设置是否生效当场可验证。
+	savedSettings := result.Manifest.Faces[faceID].Settings
 	facts := []resultFact{
 		textFact("noteId", result.Meta.ID),
 		textFact("faceId", faceID),
 		numberFact("version", version),
 	}
-	metadata := map[string]any{"noteId": result.Meta.ID, "faceId": faceID, "version": int64(version)}
-	return s.succeed(actionSaveFaceSettings, renderFaceSettings(result, dir, faceID), facts, metadata)
+	if settings := renderFaceSettingsText(savedSettings); settings != "" {
+		facts = append(facts, textFact("settings", settings))
+	}
+	metadata := map[string]any{"noteId": result.Meta.ID, "faceId": faceID, "version": int64(version), "settings": savedSettings}
+	return s.succeed(actionSaveFaceSettings, renderFaceSettings(result, dir, faceID, savedSettings), facts, metadata)
 }
 
-// runDeleteFace 删面：默认移入回收站（可恢复），mode=permanent 时永久删除。
+// runDeleteFace 删面：默认移入回收站，mode=permanent 时永久删除。
+// 回收站中的面需在 HyperCortex 界面侧的回收站里恢复，工具集不提供恢复动作。
 func runDeleteFace(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
 	s, err := openSession(input)
 	if err != nil {
-		return failure("open hypercortex_writer session", err, nil)
+		return failure("open hypercortex_writer session", err, "", "", nil)
 	}
 	dir, err := stringArg(input, "dir", true)
 	if err != nil {
@@ -191,7 +199,7 @@ func runDeleteFace(ctx context.Context, input types.ToolExecutionInput) types.To
 func runPublishVersion(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
 	s, err := openSession(input)
 	if err != nil {
-		return failure("open hypercortex_writer session", err, nil)
+		return failure("open hypercortex_writer session", err, "", "", nil)
 	}
 	dir, err := stringArg(input, "dir", true)
 	if err != nil {
@@ -255,15 +263,66 @@ func renderFaceOrder(result noteSaveResult, dir string) string {
 	return builder.String()
 }
 
-// renderFaceSettings 渲染面设置修改结果。
-func renderFaceSettings(result noteSaveResult, dir string, faceID string) string {
+// renderFaceSettings 渲染面设置修改结果：回显保存后该面的实际设置。
+func renderFaceSettings(result noteSaveResult, dir string, faceID string, settings map[string]any) string {
 	var builder strings.Builder
 	builder.WriteString("## 修改面设置\n\n")
 	fmt.Fprintf(&builder, "- noteId：%s\n", result.Meta.ID)
 	fmt.Fprintf(&builder, "- dir：%s\n", dir)
 	fmt.Fprintf(&builder, "- faceId：%s\n", faceID)
+	if text := renderFaceSettingsText(settings); text != "" {
+		fmt.Fprintf(&builder, "- 当前设置：%s\n", text)
+	} else {
+		builder.WriteString("- 当前设置：（空）\n")
+	}
 	builder.WriteString(fmt.Sprintf("- 版本（updatedAtMs）：%d\n", int64(noteResultVersion(result))))
 	return builder.String()
+}
+
+// renderFaceSettingsText 把面设置渲染为稳定顺序的单行文本（与读工具同款）；空设置返回空串。
+func renderFaceSettingsText(settings map[string]any) string {
+	if len(settings) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(settings))
+	for key := range settings {
+		if strings.TrimSpace(key) != "" {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, key+"="+settingValueText(settings[key]))
+	}
+	return strings.Join(parts, "，")
+}
+
+// settingValueText 把设置值渲染为紧凑文本；对象与数组以 JSON 原文呈现。
+func settingValueText(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return "null"
+	case string:
+		return oneLine(typed)
+	case bool:
+		if typed {
+			return "true"
+		}
+		return "false"
+	case float64:
+		return strconv.FormatFloat(typed, 'f', -1, 64)
+	case int:
+		return strconv.Itoa(typed)
+	case int64:
+		return strconv.FormatInt(typed, 10)
+	default:
+		raw, err := json.Marshal(typed)
+		if err != nil {
+			return fmt.Sprint(typed)
+		}
+		return string(raw)
+	}
 }
 
 // renderDeleteFace 渲染删面结果。
@@ -276,7 +335,7 @@ func renderDeleteFace(result noteSaveResult, dir string, faceID string, mode str
 	if mode == "permanent" {
 		builder.WriteString("- 删除方式：永久删除\n")
 	} else {
-		builder.WriteString("- 删除方式：移入回收站（可恢复）\n")
+		builder.WriteString("- 删除方式：移入回收站（恢复需在 HyperCortex 界面侧的回收站操作）\n")
 	}
 	builder.WriteString(fmt.Sprintf("- 版本（updatedAtMs）：%d\n", int64(noteResultVersion(result))))
 	return builder.String()

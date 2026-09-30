@@ -13,7 +13,7 @@ import (
 func runCreateNote(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
 	s, err := openSession(input)
 	if err != nil {
-		return failure("open hypercortex_writer session", err, nil)
+		return failure("open hypercortex_writer session", err, "", "", nil)
 	}
 	title, err := stringArg(input, "title", false)
 	if err != nil {
@@ -60,7 +60,7 @@ func runCreateNote(ctx context.Context, input types.ToolExecutionInput) types.To
 func runWriteNote(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
 	s, err := openSession(input)
 	if err != nil {
-		return failure("open hypercortex_writer session", err, nil)
+		return failure("open hypercortex_writer session", err, "", "", nil)
 	}
 	dir, err := stringArg(input, "dir", true)
 	if err != nil {
@@ -142,7 +142,7 @@ func runWriteNote(ctx context.Context, input types.ToolExecutionInput) types.Too
 func runPatchFace(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
 	s, err := openSession(input)
 	if err != nil {
-		return failure("open hypercortex_writer session", err, nil)
+		return failure("open hypercortex_writer session", err, "", "", nil)
 	}
 	dir, err := stringArg(input, "dir", true)
 	if err != nil {
@@ -199,7 +199,7 @@ func runPatchFace(ctx context.Context, input types.ToolExecutionInput) types.Too
 func runUpdateNoteMetadata(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
 	s, err := openSession(input)
 	if err != nil {
-		return failure("open hypercortex_writer session", err, nil)
+		return failure("open hypercortex_writer session", err, "", "", nil)
 	}
 	dir, err := stringArg(input, "dir", true)
 	if err != nil {

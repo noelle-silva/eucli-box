@@ -11,10 +11,11 @@ type faceKindInfo struct {
 }
 
 type noteFaceManifest struct {
-	ID    string `json:"id"`
-	Kind  string `json:"kind"`
-	Title string `json:"title"`
-	File  string `json:"file"`
+	ID       string         `json:"id"`
+	Kind     string         `json:"kind"`
+	Title    string         `json:"title"`
+	File     string         `json:"file"`
+	Settings map[string]any `json:"settings"`
 }
 
 type noteManifest struct {

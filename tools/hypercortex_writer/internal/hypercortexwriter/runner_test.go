@@ -22,20 +22,21 @@ type recordedCall struct {
 
 // fixture 是测试用的假 HyperCortex 外部访问服务与工具配置目录。
 type fixture struct {
-	t          *testing.T
-	dir        string
-	server     *httptest.Server
-	mu         sync.Mutex
-	calls      []recordedCall
-	authHeads  []string
-	responses  map[string][]any
-	failures   map[string]string
-	userConfig map[string]any
+	t            *testing.T
+	dir          string
+	server       *httptest.Server
+	mu           sync.Mutex
+	calls        []recordedCall
+	authHeads    []string
+	responses    map[string][]any
+	failures     map[string]string
+	failureCodes map[string]string
+	userConfig   map[string]any
 }
 
 func newFixture(t *testing.T, responses map[string][]any) *fixture {
 	t.Helper()
-	f := &fixture{t: t, responses: responses, failures: map[string]string{}}
+	f := &fixture{t: t, responses: responses, failures: map[string]string{}, failureCodes: map[string]string{}}
 	f.dir = t.TempDir()
 	writeFixtureFile(t, filepath.Join(f.dir, "config.json"), `{"limits":{"maxOutputChars":50000}}`)
 	f.server = httptest.NewServer(http.HandlerFunc(f.handle))
@@ -65,6 +66,7 @@ func (f *fixture) handle(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	f.mu.Lock()
 	message, failed := f.failures[frame.Method]
+	code := f.failureCodes[frame.Method]
 	queue := f.responses[frame.Method]
 	hasResult := len(queue) > 0
 	var result any
@@ -74,7 +76,11 @@ func (f *fixture) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	f.mu.Unlock()
 	if failed {
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": map[string]any{"message": message}})
+		payload := map[string]any{"message": message}
+		if strings.TrimSpace(code) != "" {
+			payload["code"] = code
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": payload})
 		return
 	}
 	if !hasResult {
@@ -739,6 +745,72 @@ func TestExecuteUnknownActionFailsFast(t *testing.T) {
 	result := execute(t, f.input(map[string]any{"action": "nope"}))
 
 	requireFailure(t, result, "unsupported action")
+}
+
+// 未知参数快速失败：废弃的旧参数名（description）不再被静默接受。
+func TestExecuteRejectsUnknownArguments(t *testing.T) {
+	f := newFixture(t, nil)
+	f.setRepos(twoReposJSON(f.server.URL))
+
+	result := execute(t, f.input(map[string]any{"action": "update_note_metadata", "dir": "d", "description": "旧参数名"}))
+
+	requireFailure(t, result, "unknown argument")
+	if calls := f.callList(); len(calls) != 0 {
+		t.Fatalf("calls = %#v", calls)
+	}
+}
+
+// save_face_settings 回显保存后的实际设置，写入是否生效当场可验证。
+func TestExecuteSaveFaceSettingsEchoesSavedSettings(t *testing.T) {
+	payload := noteSavePayload("note-1", "d", 2100)
+	payload["manifest"].(map[string]any)["faces"].(map[string]any)["html"] = map[string]any{
+		"id": "html", "kind": "html", "title": "HTML", "file": "html-view.html",
+		"settings": map[string]any{"displayMode": "natural", "fixedScale": 0.8},
+	}
+	f := newFixture(t, map[string][]any{
+		"hypercortex.notes.saveFaceSettings": {payload},
+	})
+	f.setRepos(twoReposJSON(f.server.URL))
+
+	result := execute(t, f.input(map[string]any{
+		"action":   "save_face_settings",
+		"dir":      "d",
+		"faceId":   "html",
+		"settings": map[string]any{"displayMode": "natural", "fixedScale": 0.8},
+	}))
+
+	requireSuccess(t, result)
+	for _, fragment := range []string{"当前设置：displayMode=natural，fixedScale=0.8", "settings=displayMode=natural"} {
+		if !strings.Contains(result.Content, fragment) {
+			t.Fatalf("content %q missing %q", result.Content, fragment)
+		}
+	}
+}
+
+// 失败输出同样带信息条（动作、仓库与错误码）。
+func TestExecuteFailureCarriesEnvelope(t *testing.T) {
+	f := newFixture(t, map[string][]any{
+		"hypercortex.notes.tryReadManifest": {noteSavePayload("note-1", "Notes/2026-09/note-1", 2)["manifest"]},
+	})
+	f.setRepos(twoReposJSON(f.server.URL))
+	f.mu.Lock()
+	f.failures["hypercortex.notes.saveFaces"] = "笔记版本不匹配：期望版本 1，当前版本 2"
+	f.failureCodes["hypercortex.notes.saveFaces"] = "VERSION_CONFLICT"
+	f.mu.Unlock()
+
+	result := execute(t, f.input(map[string]any{
+		"action": "write_note",
+		"dir":    "Notes/2026-09/note-1",
+		"noteId": "note-1",
+		"title":  "标题",
+	}))
+
+	requireFailure(t, result, "版本不匹配")
+	for _, fragment := range []string{"[hypercortex_writer]", "action=write_note", "repo=notes", "dir=Notes/2026-09/note-1", "code=VERSION_CONFLICT"} {
+		if !strings.Contains(result.Content, fragment) {
+			t.Fatalf("content %q missing %q", result.Content, fragment)
+		}
+	}
 }
 
 func TestExecuteSurfacesBackendErrors(t *testing.T) {

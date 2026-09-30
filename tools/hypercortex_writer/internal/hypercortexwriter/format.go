@@ -53,6 +53,25 @@ func composeContent(payload string, action string, repoID string, facts []result
 	return body + "\n" + envelope, truncated
 }
 
+// composeFailure 组合失败正文与信息条：失败同样携带仓库与动作身份，
+// 并把机器可读错误码（如有）放进信息条，供调用方程序化区分错误类型。
+func composeFailure(message string, action string, repoID string, metadata map[string]any) string {
+	facts := make([]resultFact, 0, 8)
+	for _, key := range []string{"dir", "noteId", "faceId", "folderId", "assetId", "targetId", "versionId"} {
+		if value, ok := metadata[key].(string); ok && strings.TrimSpace(value) != "" {
+			facts = append(facts, textFact(key, value))
+		}
+	}
+	if code, ok := metadata["code"].(string); ok && strings.TrimSpace(code) != "" {
+		facts = append(facts, textFact("code", code))
+	}
+	envelope := envelopeLine(action, repoID, facts)
+	if strings.TrimSpace(message) == "" {
+		return envelope
+	}
+	return message + "\n" + envelope
+}
+
 func withFact(facts []resultFact, key string, value string) []resultFact {
 	out := make([]resultFact, len(facts))
 	copy(out, facts)

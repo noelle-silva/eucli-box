@@ -33,7 +33,7 @@ func TestToolManifestMatchesImplementedActions(t *testing.T) {
 	if err := json.Unmarshal(payload, &manifest); err != nil {
 		t.Fatalf("decode tool.json: %v", err)
 	}
-	if manifest.ID != "hypercortex_reader" || manifest.Version != "0.1.1" {
+	if manifest.ID != "hypercortex_reader" || manifest.Version != "0.1.2" {
 		t.Fatalf("manifest identity = %s/%s", manifest.ID, manifest.Version)
 	}
 	if strings.TrimSpace(manifest.PromptDescription) == "" {
@@ -43,6 +43,7 @@ func TestToolManifestMatchesImplementedActions(t *testing.T) {
 	implemented := []string{
 		actionSearchNotes, actionReadNote, actionNoteRelations, actionListFavorites,
 		actionListRepos, actionSearchAssets, actionListAssets, actionListTrash,
+		actionListVersions, actionReadVersion,
 	}
 	sort.Strings(declared)
 	sort.Strings(implemented)

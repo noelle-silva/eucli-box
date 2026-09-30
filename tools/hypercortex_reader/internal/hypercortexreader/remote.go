@@ -27,8 +27,9 @@ type noteSearchHit struct {
 }
 
 type noteSearchResult struct {
-	Kinds []faceKindInfo  `json:"kinds"`
-	Items []noteSearchHit `json:"items"`
+	Kinds            []faceKindInfo  `json:"kinds"`
+	AppliedFaceKinds []string        `json:"appliedFaceKinds"`
+	Items            []noteSearchHit `json:"items"`
 }
 
 type noteFaceManifest struct {
@@ -66,6 +67,34 @@ type noteFaceDoc struct {
 type refRelationNode struct {
 	NoteID   string `json:"noteId"`
 	Distance int    `json:"distance"`
+}
+
+// noteVersionSummary 是版本快照的摘要视图（与写工具同款）。
+type noteVersionSummary struct {
+	VersionID   string   `json:"versionId"`
+	CommitName  string   `json:"commitName"`
+	CreatedAtMs float64  `json:"createdAtMs"`
+	Title       string   `json:"title"`
+	FaceIDs     []string `json:"faceIds"`
+}
+
+// noteVersionFaceSnapshot 是快照中单个面的清单与内容。
+type noteVersionFaceSnapshot struct {
+	Manifest noteFaceManifest `json:"manifest"`
+	Content  string           `json:"content"`
+}
+
+// noteVersionSnapshot 是版本快照的完整视图。
+type noteVersionSnapshot struct {
+	SchemaVersion int                                `json:"schemaVersion"`
+	VersionID     string                             `json:"versionId"`
+	NoteID        string                             `json:"noteId"`
+	PackageDir    string                             `json:"packageDir"`
+	CommitName    string                             `json:"commitName"`
+	CreatedAtMs   float64                            `json:"createdAtMs"`
+	ContentHash   string                             `json:"contentHash"`
+	Manifest      noteManifest                       `json:"manifest"`
+	Faces         map[string]noteVersionFaceSnapshot `json:"faces"`
 }
 
 type refRelationEdge struct {
@@ -121,6 +150,11 @@ type assetItem struct {
 	UploadedAtMs float64  `json:"uploadedAtMs"`
 	UpdatedAtMs  float64  `json:"updatedAtMs"`
 	ModifiedMs   float64  `json:"modifiedMs"`
+}
+
+type assetPoolPage struct {
+	Items []assetItem `json:"items"`
+	Total int         `json:"total"`
 }
 
 type trashItem struct {

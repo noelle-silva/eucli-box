@@ -14,9 +14,9 @@ import (
 // runSearchNotes 搜索笔记：关键词、匹配维度、面类型、收藏夹范围、更新时间范围与分页
 // 都是同一个接口的参数；未提供关键词时按更新时间倒序列出笔记。
 func runSearchNotes(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
-	s, err := openSession(input)
+	s, err := openSession(input, actionSearchNotes)
 	if err != nil {
-		return failure("open hypercortex_reader session", err, nil)
+		return failure("open hypercortex_reader session", err, actionSearchNotes, "", nil)
 	}
 	query, err := stringArg(input, "query", false)
 	if err != nil {
@@ -70,8 +70,11 @@ func runSearchNotes(ctx context.Context, input types.ToolExecutionInput) types.T
 	}
 
 	facts := []resultFact{intFact("count", len(result.Items))}
-	if kinds := faceKindNames(result.Kinds); len(kinds) > 0 {
-		facts = append(facts, textFact("faceKinds", strings.Join(kinds, ",")))
+	// 信息条回显本次实际生效的面类型筛选；未筛选时给可选项清单，二者都是真话。
+	if applied := nonEmptyStrings(result.AppliedFaceKinds); len(applied) > 0 {
+		facts = append(facts, textFact("faceKinds", strings.Join(applied, ",")))
+	} else if kinds := faceKindNames(result.Kinds); len(kinds) > 0 {
+		facts = append(facts, textFact("searchableKinds", strings.Join(kinds, ",")))
 	}
 	if limit > 0 && len(result.Items) == limit {
 		facts = append(facts, intFact("nextOffset", offset+len(result.Items)))
@@ -92,9 +95,9 @@ func runSearchNotes(ctx context.Context, input types.ToolExecutionInput) types.T
 // runReadNote 读取某篇笔记：笔记自身信息与全部面的正文；
 // 支持按行续读：offset 为 1 基全局行号（跨面连续），limit 为本次最多返回的行数。
 func runReadNote(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
-	s, err := openSession(input)
+	s, err := openSession(input, actionReadNote)
 	if err != nil {
-		return failure("open hypercortex_reader session", err, nil)
+		return failure("open hypercortex_reader session", err, actionReadNote, "", nil)
 	}
 	dir, err := stringArg(input, "dir", true)
 	if err != nil {
@@ -119,11 +122,11 @@ func runReadNote(ctx context.Context, input types.ToolExecutionInput) types.Tool
 	}
 	manifestRaw, err := s.client.call(ctx, "hypercortex.notes.loadManifest", map[string]any{"packageDir": dir})
 	if err != nil {
-		return s.fail("read note manifest", err, map[string]any{"dir": dir})
+		return s.fail("read note", err, map[string]any{"dir": dir})
 	}
 	var manifest noteManifest
 	if err := json.Unmarshal(manifestRaw, &manifest); err != nil {
-		return s.fail("decode note manifest", err, map[string]any{"dir": dir})
+		return s.fail("decode note", err, map[string]any{"dir": dir})
 	}
 	faceIDs := orderedFaceIDs(manifest)
 	docs := make([]noteFaceDoc, 0, len(faceIDs))
@@ -164,9 +167,9 @@ func runReadNote(ctx context.Context, input types.ToolExecutionInput) types.Tool
 // runNoteRelations 查看引用 / 被引用关系：关注笔记、半径与方向都是同一个接口的参数；
 // 大图可用 section（nodes / edges）单独翻节点表或边表，配合 limit / offset 分段读取。
 func runNoteRelations(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
-	s, err := openSession(input)
+	s, err := openSession(input, actionNoteRelations)
 	if err != nil {
-		return failure("open hypercortex_reader session", err, nil)
+		return failure("open hypercortex_reader session", err, actionNoteRelations, "", nil)
 	}
 	noteID, err := stringArg(input, "noteId", true)
 	if err != nil {

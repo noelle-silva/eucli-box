@@ -1,5 +1,16 @@
 # 更新记录
 
+## 0.1.2 - 2026-09-30
+
+- `search_notes` 信息条修正：`faceKinds` 回显本次实际生效的筛选值（此前误回显默认可搜类型）；未筛选时改给 `searchableKinds` 可选项清单。
+- 新增 `list_versions` / `read_version`：版本快照可列出、可读回（与 `read_note` 同一套行流与续读机制），版本闭环完整。
+- `list_assets` 支持 `limit` / `offset` 分页续读：信息条回 `count` / `total` / `nextOffset`，不再只能靠截断。
+- `search_assets` 信息条新增 `total`（命中总数，与窗口无关）。
+- 失败结果同样带信息条：含动作、仓库、出错对象标识（`dir` / `noteId` / `faceId`）与机器可读错误码 `code`。
+- 未知参数快速失败（不静默忽略）；后端错误码经响应信封透传。
+- `list_trash` 文案注明：恢复需在 HyperCortex 界面侧的回收站操作。
+- 文档补充：HTML 面正文不参与搜索；空面不输出段落头（面计数以信息条为准）。
+
 ## 0.1.1 - 2026-09-30
 
 - read_note 的面段落头附带面设置（如有）：写入工具设置的面设置可在此读回验证。

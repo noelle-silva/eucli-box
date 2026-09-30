@@ -12,9 +12,9 @@ import (
 // runSearchAssets 搜索附件：文本维度、类型、大小、更新时间范围与分页都是同一个接口的参数；
 // 未提供关键词时按过滤条件列出附件（按更新时间倒序）。
 func runSearchAssets(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
-	s, err := openSession(input)
+	s, err := openSession(input, actionSearchAssets)
 	if err != nil {
-		return failure("open hypercortex_reader session", err, nil)
+		return failure("open hypercortex_reader session", err, actionSearchAssets, "", nil)
 	}
 	query, err := stringArg(input, "query", false)
 	if err != nil {
@@ -67,49 +67,75 @@ func runSearchAssets(ctx context.Context, input types.ToolExecutionInput) types.
 	if err != nil {
 		return s.fail("search assets", err, queryMetadata(query))
 	}
-	items, err := decodeAssetItems(raw)
-	if err != nil {
+	var page assetPoolPage
+	if err := json.Unmarshal(raw, &page); err != nil {
 		return s.fail("decode assets result", err, nil)
 	}
 
-	facts := []resultFact{intFact("count", len(items))}
-	if limit > 0 && len(items) == limit {
-		facts = append(facts, intFact("nextOffset", offset+len(items)))
+	facts := []resultFact{intFact("count", len(page.Items)), intFact("total", page.Total)}
+	if limit > 0 && offset+len(page.Items) < page.Total {
+		facts = append(facts, intFact("nextOffset", offset+len(page.Items)))
 	}
-	metadata := map[string]any{"count": len(items)}
+	metadata := map[string]any{"count": len(page.Items), "total": page.Total}
 	if limit > 0 {
 		metadata["limit"] = limit
 	}
 	if offset > 0 {
 		metadata["offset"] = offset
 	}
-	return s.succeed(actionSearchAssets, renderAssetItems(items, query), facts, metadata)
+	if limit > 0 && offset+len(page.Items) < page.Total {
+		metadata["nextOffset"] = offset + len(page.Items)
+	}
+	return s.succeed(actionSearchAssets, renderAssetItems(page.Items, query), facts, metadata)
 }
 
-// runListAssets 查看附件清单 / 信息：完整列出附件池的全部附件。
+// runListAssets 查看附件清单 / 信息：按修改时间倒序列出附件池，支持 limit / offset 分页续读。
 func runListAssets(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
-	s, err := openSession(input)
+	s, err := openSession(input, actionListAssets)
 	if err != nil {
-		return failure("open hypercortex_reader session", err, nil)
+		return failure("open hypercortex_reader session", err, actionListAssets, "", nil)
 	}
-	raw, err := s.client.call(ctx, "hypercortex.assets.list", map[string]any{})
+	limit, err := intArg(input, "limit")
+	if err != nil {
+		return s.fail("parse list_assets request", err, nil)
+	}
+	if _, provided := argumentValue(input, "limit"); provided && limit < 1 {
+		return s.fail("parse list_assets request", fmt.Errorf("argument \"limit\" must be greater than zero"), nil)
+	}
+	offset, err := intArg(input, "offset")
+	if err != nil {
+		return s.fail("parse list_assets request", err, nil)
+	}
+	if _, provided := argumentValue(input, "offset"); provided && offset < 0 {
+		return s.fail("parse list_assets request", fmt.Errorf("argument \"offset\" must not be negative"), nil)
+	}
+
+	params := map[string]any{}
+	setInt(params, "limit", limit)
+	setInt(params, "offset", offset)
+	raw, err := s.client.call(ctx, "hypercortex.assets.listPage", params)
 	if err != nil {
 		return s.fail("list assets", err, nil)
 	}
-	items, err := decodeAssetItems(raw)
-	if err != nil {
+	var page assetPoolPage
+	if err := json.Unmarshal(raw, &page); err != nil {
 		return s.fail("decode assets result", err, nil)
 	}
-	facts := []resultFact{intFact("count", len(items))}
-	return s.succeed(actionListAssets, renderAssetItems(items, ""), facts, map[string]any{"count": len(items)})
-}
-
-func decodeAssetItems(raw json.RawMessage) ([]assetItem, error) {
-	items := []assetItem{}
-	if err := json.Unmarshal(raw, &items); err != nil {
-		return nil, err
+	facts := []resultFact{intFact("count", len(page.Items)), intFact("total", page.Total)}
+	if limit > 0 && offset+len(page.Items) < page.Total {
+		facts = append(facts, intFact("nextOffset", offset+len(page.Items)))
 	}
-	return items, nil
+	metadata := map[string]any{"count": len(page.Items), "total": page.Total}
+	if limit > 0 {
+		metadata["limit"] = limit
+	}
+	if offset > 0 {
+		metadata["offset"] = offset
+	}
+	if limit > 0 && offset+len(page.Items) < page.Total {
+		metadata["nextOffset"] = offset + len(page.Items)
+	}
+	return s.succeed(actionListAssets, renderAssetItems(page.Items, ""), facts, metadata)
 }
 
 func renderAssetItems(items []assetItem, query string) string {

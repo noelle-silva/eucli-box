@@ -11,9 +11,9 @@ import (
 
 // runListFavorites 查看收藏夹结构与其内容。
 func runListFavorites(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
-	s, err := openSession(input)
+	s, err := openSession(input, actionListFavorites)
 	if err != nil {
-		return failure("open hypercortex_reader session", err, nil)
+		return failure("open hypercortex_reader session", err, actionListFavorites, "", nil)
 	}
 	raw, err := s.client.call(ctx, "hypercortex.favorites.tryLoad", map[string]any{})
 	if err != nil {
@@ -34,9 +34,9 @@ func runListFavorites(ctx context.Context, input types.ToolExecutionInput) types
 
 // runListTrash 查看回收站（只读）。
 func runListTrash(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {
-	s, err := openSession(input)
+	s, err := openSession(input, actionListTrash)
 	if err != nil {
-		return failure("open hypercortex_reader session", err, nil)
+		return failure("open hypercortex_reader session", err, actionListTrash, "", nil)
 	}
 	raw, err := s.client.call(ctx, "hypercortex.trash.list", map[string]any{})
 	if err != nil {
@@ -55,15 +55,15 @@ func runListTrash(ctx context.Context, input types.ToolExecutionInput) types.Too
 func runListRepos(input types.ToolExecutionInput) types.ToolExecutionOutput {
 	config, err := loadConfig(input.ToolBodyDirectory)
 	if err != nil {
-		return failure("load hypercortex_reader config", err, nil)
+		return failure("load hypercortex_reader config", err, actionListRepos, "local", nil)
 	}
 	repos, err := loadRepoConfig(input)
 	if err != nil {
-		return failure("load repository configuration", err, nil)
+		return failure("load repository configuration", err, actionListRepos, "local", nil)
 	}
 	maxOutput, err := effectiveMaxOutputChars(input, config)
 	if err != nil {
-		return failure("load hypercortex_reader config", err, nil)
+		return failure("load hypercortex_reader config", err, actionListRepos, "local", nil)
 	}
 	facts := []resultFact{intFact("count", len(repos.Repos)), textFact("default", repos.DefaultRepo)}
 	content, _ := composeContent(renderRepos(repos), actionListRepos, "local", facts, maxOutput)

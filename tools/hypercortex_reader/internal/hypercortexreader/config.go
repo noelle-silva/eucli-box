@@ -181,7 +181,7 @@ func (config repoConfig) resolve(selector string) (repoEntry, error) {
 	for _, entry := range config.Repos {
 		available = append(available, entry.ID)
 	}
-	return repoEntry{}, fmt.Errorf("未注册的仓库：%s（已注册：%s）", id, strings.Join(available, "、"))
+	return repoEntry{}, coded(codeRepoNotRegistered, "未注册的仓库：%s（已注册：%s）", id, strings.Join(available, "、"))
 }
 
 func repoConfigError(message string) error {

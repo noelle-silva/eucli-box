@@ -22,20 +22,21 @@ type recordedCall struct {
 
 // fixture 是测试用的假 HyperCortex 外部访问服务与工具配置目录。
 type fixture struct {
-	t          *testing.T
-	dir        string
-	server     *httptest.Server
-	mu         sync.Mutex
-	calls      []recordedCall
-	authHeads  []string
-	responses  map[string][]any
-	failures   map[string]string
-	userConfig map[string]any
+	t            *testing.T
+	dir          string
+	server       *httptest.Server
+	mu           sync.Mutex
+	calls        []recordedCall
+	authHeads    []string
+	responses    map[string][]any
+	failures     map[string]string
+	failureCodes map[string]string
+	userConfig   map[string]any
 }
 
 func newFixture(t *testing.T, responses map[string][]any) *fixture {
 	t.Helper()
-	f := &fixture{t: t, responses: responses, failures: map[string]string{}}
+	f := &fixture{t: t, responses: responses, failures: map[string]string{}, failureCodes: map[string]string{}}
 	f.dir = t.TempDir()
 	writeFixtureFile(t, filepath.Join(f.dir, "config.json"), `{"limits":{"maxOutputChars":50000}}`)
 	f.server = httptest.NewServer(http.HandlerFunc(f.handle))
@@ -65,6 +66,7 @@ func (f *fixture) handle(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	f.mu.Lock()
 	message, failed := f.failures[frame.Method]
+	code := f.failureCodes[frame.Method]
 	queue := f.responses[frame.Method]
 	hasResult := len(queue) > 0
 	var result any
@@ -74,7 +76,11 @@ func (f *fixture) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	f.mu.Unlock()
 	if failed {
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": map[string]any{"message": message}})
+		payload := map[string]any{"message": message}
+		if strings.TrimSpace(code) != "" {
+			payload["code"] = code
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": payload})
 		return
 	}
 	if !hasResult {
@@ -187,7 +193,8 @@ func TestExecuteListReposStaysLocalAndHidesKeys(t *testing.T) {
 func TestExecuteSearchNotesSendsParametersWithoutScope(t *testing.T) {
 	f := newFixture(t, map[string][]any{
 		"hypercortex.search.query": {map[string]any{
-			"kinds": []any{map[string]any{"kind": "markdown", "label": "文本"}},
+			"kinds":             []any{map[string]any{"kind": "markdown", "label": "文本"}},
+			"appliedFaceKinds":  []any{},
 			"items": []any{map[string]any{
 				"noteId":      "note-1",
 				"title":       "标题甲",
@@ -211,7 +218,7 @@ func TestExecuteSearchNotesSendsParametersWithoutScope(t *testing.T) {
 	}))
 
 	requireSuccess(t, result)
-	for _, fragment := range []string{"note-1", "标题甲", "Notes/2026-09/note-1", "updatedAtMs=2000", "命中片段", "faceKinds=markdown", "nextOffset=1"} {
+	for _, fragment := range []string{"note-1", "标题甲", "Notes/2026-09/note-1", "updatedAtMs=2000", "命中片段", "searchableKinds=markdown", "nextOffset=1"} {
 		if !strings.Contains(result.Content, fragment) {
 			t.Fatalf("content %q missing %q", result.Content, fragment)
 		}
@@ -536,7 +543,7 @@ func TestExecuteNoteRelationsSectionPagination(t *testing.T) {
 }
 
 func TestExecuteRepoSelectionUsesEntryKey(t *testing.T) {
-	f := newFixture(t, map[string][]any{"hypercortex.assets.list": {[]any{}}})
+	f := newFixture(t, map[string][]any{"hypercortex.assets.listPage": {map[string]any{"items": []any{}, "total": 0}}})
 	f.setRepos(twoReposJSON(f.server.URL))
 
 	result := execute(t, f.input(map[string]any{"action": "list_assets", "repo": "work"}))
@@ -571,8 +578,8 @@ func TestExecuteMissingRepoConfigFails(t *testing.T) {
 }
 
 func TestExecuteBackendErrorFails(t *testing.T) {
-	f := newFixture(t, map[string][]any{"hypercortex.assets.list": {}})
-	f.failures["hypercortex.assets.list"] = "该访问密钥只能访问绑定仓库，不能访问其他仓库"
+	f := newFixture(t, map[string][]any{"hypercortex.assets.listPage": {}})
+	f.failures["hypercortex.assets.listPage"] = "该访问密钥只能访问绑定仓库，不能访问其他仓库"
 	f.setRepos(twoReposJSON(f.server.URL))
 
 	result := execute(t, f.input(map[string]any{"action": "list_assets"}))
@@ -731,7 +738,7 @@ func TestExecuteListFavoritesHandlesUninitialized(t *testing.T) {
 
 func TestExecuteSearchAssetsSendsFilters(t *testing.T) {
 	f := newFixture(t, map[string][]any{
-		"hypercortex.search.queryAssets": {[]any{map[string]any{
+		"hypercortex.search.queryAssets": {map[string]any{"items": []any{map[string]any{
 			"relPath":     "Assets/images/2026-09/a.png",
 			"name":        "a.png",
 			"assetId":     "a",
@@ -743,7 +750,7 @@ func TestExecuteSearchAssetsSendsFilters(t *testing.T) {
 			"remark":      "备注",
 			"size":        2048,
 			"updatedAtMs": 4000,
-		}}},
+		}}, "total": 1}},
 	})
 	f.setRepos(twoReposJSON(f.server.URL))
 
@@ -755,7 +762,7 @@ func TestExecuteSearchAssetsSendsFilters(t *testing.T) {
 	}))
 
 	requireSuccess(t, result)
-	for _, fragment := range []string{"参考图", "a.png", "2.0 KB", "Assets/images/2026-09/a.png", "标签：设计"} {
+	for _, fragment := range []string{"参考图", "a.png", "2.0 KB", "Assets/images/2026-09/a.png", "标签：设计", "total=1"} {
 		if !strings.Contains(result.Content, fragment) {
 			t.Fatalf("content %q missing %q", result.Content, fragment)
 		}
@@ -771,7 +778,7 @@ func TestExecuteSearchAssetsSendsFilters(t *testing.T) {
 
 func TestExecuteListAssetsAndTrash(t *testing.T) {
 	f := newFixture(t, map[string][]any{
-		"hypercortex.assets.list": {[]any{map[string]any{"name": "b.pdf", "assetId": "b", "ext": "pdf", "kind": "document", "size": 100, "updatedAtMs": 5000}}},
+		"hypercortex.assets.listPage": {map[string]any{"items": []any{map[string]any{"name": "b.pdf", "assetId": "b", "ext": "pdf", "kind": "document", "size": 100, "updatedAtMs": 5000}}, "total": 1}},
 		"hypercortex.trash.list": {[]any{
 			map[string]any{"kind": "note", "id": "note-9", "title": "已删笔记", "deletedAtMs": 6000, "originalDir": "Notes/2026-09/note-9"},
 			map[string]any{"kind": "asset", "id": "c.png", "title": "已删附件", "deletedAtMs": 7000},
@@ -795,4 +802,133 @@ func TestExecuteListAssetsAndTrash(t *testing.T) {
 	if trash.Metadata["count"] != 2 {
 		t.Fatalf("metadata = %#v", trash.Metadata)
 	}
+}
+
+// list_assets 分页：limit/offset 真实生效，信息条给 count/total/nextOffset。
+func TestExecuteListAssetsPagination(t *testing.T) {
+	f := newFixture(t, map[string][]any{
+		"hypercortex.assets.listPage": {map[string]any{
+			"items": []any{map[string]any{"name": "b.pdf", "assetId": "b", "ext": "pdf", "kind": "document", "size": 100, "updatedAtMs": 5000}},
+			"total": 3,
+		}},
+	})
+	f.setRepos(twoReposJSON(f.server.URL))
+
+	result := execute(t, f.input(map[string]any{"action": "list_assets", "limit": 1, "offset": 0}))
+
+	requireSuccess(t, result)
+	for _, fragment := range []string{"count=1", "total=3", "nextOffset=1"} {
+		if !strings.Contains(result.Content, fragment) {
+			t.Fatalf("content %q missing %q", result.Content, fragment)
+		}
+	}
+	params := f.callList()[0].Params
+	if params["limit"] != float64(1) {
+		t.Fatalf("params = %#v", params)
+	}
+}
+
+// 未知参数快速失败：杜绝「传了但没生效」的静默忽略。
+func TestExecuteRejectsUnknownArguments(t *testing.T) {
+	f := newFixture(t, nil)
+	f.setRepos(twoReposJSON(f.server.URL))
+
+	result := execute(t, f.input(map[string]any{"action": "list_assets", "bogus": 1}))
+
+	requireFailure(t, result, "unknown argument")
+	if calls := f.callList(); len(calls) != 0 {
+		t.Fatalf("calls = %#v", calls)
+	}
+}
+
+// 失败输出同样带信息条（动作、仓库与错误码）。
+func TestExecuteFailureCarriesEnvelope(t *testing.T) {
+	f := newFixture(t, map[string][]any{"hypercortex.notes.loadManifest": {}})
+	f.failures["hypercortex.notes.loadManifest"] = "笔记不存在：Notes/2026-09/ghost"
+	f.setRepos(twoReposJSON(f.server.URL))
+
+	result := execute(t, f.input(map[string]any{"action": "read_note", "dir": "Notes/2026-09/ghost"}))
+
+	requireFailure(t, result, "笔记不存在")
+	for _, fragment := range []string{"[hypercortex_reader]", "action=read_note", "repo=notes", "dir=Notes/2026-09/ghost"} {
+		if !strings.Contains(result.Content, fragment) {
+			t.Fatalf("content %q missing %q", result.Content, fragment)
+		}
+	}
+}
+
+// 后端错误信封的错误码原样透传到失败信息条。
+func TestExecuteFailureCarriesBackendCode(t *testing.T) {
+	f := newFixture(t, nil)
+	f.setRepos(twoReposJSON(f.server.URL))
+	f.mu.Lock()
+	f.failures["hypercortex.notes.loadManifest"] = "笔记版本不匹配：期望版本 1，当前版本 2"
+	f.failureCodes["hypercortex.notes.loadManifest"] = "VERSION_CONFLICT"
+	f.mu.Unlock()
+
+	result := execute(t, f.input(map[string]any{"action": "read_note", "dir": "Notes/2026-09/note-1"}))
+
+	requireFailure(t, result, "版本不匹配")
+	if !strings.Contains(result.Content, "code=VERSION_CONFLICT") {
+		t.Fatalf("content = %q", result.Content)
+	}
+	if result.Metadata["code"] != "VERSION_CONFLICT" {
+		t.Fatalf("metadata = %#v", result.Metadata)
+	}
+}
+
+// list_versions / read_version：版本快照可列出、可读回，版本闭环完整。
+func TestExecuteListAndReadVersions(t *testing.T) {
+	snapshot := map[string]any{
+		"schemaVersion": 1,
+		"versionId":     "v_20260930_065427_000_73bb483f",
+		"noteId":        "note-1",
+		"packageDir":    "Notes/2026-09/note-1",
+		"commitName":    "初稿",
+		"createdAtMs":   1700,
+		"contentHash":   "hash",
+		"manifest": map[string]any{
+			"schemaVersion": 2,
+			"id":            "note-1",
+			"title":         "标题甲",
+			"faceOrder":     []any{"text"},
+			"faces":         map[string]any{"text": map[string]any{"id": "text", "kind": "markdown", "title": "文本", "file": "text.md"}},
+		},
+		"faces": map[string]any{
+			"text": map[string]any{
+				"manifest": map[string]any{"id": "text", "kind": "markdown", "title": "文本", "file": "text.md", "settings": map[string]any{"displayMode": "natural"}},
+				"content":  "版本正文",
+			},
+		},
+	}
+	f := newFixture(t, map[string][]any{
+		"hypercortex.notes.versions.list": {[]any{map[string]any{
+			"versionId":   "v_20260930_065427_000_73bb483f",
+			"commitName":  "初稿",
+			"createdAtMs": 1700,
+			"title":       "标题甲",
+			"faceIds":     []any{"text"},
+		}}},
+		"hypercortex.notes.versions.load": {snapshot},
+	})
+	f.setRepos(twoReposJSON(f.server.URL))
+
+	list := execute(t, f.input(map[string]any{"action": "list_versions", "dir": "Notes/2026-09/note-1"}))
+	requireSuccess(t, list)
+	for _, fragment := range []string{"v_20260930_065427_000_73bb483f", "初稿", "count=1", "latest=v_20260930_065427_000_73bb483f"} {
+		if !strings.Contains(list.Content, fragment) {
+			t.Fatalf("list content %q missing %q", list.Content, fragment)
+		}
+	}
+
+	read := execute(t, f.input(map[string]any{"action": "read_version", "dir": "Notes/2026-09/note-1", "versionId": "v_20260930_065427_000_73bb483f"}))
+	requireSuccess(t, read)
+	for _, fragment := range []string{"版本快照：标题甲", "版本 id：v_20260930_065427_000_73bb483f", "提交名：初稿", "版本正文", "设置：displayMode=natural"} {
+		if !strings.Contains(read.Content, fragment) {
+			t.Fatalf("read content %q missing %q", read.Content, fragment)
+		}
+	}
+
+	missing := execute(t, f.input(map[string]any{"action": "read_version", "dir": "Notes/2026-09/note-1"}))
+	requireFailure(t, missing, "versionId")
 }

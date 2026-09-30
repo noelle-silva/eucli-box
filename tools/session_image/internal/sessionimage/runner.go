@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"eucli-box/pkg/toolcontrol"
@@ -27,6 +28,9 @@ func Execute(ctx context.Context, input types.ToolExecutionInput, session Sessio
 	imageID := strings.TrimSpace(stringValue(input.Arguments["imageId"]))
 	if imageID == "" {
 		return failure("parse session_image request", errors.New("imageId is required"), nil)
+	}
+	if err := validateAttachmentID(imageID); err != nil {
+		return failure("parse session_image request", err, nil)
 	}
 	service, err := sessionServiceOrFail(session)
 	if err != nil {
@@ -53,6 +57,21 @@ func Execute(ctx context.Context, input types.ToolExecutionInput, session Sessio
 	}
 	content := fmt.Sprintf("已把会话图片 %s（id: %s）引用到本次回复中。", name, info.ID)
 	return types.ToolExecutionOutput{Status: types.ToolStatusSuccess, Content: content, Metadata: map[string]any{"imageId": info.ID, "name": name}}
+}
+
+// attachmentIDPattern 是会话附件 ID 的标准形态：att-<时间戳>-<序号>。
+var attachmentIDPattern = regexp.MustCompile(`^att-\d+-\d+$`)
+
+// validateAttachmentID 在本地校验附件 ID 形态：把「格式不合法」与
+// 「不存在」区分开，避免排查时朝错误方向走。
+func validateAttachmentID(imageID string) error {
+	if attachmentIDPattern.MatchString(imageID) {
+		return nil
+	}
+	if imageID != strings.ToLower(imageID) {
+		return fmt.Errorf("图片 ID 格式不合法: %s（ID 区分大小写，请使用清单中的原始小写 ID）", imageID)
+	}
+	return fmt.Errorf("图片 ID 格式不合法: %s（正确形态形如 att-1790722702891563400-6352，请核对是否完整）", imageID)
 }
 
 // sessionServiceOrFail 取会话能力服务；独立运行（无宿主控制通道）时明确失败。

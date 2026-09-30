@@ -125,7 +125,7 @@ func (c *capabilitySession) readSessionAttachments(ctx context.Context, payload 
 		}
 		attachment, ok := findSessionAttachment(session, attachmentID)
 		if !ok {
-			return capabilityFailed("会话附件不存在：" + attachmentID)
+			return capabilityFailed("会话附件不存在：" + attachmentID + "（请核对 ID 完整性与大小写）")
 		}
 		dataURL, err := c.storage.LoadSessionAttachmentImage(ctx, attachment.Path)
 		if err != nil {
@@ -229,7 +229,7 @@ func (c *capabilitySession) referenceSessionAttachment(ctx context.Context, payl
 	}
 	attachment, ok := findSessionAttachment(session, attachmentID)
 	if !ok {
-		return capabilityFailed("会话附件不存在：" + attachmentID)
+		return capabilityFailed("会话附件不存在：" + attachmentID + "（请核对 ID 完整性与大小写）")
 	}
 	c.mu.Lock()
 	c.produced = append(c.produced, attachment)

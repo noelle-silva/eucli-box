@@ -27,8 +27,15 @@ func numberFact(key string, value float64) resultFact {
 }
 
 // envelopeLine renders the fixed fact line that ends every result payload.
+// 空动作名与空仓库名不渲染，避免出现 `repo=` 这类无值字段。
 func envelopeLine(action string, repoID string, facts []resultFact) string {
-	parts := []string{"[hypercortex_writer]", "action=" + action, "repo=" + repoID}
+	parts := []string{"[hypercortex_writer]"}
+	if strings.TrimSpace(action) != "" {
+		parts = append(parts, "action="+action)
+	}
+	if strings.TrimSpace(repoID) != "" {
+		parts = append(parts, "repo="+repoID)
+	}
 	for _, fact := range facts {
 		if strings.TrimSpace(fact.Value) == "" {
 			continue

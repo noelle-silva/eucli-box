@@ -33,7 +33,7 @@ func TestToolManifestMatchesImplementedActions(t *testing.T) {
 	if err := json.Unmarshal(payload, &manifest); err != nil {
 		t.Fatalf("decode tool.json: %v", err)
 	}
-	if manifest.ID != "hypercortex_writer" || manifest.Version != "0.1.2" {
+	if manifest.ID != "hypercortex_writer" || manifest.Version != "0.1.3" {
 		t.Fatalf("manifest identity = %s/%s", manifest.ID, manifest.Version)
 	}
 	if strings.TrimSpace(manifest.PromptDescription) == "" {

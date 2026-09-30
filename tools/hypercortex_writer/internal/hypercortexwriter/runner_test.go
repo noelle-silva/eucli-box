@@ -197,7 +197,14 @@ func TestExecuteListFaceKindsRendersKinds(t *testing.T) {
 	f := newFixture(t, map[string][]any{
 		"hypercortex.notes.listFacePlugins": {[]any{
 			map[string]any{"kind": "markdown", "label": "文本", "defaultFaceId": "text", "defaultFileName": "text.md"},
-			map[string]any{"kind": "html", "label": "HTML", "defaultFaceId": "html", "defaultFileName": "html.html"},
+			map[string]any{"kind": "html", "label": "HTML", "defaultFaceId": "html", "defaultFileName": "html.html", "settings": []any{
+				map[string]any{"key": "displayMode", "kind": "enum", "label": "HTML 面显示方式", "default": "fixed-fit", "options": []any{
+					map[string]any{"value": "natural", "label": "自然撑开"},
+					map[string]any{"value": "fit-window", "label": "随窗口自适应"},
+					map[string]any{"value": "fixed-fit", "label": "固定视口缩放"},
+				}},
+				map[string]any{"key": "fixedScale", "kind": "number", "label": "HTML 面缩放比例", "default": 0.95, "min": 0.25, "max": 2, "step": 0.01},
+			}},
 		}},
 	})
 	f.setRepos(twoReposJSON(f.server.URL))
@@ -205,7 +212,13 @@ func TestExecuteListFaceKindsRendersKinds(t *testing.T) {
 	result := execute(t, f.input(map[string]any{"action": "list_face_kinds"}))
 
 	requireSuccess(t, result)
-	for _, fragment := range []string{"文本（markdown）", "HTML（html）", "默认面 id：text"} {
+	// 面类型的设置声明必须随清单给出：键名、类型、默认值与可选值，调用方无需猜测。
+	for _, fragment := range []string{
+		"文本（markdown）", "HTML（html）", "默认面 id：text",
+		"设置：无",
+		"设置项 displayMode（enum）", "默认 fixed-fit", "可选 natural/fit-window/fixed-fit",
+		"设置项 fixedScale（number）", "默认 0.95", "范围 0.25~2",
+	} {
 		if !strings.Contains(result.Content, fragment) {
 			t.Fatalf("content %q missing %q", result.Content, fragment)
 		}
@@ -747,16 +760,36 @@ func TestExecuteUnknownActionFailsFast(t *testing.T) {
 	requireFailure(t, result, "unsupported action")
 }
 
-// 未知参数快速失败：废弃的旧参数名（description）不再被静默接受。
+// 未知参数快速失败：不再静默接受（框架惯例的 description 属合法公共参数，不在此列）。
 func TestExecuteRejectsUnknownArguments(t *testing.T) {
 	f := newFixture(t, nil)
 	f.setRepos(twoReposJSON(f.server.URL))
 
-	result := execute(t, f.input(map[string]any{"action": "update_note_metadata", "dir": "d", "description": "旧参数名"}))
+	result := execute(t, f.input(map[string]any{"action": "update_note_metadata", "dir": "d", "summary": "未知参数"}))
 
 	requireFailure(t, result, "unknown argument")
 	if calls := f.callList(); len(calls) != 0 {
 		t.Fatalf("calls = %#v", calls)
+	}
+}
+
+// 框架惯例的「调用原因」description 被接受并记入结果元数据（与 shell_command 同款）。
+func TestExecuteAcceptsDescriptionConvention(t *testing.T) {
+	f := newFixture(t, map[string][]any{
+		"hypercortex.notes.updateMetadata": {map[string]any{"version": 2300, "changed": true}},
+	})
+	f.setRepos(twoReposJSON(f.server.URL))
+
+	result := execute(t, f.input(map[string]any{
+		"action":      "update_note_metadata",
+		"dir":         "d",
+		"title":       "新标题",
+		"description": "用户要求更新标题",
+	}))
+
+	requireSuccess(t, result)
+	if result.Metadata["description"] != "用户要求更新标题" {
+		t.Fatalf("metadata = %#v", result.Metadata)
 	}
 }
 

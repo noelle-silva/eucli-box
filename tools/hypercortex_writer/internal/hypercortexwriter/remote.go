@@ -4,10 +4,30 @@ package hypercortexwriter
 // 未知字段一律忽略（接口向前演进不应打断写入）。
 
 type faceKindInfo struct {
-	Kind            string `json:"kind"`
-	Label           string `json:"label"`
-	DefaultFaceID   string `json:"defaultFaceId"`
-	DefaultFileName string `json:"defaultFileName"`
+	Kind            string          `json:"kind"`
+	Label           string          `json:"label"`
+	DefaultFaceID   string          `json:"defaultFaceId"`
+	DefaultFileName string          `json:"defaultFileName"`
+	Settings        []faceSettingField `json:"settings"`
+}
+
+// faceSettingField 是面类型的一个设置项声明（键名、形态与默认值）。
+type faceSettingField struct {
+	Key     string              `json:"key"`
+	Kind    string              `json:"kind"`
+	Label   string              `json:"label"`
+	Default any                 `json:"default"`
+	Options []faceSettingOption `json:"options"`
+	Min     *float64            `json:"min"`
+	Max     *float64            `json:"max"`
+	Step    *float64            `json:"step"`
+}
+
+// faceSettingOption 是枚举设置项的一个可选值。
+type faceSettingOption struct {
+	Value       string `json:"value"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
 }
 
 type noteFaceManifest struct {

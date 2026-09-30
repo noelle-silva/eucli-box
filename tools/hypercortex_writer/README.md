@@ -24,12 +24,12 @@
 
 ### 笔记
 
-- `list_face_kinds`：列出可用于新建笔记的面类型清单。
+- `list_face_kinds`：列出可用于新建笔记的面类型清单；每个面类型附带设置声明（键名、类型、默认值、枚举可选值与数值范围），`save_face_settings` 的合法键名直接从这里取，无需猜测。
 - `create_note`：新建空笔记（标题必填，`noteDescription`、标签、面类型清单可选；非法面类型会直接报错）。
 - `write_note`：整篇写入一篇已有笔记（**不会创建新笔记**，笔记不存在会报错；新建请用 `create_note`；定位笔记、标题必填；`faces` 提交要写的面内容，未提交的面保持不变；可补新面）。
 - `patch_face`：在某个面里精确替换一段文本（`newString` 为空串表示删除，`replaceAll` 可选）。
 - `save_face_order`：调整面顺序（未列出的面自动补齐）。
-- `save_face_settings`：以补丁语义改某个面的设置（值为 null 表示删除该设置项）；返回结果与信息条回显保存后该面的实际设置，可当场验证是否生效；不被该面协议支持的设置项会直接报错（不静默丢弃）。
+- `save_face_settings`：以补丁语义改某个面的设置（值为 null 表示删除该设置项）；返回结果与信息条回显保存后该面的实际设置，可当场验证是否生效；不被该面协议支持的设置项会直接报错（不静默丢弃）。**读取面设置**：传空补丁 `settings={}` 即可探读当前设置——不写盘、不推进版本，回显照常给出。
 - `delete_face`：删面（缺省移入回收站，`permanent` 永久删除）；回收站中的面需在 HyperCortex 界面侧的回收站恢复，工具集不提供恢复动作。
 - `publish_version`：为笔记当前内容发布具名版本快照；快照可用读工具的 `list_versions` / `read_version` 列出与读回。
 - `update_note_metadata`：改笔记的标题 / 简介 / 标签（只改提交的字段；简介参数为 `noteDescription`）。
@@ -55,7 +55,7 @@
 
 - 每次返回（成功与失败）的正文末尾都有一条 `[hypercortex_writer]` 信息条，说明本次调用的关键事实（仓库、动作、编号、版本、条数等）；信息条不计入输出上限、永久完整。
 - 失败信息条携带出错对象标识（`dir` / `noteId` / `faceId` / `folderId`）与机器可读的错误码 `code`（如 `VERSION_CONFLICT`、`UNKNOWN_FACE_KIND`、`DUPLICATE_FAVORITE`、`PATH_ESCAPE`）；文案可改，码不变，便于程序化区分错误类型。
-- 未知参数会直接报错，不会被静默忽略（包括已废弃的旧参数名，如 `description`）。
+- 未知参数会直接报错，不会被静默忽略；框架惯例的「调用原因」`description` 被接受并记录到结果元数据（不参与业务，与 `shell_command` 等同款）。
 - 正文超出上限时按行边界截断（仅当首行本身就超上限时才按字符切），信息条标注 `truncated=true`。
 - 正文上限由随包 `config.json` 声明，可在工具用户配置里下调；每次调用还可用可选入参 `maxOutputChars` 再下调（不能突破配置上限）。
 - 防覆盖保险丝 `expectedVersion` 是可选参数：不传则不校验；传了才会在版本不一致时拒绝写入。

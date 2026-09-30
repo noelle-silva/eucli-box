@@ -228,7 +228,8 @@ func runPublishVersion(ctx context.Context, input types.ToolExecutionInput) type
 	return s.succeed(actionPublishVersion, renderPublishVersion(dir, summary), facts, metadata)
 }
 
-// renderFaceKinds 渲染面类型清单。
+// renderFaceKinds 渲染面类型清单：每个面类型附带其设置声明（键名、类型与默认值），
+// 调用方无需猜测合法设置项，save_face_settings 的正向路径可由此闭环。
 func renderFaceKinds(kinds []faceKindInfo) string {
 	var builder strings.Builder
 	builder.WriteString("## 可用面类型\n\n")
@@ -246,8 +247,39 @@ func renderFaceKinds(kinds []faceKindInfo) string {
 			fmt.Fprintf(&builder, " ｜ 默认面 id：%s", kind.DefaultFaceID)
 		}
 		builder.WriteString("\n")
+		if len(kind.Settings) == 0 {
+			builder.WriteString("  设置：无\n")
+			continue
+		}
+		for _, field := range kind.Settings {
+			fmt.Fprintf(&builder, "  设置项 %s（%s）：%s；默认 %s", field.Key, field.Kind, firstNonEmpty(field.Label, field.Key), settingDefaultText(field))
+			if field.Kind == "enum" && len(field.Options) > 0 {
+				values := make([]string, 0, len(field.Options))
+				for _, option := range field.Options {
+					values = append(values, option.Value)
+				}
+				fmt.Fprintf(&builder, "；可选 %s", strings.Join(values, "/"))
+			}
+			if field.Kind == "number" && field.Min != nil && field.Max != nil {
+				fmt.Fprintf(&builder, "；范围 %s~%s", numberText(*field.Min), numberText(*field.Max))
+			}
+			builder.WriteString("\n")
+		}
 	}
 	return builder.String()
+}
+
+// settingDefaultText 渲染设置项的默认值文本；无默认值时空串。
+func settingDefaultText(field faceSettingField) string {
+	if field.Default == nil {
+		return "（无）"
+	}
+	return settingValueText(field.Default)
+}
+
+// numberText 渲染数值：整数不带小数点，小数去尾零。
+func numberText(value float64) string {
+	return strconv.FormatFloat(value, 'f', -1, 64)
 }
 
 // renderFaceOrder 渲染面排序结果。

@@ -81,8 +81,9 @@ var actionArgumentNames = map[string][]string{
 	actionReadVersion:   {"dir", "versionId", "offset", "limit"},
 }
 
-// commonArgumentNames 是全部动作共用的参数名（含框架级超时预算）。
-var commonArgumentNames = []string{"action", "repo", "maxOutputChars", "timeoutMs"}
+// commonArgumentNames 是全部动作共用的参数名：含框架惯例的「调用原因」description
+// （与 shell_command / context7 等同款，只记录不参与业务）与框架级超时预算。
+var commonArgumentNames = []string{"action", "repo", "maxOutputChars", "timeoutMs", "description"}
 
 // validateArguments 校验本次调用参数都在该动作允许的清单内；未知参数快速失败并逐个点名。
 func validateArguments(input types.ToolExecutionInput, action string) error {
@@ -108,10 +109,11 @@ func validateArguments(input types.ToolExecutionInput, action string) error {
 
 // session 是一次动作执行的公共装配：解析后的仓库条目、对外客户端、输出上限与动作名。
 type session struct {
-	entry     repoEntry
-	client    *rpcClient
-	maxOutput int
-	action    string
+	entry       repoEntry
+	client      *rpcClient
+	maxOutput   int
+	action      string
+	description string
 }
 
 // openSession 装配一次动作执行：装载配置、解析仓库并建立客户端；
@@ -141,7 +143,12 @@ func openSession(input types.ToolExecutionInput, action string) (session, error)
 	if err != nil {
 		return session{}, err
 	}
-	return session{entry: entry, client: client, maxOutput: maxOutput, action: action}, nil
+	// 框架惯例的「调用原因」只记录不参与业务：接受它并原样放进结果元数据。
+	description, err := stringArg(input, "description", false)
+	if err != nil {
+		return session{}, err
+	}
+	return session{entry: entry, client: client, maxOutput: maxOutput, action: action, description: description}, nil
 }
 
 // succeed 组合正文与信息条，并返回成功输出。
@@ -154,6 +161,9 @@ func (s session) succeed(action string, payload string, facts []resultFact, meta
 	metadata["repo"] = s.entry.ID
 	if s.entry.Description != "" {
 		metadata["repoDescription"] = s.entry.Description
+	}
+	if s.description != "" {
+		metadata["description"] = s.description
 	}
 	if truncated {
 		metadata["truncated"] = true

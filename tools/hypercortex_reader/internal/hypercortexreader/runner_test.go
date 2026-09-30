@@ -193,8 +193,9 @@ func TestExecuteListReposStaysLocalAndHidesKeys(t *testing.T) {
 func TestExecuteSearchNotesSendsParametersWithoutScope(t *testing.T) {
 	f := newFixture(t, map[string][]any{
 		"hypercortex.search.query": {map[string]any{
-			"kinds":             []any{map[string]any{"kind": "markdown", "label": "文本"}},
-			"appliedFaceKinds":  []any{},
+			"kinds":            []any{map[string]any{"kind": "markdown", "label": "文本"}},
+			"appliedFaceKinds": []any{},
+			"total":            2,
 			"items": []any{map[string]any{
 				"noteId":      "note-1",
 				"title":       "标题甲",

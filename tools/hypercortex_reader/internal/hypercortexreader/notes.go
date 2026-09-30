@@ -69,22 +69,25 @@ func runSearchNotes(ctx context.Context, input types.ToolExecutionInput) types.T
 		return s.fail("decode search result", err, nil)
 	}
 
-	facts := []resultFact{intFact("count", len(result.Items))}
+	facts := []resultFact{intFact("count", len(result.Items)), intFact("total", result.Total)}
 	// 信息条回显本次实际生效的面类型筛选；未筛选时给可选项清单，二者都是真话。
 	if applied := nonEmptyStrings(result.AppliedFaceKinds); len(applied) > 0 {
 		facts = append(facts, textFact("faceKinds", strings.Join(applied, ",")))
 	} else if kinds := faceKindNames(result.Kinds); len(kinds) > 0 {
 		facts = append(facts, textFact("searchableKinds", strings.Join(kinds, ",")))
 	}
-	if limit > 0 && len(result.Items) == limit {
+	if limit > 0 && offset+len(result.Items) < result.Total {
 		facts = append(facts, intFact("nextOffset", offset+len(result.Items)))
 	}
-	metadata := map[string]any{"count": len(result.Items)}
+	metadata := map[string]any{"count": len(result.Items), "total": result.Total}
 	if limit > 0 {
 		metadata["limit"] = limit
 	}
 	if offset > 0 {
 		metadata["offset"] = offset
+	}
+	if limit > 0 && offset+len(result.Items) < result.Total {
+		metadata["nextOffset"] = offset + len(result.Items)
 	}
 	if folderID != "" {
 		metadata["folderId"] = folderID

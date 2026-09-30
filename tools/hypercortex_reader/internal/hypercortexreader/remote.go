@@ -29,6 +29,7 @@ type noteSearchHit struct {
 type noteSearchResult struct {
 	Kinds            []faceKindInfo  `json:"kinds"`
 	AppliedFaceKinds []string        `json:"appliedFaceKinds"`
+	Total            int             `json:"total"`
 	Items            []noteSearchHit `json:"items"`
 }
 

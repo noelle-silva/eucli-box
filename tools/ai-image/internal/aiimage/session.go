@@ -188,7 +188,7 @@ func findSessionImage(images []sessionImage, reference string) (sessionImage, er
 		}
 		return images[index-1], nil
 	}
-	return sessionImage{}, fmt.Errorf("会话图片不存在: %s", reference)
+	return sessionImage{}, fmt.Errorf("会话图片不存在: %s（可传附件 id 或 1 起始序号；id 区分大小写；可用 session_images 查看清单）", reference)
 }
 
 // runSessionImages 列出当前会话图片清单（序号、id、名称）。

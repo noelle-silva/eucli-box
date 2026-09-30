@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -32,7 +33,9 @@ func run() types.ToolExecutionOutput {
 	if err := decoder.Decode(&input); err != nil {
 		return failedOutput("failed to decode tool input", err)
 	}
-	executionCtx, cancel := toolcontrol.ExecutionContext(input.TimeoutMs)
+	// timeoutMs 的声明语义是生图请求时限，只在业务层作用于生图 HTTP 请求；
+	// 工具执行上下文保持可取消，绝不把该时限施加到控制通道与本地动作上。
+	executionCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if input.RequestKind == migrationRequestKind {
 		return runDataMigration(executionCtx, input)

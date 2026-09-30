@@ -94,7 +94,8 @@ func resolveProvider(config providerConfig, requested string) (providerEntry, er
 	return providerEntry{}, fmt.Errorf("运营商不存在: %s（可用: %s）", providerID, providerIDs(config))
 }
 
-// resolveModel 选定模型：参数优先，其次运营商的 defaultModel。
+// resolveModel 选定模型：参数优先，其次运营商的 defaultModel；
+// 运营商声明了 models 列表时，选定模型必须在列表中。
 func resolveModel(provider providerEntry, requested string) (string, error) {
 	model := strings.TrimSpace(requested)
 	if model == "" {
@@ -102,6 +103,9 @@ func resolveModel(provider providerEntry, requested string) (string, error) {
 	}
 	if model == "" {
 		return "", fmt.Errorf("运营商 %s 未指定默认模型，且调用未提供 model", provider.ID)
+	}
+	if len(provider.Models) > 0 && !containsString(provider.Models, model) {
+		return "", fmt.Errorf("模型 %q 不在运营商 %s 的 models 列表中（可用: %s）", model, provider.ID, strings.Join(provider.Models, ", "))
 	}
 	return model, nil
 }
@@ -269,46 +273,94 @@ func maskAPIKeys(value any) bool {
 	return masked
 }
 
-// restoreMaskedProviderKeys 用原配置里同一运营商的真实 Key 替换打码占位。
-func restoreMaskedProviderKeys(previous providerConfig, next providerConfig) (providerConfig, error) {
+// restoreProviderContent 是 providers.json 落盘前的统一凭据还原入口，
+// 与 maskProviderContent 在文档层对称：新内容不含打码值时原样返回
+// （保持整份写入的原文形态）；含打码值时按运营商 id 从磁盘原配置还原
+// 真实 Key，没有可还原的原配置时明确失败。
+func restoreProviderContent(root string, nextContent string) (string, error) {
+	var document any
+	if err := json.Unmarshal([]byte(nextContent), &document); err != nil {
+		return "", fmt.Errorf("providers.json 不是合法 JSON: %w", err)
+	}
+	if !containsMaskedAPIKeyValue(document) {
+		return nextContent, nil
+	}
+	previousContent, _, err := readConfigFile(root, providersFileName)
+	if err != nil {
+		return "", fmt.Errorf("原 providers.json 不可读，无法还原打码 apiKey，请提供明文 apiKey: %w", err)
+	}
+	var previous providerConfig
+	if err := decodeStrictJSON(previousContent, &previous); err != nil {
+		return "", fmt.Errorf("原 providers.json 不是合法配置，无法还原打码 apiKey，请提供明文 apiKey: %w", err)
+	}
 	previousKeys := map[string]string{}
 	for _, provider := range previous.Providers {
 		previousKeys[provider.ID] = provider.APIKey
 	}
-	for index := range next.Providers {
-		provider := &next.Providers[index]
-		if provider.APIKey != maskedAPIKey {
-			continue
-		}
-		key := previousKeys[provider.ID]
-		if key == "" {
-			return providerConfig{}, fmt.Errorf("运营商 %s 的 apiKey 使用了打码占位，但原配置中没有可保留的真实 Key", provider.ID)
-		}
-		provider.APIKey = key
-	}
-	return next, nil
-}
-
-// restoreMaskedProviderContent 在配置编辑后把打码占位还原为原真实 Key：
-// 原内容与编辑结果都以结构体解析，逐个运营商对应还原。
-func restoreMaskedProviderContent(previousContent string, nextContent string) (string, error) {
-	var previous providerConfig
-	if err := decodeStrictJSON(previousContent, &previous); err != nil {
-		return "", fmt.Errorf("原 providers.json 不是合法配置: %w", err)
-	}
-	var next providerConfig
-	if err := decodeStrictJSON(nextContent, &next); err != nil {
-		return "", fmt.Errorf("编辑后的 providers.json 不是合法配置: %w", err)
-	}
-	restored, err := restoreMaskedProviderKeys(previous, next)
-	if err != nil {
+	if err := restoreAPIKeyValues(document, previousKeys); err != nil {
 		return "", err
 	}
-	encoded, err := marshalCanonical(restored)
+	encoded, err := marshalCanonical(document)
 	if err != nil {
 		return "", err
 	}
 	return string(encoded), nil
+}
+
+// containsMaskedAPIKeyValue 判定 JSON 文档中是否存在打码占位的 apiKey 值。
+func containsMaskedAPIKeyValue(value any) bool {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, item := range typed {
+			if strings.EqualFold(strings.TrimSpace(key), "apiKey") {
+				if text, ok := item.(string); ok && text == maskedAPIKey {
+					return true
+				}
+			}
+			if containsMaskedAPIKeyValue(item) {
+				return true
+			}
+		}
+	case []any:
+		for _, item := range typed {
+			if containsMaskedAPIKeyValue(item) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// restoreAPIKeyValues 在 JSON 文档中把打码 apiKey 原位替换为同一运营商的
+// 原真实 Key。打码占位本身永远不是合法凭据：运营商缺失、原 Key 为空、
+// 或原值本身就是打码占位（历史损坏状态）时都明确拒绝，要求提供明文。
+func restoreAPIKeyValues(value any, previousKeys map[string]string) error {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, item := range typed {
+			if strings.EqualFold(strings.TrimSpace(key), "apiKey") {
+				if text, ok := item.(string); ok && text == maskedAPIKey {
+					providerID := strings.TrimSpace(stringValue(typed["id"]))
+					original := previousKeys[providerID]
+					if original == "" || original == maskedAPIKey {
+						return fmt.Errorf("运营商 %s 的 apiKey 使用了打码占位，但原配置中没有可保留的真实 Key，请提供明文 apiKey", providerID)
+					}
+					typed[key] = original
+					continue
+				}
+			}
+			if err := restoreAPIKeyValues(item, previousKeys); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for _, item := range typed {
+			if err := restoreAPIKeyValues(item, previousKeys); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // decodeStrictJSON 严格解析 JSON：拒绝未知字段与多余内容。

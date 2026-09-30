@@ -2,6 +2,7 @@
 
 ## 未发布
 
+- ai-image 修复：配置写入的凭据保护缺口（config_write 与 config_edit 统一收口到同一凭据还原机制，打码 apiKey 写盘前还原为原真实 Key，无原 Key 可还原时明确拒绝并提示明文，不再静默把打码占位落盘为密钥）；字段级编辑缺 file 参数返回明确提示；timeoutMs 只作用于生图请求、不再打穿控制通道；运营商声明 models 列表时默认模型与覆盖模型都必须在列表内；运营商请求失败保留 HTTP 状态码；会话图片引用失败提示可用形式与大小写敏感。
 - hypercortex_writer 修复参数撞名：笔记简介改为 `noteDescription`、收藏夹说明改为 `folderDescription`，不再与框架「调用原因」的 `description` 惯例冲突；`write_note` 增加防误建守卫（只更新已有笔记，不存在或归属不匹配时快速失败并提示改用 `create_note`）；非法面类型由静默丢弃改为报错；附件类型展示与读工具统一。
 - hypercortex_reader 补面设置输出（read_note 的面段落头附带该面的设置）与附件类型展示统一。
 - 新增 AI 工具 hypercortex_writer：HyperCortex 知识库写入工具，16 个写入动作（选面、新建笔记、整篇写入、精确改字、面顺序、面设置、删面、版本快照、改元数据、上传附件、改附件信息、收藏夹建夹 / 改夹 / 放入 / 移出 / 挪夹）；连接配置与读工具同款；修改动作统一支持防覆盖保险丝 expectedVersion；附件上传为同步动作，直接返回附件编号与引用标记。

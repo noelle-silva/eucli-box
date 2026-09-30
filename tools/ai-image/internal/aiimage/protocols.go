@@ -235,16 +235,17 @@ func doRequest(ctx context.Context, network networkrequest.System, method string
 	return network.Do(ctx, types.HTTPRequest{Method: method, URL: url, Headers: headers, BodyKind: bodyKind, Body: body, Timeout: timeout})
 }
 
-// requireSuccess 判定响应状态；失败时携带上游错误信息。
+// requireSuccess 判定响应状态；失败时保留 HTTP 状态码并携带上游错误信息，
+// 让调用方能区分参数类错误（4xx）与服务类错误（5xx）。
 func requireSuccess(response types.HTTPResponse) error {
 	if response.StatusCode >= http.StatusOK && response.StatusCode < http.StatusMultipleChoices {
 		return nil
 	}
-	message := fmt.Sprintf("运营商服务返回状态 %d", response.StatusCode)
+	message := fmt.Sprintf("运营商请求失败：HTTP %d", response.StatusCode)
 	if upstream := upstreamErrorMessage(response.Body); upstream != "" {
-		message = upstream
+		message += "：" + upstream
 	}
-	return fmt.Errorf("运营商请求失败：%s", message)
+	return errors.New(message)
 }
 
 // upstreamErrorMessage 从错误响应中取可读信息。

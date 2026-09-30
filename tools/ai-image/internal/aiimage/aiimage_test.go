@@ -145,6 +145,154 @@ func TestConfigWriteRejectsInvalidProviderConfig(t *testing.T) {
 	}
 }
 
+func TestConfigWritePreservesMaskedAPIKey(t *testing.T) {
+	dataDir := t.TempDir()
+	withDataDir := func(arguments map[string]any) types.ToolExecutionInput {
+		input := newInput(t, arguments)
+		input.ToolDataDirectory = dataDir
+		return input
+	}
+	original := `{"defaultProvider":"demo","providers":[{"id":"demo","baseUrl":"https://example.com","apiKey":"sk-real","protocol":"images","defaultModel":"m1"}]}`
+	decodeOutput(t, Execute(context.Background(), withDataDir(map[string]any{"action": actionConfigWrite, "file": "providers.json", "content": original}), nil))
+
+	masked := `{"defaultProvider":"demo","providers":[{"id":"demo","name":"改名","baseUrl":"https://example.com","apiKey":"` + maskedAPIKey + `","protocol":"images","defaultModel":"m1"}]}`
+	decodeOutput(t, Execute(context.Background(), withDataDir(map[string]any{"action": actionConfigWrite, "file": "providers.json", "content": masked}), nil))
+
+	read := Execute(context.Background(), withDataDir(map[string]any{"action": actionConfigRead, "file": "providers.json"}), nil)
+	decodeOutput(t, read)
+	if !strings.Contains(read.Content, "改名") {
+		t.Fatalf("write not applied: %s", read.Content)
+	}
+	if strings.Contains(read.Content, "sk-real") {
+		t.Fatalf("read leaked apiKey: %s", read.Content)
+	}
+	raw, err := os.ReadFile(filepath.Join(dataDir, types.ToolConfigDirName, providersFileName))
+	if err != nil {
+		t.Fatalf("read providers file: %v", err)
+	}
+	if !strings.Contains(string(raw), "sk-real") {
+		t.Fatalf("masked write must preserve original apiKey: %s", string(raw))
+	}
+}
+
+func TestConfigWriteRejectsMaskedAPIKeyWithoutOriginal(t *testing.T) {
+	masked := `{"defaultProvider":"demo","providers":[{"id":"demo","baseUrl":"https://example.com","apiKey":"` + maskedAPIKey + `","protocol":"images","defaultModel":"m1"}]}`
+	output := Execute(context.Background(), newInput(t, map[string]any{"action": actionConfigWrite, "file": "providers.json", "content": masked}), nil)
+	if output.Status != types.ToolStatusFailed {
+		t.Fatalf("masked write without original must fail, got %s", output.Status)
+	}
+	if !strings.Contains(output.Error, "明文") {
+		t.Fatalf("error must ask for plaintext key: %s", output.Error)
+	}
+}
+
+func TestConfigWriteRejectsMaskedAPIKeyForNewProvider(t *testing.T) {
+	dataDir := t.TempDir()
+	withDataDir := func(arguments map[string]any) types.ToolExecutionInput {
+		input := newInput(t, arguments)
+		input.ToolDataDirectory = dataDir
+		return input
+	}
+	original := `{"defaultProvider":"demo","providers":[{"id":"demo","baseUrl":"https://example.com","apiKey":"sk-real","protocol":"images","defaultModel":"m1"}]}`
+	decodeOutput(t, Execute(context.Background(), withDataDir(map[string]any{"action": actionConfigWrite, "file": "providers.json", "content": original}), nil))
+
+	added := `{"defaultProvider":"demo","providers":[{"id":"demo","baseUrl":"https://example.com","apiKey":"sk-real","protocol":"images","defaultModel":"m1"},{"id":"other","baseUrl":"https://example.com","apiKey":"` + maskedAPIKey + `","protocol":"images","defaultModel":"m1"}]}`
+	output := Execute(context.Background(), withDataDir(map[string]any{"action": actionConfigWrite, "file": "providers.json", "content": added}), nil)
+	if output.Status != types.ToolStatusFailed {
+		t.Fatalf("masked key for new provider must fail, got %s", output.Status)
+	}
+	if !strings.Contains(output.Error, "other") {
+		t.Fatalf("error must name the provider: %s", output.Error)
+	}
+}
+
+func TestConfigWriteKeepsPlainContentVerbatim(t *testing.T) {
+	dataDir := t.TempDir()
+	input := newInput(t, map[string]any{"action": actionConfigWrite, "file": "providers.json", "content": `{"defaultProvider":"demo","providers":[{"id":"demo","baseUrl":"https://example.com","apiKey":"sk-plain","protocol":"images","defaultModel":"m1"}]}`})
+	input.ToolDataDirectory = dataDir
+	decodeOutput(t, Execute(context.Background(), input, nil))
+	raw, err := os.ReadFile(filepath.Join(dataDir, types.ToolConfigDirName, providersFileName))
+	if err != nil {
+		t.Fatalf("read providers file: %v", err)
+	}
+	if !strings.Contains(string(raw), "sk-plain") {
+		t.Fatalf("plain write must be stored verbatim: %s", string(raw))
+	}
+}
+
+func TestConfigEditRejectsMaskedAPIKeyForNewProvider(t *testing.T) {
+	dataDir := t.TempDir()
+	withDataDir := func(arguments map[string]any) types.ToolExecutionInput {
+		input := newInput(t, arguments)
+		input.ToolDataDirectory = dataDir
+		return input
+	}
+	original := `{"defaultProvider":"demo","providers":[{"id":"demo","baseUrl":"https://example.com","apiKey":"sk-real","protocol":"images","defaultModel":"m1"}]}`
+	decodeOutput(t, Execute(context.Background(), withDataDir(map[string]any{"action": actionConfigWrite, "file": "providers.json", "content": original}), nil))
+
+	output := Execute(context.Background(), withDataDir(map[string]any{"action": actionConfigEdit, "file": "providers.json", "field": "providers.0.id", "value": "renamed"}), nil)
+	if output.Status != types.ToolStatusFailed {
+		t.Fatalf("editing id while masked key exists must fail, got %s", output.Status)
+	}
+}
+
+func TestConfigActionsRequireFile(t *testing.T) {
+	actions := []string{actionConfigRead, actionConfigWrite, actionConfigDelete, actionConfigEdit}
+	for _, action := range actions {
+		arguments := map[string]any{"action": action}
+		switch action {
+		case actionConfigWrite:
+			arguments["content"] = `{}`
+		case actionConfigEdit:
+			arguments["field"] = "defaultProvider"
+			arguments["value"] = "demo"
+		}
+		output := Execute(context.Background(), newInput(t, arguments), nil)
+		if output.Status != types.ToolStatusFailed {
+			t.Fatalf("action %s without file must fail, got %s", action, output.Status)
+		}
+		if !strings.Contains(output.Error, "缺少 file 参数") {
+			t.Fatalf("action %s must explain the missing file argument: %s", action, output.Error)
+		}
+	}
+}
+
+func TestResolveModelValidatesModelsList(t *testing.T) {
+	provider := providerEntry{ID: "demo", Models: []string{"m1", "m2"}, DefaultModel: "m1"}
+	if _, err := resolveModel(provider, "m2"); err != nil {
+		t.Fatalf("listed model must pass: %v", err)
+	}
+	if _, err := resolveModel(provider, "m9"); err == nil || !strings.Contains(err.Error(), "m1, m2") {
+		t.Fatalf("unlisted model must fail with available models, got: %v", err)
+	}
+	open := providerEntry{ID: "demo", DefaultModel: "anything"}
+	if _, err := resolveModel(open, ""); err != nil {
+		t.Fatalf("provider without models list must pass: %v", err)
+	}
+}
+
+func TestRequireSuccessCarriesStatusCode(t *testing.T) {
+	plain := requireSuccess(types.HTTPResponse{StatusCode: 503, Body: []byte("gateway down")})
+	if plain == nil || !strings.Contains(plain.Error(), "HTTP 503") || !strings.Contains(plain.Error(), "gateway down") {
+		t.Fatalf("status code and upstream message must be kept: %v", plain)
+	}
+	empty := requireSuccess(types.HTTPResponse{StatusCode: 400})
+	if empty == nil || !strings.Contains(empty.Error(), "HTTP 400") {
+		t.Fatalf("status code must be kept without upstream message: %v", empty)
+	}
+	if requireSuccess(types.HTTPResponse{StatusCode: 200}) != nil {
+		t.Fatal("success status must pass")
+	}
+}
+
+func TestGenerateIgnoresTinyTimeoutForLocalActions(t *testing.T) {
+	input := newInput(t, map[string]any{"action": actionConfigList, "timeoutMs": 1})
+	output := Execute(context.Background(), input, nil)
+	if output.Status != types.ToolStatusSuccess {
+		t.Fatalf("local action must ignore request timeout: %s", output.Error)
+	}
+}
+
 func TestConfigWriteRejectsEscapingPath(t *testing.T) {
 	for _, path := range []string{"../escape.json", "a/../../b.json", "C:/abs.json", "/abs.json"} {
 		output := Execute(context.Background(), newInput(t, map[string]any{"action": actionConfigWrite, "file": path, "content": `{}`}), nil)

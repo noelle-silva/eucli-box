@@ -8,20 +8,26 @@ ai-image 是工具体系中的独立基础动作：一次调用生成一张图�
 
 ## 动作
 
-- `generate`：按提示词生成图片。可选运营商、模型、参考图与请求时限；生成结果经会话附件写入能力由宿主代写并挂回本次回复。
+- `generate`：按提示词生成图片。可选运营商、模型、参考图与生图请求时限；生成结果经会话附件写入能力由宿主代写并挂回本次回复。
 - `session_images`：列出当前会话的图片附件（序号、id、名称）。
-- `config_list` / `config_read` / `config_write` / `config_delete` / `config_edit`：读写本工具配置区（工具数据目录下 `config/`）的文件。
+- `config_list` / `config_read` / `config_write` / `config_delete` / `config_edit`：读写本工具配置区（工具数据目录下 `config/`）的文件；除 `config_list` 外都必须提供 `file`（配置区相对路径）。
 
 ## 配置区结构
 
 - `config/providers.json`：多运营商与多模型配置。
 - `config/adapters/<id>.json`：声明式适配文件，一适配一文件，文件名即适配 id。
 
+## 凭据保护
+
+`config_read` 输出 `providers.json` 时 apiKey 打码为 `********`；`config_write` 与 `config_edit` 落盘前统一还原打码占位为磁盘上的原真实 Key。原配置中没有可保留的真实 Key 时（新运营商、原文件缺失或原值本身就是打码占位），写入明确拒绝并提示提供明文 apiKey，绝不把打码占位落盘为密钥。
+
 ## 内置协议
 
 - `images`：POST `{baseUrl}/images/generations`，JSON 体 `{model, prompt, n:1}`。
 - `images-edits`：POST `{baseUrl}/images/edits`，multipart（`model`、`prompt`、参考图 `image[]`）；无参考图明确失败。
 - `chat`：POST `{baseUrl}/chat/completions`，体 `{model, messages, temperature:0.2}`；有参考图时 user 内容为 text + image_url 数组。
+
+`timeoutMs` 只作用于生图 HTTP 请求（缺省 120 秒、下限 5 秒、上限 1 小时）；本地配置动作与控制通道不受该时限影响。运营商声明了 `models` 列表时，默认模型与调用覆盖模型都必须在列表内。
 
 ## 适配文件
 

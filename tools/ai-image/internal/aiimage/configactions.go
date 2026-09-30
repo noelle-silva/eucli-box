@@ -30,8 +30,19 @@ func runConfigList(input types.ToolExecutionInput) types.ToolExecutionOutput {
 	return success(string(content), map[string]any{"action": actionConfigList, "count": len(files)})
 }
 
+// requireConfigFile 校验配置管理动作的文件参数；缺失时给出可操作的指引。
+func requireConfigFile(args arguments) error {
+	if args.File == "" {
+		return fmt.Errorf("缺少 file 参数（配置区相对路径，如 providers.json 或 adapters/<id>.json）")
+	}
+	return nil
+}
+
 // runConfigRead 读取配置区单个文件；providers.json 的 apiKey 输出打码。
 func runConfigRead(input types.ToolExecutionInput, args arguments) types.ToolExecutionOutput {
+	if err := requireConfigFile(args); err != nil {
+		return failure("read tool config file", err, nil)
+	}
 	root, err := configRoot(input)
 	if err != nil {
 		return failure("read tool config file", err, nil)
@@ -50,8 +61,12 @@ func runConfigRead(input types.ToolExecutionInput, args arguments) types.ToolExe
 	return success(content, map[string]any{"action": actionConfigRead, "file": cleaned, "masked": masked})
 }
 
-// runConfigWrite 整份写入配置区文件；providers.json 与适配文件按结构校验。
+// runConfigWrite 整份写入配置区文件；providers.json 与适配文件按结构校验，
+// providers.json 中的打码 apiKey 统一还原为原真实 Key。
 func runConfigWrite(input types.ToolExecutionInput, args arguments) types.ToolExecutionOutput {
+	if err := requireConfigFile(args); err != nil {
+		return failure("write tool config file", err, nil)
+	}
 	if args.Content == nil {
 		return failure("write tool config file", fmt.Errorf("缺少 content 参数"), map[string]any{"file": args.File})
 	}
@@ -63,7 +78,14 @@ func runConfigWrite(input types.ToolExecutionInput, args arguments) types.ToolEx
 	if err != nil {
 		return failure("write tool config file", err, map[string]any{"file": args.File})
 	}
-	if _, err := writeConfigFile(root, cleaned, *args.Content); err != nil {
+	nextContent := *args.Content
+	if cleaned == providersFileName {
+		nextContent, err = restoreProviderContent(root, nextContent)
+		if err != nil {
+			return failure("write tool config file", err, map[string]any{"file": cleaned})
+		}
+	}
+	if _, err := writeConfigFile(root, cleaned, nextContent); err != nil {
 		return failure("write tool config file", err, map[string]any{"file": cleaned})
 	}
 	return success("配置文件已写入："+cleaned, map[string]any{"action": actionConfigWrite, "file": cleaned})
@@ -71,6 +93,9 @@ func runConfigWrite(input types.ToolExecutionInput, args arguments) types.ToolEx
 
 // runConfigDelete 删除配置区文件。
 func runConfigDelete(input types.ToolExecutionInput, args arguments) types.ToolExecutionOutput {
+	if err := requireConfigFile(args); err != nil {
+		return failure("delete tool config file", err, nil)
+	}
 	root, err := configRoot(input)
 	if err != nil {
 		return failure("delete tool config file", err, nil)
@@ -82,8 +107,12 @@ func runConfigDelete(input types.ToolExecutionInput, args arguments) types.ToolE
 	return success("配置文件已删除："+cleaned, map[string]any{"action": actionConfigDelete, "file": cleaned})
 }
 
-// runConfigEdit 字段级修改：点分路径 set/remove，改后整体校验并落盘。
+// runConfigEdit 字段级修改：点分路径 set/remove，改后整体校验并落盘；
+// providers.json 中的打码 apiKey 经统一入口还原为原真实 Key。
 func runConfigEdit(input types.ToolExecutionInput, args arguments) types.ToolExecutionOutput {
+	if err := requireConfigFile(args); err != nil {
+		return failure("edit tool config file", err, nil)
+	}
 	if args.Field == "" {
 		return failure("edit tool config file", fmt.Errorf("缺少 field 参数"), map[string]any{"file": args.File})
 	}
@@ -123,11 +152,10 @@ func runConfigEdit(input types.ToolExecutionInput, args arguments) types.ToolExe
 	}
 	nextContent := string(encoded)
 	if cleaned == providersFileName {
-		restored, err := restoreMaskedProviderContent(content, nextContent)
+		nextContent, err = restoreProviderContent(root, nextContent)
 		if err != nil {
 			return failure("edit tool config file", err, map[string]any{"file": cleaned})
 		}
-		nextContent = restored
 	}
 	if _, err := validateConfigContent(root, cleaned, nextContent); err != nil {
 		return failure("edit tool config file", err, map[string]any{"file": cleaned, "field": args.Field})

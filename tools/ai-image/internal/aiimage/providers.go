@@ -80,18 +80,18 @@ func resolveProvider(config providerConfig, requested string) (providerEntry, er
 		providerID = strings.TrimSpace(config.DefaultProvider)
 	}
 	if providerID == "" {
-		return providerEntry{}, errors.New("未指定运营商，且配置中没有 defaultProvider")
+		return providerEntry{}, permanentError(errors.New("未指定运营商，且配置中没有 defaultProvider"), actionFixConfig)
 	}
 	for _, provider := range config.Providers {
 		if provider.ID != providerID {
 			continue
 		}
 		if !provider.isEnabled() {
-			return providerEntry{}, fmt.Errorf("运营商已停用: %s", providerID)
+			return providerEntry{}, permanentError(fmt.Errorf("运营商已停用: %s", providerID), actionFixConfig)
 		}
 		return provider, nil
 	}
-	return providerEntry{}, fmt.Errorf("运营商不存在: %s（可用: %s）", providerID, providerIDs(config))
+	return providerEntry{}, permanentError(fmt.Errorf("运营商不存在: %s（可用: %s）", providerID, providerIDs(config)), actionFixConfig)
 }
 
 // resolveModel 选定模型：参数优先，其次运营商的 defaultModel；
@@ -102,10 +102,10 @@ func resolveModel(provider providerEntry, requested string) (string, error) {
 		model = provider.DefaultModel
 	}
 	if model == "" {
-		return "", fmt.Errorf("运营商 %s 未指定默认模型，且调用未提供 model", provider.ID)
+		return "", permanentError(fmt.Errorf("运营商 %s 未指定默认模型，且调用未提供 model", provider.ID), actionFixModels)
 	}
 	if len(provider.Models) > 0 && !containsString(provider.Models, model) {
-		return "", fmt.Errorf("模型 %q 不在运营商 %s 的 models 列表中（可用: %s）", model, provider.ID, strings.Join(provider.Models, ", "))
+		return "", permanentError(fmt.Errorf("模型 %q 不在运营商 %s 的 models 列表中（可用: %s）", model, provider.ID, strings.Join(provider.Models, ", ")), actionFixModels)
 	}
 	return model, nil
 }

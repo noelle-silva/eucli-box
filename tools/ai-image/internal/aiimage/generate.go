@@ -12,7 +12,7 @@ import (
 // runGenerate 执行一次生图：加载配置、解析参考图、按协议请求、回写会话。
 func runGenerate(ctx context.Context, input types.ToolExecutionInput, args arguments, session SessionService) types.ToolExecutionOutput {
 	if args.Prompt == "" {
-		return failure("generate image", fmt.Errorf("缺少 prompt 参数"), nil)
+		return failure("generate image", permanentError(fmt.Errorf("缺少 prompt 参数"), actionFixParams), nil)
 	}
 	root, err := configRoot(input)
 	if err != nil {

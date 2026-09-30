@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"eucli-box/pkg/types"
 )
@@ -85,6 +86,7 @@ func listConfigFiles(root string) ([]configFileEntry, error) {
 }
 
 // readConfigFile 读取配置区内文件原文；限定单文件大小上限。
+// 报错只呈现配置区逻辑路径与系统原因，不泄露绝对路径。
 func readConfigFile(root string, relPath string) (string, string, error) {
 	target, cleaned, err := resolveConfigPath(root, relPath)
 	if err != nil {
@@ -95,7 +97,7 @@ func readConfigFile(root string, relPath string) (string, string, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return "", cleaned, fmt.Errorf("配置文件不存在: %s", cleaned)
 		}
-		return "", cleaned, fmt.Errorf("读取配置文件失败: %w", err)
+		return "", cleaned, fmt.Errorf("读取配置文件失败（%s）: %s", cleaned, ioErrorReason(err))
 	}
 	if info.IsDir() {
 		return "", cleaned, fmt.Errorf("配置文件路径是目录: %s", cleaned)
@@ -105,12 +107,20 @@ func readConfigFile(root string, relPath string) (string, string, error) {
 	}
 	payload, err := os.ReadFile(target)
 	if err != nil {
-		return "", cleaned, fmt.Errorf("读取配置文件失败: %w", err)
+		return "", cleaned, fmt.Errorf("读取配置文件失败（%s）: %s", cleaned, ioErrorReason(err))
 	}
 	return string(payload), cleaned, nil
 }
 
-// writeConfigFile 原子写入配置区内文件；路径与大小先校验。
+// 文件替换的退避重试参数：Windows 下杀毒或索引短暂占用目标文件时，
+// 重试可跨过瞬时锁；最终失败返回可理解的可重试提示。
+const (
+	configReplaceAttempts = 5
+	configReplaceBackoff  = 100 * time.Millisecond
+)
+
+// writeConfigFile 原子写入配置区内文件；路径与大小先校验，
+// 替换阶段带退避重试，失败只呈现逻辑路径。
 func writeConfigFile(root string, relPath string, content string) (string, error) {
 	target, cleaned, err := resolveConfigPath(root, relPath)
 	if err != nil {
@@ -120,29 +130,60 @@ func writeConfigFile(root string, relPath string, content string) (string, error
 		return "", fmt.Errorf("配置内容超过大小上限（%d 字节）", types.ToolConfigFileMaxBytes)
 	}
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		return "", fmt.Errorf("创建配置目录失败: %w", err)
+		return "", fmt.Errorf("创建配置目录失败: %s", ioErrorReason(err))
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(target), ".tmp-*.json")
 	if err != nil {
-		return "", fmt.Errorf("创建临时文件失败: %w", err)
+		return "", fmt.Errorf("创建临时文件失败: %s", ioErrorReason(err))
 	}
 	tmpName := tmp.Name()
 	defer func() { _ = os.Remove(tmpName) }()
 	if _, err := tmp.WriteString(content); err != nil {
 		_ = tmp.Close()
-		return "", fmt.Errorf("写入临时文件失败: %w", err)
+		return "", fmt.Errorf("写入临时文件失败: %s", ioErrorReason(err))
 	}
 	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()
-		return "", fmt.Errorf("同步临时文件失败: %w", err)
+		return "", fmt.Errorf("同步临时文件失败: %s", ioErrorReason(err))
 	}
 	if err := tmp.Close(); err != nil {
-		return "", fmt.Errorf("关闭临时文件失败: %w", err)
+		return "", fmt.Errorf("关闭临时文件失败: %s", ioErrorReason(err))
 	}
-	if err := os.Rename(tmpName, target); err != nil {
-		return "", fmt.Errorf("替换配置文件失败: %w", err)
+	if err := replaceFileWithRetry(tmpName, target); err != nil {
+		return "", retryableError(fmt.Errorf("配置文件被占用，本次未写入（%s）", cleaned), actionRetryLater)
 	}
 	return cleaned, nil
+}
+
+// replaceFileWithRetry 以退避重试执行文件替换；重试期间目标文件被
+// 其他进程短暂占用（杀毒、索引）时可跨过瞬时锁。
+func replaceFileWithRetry(source string, target string) error {
+	backoff := configReplaceBackoff
+	var lastErr error
+	for attempt := 0; attempt < configReplaceAttempts; attempt++ {
+		if err := os.Rename(source, target); err != nil {
+			lastErr = err
+			time.Sleep(backoff)
+			backoff *= 2
+			continue
+		}
+		return nil
+	}
+	return lastErr
+}
+
+// ioErrorReason 从文件系统错误中提取系统原因文本：
+// 剥离绝对路径与临时文件名，只保留可读原因。
+func ioErrorReason(err error) string {
+	var pathErr *os.PathError
+	if errors.As(err, &pathErr) {
+		return pathErr.Err.Error()
+	}
+	var linkErr *os.LinkError
+	if errors.As(err, &linkErr) {
+		return linkErr.Err.Error()
+	}
+	return err.Error()
 }
 
 // deleteConfigFile 删除配置区内文件。

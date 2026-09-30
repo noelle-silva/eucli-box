@@ -27,7 +27,13 @@ ai-image 是工具体系中的独立基础动作：一次调用生成一张图�
 - `images-edits`：POST `{baseUrl}/images/edits`，multipart（`model`、`prompt`、参考图 `image[]`）；无参考图明确失败。
 - `chat`：POST `{baseUrl}/chat/completions`，体 `{model, messages, temperature:0.2}`；有参考图时 user 内容为 text + image_url 数组。
 
-`timeoutMs` 只作用于生图 HTTP 请求（缺省 120 秒、下限 5 秒、上限 1 小时）；本地配置动作与控制通道不受该时限影响。运营商声明了 `models` 列表时，默认模型与调用覆盖模型都必须在列表内。
+`timeoutMs` 只作用于生图 HTTP 请求（缺省 120 秒，显式值范围 5000-3600000 毫秒，越界返回参数错误）；本地配置动作与控制通道不受该时限影响。运营商声明了 `models` 列表时，默认模型与调用覆盖模型都必须在列表内。参考图须为可识别格式且最短边至少 64 像素，不合规在本地直接拒绝、不发上游。
+
+生图请求遇连接中断与 502/503/504 会退避后自动重试一次；失败结果统一带有可重试标记与建议动作。
+
+## 并发与错误
+
+配置写入（config_write / config_edit / config_delete）以跨进程锁文件串行化，文件替换带退避重试；并发编辑不会静默丢失，锁冲突返回可重试提示。配置读写失败只呈现配置区逻辑路径（如 `providers.json`），不泄露内部绝对路径与临时文件命名。
 
 ## 适配文件
 

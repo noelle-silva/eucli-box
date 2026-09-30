@@ -78,6 +78,11 @@ func runConfigWrite(input types.ToolExecutionInput, args arguments) types.ToolEx
 	if err != nil {
 		return failure("write tool config file", err, map[string]any{"file": args.File})
 	}
+	lock, err := acquireConfigWriteLock(input)
+	if err != nil {
+		return failure("write tool config file", err, map[string]any{"file": cleaned})
+	}
+	defer lock.release()
 	nextContent := *args.Content
 	if cleaned == providersFileName {
 		nextContent, err = restoreProviderContent(root, nextContent)
@@ -100,6 +105,11 @@ func runConfigDelete(input types.ToolExecutionInput, args arguments) types.ToolE
 	if err != nil {
 		return failure("delete tool config file", err, nil)
 	}
+	lock, err := acquireConfigWriteLock(input)
+	if err != nil {
+		return failure("delete tool config file", err, map[string]any{"file": args.File})
+	}
+	defer lock.release()
 	cleaned, err := deleteConfigFile(root, args.File)
 	if err != nil {
 		return failure("delete tool config file", err, map[string]any{"file": args.File})
@@ -123,6 +133,11 @@ func runConfigEdit(input types.ToolExecutionInput, args arguments) types.ToolExe
 	if err != nil {
 		return failure("edit tool config file", err, nil)
 	}
+	lock, err := acquireConfigWriteLock(input)
+	if err != nil {
+		return failure("edit tool config file", err, map[string]any{"file": args.File})
+	}
+	defer lock.release()
 	content, cleaned, err := readConfigFile(root, args.File)
 	if err != nil {
 		return failure("edit tool config file", err, map[string]any{"file": args.File})

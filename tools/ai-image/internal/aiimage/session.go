@@ -142,7 +142,10 @@ func resolveReferenceImages(ctx context.Context, session SessionService, referen
 		if isDirectImageInput(value) {
 			image, err := normalizeImageInput(value)
 			if err != nil {
-				return nil, fmt.Errorf("参考图 %q 无效: %w", value, err)
+				return nil, permanentError(fmt.Errorf("参考图 %s 无效: %w", referenceLabel(value), err), actionReplaceImage)
+			}
+			if err := validateReferenceImage(image); err != nil {
+				return nil, err
 			}
 			images = append(images, image)
 			continue
@@ -161,6 +164,9 @@ func resolveReferenceImages(ctx context.Context, session SessionService, referen
 		image, err := loadSessionImage(ctx, session, attachment.ID)
 		if err != nil {
 			return nil, err
+		}
+		if err := validateReferenceImage(image); err != nil {
+			return nil, permanentError(fmt.Errorf("会话图片 %s 不可用作参考图: %w", referenceLabel(value), err), actionReplaceImage)
 		}
 		images = append(images, image)
 	}
@@ -184,11 +190,11 @@ func findSessionImage(images []sessionImage, reference string) (sessionImage, er
 	}
 	if index, err := strconv.Atoi(reference); err == nil {
 		if index < 1 || index > len(images) {
-			return sessionImage{}, fmt.Errorf("会话图片序号越界: %d（共 %d 张）", index, len(images))
+			return sessionImage{}, permanentError(fmt.Errorf("会话图片序号越界: %d（共 %d 张）", index, len(images)), actionFixParams)
 		}
 		return images[index-1], nil
 	}
-	return sessionImage{}, fmt.Errorf("会话图片不存在: %s（可传附件 id 或 1 起始序号；id 区分大小写；可用 session_images 查看清单）", reference)
+	return sessionImage{}, permanentError(fmt.Errorf("会话图片不存在: %s（可传附件 id 或 1 起始序号；id 区分大小写；可用 session_images 查看清单）", reference), actionFixParams)
 }
 
 // runSessionImages 列出当前会话图片清单（序号、id、名称）。

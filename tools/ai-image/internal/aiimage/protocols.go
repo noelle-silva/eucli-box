@@ -30,7 +30,10 @@ type generationResult struct {
 
 // callProvider 按运营商协议执行一次生图请求。
 func callProvider(ctx context.Context, network networkrequest.System, configRootDir string, provider providerEntry, request generationRequest, timeoutMs int64) (generationResult, error) {
-	timeout := requestTimeout(timeoutMs)
+	timeout, err := requestTimeout(timeoutMs)
+	if err != nil {
+		return generationResult{}, err
+	}
 	switch provider.Protocol {
 	case protocolImages:
 		return callImagesProtocol(ctx, network, provider, request, timeout)
@@ -45,19 +48,26 @@ func callProvider(ctx context.Context, network networkrequest.System, configRoot
 	}
 }
 
-// requestTimeout 归一请求时限：缺省 120 秒，下限 5 秒，上限 1 小时。
-func requestTimeout(timeoutMs int64) time.Duration {
-	if timeoutMs <= 0 {
-		return 120 * time.Second
+// 请求时限的取值范围：缺省 120 秒；显式值必须在 5 秒到 1 小时之间，
+// 越界直接参数错误，不做静默钳制。
+const (
+	defaultRequestTimeout = 120 * time.Second
+	minRequestTimeoutMs   = 5000
+	maxRequestTimeoutMs   = 3600000
+)
+
+// requestTimeout 解析请求时限：0/缺省取 120 秒；越界返回参数错误并回显范围。
+func requestTimeout(timeoutMs int64) (time.Duration, error) {
+	if timeoutMs == 0 {
+		return defaultRequestTimeout, nil
 	}
-	timeout := time.Duration(timeoutMs) * time.Millisecond
-	if timeout < 5*time.Second {
-		return 5 * time.Second
+	if timeoutMs < minRequestTimeoutMs || timeoutMs > maxRequestTimeoutMs {
+		return 0, permanentError(
+			fmt.Errorf("timeoutMs 超出取值范围（%d-%d 毫秒，缺省 %d）", minRequestTimeoutMs, maxRequestTimeoutMs, defaultRequestTimeout.Milliseconds()),
+			actionFixTimeout,
+		)
 	}
-	if timeout > time.Hour {
-		return time.Hour
-	}
-	return timeout
+	return time.Duration(timeoutMs) * time.Millisecond, nil
 }
 
 // images 协议：POST {baseUrl}/images/generations，JSON 体 {model, prompt, n:1}。
@@ -71,11 +81,11 @@ func callImagesProtocol(ctx context.Context, network networkrequest.System, prov
 		return generationResult{}, err
 	}
 	headers := map[string]string{"Authorization": "Bearer " + provider.APIKey, "Content-Type": "application/json"}
-	response, err := doRequest(ctx, network, http.MethodPost, provider.BaseURL+"/images/generations", headers, types.HTTPBodyJSON, body, timeout)
+	response, retried, err := doGenerationRequest(ctx, network, http.MethodPost, provider.BaseURL+"/images/generations", headers, types.HTTPBodyJSON, body, timeout)
 	if err != nil {
 		return generationResult{}, err
 	}
-	if err := requireSuccess(response); err != nil {
+	if err := requireSuccess(response, retried); err != nil {
 		return generationResult{}, err
 	}
 	imageDataURL, err := parseImageSource(ctx, network, response.Body, "")
@@ -112,11 +122,11 @@ func callImagesEditsProtocol(ctx context.Context, network networkrequest.System,
 		return generationResult{}, err
 	}
 	headers := map[string]string{"Authorization": "Bearer " + provider.APIKey, "Content-Type": contentType}
-	response, err := doRequest(ctx, network, http.MethodPost, provider.BaseURL+"/images/edits", headers, types.HTTPBodyBytes, body, timeout)
+	response, retried, err := doGenerationRequest(ctx, network, http.MethodPost, provider.BaseURL+"/images/edits", headers, types.HTTPBodyBytes, body, timeout)
 	if err != nil {
 		return generationResult{}, err
 	}
-	if err := requireSuccess(response); err != nil {
+	if err := requireSuccess(response, retried); err != nil {
 		return generationResult{}, err
 	}
 	imageDataURL, err := parseImageSource(ctx, network, response.Body, "")
@@ -151,11 +161,11 @@ func callChatProtocol(ctx context.Context, network networkrequest.System, provid
 		return generationResult{}, err
 	}
 	headers := map[string]string{"Authorization": "Bearer " + provider.APIKey, "Content-Type": "application/json"}
-	response, err := doRequest(ctx, network, http.MethodPost, provider.BaseURL+"/chat/completions", headers, types.HTTPBodyJSON, body, timeout)
+	response, retried, err := doGenerationRequest(ctx, network, http.MethodPost, provider.BaseURL+"/chat/completions", headers, types.HTTPBodyJSON, body, timeout)
 	if err != nil {
 		return generationResult{}, err
 	}
-	if err := requireSuccess(response); err != nil {
+	if err := requireSuccess(response, retried); err != nil {
 		return generationResult{}, err
 	}
 	imageDataURL, err := parseImageSource(ctx, network, response.Body, "")
@@ -213,11 +223,11 @@ func callAdapterProtocol(ctx context.Context, network networkrequest.System, con
 		bodyKind = types.HTTPBodyBytes
 		headers["Content-Type"] = contentType
 	}
-	response, err := doRequest(ctx, network, adapter.Request.Method, requestURL, headers, bodyKind, body, timeout)
+	response, retried, err := doGenerationRequest(ctx, network, adapter.Request.Method, requestURL, headers, bodyKind, body, timeout)
 	if err != nil {
 		return generationResult{}, err
 	}
-	if err := requireSuccess(response); err != nil {
+	if err := requireSuccess(response, retried); err != nil {
 		return generationResult{}, err
 	}
 	imageDataURL, err := parseImageSource(ctx, network, response.Body, adapter.Response.ImagePath)
@@ -235,9 +245,86 @@ func doRequest(ctx context.Context, network networkrequest.System, method string
 	return network.Do(ctx, types.HTTPRequest{Method: method, URL: url, Headers: headers, BodyKind: bodyKind, Body: body, Timeout: timeout})
 }
 
+// generationRetryBackoff 是自动重试前的退避等待。
+const generationRetryBackoff = 500 * time.Millisecond
+
+// doGenerationRequest 发出一次幂等生图请求：遇连接中断与 502/503/504
+// 瞬时故障时退避后自动重试一次；返回响应、是否已重试与最终错误。
+func doGenerationRequest(ctx context.Context, network networkrequest.System, method string, url string, headers map[string]string, bodyKind types.HTTPBodyKind, body []byte, timeout time.Duration) (types.HTTPResponse, bool, error) {
+	response, err := doRequest(ctx, network, method, url, headers, bodyKind, body, timeout)
+	if err != nil {
+		if isTransientTransportError(err) {
+			if waitErr := sleepWithContext(ctx, generationRetryBackoff); waitErr == nil {
+				response, err = doRequest(ctx, network, method, url, headers, bodyKind, body, timeout)
+				if err != nil {
+					return types.HTTPResponse{}, true, generationTransportError(err)
+				}
+				return response, true, nil
+			}
+		}
+		return types.HTTPResponse{}, false, generationTransportError(err)
+	}
+	if isTransientStatus(response.StatusCode) {
+		if waitErr := sleepWithContext(ctx, generationRetryBackoff); waitErr == nil {
+			retryResponse, retryErr := doRequest(ctx, network, method, url, headers, bodyKind, body, timeout)
+			if retryErr != nil {
+				return types.HTTPResponse{}, true, generationTransportError(retryErr)
+			}
+			return retryResponse, true, nil
+		}
+	}
+	return response, false, nil
+}
+
+// isTransientTransportError 判定可重试的传输类瞬时故障：连接中断与请求超时。
+func isTransientTransportError(err error) bool {
+	switch networkErrorCode(err) {
+	case "network.connection_lost", "network.timeout":
+		return true
+	default:
+		return false
+	}
+}
+
+// isTransientStatus 判定可重试的上游瞬时状态：502/503/504。
+func isTransientStatus(statusCode int) bool {
+	switch statusCode {
+	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	default:
+		return false
+	}
+}
+
+// generationTransportError 把传输类错误翻译为带分类的失败：
+// 瞬时故障标可重试，参数类标不可重试，其余归入网络检查建议。
+func generationTransportError(err error) error {
+	switch networkErrorCode(err) {
+	case "network.connection_lost", "network.timeout":
+		return retryableError(err, actionRetryLater)
+	case "network.invalid_request":
+		return permanentError(err, actionFixParams)
+	default:
+		return retryableError(err, actionCheckNetwork)
+	}
+}
+
+// sleepWithContext 按退避时长等待；上下文取消时立即返回错误。
+func sleepWithContext(ctx context.Context, wait time.Duration) error {
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
 // requireSuccess 判定响应状态；失败时保留 HTTP 状态码并携带上游错误信息，
-// 让调用方能区分参数类错误（4xx）与服务类错误（5xx）。
-func requireSuccess(response types.HTTPResponse) error {
+// 并附上失败分类：429 与全部 5xx 可重试（自动重试只覆盖 502/503/504），
+// 其余 4xx 为参数类不可重试；自动重试已发生时在信息中标注。
+func requireSuccess(response types.HTTPResponse, retried bool) error {
 	if response.StatusCode >= http.StatusOK && response.StatusCode < http.StatusMultipleChoices {
 		return nil
 	}
@@ -245,7 +332,14 @@ func requireSuccess(response types.HTTPResponse) error {
 	if upstream := upstreamErrorMessage(response.Body); upstream != "" {
 		message += "：" + upstream
 	}
-	return errors.New(message)
+	if retried {
+		message += "（已自动重试 1 次）"
+	}
+	err := errors.New(message)
+	if response.StatusCode >= http.StatusInternalServerError || response.StatusCode == http.StatusTooManyRequests {
+		return retryableError(err, actionRetryLater)
+	}
+	return permanentError(err, actionCheckProvider)
 }
 
 // upstreamErrorMessage 从错误响应中取可读信息。

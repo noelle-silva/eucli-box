@@ -4,23 +4,32 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"eucli-box/pkg/toolcontrol"
 	"eucli-box/pkg/types"
 )
 
-// pngBase64 是一张 1x1 PNG 的 base64，用作图片数据夹具。
+// pngBase64 是一张 1x1 PNG 的 base64，用于校验「尺寸过小」的拒绝路径。
 const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+// validPngBase64 是一张 64x64 PNG 的 base64，满足参考图最短边下限。
+const validPngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAZElEQVR4nOzPUQnAUBTFsPNxhU/6ZJQHCTXQ277bXu72NAM1AzUDNQM1AzUDNQM1AzUDNQM1AzUDNQM1AzUDNQM1AzUDNQM1AzUDNQM1AzUDNQM1AzUDNQM1AzUDNQO1PwAA//+zRQN5bYZVRgAAAABJRU5ErkJggg=="
 
 func pngDataURL() string {
 	return "data:image/png;base64," + pngBase64
+}
+
+func validPngDataURL() string {
+	return "data:image/png;base64," + validPngBase64
 }
 
 // fakeSession 是会话能力服务的测试替身：按能力与访问方式应答。
@@ -42,7 +51,7 @@ func (f *fakeSession) Request(_ context.Context, capability string, access strin
 		if request.Operation == types.SessionAttachmentOperationRead {
 			dataURL := f.readDataURL
 			if dataURL == "" {
-				dataURL = pngDataURL()
+				dataURL = validPngDataURL()
 			}
 			return toolcontrol.CapabilityResult{Status: toolcontrol.CapabilityStatusSuccess, Payload: types.SessionAttachmentData{ID: request.AttachmentID, Name: "图片", Mime: "image/png", DataURL: dataURL}}, nil
 		}
@@ -272,15 +281,26 @@ func TestResolveModelValidatesModelsList(t *testing.T) {
 }
 
 func TestRequireSuccessCarriesStatusCode(t *testing.T) {
-	plain := requireSuccess(types.HTTPResponse{StatusCode: 503, Body: []byte("gateway down")})
+	plain := requireSuccess(types.HTTPResponse{StatusCode: 503, Body: []byte("gateway down")}, false)
 	if plain == nil || !strings.Contains(plain.Error(), "HTTP 503") || !strings.Contains(plain.Error(), "gateway down") {
 		t.Fatalf("status code and upstream message must be kept: %v", plain)
 	}
-	empty := requireSuccess(types.HTTPResponse{StatusCode: 400})
+	var classified *classifiedError
+	if !errors.As(plain, &classified) || !classified.retryable {
+		t.Fatalf("503 must be classified retryable: %v", plain)
+	}
+	empty := requireSuccess(types.HTTPResponse{StatusCode: 400}, false)
 	if empty == nil || !strings.Contains(empty.Error(), "HTTP 400") {
 		t.Fatalf("status code must be kept without upstream message: %v", empty)
 	}
-	if requireSuccess(types.HTTPResponse{StatusCode: 200}) != nil {
+	if !errors.As(empty, &classified) || classified.retryable {
+		t.Fatalf("400 must be classified non-retryable: %v", empty)
+	}
+	retried := requireSuccess(types.HTTPResponse{StatusCode: 502}, true)
+	if retried == nil || !strings.Contains(retried.Error(), "已自动重试 1 次") {
+		t.Fatalf("retried failure must be labelled: %v", retried)
+	}
+	if requireSuccess(types.HTTPResponse{StatusCode: 200}, false) != nil {
 		t.Fatal("success status must pass")
 	}
 }
@@ -483,5 +503,155 @@ func TestNormalizeImageInputAcceptsBareBase64(t *testing.T) {
 	decoded, err := base64.StdEncoding.DecodeString(image.Base64)
 	if err != nil || len(decoded) == 0 {
 		t.Fatalf("base64 invalid: %v", err)
+	}
+}
+
+func TestGenerateRejectsTinyReferenceImageLocally(t *testing.T) {
+	var hits int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt64(&hits, 1)
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"url": validPngDataURL()}}})
+	}))
+	defer server.Close()
+
+	input := newInput(t, map[string]any{"action": actionGenerate, "prompt": "验证", "referenceImages": []any{pngDataURL()}})
+	writeProviders(t, input.ToolDataDirectory, `{"defaultProvider":"demo","providers":[{"id":"demo","baseUrl":"`+server.URL+`","apiKey":"sk-test","protocol":"chat","defaultModel":"m1"}]}`)
+	output := Execute(context.Background(), input, &fakeSession{})
+	if output.Status != types.ToolStatusFailed {
+		t.Fatalf("tiny reference must fail, got %s", output.Status)
+	}
+	if !strings.Contains(output.Error, "尺寸过小") {
+		t.Fatalf("error must name the size problem: %s", output.Error)
+	}
+	if output.Metadata["retryable"] != false {
+		t.Fatalf("size failure must be non-retryable: %#v", output.Metadata)
+	}
+	if atomic.LoadInt64(&hits) != 0 {
+		t.Fatalf("tiny reference must not reach upstream, hits = %d", hits)
+	}
+}
+
+func TestGenerateRejectsTimeoutOutOfRange(t *testing.T) {
+	for _, timeoutMs := range []int64{1, 1000, 4000000} {
+		input := newInput(t, map[string]any{"action": actionGenerate, "prompt": "验证", "timeoutMs": timeoutMs})
+		writeProviders(t, input.ToolDataDirectory, `{"defaultProvider":"demo","providers":[{"id":"demo","baseUrl":"https://example.com","apiKey":"sk-test","protocol":"images","defaultModel":"m1"}]}`)
+		output := Execute(context.Background(), input, &fakeSession{})
+		if output.Status != types.ToolStatusFailed {
+			t.Fatalf("timeoutMs=%d must fail, got %s", timeoutMs, output.Status)
+		}
+		if !strings.Contains(output.Error, "5000-3600000") {
+			t.Fatalf("error must state the range: %s", output.Error)
+		}
+	}
+}
+
+func TestGenerateRetriesTransientUpstreamFailure(t *testing.T) {
+	var hits int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt64(&hits, 1) == 1 {
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte(`{"error":{"message":"upstream busy"}}`))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"url": validPngDataURL()}}})
+	}))
+	defer server.Close()
+
+	input := newInput(t, map[string]any{"action": actionGenerate, "prompt": "验证"})
+	writeProviders(t, input.ToolDataDirectory, `{"defaultProvider":"demo","providers":[{"id":"demo","baseUrl":"`+server.URL+`","apiKey":"sk-test","protocol":"images","defaultModel":"m1"}]}`)
+	session := &fakeSession{}
+	output := Execute(context.Background(), input, session)
+	if output.Status != types.ToolStatusSuccess {
+		t.Fatalf("transient 502 must succeed after retry, got %s: %s", output.Status, output.Error)
+	}
+	if atomic.LoadInt64(&hits) != 2 {
+		t.Fatalf("expected exactly one retry, hits = %d", hits)
+	}
+	if len(session.written) != 1 {
+		t.Fatalf("expected one session write, got %d", len(session.written))
+	}
+}
+
+func TestGenerateLabelsPersistentUpstreamFailureAsRetryable(t *testing.T) {
+	var hits int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt64(&hits, 1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":{"message":"still busy"}}`))
+	}))
+	defer server.Close()
+
+	input := newInput(t, map[string]any{"action": actionGenerate, "prompt": "验证"})
+	writeProviders(t, input.ToolDataDirectory, `{"defaultProvider":"demo","providers":[{"id":"demo","baseUrl":"`+server.URL+`","apiKey":"sk-test","protocol":"images","defaultModel":"m1"}]}`)
+	output := Execute(context.Background(), input, &fakeSession{})
+	if output.Status != types.ToolStatusFailed {
+		t.Fatalf("persistent 503 must fail, got %s", output.Status)
+	}
+	if output.Metadata["retryable"] != true {
+		t.Fatalf("503 failure must be retryable: %#v", output.Metadata)
+	}
+	if !strings.Contains(output.Error, "已自动重试 1 次") {
+		t.Fatalf("failure must note the retry: %s", output.Error)
+	}
+	if atomic.LoadInt64(&hits) != 2 {
+		t.Fatalf("expected two attempts, hits = %d", hits)
+	}
+}
+
+func TestConfigErrorsDoNotLeakPaths(t *testing.T) {
+	dataDir := t.TempDir()
+	input := newInput(t, map[string]any{"action": actionConfigRead, "file": "missing.json"})
+	input.ToolDataDirectory = dataDir
+	output := Execute(context.Background(), input, nil)
+	if output.Status != types.ToolStatusFailed {
+		t.Fatalf("missing file must fail, got %s", output.Status)
+	}
+	if strings.Contains(output.Error, dataDir) || strings.Contains(output.Error, ".tmp-") {
+		t.Fatalf("error leaked internal path: %s", output.Error)
+	}
+	if !strings.Contains(output.Error, "missing.json") {
+		t.Fatalf("error must keep logical path: %s", output.Error)
+	}
+}
+
+func TestConfigWriteLockSerializesConcurrentEdits(t *testing.T) {
+	dataDir := t.TempDir()
+	withDataDir := func(arguments map[string]any) types.ToolExecutionInput {
+		input := newInput(t, arguments)
+		input.ToolDataDirectory = dataDir
+		return input
+	}
+	original := `{"defaultProvider":"demo","providers":[{"id":"demo","baseUrl":"https://example.com","apiKey":"sk-real","protocol":"images","defaultModel":"flare"}]}`
+	decodeOutput(t, Execute(context.Background(), withDataDir(map[string]any{"action": actionConfigWrite, "file": "providers.json", "content": original}), nil))
+
+	edits := []map[string]any{
+		{"action": actionConfigEdit, "file": "providers.json", "field": "providers.0.defaultModel", "value": "sunburst"},
+		{"action": actionConfigEdit, "file": "providers.json", "field": "providers.0.name", "value": "并发一"},
+		{"action": actionConfigEdit, "file": "providers.json", "field": "providers.0.baseUrl", "value": "https://example.org"},
+	}
+	results := make(chan types.ToolExecutionOutput, len(edits))
+	start := make(chan struct{})
+	for _, edit := range edits {
+		go func(arguments map[string]any) {
+			<-start
+			results <- Execute(context.Background(), withDataDir(arguments), nil)
+		}(edit)
+	}
+	close(start)
+	failures := 0
+	for range edits {
+		if output := <-results; output.Status != types.ToolStatusSuccess {
+			failures++
+		}
+	}
+	if failures != 0 {
+		t.Fatalf("all concurrent edits must succeed, failures = %d", failures)
+	}
+	read := Execute(context.Background(), withDataDir(map[string]any{"action": actionConfigRead, "file": "providers.json"}), nil)
+	decodeOutput(t, read)
+	for _, expected := range []string{"sunburst", "并发一", "https://example.org"} {
+		if !strings.Contains(read.Content, expected) {
+			t.Fatalf("concurrent edit lost %q: %s", expected, read.Content)
+		}
 	}
 }

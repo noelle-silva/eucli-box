@@ -32,7 +32,7 @@
 ## 输出与边界
 
 - 每次返回（成功与失败）的正文末尾都有一条 `[hypercortex_reader]` 信息条，说明本次调用的关键事实（仓库、动作、条数、行数、续读位置、截断状态等）；信息条不计入输出上限、永久完整。
-- 失败信息条携带出错对象标识（`dir` / `noteId` / `faceId`）与机器可读的错误码 `code`（如 `VERSION_CONFLICT`、`NOTE_NOT_FOUND`、`UNKNOWN_FACE_KIND`、`DUPLICATE_FAVORITE`、`PATH_ESCAPE`）；文案可改，码不变，便于程序化区分错误类型。
+- 失败信息条携带出错对象标识（`dir` / `noteId` / `faceId`）与机器可读的错误码 `code`（如 `VERSION_CONFLICT`、`VERSION_NOT_FOUND`、`NOTE_NOT_FOUND`、`UNKNOWN_FACE_KIND`、`DUPLICATE_FAVORITE`、`PATH_ESCAPE`）；文案可改，码不变，便于程序化区分错误类型。笔记存在而版本不存在时报「版本不存在」（`VERSION_NOT_FOUND`），与「笔记不存在」（`NOTE_NOT_FOUND`）明确分开。
 - 未知参数会直接报错，不会被静默忽略；框架惯例的「调用原因」`description` 被接受并记录到结果元数据（不参与业务，与 `shell_command` 等同款）。
 - 正文超出上限时按行边界截断：取预算内最后一个换行处、整行延后（不会砍断编号）；仅当首行本身就超上限时才按字符切。信息条标注 `truncated=true` 与续读位置。
 - 分段读取优先用 `limit`（行数 / 条数）：它与内容长度无关、可预期；`maxOutputChars` 只作为总正文上限。

@@ -219,7 +219,7 @@ func TestExecuteSearchNotesSendsParametersWithoutScope(t *testing.T) {
 	}))
 
 	requireSuccess(t, result)
-	for _, fragment := range []string{"note-1", "标题甲", "Notes/2026-09/note-1", "updatedAtMs=2000", "命中片段", "searchableKinds=markdown", "nextOffset=1"} {
+	for _, fragment := range []string{"note-1", "标题甲", "Notes/2026-09/note-1", "updatedAtMs=2000", "命中片段", "count=1", "total=2", "searchableKinds=markdown", "nextOffset=1"} {
 		if !strings.Contains(result.Content, fragment) {
 			t.Fatalf("content %q missing %q", result.Content, fragment)
 		}

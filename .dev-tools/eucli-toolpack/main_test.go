@@ -84,35 +84,35 @@ func TestRunRejectsAssetRootRequiredFileDirectory(t *testing.T) {
 }
 
 func TestCopyDeclaredAssetRootsAcceptsRequiredFiles(t *testing.T) {
-	assetRoot := filepath.Join(t.TempDir(), "everything-root")
-	writeFixtureFile(t, filepath.Join(assetRoot, "Everything.exe"))
-	writeFixtureFile(t, filepath.Join(assetRoot, "es.exe"))
+	assetRoot := filepath.Join(t.TempDir(), "demo-root")
+	writeFixtureFile(t, filepath.Join(assetRoot, "demo-tool.exe"))
+	writeFixtureFile(t, filepath.Join(assetRoot, "demo-cli.exe"))
 	targetDir := filepath.Join(t.TempDir(), "tool")
 
 	err := copyDeclaredAssetRoots(targetDir, toolpackSpec{AssetRoots: []assetRootSpec{{
-		Name:          "everything-root",
-		Target:        "providers/everything",
-		RequiredFiles: []string{"Everything.exe", "es.exe"},
-	}}}, assetRootFlags{"everything-root": assetRoot}, nil, false)
+		Name:          "demo-root",
+		Target:        "providers/demo",
+		RequiredFiles: []string{"demo-tool.exe", "demo-cli.exe"},
+	}}}, assetRootFlags{"demo-root": assetRoot}, nil, false)
 	if err != nil {
 		t.Fatalf("copyDeclaredAssetRoots() error = %v", err)
 	}
-	assertFile(t, filepath.Join(targetDir, "providers", "everything", "Everything.exe"))
-	assertFile(t, filepath.Join(targetDir, "providers", "everything", "es.exe"))
+	assertFile(t, filepath.Join(targetDir, "providers", "demo", "demo-tool.exe"))
+	assertFile(t, filepath.Join(targetDir, "providers", "demo", "demo-cli.exe"))
 }
 
 func TestCopyDeclaredAssetRootsRejectsMissingRequiredFile(t *testing.T) {
-	assetRoot := filepath.Join(t.TempDir(), "everything-root")
-	writeFixtureFile(t, filepath.Join(assetRoot, "Everything.exe"))
+	assetRoot := filepath.Join(t.TempDir(), "demo-root")
+	writeFixtureFile(t, filepath.Join(assetRoot, "demo-tool.exe"))
 	targetDir := filepath.Join(t.TempDir(), "tool")
 
 	err := copyDeclaredAssetRoots(targetDir, toolpackSpec{AssetRoots: []assetRootSpec{{
-		Name:          "everything-root",
-		Target:        "providers/everything",
-		RequiredFiles: []string{"Everything.exe", "es.exe"},
-	}}}, assetRootFlags{"everything-root": assetRoot}, nil, false)
-	if err == nil || !strings.Contains(err.Error(), "es.exe") {
-		t.Fatalf("copyDeclaredAssetRoots() error = %v, want missing es.exe error", err)
+		Name:          "demo-root",
+		Target:        "providers/demo",
+		RequiredFiles: []string{"demo-tool.exe", "demo-cli.exe"},
+	}}}, assetRootFlags{"demo-root": assetRoot}, nil, false)
+	if err == nil || !strings.Contains(err.Error(), "demo-cli.exe") {
+		t.Fatalf("copyDeclaredAssetRoots() error = %v, want missing demo-cli.exe error", err)
 	}
 }
 
@@ -134,13 +134,13 @@ func TestCopyDeclaredAssetRootsAcceptsLegacyRequiredFile(t *testing.T) {
 
 func TestCopyDeclaredAssetRootsAcceptsExistingPackagedTarget(t *testing.T) {
 	targetDir := filepath.Join(t.TempDir(), "tool")
-	writeFixtureFile(t, filepath.Join(targetDir, "providers", "everything", "Everything.exe"))
-	writeFixtureFile(t, filepath.Join(targetDir, "providers", "everything", "es.exe"))
+	writeFixtureFile(t, filepath.Join(targetDir, "providers", "demo", "demo-tool.exe"))
+	writeFixtureFile(t, filepath.Join(targetDir, "providers", "demo", "demo-cli.exe"))
 
 	err := copyDeclaredAssetRoots(targetDir, toolpackSpec{AssetRoots: []assetRootSpec{{
-		Name:          "everything-root",
-		Target:        "providers/everything",
-		RequiredFiles: []string{"Everything.exe", "es.exe"},
+		Name:          "demo-root",
+		Target:        "providers/demo",
+		RequiredFiles: []string{"demo-tool.exe", "demo-cli.exe"},
 	}}}, nil, nil, false)
 	if err != nil {
 		t.Fatalf("copyDeclaredAssetRoots() error = %v", err)
@@ -149,15 +149,15 @@ func TestCopyDeclaredAssetRootsAcceptsExistingPackagedTarget(t *testing.T) {
 
 func TestCopyDeclaredAssetRootsRejectsIncompletePackagedTarget(t *testing.T) {
 	targetDir := filepath.Join(t.TempDir(), "tool")
-	writeFixtureFile(t, filepath.Join(targetDir, "providers", "everything", "Everything.exe"))
+	writeFixtureFile(t, filepath.Join(targetDir, "providers", "demo", "demo-tool.exe"))
 
 	err := copyDeclaredAssetRoots(targetDir, toolpackSpec{AssetRoots: []assetRootSpec{{
-		Name:          "everything-root",
-		Target:        "providers/everything",
-		RequiredFiles: []string{"Everything.exe", "es.exe"},
+		Name:          "demo-root",
+		Target:        "providers/demo",
+		RequiredFiles: []string{"demo-tool.exe", "demo-cli.exe"},
 	}}}, nil, nil, false)
-	if err == nil || !strings.Contains(err.Error(), "es.exe") {
-		t.Fatalf("copyDeclaredAssetRoots() error = %v, want missing packaged es.exe error", err)
+	if err == nil || !strings.Contains(err.Error(), "demo-cli.exe") {
+		t.Fatalf("copyDeclaredAssetRoots() error = %v, want missing packaged demo-cli.exe error", err)
 	}
 }
 
@@ -165,9 +165,9 @@ func TestCopyDeclaredAssetRootsRejectsMissingRequiredPackagedTarget(t *testing.T
 	targetDir := filepath.Join(t.TempDir(), "tool")
 
 	err := copyDeclaredAssetRoots(targetDir, toolpackSpec{AssetRoots: []assetRootSpec{{
-		Name:              "everything-root",
-		Target:            "providers/everything",
-		RequiredFiles:     []string{"Everything.exe", "es.exe"},
+		Name:              "demo-root",
+		Target:            "providers/demo",
+		RequiredFiles:     []string{"demo-tool.exe", "demo-cli.exe"},
 		RequiredInPackage: true,
 	}}}, nil, nil, false)
 	if err == nil || !strings.Contains(err.Error(), "was not produced") {

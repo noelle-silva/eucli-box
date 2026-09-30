@@ -5,24 +5,22 @@ import (
 	"strings"
 )
 
-func formatContent(response searchResponse, request searchRequest) (string, bool) {
+// formatContent 把搜索结果整理为稳定的 Markdown，并按字符上限截断。
+func formatContent(payload searchResultPayload, request searchRequest) (string, bool) {
 	var builder strings.Builder
 	builder.WriteString("## Everything Search Results\n\n")
-	builder.WriteString(fmt.Sprintf("Query: `%s`  \n", response.Query))
-	builder.WriteString(fmt.Sprintf("Results: `%d` of limit `%d`\n", len(response.Results), response.Limit))
-	if scope := scopeSummary(response); scope != "" {
-		builder.WriteString(fmt.Sprintf("Scope: %s\n", scope))
-	}
-	if strings.TrimSpace(response.InstanceName) != "" {
-		builder.WriteString(fmt.Sprintf("Instance: `%s`\n", response.InstanceName))
+	builder.WriteString(fmt.Sprintf("Query: `%s`  \n", payload.Query))
+	builder.WriteString(fmt.Sprintf("Results: `%d`\n", len(payload.Results)))
+	if scope := strings.TrimSpace(payload.ScopePath); scope != "" {
+		builder.WriteString(fmt.Sprintf("Scope: %s\n", inlineCode(scope)))
 	}
 	builder.WriteString("\n")
-	if len(response.Results) == 0 {
+	if len(payload.Results) == 0 {
 		builder.WriteString("No local files matched the query.\n")
 		return truncateWithState(builder.String(), request.MaxOutputChars)
 	}
 	builder.WriteString("### Results\n\n")
-	for index, result := range response.Results {
+	for index, result := range payload.Results {
 		builder.WriteString(fmt.Sprintf("%d. %s\n", index+1, inlineCode(result.FullPath)))
 		details := []string{}
 		if strings.TrimSpace(result.Kind) != "" {
@@ -44,27 +42,22 @@ func formatContent(response searchResponse, request searchRequest) (string, bool
 	return truncateWithState(builder.String(), request.MaxOutputChars)
 }
 
-func scopeSummary(response searchResponse) string {
-	if response.ScopeMode == scopeModeAllLocalDrives && len(response.ScopePaths) > 0 {
-		return "all local drives: " + strings.Join(inlineCodeList(response.ScopePaths), ", ")
-	}
-	if strings.TrimSpace(response.ScopePath) != "" {
-		return inlineCode(response.ScopePath)
-	}
-	return ""
-}
-
-func inlineCodeList(values []string) []string {
-	items := make([]string, 0, len(values))
-	for _, value := range values {
-		items = append(items, inlineCode(value))
-	}
-	return items
-}
-
+// truncateWithState 按字符上限截断，并报告是否发生截断。
 func truncateWithState(text string, limit int) (string, bool) {
 	if limit <= 0 {
 		return text, false
+	}
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text, false
+	}
+	return string(runes[:limit]), true
+}
+
+// truncateRunes 按字符截断（不切断多字节字符），并报告是否发生截断。
+func truncateRunes(text string, limit int) (string, bool) {
+	if limit <= 0 {
+		return "", text != ""
 	}
 	runes := []rune(text)
 	if len(runes) <= limit {

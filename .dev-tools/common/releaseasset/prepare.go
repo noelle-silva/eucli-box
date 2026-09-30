@@ -60,14 +60,6 @@ func PrepareRequired(ctx context.Context, options PrepareOptions) (map[string]st
 	}
 	result := map[string]string{}
 	for _, recipe := range catalog.RecipesForArtifact(options.Artifact) {
-		if recipe.Kind == "existing" {
-			root := filepath.Join(repositoryRoot, filepath.FromSlash(recipe.RepositoryPath))
-			if _, err := Inspect(ctx, root, recipe.Name); err != nil {
-				return nil, err
-			}
-			result[recipe.Name] = root
-			continue
-		}
 		target := filepath.Join(outputRoot, recipe.Name)
 		if !pathWithin(outputRoot, target) {
 			return nil, fmt.Errorf("外部随包内容目标越过准备目录")

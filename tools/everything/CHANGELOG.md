@@ -1,5 +1,15 @@
 # 更新记录
 
+## 0.5.0 - 2026-09-30
+
+- 不再自带 Everything 发布物：移除 `providers/everything/`（`Everything.exe`、`es.exe` 等）与全部打包资产声明。
+- 移除权限管家机制：删除一次性授权动作、保护区引擎安装、系统服务登记与健康判定。
+- 移除工具专属运行实例、保活机制与全盘索引动作：索引与实例生命周期统一由 Everything 应用负责。
+- 工具改为通过 Everything 应用开放接口搜索：用户配置填写访问地址（endpoint）与访问钥匙（key），以本机 HTTP JSON-RPC + Bearer 发起请求。
+- 动作收口为单一搜索：删除 `action` 参数与 `authorize` / `index` 动作。
+- 输入参数收口：保留 `query`（必填）、`scopePath`、`maxResults`、`timeoutMs`、`maxOutputChars`、`description`；删除 `esPath`、`instanceName`、`keepAliveEnabled`、`keepAliveSeconds` 及 `EVERYTHING_ES_PATH` 环境变量通道。
+- 时限语义归位：`timeoutMs` 只作用于对应用的搜索请求，不再打穿工具执行上下文与控制通道。
+
 ## 0.4.0 - 2026-09-10
 
 - 新增 `action` 输入参数，取值 `search`、`authorize`、`index`，缺省为 `search`；其他取值明确失败。

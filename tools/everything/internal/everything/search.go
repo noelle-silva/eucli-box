@@ -2,125 +2,35 @@ package everything
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
 	"fmt"
-	"os"
-	"os/exec"
-	"strconv"
-	"strings"
 	"time"
 )
 
-type searchResponse struct {
-	Query        string
-	Limit        int
-	ScopePath    string
-	ScopePaths   []string
-	ScopeMode    string
-	InstanceName string
-	DurationMs   int64
-	Results      []searchResult
+// searchEverything 通过 Everything 应用开放接口执行一次搜索，返回结构化结果。
+func searchEverything(ctx context.Context, client *rpcClient, request searchRequest) (searchResultPayload, error) {
+	params := map[string]any{"query": request.Query}
+	if request.MaxResults > 0 {
+		params["limit"] = request.MaxResults
+	}
+	if request.ScopePath != "" {
+		params["scopePath"] = request.ScopePath
+	}
+	raw, err := client.call(ctx, "everything.search", params)
+	if err != nil {
+		return searchResultPayload{}, err
+	}
+	var payload searchResultPayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return searchResultPayload{}, fmt.Errorf("解析搜索结果失败：%w", err)
+	}
+	return payload, nil
 }
 
-func searchEverything(ctx context.Context, executable string, request searchRequest) (searchResponse, error) {
-	startedAt := time.Now()
-	response := searchResponse{Query: request.Query, Limit: request.MaxResults, ScopePath: request.ScopePath, ScopePaths: request.ScopePaths, ScopeMode: request.ScopeMode, InstanceName: request.InstanceName, Results: []searchResult{}}
-	text, err := runEverythingSearchCSV(ctx, executable, request)
-	response.DurationMs = int64(time.Since(startedAt) / time.Millisecond)
-	if err != nil {
-		return response, err
+// requestTimeout 计算本次请求时限：调用参数优先，否则用随包缺省。
+func requestTimeout(request searchRequest, config Config) time.Duration {
+	if request.TimeoutMs > 0 {
+		return time.Duration(request.TimeoutMs) * time.Millisecond
 	}
-	results, err := parseSearchCSV(text)
-	if err != nil {
-		return response, err
-	}
-	response.Results = results
-	return response, nil
-}
-
-func runEverythingSearchCSV(ctx context.Context, executable string, request searchRequest) (string, error) {
-	file, err := os.CreateTemp("", "eucli-everything-search-*.csv")
-	if err != nil {
-		return "", fmt.Errorf("create Everything search export failed: %w", err)
-	}
-	csvPath := file.Name()
-	if err := file.Close(); err != nil {
-		_ = os.Remove(csvPath)
-		return "", fmt.Errorf("close Everything search export failed: %w", err)
-	}
-	defer os.Remove(csvPath)
-
-	args := everythingSearchArgs(request.InstanceName, request.Query, request.MaxResults, csvPath, request.ScopePath, request.ConnectTimeoutMs)
-	if _, err := runCommandOutput(ctx, 0, executable, args...); err != nil {
-		return "", err
-	}
-	content, err := os.ReadFile(csvPath)
-	if err != nil {
-		return "", fmt.Errorf("read Everything search export failed: %w", err)
-	}
-	return string(content), nil
-}
-
-func everythingSearchArgs(instance string, query string, limit int, csvPath string, scopePath string, connectTimeoutMs int) []string {
-	args := []string{}
-	if strings.TrimSpace(instance) != "" {
-		args = append(args, "-instance", strings.TrimSpace(instance))
-	}
-	args = append(args,
-		"-timeout", strconv.Itoa(connectTimeoutMs),
-		"-export-csv", csvPath,
-		"-utf8-bom",
-		"-no-header",
-		"-name",
-		"-path-column",
-		"-size",
-		"-date-modified",
-		"-n", strconv.Itoa(limit),
-	)
-	if strings.TrimSpace(scopePath) != "" {
-		args = append(args, "-path", scopePath)
-	}
-	return append(args, query)
-}
-
-// runCommandOutput runs an Everything CLI command. A positive timeout bounds
-// the command (connection-layer waits); a non-positive timeout leaves the
-// command bounded only by the context, which carries the caller-specified
-// execution deadline when one was set.
-func runCommandOutput(ctx context.Context, timeout time.Duration, name string, args ...string) (string, error) {
-	commandCtx := ctx
-	var cancel context.CancelFunc
-	if timeout > 0 {
-		commandCtx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
-	}
-	cmd := exec.CommandContext(commandCtx, name, args...)
-	output, err := cmd.CombinedOutput()
-	text := string(output)
-	message := strings.TrimSpace(text)
-	if commandCtx.Err() != nil {
-		if errors.Is(commandCtx.Err(), context.DeadlineExceeded) {
-			if timeout > 0 {
-				if message != "" {
-					return text, fmt.Errorf("Everything search timed out after %s: %s", timeout, message)
-				}
-				return text, fmt.Errorf("Everything search timed out after %s", timeout)
-			}
-			if message != "" {
-				return text, fmt.Errorf("Everything search timed out: %s", message)
-			}
-			return text, fmt.Errorf("Everything search timed out")
-		}
-		if message != "" {
-			return text, fmt.Errorf("Everything search cancelled: %s", message)
-		}
-		return text, fmt.Errorf("Everything search cancelled")
-	}
-	if err != nil {
-		if message != "" {
-			return text, fmt.Errorf("%w: %s", err, message)
-		}
-		return text, err
-	}
-	return text, nil
+	return time.Duration(config.Limits.DefaultRequestTimeoutMs) * time.Millisecond
 }

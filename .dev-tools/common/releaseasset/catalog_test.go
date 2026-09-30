@@ -18,7 +18,7 @@ func TestCatalogDefinesFixedAssetsForReleaseArtifacts(t *testing.T) {
 		artifact types.ReleaseArtifactIdentity
 		want     []string
 	}{
-		{artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "everything"}, want: []string{"everything-root"}},
+		{artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "everything"}, want: []string{}},
 		{artifact: types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: "shell_command"}, want: []string{"command-analyzer-root", "git-bash-root", "nushell-root", "powershell-root"}},
 	}
 	for _, testCase := range cases {
@@ -89,7 +89,7 @@ func TestInspectRejectsChangedContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	recipe, err := catalog.Recipe("everything-root")
+	recipe, err := catalog.Recipe("command-analyzer-root")
 	if err != nil {
 		t.Fatal(err)
 	}

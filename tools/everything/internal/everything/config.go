@@ -3,297 +3,127 @@ package everything
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"eucli-box/pkg/types"
 )
 
+// Config 是随包静态配置（config.json）的读取视图。
 type Config struct {
-	DefaultProvider string           `json:"defaultProvider"`
-	ESPathEnv       string           `json:"esPathEnv"`
-	Providers       []ProviderConfig `json:"providers"`
-	Runtime         RuntimeConfig    `json:"runtime"`
-	Limits          LimitsConfig     `json:"limits"`
+	Limits LimitsConfig `json:"limits"`
 }
 
-type ProviderConfig struct {
-	ID                 string             `json:"id"`
-	Mode               string             `json:"mode"`
-	Enabled            bool               `json:"enabled"`
-	Executables        []types.ToolBinary `json:"executables"`
-	RuntimeExecutables []types.ToolBinary `json:"runtimeExecutables"`
-}
-
-type RuntimeConfig struct {
-	Directory           string `json:"directory"`
-	DefaultInstanceName string `json:"defaultInstanceName"`
-	ReadyTimeoutMs      int    `json:"readyTimeoutMs"`
-	ProbeIntervalMs     int    `json:"probeIntervalMs"`
-}
-
+// LimitsConfig 是随包静态上限：用户配置与调用参数只能在其范围内下调。
 type LimitsConfig struct {
-	DefaultConnectTimeoutMs int `json:"defaultConnectTimeoutMs"`
-	DefaultMaxResults       int `json:"defaultMaxResults"`
-	MaxResults              int `json:"maxResults"`
+	DefaultRequestTimeoutMs int `json:"defaultRequestTimeoutMs"`
 	MaxOutputChars          int `json:"maxOutputChars"`
 }
 
-type selectedProvider struct {
-	ID                string
-	ESExecutable      string
-	RuntimeExecutable string
-	ExecutableSource  string
-	RuntimeSource     string
-	Bundled           bool
-}
-
-func loadConfig(toolDirectory string) (Config, error) {
-	if strings.TrimSpace(toolDirectory) == "" {
-		return Config{}, fmt.Errorf("toolDirectory is required")
+// loadConfig 读取随包静态配置；工具安装包内始终携带 config.json，缺失即视为安装损坏。
+func loadConfig(bodyDir string) (Config, error) {
+	bodyDir = strings.TrimSpace(bodyDir)
+	if bodyDir == "" {
+		return Config{}, errors.New("tool body directory is required")
 	}
-	payload, err := os.ReadFile(filepath.Join(toolDirectory, "config.json"))
+	payload, err := os.ReadFile(filepath.Join(bodyDir, "config.json"))
 	if err != nil {
 		return Config{}, fmt.Errorf("read config.json: %w", err)
 	}
-	var config Config
+	config := Config{}
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&config); err != nil {
 		return Config{}, fmt.Errorf("decode config.json: %w", err)
 	}
-	return normalizeConfig(config)
-}
-
-func normalizeConfig(config Config) (Config, error) {
-	config.DefaultProvider = strings.TrimSpace(config.DefaultProvider)
-	if config.DefaultProvider == "" {
-		return Config{}, fmt.Errorf("defaultProvider is required")
+	if config.Limits.DefaultRequestTimeoutMs <= 0 {
+		return Config{}, errors.New("limits.defaultRequestTimeoutMs must be greater than zero")
 	}
-	config.ESPathEnv = strings.TrimSpace(config.ESPathEnv)
-	if config.ESPathEnv == "" {
-		return Config{}, fmt.Errorf("esPathEnv is required")
-	}
-	if err := validateRuntimeConfig(config.Runtime); err != nil {
-		return Config{}, err
-	}
-	if err := validateLimits(config.Limits); err != nil {
-		return Config{}, err
-	}
-	if err := validateProviders(config); err != nil {
-		return Config{}, err
+	if config.Limits.MaxOutputChars <= 0 {
+		return Config{}, errors.New("limits.maxOutputChars must be greater than zero")
 	}
 	return config, nil
 }
 
-func validateRuntimeConfig(runtimeConfig RuntimeConfig) error {
-	directory := strings.TrimSpace(runtimeConfig.Directory)
-	if directory == "" {
-		return fmt.Errorf("runtime.directory is required")
-	}
-	if filepath.IsAbs(directory) || filepath.VolumeName(directory) != "" {
-		return fmt.Errorf("runtime.directory must be relative")
-	}
-	if strings.TrimSpace(runtimeConfig.DefaultInstanceName) == "" {
-		return fmt.Errorf("runtime.defaultInstanceName is required")
-	}
-	if runtimeConfig.ReadyTimeoutMs <= 0 {
-		return fmt.Errorf("runtime.readyTimeoutMs must be greater than zero")
-	}
-	if runtimeConfig.ProbeIntervalMs <= 0 || runtimeConfig.ProbeIntervalMs > runtimeConfig.ReadyTimeoutMs {
-		return fmt.Errorf("runtime.probeIntervalMs must be between 1 and runtime.readyTimeoutMs")
-	}
-	return nil
+// userConfig 是工具用户配置的连接视图：访问地址、访问钥匙与输出上限。
+type userConfig struct {
+	Endpoint       string
+	Key            string
+	MaxOutputChars int
 }
 
-func validateLimits(limits LimitsConfig) error {
-	if limits.DefaultConnectTimeoutMs <= 0 {
-		return fmt.Errorf("limits.defaultConnectTimeoutMs must be greater than zero")
-	}
-	if limits.DefaultMaxResults <= 0 {
-		return fmt.Errorf("limits.defaultMaxResults must be greater than zero")
-	}
-	if limits.MaxResults < limits.DefaultMaxResults {
-		return fmt.Errorf("limits.maxResults must be greater than or equal to limits.defaultMaxResults")
-	}
-	if limits.MaxOutputChars <= 0 {
-		return fmt.Errorf("limits.maxOutputChars must be greater than zero")
-	}
-	return nil
-}
-
-func validateProviders(config Config) error {
-	if len(config.Providers) == 0 {
-		return fmt.Errorf("providers are required")
-	}
-	seen := map[string]struct{}{}
-	defaultEnabled := false
-	for index := range config.Providers {
-		provider := &config.Providers[index]
-		provider.ID = strings.TrimSpace(provider.ID)
-		provider.Mode = strings.TrimSpace(provider.Mode)
-		if provider.ID == "" {
-			return fmt.Errorf("provider id is required")
-		}
-		if _, ok := seen[provider.ID]; ok {
-			return fmt.Errorf("duplicate provider id %q", provider.ID)
-		}
-		seen[provider.ID] = struct{}{}
-		if provider.Mode != "bundled" {
-			return fmt.Errorf("provider %q mode must be bundled", provider.ID)
-		}
-		if len(provider.Executables) == 0 {
-			return fmt.Errorf("provider %q must declare es executables", provider.ID)
-		}
-		if len(provider.RuntimeExecutables) == 0 {
-			return fmt.Errorf("provider %q must declare runtime executables", provider.ID)
-		}
-		if provider.ID == config.DefaultProvider && provider.Enabled {
-			defaultEnabled = true
-		}
-	}
-	if !defaultEnabled {
-		return fmt.Errorf("defaultProvider %q must exist and be enabled", config.DefaultProvider)
-	}
-	return nil
-}
-
-func resolveSearchProvider(config Config, input types.ToolExecutionInput) (selectedProvider, error) {
-	if value, err := optionalString(input.UserConfig, "esPath"); err != nil {
-		return selectedProvider{}, err
-	} else if value != "" {
-		executable, source, err := resolveConfiguredExecutable(value, "userConfig.esPath")
-		return selectedProvider{ID: "external", ESExecutable: executable, ExecutableSource: source, RuntimeSource: "external"}, err
-	}
-	if value := strings.TrimSpace(os.Getenv(config.ESPathEnv)); value != "" {
-		executable, source, err := resolveConfiguredExecutable(value, config.ESPathEnv)
-		return selectedProvider{ID: "external", ESExecutable: executable, ExecutableSource: source, RuntimeSource: "external"}, err
-	}
-	return resolveBundledProvider(config, input.ToolBodyDirectory)
-}
-
-func resolveBundledProvider(config Config, toolBodyDirectory string) (selectedProvider, error) {
-	provider, ok := defaultProviderConfig(config)
-	if !ok {
-		return selectedProvider{}, fmt.Errorf("provider %q is not configured", config.DefaultProvider)
-	}
-	if !provider.Enabled {
-		return selectedProvider{}, fmt.Errorf("provider %q is disabled", provider.ID)
-	}
-	esExecutable, err := resolveBundledExecutable(toolBodyDirectory, provider.ID, provider.Executables, "es")
+// loadUserConfig 从工具用户配置读取连接信息；地址非法或钥匙缺失都快速失败并指明修复位置。
+func loadUserConfig(input types.ToolExecutionInput) (userConfig, error) {
+	endpoint, err := normalizeAccessEndpoint(userConfigString(input, "endpoint"))
 	if err != nil {
-		return selectedProvider{}, err
+		return userConfig{}, err
 	}
-	runtimeExecutable, err := bundledRuntimeExecutable(config, toolBodyDirectory)
-	if err != nil {
-		return selectedProvider{}, err
+	key := strings.TrimSpace(userConfigString(input, "key"))
+	if key == "" {
+		return userConfig{}, errors.New("缺少访问钥匙（key）：请在工具设置页的用户配置里填写 Everything 应用开放接口的访问钥匙")
 	}
-	return selectedProvider{ID: provider.ID, ESExecutable: esExecutable, RuntimeExecutable: runtimeExecutable, ExecutableSource: "bundled", RuntimeSource: "bundled", Bundled: true}, nil
+	return userConfig{Endpoint: endpoint, Key: key}, nil
 }
 
-func defaultProviderConfig(config Config) (ProviderConfig, bool) {
-	for _, provider := range config.Providers {
-		if provider.ID == config.DefaultProvider {
-			return provider, true
-		}
-	}
-	return ProviderConfig{}, false
-}
-
-// bundledRuntimeExecutable resolves the engine copy of the default bundled
-// provider: the full-disk instance engine. The permission steward always
-// serves this engine, independent of any user-provided CLI override.
-func bundledRuntimeExecutable(config Config, toolBodyDirectory string) (string, error) {
-	provider, ok := defaultProviderConfig(config)
-	if !ok {
-		return "", fmt.Errorf("provider %q is not configured", config.DefaultProvider)
-	}
-	if !provider.Enabled {
-		return "", fmt.Errorf("provider %q is disabled", provider.ID)
-	}
-	return resolveBundledExecutable(toolBodyDirectory, provider.ID, provider.RuntimeExecutables, "runtime")
-}
-
-func resolveBundledExecutable(toolBodyDirectory string, providerID string, executables []types.ToolBinary, label string) (string, error) {
-	if strings.TrimSpace(toolBodyDirectory) == "" {
-		return "", fmt.Errorf("toolBodyDirectory is required")
-	}
-	for _, candidate := range executables {
-		if candidate.GOOS != runtime.GOOS || candidate.GOARCH != runtime.GOARCH {
-			continue
-		}
-		path := strings.TrimSpace(candidate.Path)
-		if path == "" {
-			return "", fmt.Errorf("provider %q %s executable path is required", providerID, label)
-		}
-		if filepath.IsAbs(path) || filepath.VolumeName(path) != "" {
-			return "", fmt.Errorf("provider %q %s executable path must be relative", providerID, label)
-		}
-		resolved := filepath.Clean(filepath.Join(toolBodyDirectory, filepath.FromSlash(path)))
-		if !pathWithin(toolBodyDirectory, resolved) {
-			return "", fmt.Errorf("provider %q %s executable escapes tool body directory", providerID, label)
-		}
-		if err := ensureExecutableFile(resolved, fmt.Sprintf("provider %q %s executable", providerID, label)); err != nil {
-			return "", err
-		}
-		return resolved, nil
-	}
-	return "", fmt.Errorf("provider %q has no %s executable for %s/%s", providerID, label, runtime.GOOS, runtime.GOARCH)
-}
-
-func optionalString(values map[string]any, key string) (string, error) {
-	if values == nil {
-		return "", nil
-	}
-	value, ok := values[key]
+// userConfigString 读取用户配置中的字符串项；缺失或非字符串都返回空串。
+func userConfigString(input types.ToolExecutionInput, key string) string {
+	value, ok := input.UserConfig[key]
 	if !ok || value == nil {
-		return "", nil
+		return ""
 	}
-	return stringValue(value, key)
+	text, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return text
 }
 
-func resolveConfiguredExecutable(value string, source string) (string, string, error) {
-	path := strings.TrimSpace(value)
-	if path == "" {
-		return "", "", nil
+// normalizeAccessEndpoint 归一访问地址：去尾部斜杠、必须是纯 http/https 地址。
+func normalizeAccessEndpoint(value string) (string, error) {
+	endpoint := strings.TrimRight(strings.TrimSpace(value), "/")
+	if endpoint == "" {
+		return "", errors.New("缺少访问地址（endpoint）：请在工具设置页的用户配置里填写 Everything 应用开放接口的访问地址，例如 http://127.0.0.1:43210")
 	}
-	if filepath.Base(path) == path && filepath.VolumeName(path) == "" {
-		resolved, err := exec.LookPath(path)
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", errors.New("访问地址（endpoint）必须是绝对地址，例如 http://127.0.0.1:43210")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", errors.New("访问地址（endpoint）只支持 http/https")
+	}
+	if parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", errors.New("访问地址（endpoint）必须是纯地址，不能携带路径、参数或片段")
+	}
+	return endpoint, nil
+}
+
+// effectiveMaxOutputChars 计算本次输出的字符上限：
+// 随包上限为底，用户配置可下调；调用参数可在当前上限内再下调。两者越界都快速失败。
+func effectiveMaxOutputChars(input types.ToolExecutionInput, config Config) (int, error) {
+	limit := config.Limits.MaxOutputChars
+	if value, ok := input.UserConfig["maxOutputChars"]; ok && value != nil {
+		parsed, err := intValue(value, "maxOutputChars")
 		if err != nil {
-			return "", "", fmt.Errorf("%s command %q was not found on PATH", source, path)
+			return 0, errors.New("userConfig.maxOutputChars must be an integer")
 		}
-		return validateExecutablePath(resolved, source)
+		if parsed < 1 || parsed > limit {
+			return 0, fmt.Errorf("userConfig.maxOutputChars must be between 1 and %d", limit)
+		}
+		limit = parsed
 	}
-	return validateExecutablePath(path, source)
-}
-
-func validateExecutablePath(path string, source string) (string, string, error) {
-	if !filepath.IsAbs(path) {
-		return "", "", fmt.Errorf("%s must be an absolute executable path or a command name on PATH", source)
+	if value, ok := input.Arguments["maxOutputChars"]; ok && value != nil {
+		parsed, err := intValue(value, "maxOutputChars")
+		if err != nil {
+			return 0, err
+		}
+		if parsed < 1 || parsed > limit {
+			return 0, fmt.Errorf("argument \"maxOutputChars\" must be between 1 and %d", limit)
+		}
+		limit = parsed
 	}
-	resolved := filepath.Clean(path)
-	if err := ensureExecutableFile(resolved, source); err != nil {
-		return "", "", err
-	}
-	return resolved, source, nil
-}
-
-func ensureExecutableFile(path string, source string) error {
-	info, err := os.Stat(path)
-	if err != nil {
-		return fmt.Errorf("%s does not exist: %w", source, err)
-	}
-	if info.IsDir() {
-		return fmt.Errorf("%s path is a directory", source)
-	}
-	return nil
-}
-
-func pathWithin(base string, child string) bool {
-	rel, err := filepath.Rel(filepath.Clean(base), filepath.Clean(child))
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	return limit, nil
 }

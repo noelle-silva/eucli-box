@@ -1,7 +1,10 @@
+// 本入口是 AI 工具的公共底座：从标准输入读取执行输入、接入宿主控制协议，
+// 并按请求种类分流到数据迁移或业务动作；业务动作位于 internal/everything。
 package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -12,39 +15,11 @@ import (
 )
 
 func main() {
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "--keepalive-guard":
-			os.Exit(runKeepAliveGuard(os.Args[2:]))
-		case "--steward-install":
-			os.Exit(runStewardInstall(os.Args[2:]))
-		}
-	}
 	output := run()
 	encoder := json.NewEncoder(os.Stdout)
 	if err := encoder.Encode(output); err != nil {
 		os.Exit(1)
 	}
-}
-
-func runKeepAliveGuard(args []string) int {
-	if len(args) != 2 {
-		return 1
-	}
-	if err := everything.RunKeepAliveGuard(args[0], args[1]); err != nil {
-		return 2
-	}
-	return 0
-}
-
-func runStewardInstall(args []string) int {
-	if len(args) != 1 {
-		return 1
-	}
-	if err := everything.RunStewardInstall(args[0]); err != nil {
-		return 2
-	}
-	return 0
 }
 
 func run() types.ToolExecutionOutput {
@@ -58,7 +33,9 @@ func run() types.ToolExecutionOutput {
 	if err := decoder.Decode(&input); err != nil {
 		return failedOutput("failed to decode tool input", err)
 	}
-	executionCtx, cancel := toolcontrol.ExecutionContext(input.TimeoutMs)
+	// timeoutMs 的声明语义是搜索请求时限，只在业务层作用于对 Everything 应用的请求；
+	// 工具执行上下文保持可取消，绝不把该时限施加到控制通道与本地动作上。
+	executionCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if input.RequestKind == migrationRequestKind {
 		return runDataMigration(executionCtx, input)

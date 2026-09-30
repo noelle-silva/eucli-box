@@ -16,14 +16,6 @@ func probe(ctx context.Context, root string, recipe Recipe) error {
 		return fmt.Errorf("运行核对上下文不能为空")
 	}
 	switch recipe.Kind {
-	case "existing":
-		cmd := exec.CommandContext(ctx, filepath.Join(root, "es.exe"), "-version")
-		cmd.Dir = root
-		output, err := cmd.CombinedOutput()
-		if err != nil || !strings.Contains(string(output), "1.1.0.30") {
-			return fmt.Errorf("Everything CLI 版本核对失败：%w", err)
-		}
-		return nil
 	case "git-bash":
 		cmd := exec.CommandContext(ctx, filepath.Join(root, "bin", "bash.exe"), "--noprofile", "--norc", "-lc", "test \"$(command -v grep)\" = /usr/bin/grep && test \"$(command -v git)\" = /mingw64/bin/git && printf 'release-root\\n' | grep -qx release-root && git --version")
 		cmd.Dir = root

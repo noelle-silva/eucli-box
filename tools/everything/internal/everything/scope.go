@@ -4,39 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 )
 
-const (
-	scopeModeAllLocalDrives = "allLocalDrives"
-	scopeModeDirectory      = "directory"
-)
-
-type searchScope struct {
-	Mode         string
-	SearchPath   string
-	DisplayPaths []string
-	IndexPaths   []string
-}
-
-func resolveSearchScope(hostWorkingDirectory string, value string) (searchScope, error) {
-	path := strings.TrimSpace(value)
-	if path == "" {
-		paths, err := defaultLocalDriveRoots()
-		if err != nil {
-			return searchScope{}, err
-		}
-		return searchScope{Mode: scopeModeAllLocalDrives, DisplayPaths: paths}, nil
-	}
-	resolved, err := normalizeScopePath(hostWorkingDirectory, path)
-	if err != nil {
-		return searchScope{}, err
-	}
-	return searchScope{Mode: scopeModeDirectory, SearchPath: resolved, DisplayPaths: []string{resolved}, IndexPaths: []string{resolved}}, nil
-}
-
-func normalizeScopePath(hostWorkingDirectory string, value string) (string, error) {
+// resolveScopePath 解析可选的搜索范围：空值返回空串（交应用按自己的默认范围搜索）；
+// 绝对路径直接归一，相对路径基于主机工作目录解析；结果必须是一个已存在的目录。
+func resolveScopePath(hostWorkingDirectory string, value string) (string, error) {
 	path := strings.TrimSpace(value)
 	if path == "" {
 		return "", nil
@@ -62,27 +35,4 @@ func normalizeScopePath(hostWorkingDirectory string, value string) (string, erro
 		return "", fmt.Errorf("scopePath must be a directory")
 	}
 	return resolved, nil
-}
-
-func defaultLocalDriveRoots() ([]string, error) {
-	if runtime.GOOS != "windows" {
-		root := string(filepath.Separator)
-		info, err := os.Stat(root)
-		if err != nil || !info.IsDir() {
-			return nil, fmt.Errorf("default full-disk search root is not available")
-		}
-		return []string{root}, nil
-	}
-	roots := []string{}
-	for drive := 'A'; drive <= 'Z'; drive++ {
-		root := string(drive) + `:\`
-		info, err := os.Stat(root)
-		if err == nil && info.IsDir() {
-			roots = append(roots, root)
-		}
-	}
-	if len(roots) == 0 {
-		return nil, fmt.Errorf("no accessible drive roots found for default full-disk search")
-	}
-	return roots, nil
 }

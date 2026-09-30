@@ -20,31 +20,6 @@
       ]
     },
     {
-      "name": "everything-root",
-      "kind": "existing",
-      "version": "Everything 1.4.1.1032; ES 1.1.0.30",
-      "source": "https://www.voidtools.com/",
-      "sources": [
-        "https://www.voidtools.com/Everything-1.4.1.1032.x64.zip",
-        "https://www.voidtools.com/ES-1.1.0.30.x64.zip",
-        "https://www.voidtools.com/License.txt"
-      ],
-      "artifacts": ["tool:everything"],
-      "repositoryPath": "tools/everything/providers/everything",
-      "requiredFiles": [
-        {
-          "path": "Everything.exe",
-          "size": 2272424,
-          "sha256": "f191f756996a14a11e5445fa7103d302efd510cf2fbf920e6c0c8ed51d512e36"
-        },
-        {
-          "path": "es.exe",
-          "size": 154736,
-          "sha256": "9a9b851f9da14a29626126d9b5f8ef71b569b3cf7e3e70bfbf57f4f00a9b9383"
-        }
-      ]
-    },
-    {
       "name": "git-bash-root",
       "kind": "git-bash",
       "version": "Git for Windows 2.42.0.windows.2; Bash 5.2.15",

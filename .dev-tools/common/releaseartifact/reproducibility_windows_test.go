@@ -6,10 +6,19 @@ import (
 	"context"
 	"reflect"
 	"testing"
+
+	"devtools/common/releaseops"
 )
 
 func TestBuildProducesSameArtifactFromSameSource(t *testing.T) {
 	repositoryRoot := repositoryRootForTest(t)
+	// 开发版本建立在源码正式基线上，基线随源码版本升级而变；
+	// 从发布物自身推导开发版本，避免测试写死版本号而在源码升版后失效。
+	artifact, err := releaseops.Resolve(repositoryRoot, "tool:context7")
+	if err != nil {
+		t.Fatalf("resolve context7: %v", err)
+	}
+	developmentVersion := artifact.Version + ".1"
 	results := make([]BuildResult, 0, 2)
 	for index := 0; index < 2; index++ {
 		root := t.TempDir()
@@ -19,7 +28,7 @@ func TestBuildProducesSameArtifactFromSameSource(t *testing.T) {
 			WorkRoot:        root + "\\work",
 			OutputRoot:      root + "\\output",
 			EvidenceRoot:    root + "\\evidence",
-			VersionOverride: "0.2.0.1",
+			VersionOverride: developmentVersion,
 			AssetRoot:       root + "\\assets",
 		})
 		if err != nil {

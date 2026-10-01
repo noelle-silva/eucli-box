@@ -15,3 +15,7 @@
 - `general-verification-tools/`：长期验证工具专区（当前为空）
 - `dev-box/`：开发盒子（当前源码业务端编译、普通模式启动与连接信息输出）
 - `worktree-overlay/`：worktree 覆盖工具
+
+## 工具开发构建入口
+
+在任意 AI 工具目录里运行 `go run devtools/build`，即把该工具构建为成品并铺入本地开发货架。工具身份来自它自己的 `tool.json`，入口不向工具目录写入任何文件。

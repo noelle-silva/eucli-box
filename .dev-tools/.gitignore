@@ -1,6 +1,9 @@
 # Build outputs
 build/
 **/build/
+# 例外：开发构建入口是源码，仅放行顶层的 .dev-tools/build/
+!/build/
+!/build/**
 
 # Logs
 *.log

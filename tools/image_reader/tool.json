@@ -1,0 +1,73 @@
+{
+  "id": "image_reader",
+  "name": "image_reader",
+  "description": "从文件系统按路径读取一张图片文件，判定格式与大小并按需压缩，然后加载进当前会话供模型查看。",
+  "version": "0.1.0",
+  "eucliBoxCompatibility": {
+    "minimumVersion": "0.1.0",
+    "maximumVersionExclusive": "0.2.0"
+  },
+  "promptDescription": "使用 image_reader 按路径读取一张图片文件并加载进当前会话，让模型能够查看该图片。\n\n【动作】唯一动作：传入 path（必填），读取该图片文件。\n\n【路径基准】相对路径在工作区会话中以工作区首个注册目录为基准解析，其他会话从 e-b 宿主运行位置解析；绝对路径允许使用，前提是运行进程具有操作系统权限。路径越界由宿主围栏把关。\n\n【支持格式】仅 PNG / JPEG / WebP / GIF；按文件魔数识别，不认扩展名，其他内容（含伪装成图片的文件）本地直接拒绝。\n\n【体积处理】源文件超过 maxSourceBytes 直接拒绝，不读入；源文件超过 maxImageBytes 时自动压缩（等比缩放长边、透明合成白底、JPEG 重编码）；压缩后仍超过 maxImageBytes 则原地拒绝并提示文件太大。压缩只作用于加载进会话的这一张图，不改变磁盘上的源文件。\n\n【结果】图片经宿主写入当前会话并挂回本次回复，返回图片名、尺寸与是否压缩。失败区分：路径错误、文件不存在、非图片、文件太大、未授权等均明确回报。",
+  "defaultInvocationMode": "sync",
+  "type": "local",
+  "capabilities": [
+    {
+      "id": "workspace",
+      "access": "read",
+      "name": "工作区路径",
+      "description": "获取当前工作区的注册目录，并按工作区范围校验路径参数。"
+    },
+    {
+      "id": "session-attachments",
+      "access": "write",
+      "name": "写入会话图片",
+      "description": "把读取到的图片写入当前会话，由宿主代写并挂回本次回复。"
+    }
+  ],
+  "bodyDirectory": ".",
+  "userConfigSchema": {
+    "type": "object",
+    "properties": {
+      "maxImageBytes": {
+        "type": "integer",
+        "title": "入库上限字节数",
+        "description": "图片加载进会话的字节上限：源图超过此值触发压缩，压缩后仍超过则拒绝读取。"
+      },
+      "maxSourceBytes": {
+        "type": "integer",
+        "title": "源文件读取上限字节数",
+        "description": "允许读取的源图片文件字节硬上限，超过则直接拒绝、不读入内存。"
+      },
+      "maxDimension": {
+        "type": "integer",
+        "title": "压缩长边像素上限",
+        "description": "触发压缩时，图片长边缩放到的像素上限。"
+      },
+      "jpegQuality": {
+        "type": "integer",
+        "title": "压缩 JPEG 质量",
+        "description": "触发压缩时 JPEG 重编码的质量（1-100）。"
+      }
+    },
+    "additionalProperties": false
+  },
+  "defaultConfig": {
+    "maxImageBytes": 4194304,
+    "maxSourceBytes": 67108864,
+    "maxDimension": 1568,
+    "jpegQuality": 80
+  },
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string",
+        "format": "filepath",
+        "description": "要读取的图片文件路径。工作区会话中以工作区首个注册目录为基准解析相对路径，其他会话从 e-b 宿主运行位置解析；绝对路径允许使用。"
+      }
+    },
+    "required": ["path"],
+    "additionalProperties": false
+  },
+  "binaries": []
+}

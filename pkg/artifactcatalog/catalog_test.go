@@ -11,11 +11,12 @@ func TestLoadReturnsCompleteReleaseRoster(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if catalog.Platform != types.ReleasePlatformWindowsX64 || len(catalog.Artifacts) != 14 {
+	if catalog.Platform != types.ReleasePlatformWindowsX64 || len(catalog.Artifacts) != 15 {
 		t.Fatalf("catalog = %#v", catalog)
 	}
 	for _, identity := range []types.ReleaseArtifactIdentity{
 		{Kind: types.ReleaseArtifactKindTool, ID: "context7"},
+		{Kind: types.ReleaseArtifactKindTool, ID: "image_reader"},
 		{Kind: types.ReleaseArtifactKindTool, ID: "shell_command"},
 		{Kind: types.ReleaseArtifactKindPlugin, ID: "time-plugin"},
 	} {

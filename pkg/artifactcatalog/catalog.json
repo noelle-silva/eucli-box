@@ -9,6 +9,7 @@
     { "kind": "tool", "id": "file_reader" },
     { "kind": "tool", "id": "hypercortex_reader" },
     { "kind": "tool", "id": "hypercortex_writer" },
+    { "kind": "tool", "id": "image_reader" },
     { "kind": "tool", "id": "session_image" },
     { "kind": "tool", "id": "shell_command" },
     { "kind": "tool", "id": "web_search" },

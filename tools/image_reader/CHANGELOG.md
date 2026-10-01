@@ -1,0 +1,9 @@
+# 更新记录
+
+## 0.1.0 - 2026-10-02
+
+- 从 AI 工具模板建立 image_reader。
+- 唯一动作：按路径读取一张图片文件并加载进当前会话。
+- 声明 `workspace:read` 与 `session-attachments:write` 两项标准能力；路径参数标注 filepath，接入宿主围栏。
+- 按魔数识别 PNG / JPEG / WebP / GIF；超源读取上限直接拒绝。
+- 超入库上限触发压缩（等比缩放、白底合成、JPEG 重编码），压缩后仍超限原地拒绝。

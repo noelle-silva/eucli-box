@@ -1,13 +1,13 @@
 {
   "id": "zhihu_search",
   "name": "zhihu_search",
-  "description": "Search Zhihu through the Zhihu OpenAPI and return normalized markdown results with structured sources and items.",
+  "description": "通过知乎 OpenAPI 搜索知乎，返回规范化 Markdown 结果与结构化来源、条目。",
   "version": "0.2.0",
   "eucliBoxCompatibility": {
     "minimumVersion": "0.1.0",
     "maximumVersionExclusive": "0.2.0"
   },
-  "promptDescription": "Search Zhihu through the Zhihu OpenAPI. Required [query] is the search text. Optional [searchType] selects zhihu_search or global_search; aliases zhihu, site, global, and all are accepted. Optional [count] controls result count and is capped by the selected search type: zhihu_search returns 1-10 results, global_search returns 1-20 results. Optional [timeoutMs] controls request timeout. Optional [maxOutputChars] controls markdown output length. Optional [description] records why the lookup is being run. API secrets should be configured in tool user config or ZHIHU_ACCESS_SECRET, not placed in prompts. The tool returns markdown plus metadata including searchType, query, resultsCount, statusCode, durationMs, code, apiMessage, sources, and items.",
+  "promptDescription": "通过知乎 OpenAPI 搜索知乎。\n\n【参数】\n- query（必填）：搜索文本。\n- searchType（可选）：选择 zhihu_search 或 global_search；也接受别名 zhihu、site、global、all。\n- count（可选）：控制结果数量，受所选搜索类型上限约束：zhihu_search 返回 1-10 条，global_search 返回 1-20 条。\n- timeoutMs（可选）：控制请求时限。\n- maxOutputChars（可选）：控制 Markdown 输出长度。\n- description（可选）：记录这次查询的原因。\n\n【密钥】API Secret 应在工具用户配置或 ZHIHU_ACCESS_SECRET 中设置，不要写进提示词。\n\n【结果】工具返回 Markdown 与元数据，包含 searchType、query、resultsCount、statusCode、durationMs、code、apiMessage、sources 与 items。",
   "defaultInvocationMode": "sync",
   "type": "local",
   "bodyDirectory": ".",
@@ -64,28 +64,28 @@
     "properties": {
       "query": {
         "type": "string",
-        "description": "Zhihu search query."
+        "description": "知乎搜索查询文本。"
       },
       "searchType": {
         "type": "string",
         "enum": ["zhihu_search", "global_search", "zhihu", "site", "global", "all"],
-        "description": "Search scope. zhihu_search searches Zhihu content; global_search searches broader Zhihu-related content."
+        "description": "搜索范围：zhihu_search 搜索知乎内容；global_search 搜索更广泛的知乎相关内容。"
       },
       "count": {
         "type": "integer",
-        "description": "Maximum number of results. zhihu_search supports up to 10; global_search supports up to 20."
+        "description": "返回结果数量上限。zhihu_search 最多 10 条；global_search 最多 20 条。"
       },
       "timeoutMs": {
         "type": "integer",
-        "description": "Request timeout in milliseconds."
+        "description": "请求时限，单位毫秒。"
       },
       "maxOutputChars": {
         "type": "integer",
-        "description": "Maximum markdown output characters."
+        "description": "Markdown 输出的最大字符数。"
       },
       "description": {
         "type": "string",
-        "description": "Short human-readable reason for running the search."
+        "description": "简短说明这次搜索的原因。"
       }
     },
     "required": ["query"],

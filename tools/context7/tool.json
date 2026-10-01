@@ -1,13 +1,13 @@
 {
   "id": "context7",
   "name": "context7",
-  "description": "Fetch up-to-date library documentation from Context7 by searching library ids and querying documentation context.",
+  "description": "从 Context7 获取最新的库文档：搜索库 id，并按库 id 查询文档内容。",
   "version": "0.3.0",
   "eucliBoxCompatibility": {
     "minimumVersion": "0.1.0",
     "maximumVersionExclusive": "0.2.0"
   },
-  "promptDescription": "Fetch up-to-date library/API documentation from Context7. Required [action] chooses search or docs. For [action]: search, provide required [libraryName] and [query] to find Context7-compatible library ids. For [action]: docs, provide required [libraryId] such as /vercel/next.js or /facebook/react and required [query] to retrieve documentation snippets. Optional [fast] skips reranking for lower latency. Optional [timeoutMs] controls request timeout. Optional [maxOutputChars] controls markdown output length. Optional [description] records why the lookup is being run. API keys should be configured in tool user config or CONTEXT7_API_KEY, not placed in prompts. The tool returns normalized markdown plus metadata including action, query, statusCode, durationMs, truncated, and result counts.",
+  "promptDescription": "从 Context7 获取最新的库/API 文档。必须提供一个 action：search 或 docs。\n\n【动作】\n- action=search：提供必填的 libraryName 与 query，查找与 Context7 兼容的库 id。\n- action=docs：提供必填的 libraryId（如 /vercel/next.js 或 /facebook/react）与必填的 query，检索文档片段。\n\n【可选参数】\n- fast：跳过重排序以降低延迟。\n- timeoutMs：控制请求时限。\n- maxOutputChars：控制 Markdown 输出长度。\n- description：记录这次查询的原因。\n\n【密钥】API Key 应在工具用户配置或 CONTEXT7_API_KEY 中设置，不要写进提示词。\n\n【结果】工具返回规范化 Markdown 与元数据，包含 action、query、statusCode、durationMs、truncated 与结果数量。",
   "defaultInvocationMode": "sync",
   "type": "local",
   "bodyDirectory": ".",
@@ -42,35 +42,35 @@
       "action": {
         "type": "string",
         "enum": ["search", "docs"],
-        "description": "Action to run. Use search to find library ids; use docs to fetch documentation for a known library id."
+        "description": "要执行的动作：search 用于查找库 id；docs 用于按已知库 id 获取文档。"
       },
       "libraryName": {
         "type": "string",
-        "description": "Context7 library name to search for, for example react, nextjs, prisma. Required for action=search."
+        "description": "要搜索的 Context7 库名，例如 react、nextjs、prisma；action=search 时必填。"
       },
       "libraryId": {
         "type": "string",
-        "description": "Context7-compatible library id, for example /facebook/react or /vercel/next.js. Required for action=docs."
+        "description": "与 Context7 兼容的库 id，例如 /facebook/react 或 /vercel/next.js；action=docs 时必填。"
       },
       "query": {
         "type": "string",
-        "description": "Specific documentation question or task."
+        "description": "具体的文档问题或任务。"
       },
       "fast": {
         "type": "boolean",
-        "description": "Skip Context7 reranking for lower latency."
+        "description": "跳过 Context7 重排序以降低延迟。"
       },
       "timeoutMs": {
         "type": "integer",
-        "description": "Request timeout in milliseconds."
+        "description": "请求时限，单位毫秒。"
       },
       "maxOutputChars": {
         "type": "integer",
-        "description": "Maximum markdown output characters."
+        "description": "Markdown 输出的最大字符数。"
       },
       "description": {
         "type": "string",
-        "description": "Short human-readable reason for running the lookup."
+        "description": "简短说明这次查询的原因。"
       }
     },
     "required": ["action", "query"],

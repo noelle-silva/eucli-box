@@ -7,7 +7,7 @@
     "minimumVersion": "0.1.0",
     "maximumVersionExclusive": "0.2.0"
   },
-  "promptDescription": "使用 everything 通过 Everything 应用的开放接口搜索本机文件。必须提供 [query]（Everything 查询语法）。可选 [scopePath] 把搜索限定在一个已存在的文件夹内，相对路径基于主机工作目录解析为绝对路径；省略时由应用按自己的默认范围搜索。可选 [maxResults] 控制返回结果数量。可选 [timeoutMs] 控制请求时限。可选 [maxOutputChars] 控制 Markdown 输出长度（不能超过工具配置的上限）。可选 [description] 记录这次搜索的原因。连接信息在工具设置页的用户配置里填写：访问地址（endpoint）与访问钥匙（key）；未配置或地址非法时工具明确失败并指明修复位置。工具不再自带 Everything 程序、不安装系统服务、不维护索引，也不管理实例；这些都由 Everything 应用负责。返回规范化 Markdown 与元数据，包含 query、scopePath、resultsCount、durationMs、truncated 与 description。",
+  "promptDescription": "使用 everything 通过 Everything 应用的开放接口搜索本机文件。\n\n【参数】\n- query（必填）：Everything 查询语法。\n- scopePath（可选）：把搜索限定在一个已存在的文件夹内，相对路径基于主机工作目录解析为绝对路径；省略时由应用按自己的默认范围搜索。\n- maxResults（可选）：控制返回结果数量。\n- timeoutMs（可选）：控制请求时限。\n- maxOutputChars（可选）：控制 Markdown 输出长度（不能超过工具配置的上限）。\n- description（可选）：记录这次搜索的原因。\n\n【连接配置】连接信息在工具设置页的用户配置里填写：访问地址（endpoint）与访问钥匙（key）；未配置或地址非法时工具明确失败并指明修复位置。\n\n【职责边界】工具不再自带 Everything 程序、不安装系统服务、不维护索引，也不管理实例；这些都由 Everything 应用负责。\n\n【结果】返回规范化 Markdown 与元数据，包含 query、scopePath、resultsCount、durationMs、truncated 与 description。",
   "defaultInvocationMode": "sync",
   "type": "local",
   "bodyDirectory": ".",

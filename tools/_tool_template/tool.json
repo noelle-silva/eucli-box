@@ -7,7 +7,7 @@
     "minimumVersion": "0.1.0",
     "maximumVersionExclusive": "0.2.0"
   },
-  "promptDescription": "这是 AI 工具基础模板，不具备任何业务动作。复制本模板并实现业务动作后，把本字段改写为新工具的模型调用说明。",
+  "promptDescription": "这是 AI 工具基础模板，不具备任何业务动作。\n\n复制本模板并实现业务动作后，把本字段改写为新工具的模型调用说明。",
   "defaultInvocationMode": "sync",
   "type": "local",
   "bodyDirectory": ".",

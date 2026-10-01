@@ -1,13 +1,13 @@
 {
   "id": "web_search",
   "name": "web_search",
-  "description": "Search the web through a selected search provider and return normalized markdown results with structured metadata.",
+  "description": "通过选定的搜索供应商搜索网络，返回规范化 Markdown 结果与结构化元数据。",
   "version": "0.2.0",
   "eucliBoxCompatibility": {
     "minimumVersion": "0.1.0",
     "maximumVersionExclusive": "0.2.0"
   },
-  "promptDescription": "Search the web through one enabled provider. Required [query] is the search text. Optional [provider] selects tavily or anysearch; if omitted, the configured default is anysearch. Optional [maxResults] controls result count. Optional [timeoutMs] controls request timeout. Optional [includeContent] includes longer provider content in the markdown output when the provider returns it. Tavily-specific optional fields: [searchDepth] ultra-fast|fast|basic|advanced, [topic] general|news|finance, [includeAnswer], [includeImages], [includeImageDescriptions], [includeRawContent] text|markdown, [country], [timeRange] day|week|month|year|d|w|m|y, [startDate], [endDate]. AnySearch-specific optional fields: [domain], [tag], [contentTypes], [zone] cn|intl, [language], [params]. API keys should be configured in tool user config or environment variables, not placed in prompts. The tool returns normalized markdown plus metadata including provider, query, resultsCount, statusCode, durationMs, truncated, and providerMetadata.",
+  "promptDescription": "通过一个已启用的供应商搜索网络。\n\n【通用参数】\n- query（必填）：搜索文本。\n- provider（可选）：选择 tavily 或 anysearch；省略时使用配置的默认值 anysearch。\n- maxResults（可选）：控制结果数量。\n- timeoutMs（可选）：控制请求时限。\n- includeContent（可选）：当供应商返回较长正文时，是否把它包含进 Markdown 输出。\n\n【Tavily 专有可选字段】searchDepth（ultra-fast|fast|basic|advanced）、topic（general|news|finance）、includeAnswer、includeImages、includeImageDescriptions、includeRawContent（text|markdown）、country、timeRange（day|week|month|year|d|w|m|y）、startDate、endDate。\n\n【AnySearch 专有可选字段】domain、tag、contentTypes、zone（cn|intl）、language、params。\n\n【密钥】API Key 应在工具用户配置或环境变量中设置，不要写进提示词。\n\n【结果】工具返回规范化 Markdown 与元数据，包含 provider、query、resultsCount、statusCode、durationMs、truncated 与 providerMetadata。",
   "defaultInvocationMode": "sync",
   "type": "local",
   "bodyDirectory": ".",
@@ -59,102 +59,102 @@
     "properties": {
       "query": {
         "type": "string",
-        "description": "Search query."
+        "description": "搜索查询文本。"
       },
       "provider": {
         "type": "string",
         "enum": ["tavily", "anysearch"],
-        "description": "Optional enabled provider id. Defaults to anysearch."
+        "description": "可选：已启用的 provider id，默认 anysearch。"
       },
       "maxResults": {
         "type": "integer",
-        "description": "Maximum number of results. Tavily supports up to 20; AnySearch supports up to 100."
+        "description": "返回结果数量上限。Tavily 最多 20 条；AnySearch 最多 100 条。"
       },
       "timeoutMs": {
         "type": "integer",
-        "description": "Request timeout in milliseconds."
+        "description": "请求时限，单位毫秒。"
       },
       "maxOutputChars": {
         "type": "integer",
-        "description": "Maximum markdown output characters."
+        "description": "Markdown 输出的最大字符数。"
       },
       "includeContent": {
         "type": "boolean",
-        "description": "Include longer provider content when returned."
+        "description": "供应商返回较长正文时是否包含进输出。"
       },
       "description": {
         "type": "string",
-        "description": "Short human-readable reason for running the search."
+        "description": "简短说明这次搜索的原因。"
       },
       "searchDepth": {
         "type": "string",
         "enum": ["ultra-fast", "fast", "basic", "advanced"],
-        "description": "Tavily search depth."
+        "description": "Tavily 搜索深度。"
       },
       "topic": {
         "type": "string",
         "enum": ["general", "news", "finance"],
-        "description": "Tavily topic."
+        "description": "Tavily 主题。"
       },
       "includeAnswer": {
         "type": "boolean",
-        "description": "Tavily: include direct answer when available."
+        "description": "Tavily：可用时包含直接答案。"
       },
       "includeImages": {
         "type": "boolean",
-        "description": "Tavily: request image URLs."
+        "description": "Tavily：请求图片 URL。"
       },
       "includeImageDescriptions": {
         "type": "boolean",
-        "description": "Tavily: request image descriptions."
+        "description": "Tavily：请求图片描述。"
       },
       "includeRawContent": {
         "type": "string",
         "enum": ["text", "markdown"],
-        "description": "Tavily: request raw page content in text or markdown."
+        "description": "Tavily：以 text 或 markdown 请求原始页面内容。"
       },
       "country": {
         "type": "string",
-        "description": "Tavily: country filter, lower-case English country name."
+        "description": "Tavily：国家过滤，使用小写英文国名。"
       },
       "timeRange": {
         "type": "string",
         "enum": ["day", "week", "month", "year", "d", "w", "m", "y"],
-        "description": "Tavily: recent time range. Ignored when startDate or endDate is set."
+        "description": "Tavily：最近时间范围；设置了 startDate 或 endDate 时忽略。"
       },
       "startDate": {
         "type": "string",
-        "description": "Tavily: start date in YYYY-MM-DD format."
+        "description": "Tavily：起始日期，格式 YYYY-MM-DD。"
       },
       "endDate": {
         "type": "string",
-        "description": "Tavily: end date in YYYY-MM-DD format."
+        "description": "Tavily：结束日期，格式 YYYY-MM-DD。"
       },
       "domain": {
         "type": "string",
-        "description": "AnySearch: domain filter, for example code, finance, academic, security."
+        "description": "AnySearch：领域过滤，例如 code、finance、academic、security。"
       },
       "tag": {
         "type": "string",
-        "description": "AnySearch: capability tag, for example code.doc."
+        "description": "AnySearch：能力标签，例如 code.doc。"
       },
       "contentTypes": {
         "type": "array",
         "items": { "type": "string" },
-        "description": "AnySearch: content type filters such as web, news, doc."
+        "description": "AnySearch：内容类型过滤，例如 web、news、doc。"
       },
       "zone": {
         "type": "string",
         "enum": ["cn", "intl"],
-        "description": "AnySearch: regional zone."
+        "description": "AnySearch：区域。"
       },
       "language": {
         "type": "string",
-        "description": "AnySearch: preferred language such as zh-CN or en."
+        "description": "AnySearch：首选语言，例如 zh-CN 或 en。"
       },
       "params": {
         "type": "object",
-        "description": "AnySearch: extended provider-specific parameters."
+        "description": "AnySearch：供应商扩展参数。"
       }
     },
     "required": ["query"],

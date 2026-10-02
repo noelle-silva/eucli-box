@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// Config 是工具的运行时配置：抓取的传输上限与输出上限。
+// Config 是工具的运行时配置：抓取的传输上限、输出上限与反封锁策略。
 type Config struct {
 	// MaxResponseBytes 是响应体的最大字节数；超过即拒绝或截断。
 	MaxResponseBytes int `json:"maxResponseBytes"`
@@ -17,12 +17,19 @@ type Config struct {
 	MaxBodyChars int `json:"maxBodyChars"`
 	// DefaultTimeoutMs 是未指定时限时使用的请求时限，单位毫秒。
 	DefaultTimeoutMs int `json:"defaultTimeoutMs"`
-	// MaxRedirects 是最多跟随的同源跳转次数；0 表示不跟随。
+	// MaxRedirects 是最多自动跟随的跳转次数；0 表示不跟随。
 	MaxRedirects int `json:"maxRedirects"`
 	// MaxOutputChars 是最终 Markdown 输出的最大字符数。
 	MaxOutputChars int `json:"maxOutputChars"`
-	// UserAgent 是每次请求发送的 User-Agent，显式声明产品身份。
-	UserAgent string `json:"userAgent"`
+	// ProxyURL 是可选的代理地址（如 http://127.0.0.1:7890）；
+	// 留空时由 tls-client 直连，系统代理环境变量不会被其自动读取。
+	ProxyURL string `json:"proxyUrl"`
+	// MaxRetries 是遇到封锁或网络错误时的最大重试次数。
+	MaxRetries int `json:"maxRetries"`
+	// RetryBaseDelayMs 是退避重试的基础等待时长，单位毫秒。
+	RetryBaseDelayMs int `json:"retryBaseDelayMs"`
+	// MaxDelayMs 是单次退避等待的上限，单位毫秒。
+	MaxDelayMs int `json:"maxDelayMs"`
 }
 
 func loadConfig(toolDirectory string) (Config, error) {
@@ -58,9 +65,15 @@ func normalizeConfig(config Config) (Config, error) {
 	if config.MaxOutputChars <= 0 {
 		return Config{}, fmt.Errorf("maxOutputChars must be greater than zero")
 	}
-	config.UserAgent = strings.TrimSpace(config.UserAgent)
-	if config.UserAgent == "" {
-		return Config{}, fmt.Errorf("userAgent is required")
+	if config.MaxRetries < 0 {
+		return Config{}, fmt.Errorf("maxRetries must not be negative")
 	}
+	if config.RetryBaseDelayMs < 0 {
+		return Config{}, fmt.Errorf("retryBaseDelayMs must not be negative")
+	}
+	if config.MaxDelayMs < 0 {
+		return Config{}, fmt.Errorf("maxDelayMs must not be negative")
+	}
+	config.ProxyURL = strings.TrimSpace(config.ProxyURL)
 	return config, nil
 }

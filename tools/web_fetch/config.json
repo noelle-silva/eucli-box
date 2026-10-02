@@ -4,5 +4,8 @@
   "defaultTimeoutMs": 30000,
   "maxRedirects": 5,
   "maxOutputChars": 200000,
-  "userAgent": "eucli-box-web-fetch/1.0"
+  "proxyUrl": "",
+  "maxRetries": 3,
+  "retryBaseDelayMs": 500,
+  "maxDelayMs": 5000
 }

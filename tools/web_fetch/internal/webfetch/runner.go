@@ -1,8 +1,9 @@
 // Package webfetch 实现 web_fetch 工具的业务动作：获取一个 HTTP(S) 网址的内容。
 //
-// 它只培育几个基础根动作：读取输入、读取运行时配置、校验网址、解析并校验公开地址、
-// 发起一次有界的 HTTP 请求、解码正文、把网页渲染为 Markdown、输出工具协议结果。
-// 复杂行为由这些根动作协作涌现，不在工具内预设任何「抓取管理器」。
+// 它只培育几个基础根动作：读取输入、读取运行时配置、校验网址、构造带浏览器身份
+// 与 TLS 指纹的客户端、发起一次有界请求、被封锁时换身份退避重试、解码正文、
+// 把网页渲染为 Markdown、输出工具协议结果。复杂行为由这些根动作协作涌现，
+// 不在工具内预设任何「抓取管理器」。
 package webfetch
 
 import (
@@ -40,6 +41,8 @@ func Execute(ctx context.Context, input types.ToolExecutionInput) types.ToolExec
 	metadata["finalUrl"] = result.URL
 	metadata["statusCode"] = result.StatusCode
 	metadata["truncated"] = truncated
+	metadata["profile"] = result.Profile
+	metadata["attempts"] = result.Attempts
 	return types.ToolExecutionOutput{Status: types.ToolStatusSuccess, Content: content, Metadata: metadata}
 }
 

@@ -15,7 +15,7 @@ import (
 func writeConfig(t *testing.T) string {
 	t.Helper()
 	directory := t.TempDir()
-	payload := `{"maxResponseBytes":5000000,"maxBodyChars":100000,"defaultTimeoutMs":30000,"maxRedirects":5,"maxOutputChars":200000,"userAgent":"test-agent"}`
+	payload := `{"maxResponseBytes":5000000,"maxBodyChars":100000,"defaultTimeoutMs":30000,"maxRedirects":5,"maxOutputChars":200000,"proxyUrl":"","maxRetries":2,"retryBaseDelayMs":10,"maxDelayMs":100}`
 	if err := os.WriteFile(filepath.Join(directory, "config.json"), []byte(payload), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}

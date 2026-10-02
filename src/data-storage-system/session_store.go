@@ -337,15 +337,23 @@ func (s *system) writeSessionData(ctx context.Context, session types.Session, no
 	return session, nil
 }
 
+// 公开会话读取与写入共用 sessionMu。Windows 下读取句柄默认不共享删除，
+// 与会话文件的临时文件替换并发时会把一次正常保存放大成落盘失败。
 func (s *system) LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error) {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
 	return s.loadSession(ctx, roleSessionScope(roleID), sessionID)
 }
 
 func (s *system) LoadGroupSession(ctx context.Context, groupID string, sessionID string) (types.Session, error) {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
 	return s.loadSession(ctx, groupSessionScope(groupID), sessionID)
 }
 
 func (s *system) LoadWorkspaceSession(ctx context.Context, workspaceID string, roleID string, sessionID string) (types.Session, error) {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
 	return s.loadSession(ctx, workspaceSessionScope(workspaceID, roleID), sessionID)
 }
 
@@ -690,14 +698,20 @@ func upsertStoredSessionMessage(session types.Session, message types.Message) ty
 }
 
 func (s *system) ListSessions(ctx context.Context, roleID string) ([]types.SessionSummary, error) {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
 	return s.listSessions(ctx, roleSessionScope(roleID))
 }
 
 func (s *system) ListGroupSessions(ctx context.Context, groupID string) ([]types.SessionSummary, error) {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
 	return s.listSessions(ctx, groupSessionScope(groupID))
 }
 
 func (s *system) ListWorkspaceSessions(ctx context.Context, workspaceID string, roleID string) ([]types.SessionSummary, error) {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
 	return s.listSessions(ctx, workspaceSessionScope(workspaceID, roleID))
 }
 

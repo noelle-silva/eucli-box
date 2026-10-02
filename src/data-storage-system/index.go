@@ -50,7 +50,10 @@ func (s *system) RebuildIndexes(ctx context.Context) error {
 	if err := s.rebuildStickerIndexes(ctx); err != nil {
 		return err
 	}
-	if err := s.rebuildAllSessionIndexes(ctx); err != nil {
+	s.sessionMu.Lock()
+	err := s.rebuildAllSessionIndexes(ctx)
+	s.sessionMu.Unlock()
+	if err != nil {
 		return err
 	}
 	if err := s.rebuildRequestRecordIndex(ctx); err != nil {
@@ -117,7 +120,7 @@ func (s *system) rebuildAllSessionIndexes(ctx context.Context) error {
 }
 
 func (s *system) rebuildSessionIndexes(ctx context.Context, roleID string) error {
-	sessions, err := s.ListSessions(ctx, roleID)
+	sessions, err := s.listSessions(ctx, roleSessionScope(roleID))
 	if err != nil {
 		return err
 	}
@@ -166,7 +169,7 @@ func (s *system) rebuildAllGroupSessionIndexes(ctx context.Context) error {
 }
 
 func (s *system) rebuildGroupSessionIndexes(ctx context.Context, groupID string) error {
-	sessions, err := s.ListGroupSessions(ctx, groupID)
+	sessions, err := s.listSessions(ctx, groupSessionScope(groupID))
 	if err != nil {
 		return err
 	}
@@ -228,7 +231,7 @@ func (s *system) rebuildWorkspaceSessionIndexes(ctx context.Context, workspaceID
 }
 
 func (s *system) rebuildWorkspaceRoleSessionIndex(ctx context.Context, workspaceID string, roleID string) error {
-	sessions, err := s.ListWorkspaceSessions(ctx, workspaceID, roleID)
+	sessions, err := s.listSessions(ctx, workspaceSessionScope(workspaceID, roleID))
 	if err != nil {
 		return err
 	}

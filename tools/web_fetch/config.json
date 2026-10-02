@@ -1,0 +1,8 @@
+{
+  "maxResponseBytes": 5000000,
+  "maxBodyChars": 100000,
+  "defaultTimeoutMs": 30000,
+  "maxRedirects": 5,
+  "maxOutputChars": 200000,
+  "userAgent": "eucli-box-web-fetch/1.0"
+}

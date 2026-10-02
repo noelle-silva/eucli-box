@@ -57,7 +57,7 @@ func (s *system) handleToolIntents(ctx context.Context, record *runRecord, inten
 	if err := s.saveRunSession(ctx, record, types.RunStatusRunning); err != nil {
 		return nil, err
 	}
-	s.publishAssistantMessageUpdate(record)
+	s.publishAssistantMessageDelta(record)
 
 	if err := s.resolvePendingToolConfirmations(ctx, record, entries); err != nil {
 		return nil, err
@@ -77,7 +77,7 @@ func (s *system) handleToolIntents(ctx context.Context, record *runRecord, inten
 	if err := s.saveRunSession(ctx, record, types.RunStatusRunning); err != nil {
 		return nil, err
 	}
-	s.publishAssistantMessageUpdate(record)
+	s.publishAssistantMessageDelta(record)
 	executed, updateErr := s.executeReadyTools(ctx, record, ready, func(result toolExecutionResult) error {
 		upsertRunToolPart(record, result.Entry.Action, toolResultPartState(result), &result.Entry.Plan.Decision, &result.Result)
 		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
@@ -175,6 +175,9 @@ func (s *system) executeReadyTools(ctx context.Context, record *runRecord, entri
 	if limit > len(entries) {
 		limit = len(entries)
 	}
+	// 工具执行协程只读这一份不可变身份快照，不触碰运行状态；
+	// 实时输出的发布因此不会与运行主干并发读写同一条运行。
+	outputContext := toolOutputContextFromRun(record)
 	semaphore := make(chan struct{}, limit)
 	resultCh := make(chan toolExecutionResult, len(entries))
 	var wg sync.WaitGroup
@@ -194,7 +197,7 @@ func (s *system) executeReadyTools(ctx context.Context, record *runRecord, entri
 				return
 			}
 			result, err := s.tools.ExecuteWithOutputUpdate(ctx, entry.Plan, func(update types.ToolOutputUpdate) {
-				s.publishToolOutputUpdate(record, entry, update)
+				s.publishToolOutputUpdate(outputContext, entry, update)
 			})
 			if cancellationErr, ok := toolExecutionCancelled(ctx, nil, err); ok {
 				resultCh <- toolExecutionResult{Entry: entry, Err: cancellationErr}

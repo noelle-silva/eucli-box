@@ -133,7 +133,6 @@ func (s *system) callModelStream(ctx context.Context, record *runRecord, request
 				return nil
 			}
 			record.modelTiming.markContent(time.Now().UTC())
-			contentDelta := streamContentDelta(record.streamContent, content)
 			record.streamContent = content
 			_, hadAssistant := activeRunAssistant(record)
 			updateRunAssistantContent(record, content)
@@ -145,8 +144,7 @@ func (s *system) callModelStream(ctx context.Context, record *runRecord, request
 					return err
 				}
 			}
-			s.publish(record.runID, "model_stream_delta", types.RunStreamDelta{RunID: record.runID, RoleID: record.roleID, GroupID: record.groupID, WorkspaceID: record.workspaceID, SessionID: record.session.ID, MessageID: record.messageParent.ID, ParentMessageID: record.messageParent.ParentMessageID, BranchID: record.messageParent.BranchID, ContentDelta: contentDelta, Content: content, CreatedAt: event.CreatedAt})
-			s.publishAssistantMessageUpdate(record)
+			s.publishAssistantMessageDelta(record)
 			return nil
 		case types.ModelStreamEventReasoningDelta:
 			reasoning := event.Reasoning
@@ -167,7 +165,7 @@ func (s *system) callModelStream(ctx context.Context, record *runRecord, request
 					return err
 				}
 			}
-			s.publishAssistantMessageUpdate(record)
+			s.publishAssistantMessageDelta(record)
 			return nil
 		default:
 			return nil

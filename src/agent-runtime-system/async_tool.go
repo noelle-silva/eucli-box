@@ -56,7 +56,7 @@ func (s *system) acceptAsyncToolEntries(ctx context.Context, record *runRecord, 
 			return err
 		}
 		s.publishAsyncToolTaskUpdate(record.runID, task)
-		s.publishAssistantMessageUpdate(record)
+		s.publishAssistantMessageDelta(record)
 		go s.executeAsyncToolTask(task)
 	}
 	return nil
@@ -104,18 +104,17 @@ func asyncToolContinuationFromRun(record *runRecord) types.RunContinuation {
 	return continuation
 }
 
+// executeAsyncToolTask 在后台只做真实工具执行，并更新运行期任务登记。
+// 它绝不加载、修改或落盘会话：任务结果作为事件投递给所属运行，
+// 由该运行（或新起的续跑运行）成为唯一写入者，把结果投影进会话。
 func (s *system) executeAsyncToolTask(task types.AsyncToolTask) {
 	task.Status = types.AsyncToolTaskStatusRunning
 	task.StartedAt = time.Now().UTC()
-	if err := s.saveAsyncToolTaskWithRetry(context.Background(), task); err != nil {
-		task.Error = "异步任务状态落盘失败: " + err.Error()
-		s.upsertRuntimeAsyncToolTask(task)
-	}
+	s.upsertRuntimeAsyncToolTask(task)
 	s.publishAsyncToolTaskUpdate(task.RunID, task)
 
 	result, err := s.tools.Execute(context.Background(), task.Plan)
-	finished := time.Now().UTC()
-	task.FinishedAt = finished
+	task.FinishedAt = time.Now().UTC()
 	if err != nil {
 		result = failedToolResult(task.Action, err.Error())
 	}
@@ -129,48 +128,9 @@ func (s *system) executeAsyncToolTask(task types.AsyncToolTask) {
 		}
 	}
 	task.Result = &result
-	if err := s.saveAsyncToolTaskWithRetry(context.Background(), task); err != nil {
-		task.Error = strings.TrimSpace(task.Error)
-		if task.Error != "" {
-			task.Error += "\n"
-		}
-		task.Error += "异步任务结果落盘失败: " + err.Error()
-		s.upsertRuntimeAsyncToolTask(task)
-	}
+	s.upsertRuntimeAsyncToolTask(task)
 	s.publishAsyncToolTaskUpdate(task.RunID, task)
 	s.notifyAsyncToolReady(task)
-}
-
-func (s *system) saveAsyncToolTaskWithRetry(ctx context.Context, task types.AsyncToolTask) error {
-	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
-		if err := s.saveAsyncToolTask(ctx, task); err != nil {
-			lastErr = err
-			if attempt < 2 {
-				time.Sleep(time.Duration(attempt+1) * 50 * time.Millisecond)
-			}
-			continue
-		}
-		return nil
-	}
-	return lastErr
-}
-
-func (s *system) saveAsyncToolTask(ctx context.Context, task types.AsyncToolTask) error {
-	s.upsertRuntimeAsyncToolTask(task)
-	session, err := s.loadTaskSession(ctx, task)
-	if err != nil {
-		return runtimeStorageFailed("failed to load async tool task session", err)
-	}
-	session.AsyncToolTasks = upsertAsyncToolTask(session.AsyncToolTasks, task)
-	status := types.RunStatus(session.Status)
-	if strings.TrimSpace(string(status)) == "" {
-		status = types.RunStatusRunning
-	}
-	if err := s.storage.SaveSessionMessages(ctx, types.SessionMessageSave{Session: session, Status: status}); err != nil {
-		return runtimeStorageFailed("failed to save async tool task", err)
-	}
-	return nil
 }
 
 func (s *system) upsertRuntimeAsyncToolTask(task types.AsyncToolTask) {
@@ -322,10 +282,7 @@ func (s *system) notifyAsyncToolReady(task types.AsyncToolTask) {
 			continue
 		}
 		hasActiveRun = true
-		select {
-		case record.asyncToolCh <- task.ID:
-		default:
-		}
+		enqueueRunEvent(record, runEvent{kind: runEventAsyncReady, taskID: task.ID})
 	}
 	startContinuation := false
 	key := asyncContinuationKeyFromTask(task)
@@ -342,7 +299,7 @@ func (s *system) notifyAsyncToolReady(task types.AsyncToolTask) {
 }
 
 func asyncToolTaskMatchesRun(record *runRecord, task types.AsyncToolTask) bool {
-	if record == nil || record.asyncToolCh == nil {
+	if record == nil || record.inbox == nil {
 		return false
 	}
 	return strings.TrimSpace(record.roleID) == strings.TrimSpace(task.RoleID) &&
@@ -520,21 +477,20 @@ func (s *system) ListAsyncToolTasks(ctx context.Context, query types.AsyncToolTa
 	if err := ctx.Err(); err != nil {
 		return nil, runtimeInvalid("list async tool tasks context is cancelled", err)
 	}
-	tasks := s.runtimeAsyncToolTasks(query)
+	// 读取只读快照：绝不修改会话、绝不回写状态。
+	// 会话落盘的任务作为基线，运行期登记（更鲜活）覆盖其上。
+	tasks := []types.AsyncToolTask{}
 	if strings.TrimSpace(query.SessionID) != "" {
 		if session, err := s.loadTaskSession(ctx, types.AsyncToolTask{RoleID: query.RoleID, GroupID: query.GroupID, WorkspaceID: query.WorkspaceID, SessionID: query.SessionID}); err == nil {
-			session = s.recoverAsyncToolTasks(session)
 			for _, task := range session.AsyncToolTasks {
 				if asyncToolTaskMatches(task, query) {
 					tasks = upsertAsyncToolTask(tasks, task)
 				}
 			}
-			status := types.RunStatus(session.Status)
-			if strings.TrimSpace(string(status)) == "" {
-				status = types.RunStatusRunning
-			}
-			_ = s.storage.SaveSessionMessages(ctx, types.SessionMessageSave{Session: session, Status: status})
 		}
+	}
+	for _, task := range s.runtimeAsyncToolTasks(query) {
+		tasks = upsertAsyncToolTask(tasks, task)
 	}
 	return tasks, nil
 }

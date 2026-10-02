@@ -316,18 +316,31 @@ type RunState struct {
 	UpdatedAt            time.Time     `json:"updatedAt"`
 }
 
-type RunStreamDelta struct {
-	RunID           string    `json:"runId"`
-	RoleID          string    `json:"roleId"`
-	GroupID         string    `json:"groupId,omitempty"`
-	WorkspaceID     string    `json:"workspaceId,omitempty"`
-	SessionID       string    `json:"sessionId"`
-	MessageID       string    `json:"messageId"`
-	ParentMessageID string    `json:"parentMessageId,omitempty"`
-	BranchID        string    `json:"branchId,omitempty"`
-	ContentDelta    string    `json:"contentDelta"`
-	Content         string    `json:"content"`
-	CreatedAt       time.Time `json:"createdAt"`
+// RunMessageDelta 只承载某条助手消息本次新增的变化：
+// 正文增量、思考增量，以及消息诞生所需的标识。前端把它叠加到本地消息上。
+type RunMessageDelta struct {
+	RunID              string    `json:"runId"`
+	RoleID             string    `json:"roleId"`
+	GroupID            string    `json:"groupId,omitempty"`
+	WorkspaceID        string    `json:"workspaceId,omitempty"`
+	SessionID          string    `json:"sessionId"`
+	MessageID          string    `json:"messageId"`
+	ParentMessageID    string    `json:"parentMessageId,omitempty"`
+	BranchID           string    `json:"branchId,omitempty"`
+	SpeakerRoleID      string    `json:"speakerRoleId,omitempty"`
+	MessageType        string    `json:"messageType,omitempty"`
+	MessageCreatedAt   time.Time      `json:"messageCreatedAt"`
+	Stream             bool           `json:"stream,omitempty"`
+	Status             RunStatus      `json:"status,omitempty"`
+	ContentDelta       string         `json:"contentDelta,omitempty"`
+	ContentReset       bool           `json:"contentReset,omitempty"`
+	ReasoningDelta     string         `json:"reasoningDelta,omitempty"`
+	ReasoningReset     bool           `json:"reasoningReset,omitempty"`
+	ReasoningSource    string        `json:"reasoningSource,omitempty"`
+	ReasoningSignature string        `json:"reasoningSignature,omitempty"`
+	ReasoningData      string        `json:"reasoningData,omitempty"`
+	PartsDelta         []MessagePart `json:"partsDelta,omitempty"`
+	CreatedAt          time.Time     `json:"createdAt"`
 }
 
 type RunAssistantMessageUpdate struct {

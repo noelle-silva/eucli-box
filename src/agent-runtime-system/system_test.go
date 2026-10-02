@@ -470,40 +470,27 @@ func TestStartRunStreamCreatesAssistantAndPublishesDeltas(t *testing.T) {
 	if part := reasoningPartByType(session.Messages[1]); part == nil || part.Text != "先想一下" {
 		t.Fatalf("reasoning part = %#v", session.Messages[1].Parts)
 	}
-	gotDeltas := []string{}
-	gotReasoning := []string{}
+	gotContent := ""
+	gotReasoning := ""
 	deadline := time.After(2 * time.Second)
-	for len(gotDeltas) < 2 || len(gotReasoning) < 1 {
+	for gotContent != "hello" || gotReasoning != "先想一下" {
 		select {
 		case event := <-events:
-			if event.Type == "assistant_message_update" {
-				payload, ok := event.Payload.(types.RunAssistantMessageUpdate)
-				if !ok {
-					t.Fatalf("assistant update payload = %#v", event.Payload)
-				}
-				part := reasoningPartByType(payload.Message)
-				if part != nil && part.Text != "" {
-					gotReasoning = append(gotReasoning, part.Text)
-				}
+			if event.Type != "assistant_message_delta" {
 				continue
 			}
-			if event.Type != "model_stream_delta" {
-				continue
-			}
-			payload, ok := event.Payload.(types.RunStreamDelta)
+			payload, ok := event.Payload.(types.RunMessageDelta)
 			if !ok {
-				t.Fatalf("stream payload = %#v", event.Payload)
+				t.Fatalf("delta payload = %#v", event.Payload)
 			}
-			gotDeltas = append(gotDeltas, payload.Content)
+			if payload.MessageID == "" {
+				t.Fatalf("delta missing message id: %#v", payload)
+			}
+			gotContent += payload.ContentDelta
+			gotReasoning += payload.ReasoningDelta
 		case <-deadline:
-			t.Fatalf("stream deltas = %#v", gotDeltas)
+			t.Fatalf("stream deltas content=%q reasoning=%q", gotContent, gotReasoning)
 		}
-	}
-	if gotDeltas[0] != "he" || gotDeltas[1] != "hello" {
-		t.Fatalf("stream deltas = %#v", gotDeltas)
-	}
-	if gotReasoning[0] != "先想一下" {
-		t.Fatalf("reasoning updates = %#v", gotReasoning)
 	}
 }
 
@@ -1992,6 +1979,123 @@ func TestListAsyncToolTasksDoesNotRecoverLiveTaskAsFailed(t *testing.T) {
 	}
 }
 
+// TestListAsyncToolTasksDoesNotMutateSession 钉住约束 9：读取只读快照。
+// 列表查询遇到已就绪的异步任务，不得回灌消息、不得落盘。
+func TestListAsyncToolTasksDoesNotMutateSession(t *testing.T) {
+	fakes := newRuntimeFakes()
+	now := time.Now().UTC()
+	fakes.storage.sessions["developer/session-1"] = types.Session{
+		ID:         "session-1",
+		RoleID:     "developer",
+		Title:      "Existing",
+		Status:     string(types.RunStatusCompleted),
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		LastActive: now,
+		Messages:   []types.Message{{ID: "u1", Type: "user", Content: "before", BranchID: defaultRuntimeBranchID, CreatedAt: now, UpdatedAt: now}},
+		AsyncToolTasks: []types.AsyncToolTask{{
+			ID:          "async-1",
+			RoleID:      "developer",
+			SessionID:   "session-1",
+			TaskName:    "file-reader",
+			ToolName:    "file-reader",
+			Status:      types.AsyncToolTaskStatusSucceeded,
+			SubmittedAt: now,
+			FinishedAt:  now,
+			Result:      &types.ToolResult{ID: "result-1", ToolName: "file-reader", Status: types.ToolStatusSuccess, Content: "ready", CreatedAt: now},
+		}},
+	}
+	runtime := newTestRuntime(t, fakes, Config{}).(*system)
+	// 启动恢复已处理落盘任务；这里再放一条运行期就绪任务，验证列表只读。
+	runtime.upsertRuntimeAsyncToolTask(types.AsyncToolTask{ID: "async-live", RoleID: "developer", SessionID: "session-1", ToolName: "file-reader", Status: types.AsyncToolTaskStatusSucceeded, Result: &types.ToolResult{ID: "result-live", ToolName: "file-reader", Status: types.ToolStatusSuccess, Content: "ready", CreatedAt: now}})
+	beforeCount := fakes.storage.messageSaveCount
+	beforeMessages := len(fakes.storage.sessions["developer/session-1"].Messages)
+	tasks, err := runtime.ListAsyncToolTasks(context.Background(), types.AsyncToolTaskQuery{RoleID: "developer", SessionID: "session-1"})
+	if err != nil {
+		t.Fatalf("ListAsyncToolTasks() error = %v", err)
+	}
+	found := false
+	for _, task := range tasks {
+		if task.ID == "async-live" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("runtime task not listed: %#v", tasks)
+	}
+	if fakes.storage.messageSaveCount != beforeCount {
+		t.Fatalf("list wrote to storage: before=%d after=%d", beforeCount, fakes.storage.messageSaveCount)
+	}
+	if after := len(fakes.storage.sessions["developer/session-1"].Messages); after != beforeMessages {
+		t.Fatalf("list mutated session messages: before=%d after=%d", beforeMessages, after)
+	}
+}
+
+// TestAsyncToolExecutionGoroutineDoesNotWriteSession 钉住约束 1/2/7：
+// 后台执行协程只做真实执行与运行期登记，绝不落盘会话；落盘由所属运行完成。
+func TestAsyncToolExecutionGoroutineDoesNotWriteSession(t *testing.T) {
+	fakes := newRuntimeFakes()
+	now := time.Now().UTC()
+	fakes.storage.sessions["developer/session-1"] = types.Session{ID: "session-1", RoleID: "developer", Title: "Existing", Status: string(types.RunStatusRunning), CreatedAt: now, UpdatedAt: now, LastActive: now, Messages: []types.Message{}}
+	system := newTestRuntime(t, fakes, Config{}).(*system)
+	task := types.AsyncToolTask{ID: "async-1", RunID: "run-1", RoleID: "developer", SessionID: "session-1", ToolName: "file-reader", Status: types.AsyncToolTaskStatusPending, Plan: types.ToolRunPlan{Action: types.ToolAction{ID: "intent-1", ToolName: "file-reader"}}}
+	before := fakes.storage.messageSaveCount
+	system.executeAsyncToolTask(task)
+	if fakes.storage.messageSaveCount != before {
+		t.Fatalf("execution goroutine wrote session: before=%d after=%d", before, fakes.storage.messageSaveCount)
+	}
+	session := fakes.storage.sessions["developer/session-1"]
+	if len(session.AsyncToolTasks) != 0 {
+		t.Fatalf("execution goroutine persisted task: %#v", session.AsyncToolTasks)
+	}
+	runtimeTasks := system.runtimeAsyncToolTasks(types.AsyncToolTaskQuery{RoleID: "developer", SessionID: "session-1"})
+	if len(runtimeTasks) != 1 || runtimeTasks[0].Status != types.AsyncToolTaskStatusSucceeded {
+		t.Fatalf("runtime task was not registered: %#v", runtimeTasks)
+	}
+}
+
+// TestCancelRunPublishesSingleTerminalEvent 钉住约束 5：
+// 停止接口只发信号，终态通知由运行自己发一次，不重复。
+func TestCancelRunPublishesSingleTerminalEvent(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.block = make(chan struct{})
+	system := newTestRuntime(t, fakes, Config{})
+	events, unsubscribe, err := system.Subscribe(context.Background())
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	defer unsubscribe()
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	// 模型调用被阻塞，运行保持进行中；停止信号应让运行自己收尾。
+	if err := system.CancelRun(context.Background(), state.ID); err != nil {
+		t.Fatalf("CancelRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCancelled {
+		t.Fatalf("status = %s", final.Status)
+	}
+	close(fakes.provider.block)
+	// 排空订阅：终态事件必须恰好一次。
+	cancelledEvents := 0
+	deadline := time.After(200 * time.Millisecond)
+	for {
+		select {
+		case event := <-events:
+			if event.RunID == state.ID && event.Type == "run_cancelled" {
+				cancelledEvents++
+			}
+		case <-deadline:
+			if cancelledEvents != 1 {
+				t.Fatalf("run_cancelled events = %d, want 1", cancelledEvents)
+			}
+			return
+		}
+	}
+}
+
 func TestNewSystemRecoversReadyAsyncToolTaskIntoSession(t *testing.T) {
 	fakes := newRuntimeFakes()
 	now := time.Now().UTC()
@@ -2454,21 +2558,133 @@ func waitStoredSessionLastContent(t *testing.T, storage *fakeRuntimeStorage, con
 	return types.Session{}
 }
 
+func TestSlowSubscriberReceivesAllContentWithoutLoss(t *testing.T) {
+	fakes := newRuntimeFakes()
+	events := []types.ModelStreamEvent{}
+	for _, ch := range []string{"a", "b", "c", "d", "e", "f", "g", "h"} {
+		events = append(events, types.ModelStreamEvent{Type: types.ModelStreamEventContentDelta, ContentDelta: ch, Content: strings.Repeat(ch, 1), CreatedAt: time.Now().UTC()})
+	}
+	// 让每段增量都有不同累计内容，确保增量事件真实产生。
+	accumulated := ""
+	for index := range events {
+		accumulated += events[index].ContentDelta
+		events[index].Content = accumulated
+	}
+	fakes.provider.streamEvents = events
+	fakes.provider.streamResponse = types.ModelResponse{ID: "stream-slow", Content: accumulated}
+	system := newTestRuntime(t, fakes, Config{})
+	sub, unsubscribe, err := system.Subscribe(context.Background())
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	defer unsubscribe()
+
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hello", Stream: types.BoolPtr(true)})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("final status = %s", final.Status)
+	}
+
+	// 订阅者故意不读，直到运行结束；投递缓冲必须靠合并保住全部内容。
+	got := ""
+	deadline := time.After(2 * time.Second)
+	for got != accumulated {
+		select {
+		case event, ok := <-sub:
+			if !ok {
+				t.Fatalf("subscriber channel closed early, got %q", got)
+			}
+			if event.Type != "assistant_message_delta" {
+				continue
+			}
+			delta, ok := event.Payload.(types.RunMessageDelta)
+			if !ok {
+				continue
+			}
+			if delta.ContentReset {
+				got = delta.ContentDelta
+			} else {
+				got += delta.ContentDelta
+			}
+		case <-deadline:
+			t.Fatalf("slow subscriber content = %q want %q", got, accumulated)
+		}
+	}
+}
+
+func TestAssistantDeltaCarriesOnlyNewChanges(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.streamEvents = []types.ModelStreamEvent{
+		{Type: types.ModelStreamEventContentDelta, ContentDelta: "he", Content: "he", CreatedAt: time.Now().UTC()},
+		{Type: types.ModelStreamEventContentDelta, ContentDelta: "llo", Content: "hello", CreatedAt: time.Now().UTC()},
+	}
+	fakes.provider.streamResponse = types.ModelResponse{ID: "stream-delta", Content: "hello"}
+	system := newTestRuntime(t, fakes, Config{})
+	sub, unsubscribe, err := system.Subscribe(context.Background())
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	defer unsubscribe()
+
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hi", Stream: types.BoolPtr(true)})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	waitRun(t, system, state.ID)
+
+	// 纯追加流式：增量拼接即全文，且不得要求整体替换（替换才是全量快照的标志）。
+	accumulated := ""
+	resetSeen := false
+	deadline := time.After(2 * time.Second)
+	for accumulated != "hello" {
+		select {
+		case event := <-sub:
+			if event.Type != "assistant_message_delta" {
+				continue
+			}
+			delta, ok := event.Payload.(types.RunMessageDelta)
+			if !ok {
+				continue
+			}
+			if delta.ContentReset {
+				resetSeen = true
+			}
+			accumulated += delta.ContentDelta
+		case <-deadline:
+			t.Fatalf("accumulated = %q", accumulated)
+		}
+	}
+	if resetSeen {
+		t.Fatalf("pure append stream must not signal content reset")
+	}
+}
+
 func waitStreamDeltaContent(t *testing.T, events <-chan types.RunEvent, content string) {
 	t.Helper()
 	deadline := time.After(2 * time.Second)
+	accumulated := ""
 	for {
 		select {
 		case event := <-events:
-			if event.Type != "model_stream_delta" {
+			if event.Type != "assistant_message_delta" {
 				continue
 			}
-			payload, ok := event.Payload.(types.RunStreamDelta)
-			if ok && payload.Content == content {
+			payload, ok := event.Payload.(types.RunMessageDelta)
+			if ok && payload.ContentDelta != "" {
+				if payload.ContentReset {
+					accumulated = payload.ContentDelta
+				} else {
+					accumulated += payload.ContentDelta
+				}
+			}
+			if accumulated == content {
 				return
 			}
 		case <-deadline:
-			t.Fatalf("stream delta content did not reach %q", content)
+			t.Fatalf("stream delta content did not reach %q (got %q)", content, accumulated)
 		}
 	}
 }
@@ -2506,6 +2722,7 @@ type fakeRuntimeStorage struct {
 	compressionConfig types.ContextCompressionConfig
 	conversationImage types.ConversationImageConfig
 	listRolesErr      error
+	messageSaveCount  int
 }
 
 func newFakeRuntimeStorage() *fakeRuntimeStorage {
@@ -2571,6 +2788,7 @@ func (f *fakeRuntimeStorage) SaveSession(ctx context.Context, session types.Sess
 func (f *fakeRuntimeStorage) SaveSessionMessages(ctx context.Context, save types.SessionMessageSave) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.messageSaveCount++
 	session := save.Session
 	key := f.sessionKey(session)
 	merged, ok := f.sessions[key]

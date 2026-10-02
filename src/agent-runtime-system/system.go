@@ -81,9 +81,11 @@ type system struct {
 
 	mu                 sync.Mutex
 	runs               map[string]*runRecord
-	subscribers        map[chan types.RunEvent]struct{}
+	subscribers        map[*eventSubscriber]struct{}
 	asyncTasks         map[string]types.AsyncToolTask
 	asyncContinuations map[asyncContinuationKey]struct{}
+	publishedMu        sync.Mutex
+	publishedMessages  map[string]publishedMessageState
 }
 
 type runRecord struct {
@@ -124,7 +126,7 @@ type runRecord struct {
 
 	pendingPlans   map[string]types.ToolRunPlan
 	confirmationCh chan toolConfirmationRequest
-	asyncToolCh    chan string
+	inbox          chan runEvent
 }
 
 func NewSystem(config Config, storage StorageSystem, roles RoleSystem, providers ProviderSystem, tools ToolSystem, placeholders PlaceholderSystem) (System, error) {
@@ -149,7 +151,7 @@ func NewSystem(config Config, storage StorageSystem, roles RoleSystem, providers
 	if config.MaxParallelTools == 0 {
 		config.MaxParallelTools = 4
 	}
-	runtime := &system{config: config, storage: storage, roles: roles, providers: providers, tools: tools, placeholders: placeholders, runs: map[string]*runRecord{}, subscribers: map[chan types.RunEvent]struct{}{}, asyncTasks: map[string]types.AsyncToolTask{}, asyncContinuations: map[asyncContinuationKey]struct{}{}}
+	runtime := &system{config: config, storage: storage, roles: roles, providers: providers, tools: tools, placeholders: placeholders, runs: map[string]*runRecord{}, subscribers: map[*eventSubscriber]struct{}{}, asyncTasks: map[string]types.AsyncToolTask{}, asyncContinuations: map[asyncContinuationKey]struct{}{}}
 	// 异步任务恢复是启动维护动作，不是启动关键：坏数据只记录日志并跳过，不阻断启动。
 	runtime.recoverPersistedAsyncToolTasks(context.Background())
 	return runtime, nil
@@ -176,11 +178,14 @@ func runStateSnapshot(record *runRecord) types.RunState {
 	return state
 }
 
-func (s *system) removeSubscriber(ch chan types.RunEvent) {
+func (s *system) removeSubscriber(sub *eventSubscriber) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, ok := s.subscribers[ch]; ok {
-		delete(s.subscribers, ch)
-		close(ch)
+	_, ok := s.subscribers[sub]
+	if ok {
+		delete(s.subscribers, sub)
+	}
+	s.mu.Unlock()
+	if ok {
+		sub.close()
 	}
 }

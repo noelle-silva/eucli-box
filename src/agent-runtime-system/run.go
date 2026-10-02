@@ -20,7 +20,7 @@ func (s *system) StartRun(ctx context.Context, request types.RunRequest) (types.
 	now := nowUTC()
 	state := types.RunState{ID: utils.NewID("run"), RoleID: request.RoleID, GroupID: strings.TrimSpace(request.GroupID), WorkspaceID: strings.TrimSpace(request.WorkspaceID), SessionID: request.SessionID, Stream: stream, Status: types.RunStatusCreated, CreatedAt: now, UpdatedAt: now}
 	modelOverride, _ := types.NormalizeModelOverrideCoordinate(modelOverrideFromRunRequest(request))
-	record := &runRecord{runID: state.ID, roleID: request.RoleID, groupID: state.GroupID, workspaceID: state.WorkspaceID, state: state, stream: stream, streamInput: request.Stream, isCompactRun: compactRun, modelOverride: modelOverride, reasoningEffort: types.TrimReasoningEffort(request.ReasoningEffort), hookPromptSelection: types.NormalizeHookPromptSelection(request.HookPromptMode, request.HookPromptPresetID), hookPromptSelectionInput: hasHookPromptSelectionInput(request), cancel: cancel, asyncToolCh: make(chan string, 1)}
+	record := &runRecord{runID: state.ID, roleID: request.RoleID, groupID: state.GroupID, workspaceID: state.WorkspaceID, state: state, stream: stream, streamInput: request.Stream, isCompactRun: compactRun, modelOverride: modelOverride, reasoningEffort: types.TrimReasoningEffort(request.ReasoningEffort), hookPromptSelection: types.NormalizeHookPromptSelection(request.HookPromptMode, request.HookPromptPresetID), hookPromptSelectionInput: hasHookPromptSelectionInput(request), cancel: cancel, inbox: newRunInbox()}
 	if compactRun {
 		record.commandName = compactCommandName
 	}
@@ -86,6 +86,9 @@ func isActiveRunStatus(status types.RunStatus) bool {
 	}
 }
 
+// CancelRun 只发出取消信号并登记停止意图：
+// 消息收尾、状态落定、保存与终态通知都由该运行自己的处理队列完成，
+// 接口本身不修改会话状态、不广播终态。
 func (s *system) CancelRun(ctx context.Context, runID string) error {
 	s.mu.Lock()
 	record, ok := s.runs[runID]
@@ -98,12 +101,8 @@ func (s *system) CancelRun(ctx context.Context, runID string) error {
 		return runtimeStateInvalid("invalid run state transition", nil)
 	}
 	record.cancel()
+	enqueueRunEvent(record, runEvent{kind: runEventStop})
 	s.mu.Unlock()
-	state, err := s.updateRun(runID, types.RunStatusCancelled, "cancelled by user")
-	if err != nil {
-		return err
-	}
-	s.publish(runID, "run_cancelled", state)
 	return nil
 }
 
@@ -207,7 +206,7 @@ func hasHookPromptSelectionInput(request types.RunRequest) bool {
 func (s *system) continueRun(ctx context.Context, record *runRecord, contextSession types.Session) {
 	assistantParent := record.messageParent
 	for {
-		if err := ctx.Err(); err != nil {
+		if s.drainRunInbox(record) || ctx.Err() != nil {
 			s.cancelRunRecord(context.Background(), record, record.session)
 			return
 		}
@@ -540,6 +539,8 @@ func (s *system) failRunWithPayload(ctx context.Context, record *runRecord, sess
 		return
 	}
 	if session.ID != "" {
+		// 运行失败即收口：未决工具统一落定为失败，不留在未决状态。
+		failRunToolParts(record, reason)
 		session = markRunFailureMessage(record, session, payload)
 		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err == nil {
 			if next, ok := s.getRunState(record.runID); ok {

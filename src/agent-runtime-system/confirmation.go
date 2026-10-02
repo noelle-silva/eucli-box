@@ -150,8 +150,11 @@ func (s *system) waitForConfirmations(ctx context.Context, record *runRecord, pl
 			err := runtimeInvalid("run cancelled while waiting for confirmation", ctx.Err())
 			cleanup(err)
 			return nil, err
-		case taskID := <-record.asyncToolCh:
-			err := asyncToolInterruption(taskID)
+		case event := <-record.inbox:
+			if event.kind != runEventAsyncReady {
+				continue
+			}
+			err := asyncToolInterruption(event.taskID)
 			cleanup(err)
 			return nil, err
 		}

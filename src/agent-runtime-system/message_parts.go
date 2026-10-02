@@ -111,7 +111,9 @@ func hasReasoningParts(message types.Message) bool {
 	return false
 }
 
-func cancelRunToolParts(record *runRecord, reason string) bool {
+// settleRunUnfinishedToolParts 把本轮助手消息上尚未落定的工具部件统一收口。
+// 运行结束时不允许把工具留在未决状态：未完成的工具一律落定为取消或失败。
+func settleRunUnfinishedToolParts(record *runRecord, state string, status types.ToolStatus, reason string) bool {
 	messageID := strings.TrimSpace(record.activeAssistantID)
 	if messageID == "" && record.messageParent.Type == "assistant" {
 		messageID = strings.TrimSpace(record.messageParent.ID)
@@ -130,10 +132,10 @@ func cancelRunToolParts(record *runRecord, reason string) bool {
 			if part.Type != "tool" || isTerminalToolPartState(part.State) {
 				continue
 			}
-			part.State = "cancelled"
+			part.State = state
 			part.UpdatedAt = now
 			if part.Result == nil {
-				part.Result = &types.ToolPartResult{ID: utils.NewID("tool-result"), ActionID: strings.TrimSpace(part.CallID), ToolName: part.ToolName, Status: types.ToolStatusCancelled, Error: strings.TrimSpace(reason), CreatedAt: now}
+				part.Result = &types.ToolPartResult{ID: utils.NewID("tool-result"), ActionID: strings.TrimSpace(part.CallID), ToolName: part.ToolName, Status: status, Error: strings.TrimSpace(reason), CreatedAt: now}
 			}
 			changed = true
 		}
@@ -148,6 +150,14 @@ func cancelRunToolParts(record *runRecord, reason string) bool {
 		return true
 	}
 	return false
+}
+
+func cancelRunToolParts(record *runRecord, reason string) bool {
+	return settleRunUnfinishedToolParts(record, "cancelled", types.ToolStatusCancelled, reason)
+}
+
+func failRunToolParts(record *runRecord, reason string) bool {
+	return settleRunUnfinishedToolParts(record, "error", types.ToolStatusFailed, reason)
 }
 
 func isTerminalToolPartState(state string) bool {

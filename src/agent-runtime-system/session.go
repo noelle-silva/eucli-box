@@ -55,6 +55,9 @@ func (s *system) recoverAsyncToolTasks(session types.Session) types.Session {
 	if len(session.AsyncToolTasks) == 0 {
 		return session
 	}
+	// 存储实现可能复用返回值中的切片；恢复动作会更新任务状态，
+	// 先隔离底层数组，避免与异步任务落盘线程共享可变内存。
+	session.AsyncToolTasks = append([]types.AsyncToolTask(nil), session.AsyncToolTasks...)
 	now := time.Now().UTC()
 	for index := range session.AsyncToolTasks {
 		if runtimeTask, ok := s.asyncToolTaskSnapshot(session.AsyncToolTasks[index]); ok {

@@ -2738,7 +2738,7 @@ func (f *fakeRuntimeStorage) LoadSession(ctx context.Context, roleID string, ses
 	if !ok {
 		return types.Session{}, errors.New("session missing")
 	}
-	return session, nil
+	return cloneFakeRuntimeSession(session), nil
 }
 
 func (f *fakeRuntimeStorage) LoadGroupSession(ctx context.Context, groupID string, sessionID string) (types.Session, error) {
@@ -2748,7 +2748,7 @@ func (f *fakeRuntimeStorage) LoadGroupSession(ctx context.Context, groupID strin
 	if !ok {
 		return types.Session{}, errors.New("group session missing")
 	}
-	return session, nil
+	return cloneFakeRuntimeSession(session), nil
 }
 
 func (f *fakeRuntimeStorage) LoadWorkspaceSession(ctx context.Context, workspaceID string, roleID string, sessionID string) (types.Session, error) {
@@ -2758,7 +2758,17 @@ func (f *fakeRuntimeStorage) LoadWorkspaceSession(ctx context.Context, workspace
 	if !ok {
 		return types.Session{}, errors.New("workspace session missing")
 	}
-	return session, nil
+	return cloneFakeRuntimeSession(session), nil
+}
+
+func cloneFakeRuntimeSession(session types.Session) types.Session {
+	messages := session.Messages
+	session.Messages = make([]types.Message, len(messages))
+	for index, message := range messages {
+		session.Messages[index] = cloneRunMessageSnapshot(message)
+	}
+	session.AsyncToolTasks = append([]types.AsyncToolTask(nil), session.AsyncToolTasks...)
+	return session
 }
 
 func (f *fakeRuntimeStorage) ListRoles(ctx context.Context) ([]types.RoleSummary, error) {

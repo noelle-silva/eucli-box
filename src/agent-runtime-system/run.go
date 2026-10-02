@@ -93,13 +93,16 @@ func (s *system) CancelRun(ctx context.Context, runID string) error {
 		s.mu.Unlock()
 		return runtimeNotFound("run was not found", nil)
 	}
+	if !isActiveRunStatus(record.state.Status) {
+		s.mu.Unlock()
+		return runtimeStateInvalid("invalid run state transition", nil)
+	}
 	record.cancel()
 	s.mu.Unlock()
 	state, err := s.updateRun(runID, types.RunStatusCancelled, "cancelled by user")
 	if err != nil {
 		return err
 	}
-	s.publishAssistantMessageUpdate(record)
 	s.publish(runID, "run_cancelled", state)
 	return nil
 }

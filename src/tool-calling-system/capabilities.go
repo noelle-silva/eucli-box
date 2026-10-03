@@ -306,16 +306,5 @@ func (c *capabilitySession) readSessionState(ctx context.Context, payload json.R
 }
 
 func (c *capabilitySession) loadSession(ctx context.Context) (types.Session, error) {
-	scope := c.plan.Scope
-	sessionID := strings.TrimSpace(scope.SessionID)
-	if sessionID == "" {
-		return types.Session{}, toolInvalid("tool run scope is missing session id", nil)
-	}
-	if groupID := strings.TrimSpace(scope.GroupID); groupID != "" {
-		return c.storage.LoadGroupSession(ctx, groupID, sessionID)
-	}
-	if workspaceID := strings.TrimSpace(scope.WorkspaceID); workspaceID != "" {
-		return c.storage.LoadWorkspaceSession(ctx, workspaceID, strings.TrimSpace(scope.RoleID), sessionID)
-	}
-	return c.storage.LoadSession(ctx, strings.TrimSpace(scope.RoleID), sessionID)
+	return loadSessionForScope(ctx, c.storage, c.plan.Scope)
 }

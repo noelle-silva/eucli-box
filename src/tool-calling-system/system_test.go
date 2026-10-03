@@ -703,6 +703,28 @@ func (f *fakeToolStorage) LoadWorkspaceSession(ctx context.Context, workspaceID 
 	return session, nil
 }
 
+func (f *fakeToolStorage) UpdateSessionToolAuthorization(ctx context.Context, roleID string, sessionID string, toolID string, authorized bool) (types.Session, error) {
+	return f.updateSessionToolAuthorization(sessionID, toolID, authorized)
+}
+
+func (f *fakeToolStorage) UpdateGroupSessionToolAuthorization(ctx context.Context, groupID string, sessionID string, toolID string, authorized bool) (types.Session, error) {
+	return f.updateSessionToolAuthorization(sessionID, toolID, authorized)
+}
+
+func (f *fakeToolStorage) UpdateWorkspaceSessionToolAuthorization(ctx context.Context, workspaceID string, roleID string, sessionID string, toolID string, authorized bool) (types.Session, error) {
+	return f.updateSessionToolAuthorization(sessionID, toolID, authorized)
+}
+
+func (f *fakeToolStorage) updateSessionToolAuthorization(sessionID string, toolID string, authorized bool) (types.Session, error) {
+	session, ok := f.sessions[sessionID]
+	if !ok {
+		return types.Session{}, errors.New("session missing")
+	}
+	session.Metadata = types.PutSessionToolAuthorization(session.Metadata, toolID, authorized)
+	f.sessions[sessionID] = session
+	return session, nil
+}
+
 func (f *fakeToolStorage) SaveSessionMessageAttachment(ctx context.Context, roleID string, sessionID string, attachment types.RunAttachment) (types.MessageAttachment, error) {
 	return f.saveAttachment("roles", roleID, sessionID, attachment)
 }

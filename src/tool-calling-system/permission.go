@@ -31,18 +31,24 @@ func (s *system) Prepare(ctx context.Context, scope types.ToolRunScope, action t
 	if tool.Status == types.ToolAvailabilityUnavailable {
 		return unavailableToolPlan(scope, action, tool), nil
 	}
-	fence, err := s.evaluateWorkspaceFence(ctx, scope, tool, action)
-	if err != nil {
-		return types.ToolRunPlan{}, err
-	}
-	if fence != nil && fence.RequiresConfirmation {
-		decision := workspaceFenceDecision(action, fence)
-		return types.ToolRunPlan{ID: utils.NewID("tool-plan"), RoleID: scope.RoleID, Scope: scope, Action: action, Tool: tool, InvocationMode: resolveInvocationMode(action, tool), Decision: decision, WorkspaceFence: fence, PlanStatus: types.ToolPlanStatusNeedsConfirmation, CreatedAt: time.Now().UTC()}, nil
+	// 运行前先查会话放行清单：命中即直接放行，不再评估路径围栏、不看角色询问。
+	authorized := s.sessionToolAuthorized(ctx, scope, tool.ID)
+	var fence *types.ToolWorkspaceFence
+	if !authorized {
+		fence, err = s.evaluateWorkspaceFence(ctx, scope, tool, action)
+		if err != nil {
+			return types.ToolRunPlan{}, err
+		}
+		if fence != nil && fence.RequiresConfirmation {
+			decision := workspaceFenceDecision(action, fence)
+			return types.ToolRunPlan{ID: utils.NewID("tool-plan"), RoleID: scope.RoleID, Scope: scope, Action: action, Tool: tool, InvocationMode: resolveInvocationMode(action, tool), Decision: decision, WorkspaceFence: fence, PlanStatus: types.ToolPlanStatusNeedsConfirmation, CreatedAt: time.Now().UTC()}, nil
+		}
 	}
 	decision, err := s.permission.Decide(ctx, roleID, action)
 	if err != nil {
 		return types.ToolRunPlan{}, toolPermissionFailed("failed to decide tool permission", err)
 	}
+	decision = resolveSessionAuthorization(decision, authorized)
 	return s.planFromDecision(scope, action, tool, decision, fence)
 }
 
@@ -93,6 +99,13 @@ func (s *system) ApplyConfirmation(ctx context.Context, plan types.ToolRunPlan, 
 	if !confirmation.Approved {
 		return types.ToolRunPlan{ID: plan.ID, RoleID: plan.RoleID, Scope: plan.Scope, Action: plan.Action, Tool: plan.Tool, InvocationMode: plan.InvocationMode, Decision: types.PermissionDecision{ID: plan.Decision.ID, ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Status: types.PermissionStatusDenied, Reason: confirmationReason(confirmation), Details: plan.Decision.Details, CreatedAt: time.Now().UTC()}, WorkspaceFence: plan.WorkspaceFence, PlanStatus: types.ToolPlanStatusDenied, CreatedAt: time.Now().UTC()}, nil
 	}
+	// “本会话内始终同意”：先落放行清单，再让本次也按已放行处理。
+	authorized := confirmation.RememberForSession
+	if authorized {
+		if err := s.rememberToolAuthorization(ctx, plan.Scope, plan.Tool.ID); err != nil {
+			return types.ToolRunPlan{}, err
+		}
+	}
 	if isWorkspaceFenceDecision(plan.Decision) {
 		if strings.TrimSpace(plan.RoleID) == "" {
 			return types.ToolRunPlan{}, toolInvalid("role id is required", nil)
@@ -104,12 +117,14 @@ func (s *system) ApplyConfirmation(ctx context.Context, plan types.ToolRunPlan, 
 		if err != nil {
 			return types.ToolRunPlan{}, toolPermissionFailed("failed to decide tool permission", err)
 		}
+		decision = resolveSessionAuthorization(decision, authorized)
 		return s.planFromDecision(plan.Scope, plan.Action, plan.Tool, decision, plan.WorkspaceFence)
 	}
 	decision, err := s.permission.ApplyConfirmation(ctx, plan.Decision, confirmation)
 	if err != nil {
 		return types.ToolRunPlan{}, toolPermissionFailed("failed to apply tool confirmation", err)
 	}
+	decision = resolveSessionAuthorization(decision, authorized)
 	if decision.Status == types.PermissionStatusDenied {
 		plan.Decision = decision
 		plan.PlanStatus = types.ToolPlanStatusDenied

@@ -279,6 +279,28 @@ func (s *system) updateSessionHookPrompt(ctx context.Context, scope sessionScope
 	})
 }
 
+func (s *system) UpdateSessionToolAuthorization(ctx context.Context, roleID string, sessionID string, toolID string, authorized bool) (types.Session, error) {
+	return s.updateSessionToolAuthorization(ctx, roleSessionScope(roleID), sessionID, toolID, authorized)
+}
+
+func (s *system) UpdateGroupSessionToolAuthorization(ctx context.Context, groupID string, sessionID string, toolID string, authorized bool) (types.Session, error) {
+	return s.updateSessionToolAuthorization(ctx, groupSessionScope(groupID), sessionID, toolID, authorized)
+}
+
+func (s *system) UpdateWorkspaceSessionToolAuthorization(ctx context.Context, workspaceID string, roleID string, sessionID string, toolID string, authorized bool) (types.Session, error) {
+	return s.updateSessionToolAuthorization(ctx, workspaceSessionScope(workspaceID, roleID), sessionID, toolID, authorized)
+}
+
+func (s *system) updateSessionToolAuthorization(ctx context.Context, scope sessionScope, sessionID string, toolID string, authorized bool) (types.Session, error) {
+	if strings.TrimSpace(toolID) == "" {
+		return types.Session{}, storageInvalid("tool id is required", nil)
+	}
+	return s.updateSessionAtomically(ctx, scope, sessionID, func(session *types.Session) error {
+		session.Metadata = types.PutSessionToolAuthorization(session.Metadata, toolID, authorized)
+		return nil
+	})
+}
+
 func (s *system) updateSessionAtomically(ctx context.Context, scope sessionScope, sessionID string, mutate func(*types.Session) error) (types.Session, error) {
 	s.sessionMu.Lock()
 	defer s.sessionMu.Unlock()

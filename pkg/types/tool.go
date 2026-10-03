@@ -251,11 +251,14 @@ type ToolResult struct {
 }
 
 type ToolConfirmation struct {
-	ID         string    `json:"id"`
-	DecisionID string    `json:"decisionId"`
-	Approved   bool      `json:"approved"`
-	Reason     string    `json:"reason,omitempty"`
-	CreatedAt  time.Time `json:"createdAt"`
+	ID         string `json:"id"`
+	DecisionID string `json:"decisionId"`
+	Approved   bool   `json:"approved"`
+	// RememberForSession 表示用户选择“本会话内始终同意”：
+	// 本次放行后把该工具写入会话放行清单，本会话内后续调用直接执行。
+	RememberForSession bool      `json:"rememberForSession,omitempty"`
+	Reason             string    `json:"reason,omitempty"`
+	CreatedAt          time.Time `json:"createdAt"`
 }
 
 type PermissionDecision struct {

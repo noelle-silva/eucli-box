@@ -108,6 +108,8 @@ func (s *system) CancelRun(ctx context.Context, runID string) error {
 }
 
 func (s *system) startRun(ctx context.Context, record *runRecord, request types.RunRequest) (types.RunState, types.Session, error) {
+	origin := runOriginFromRequest(request)
+	record.origin = origin
 	state, err := s.updateRun(record.runID, types.RunStatusRunning, "")
 	if err != nil {
 		return state, types.Session{}, err
@@ -144,15 +146,17 @@ func (s *system) startRun(ctx context.Context, record *runRecord, request types.
 	record.session = session
 	record.messageParent = assistantParent
 	record.anchorMessageID = assistantParent.ID
-	if !compactRun && strings.TrimSpace(request.UserMessageID) == "" && strings.TrimSpace(request.ContextMessageID) == "" {
+	if !compactRun && runOriginMarksInputMessage(origin) {
 		markRunInputMessage(record, assistantParent)
 	}
 	markRunDependencyMessages(record, contextSession.Messages)
 	if compactRun && s.hasActiveRunInDependencyPath(record) {
 		return state, types.Session{}, runtimeStateInvalid("当前分支路径仍有运行中的任务，请完成后再压缩", nil)
 	}
-	record.forceBranchReply = shouldForceRunBranchReply(session, assistantParent, request) || s.hasActiveRunAtAnchor(record)
-	record.forceNewAssistantReply = strings.TrimSpace(request.ContextMessageID) != ""
+	// 「从会话末条」起点的语义是接在当前活动分支最新之后、不分叉：
+	// 残余并发由分支槽冲突兜住，因此不再以「同锚点有活动运行」为由另起分支。
+	record.forceBranchReply = origin != types.RunOriginSessionTail && (shouldForceRunBranchReply(session, assistantParent, origin) || s.hasActiveRunAtAnchor(record))
+	record.forceNewAssistantReply = runOriginForcesNewAssistantReply(origin)
 	lastMessageID := assistantParent.ID
 	inputMessageID := assistantParent.ID
 	if compactRun {
@@ -211,37 +215,65 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 			s.failRun(context.Background(), record, record.session, fmt.Errorf("agent run panicked: %v", recovered))
 		}
 	}()
+	for attempt := 0; ; attempt++ {
+		retry, err := s.runConversation(ctx, record, &contextSession)
+		if err == nil {
+			return
+		}
+		if !retry || attempt >= maxSessionTailRunRetries {
+			s.failRun(context.Background(), record, record.session, err)
+			return
+		}
+		next, resetErr := s.resetSessionTailRun(ctx, record)
+		if resetErr != nil {
+			s.failRun(context.Background(), record, record.session, resetErr)
+			return
+		}
+		contextSession = next
+	}
+}
+
+// maxSessionTailRunRetries 是「从会话末条」起点因并发分支槽冲突而重解析起点的最大重试次数。
+const maxSessionTailRunRetries = 3
+
+// runConversation 推进一次会话循环。返回 (retry, err)：err 非空且 retry 为真表示遭遇
+// 可重试的分支槽冲突，调用方应重新载入会话、重解析起点后重试；
+// 其余终态出口都在内部收口并返回 (false, nil)。
+func (s *system) runConversation(ctx context.Context, record *runRecord, contextSession *types.Session) (bool, error) {
 	assistantParent := record.messageParent
 	for {
 		if s.drainRunInbox(record) || ctx.Err() != nil {
 			s.cancelRunRecord(context.Background(), record, record.session)
-			return
+			return false, nil
 		}
-		flushedAsyncToolResults, err := s.flushAsyncToolResults(ctx, record, &contextSession)
+		flushedAsyncToolResults, err := s.flushAsyncToolResults(ctx, record, contextSession)
 		if err != nil {
+			if s.retryableSessionTailConflict(record, err) {
+				return true, err
+			}
 			s.failRun(context.Background(), record, record.session, err)
-			return
+			return false, nil
 		}
 		if flushedAsyncToolResults {
 			continue
 		}
-		roleContext, err := s.buildRoleContext(ctx, record.roleID, contextSession)
+		roleContext, err := s.buildRoleContext(ctx, record.roleID, *contextSession)
 		if err != nil {
 			s.failRun(context.Background(), record, record.session, err)
-			return
+			return false, nil
 		}
 		modelResponse, err := s.callModel(ctx, record, roleContext)
 		if err != nil {
 			if ctx.Err() != nil {
 				s.cancelRunRecord(context.Background(), record, record.session)
-				return
+				return false, nil
 			}
 			s.failRun(context.Background(), record, record.session, err)
-			return
+			return false, nil
 		}
 		if err := ctx.Err(); err != nil {
 			s.cancelRunRecord(context.Background(), record, record.session)
-			return
+			return false, nil
 		}
 		assistantOutputRecorded := shouldRecordAssistantOutput(modelResponse)
 		if assistantOutputRecorded {
@@ -262,59 +294,115 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 		assistantParent = record.messageParent
 		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, assistantParent.ID); err != nil {
 			s.failRun(context.Background(), record, record.session, err)
-			return
+			return false, nil
 		}
 		if assistantOutputRecorded {
-			contextSession = appendMessage(contextSession, assistantParent)
+			*contextSession = appendMessage(*contextSession, assistantParent)
 		}
 		s.publish(eventSourceFromRecord(record), "model_output", modelResponse)
 		if err := s.saveRunSession(ctx, record, types.RunStatusRunning); err != nil {
+			if s.retryableSessionTailConflict(record, err) {
+				return true, err
+			}
 			s.failRun(context.Background(), record, record.session, err)
-			return
+			return false, nil
 		}
 		if assistantOutputRecorded {
 			s.publishAssistantMessageUpdate(record)
 		}
 		if len(modelResponse.ToolIntents) == 0 {
-			flushedAsyncToolResults, err := s.flushAsyncToolResults(ctx, record, &contextSession)
+			flushedAsyncToolResults, err := s.flushAsyncToolResults(ctx, record, contextSession)
 			if err != nil {
+				if s.retryableSessionTailConflict(record, err) {
+					return true, err
+				}
 				s.failRun(context.Background(), record, record.session, err)
-				return
+				return false, nil
 			}
 			if flushedAsyncToolResults {
 				continue
 			}
 			s.completeRun(context.Background(), record, record.session)
-			return
+			return false, nil
 		}
-		_, err = s.handleToolIntents(ctx, record, &contextSession, modelResponse.ToolIntents)
+		_, err = s.handleToolIntents(ctx, record, contextSession, modelResponse.ToolIntents)
 		if err != nil {
 			if ctx.Err() != nil {
 				s.cancelRunRecord(context.Background(), record, record.session)
-				return
+				return false, nil
+			}
+			if s.retryableSessionTailConflict(record, err) {
+				return true, err
 			}
 			s.failRun(context.Background(), record, record.session, err)
-			return
+			return false, nil
 		}
 		// 工具批可能在等待期间就地回灌过异步结果；回复锚点统一取会话当前末条，
 		// 让紧随其后的模型回复接在最新事实上。
 		assistantParent = lastSessionMessage(record.session)
 		record.messageParent = assistantParent
-		contextSession = upsertSessionMessage(contextSession, assistantParent)
+		*contextSession = upsertSessionMessage(*contextSession, assistantParent)
 		record.activeAssistantID = ""
 		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, assistantParent.ID); err != nil {
 			s.failRun(context.Background(), record, record.session, err)
-			return
+			return false, nil
 		}
 		if err := ctx.Err(); err != nil {
 			s.cancelRunRecord(context.Background(), record, record.session)
-			return
+			return false, nil
 		}
 		if err := s.saveRunSession(ctx, record, types.RunStatusRunning); err != nil {
+			if s.retryableSessionTailConflict(record, err) {
+				return true, err
+			}
 			s.failRun(context.Background(), record, record.session, err)
-			return
+			return false, nil
 		}
 	}
+}
+
+// retryableSessionTailConflict 判定一次落盘冲突是否应触发「从会话末条」起点重解析重试。
+// 只在运行尚未落定自有助手回复时重试，避免把已提交的回复重新生成一遍；
+// 异步结果等非助手产出已落盘不影响重试，它们幂等且不会重复。
+func (s *system) retryableSessionTailConflict(record *runRecord, err error) bool {
+	if record == nil || record.origin != types.RunOriginSessionTail || record.persistedAssistantOutput {
+		return false
+	}
+	return isStorageConflict(err)
+}
+
+// resetSessionTailRun 在「从会话末条」起点遭遇并发分支槽冲突后，重新载入会话、重解析起点，
+// 丢弃本次未落定的运行副本，让运行从最新事实上重试。
+func (s *system) resetSessionTailRun(ctx context.Context, record *runRecord) (types.Session, error) {
+	request := types.RunRequest{RoleID: record.roleID, GroupID: record.groupID, WorkspaceID: record.workspaceID, SessionID: record.session.ID, Origin: types.RunOriginSessionTail}
+	session, err := s.loadOrCreateSession(ctx, request)
+	if err != nil {
+		return types.Session{}, err
+	}
+	applyRunReasoningEffort(record, &session)
+	applyRunModelOverride(record, &session)
+	applyRunHookPromptPreset(record, &session)
+	applyRunStreamPreference(record, &session)
+	session, contextSession, assistantParent, err := s.prepareRunSession(ctx, session, request)
+	if err != nil {
+		return types.Session{}, err
+	}
+	contextSession = compactedContextSession(contextSession)
+	record.session = session
+	record.messageParent = assistantParent
+	record.anchorMessageID = assistantParent.ID
+	record.activeAssistantID = ""
+	record.ownedMessageIDs = nil
+	record.deletedMessageIDs = nil
+	record.dependencyIDs = nil
+	record.messageSnapshots = nil
+	record.forceBranchReply = false
+	record.forceNewAssistantReply = true
+	markRunDependencyMessages(record, contextSession.Messages)
+	if err := s.setRunMessageIDs(record.runID, assistantParent.ID, assistantParent.ID); err != nil {
+		return types.Session{}, err
+	}
+	return contextSession, nil
 }
 
 func shouldRecordAssistantOutput(response types.ModelResponse) bool {
@@ -341,6 +429,17 @@ func validateRunRequest(ctx context.Context, request types.RunRequest) error {
 	if strings.TrimSpace(request.GroupID) != "" && strings.TrimSpace(request.WorkspaceID) != "" {
 		return runtimeInvalid("groupId cannot be combined with workspaceId", nil)
 	}
+	if effort := types.TrimReasoningEffort(request.ReasoningEffort); effort != "" && !types.IsReasoningEffort(effort) {
+		return runtimeInvalid("reasoningEffort is invalid", nil)
+	}
+	if override := modelOverrideFromRunRequest(request); hasModelOverrideInput(override) {
+		if _, ok := types.NormalizeModelOverrideCoordinate(override); !ok {
+			return runtimeInvalid("modelOverride is invalid", nil)
+		}
+	}
+	if runOriginFromRequest(request) == types.RunOriginSessionTail {
+		return validateSessionTailRunRequest(request)
+	}
 	hasAttachments := len(request.Attachments) > 0
 	hasMessage := strings.TrimSpace(request.Message) != "" || hasAttachments
 	hasUserMessageID := strings.TrimSpace(request.UserMessageID) != ""
@@ -363,13 +462,16 @@ func validateRunRequest(ctx context.Context, request types.RunRequest) error {
 	if strings.TrimSpace(request.ParentMessageID) != "" && strings.TrimSpace(request.SessionID) == "" {
 		return runtimeInvalid("session id is required when parentMessageId is provided", nil)
 	}
-	if effort := types.TrimReasoningEffort(request.ReasoningEffort); effort != "" && !types.IsReasoningEffort(effort) {
-		return runtimeInvalid("reasoningEffort is invalid", nil)
+	return nil
+}
+
+// validateSessionTailRunRequest 校验「从会话末条」起点：它只声明会话，不携带任何消息输入。
+func validateSessionTailRunRequest(request types.RunRequest) error {
+	if strings.TrimSpace(request.SessionID) == "" {
+		return runtimeInvalid("session id is required when starting from session tail", nil)
 	}
-	if override := modelOverrideFromRunRequest(request); hasModelOverrideInput(override) {
-		if _, ok := types.NormalizeModelOverrideCoordinate(override); !ok {
-			return runtimeInvalid("modelOverride is invalid", nil)
-		}
+	if strings.TrimSpace(request.Message) != "" || len(request.Attachments) > 0 || strings.TrimSpace(request.UserMessageID) != "" || strings.TrimSpace(request.ContextMessageID) != "" || strings.TrimSpace(request.ParentMessageID) != "" {
+		return runtimeInvalid("session tail run must not carry message input", nil)
 	}
 	return nil
 }
@@ -446,16 +548,32 @@ func applyRunModelOverride(record *runRecord, session *types.Session) {
 }
 
 func (s *system) prepareRunSession(ctx context.Context, session types.Session, request types.RunRequest) (types.Session, types.Session, types.Message, error) {
-	if strings.TrimSpace(request.ContextMessageID) != "" {
+	switch runOriginFromRequest(request) {
+	case types.RunOriginSessionTail:
+		// 锚点在本函数的同一次会话读取内解析，调用方不预计算、不传入锚点消息 ID。
+		parent := activeSessionBranchTail(session)
+		if strings.TrimSpace(parent.ID) == "" {
+			return session, types.Session{}, types.Message{}, runtimeInvalid("session has no message to continue from", nil)
+		}
+		contextSession, _, err := sessionContextThroughMessage(session, parent.ID)
+		if err != nil {
+			return session, types.Session{}, types.Message{}, err
+		}
+		return session, contextSession, parent, nil
+	case types.RunOriginContextMessage:
 		contextSession, parent, err := sessionContextThroughMessage(session, request.ContextMessageID)
 		if err != nil {
 			return session, types.Session{}, types.Message{}, err
 		}
 		return session, contextSession, parent, nil
-	}
-	if strings.TrimSpace(request.UserMessageID) == "" {
-		var err error
-		session, err = s.appendUserMessageForRun(ctx, session, request)
+	case types.RunOriginUserMessage:
+		contextSession, parent, err := sessionContextThroughUserMessage(session, request.UserMessageID)
+		if err != nil {
+			return session, types.Session{}, types.Message{}, err
+		}
+		return session, contextSession, parent, nil
+	default:
+		session, err := s.appendUserMessageForRun(ctx, session, request)
 		if err != nil {
 			return session, types.Session{}, types.Message{}, err
 		}
@@ -466,15 +584,10 @@ func (s *system) prepareRunSession(ctx context.Context, session types.Session, r
 		}
 		return session, contextSession, parent, nil
 	}
-	contextSession, parent, err := sessionContextThroughUserMessage(session, request.UserMessageID)
-	if err != nil {
-		return session, types.Session{}, types.Message{}, err
-	}
-	return session, contextSession, parent, nil
 }
 
-func shouldForceRunBranchReply(session types.Session, parent types.Message, request types.RunRequest) bool {
-	if strings.TrimSpace(request.ContextMessageID) != "" {
+func shouldForceRunBranchReply(session types.Session, parent types.Message, origin types.RunOrigin) bool {
+	if origin == types.RunOriginContextMessage {
 		return hasAnyChild(session.Messages, parent.ID)
 	}
 	return shouldForceBranchReply(session, parent)

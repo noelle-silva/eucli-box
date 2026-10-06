@@ -337,6 +337,30 @@ const (
 	RunStatusCancelled           RunStatus = "cancelled"
 )
 
+// RunOrigin 是运行的起点种类：调用方只声明起点种类，具体锚点由运行在载入会话的同一次读取内解析。
+type RunOrigin string
+
+const (
+	// RunOriginMessage 追加一条新消息后从该新消息起跑。
+	RunOriginMessage RunOrigin = "message"
+	// RunOriginUserMessage 从指定的用户消息起跑。
+	RunOriginUserMessage RunOrigin = "user_message"
+	// RunOriginContextMessage 从指定的消息起跑。
+	RunOriginContextMessage RunOrigin = "context_message"
+	// RunOriginSessionTail 从会话当前活动分支的末条消息起跑，接在其后且不分叉。
+	RunOriginSessionTail RunOrigin = "session_tail"
+)
+
+// NormalizeRunOrigin 校验并归一化起点种类；未知取值返回空串。
+func NormalizeRunOrigin(origin RunOrigin) RunOrigin {
+	switch origin {
+	case RunOriginMessage, RunOriginUserMessage, RunOriginContextMessage, RunOriginSessionTail:
+		return origin
+	default:
+		return ""
+	}
+}
+
 type RunRequest struct {
 	RoleID             string           `json:"roleId"`
 	GroupID            string           `json:"groupId,omitempty"`
@@ -347,6 +371,7 @@ type RunRequest struct {
 	ParentMessageID    string           `json:"parentMessageId,omitempty"`
 	UserMessageID      string           `json:"userMessageId,omitempty"`
 	ContextMessageID   string           `json:"contextMessageId,omitempty"`
+	Origin             RunOrigin        `json:"origin,omitempty"`
 	ModelOverride      *ModelCoordinate `json:"modelOverride,omitempty"`
 	ReasoningEffort    ReasoningEffort  `json:"reasoningEffort,omitempty"`
 	HookPromptMode     string           `json:"hookPromptMode,omitempty"`

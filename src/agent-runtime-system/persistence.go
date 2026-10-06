@@ -156,6 +156,9 @@ func markRunSessionSaveAccepted(record *runRecord, save types.SessionMessageSave
 		if messageID == "" {
 			continue
 		}
+		if write.Message.Type == "assistant" {
+			record.persistedAssistantOutput = true
+		}
 		record.messageSnapshots[messageID] = cloneRunMessageSnapshot(write.Message)
 	}
 	for _, removed := range save.Deletes {

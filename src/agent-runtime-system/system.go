@@ -101,6 +101,8 @@ type runRecord struct {
 	state                       types.RunState
 	session                     types.Session
 	terminalAt                  time.Time
+	origin                      types.RunOrigin
+	persistedAssistantOutput    bool
 	messageParent               types.Message
 	inputMessageID              string
 	lastMessageID               string

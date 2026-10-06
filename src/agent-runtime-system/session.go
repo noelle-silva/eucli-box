@@ -571,6 +571,17 @@ func activeSessionBranchID(session types.Session) string {
 	return defaultRuntimeBranchID
 }
 
+// activeSessionBranchTail 返回当前活动分支上的最新消息，作为「从会话末条」起点的锚点。
+// 锚点由运行在载入会话的同一次读取内解析，不由调用方预计算传入。
+func activeSessionBranchTail(session types.Session) types.Message {
+	if messageID := lastMessageIDInBranch(session.Messages, activeSessionBranchID(session)); messageID != "" {
+		if message, ok := messageByID(session.Messages, messageID); ok {
+			return message
+		}
+	}
+	return lastSessionMessage(session)
+}
+
 func lastMessageIDInBranch(messages []types.Message, branchID string) string {
 	branchID = strings.TrimSpace(branchID)
 	for i := len(messages) - 1; i >= 0; i-- {

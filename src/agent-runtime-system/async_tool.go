@@ -321,22 +321,17 @@ func asyncContinuationKeyFromTask(task types.AsyncToolTask) asyncContinuationKey
 
 func (s *system) continueAfterAsyncToolReady(ctx context.Context, task types.AsyncToolTask, key asyncContinuationKey) {
 	defer s.releaseAsyncContinuation(key)
-	session, err := s.loadTaskSession(ctx, task)
-	if err != nil {
-		return
-	}
-	request := runRequestFromAsyncToolContinuation(task, key, lastSessionMessage(session).ID)
-	if strings.TrimSpace(request.ContextMessageID) == "" {
-		return
-	}
+	// 「是否有活动运行」只是廉价的「是否值得起跑」前置；正确性由运行自身在载入会话时解析起点、
+	// 以及分支槽冲突兜底，不依赖它。
 	if s.hasActiveAsyncContinuationTarget(key) {
 		return
 	}
-	_, _ = s.StartRun(ctx, request)
+	_, _ = s.StartRun(ctx, runRequestFromAsyncToolContinuation(task, key))
 }
 
-func runRequestFromAsyncToolContinuation(task types.AsyncToolTask, key asyncContinuationKey, contextMessageID string) types.RunRequest {
-	request := types.RunRequest{RoleID: key.roleID, GroupID: key.groupID, WorkspaceID: key.workspaceID, SessionID: key.sessionID, ContextMessageID: strings.TrimSpace(contextMessageID)}
+func runRequestFromAsyncToolContinuation(task types.AsyncToolTask, key asyncContinuationKey) types.RunRequest {
+	// 异步续跑只声明「从会话末条」起点：不自行读会话、不计算锚点，语义是接在当前活动分支最新之后、不分叉。
+	request := types.RunRequest{RoleID: key.roleID, GroupID: key.groupID, WorkspaceID: key.workspaceID, SessionID: key.sessionID, Origin: types.RunOriginSessionTail}
 	continuation := task.Continuation
 	request.Stream = continuation.Stream
 	request.ReasoningEffort = types.TrimReasoningEffort(continuation.ReasoningEffort)

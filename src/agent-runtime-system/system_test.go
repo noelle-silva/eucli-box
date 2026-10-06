@@ -3002,6 +3002,7 @@ type fakeRuntimeStorage struct {
 	listRolesErr      error
 	messageSaveCount  int
 	saveMessagesErr   error
+	onSaveMessages    func(types.SessionMessageSave)
 }
 
 func newFakeRuntimeStorage() *fakeRuntimeStorage {
@@ -3067,6 +3068,9 @@ func (f *fakeRuntimeStorage) SaveSession(ctx context.Context, session types.Sess
 func (f *fakeRuntimeStorage) SaveSessionMessages(ctx context.Context, save types.SessionMessageSave) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.onSaveMessages != nil {
+		f.onSaveMessages(save)
+	}
 	if f.saveMessagesErr != nil {
 		return f.saveMessagesErr
 	}

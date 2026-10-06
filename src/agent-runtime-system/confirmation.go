@@ -12,6 +12,8 @@ type toolConfirmationRequest struct {
 	done         chan error
 }
 
+// SubmitToolConfirmation 只把确认决定投进目标运行的唯一队列，并等待主脑回执。
+// 它不修改待确认表、不直接落定状态：确认由该运行的主脑在安全点消费并收口。
 func (s *system) SubmitToolConfirmation(ctx context.Context, confirmation types.ToolConfirmation) error {
 	if err := ctx.Err(); err != nil {
 		return runtimeInvalid("submit confirmation cancelled", err)
@@ -20,6 +22,10 @@ func (s *system) SubmitToolConfirmation(ctx context.Context, confirmation types.
 	if decisionID == "" {
 		return runtimeInvalid("confirmation decision id is required", nil)
 	}
+	done := make(chan error, 1)
+	request := &toolConfirmationRequest{confirmation: confirmation, done: done}
+	// 待确认表既是路由索引也是主脑的落定对象：投递与主脑的收口同受 s.mu 保护，
+	// 使「入队」与「收口清表」串行化，确认不会落在无人消费的缝隙里。
 	s.mu.Lock()
 	var target *runRecord
 	for _, record := range s.runs {
@@ -32,25 +38,11 @@ func (s *system) SubmitToolConfirmation(ctx context.Context, confirmation types.
 		s.mu.Unlock()
 		return runtimeNotFound("pending confirmation was not found", nil)
 	}
-	state := target.state
-	if state.Status != types.RunStatusWaitingConfirmation {
+	if !enqueueRunEvent(target, runEvent{kind: runEventToolConfirmation, confirmation: request}) {
 		s.mu.Unlock()
-		return runtimeStateInvalid("run is not waiting for confirmation", nil)
+		return runtimeStateInvalid("run confirmation queue is full", nil)
 	}
-	ch := target.confirmationCh
-	if ch == nil {
-		s.mu.Unlock()
-		return runtimeStateInvalid("run has no confirmation channel", nil)
-	}
-	delete(target.pendingPlans, decisionID)
 	s.mu.Unlock()
-	done := make(chan error, 1)
-	request := toolConfirmationRequest{confirmation: confirmation, done: done}
-	select {
-	case ch <- request:
-	case <-ctx.Done():
-		return runtimeInvalid("submit confirmation cancelled", ctx.Err())
-	}
 	select {
 	case err := <-done:
 		return err
@@ -85,17 +77,17 @@ func (s *system) waitForConfirmations(ctx context.Context, record *runRecord, pl
 		}
 		plansByDecisionID[decisionID] = plan
 	}
-	confirmationCh := make(chan toolConfirmationRequest, len(plans))
 	cleanup := func(err error) {
 		s.mu.Lock()
 		record.pendingPlans = nil
-		record.confirmationCh = nil
 		s.mu.Unlock()
-		drainToolConfirmationRequests(confirmationCh, err)
+		if err != nil {
+			// 收口时把队列里尚未消费的确认意图一并回绝，避免投递方空等。
+			s.drainRunInbox(record)
+		}
 	}
 	s.mu.Lock()
 	record.pendingPlans = clonePendingPlans(plansByDecisionID)
-	record.confirmationCh = confirmationCh
 	s.mu.Unlock()
 	_, err := s.updateRun(record.runID, types.RunStatusWaitingConfirmation, "waiting for tool confirmation")
 	if err != nil {
@@ -109,52 +101,56 @@ func (s *system) waitForConfirmations(ctx context.Context, record *runRecord, pl
 	confirmedByDecisionID := make(map[string]types.ToolRunPlan, len(plans))
 	for len(confirmedByDecisionID) < len(plans) {
 		select {
-		case request := <-confirmationCh:
-			confirmation := request.confirmation
-			decisionID := strings.TrimSpace(confirmation.DecisionID)
-			plan, ok := plansByDecisionID[decisionID]
-			if !ok {
-				err := runtimeNotFound("pending confirmation was not found", nil)
-				finishToolConfirmationRequest(request, err)
+		case event := <-record.inbox:
+			switch event.kind {
+			case runEventToolConfirmation:
+				request := event.confirmation
+				if request == nil {
+					continue
+				}
+				confirmation := request.confirmation
+				decisionID := strings.TrimSpace(confirmation.DecisionID)
+				plan, ok := plansByDecisionID[decisionID]
+				if !ok {
+					err := runtimeNotFound("pending confirmation was not found", nil)
+					finishToolConfirmationRequest(*request, err)
+					cleanup(err)
+					return nil, err
+				}
+				if _, exists := confirmedByDecisionID[decisionID]; exists {
+					err := runtimeStateInvalid("tool confirmation was already submitted", nil)
+					finishToolConfirmationRequest(*request, err)
+					cleanup(err)
+					return nil, err
+				}
+				confirmed, err := s.tools.ApplyConfirmation(ctx, plan, confirmation)
+				if err != nil {
+					err := runtimeToolFailed("failed to apply tool confirmation", err)
+					finishToolConfirmationRequest(*request, err)
+					cleanup(err)
+					return nil, err
+				}
+				confirmedByDecisionID[decisionID] = confirmed
+				if err := s.recordAppliedToolConfirmation(ctx, record, confirmed); err != nil {
+					finishToolConfirmationRequest(*request, err)
+					cleanup(err)
+					return nil, err
+				}
+				finishToolConfirmationRequest(*request, nil)
+				if confirmed.PlanStatus == types.ToolPlanStatusNeedsConfirmation {
+					// The next waiting prompt is published after it is registered as pending.
+				} else if confirmed.Decision.Status == types.PermissionStatusAllowed {
+					s.publish(record.runID, "tool_confirmation_applied", confirmed.Decision)
+				} else {
+					s.publish(record.runID, "tool_confirmation_rejected", confirmed.Decision)
+				}
+			case runEventAsyncReady:
+				err := asyncToolInterruption(event.taskID)
 				cleanup(err)
 				return nil, err
-			}
-			if _, exists := confirmedByDecisionID[decisionID]; exists {
-				err := runtimeStateInvalid("tool confirmation was already submitted", nil)
-				finishToolConfirmationRequest(request, err)
-				cleanup(err)
-				return nil, err
-			}
-			confirmed, err := s.tools.ApplyConfirmation(ctx, plan, confirmation)
-			if err != nil {
-				err := runtimeToolFailed("failed to apply tool confirmation", err)
-				finishToolConfirmationRequest(request, err)
-				cleanup(err)
-				return nil, err
-			}
-			confirmedByDecisionID[decisionID] = confirmed
-			if err := s.recordAppliedToolConfirmation(ctx, record, confirmed); err != nil {
-				finishToolConfirmationRequest(request, err)
-				cleanup(err)
-				return nil, err
-			}
-			finishToolConfirmationRequest(request, nil)
-			if confirmed.PlanStatus == types.ToolPlanStatusNeedsConfirmation {
-				// The next waiting prompt is published after it is registered as pending.
-			} else if confirmed.Decision.Status == types.PermissionStatusAllowed {
-				s.publish(record.runID, "tool_confirmation_applied", confirmed.Decision)
-			} else {
-				s.publish(record.runID, "tool_confirmation_rejected", confirmed.Decision)
 			}
 		case <-ctx.Done():
 			err := runtimeInvalid("run cancelled while waiting for confirmation", ctx.Err())
-			cleanup(err)
-			return nil, err
-		case event := <-record.inbox:
-			if event.kind != runEventAsyncReady {
-				continue
-			}
-			err := asyncToolInterruption(event.taskID)
 			cleanup(err)
 			return nil, err
 		}
@@ -188,17 +184,6 @@ func finishToolConfirmationRequest(request toolConfirmationRequest, err error) {
 		return
 	}
 	request.done <- err
-}
-
-func drainToolConfirmationRequests(ch <-chan toolConfirmationRequest, err error) {
-	for {
-		select {
-		case request := <-ch:
-			finishToolConfirmationRequest(request, err)
-		default:
-			return
-		}
-	}
 }
 
 func (s *system) recordAppliedToolConfirmation(ctx context.Context, record *runRecord, plan types.ToolRunPlan) error {

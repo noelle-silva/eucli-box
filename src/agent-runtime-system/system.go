@@ -124,9 +124,8 @@ type runRecord struct {
 	hookPromptPersistPending    bool
 	cancel                      context.CancelFunc
 
-	pendingPlans   map[string]types.ToolRunPlan
-	confirmationCh chan toolConfirmationRequest
-	inbox          chan runEvent
+	pendingPlans map[string]types.ToolRunPlan
+	inbox        chan runEvent
 }
 
 func NewSystem(config Config, storage StorageSystem, roles RoleSystem, providers ProviderSystem, tools ToolSystem, placeholders PlaceholderSystem) (System, error) {

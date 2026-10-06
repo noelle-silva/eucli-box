@@ -3,11 +3,9 @@ package toolcontrol
 import (
 	"context"
 	"errors"
-	"math"
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"eucli-box/tools/shell_command/internal/types"
 )
@@ -18,31 +16,6 @@ const (
 	controlVersionEnv  = "EUCLI_TOOL_CONTROL_VERSION"
 	controlRequiredEnv = "EUCLI_TOOL_CONTROL_REQUIRED"
 )
-
-// ExecutionContext derives the tool execution context from the
-// caller-specified timeout: a positive timeoutMs sets a deadline, zero or a
-// negative timeoutMs mean the caller did not set one and no deadline is
-// applied. Values too large to fit a time.Duration are clamped instead of
-// overflowing, so an extreme timeout can never turn into an already-expired
-// deadline.
-func ExecutionContext(timeoutMs int64) (context.Context, context.CancelFunc) {
-	if timeoutMs > 0 {
-		return context.WithTimeout(context.Background(), deadlineDuration(timeoutMs))
-	}
-	return context.WithCancel(context.Background())
-}
-
-// deadlineDuration converts a positive millisecond value into the largest
-// time.Duration that is guaranteed to sit far in the future. Directly
-// multiplying by time.Millisecond would overflow for extreme values and make
-// the derived context expire immediately.
-func deadlineDuration(timeoutMs int64) time.Duration {
-	const maxMilliseconds = math.MaxInt64 / int64(time.Millisecond)
-	if timeoutMs > maxMilliseconds {
-		timeoutMs = maxMilliseconds
-	}
-	return time.Duration(timeoutMs) * time.Millisecond
-}
 
 // AdoptControl connects a tool binary to the host control channel when the
 // host manages it. Without a full control environment the tool runs standalone

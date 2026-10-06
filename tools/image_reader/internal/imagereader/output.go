@@ -1,7 +1,7 @@
 package imagereader
 
 import (
-	"eucli-box/pkg/types"
+	"eucli-box/tools/image_reader/internal/types"
 )
 
 // success 构造成功结果。

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/image_reader/internal/types"
 )
 
 // PathPolicy 把调用参数中的相对路径解析为绝对路径。

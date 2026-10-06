@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/image_reader/internal/types"
 )
 
 // Execute 执行一次 image_reader 工具动作。

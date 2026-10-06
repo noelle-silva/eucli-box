@@ -8,8 +8,8 @@ import (
 	"io"
 	"os"
 
-	"eucli-box/pkg/toolcontrol"
-	"eucli-box/pkg/types"
+	"eucli-box/tools/image_reader/internal/toolcontrol"
+	"eucli-box/tools/image_reader/internal/types"
 	imagereader "eucli-box/tools/image_reader/internal/imagereader"
 )
 

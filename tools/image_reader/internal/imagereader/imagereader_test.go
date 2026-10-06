@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	"eucli-box/pkg/toolcontrol"
-	"eucli-box/pkg/types"
+	"eucli-box/tools/image_reader/internal/toolcontrol"
+	"eucli-box/tools/image_reader/internal/types"
 )
 
 // fakeSession 是会话能力服务的测试替身：记录写入请求并按需拒绝。

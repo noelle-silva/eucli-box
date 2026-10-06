@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/image_reader/internal/types"
 )
 
 const (

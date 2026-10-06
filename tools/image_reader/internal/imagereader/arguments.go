@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/image_reader/internal/types"
 )
 
 // arguments 是一次工具调用的完整参数视图。

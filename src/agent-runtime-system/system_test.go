@@ -1331,6 +1331,35 @@ func TestRunExecutesMultipleToolIntentsFromOneModelResponse(t *testing.T) {
 	}
 }
 
+func TestRunWrapsMalformedToolIntentAsFailureAndContinues(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{
+		{ID: "m1", Content: "need tools", ToolIntents: []types.ToolIntent{{ID: "intent-bad", ToolName: "file-reader", ArgumentError: "failed to parse tool arguments"}, {ID: "intent-good", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}}}},
+		{ID: "m2", Content: "final"},
+	}
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use tools"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	if fakes.tool.executeCount != 1 || len(fakes.tool.normalizedIntents) != 1 {
+		t.Fatalf("tool flow execute=%d intents=%#v", fakes.tool.executeCount, fakes.tool.normalizedIntents)
+	}
+	session := fakes.storage.lastSession()
+	bad := toolPartByCallID(session.Messages[1], "intent-bad")
+	if bad == nil || bad.State != "error" || bad.Result == nil || bad.Result.Status != types.ToolStatusFailed || !strings.Contains(bad.Result.Content, "failed to parse tool arguments") {
+		t.Fatalf("bad tool part = %#v", bad)
+	}
+	good := toolPartByCallID(session.Messages[1], "intent-good")
+	if good == nil || good.State != "completed" || good.Result == nil || good.Result.Status != types.ToolStatusSuccess {
+		t.Fatalf("good tool part = %#v", good)
+	}
+}
+
 func TestRunPublishesAssistantMessageUpdateWhenEachToolFinishes(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.responses = []types.ModelResponse{

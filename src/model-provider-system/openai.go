@@ -184,15 +184,12 @@ func (p *openAIStreamParser) Finish(response types.HTTPResponse) (types.ModelRes
 			continue
 		}
 		argsRaw := builder.Arguments.String()
-		args, err := parseToolArguments(argsRaw)
-		if err != nil {
-			return types.ModelResponse{}, err
-		}
+		args, argumentError := toolIntentArguments(argsRaw)
 		id := strings.TrimSpace(builder.ID)
 		if id == "" {
 			id = "tool-call-" + strconv.Itoa(index)
 		}
-		result.ToolIntents = append(result.ToolIntents, types.ToolIntent{ID: id, ToolName: builder.Name, Arguments: args, Raw: argsRaw, CreatedAt: result.CreatedAt})
+		result.ToolIntents = append(result.ToolIntents, types.ToolIntent{ID: id, ToolName: builder.Name, Arguments: args, Raw: argsRaw, ArgumentError: argumentError, CreatedAt: result.CreatedAt})
 	}
 	return result, nil
 }
@@ -285,11 +282,8 @@ func (openAIAdapter) ParseCompleteResponse(response types.HTTPResponse) (types.M
 		result.ReasoningSource = "op"
 	}
 	for _, toolCall := range message.ToolCalls {
-		args, err := parseToolArguments(toolCall.Function.Arguments)
-		if err != nil {
-			return types.ModelResponse{}, err
-		}
-		result.ToolIntents = append(result.ToolIntents, types.ToolIntent{ID: toolCall.ID, ToolName: toolCall.Function.Name, Arguments: args, Raw: toolCall.Function.Arguments, CreatedAt: result.CreatedAt})
+		args, argumentError := toolIntentArguments(toolCall.Function.Arguments)
+		result.ToolIntents = append(result.ToolIntents, types.ToolIntent{ID: toolCall.ID, ToolName: toolCall.Function.Name, Arguments: args, Raw: toolCall.Function.Arguments, ArgumentError: argumentError, CreatedAt: result.CreatedAt})
 	}
 	return result, nil
 }

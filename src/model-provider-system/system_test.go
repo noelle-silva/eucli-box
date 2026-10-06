@@ -170,6 +170,27 @@ func TestCompleteOpenAIWritesToolsIntoRequest(t *testing.T) {
 	}
 }
 
+func TestCompleteOpenAIKeepsUnparseableToolArgumentsAsIntentError(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["openai-main"] = testOpenAIProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"hello","tool_calls":[{"id":"call-1","function":{"name":"file-reader","arguments":"{not json"}}]}}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	response, err := system.Complete(context.Background(), types.ModelRequest{
+		Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"},
+		Messages:   []types.PromptMessage{{Role: "user", Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	if len(response.ToolIntents) != 1 || response.ToolIntents[0].ToolName != "file-reader" {
+		t.Fatalf("tool intents = %#v", response.ToolIntents)
+	}
+	if strings.TrimSpace(response.ToolIntents[0].ArgumentError) == "" || response.ToolIntents[0].Arguments != nil {
+		t.Fatalf("tool intent = %#v", response.ToolIntents[0])
+	}
+}
+
 func TestCompleteOpenAIUsesReasoningEffortAndOmitsTemperature(t *testing.T) {
 	storage := newFakeProviderStorage()
 	provider := testOpenAIProvider()
@@ -1023,6 +1044,28 @@ data: [DONE]
 	}
 	if body["stream"] != true {
 		t.Fatalf("stream flag = %#v body=%s", body["stream"], string(network.lastRequest.Body))
+	}
+}
+
+func TestCompleteStreamOpenAIKeepsUnparseableToolArgumentsAsIntentError(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["openai-main"] = testOpenAIProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`data: {"id":"chatcmpl-stream","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"file-reader","arguments":"{not json"}}]}}]}
+
+data: [DONE]
+
+`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	response, err := system.CompleteStream(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}}, nil)
+	if err != nil {
+		t.Fatalf("CompleteStream() error = %v", err)
+	}
+	if len(response.ToolIntents) != 1 || response.ToolIntents[0].ToolName != "file-reader" {
+		t.Fatalf("tool intents = %#v", response.ToolIntents)
+	}
+	if strings.TrimSpace(response.ToolIntents[0].ArgumentError) == "" || response.ToolIntents[0].Arguments != nil {
+		t.Fatalf("tool intent = %#v", response.ToolIntents[0])
 	}
 }
 

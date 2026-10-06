@@ -130,7 +130,10 @@ type ToolIntent struct {
 	Arguments      map[string]any     `json:"arguments,omitempty"`
 	InvocationMode ToolInvocationMode `json:"invocationMode,omitempty"`
 	Raw            string             `json:"raw,omitempty"`
-	CreatedAt      time.Time          `json:"createdAt"`
+	// ArgumentError 记录该次调用参数文本无法解析的原因；
+	// 非空表示单点参数错误，由运行时包装为该次调用的失败结果，不升级为整轮失败。
+	ArgumentError string    `json:"argumentError,omitempty"`
+	CreatedAt     time.Time `json:"createdAt"`
 }
 
 type ToolInvocationMode string

@@ -13,15 +13,16 @@ import (
 func (s *system) handleToolIntents(ctx context.Context, record *runRecord, intents []types.ToolIntent) ([]types.ToolResult, error) {
 	entries := make([]toolRunEntry, 0, len(intents))
 	for index, intent := range intents {
+		if message := strings.TrimSpace(intent.ArgumentError); message != "" {
+			entries = append(entries, failedIntentEntry(record, index, intent, message))
+			continue
+		}
 		action, err := s.tools.NormalizeIntent(ctx, intent)
 		if err != nil {
 			if isToolContextCancelled(err) {
 				return nil, err
 			}
-			action = fallbackToolAction(intent)
-			result := failedToolResult(action, "failed to normalize tool intent: "+err.Error())
-			entries = append(entries, toolRunEntry{Index: index, Action: action, Result: result, HasResult: true})
-			upsertRunToolPart(record, action, "error", nil, &result)
+			entries = append(entries, failedIntentEntry(record, index, intent, "failed to normalize tool intent: "+err.Error()))
 			continue
 		}
 		entries = append(entries, toolRunEntry{Index: index, Action: action})
@@ -350,6 +351,15 @@ func failedToolResult(action types.ToolAction, message string) types.ToolResult 
 		message = "tool execution failed"
 	}
 	return types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: action.ID, ToolName: action.ToolName, Status: types.ToolStatusFailed, Content: message, Error: message, CreatedAt: time.Now().UTC()}
+}
+
+// failedIntentEntry 把一次无法执行的工具意图落定为该次调用的失败结果：
+// 走与正常工具结果同一条回喂通道，不升级为整轮失败，让模型看到并自行纠正。
+func failedIntentEntry(record *runRecord, index int, intent types.ToolIntent, message string) toolRunEntry {
+	action := fallbackToolAction(intent)
+	result := failedToolResult(action, message)
+	upsertRunToolPart(record, action, "error", nil, &result)
+	return toolRunEntry{Index: index, Action: action, Result: result, HasResult: true}
 }
 
 func fallbackToolAction(intent types.ToolIntent) types.ToolAction {

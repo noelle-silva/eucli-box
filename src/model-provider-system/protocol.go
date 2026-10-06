@@ -207,6 +207,17 @@ func parseToolArguments(raw string) (map[string]any, error) {
 	return args, nil
 }
 
+// toolIntentArguments 解析一次工具调用的原始参数文本。
+// 单个调用的参数文本无法解析成合法参数时，不升级为整轮响应失败，
+// 而是返回失败原因，交由运行时包装为该次调用的失败结果。
+func toolIntentArguments(raw string) (map[string]any, string) {
+	args, err := parseToolArguments(raw)
+	if err != nil {
+		return nil, err.Error()
+	}
+	return args, ""
+}
+
 func parsePromptImageDataURL(dataURL string) (promptImageData, error) {
 	dataURL = strings.TrimSpace(dataURL)
 	if !strings.HasPrefix(dataURL, "data:") {

@@ -196,24 +196,17 @@ func (p *anthropicStreamParser) Finish(response types.HTTPResponse) (types.Model
 		}
 		argsRaw := strings.TrimSpace(builder.PartialJSON.String())
 		args := builder.Input
+		argumentError := ""
 		if argsRaw != "" {
-			parsed, err := parseToolArguments(argsRaw)
-			if err != nil {
-				return types.ModelResponse{}, err
-			}
-			args = parsed
+			args, argumentError = toolIntentArguments(argsRaw)
 		} else if args == nil {
-			var err error
-			args, err = parseToolArguments(argsRaw)
-			if err != nil {
-				return types.ModelResponse{}, err
-			}
+			args = map[string]any{}
 		}
 		id := strings.TrimSpace(builder.ID)
 		if id == "" {
 			id = "tool-use-" + strconv.Itoa(index)
 		}
-		result.ToolIntents = append(result.ToolIntents, types.ToolIntent{ID: id, ToolName: builder.Name, Arguments: args, Raw: argsRaw, CreatedAt: result.CreatedAt})
+		result.ToolIntents = append(result.ToolIntents, types.ToolIntent{ID: id, ToolName: builder.Name, Arguments: args, Raw: argsRaw, ArgumentError: argumentError, CreatedAt: result.CreatedAt})
 	}
 	return result, nil
 }

@@ -1,0 +1,281 @@
+package types
+
+import (
+	"strings"
+	"time"
+)
+
+const (
+	ToolAvailabilityActive      = "active"
+	ToolAvailabilityUnavailable = "unavailable"
+)
+
+type ToolDefinition struct {
+	ID                        string                `json:"id"`
+	Name                      string                `json:"name"`
+	Description               string                `json:"description"`
+	Version                   string                `json:"version"`
+	EucliBoxCompatibility     EucliBoxCompatibility `json:"eucliBoxCompatibility"`
+	Compatibility             CompatibilityStatus   `json:"compatibility"`
+	Status                    string                `json:"status,omitempty"`
+	StatusMessage             string                `json:"statusMessage,omitempty"`
+	PromptDescription         string                `json:"promptDescription,omitempty"`
+	PromptDescriptionOverride string                `json:"promptDescriptionOverride,omitempty"`
+	DefaultInvocationMode     ToolInvocationMode    `json:"defaultInvocationMode,omitempty"`
+	Type                      string                `json:"type"`
+	Capabilities              []ToolCapability      `json:"capabilities,omitempty"`
+	InputSchema               map[string]any        `json:"inputSchema,omitempty"`
+	UserConfigSchema          map[string]any        `json:"userConfigSchema,omitempty"`
+	UserConfig                map[string]any        `json:"userConfig,omitempty"`
+	CapabilityGrants          map[string]bool       `json:"capabilityGrants,omitempty"`
+	DefaultConfig             map[string]any        `json:"defaultConfig,omitempty"`
+	BodyDirectory             string                `json:"bodyDirectory,omitempty"`
+	DataDirectory             string                `json:"dataDirectory,omitempty"`
+	// ConfigFiles 是工具配置区文件的运行时读取视图，只由设置页读取链路填充，
+	// 不随工具定义落盘。
+	ConfigFiles []ToolConfigFile `json:"configFiles,omitempty"`
+	Binaries    []ToolBinary     `json:"binaries,omitempty"`
+	CreatedAt   time.Time        `json:"createdAt"`
+	UpdatedAt   time.Time        `json:"updatedAt"`
+}
+
+// ToolOutputUpdate is a live output progress for one tool call, relayed by the
+// tool over the control channel during execution.
+type ToolOutputUpdate struct {
+	CallID   string `json:"callId"`
+	ToolName string `json:"toolName,omitempty"`
+	Bytes    uint64 `json:"bytes"`
+	Preview  string `json:"preview"`
+}
+
+type ToolUserSettings struct {
+	UserConfig                map[string]any  `json:"userConfig"`
+	PromptDescriptionOverride string          `json:"promptDescriptionOverride,omitempty"`
+	CapabilityGrants          map[string]bool `json:"capabilityGrants,omitempty"`
+	// ConfigFiles 是随保存请求一起提交的配置区文件写入意图；
+	// 文件内容落 config/ 文件区，不写进 settings.json。
+	ConfigFiles []ToolConfigFileWrite `json:"configFiles,omitempty"`
+	UpdatedAt   time.Time             `json:"updatedAt,omitempty"`
+}
+
+func ToolPromptDescription(tool ToolDefinition) string {
+	if override := tool.PromptDescriptionOverride; strings.TrimSpace(override) != "" {
+		return override
+	}
+	if promptDescription := tool.PromptDescription; strings.TrimSpace(promptDescription) != "" {
+		return promptDescription
+	}
+	return tool.Description
+}
+
+type ToolBinary struct {
+	GOOS   string `json:"goos"`
+	GOARCH string `json:"goarch"`
+	Path   string `json:"path"`
+}
+
+// ToolRequestKindWarmup marks a tool request as a warm-up: the host asks the
+// tool to prepare itself; no user arguments are executed. An empty request
+// kind is the ordinary execution request, so execution payloads carry no
+// request-kind field at all.
+const ToolRequestKindWarmup = "warmup"
+
+type ToolExecutionInput struct {
+	ActionID             string                `json:"actionId"`
+	ToolName             string                `json:"toolName"`
+	Arguments            map[string]any        `json:"arguments"`
+	UserConfig           map[string]any        `json:"userConfig"`
+	DefaultConfig        map[string]any        `json:"defaultConfig"`
+	ToolBodyDirectory    string                `json:"toolBodyDirectory"`
+	ToolDataDirectory    string                `json:"toolDataDirectory"`
+	HostWorkingDirectory string                `json:"hostWorkingDirectory"`
+	Workspace            *ToolWorkspaceContext `json:"workspace,omitempty"`
+	TimeoutMs            int64                 `json:"timeoutMs,omitempty"`
+	RequestKind          string                `json:"requestKind,omitempty"`
+}
+
+// IsToolWarmupRequest reports whether a tool input is a warm-up request.
+func IsToolWarmupRequest(input ToolExecutionInput) bool {
+	return input.RequestKind == ToolRequestKindWarmup
+}
+
+type ToolExecutionOutput struct {
+	Status   ToolStatus     `json:"status"`
+	Content  string         `json:"content"`
+	Error    string         `json:"error,omitempty"`
+	Metadata map[string]any `json:"metadata"`
+}
+
+type ToolSummary struct {
+	ID                    string                `json:"id"`
+	Name                  string                `json:"name"`
+	Description           string                `json:"description"`
+	Version               string                `json:"version,omitempty"`
+	EucliBoxCompatibility EucliBoxCompatibility `json:"eucliBoxCompatibility"`
+	Compatibility         CompatibilityStatus   `json:"compatibility"`
+	Status                string                `json:"status,omitempty"`
+	StatusMessage         string                `json:"statusMessage,omitempty"`
+	Type                  string                `json:"type"`
+	UpdatedAt             time.Time             `json:"updatedAt"`
+}
+
+// ToolStopResult reports how many active executions of one tool were stopped.
+type ToolStopResult struct {
+	Terminated int `json:"terminated"`
+}
+
+type ToolIntent struct {
+	ID             string             `json:"id"`
+	ToolName       string             `json:"toolName"`
+	Arguments      map[string]any     `json:"arguments,omitempty"`
+	InvocationMode ToolInvocationMode `json:"invocationMode,omitempty"`
+	Raw            string             `json:"raw,omitempty"`
+	// ArgumentError 记录该次调用参数文本无法解析的原因；
+	// 非空表示单点参数错误，由运行时包装为该次调用的失败结果，不升级为整轮失败。
+	ArgumentError string    `json:"argumentError,omitempty"`
+	CreatedAt     time.Time `json:"createdAt"`
+}
+
+type ToolInvocationMode string
+
+const (
+	ToolInvocationModeSync  ToolInvocationMode = "sync"
+	ToolInvocationModeAsync ToolInvocationMode = "async"
+)
+
+func NormalizeToolInvocationMode(mode ToolInvocationMode) ToolInvocationMode {
+	switch CleanToolInvocationMode(mode) {
+	case ToolInvocationModeAsync:
+		return ToolInvocationModeAsync
+	default:
+		return ToolInvocationModeSync
+	}
+}
+
+func CleanToolInvocationMode(mode ToolInvocationMode) ToolInvocationMode {
+	return ToolInvocationMode(strings.TrimSpace(string(mode)))
+}
+
+func ValidToolInvocationMode(mode ToolInvocationMode) bool {
+	switch CleanToolInvocationMode(mode) {
+	case "", ToolInvocationModeSync, ToolInvocationModeAsync:
+		return true
+	default:
+		return false
+	}
+}
+
+func ValidExplicitToolInvocationMode(mode ToolInvocationMode) bool {
+	switch CleanToolInvocationMode(mode) {
+	case ToolInvocationModeSync, ToolInvocationModeAsync:
+		return true
+	default:
+		return false
+	}
+}
+
+type ToolAction struct {
+	ID             string             `json:"id"`
+	ToolName       string             `json:"toolName"`
+	Arguments      map[string]any     `json:"arguments,omitempty"`
+	InvocationMode ToolInvocationMode `json:"invocationMode,omitempty"`
+	Raw            string             `json:"raw,omitempty"`
+	CreatedAt      time.Time          `json:"createdAt"`
+}
+
+// ToolRunScope 是一次工具执行的会话身份：能力服务以此访问会话资源。
+type ToolRunScope struct {
+	RoleID      string `json:"roleId,omitempty"`
+	GroupID     string `json:"groupId,omitempty"`
+	WorkspaceID string `json:"workspaceId,omitempty"`
+	SessionID   string `json:"sessionId,omitempty"`
+}
+
+type ToolRunPlan struct {
+	ID string `json:"id"`
+	// RoleID 是权限裁决的主体标识（与 Scope.RoleID 同源的历史字段）；
+	// 执行身份与能力服务一律以 Scope 为唯一来源。
+	RoleID         string              `json:"roleId,omitempty"`
+	Scope          ToolRunScope        `json:"scope,omitempty"`
+	Action         ToolAction          `json:"action"`
+	Tool           ToolDefinition      `json:"tool"`
+	InvocationMode ToolInvocationMode  `json:"invocationMode,omitempty"`
+	Decision       PermissionDecision  `json:"decision"`
+	WorkspaceFence *ToolWorkspaceFence `json:"workspaceFence,omitempty"`
+	PlanStatus     ToolPlanStatus      `json:"planStatus"`
+	Executable     string              `json:"executable,omitempty"`
+	CreatedAt      time.Time           `json:"createdAt"`
+}
+
+type ToolWorkspaceFence struct {
+	WorkspaceID           string                   `json:"workspaceId"`
+	RegisteredDirectories []WorkspaceDirectory     `json:"registeredDirectories,omitempty"`
+	Paths                 []ToolWorkspaceFencePath `json:"paths,omitempty"`
+	RequiresConfirmation  bool                     `json:"requiresConfirmation"`
+}
+
+type ToolWorkspaceFencePath struct {
+	Argument              string `json:"argument"`
+	RawPath               string `json:"rawPath"`
+	AbsolutePath          string `json:"absolutePath"`
+	WithinWorkspace       bool   `json:"withinWorkspace"`
+	MatchedDirectoryAlias string `json:"matchedDirectoryAlias,omitempty"`
+	Reason                string `json:"reason,omitempty"`
+}
+
+type ToolPlanStatus string
+
+const (
+	ToolPlanStatusReady             ToolPlanStatus = "ready"
+	ToolPlanStatusNeedsConfirmation ToolPlanStatus = "needs_confirmation"
+	ToolPlanStatusDenied            ToolPlanStatus = "denied"
+)
+
+type ToolStatus string
+
+const (
+	ToolStatusSuccess   ToolStatus = "success"
+	ToolStatusFailed    ToolStatus = "failed"
+	ToolStatusDenied    ToolStatus = "denied"
+	ToolStatusCancelled ToolStatus = "cancelled"
+)
+
+type ToolResult struct {
+	ID                  string              `json:"id"`
+	ActionID            string              `json:"actionId"`
+	ToolName            string              `json:"toolName"`
+	Status              ToolStatus          `json:"status"`
+	Content             string              `json:"content"`
+	Metadata            map[string]any      `json:"metadata,omitempty"`
+	Error               string              `json:"error,omitempty"`
+	ProducedAttachments []MessageAttachment `json:"producedAttachments,omitempty"`
+	DurationMs          int64               `json:"durationMs,omitempty"`
+	CreatedAt           time.Time           `json:"createdAt"`
+}
+
+type ToolConfirmation struct {
+	ID         string `json:"id"`
+	DecisionID string `json:"decisionId"`
+	Approved   bool   `json:"approved"`
+	// RememberForSession 表示用户选择“本会话内始终同意”：
+	// 本次放行后把该工具写入会话放行清单，本会话内后续调用直接执行。
+	RememberForSession bool      `json:"rememberForSession,omitempty"`
+	Reason             string    `json:"reason,omitempty"`
+	CreatedAt          time.Time `json:"createdAt"`
+}
+
+type PermissionDecision struct {
+	ID        string         `json:"id"`
+	ActionID  string         `json:"actionId"`
+	ToolName  string         `json:"toolName"`
+	Status    string         `json:"status"`
+	Reason    string         `json:"reason"`
+	Details   map[string]any `json:"details,omitempty"`
+	CreatedAt time.Time      `json:"createdAt"`
+}
+
+const (
+	PermissionStatusAllowed           = "allowed"
+	PermissionStatusDenied            = "denied"
+	PermissionStatusNeedsConfirmation = "needs_confirmation"
+)

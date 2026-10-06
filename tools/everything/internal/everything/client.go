@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"eucli-box/pkg/types"
-	networkrequest "eucli-box/src/network-request-system"
+	"eucli-box/tools/everything/internal/types"
+	networkrequest "eucli-box/tools/everything/internal/networkrequest"
 )
 
 // rpcClient 是 Everything 应用开放接口的最小客户端：

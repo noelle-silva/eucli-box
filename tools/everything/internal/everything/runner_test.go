@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/everything/internal/types"
 )
 
 // fixture 是测试用的假 Everything 应用开放接口与工具配置目录。

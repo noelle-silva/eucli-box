@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/everything/internal/types"
 )
 
 // searchRequest 是一次已校验的搜索请求。

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/everything/internal/types"
 )
 
 func fixtureConfig() Config {

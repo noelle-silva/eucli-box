@@ -6,7 +6,7 @@ import (
 	"context"
 	"time"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/everything/internal/types"
 )
 
 // Execute 执行一次工具动作。

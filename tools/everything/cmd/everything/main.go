@@ -9,8 +9,8 @@ import (
 	"io"
 	"os"
 
-	"eucli-box/pkg/toolcontrol"
-	"eucli-box/pkg/types"
+	"eucli-box/tools/everything/internal/toolcontrol"
+	"eucli-box/tools/everything/internal/types"
 	everything "eucli-box/tools/everything/internal/everything"
 )
 

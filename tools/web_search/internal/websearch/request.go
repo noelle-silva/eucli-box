@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/web_search/internal/types"
 )
 
 type searchRequest struct {

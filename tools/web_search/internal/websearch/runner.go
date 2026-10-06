@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"eucli-box/pkg/types"
-	networkrequest "eucli-box/src/network-request-system"
+	"eucli-box/tools/web_search/internal/types"
+	networkrequest "eucli-box/tools/web_search/internal/networkrequest"
 )
 
 func Execute(ctx context.Context, input types.ToolExecutionInput) types.ToolExecutionOutput {

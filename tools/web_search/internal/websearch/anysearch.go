@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"eucli-box/pkg/types"
-	networkrequest "eucli-box/src/network-request-system"
+	"eucli-box/tools/web_search/internal/types"
+	networkrequest "eucli-box/tools/web_search/internal/networkrequest"
 )
 
 func callAnySearch(ctx context.Context, network networkrequest.System, provider ProviderConfig, request searchRequest, input types.ToolExecutionInput) (searchResponse, error) {

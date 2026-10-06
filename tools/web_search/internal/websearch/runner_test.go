@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/web_search/internal/types"
 )
 
 func TestExecuteSearchesTavilyProvider(t *testing.T) {

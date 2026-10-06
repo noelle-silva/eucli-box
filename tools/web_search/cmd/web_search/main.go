@@ -6,8 +6,8 @@ import (
 	"io"
 	"os"
 
-	"eucli-box/pkg/toolcontrol"
-	"eucli-box/pkg/types"
+	"eucli-box/tools/web_search/internal/toolcontrol"
+	"eucli-box/tools/web_search/internal/types"
 	websearch "eucli-box/tools/web_search/internal/websearch"
 )
 

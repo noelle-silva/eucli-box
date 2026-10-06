@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"eucli-box/pkg/toolcontrol"
-	"eucli-box/pkg/types"
+	"eucli-box/tools/zhihu_search/internal/toolcontrol"
+	"eucli-box/tools/zhihu_search/internal/types"
 	"eucli-box/tools/zhihu_search/internal/datamigration"
 )
 

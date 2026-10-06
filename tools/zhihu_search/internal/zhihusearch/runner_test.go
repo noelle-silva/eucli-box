@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/zhihu_search/internal/types"
 )
 
 func TestExecuteSearchesZhihuContent(t *testing.T) {

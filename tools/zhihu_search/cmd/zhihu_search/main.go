@@ -6,8 +6,8 @@ import (
 	"io"
 	"os"
 
-	"eucli-box/pkg/toolcontrol"
-	"eucli-box/pkg/types"
+	"eucli-box/tools/zhihu_search/internal/toolcontrol"
+	"eucli-box/tools/zhihu_search/internal/types"
 	zhihusearch "eucli-box/tools/zhihu_search/internal/zhihusearch"
 )
 

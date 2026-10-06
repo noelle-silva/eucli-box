@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"eucli-box/pkg/types"
-	networkrequest "eucli-box/src/network-request-system"
+	"eucli-box/tools/zhihu_search/internal/types"
+	networkrequest "eucli-box/tools/zhihu_search/internal/networkrequest"
 )
 
 type apiResponse struct {

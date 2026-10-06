@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/zhihu_search/internal/types"
 )
 
 type searchRequest struct {

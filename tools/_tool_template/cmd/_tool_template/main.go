@@ -8,8 +8,8 @@ import (
 	"io"
 	"os"
 
-	"eucli-box/pkg/toolcontrol"
-	"eucli-box/pkg/types"
+	"eucli-box/tools/_tool_template/internal/toolcontrol"
+	"eucli-box/tools/_tool_template/internal/types"
 	tooltemplate "eucli-box/tools/_tool_template/internal/tooltemplate"
 )
 

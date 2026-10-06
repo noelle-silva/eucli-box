@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"eucli-box/pkg/toolcontrol"
-	"eucli-box/pkg/types"
+	"eucli-box/tools/_tool_template/internal/toolcontrol"
+	"eucli-box/tools/_tool_template/internal/types"
 	"eucli-box/tools/_tool_template/internal/datamigration"
 )
 

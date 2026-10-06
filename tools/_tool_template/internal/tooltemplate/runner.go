@@ -8,7 +8,7 @@ package tooltemplate
 import (
 	"context"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/_tool_template/internal/types"
 )
 
 // Execute 执行一次工具动作。

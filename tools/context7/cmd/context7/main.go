@@ -6,8 +6,8 @@ import (
 	"io"
 	"os"
 
-	"eucli-box/pkg/toolcontrol"
-	"eucli-box/pkg/types"
+	"eucli-box/tools/context7/internal/toolcontrol"
+	"eucli-box/tools/context7/internal/types"
 	context7 "eucli-box/tools/context7/internal/context7"
 )
 

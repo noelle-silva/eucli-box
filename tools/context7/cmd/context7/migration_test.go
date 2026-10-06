@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/context7/internal/types"
 )
 
 func TestDataMigrationModeInitializesDataVersion(t *testing.T) {

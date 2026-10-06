@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/context7/internal/types"
 )
 
 const (

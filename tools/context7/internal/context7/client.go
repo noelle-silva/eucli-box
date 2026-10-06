@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"eucli-box/pkg/types"
-	networkrequest "eucli-box/src/network-request-system"
+	"eucli-box/tools/context7/internal/types"
+	networkrequest "eucli-box/tools/context7/internal/networkrequest"
 )
 
 type apiError struct {

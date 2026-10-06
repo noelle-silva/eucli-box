@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/context7/internal/types"
 )
 
 func TestExecuteSearchesLibraries(t *testing.T) {

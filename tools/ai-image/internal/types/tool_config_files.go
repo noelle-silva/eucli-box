@@ -12,20 +12,6 @@ const ToolConfigDirName = "config"
 // ToolConfigFileMaxBytes 是单个工具配置文件的大小上限，读写两侧共同遵守。
 const ToolConfigFileMaxBytes = 1 << 20
 
-// ToolConfigFile 是工具配置区中一个文件的快照：相对路径 + 原始文本。
-type ToolConfigFile struct {
-	Path    string `json:"path"`
-	Content string `json:"content"`
-}
-
-// ToolConfigFileWrite 是一次配置文件写入意图：Deleted 为真时删除该文件，
-// 否则以 Content 整份写入。
-type ToolConfigFileWrite struct {
-	Path    string `json:"path"`
-	Content string `json:"content,omitempty"`
-	Deleted bool   `json:"deleted,omitempty"`
-}
-
 // CleanToolConfigRelPath 规范化工具配置区内的相对文件路径：
 // 统一使用 / 分隔，拒绝空路径、绝对路径、盘符路径与上跳分段；
 // 通过后路径保证落在配置区内。

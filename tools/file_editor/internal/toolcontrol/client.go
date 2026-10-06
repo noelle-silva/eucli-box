@@ -106,65 +106,6 @@ func (c *Client) dispatchCapabilityResponse(message Message) error {
 	return nil
 }
 
-// Request 向宿主发出一次运行时能力请求并等待响应。
-// 请求的等待由调用方上下文控制；通道关闭或请求超时都返回错误。
-func (c *Client) Request(ctx context.Context, capability string, access string, payload any) (CapabilityResult, error) {
-	if c == nil || c.conn == nil || c.encoder == nil {
-		return CapabilityResult{}, errors.New("tool control client is closed")
-	}
-	var encoded json.RawMessage
-	if payload != nil {
-		bytes, err := json.Marshal(payload)
-		if err != nil {
-			return CapabilityResult{}, fmt.Errorf("encode capability request: %w", err)
-		}
-		encoded = bytes
-	}
-	requestID, err := newToken()
-	if err != nil {
-		return CapabilityResult{}, err
-	}
-	waiter := make(chan Message, 1)
-	c.pendingMu.Lock()
-	c.pending[requestID] = waiter
-	c.pendingMu.Unlock()
-	defer func() {
-		c.pendingMu.Lock()
-		delete(c.pending, requestID)
-		c.pendingMu.Unlock()
-	}()
-	message := Message{Version: ProtocolVersion, Type: MessageCapabilityRequest, Token: c.token, RequestID: requestID, Capability: capability, Access: access, Payload: encoded}
-	if err := c.write(message); err != nil {
-		return CapabilityResult{}, fmt.Errorf("write capability request: %w", err)
-	}
-	select {
-	case response := <-waiter:
-		return CapabilityResult{Status: response.Status, Error: response.Error, Payload: response.Payload}, nil
-	case <-ctx.Done():
-		return CapabilityResult{}, ctx.Err()
-	case <-c.done:
-		return CapabilityResult{}, errors.New("tool control client is closed")
-	}
-}
-
-// SendOutputUpdate relays one output update to the host with a short write
-// deadline so a congested connection can never stall the command output for
-// long. Best-effort: callers must not block their command execution on it.
-func (c *Client) SendOutputUpdate(sequence uint64, update OutputUpdate) error {
-	if c == nil || c.conn == nil || c.encoder == nil {
-		return errors.New("tool control client is closed")
-	}
-	c.writeMu.Lock()
-	defer c.writeMu.Unlock()
-	if err := c.conn.SetWriteDeadline(time.Now().Add(2 * time.Second)); err != nil {
-		return err
-	}
-	if err := c.encoder.Encode(Message{Version: ProtocolVersion, Type: MessageOutputUpdate, Token: c.token, Sequence: sequence, Update: &update}); err != nil {
-		return err
-	}
-	return c.conn.SetWriteDeadline(time.Time{})
-}
-
 func (c *Client) Close() error {
 	if c == nil {
 		return nil

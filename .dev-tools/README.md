@@ -22,7 +22,7 @@
 - `dev-box/`：开发盒子（当前源码业务端编译、普通模式启动与连接信息输出；入口 `run-dev-box.cmd`）。
 - `worktree-overlay/`：worktree 覆盖工具。
 - `common/`：工具族共享区（`toolkit`、`toolruntime`、`release*` 等公共模块）。
-- `general-verification-tools/`：长期验证工具专区，当前入住 7 个：
+- `general-verification-tools/`：长期验证工具专区，当前入住 8 个：
   - `verify-background-access/`：后台访问验证
   - `verify-command-execution-limit-protection/`：命令执行时限保护验证
   - `verify-data-migration/`：数据迁移验证
@@ -30,6 +30,7 @@
   - `verify-release-build/`：发布成品制作验证
   - `verify-release-publish/`：GitHub 发布链验证
   - `verify-tool-plugin-update/`：工具与插件安装更新验证
+  - `verify-tool-import-boundary/`：AI 工具导入边界验证
 
 ## 工具开发构建入口
 

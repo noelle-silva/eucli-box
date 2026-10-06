@@ -43,7 +43,8 @@ $modeRules = @{
 	"verify-background-access"    = @{ AllowNoMode = $true;  Modes = @("experience"); DefaultMode = "default" }
 	"verify-data-migration"       = @{ AllowNoMode = $true;  Modes = @();             DefaultMode = "default" }
 	"verify-dev-box"              = @{ AllowNoMode = $true;  Modes = @();             DefaultMode = "default" }
-	"verify-command-execution-limit-protection" = @{ AllowNoMode = $true;  Modes = @(); DefaultMode = "default" }
+	"verify-command-execution-limit-protection" = @{ AllowNoMode = $true;  Modes = @();             DefaultMode = "default" }
+	"verify-tool-import-boundary" = @{ AllowNoMode = $true;  Modes = @();             DefaultMode = "default" }
 }
 
 if (-not $modeRules.ContainsKey($Tool)) {

@@ -3,7 +3,7 @@ package filereader
 import (
 	"unicode/utf8"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/file_reader/internal/types"
 )
 
 func success(content string, metadata map[string]any) types.ToolExecutionOutput {

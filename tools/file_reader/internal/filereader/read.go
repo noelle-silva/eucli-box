@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/file_reader/internal/types"
 )
 
 func runRead(input types.ToolExecutionInput, config Config, policy PathPolicy) types.ToolExecutionOutput {

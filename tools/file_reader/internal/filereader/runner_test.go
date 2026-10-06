@@ -11,7 +11,7 @@ import (
 	"testing"
 	"unicode/utf16"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/file_reader/internal/types"
 )
 
 func TestReadReturnsLineWindowAndHash(t *testing.T) {

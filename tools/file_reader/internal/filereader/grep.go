@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/file_reader/internal/types"
 )
 
 type grepMatch struct {

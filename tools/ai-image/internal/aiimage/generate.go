@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"eucli-box/pkg/types"
-	networkrequest "eucli-box/src/network-request-system"
+	"eucli-box/tools/ai-image/internal/types"
+	networkrequest "eucli-box/tools/ai-image/internal/networkrequest"
 )
 
 // runGenerate 执行一次生图：加载配置、解析参考图、按协议请求、回写会话。

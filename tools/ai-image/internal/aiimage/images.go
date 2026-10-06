@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"eucli-box/pkg/types"
-	networkrequest "eucli-box/src/network-request-system"
+	"eucli-box/tools/ai-image/internal/types"
+	networkrequest "eucli-box/tools/ai-image/internal/networkrequest"
 )
 
 // 图片与请求体的命名上限：失控的响应不能撑爆内存或会话附件。

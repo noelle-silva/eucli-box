@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/ai-image/internal/types"
 )
 
 // runConfigList 列出配置区全部文件。

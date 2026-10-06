@@ -3,7 +3,7 @@ package aiimage
 import (
 	"errors"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/ai-image/internal/types"
 )
 
 // failure 构造失败结果：每层说明自己当时在做什么，保留真实原因。

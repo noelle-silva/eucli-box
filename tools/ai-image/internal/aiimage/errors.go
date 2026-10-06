@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strings"
 
-	apperrors "eucli-box/pkg/errors"
+	apperrors "eucli-box/tools/ai-image/internal/errors"
 )
 
 // 失败分类的建议动作：瞬时故障引导重试，参数与配置类失败引导修正。

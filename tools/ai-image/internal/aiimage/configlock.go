@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/ai-image/internal/types"
 )
 
 // 配置写锁：工具每次调用是独立进程，以锁文件对配置区做跨进程读-改-写串行化，

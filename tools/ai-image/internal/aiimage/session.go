@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"eucli-box/pkg/toolcontrol"
-	"eucli-box/pkg/types"
+	"eucli-box/tools/ai-image/internal/toolcontrol"
+	"eucli-box/tools/ai-image/internal/types"
 )
 
 // sessionImage 是会话图片附件的逻辑信息：工具只持逻辑标识，不接触物理路径。

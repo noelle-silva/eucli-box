@@ -6,8 +6,8 @@ import (
 	"context"
 	"fmt"
 
-	"eucli-box/pkg/toolcontrol"
-	"eucli-box/pkg/types"
+	"eucli-box/tools/ai-image/internal/toolcontrol"
+	"eucli-box/tools/ai-image/internal/types"
 )
 
 // SessionService 是工具访问宿主会话能力的窄接口：由控制通道客户端实现；

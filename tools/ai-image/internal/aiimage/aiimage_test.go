@@ -14,8 +14,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"eucli-box/pkg/toolcontrol"
-	"eucli-box/pkg/types"
+	"eucli-box/tools/ai-image/internal/toolcontrol"
+	"eucli-box/tools/ai-image/internal/types"
 )
 
 // pngBase64 是一张 1x1 PNG 的 base64，用于校验「尺寸过小」的拒绝路径。

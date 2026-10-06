@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/ai-image/internal/types"
 )
 
 type configFileEntry struct {

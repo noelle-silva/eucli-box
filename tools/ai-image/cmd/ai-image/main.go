@@ -9,8 +9,8 @@ import (
 	"io"
 	"os"
 
-	"eucli-box/pkg/toolcontrol"
-	"eucli-box/pkg/types"
+	"eucli-box/tools/ai-image/internal/toolcontrol"
+	"eucli-box/tools/ai-image/internal/types"
 	aiimage "eucli-box/tools/ai-image/internal/aiimage"
 )
 

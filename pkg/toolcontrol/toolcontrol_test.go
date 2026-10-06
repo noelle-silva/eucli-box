@@ -16,13 +16,13 @@ func TestServerClientHandshake(t *testing.T) {
 
 	handshake := make(chan error, 1)
 	go func() { handshake <- server.AcceptAndHandshake(ctx) }()
-	client, err := Connect(ctx, server.Address(), server.Token())
+	stub, err := connectToolStub(ctx, server.Address(), server.Token())
 	if err != nil {
-		t.Fatalf("Connect() error = %v", err)
+		t.Fatalf("connectToolStub() error = %v", err)
 	}
-	defer client.Close()
-	if err := client.WaitReady(ctx); err != nil {
-		t.Fatalf("WaitReady() error = %v", err)
+	defer stub.close()
+	if err := stub.waitReady(ctx); err != nil {
+		t.Fatalf("waitReady() error = %v", err)
 	}
 	if err := <-handshake; err != nil {
 		t.Fatalf("AcceptAndHandshake() error = %v", err)
@@ -67,7 +67,7 @@ func TestServerRejectsWrongVersion(t *testing.T) {
 	}
 }
 
-func TestClientValidatesReady(t *testing.T) {
+func TestToolStubValidatesReady(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Listen() error = %v", err)
@@ -90,39 +90,39 @@ func TestClientValidatesReady(t *testing.T) {
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	client, err := Connect(ctx, listener.Addr().String(), "expected")
+	stub, err := connectToolStub(ctx, listener.Addr().String(), "expected")
 	if err != nil {
-		t.Fatalf("Connect() error = %v", err)
+		t.Fatalf("connectToolStub() error = %v", err)
 	}
-	defer client.Close()
-	if err := client.WaitReady(ctx); err == nil {
-		t.Fatal("WaitReady() error = nil")
+	defer stub.close()
+	if err := stub.waitReady(ctx); err == nil {
+		t.Fatal("waitReady() error = nil")
 	}
 	if err := <-serverDone; err != nil {
 		t.Fatalf("fake server error = %v", err)
 	}
 }
 
-func TestClientRepliesToPingWithoutCommandOutput(t *testing.T) {
+func TestToolStubRepliesToPingWithoutCommandOutput(t *testing.T) {
 	server := newTestServer(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	handshake := make(chan error, 1)
 	go func() { handshake <- server.AcceptAndHandshake(ctx) }()
-	client, err := Connect(ctx, server.Address(), server.Token())
+	stub, err := connectToolStub(ctx, server.Address(), server.Token())
 	if err != nil {
-		t.Fatalf("Connect() error = %v", err)
+		t.Fatalf("connectToolStub() error = %v", err)
 	}
-	defer client.Close()
-	if err := client.WaitReady(ctx); err != nil {
-		t.Fatalf("WaitReady() error = %v", err)
+	defer stub.close()
+	if err := stub.waitReady(ctx); err != nil {
+		t.Fatalf("waitReady() error = %v", err)
 	}
 	if err := <-handshake; err != nil {
 		t.Fatalf("AcceptAndHandshake() error = %v", err)
 	}
 	watch := server.Watch(ctx)
 	serveDone := make(chan error, 1)
-	go func() { serveDone <- client.Serve(ctx) }()
+	go func() { serveDone <- stub.serve(ctx) }()
 	select {
 	case failure := <-watch:
 		t.Fatalf("unexpected watchdog failure = %s", failure)
@@ -132,7 +132,7 @@ func TestClientRepliesToPingWithoutCommandOutput(t *testing.T) {
 	select {
 	case <-serveDone:
 	case <-time.After(time.Second):
-		t.Fatal("client Serve() did not stop")
+		t.Fatal("stub serve() did not stop")
 	}
 }
 
@@ -229,19 +229,19 @@ func TestWatchdogReportsConnectionClose(t *testing.T) {
 	defer cancel()
 	handshake := make(chan error, 1)
 	go func() { handshake <- server.AcceptAndHandshake(ctx) }()
-	client, err := Connect(ctx, server.Address(), server.Token())
+	stub, err := connectToolStub(ctx, server.Address(), server.Token())
 	if err != nil {
-		t.Fatalf("Connect() error = %v", err)
+		t.Fatalf("connectToolStub() error = %v", err)
 	}
-	if err := client.WaitReady(ctx); err != nil {
-		t.Fatalf("WaitReady() error = %v", err)
+	if err := stub.waitReady(ctx); err != nil {
+		t.Fatalf("waitReady() error = %v", err)
 	}
 	if err := <-handshake; err != nil {
 		t.Fatalf("AcceptAndHandshake() error = %v", err)
 	}
 	watch := server.Watch(ctx)
-	if err := client.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
+	if err := stub.close(); err != nil {
+		t.Fatalf("close() error = %v", err)
 	}
 	select {
 	case failure, ok := <-watch:
@@ -258,13 +258,13 @@ func TestWatchdogContextCancellationDoesNotReportUnresponsive(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	handshake := make(chan error, 1)
 	go func() { handshake <- server.AcceptAndHandshake(ctx) }()
-	client, err := Connect(ctx, server.Address(), server.Token())
+	stub, err := connectToolStub(ctx, server.Address(), server.Token())
 	if err != nil {
-		t.Fatalf("Connect() error = %v", err)
+		t.Fatalf("connectToolStub() error = %v", err)
 	}
-	defer client.Close()
-	if err := client.WaitReady(ctx); err != nil {
-		t.Fatalf("WaitReady() error = %v", err)
+	defer stub.close()
+	if err := stub.waitReady(ctx); err != nil {
+		t.Fatalf("waitReady() error = %v", err)
 	}
 	if err := <-handshake; err != nil {
 		t.Fatalf("AcceptAndHandshake() error = %v", err)
@@ -287,23 +287,23 @@ func TestOutputUpdateRelayWithHeartbeatInterleaved(t *testing.T) {
 	defer cancel()
 	handshake := make(chan error, 1)
 	go func() { handshake <- server.AcceptAndHandshake(ctx) }()
-	client, err := Connect(ctx, server.Address(), server.Token())
+	stub, err := connectToolStub(ctx, server.Address(), server.Token())
 	if err != nil {
-		t.Fatalf("Connect() error = %v", err)
+		t.Fatalf("connectToolStub() error = %v", err)
 	}
-	defer client.Close()
-	if err := client.WaitReady(ctx); err != nil {
-		t.Fatalf("WaitReady() error = %v", err)
+	defer stub.close()
+	if err := stub.waitReady(ctx); err != nil {
+		t.Fatalf("waitReady() error = %v", err)
 	}
 	if err := <-handshake; err != nil {
 		t.Fatalf("AcceptAndHandshake() error = %v", err)
 	}
 	watch := server.Watch(ctx)
 	serveDone := make(chan error, 1)
-	go func() { serveDone <- client.Serve(ctx) }()
+	go func() { serveDone <- stub.serve(ctx) }()
 	for sequence := uint64(1); sequence <= 5; sequence++ {
-		if err := client.SendOutputUpdate(sequence, OutputUpdate{Bytes: uint64(sequence * 100), Preview: "preview-line"}); err != nil {
-			t.Fatalf("SendOutputUpdate(%d) error = %v", sequence, err)
+		if err := stub.sendOutputUpdate(sequence, OutputUpdate{Bytes: uint64(sequence * 100), Preview: "preview-line"}); err != nil {
+			t.Fatalf("sendOutputUpdate(%d) error = %v", sequence, err)
 		}
 	}
 	select {
@@ -318,7 +318,7 @@ func TestOutputUpdateRelayWithHeartbeatInterleaved(t *testing.T) {
 	select {
 	case <-serveDone:
 	case <-time.After(time.Second):
-		t.Fatal("client Serve() did not stop")
+		t.Fatal("stub serve() did not stop")
 	}
 }
 
@@ -328,22 +328,22 @@ func TestOutputUpdateCapsAtLimit(t *testing.T) {
 	defer cancel()
 	handshake := make(chan error, 1)
 	go func() { handshake <- server.AcceptAndHandshake(ctx) }()
-	client, err := Connect(ctx, server.Address(), server.Token())
+	stub, err := connectToolStub(ctx, server.Address(), server.Token())
 	if err != nil {
-		t.Fatalf("Connect() error = %v", err)
+		t.Fatalf("connectToolStub() error = %v", err)
 	}
-	defer client.Close()
-	if err := client.WaitReady(ctx); err != nil {
-		t.Fatalf("WaitReady() error = %v", err)
+	defer stub.close()
+	if err := stub.waitReady(ctx); err != nil {
+		t.Fatalf("waitReady() error = %v", err)
 	}
 	if err := <-handshake; err != nil {
 		t.Fatalf("AcceptAndHandshake() error = %v", err)
 	}
 	watch := server.Watch(ctx)
-	go func() { _ = client.Serve(ctx) }()
+	go func() { _ = stub.serve(ctx) }()
 	for sequence := uint64(1); sequence <= MaxOutputUpdates+50; sequence++ {
-		if err := client.SendOutputUpdate(sequence, OutputUpdate{Bytes: uint64(sequence), Preview: "p"}); err != nil {
-			t.Fatalf("SendOutputUpdate(%d) error = %v", sequence, err)
+		if err := stub.sendOutputUpdate(sequence, OutputUpdate{Bytes: uint64(sequence), Preview: "p"}); err != nil {
+			t.Fatalf("sendOutputUpdate(%d) error = %v", sequence, err)
 		}
 	}
 	time.Sleep(20 * time.Millisecond)

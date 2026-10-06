@@ -99,20 +99,6 @@ func validateHello(message Message, expectedToken string) error {
 	return nil
 }
 
-func validateReady(message Message, expectedToken string) error {
-	if message.Version != ProtocolVersion || message.Type != MessageReady || message.Token == "" || message.Token != expectedToken || message.Sequence != 0 {
-		return errInvalidMessage
-	}
-	return nil
-}
-
-func validatePing(message Message, expectedToken string) error {
-	if message.Version != ProtocolVersion || message.Type != MessagePing || message.Token == "" || message.Token != expectedToken || message.Sequence == 0 {
-		return errInvalidMessage
-	}
-	return nil
-}
-
 func validatePong(message Message, expectedToken string, expectedSequence uint64) error {
 	if message.Version != ProtocolVersion || message.Type != MessagePong || message.Token == "" || message.Token != expectedToken || message.Sequence != expectedSequence {
 		return errInvalidMessage
@@ -135,19 +121,4 @@ func validateCapabilityRequest(message Message, expectedToken string) error {
 		return errInvalidMessage
 	}
 	return nil
-}
-
-func validateCapabilityResponse(message Message, expectedToken string) error {
-	if message.Version != ProtocolVersion || message.Type != MessageCapabilityResponse || message.Token == "" || message.Token != expectedToken {
-		return errInvalidMessage
-	}
-	if strings.TrimSpace(message.RequestID) == "" {
-		return errInvalidMessage
-	}
-	switch message.Status {
-	case CapabilityStatusSuccess, CapabilityStatusDenied, CapabilityStatusFailed:
-		return nil
-	default:
-		return errInvalidMessage
-	}
 }

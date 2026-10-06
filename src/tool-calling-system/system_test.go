@@ -495,6 +495,115 @@ func buildRawTool(t *testing.T, source string) string {
 	return buildHelperTool(t, source, false)
 }
 
+// helperControlStubSource is a minimal tool-side control implementation compiled
+// into each controlled helper tool. It speaks the control wire protocol
+// (hello/ready handshake and ping/pong heartbeat) so helper tools stay
+// self-contained and never depend on the host package.
+const helperControlStubSource = `package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+)
+
+const controlProtocolVersion = 1
+
+type controlMessage struct {
+	Version  int    ` + "`json:\"version\"`" + `
+	Type     string ` + "`json:\"type\"`" + `
+	Token    string ` + "`json:\"token,omitempty\"`" + `
+	Sequence uint64 ` + "`json:\"sequence,omitempty\"`" + `
+}
+
+type toolControl struct {
+	conn    net.Conn
+	token   string
+	decoder *json.Decoder
+	encoder *json.Encoder
+	writeMu sync.Mutex
+}
+
+func adoptControl(ctx context.Context) (*toolControl, error) {
+	address := strings.TrimSpace(os.Getenv("EUCLI_TOOL_CONTROL_ADDR"))
+	token := strings.TrimSpace(os.Getenv("EUCLI_TOOL_CONTROL_TOKEN"))
+	version := strings.TrimSpace(os.Getenv("EUCLI_TOOL_CONTROL_VERSION"))
+	required := strings.TrimSpace(os.Getenv("EUCLI_TOOL_CONTROL_REQUIRED")) == "1"
+	if !required && address == "" && token == "" && version == "" {
+		return nil, nil
+	}
+	if address == "" || token == "" || version == "" {
+		return nil, errors.New("tool control environment is incomplete")
+	}
+	parsed, err := strconv.Atoi(version)
+	if err != nil || parsed != controlProtocolVersion {
+		return nil, errors.New("tool control protocol version is invalid")
+	}
+	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", address)
+	if err != nil {
+		return nil, err
+	}
+	control := &toolControl{conn: conn, token: token, decoder: json.NewDecoder(conn), encoder: json.NewEncoder(conn)}
+	if err := control.write(controlMessage{Version: controlProtocolVersion, Type: "hello", Token: token}); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	var ready controlMessage
+	if err := control.decoder.Decode(&ready); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	if ready.Version != controlProtocolVersion || ready.Type != "ready" || ready.Token != token {
+		_ = conn.Close()
+		return nil, errors.New("tool control handshake failed")
+	}
+	return control, nil
+}
+
+func (c *toolControl) serve(ctx context.Context) error {
+	for {
+		var message controlMessage
+		if err := c.decoder.Decode(&message); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return err
+		}
+		if message.Type != "ping" || message.Token != c.token {
+			return errors.New("unexpected tool control message")
+		}
+		if err := c.write(controlMessage{Version: controlProtocolVersion, Type: "pong", Token: c.token, Sequence: message.Sequence}); err != nil {
+			return err
+		}
+	}
+}
+
+func (c *toolControl) write(message controlMessage) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	if err := c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		return err
+	}
+	if err := c.encoder.Encode(message); err != nil {
+		return err
+	}
+	return c.conn.SetWriteDeadline(time.Time{})
+}
+
+func (c *toolControl) close() error {
+	if c == nil || c.conn == nil {
+		return nil
+	}
+	return c.conn.Close()
+}
+`
+
 // buildHelperTool compiles the helper in a self-contained module so the build
 // never depends on the current working directory or the repository go.work.
 func buildHelperTool(t *testing.T, source string, controlled bool) string {
@@ -510,23 +619,24 @@ func buildHelperTool(t *testing.T, source string, controlled bool) string {
 import (
 	"context"
 	"time"
-
-	"eucli-box/pkg/toolcontrol"
 )
 
 func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	client, err := toolcontrol.AdoptControl(ctx)
-	if err == nil && client != nil {
-		defer client.Close()
-		go func() { _ = client.Serve(ctx) }()
+	control, err := adoptControl(ctx)
+	if err == nil && control != nil {
+		defer control.close()
+		go func() { _ = control.serve(ctx) }()
 	}
 	run()
 }
 `
 		if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(mainSource), 0o644); err != nil {
 			t.Fatalf("WriteFile(main) error = %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "control.go"), []byte(helperControlStubSource), 0o644); err != nil {
+			t.Fatalf("WriteFile(control) error = %v", err)
 		}
 		if err := os.WriteFile(filepath.Join(dir, "body.go"), []byte(body), 0o644); err != nil {
 			t.Fatalf("WriteFile(body) error = %v", err)
@@ -558,7 +668,7 @@ func helperModuleGoMod(t *testing.T) string {
 		t.Fatalf("runtime.Caller failed")
 	}
 	repoRoot := filepath.Dir(filepath.Dir(filepath.Dir(callerFile)))
-	return fmt.Sprintf("module ebbchelper\n\ngo 1.23\n\nrequire eucli-box v0.0.0\n\nreplace eucli-box => %s\n", filepath.ToSlash(repoRoot))
+	return fmt.Sprintf("module ebbchelper\n\ngo 1.23.0\n\nrequire eucli-box v0.0.0\n\nreplace eucli-box => %s\n", filepath.ToSlash(repoRoot))
 }
 
 type fakePermission struct {

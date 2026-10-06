@@ -9,21 +9,21 @@ import (
 	"time"
 )
 
-// startCapabilityPair 建立一个已完成握手、已开始监视与应答的宿主—工具对。
-func startCapabilityPair(t *testing.T, config Config) (*Server, *Client, context.CancelFunc) {
+// startCapabilityPair 建立一个已完成握手、已开始监视与应答的宿主—工具桩对。
+func startCapabilityPair(t *testing.T, config Config) (*Server, *toolStub, context.CancelFunc) {
 	t.Helper()
 	server := newTestServerWithConfig(t, config)
 	ctx, cancel := context.WithCancel(context.Background())
 	handshake := make(chan error, 1)
 	go func() { handshake <- server.AcceptAndHandshake(ctx) }()
-	client, err := Connect(ctx, server.Address(), server.Token())
+	stub, err := connectToolStub(ctx, server.Address(), server.Token())
 	if err != nil {
 		cancel()
-		t.Fatalf("Connect() error = %v", err)
+		t.Fatalf("connectToolStub() error = %v", err)
 	}
-	if err := client.WaitReady(ctx); err != nil {
+	if err := stub.waitReady(ctx); err != nil {
 		cancel()
-		t.Fatalf("WaitReady() error = %v", err)
+		t.Fatalf("waitReady() error = %v", err)
 	}
 	if err := <-handshake; err != nil {
 		cancel()
@@ -31,11 +31,11 @@ func startCapabilityPair(t *testing.T, config Config) (*Server, *Client, context
 	}
 	t.Cleanup(func() {
 		cancel()
-		_ = client.Close()
+		_ = stub.close()
 	})
 	server.Watch(ctx)
-	go func() { _ = client.Serve(ctx) }()
-	return server, client, cancel
+	go func() { _ = stub.serve(ctx) }()
+	return server, stub, cancel
 }
 
 func capabilityTestConfig(handler func(ctx context.Context, request CapabilityRequest) CapabilityResult) Config {
@@ -44,11 +44,11 @@ func capabilityTestConfig(handler func(ctx context.Context, request CapabilityRe
 
 func TestCapabilityRequestServesToolAsk(t *testing.T) {
 	var received CapabilityRequest
-	_, client, _ := startCapabilityPair(t, capabilityTestConfig(func(ctx context.Context, request CapabilityRequest) CapabilityResult {
+	_, stub, _ := startCapabilityPair(t, capabilityTestConfig(func(ctx context.Context, request CapabilityRequest) CapabilityResult {
 		received = request
 		return CapabilityResult{Status: CapabilityStatusSuccess, Payload: map[string]any{"value": "42"}}
 	}))
-	result, err := client.Request(context.Background(), "session-state", "read", map[string]any{"key": "session-title"})
+	result, err := stub.request(context.Background(), "session-state", "read", map[string]any{"key": "session-title"})
 	if err != nil {
 		t.Fatalf("Request() error = %v", err)
 	}
@@ -72,10 +72,10 @@ func TestCapabilityRequestServesToolAsk(t *testing.T) {
 }
 
 func TestCapabilityRequestCarriesDeniedFeedback(t *testing.T) {
-	_, client, _ := startCapabilityPair(t, capabilityTestConfig(func(ctx context.Context, request CapabilityRequest) CapabilityResult {
+	_, stub, _ := startCapabilityPair(t, capabilityTestConfig(func(ctx context.Context, request CapabilityRequest) CapabilityResult {
 		return CapabilityResult{Status: CapabilityStatusDenied, Error: CapabilityDeniedMessage}
 	}))
-	result, err := client.Request(context.Background(), "session-attachments", "read", map[string]any{"operation": "list"})
+	result, err := stub.request(context.Background(), "session-attachments", "read", map[string]any{"operation": "list"})
 	if err != nil {
 		t.Fatalf("Request() error = %v", err)
 	}
@@ -85,8 +85,8 @@ func TestCapabilityRequestCarriesDeniedFeedback(t *testing.T) {
 }
 
 func TestCapabilityRequestWithoutHandlerFails(t *testing.T) {
-	_, client, _ := startCapabilityPair(t, Config{Timeout: 200 * time.Millisecond, PingInterval: 20 * time.Millisecond})
-	result, err := client.Request(context.Background(), "workspace", "read", nil)
+	_, stub, _ := startCapabilityPair(t, Config{Timeout: 200 * time.Millisecond, PingInterval: 20 * time.Millisecond})
+	result, err := stub.request(context.Background(), "workspace", "read", nil)
 	if err != nil {
 		t.Fatalf("Request() error = %v", err)
 	}
@@ -96,20 +96,20 @@ func TestCapabilityRequestWithoutHandlerFails(t *testing.T) {
 }
 
 func TestCapabilityRequestHonoursCallerContext(t *testing.T) {
-	_, client, _ := startCapabilityPair(t, capabilityTestConfig(func(ctx context.Context, request CapabilityRequest) CapabilityResult {
+	_, stub, _ := startCapabilityPair(t, capabilityTestConfig(func(ctx context.Context, request CapabilityRequest) CapabilityResult {
 		time.Sleep(500 * time.Millisecond)
 		return CapabilityResult{Status: CapabilityStatusSuccess}
 	}))
 	requestCtx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	_, err := client.Request(requestCtx, "session-state", "read", nil)
+	_, err := stub.request(requestCtx, "session-state", "read", nil)
 	if err == nil {
 		t.Fatal("Request() error = nil, want deadline exceeded")
 	}
 }
 
 func TestCapabilityRequestsAreConcurrentAndMatchedByRequestID(t *testing.T) {
-	_, client, _ := startCapabilityPair(t, capabilityTestConfig(func(ctx context.Context, request CapabilityRequest) CapabilityResult {
+	_, stub, _ := startCapabilityPair(t, capabilityTestConfig(func(ctx context.Context, request CapabilityRequest) CapabilityResult {
 		var payload map[string]any
 		_ = json.Unmarshal(request.Payload, &payload)
 		return CapabilityResult{Status: CapabilityStatusSuccess, Payload: map[string]any{"echo": payload["id"]}}
@@ -122,7 +122,7 @@ func TestCapabilityRequestsAreConcurrentAndMatchedByRequestID(t *testing.T) {
 		go func(slot int) {
 			defer wg.Done()
 			id := "request-" + string(rune('a'+slot))
-			result, err := client.Request(context.Background(), "session-state", "read", map[string]any{"id": id})
+			result, err := stub.request(context.Background(), "session-state", "read", map[string]any{"id": id})
 			if err != nil || result.Status != CapabilityStatusSuccess {
 				results[slot] = "error"
 				return
@@ -142,27 +142,27 @@ func TestCapabilityRequestsAreConcurrentAndMatchedByRequestID(t *testing.T) {
 	}
 }
 
-func TestCapabilityRequestAfterClientCloseFails(t *testing.T) {
-	_, client, _ := startCapabilityPair(t, capabilityTestConfig(func(ctx context.Context, request CapabilityRequest) CapabilityResult {
+func TestCapabilityRequestAfterToolStubCloseFails(t *testing.T) {
+	_, stub, _ := startCapabilityPair(t, capabilityTestConfig(func(ctx context.Context, request CapabilityRequest) CapabilityResult {
 		return CapabilityResult{Status: CapabilityStatusSuccess}
 	}))
-	if err := client.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
+	if err := stub.close(); err != nil {
+		t.Fatalf("close() error = %v", err)
 	}
-	_, err := client.Request(context.Background(), "session-state", "read", nil)
+	_, err := stub.request(context.Background(), "session-state", "read", nil)
 	if err == nil {
-		t.Fatal("Request() after Close() error = nil")
+		t.Fatal("request() after close() error = nil")
 	}
 }
 
 func TestCapabilityRequestLimitIsEnforced(t *testing.T) {
-	server, client, _ := startCapabilityPair(t, capabilityTestConfig(func(ctx context.Context, request CapabilityRequest) CapabilityResult {
+	server, stub, _ := startCapabilityPair(t, capabilityTestConfig(func(ctx context.Context, request CapabilityRequest) CapabilityResult {
 		return CapabilityResult{Status: CapabilityStatusSuccess}
 	}))
 	server.mu.Lock()
 	server.capabilityRequests = MaxCapabilityRequests
 	server.mu.Unlock()
-	result, err := client.Request(context.Background(), "session-state", "read", nil)
+	result, err := stub.request(context.Background(), "session-state", "read", nil)
 	if err != nil {
 		t.Fatalf("Request() error = %v", err)
 	}
@@ -174,7 +174,7 @@ func TestCapabilityRequestLimitIsEnforced(t *testing.T) {
 // TestCapabilityRequestsQueueBeyondConcurrency 验证并发槽满时请求进入等待
 // 而不是被丢弃：槽位缩小到 1，两个并发请求仍然都拿到成功响应。
 func TestCapabilityRequestsQueueBeyondConcurrency(t *testing.T) {
-	server, client, _ := startCapabilityPair(t, capabilityTestConfig(func(ctx context.Context, request CapabilityRequest) CapabilityResult {
+	server, stub, _ := startCapabilityPair(t, capabilityTestConfig(func(ctx context.Context, request CapabilityRequest) CapabilityResult {
 		time.Sleep(30 * time.Millisecond)
 		return CapabilityResult{Status: CapabilityStatusSuccess}
 	}))
@@ -186,7 +186,7 @@ func TestCapabilityRequestsQueueBeyondConcurrency(t *testing.T) {
 		wg.Add(1)
 		go func(slot int) {
 			defer wg.Done()
-			result, err := client.Request(context.Background(), "session-state", "read", nil)
+			result, err := stub.request(context.Background(), "session-state", "read", nil)
 			if err != nil {
 				statuses[slot] = "error"
 				return

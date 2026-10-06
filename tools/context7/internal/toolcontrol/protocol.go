@@ -7,11 +7,8 @@
 package toolcontrol
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 )
 
@@ -21,10 +18,7 @@ const (
 	MessageReady        = "ready"
 	MessagePing         = "ping"
 	MessagePong         = "pong"
-	MessageOutputUpdate = "output_update"
-	// MessageCapabilityRequest 与 MessageCapabilityResponse 是运行时能力的
-	// 双向消息：工具主动索取，宿主被动响应。
-	MessageCapabilityRequest  = "capability_request"
+	// MessageCapabilityResponse 是运行时能力消息：宿主被动响应工具的索取。
 	MessageCapabilityResponse = "capability_response"
 )
 
@@ -34,20 +28,6 @@ const (
 	CapabilityStatusDenied  = "denied"
 	CapabilityStatusFailed  = "failed"
 )
-
-// CapabilityDeniedMessage 是用户未授权某项能力时的统一失败反馈。
-const CapabilityDeniedMessage = "用户未授权此能力，请前往工具设置页开启能力授权"
-
-// MaxOutputUpdates caps how many output update messages a tool may relay per run.
-const MaxOutputUpdates = 10_000
-
-// MaxCapabilityRequests 限制单次执行中工具可发起的能力请求总数，
-// 与输出更新上限同一防线：失控的工具不能无限打满宿主。
-const MaxCapabilityRequests = 10_000
-
-// MaxCapabilityConcurrency 限制宿主同时处理的能力请求数；
-// 超出的请求在队列中等待服务，而不是被丢弃。
-const MaxCapabilityConcurrency = 16
 
 type Message struct {
 	Version    int             `json:"version"`
@@ -63,41 +43,12 @@ type Message struct {
 	Update     *OutputUpdate   `json:"update,omitempty"`
 }
 
-// CapabilityRequest 是宿主收到的一次运行时能力请求。
-type CapabilityRequest struct {
-	Capability string
-	Access     string
-	Payload    json.RawMessage
-}
-
-// CapabilityResult 是宿主对一次能力请求的裁决与响应数据。
-type CapabilityResult struct {
-	Status  string
-	Error   string
-	Payload any
-}
-
 type OutputUpdate struct {
 	Bytes   uint64 `json:"bytes"`
 	Preview string `json:"preview"`
 }
 
 var errInvalidMessage = errors.New("invalid tool control message")
-
-func newToken() (string, error) {
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", fmt.Errorf("generate tool control token: %w", err)
-	}
-	return hex.EncodeToString(bytes), nil
-}
-
-func validateHello(message Message, expectedToken string) error {
-	if message.Version != ProtocolVersion || message.Type != MessageHello || message.Token == "" || message.Token != expectedToken {
-		return errInvalidMessage
-	}
-	return nil
-}
 
 func validateReady(message Message, expectedToken string) error {
 	if message.Version != ProtocolVersion || message.Type != MessageReady || message.Token == "" || message.Token != expectedToken || message.Sequence != 0 {
@@ -108,30 +59,6 @@ func validateReady(message Message, expectedToken string) error {
 
 func validatePing(message Message, expectedToken string) error {
 	if message.Version != ProtocolVersion || message.Type != MessagePing || message.Token == "" || message.Token != expectedToken || message.Sequence == 0 {
-		return errInvalidMessage
-	}
-	return nil
-}
-
-func validatePong(message Message, expectedToken string, expectedSequence uint64) error {
-	if message.Version != ProtocolVersion || message.Type != MessagePong || message.Token == "" || message.Token != expectedToken || message.Sequence != expectedSequence {
-		return errInvalidMessage
-	}
-	return nil
-}
-
-func validateOutputUpdate(message Message, expectedToken string) error {
-	if message.Version != ProtocolVersion || message.Type != MessageOutputUpdate || message.Token == "" || message.Token != expectedToken || message.Sequence == 0 || message.Update == nil {
-		return errInvalidMessage
-	}
-	return nil
-}
-
-func validateCapabilityRequest(message Message, expectedToken string) error {
-	if message.Version != ProtocolVersion || message.Type != MessageCapabilityRequest || message.Token == "" || message.Token != expectedToken {
-		return errInvalidMessage
-	}
-	if strings.TrimSpace(message.RequestID) == "" || strings.TrimSpace(message.Capability) == "" || strings.TrimSpace(message.Access) == "" {
 		return errInvalidMessage
 	}
 	return nil

@@ -1,6 +1,6 @@
 package networkrequest
 
-import apperrors "eucli-box/tools/context7/internal/apperrors"
+import apperrors "eucli-box/tools/context7/internal/errors"
 
 const systemName = "network-request-system"
 

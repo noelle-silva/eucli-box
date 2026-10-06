@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/hypercortex_writer/internal/types"
 )
 
 // runListFaceKinds 选面：列出可用于新建笔记的面类型清单。

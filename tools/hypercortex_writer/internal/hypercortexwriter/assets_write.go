@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/hypercortex_writer/internal/types"
 )
 
 // runUploadAssets 上传附件：提交本机文件路径清单，等待全部传完，

@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"strings"
 
-	"eucli-box/pkg/types"
-	networkrequest "eucli-box/src/network-request-system"
+	"eucli-box/tools/hypercortex_writer/internal/types"
+	networkrequest "eucli-box/tools/hypercortex_writer/internal/networkrequest"
 )
 
 // rpcClient 是 HyperCortex 外部访问接口的最小客户端：

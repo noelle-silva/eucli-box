@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/hypercortex_writer/internal/types"
 )
 
 func TestDataMigrationModeInitializesDataVersion(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/hypercortex_writer/internal/types"
 )
 
 // runCreateNote 新建笔记：按提交的标题、简介、标签与面类型清单建立空笔记。

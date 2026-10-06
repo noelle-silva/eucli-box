@@ -8,8 +8,8 @@ import (
 	"io"
 	"os"
 
-	"eucli-box/pkg/toolcontrol"
-	"eucli-box/pkg/types"
+	"eucli-box/tools/hypercortex_writer/internal/toolcontrol"
+	"eucli-box/tools/hypercortex_writer/internal/types"
 	hypercortexwriter "eucli-box/tools/hypercortex_writer/internal/hypercortexwriter"
 )
 

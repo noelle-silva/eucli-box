@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/hypercortex_writer/internal/types"
 )
 
 // runCreateFavoriteFolder 建夹：在指定收藏夹（缺省为根）下新建一个子收藏夹。

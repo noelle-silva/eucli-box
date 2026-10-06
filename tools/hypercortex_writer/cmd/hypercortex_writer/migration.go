@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"eucli-box/pkg/toolcontrol"
-	"eucli-box/pkg/types"
+	"eucli-box/tools/hypercortex_writer/internal/toolcontrol"
+	"eucli-box/tools/hypercortex_writer/internal/types"
 	"eucli-box/tools/hypercortex_writer/internal/datamigration"
 )
 

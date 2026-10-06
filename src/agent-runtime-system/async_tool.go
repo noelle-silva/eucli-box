@@ -227,22 +227,50 @@ func (s *system) recoverPersistedAsyncToolSession(ctx context.Context, locator t
 func (s *system) recoverSessionAsyncToolTasks(session types.Session) (types.Session, []types.Message, bool) {
 	before := append([]types.AsyncToolTask(nil), session.AsyncToolTasks...)
 	session = s.recoverAsyncToolTasks(session)
+	// 启动时不存在活动运行，落盘的认领标记都是上次进程遗留的陈旧认领，先清除以便重试。
+	session = clearStaleAsyncToolClaims(session)
 	ready := readyAsyncToolTasks(session.AsyncToolTasks)
 	if len(ready) == 0 {
 		return session, nil, !reflect.DeepEqual(before, session.AsyncToolTasks)
 	}
-	messages := asyncToolResultMessages(ready)
-	writes := make([]types.Message, 0, len(messages))
-	for _, message := range messages {
-		session = appendMessage(session, message)
-		writes = append(writes, lastSessionMessage(session))
-	}
+	writes := make([]types.Message, 0, len(ready))
 	for _, task := range ready {
+		// 第二道防线：结果消息已按任务 ID 落盘则视为已回灌，只补完成标记，不再重复生成。
+		if !sessionHasAsyncToolResult(session, task.ID) {
+			session = appendMessage(session, asyncToolResultMessage(task))
+			writes = append(writes, lastSessionMessage(session))
+		}
 		task.Status = types.AsyncToolTaskStatusCompleted
 		task.CompletedAt = time.Now().UTC()
 		session.AsyncToolTasks = upsertAsyncToolTask(session.AsyncToolTasks, task)
 	}
 	return session, writes, true
+}
+
+// clearStaleAsyncToolClaims 清除未完成任务的陈旧认领标记。
+func clearStaleAsyncToolClaims(session types.Session) types.Session {
+	for index := range session.AsyncToolTasks {
+		task := &session.AsyncToolTasks[index]
+		if task.CompletedAt.IsZero() && !task.InjectionClaimedAt.IsZero() {
+			task.InjectionClaimedAt = time.Time{}
+			task.InjectionClaimRunID = ""
+		}
+	}
+	return session
+}
+
+// sessionHasAsyncToolResult 判断会话中是否已存在绑定该任务 ID 的结果消息。
+func sessionHasAsyncToolResult(session types.Session, taskID string) bool {
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return false
+	}
+	for _, message := range session.Messages {
+		if message.Type == types.MessageTypeAsyncToolResult && strings.TrimSpace(message.AsyncToolTaskID) == taskID {
+			return true
+		}
+	}
+	return false
 }
 
 func messageWrites(messages []types.Message) []types.SessionMessageWrite {
@@ -363,47 +391,111 @@ func (s *system) flushReadyAsyncToolResults(ctx context.Context, record *runReco
 	latest, err := s.loadTaskSession(ctx, types.AsyncToolTask{RoleID: record.roleID, GroupID: record.groupID, WorkspaceID: record.workspaceID, SessionID: record.session.ID})
 	if err == nil {
 		latest = s.recoverAsyncToolTasks(latest)
-		record.session.AsyncToolTasks = mergeRuntimeAsyncToolTasks(record.session.AsyncToolTasks, latest.AsyncToolTasks)
+		record.session.AsyncToolTasks = types.MergeAsyncToolTasks(record.session.AsyncToolTasks, latest.AsyncToolTasks)
 	}
-	record.session.AsyncToolTasks = mergeRuntimeAsyncToolTasks(record.session.AsyncToolTasks, s.runtimeAsyncToolTasks(types.AsyncToolTaskQuery{RoleID: record.roleID, GroupID: record.groupID, WorkspaceID: record.workspaceID, SessionID: record.session.ID}))
+	record.session.AsyncToolTasks = types.MergeAsyncToolTasks(record.session.AsyncToolTasks, s.runtimeAsyncToolTasks(types.AsyncToolTaskQuery{RoleID: record.roleID, GroupID: record.groupID, WorkspaceID: record.workspaceID, SessionID: record.session.ID}))
 	ready := readyAsyncToolTasks(record.session.AsyncToolTasks)
 	if len(ready) == 0 {
 		return false, nil
 	}
-	flushedMessages := make([]types.Message, 0, len(ready))
-	for _, message := range asyncToolResultMessages(ready) {
+	flushed := false
+	for _, task := range ready {
+		// 1. 认领：以任务 ID 为键的跨运行原子条件写。
+		// 只有认领成功的运行才生成并落盘结果消息；认领失败视为结果已被回灌，静默跳过、不报错。
+		claimed, err := s.storage.ClaimAsyncToolResult(ctx, record.session, task.ID, record.runID)
+		if err != nil {
+			return flushed, runtimeStorageFailed("failed to claim async tool result", err)
+		}
+		if !claimed {
+			continue
+		}
+		// 2. 生成结果消息：消息携带任务 ID，作为回灌幂等的第二道防线。
+		before := snapshotAsyncFlush(record)
+		message := asyncToolResultMessage(task)
 		appendRunMessage(record, message)
 		if !preserveAssistant {
 			record.activeAssistantID = ""
 		}
-		flushedMessages = append(flushedMessages, record.messageParent)
 		if contextSession != nil {
 			*contextSession = appendMessage(*contextSession, record.messageParent)
 		}
-	}
-	completed := make([]types.AsyncToolTask, 0, len(ready))
-	for _, task := range ready {
-		task.Status = types.AsyncToolTaskStatusCompleted
-		task.CompletedAt = time.Now().UTC()
-		record.session.AsyncToolTasks = upsertAsyncToolTask(record.session.AsyncToolTasks, task)
-		completed = append(completed, task)
-	}
-	if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
-		return false, err
-	}
-	// 顺序固定为「落盘 → 广播 → 回收」：落盘成功回灌才算成立，失败则运行期登记原样保留，
-	// 等待后续运行重试，绝不丢结果。
-	if err := s.saveRunSession(ctx, record, status); err != nil {
-		return false, err
-	}
-	for _, message := range flushedMessages {
-		s.publishRunMessageUpdate(record, "run_message_update", message)
-	}
-	for _, task := range completed {
-		s.publishAsyncToolTaskUpdate(task)
+		// 3./4. 落盘并标记：结果消息与完成标记在同一次原子落盘内写入。
+		completed := task
+		completed.Status = types.AsyncToolTaskStatusCompleted
+		completed.CompletedAt = time.Now().UTC()
+		record.session.AsyncToolTasks = upsertAsyncToolTask(record.session.AsyncToolTasks, completed)
+		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
+			s.rollbackAsyncToolFlush(record, before, message.ID, task)
+			s.releaseAsyncToolResultClaim(ctx, record, task)
+			return flushed, err
+		}
+		if err := s.saveRunSession(ctx, record, status); err != nil {
+			// 落盘失败必须回退认领，保留可重试，绝不丢结果；
+			// 同时撤销运行副本里未落定的结果消息与完成标记，避免失败收口把它当成本次产出落盘。
+			s.rollbackAsyncToolFlush(record, before, message.ID, task)
+			s.releaseAsyncToolResultClaim(ctx, record, task)
+			return flushed, err
+		}
+		// 落盘成功才广播并回收运行期登记。
+		s.publishRunMessageUpdate(record, "run_message_update", record.messageParent)
+		s.publishAsyncToolTaskUpdate(completed)
 		s.reclaimAsyncToolTask(task.ID)
+		flushed = true
 	}
-	return true, nil
+	return flushed, nil
+}
+
+// asyncFlushSnapshot 记录一次回灌前运行副本的消息锚点，供回滚恢复。
+type asyncFlushSnapshot struct {
+	messageParent     types.Message
+	lastMessageID     string
+	activeAssistantID string
+}
+
+func snapshotAsyncFlush(record *runRecord) asyncFlushSnapshot {
+	if record == nil {
+		return asyncFlushSnapshot{}
+	}
+	return asyncFlushSnapshot{messageParent: record.messageParent, lastMessageID: record.lastMessageID, activeAssistantID: record.activeAssistantID}
+}
+
+// rollbackAsyncToolFlush 撤销一次未落定的回灌：移除结果消息与完成标记，恢复消息锚点，
+// 让运行收口落盘的是回灌前的真实状态，而不是一次未成立的产出。
+func (s *system) rollbackAsyncToolFlush(record *runRecord, snapshot asyncFlushSnapshot, messageID string, task types.AsyncToolTask) {
+	if record == nil {
+		return
+	}
+	record.session.Messages = removeRunMessageByID(record.session.Messages, messageID)
+	delete(record.ownedMessageIDs, messageID)
+	record.session.AsyncToolTasks = upsertAsyncToolTask(record.session.AsyncToolTasks, task)
+	record.messageParent = snapshot.messageParent
+	record.lastMessageID = snapshot.lastMessageID
+	record.activeAssistantID = snapshot.activeAssistantID
+}
+
+func removeRunMessageByID(messages []types.Message, messageID string) []types.Message {
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		return messages
+	}
+	out := make([]types.Message, 0, len(messages))
+	for _, message := range messages {
+		if strings.TrimSpace(message.ID) == messageID {
+			continue
+		}
+		out = append(out, message)
+	}
+	return out
+}
+
+// releaseAsyncToolResultClaim 回退一次未落定的认领，让该结果保留可重试。
+func (s *system) releaseAsyncToolResultClaim(ctx context.Context, record *runRecord, task types.AsyncToolTask) {
+	if record == nil {
+		return
+	}
+	if err := s.storage.ReleaseAsyncToolResultClaim(ctx, record.session, task.ID, record.runID); err != nil {
+		log.Printf("agent-runtime-system: 回退异步结果认领失败 task=%s: %v", task.ID, err)
+	}
 }
 
 // reclaimAsyncToolTask 回收一条已完成回灌的异步任务运行期登记；
@@ -421,7 +513,8 @@ func (s *system) reclaimAsyncToolTask(taskID string) {
 func readyAsyncToolTasks(tasks []types.AsyncToolTask) []types.AsyncToolTask {
 	ready := []types.AsyncToolTask{}
 	for _, task := range tasks {
-		if !task.CompletedAt.IsZero() {
+		// 已完成或已被认领的任务都不再是「就绪待回灌」。
+		if !task.CompletedAt.IsZero() || !task.InjectionClaimedAt.IsZero() {
 			continue
 		}
 		if task.Status == types.AsyncToolTaskStatusSucceeded || task.Status == types.AsyncToolTaskStatusFailed {
@@ -429,14 +522,6 @@ func readyAsyncToolTasks(tasks []types.AsyncToolTask) []types.AsyncToolTask {
 		}
 	}
 	return ready
-}
-
-func asyncToolResultMessages(tasks []types.AsyncToolTask) []types.Message {
-	messages := make([]types.Message, 0, len(tasks))
-	for _, task := range tasks {
-		messages = append(messages, asyncToolResultMessage(task))
-	}
-	return messages
 }
 
 func asyncToolResultContent(task types.AsyncToolTask) string {
@@ -472,13 +557,6 @@ func upsertAsyncToolTask(tasks []types.AsyncToolTask, task types.AsyncToolTask) 
 	return append(tasks, task)
 }
 
-func mergeRuntimeAsyncToolTasks(left []types.AsyncToolTask, right []types.AsyncToolTask) []types.AsyncToolTask {
-	for _, task := range right {
-		left = upsertAsyncToolTask(left, task)
-	}
-	return left
-}
-
 func (s *system) publishAsyncToolTaskUpdate(task types.AsyncToolTask) {
 	s.publish(eventSourceFromAsyncTask(task), "async_tool_task_update", task)
 }
@@ -499,9 +577,7 @@ func (s *system) ListAsyncToolTasks(ctx context.Context, query types.AsyncToolTa
 			}
 		}
 	}
-	for _, task := range s.runtimeAsyncToolTasks(query) {
-		tasks = upsertAsyncToolTask(tasks, task)
-	}
+	tasks = types.MergeAsyncToolTasks(tasks, s.runtimeAsyncToolTasks(query))
 	return tasks, nil
 }
 

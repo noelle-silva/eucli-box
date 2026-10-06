@@ -38,11 +38,13 @@ type Message struct {
 	BranchID        string              `json:"branchId,omitempty"`
 	ToolID          string              `json:"toolId,omitempty"`
 	ToolName        string              `json:"toolName,omitempty"`
-	Reason          string              `json:"reason,omitempty"`
-	TokenEstimate   int                 `json:"tokenEstimate,omitempty"`
-	ModelDurationMs int64               `json:"modelDurationMs,omitempty"`
-	CreatedAt       time.Time           `json:"createdAt"`
-	UpdatedAt       time.Time           `json:"updatedAt"`
+	// AsyncToolTaskID 把异步结果消息与其来源任务绑定，作为回灌幂等的第二道防线。
+	AsyncToolTaskID string    `json:"asyncToolTaskId,omitempty"`
+	Reason          string    `json:"reason,omitempty"`
+	TokenEstimate   int       `json:"tokenEstimate,omitempty"`
+	ModelDurationMs int64     `json:"modelDurationMs,omitempty"`
+	CreatedAt       time.Time `json:"createdAt"`
+	UpdatedAt       time.Time `json:"updatedAt"`
 }
 
 const (
@@ -249,6 +251,60 @@ type AsyncToolTask struct {
 	StartedAt          time.Time           `json:"startedAt,omitempty"`
 	FinishedAt         time.Time           `json:"finishedAt,omitempty"`
 	CompletedAt        time.Time           `json:"completedAt,omitempty"`
+	// InjectionClaimedAt 是跨运行回灌认领标记：非零表示已有运行认领了该任务的回灌权。
+	// 认领与完成都是单调终态标记，迟到的运行期副本不得抹掉它们。
+	InjectionClaimedAt  time.Time `json:"injectionClaimedAt,omitempty"`
+	InjectionClaimRunID string    `json:"injectionClaimRunId,omitempty"`
+}
+
+// MergeAsyncToolTask 合并同一任务的两个副本，保护单调的终态标记：
+// 已完成或已认领的权威副本，不被缺少这些标记的迟到副本覆盖。
+func MergeAsyncToolTask(current AsyncToolTask, incoming AsyncToolTask) AsyncToolTask {
+	if strings.TrimSpace(incoming.ID) == "" {
+		return current
+	}
+	if !current.CompletedAt.IsZero() && incoming.CompletedAt.IsZero() {
+		return current
+	}
+	if !current.InjectionClaimedAt.IsZero() && incoming.InjectionClaimedAt.IsZero() && incoming.CompletedAt.IsZero() {
+		merged := incoming
+		merged.InjectionClaimedAt = current.InjectionClaimedAt
+		merged.InjectionClaimRunID = current.InjectionClaimRunID
+		return merged
+	}
+	return incoming
+}
+
+// MergeAsyncToolTasks 以任务 ID 为键合并两组任务，保持首次出现顺序。
+func MergeAsyncToolTasks(current []AsyncToolTask, incoming []AsyncToolTask) []AsyncToolTask {
+	if len(current) == 0 && len(incoming) == 0 {
+		return nil
+	}
+	byID := map[string]AsyncToolTask{}
+	order := []string{}
+	add := func(task AsyncToolTask) {
+		id := strings.TrimSpace(task.ID)
+		if id == "" {
+			return
+		}
+		if existing, ok := byID[id]; ok {
+			byID[id] = MergeAsyncToolTask(existing, task)
+			return
+		}
+		order = append(order, id)
+		byID[id] = task
+	}
+	for _, task := range current {
+		add(task)
+	}
+	for _, task := range incoming {
+		add(task)
+	}
+	result := make([]AsyncToolTask, 0, len(order))
+	for _, id := range order {
+		result = append(result, byID[id])
+	}
+	return result
 }
 
 type AsyncToolTaskQuery struct {
@@ -319,23 +375,23 @@ type RunState struct {
 // RunMessageDelta 只承载某条助手消息本次新增的变化：
 // 正文增量、思考增量，以及消息诞生所需的标识。前端把它叠加到本地消息上。
 type RunMessageDelta struct {
-	RunID              string    `json:"runId"`
-	RoleID             string    `json:"roleId"`
-	GroupID            string    `json:"groupId,omitempty"`
-	WorkspaceID        string    `json:"workspaceId,omitempty"`
-	SessionID          string    `json:"sessionId"`
-	MessageID          string    `json:"messageId"`
-	ParentMessageID    string    `json:"parentMessageId,omitempty"`
-	BranchID           string    `json:"branchId,omitempty"`
-	SpeakerRoleID      string    `json:"speakerRoleId,omitempty"`
-	MessageType        string    `json:"messageType,omitempty"`
-	MessageCreatedAt   time.Time      `json:"messageCreatedAt"`
-	Stream             bool           `json:"stream,omitempty"`
-	Status             RunStatus      `json:"status,omitempty"`
-	ContentDelta       string         `json:"contentDelta,omitempty"`
-	ContentReset       bool           `json:"contentReset,omitempty"`
-	ReasoningDelta     string         `json:"reasoningDelta,omitempty"`
-	ReasoningReset     bool           `json:"reasoningReset,omitempty"`
+	RunID              string        `json:"runId"`
+	RoleID             string        `json:"roleId"`
+	GroupID            string        `json:"groupId,omitempty"`
+	WorkspaceID        string        `json:"workspaceId,omitempty"`
+	SessionID          string        `json:"sessionId"`
+	MessageID          string        `json:"messageId"`
+	ParentMessageID    string        `json:"parentMessageId,omitempty"`
+	BranchID           string        `json:"branchId,omitempty"`
+	SpeakerRoleID      string        `json:"speakerRoleId,omitempty"`
+	MessageType        string        `json:"messageType,omitempty"`
+	MessageCreatedAt   time.Time     `json:"messageCreatedAt"`
+	Stream             bool          `json:"stream,omitempty"`
+	Status             RunStatus     `json:"status,omitempty"`
+	ContentDelta       string        `json:"contentDelta,omitempty"`
+	ContentReset       bool          `json:"contentReset,omitempty"`
+	ReasoningDelta     string        `json:"reasoningDelta,omitempty"`
+	ReasoningReset     bool          `json:"reasoningReset,omitempty"`
 	ReasoningSource    string        `json:"reasoningSource,omitempty"`
 	ReasoningSignature string        `json:"reasoningSignature,omitempty"`
 	ReasoningData      string        `json:"reasoningData,omitempty"`

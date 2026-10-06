@@ -3080,7 +3080,7 @@ func (f *fakeRuntimeStorage) SaveSessionMessages(ctx context.Context, save types
 	}
 	merged.Status = string(save.Status)
 	merged.Metadata = fakeApplySessionMetadataPatch(merged.Metadata, save.MetadataPatch)
-	merged.AsyncToolTasks = mergeRuntimeAsyncToolTasks(merged.AsyncToolTasks, session.AsyncToolTasks)
+	merged.AsyncToolTasks = types.MergeAsyncToolTasks(merged.AsyncToolTasks, session.AsyncToolTasks)
 	for _, condition := range save.Conditions {
 		messageID := strings.TrimSpace(condition.MessageID)
 		if messageID == "" && condition.Expected != nil {
@@ -3116,6 +3116,67 @@ func (f *fakeRuntimeStorage) SaveSessionMessages(ctx context.Context, save types
 	}
 	merged = validated
 	f.sessions[key] = merged
+	return nil
+}
+
+func (f *fakeRuntimeStorage) ClaimAsyncToolResult(ctx context.Context, session types.Session, taskID string, runID string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	key := f.sessionKey(session)
+	stored, ok := f.sessions[key]
+	if !ok {
+		return false, nil
+	}
+	taskID = strings.TrimSpace(taskID)
+	for index := range stored.AsyncToolTasks {
+		if strings.TrimSpace(stored.AsyncToolTasks[index].ID) != taskID {
+			continue
+		}
+		if !stored.AsyncToolTasks[index].CompletedAt.IsZero() || !stored.AsyncToolTasks[index].InjectionClaimedAt.IsZero() {
+			return false, nil
+		}
+		stored.AsyncToolTasks[index].InjectionClaimedAt = time.Now().UTC()
+		stored.AsyncToolTasks[index].InjectionClaimRunID = strings.TrimSpace(runID)
+		f.sessions[key] = stored
+		return true, nil
+	}
+	for _, task := range session.AsyncToolTasks {
+		if strings.TrimSpace(task.ID) != taskID {
+			continue
+		}
+		task.InjectionClaimedAt = time.Now().UTC()
+		task.InjectionClaimRunID = strings.TrimSpace(runID)
+		stored.AsyncToolTasks = append(stored.AsyncToolTasks, task)
+		f.sessions[key] = stored
+		return true, nil
+	}
+	return false, nil
+}
+
+func (f *fakeRuntimeStorage) ReleaseAsyncToolResultClaim(ctx context.Context, session types.Session, taskID string, runID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	key := f.sessionKey(session)
+	stored, ok := f.sessions[key]
+	if !ok {
+		return nil
+	}
+	taskID = strings.TrimSpace(taskID)
+	for index := range stored.AsyncToolTasks {
+		if strings.TrimSpace(stored.AsyncToolTasks[index].ID) != taskID {
+			continue
+		}
+		if !stored.AsyncToolTasks[index].CompletedAt.IsZero() || stored.AsyncToolTasks[index].InjectionClaimedAt.IsZero() {
+			return nil
+		}
+		if owner := strings.TrimSpace(stored.AsyncToolTasks[index].InjectionClaimRunID); owner != "" && owner != strings.TrimSpace(runID) {
+			return nil
+		}
+		stored.AsyncToolTasks[index].InjectionClaimedAt = time.Time{}
+		stored.AsyncToolTasks[index].InjectionClaimRunID = ""
+		f.sessions[key] = stored
+		return nil
+	}
 	return nil
 }
 

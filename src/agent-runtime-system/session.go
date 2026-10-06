@@ -61,7 +61,8 @@ func (s *system) recoverAsyncToolTasks(session types.Session) types.Session {
 	now := time.Now().UTC()
 	for index := range session.AsyncToolTasks {
 		if runtimeTask, ok := s.asyncToolTaskSnapshot(session.AsyncToolTasks[index]); ok {
-			session.AsyncToolTasks[index] = runtimeTask
+			// 运行期副本更新鲜，但不得覆盖落盘副本上的完成/认领终态标记。
+			session.AsyncToolTasks[index] = types.MergeAsyncToolTask(session.AsyncToolTasks[index], runtimeTask)
 			continue
 		}
 		status := session.AsyncToolTasks[index].Status
@@ -596,7 +597,7 @@ func asyncToolResultMessage(task types.AsyncToolTask) types.Message {
 	if task.Result != nil {
 		toolID = strings.TrimSpace(task.Result.ID)
 	}
-	return types.Message{ID: utils.NewID("message"), Type: types.MessageTypeAsyncToolResult, Content: asyncToolResultContent(task), BranchID: defaultRuntimeBranchID, ToolID: toolID, ToolName: asyncToolResultToolName(task), CreatedAt: now, UpdatedAt: now}
+	return types.Message{ID: utils.NewID("message"), Type: types.MessageTypeAsyncToolResult, Content: asyncToolResultContent(task), BranchID: defaultRuntimeBranchID, ToolID: toolID, ToolName: asyncToolResultToolName(task), AsyncToolTaskID: strings.TrimSpace(task.ID), CreatedAt: now, UpdatedAt: now}
 }
 
 func assistantMessage(content string) types.Message {

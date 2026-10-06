@@ -34,6 +34,7 @@ type messageStorageRecord struct {
 	BranchID        string                    `json:"branchId,omitempty"`
 	ToolID          string                    `json:"toolId,omitempty"`
 	ToolName        string                    `json:"toolName,omitempty"`
+	AsyncToolTaskID string                    `json:"asyncToolTaskId,omitempty"`
 	Reason          string                    `json:"reason,omitempty"`
 	TokenEstimate   int                       `json:"tokenEstimate,omitempty"`
 	ModelDurationMs int64                     `json:"modelDurationMs,omitempty"`
@@ -80,6 +81,7 @@ func toMessageStorageRecord(message types.Message) messageStorageRecord {
 		BranchID:        message.BranchID,
 		ToolID:          message.ToolID,
 		ToolName:        message.ToolName,
+		AsyncToolTaskID: message.AsyncToolTaskID,
 		Reason:          message.Reason,
 		TokenEstimate:   message.TokenEstimate,
 		ModelDurationMs: message.ModelDurationMs,

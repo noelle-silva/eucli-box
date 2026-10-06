@@ -23,6 +23,8 @@ type System interface {
 type StorageSystem interface {
 	SaveSession(ctx context.Context, session types.Session) error
 	SaveSessionMessages(ctx context.Context, save types.SessionMessageSave) error
+	ClaimAsyncToolResult(ctx context.Context, session types.Session, taskID string, runID string) (bool, error)
+	ReleaseAsyncToolResultClaim(ctx context.Context, session types.Session, taskID string, runID string) error
 	LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error)
 	LoadGroupSession(ctx context.Context, groupID string, sessionID string) (types.Session, error)
 	LoadWorkspaceSession(ctx context.Context, workspaceID string, roleID string, sessionID string) (types.Session, error)

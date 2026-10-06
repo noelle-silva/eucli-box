@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/file_editor/internal/types"
 )
 
 type patchOperation struct {

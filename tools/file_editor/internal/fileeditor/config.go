@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/file_editor/internal/types"
 )
 
 const defaultMaxFileBytes = 10 * 1024 * 1024

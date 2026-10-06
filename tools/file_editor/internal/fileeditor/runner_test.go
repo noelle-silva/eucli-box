@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/file_editor/internal/types"
 )
 
 func TestWriteAndEditAbsolutePathOutsideBase(t *testing.T) {

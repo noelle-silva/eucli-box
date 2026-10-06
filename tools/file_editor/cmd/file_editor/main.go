@@ -6,8 +6,8 @@ import (
 	"io"
 	"os"
 
-	"eucli-box/pkg/toolcontrol"
-	"eucli-box/pkg/types"
+	"eucli-box/tools/file_editor/internal/toolcontrol"
+	"eucli-box/tools/file_editor/internal/types"
 	fileeditor "eucli-box/tools/file_editor/internal/fileeditor"
 )
 

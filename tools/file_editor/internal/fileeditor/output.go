@@ -1,7 +1,7 @@
 package fileeditor
 
 import (
-	"eucli-box/pkg/types"
+	"eucli-box/tools/file_editor/internal/types"
 )
 
 func success(content string, metadata map[string]any) types.ToolExecutionOutput {

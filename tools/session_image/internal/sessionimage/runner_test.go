@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"eucli-box/pkg/toolcontrol"
-	"eucli-box/pkg/types"
+	"eucli-box/tools/session_image/internal/toolcontrol"
+	"eucli-box/tools/session_image/internal/types"
 )
 
 // fakeSession 是会话能力服务的测试替身：固定成功应答。

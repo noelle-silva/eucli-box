@@ -8,8 +8,8 @@ import (
 	"io"
 	"os"
 
-	"eucli-box/pkg/toolcontrol"
-	"eucli-box/pkg/types"
+	"eucli-box/tools/session_image/internal/toolcontrol"
+	"eucli-box/tools/session_image/internal/types"
 	sessionimage "eucli-box/tools/session_image/internal/sessionimage"
 )
 

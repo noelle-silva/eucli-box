@@ -10,8 +10,8 @@ import (
 	"regexp"
 	"strings"
 
-	"eucli-box/pkg/toolcontrol"
-	"eucli-box/pkg/types"
+	"eucli-box/tools/session_image/internal/toolcontrol"
+	"eucli-box/tools/session_image/internal/types"
 )
 
 // SessionService 是工具访问宿主会话能力的窄接口：由控制通道客户端实现；

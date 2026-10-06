@@ -2,6 +2,7 @@ package agentruntime
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -204,6 +205,12 @@ func hasHookPromptSelectionInput(request types.RunRequest) bool {
 }
 
 func (s *system) continueRun(ctx context.Context, record *runRecord, contextSession types.Session) {
+	// 主脑协程顶层兜底：任何未预期崩溃都按既有失败收口路径进入失败终态，绝不把运行留在「运行中」。
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			s.failRun(context.Background(), record, record.session, fmt.Errorf("agent run panicked: %v", recovered))
+		}
+	}()
 	assistantParent := record.messageParent
 	for {
 		if s.drainRunInbox(record) || ctx.Err() != nil {
@@ -280,26 +287,25 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 			s.completeRun(context.Background(), record, record.session)
 			return
 		}
-		_, err = s.handleToolIntents(ctx, record, modelResponse.ToolIntents)
+		_, err = s.handleToolIntents(ctx, record, &contextSession, modelResponse.ToolIntents)
 		if err != nil {
 			if ctx.Err() != nil {
 				s.cancelRunRecord(context.Background(), record, record.session)
 				return
 			}
-			if isAsyncToolInterruption(err) {
-				if saveErr := s.saveRunSession(ctx, record, types.RunStatusRunning); saveErr != nil {
-					s.failRun(context.Background(), record, record.session, saveErr)
-					return
-				}
-				s.publishAssistantMessageUpdate(record)
-				continue
-			}
 			s.failRun(context.Background(), record, record.session, err)
 			return
 		}
-		assistantParent = record.messageParent
+		// 工具批可能在等待期间就地回灌过异步结果；回复锚点统一取会话当前末条，
+		// 让紧随其后的模型回复接在最新事实上。
+		assistantParent = lastSessionMessage(record.session)
+		record.messageParent = assistantParent
 		contextSession = upsertSessionMessage(contextSession, assistantParent)
 		record.activeAssistantID = ""
+		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, assistantParent.ID); err != nil {
+			s.failRun(context.Background(), record, record.session, err)
+			return
+		}
 		if err := ctx.Err(); err != nil {
 			s.cancelRunRecord(context.Background(), record, record.session)
 			return

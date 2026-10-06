@@ -10,7 +10,7 @@ import (
 	"eucli-box/pkg/types"
 )
 
-func (s *system) handleToolIntents(ctx context.Context, record *runRecord, intents []types.ToolIntent) ([]types.ToolResult, error) {
+func (s *system) handleToolIntents(ctx context.Context, record *runRecord, contextSession *types.Session, intents []types.ToolIntent) ([]types.ToolResult, error) {
 	entries := make([]toolRunEntry, 0, len(intents))
 	for index, intent := range intents {
 		if message := strings.TrimSpace(intent.ArgumentError); message != "" {
@@ -60,7 +60,7 @@ func (s *system) handleToolIntents(ctx context.Context, record *runRecord, inten
 	}
 	s.publishAssistantMessageDelta(record)
 
-	if err := s.resolvePendingToolConfirmations(ctx, record, entries); err != nil {
+	if err := s.resolvePendingToolConfirmations(ctx, record, contextSession, entries); err != nil {
 		return nil, err
 	}
 
@@ -97,7 +97,7 @@ func (s *system) handleToolIntents(ctx context.Context, record *runRecord, inten
 	return orderedToolResults(entries, executed)
 }
 
-func (s *system) resolvePendingToolConfirmations(ctx context.Context, record *runRecord, entries []toolRunEntry) error {
+func (s *system) resolvePendingToolConfirmations(ctx context.Context, record *runRecord, contextSession *types.Session, entries []toolRunEntry) error {
 	for {
 		pending := pendingConfirmationPlans(entries)
 		if len(pending) == 0 {
@@ -107,7 +107,7 @@ func (s *system) resolvePendingToolConfirmations(ctx context.Context, record *ru
 		if err := s.saveRunSession(ctx, record, types.RunStatusWaitingConfirmation); err != nil {
 			return err
 		}
-		confirmed, err := s.waitForConfirmations(ctx, record, pending)
+		confirmed, err := s.waitForConfirmations(ctx, record, contextSession, pending)
 		if err != nil {
 			s.markPendingToolsCancelled(record, entries, err)
 			if stateErr := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); stateErr != nil {
@@ -136,9 +136,6 @@ func (s *system) markPendingToolsCancelled(record *runRecord, entries []toolRunE
 			continue
 		}
 		metadata := map[string]any{"cancelReason": "user_interrupted"}
-		if isAsyncToolInterruption(err) {
-			metadata["cancelReason"] = "system_event"
-		}
 		result := types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: entry.Action.ID, ToolName: entry.Action.ToolName, Status: types.ToolStatusCancelled, Metadata: metadata, Error: err.Error(), CreatedAt: time.Now().UTC()}
 		upsertRunToolPart(record, entry.Action, "cancelled", &entry.Plan.Decision, &result)
 	}

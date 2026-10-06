@@ -51,8 +51,8 @@ func (s *system) SubmitToolConfirmation(ctx context.Context, confirmation types.
 	}
 }
 
-func (s *system) waitForConfirmation(ctx context.Context, record *runRecord, plan types.ToolRunPlan) (types.ToolRunPlan, error) {
-	confirmed, err := s.waitForConfirmations(ctx, record, []types.ToolRunPlan{plan})
+func (s *system) waitForConfirmation(ctx context.Context, record *runRecord, contextSession *types.Session, plan types.ToolRunPlan) (types.ToolRunPlan, error) {
+	confirmed, err := s.waitForConfirmations(ctx, record, contextSession, []types.ToolRunPlan{plan})
 	if err != nil {
 		return types.ToolRunPlan{}, err
 	}
@@ -62,7 +62,7 @@ func (s *system) waitForConfirmation(ctx context.Context, record *runRecord, pla
 	return confirmed[0], nil
 }
 
-func (s *system) waitForConfirmations(ctx context.Context, record *runRecord, plans []types.ToolRunPlan) ([]types.ToolRunPlan, error) {
+func (s *system) waitForConfirmations(ctx context.Context, record *runRecord, contextSession *types.Session, plans []types.ToolRunPlan) ([]types.ToolRunPlan, error) {
 	if len(plans) == 0 {
 		return nil, nil
 	}
@@ -145,9 +145,11 @@ func (s *system) waitForConfirmations(ctx context.Context, record *runRecord, pl
 					s.publish(record.runID, "tool_confirmation_rejected", confirmed.Decision)
 				}
 			case runEventAsyncReady:
-				err := asyncToolInterruption(event.taskID)
-				cleanup(err)
-				return nil, err
+				// 异步结果就绪只是数据到达：就地回灌并落盘，不推进也不打断本次等待。
+				if _, err := s.flushAsyncToolResultsDuringConfirmation(ctx, record, contextSession); err != nil {
+					cleanup(err)
+					return nil, err
+				}
 			}
 		case <-ctx.Done():
 			err := runtimeInvalid("run cancelled while waiting for confirmation", ctx.Err())

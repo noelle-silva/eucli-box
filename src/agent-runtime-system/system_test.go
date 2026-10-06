@@ -612,7 +612,8 @@ func TestRunCarriesProducedToolImagesIntoNextModelRequest(t *testing.T) {
 	}
 }
 
-func TestRunCopiesToolExecutionDurationIntoPartResult(t *testing.T) {	fakes := newRuntimeFakes()
+func TestRunCopiesToolExecutionDurationIntoPartResult(t *testing.T) {
+	fakes := newRuntimeFakes()
 	fakes.provider.completeDelay = 20 * time.Millisecond
 	fakes.provider.responses = []types.ModelResponse{
 		{ID: "m1", Content: "", ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader"}}},
@@ -1560,6 +1561,73 @@ func TestRunWaitsForMultipleToolConfirmationsThenExecutesBatch(t *testing.T) {
 	}
 }
 
+// TestSubmitToolConfirmationDoesNotHangWhenRunCancelledConcurrently 覆盖 A2：
+// 运行停在「等待确认」时并发触发「取消运行」与「提交确认」，
+// 投递方必须拿到回执或明确错误而不得永久阻塞，运行也必须落到终态（取消），
+// 不能停在「运行中」或「等待确认」。
+func TestSubmitToolConfirmationDoesNotHangWhenRunCancelledConcurrently(t *testing.T) {
+	for attempt := 0; attempt < 20; attempt++ {
+		fakes := newRuntimeFakes()
+		fakes.provider.responses = []types.ModelResponse{
+			{ID: "m1", Content: "need tool", ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}}}},
+			{ID: "m2", Content: "final"},
+		}
+		fakes.tool.prepareDecision = types.PermissionDecision{ID: "decision-1", ActionID: "intent-1", ToolName: "file-reader", Status: types.PermissionStatusNeedsConfirmation}
+		fakes.tool.confirmedDecision = types.PermissionDecision{ID: "decision-1", ActionID: "intent-1", ToolName: "file-reader", Status: types.PermissionStatusAllowed}
+		// 卡住放行后的工具执行，确保取消先于完成生效，运行必定落到取消终态。
+		executeBlock := make(chan struct{})
+		fakes.tool.executeBlock = executeBlock
+		system := newTestRuntime(t, fakes, Config{})
+		state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use tool"})
+		if err != nil {
+			t.Fatalf("attempt %d: StartRun() error = %v", attempt, err)
+		}
+		waitStatus(t, system, state.ID, types.RunStatusWaitingConfirmation)
+
+		start := make(chan struct{})
+		submitResult := make(chan error, 1)
+		cancelResult := make(chan error, 1)
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			submitResult <- system.SubmitToolConfirmation(context.Background(), types.ToolConfirmation{DecisionID: "decision-1", Approved: true})
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			cancelResult <- system.CancelRun(context.Background(), state.ID)
+		}()
+		close(start)
+
+		select {
+		case err := <-submitResult:
+			// 竞态下允许明确错误；关键是必须返回，不得永久阻塞。
+			if err != nil {
+				t.Logf("attempt %d: SubmitToolConfirmation returned error: %v", attempt, err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatalf("attempt %d: SubmitToolConfirmation blocked forever", attempt)
+		}
+		select {
+		case err := <-cancelResult:
+			if err != nil {
+				t.Fatalf("attempt %d: CancelRun() error = %v", attempt, err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatalf("attempt %d: CancelRun blocked forever", attempt)
+		}
+		wg.Wait()
+		close(executeBlock)
+
+		final := waitRun(t, system, state.ID)
+		if final.Status != types.RunStatusCancelled {
+			t.Fatalf("attempt %d: final status = %s reason=%s", attempt, final.Status, final.Reason)
+		}
+	}
+}
+
 func TestRunPreservesNonErrorToolResultStates(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.responses = []types.ModelResponse{
@@ -1755,6 +1823,66 @@ func TestAsyncToolResultFlushesAfterActiveModelOutput(t *testing.T) {
 	}
 	if strings.TrimSpace(firstFinal.ID) == "" {
 		t.Fatalf("assistant output before async result was overwritten: %#v", session.Messages)
+	}
+	if finalReply.ParentMessageID != asyncResult.ID {
+		t.Fatalf("final reply parent = %q, want async result %q; messages = %#v", finalReply.ParentMessageID, asyncResult.ID, session.Messages)
+	}
+}
+
+func TestAsyncResultReadyDuringConfirmationWaitDoesNotAbandonToolBatch(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{
+		{ID: "m1", Content: "need async tool", ToolIntents: []types.ToolIntent{{ID: "intent-async", ToolName: "file-reader", InvocationMode: types.ToolInvocationModeAsync, Arguments: map[string]any{"path": "async.md"}}}},
+		{ID: "m2", Content: "need confirm and ready", ToolIntents: []types.ToolIntent{
+			{ID: "intent-confirm", ToolName: "file-reader", Arguments: map[string]any{"path": "confirm.md"}},
+			{ID: "intent-ready", ToolName: "file-reader", Arguments: map[string]any{"path": "ready.md"}},
+		}},
+		{ID: "m3", Content: "final after batch"},
+	}
+	fakes.tool.prepareDecisions = map[string]types.PermissionDecision{
+		"intent-confirm": {ID: "decision-confirm", ActionID: "intent-confirm", ToolName: "file-reader", Status: types.PermissionStatusNeedsConfirmation},
+		"intent-ready":   {ID: "decision-ready", ActionID: "intent-ready", ToolName: "file-reader", Status: types.PermissionStatusAllowed},
+	}
+	fakes.tool.confirmedDecision = types.PermissionDecision{ID: "decision-confirm", ActionID: "intent-confirm", ToolName: "file-reader", Status: types.PermissionStatusAllowed}
+	executeBlock := make(chan struct{})
+	fakes.tool.executeBlock = executeBlock
+	system := newTestRuntime(t, fakes, Config{})
+	events, unsubscribe, err := system.Subscribe(context.Background())
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	defer unsubscribe()
+
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use tools"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	waitStatus(t, system, state.ID, types.RunStatusWaitingConfirmation)
+	// 放开异步任务，使其恰好在确认等待期间就绪。
+	close(executeBlock)
+	waitAsyncResultFlushEvent(t, events)
+	if err := system.SubmitToolConfirmation(context.Background(), types.ToolConfirmation{DecisionID: "decision-confirm", Approved: true}); err != nil {
+		t.Fatalf("SubmitToolConfirmation() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	session := fakes.storage.lastSession()
+	if asyncResultMessage(session).ID == "" {
+		t.Fatalf("async result was not flushed into session: %#v", session.Messages)
+	}
+	// 同批次里「需确认」与「就绪」的工具都必须落定，不得留下无结果的悬空部件。
+	for _, callID := range []string{"intent-confirm", "intent-ready"} {
+		part := toolPartByCallIDInSession(session, callID)
+		if part == nil || part.State != "completed" || part.Result == nil {
+			t.Fatalf("tool part %s = %#v; messages = %#v", callID, part, session.Messages)
+		}
+	}
+	asyncResult := asyncResultMessage(session)
+	finalReply := lastAssistantMessage(session)
+	if finalReply.Content != "final after batch" {
+		t.Fatalf("final content = %q", finalReply.Content)
 	}
 	if finalReply.ParentMessageID != asyncResult.ID {
 		t.Fatalf("final reply parent = %q, want async result %q; messages = %#v", finalReply.ParentMessageID, asyncResult.ID, session.Messages)
@@ -2323,6 +2451,52 @@ func completedToolPartCount(message types.Message) int {
 	return count
 }
 
+func toolPartByCallIDInSession(session types.Session, callID string) *types.MessagePart {
+	for _, message := range session.Messages {
+		if part := toolPartByCallID(message, callID); part != nil {
+			return part
+		}
+	}
+	return nil
+}
+
+func asyncResultMessage(session types.Session) types.Message {
+	for _, message := range session.Messages {
+		if message.Type == types.MessageTypeAsyncToolResult {
+			return message
+		}
+	}
+	return types.Message{}
+}
+
+func lastAssistantMessage(session types.Session) types.Message {
+	for index := len(session.Messages) - 1; index >= 0; index-- {
+		if session.Messages[index].Type == "assistant" {
+			return session.Messages[index]
+		}
+	}
+	return types.Message{}
+}
+
+func waitAsyncResultFlushEvent(t *testing.T, events <-chan types.RunEvent) {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case event := <-events:
+			if event.Type != "run_message_update" {
+				continue
+			}
+			payload, ok := event.Payload.(types.RunAssistantMessageUpdate)
+			if ok && payload.Message.Type == types.MessageTypeAsyncToolResult {
+				return
+			}
+		case <-deadline:
+			t.Fatalf("async result flush event was not published")
+		}
+	}
+}
+
 func TestRunContinuesAcrossManyToolRounds(t *testing.T) {
 	fakes := newRuntimeFakes()
 	const rounds = 10
@@ -2432,6 +2606,41 @@ func TestRunFailsWhenDependencyMessageIsExternallyEdited(t *testing.T) {
 		t.Fatalf("session messages after conflict = %#v", session.Messages)
 	}
 	assertNoAssistantUpdateBeforeRunFailed(t, events, state.ID)
+}
+
+func TestRunPanicFallsToFailedAndNotifies(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.panicValue = "boom"
+	system := newTestRuntime(t, fakes, Config{})
+	events, unsubscribe, err := system.Subscribe(context.Background())
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	defer unsubscribe()
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	// 主脑协程在模型调用处崩溃；兜底必须让它按既有失败收口路径落定，绝不留在「运行中」。
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusFailed || !strings.Contains(final.Reason, "panicked") {
+		t.Fatalf("final = %#v", final)
+	}
+	failedEvents := 0
+	deadline := time.After(200 * time.Millisecond)
+	for {
+		select {
+		case event := <-events:
+			if event.RunID == state.ID && event.Type == "run_failed" {
+				failedEvents++
+			}
+		case <-deadline:
+			if failedEvents != 1 {
+				t.Fatalf("run_failed events = %d, want 1", failedEvents)
+			}
+			return
+		}
+	}
 }
 
 func assertNoAssistantUpdateBeforeRunFailed(t *testing.T, events <-chan types.RunEvent, runID string) {
@@ -3272,9 +3481,13 @@ type fakeRuntimeProvider struct {
 	requests            []types.ModelRequest
 	block               chan struct{}
 	err                 error
+	panicValue          any
 }
 
 func (f *fakeRuntimeProvider) Complete(ctx context.Context, request types.ModelRequest) (types.ModelResponse, error) {
+	if f.panicValue != nil {
+		panic(f.panicValue)
+	}
 	if f.completeDelay > 0 {
 		select {
 		case <-time.After(f.completeDelay):
@@ -3325,6 +3538,9 @@ func (f *fakeRuntimeProvider) Complete(ctx context.Context, request types.ModelR
 }
 
 func (f *fakeRuntimeProvider) CompleteStream(ctx context.Context, request types.ModelRequest, onEvent types.ModelStreamHandler) (types.ModelResponse, error) {
+	if f.panicValue != nil {
+		panic(f.panicValue)
+	}
 	if f.block != nil {
 		select {
 		case <-f.block:

@@ -8,7 +8,7 @@ import (
 )
 
 func (s *system) handleToolIntent(ctx context.Context, record *runRecord, intent types.ToolIntent) (types.ToolResult, error) {
-	results, err := s.handleToolIntents(ctx, record, []types.ToolIntent{intent})
+	results, err := s.handleToolIntents(ctx, record, nil, []types.ToolIntent{intent})
 	if err != nil {
 		return types.ToolResult{}, err
 	}

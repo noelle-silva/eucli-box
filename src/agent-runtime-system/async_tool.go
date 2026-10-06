@@ -2,7 +2,6 @@ package agentruntime
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"reflect"
@@ -13,31 +12,11 @@ import (
 	"eucli-box/pkg/utils"
 )
 
-type asyncToolInterruptError struct {
-	taskID string
-}
-
 type asyncContinuationKey struct {
 	roleID      string
 	groupID     string
 	workspaceID string
 	sessionID   string
-}
-
-func (err asyncToolInterruptError) Error() string {
-	if strings.TrimSpace(err.taskID) == "" {
-		return "tool confirmation interrupted by async tool result"
-	}
-	return "tool confirmation interrupted by async tool result: " + err.taskID
-}
-
-func asyncToolInterruption(taskID string) error {
-	return asyncToolInterruptError{taskID: strings.TrimSpace(taskID)}
-}
-
-func isAsyncToolInterruption(err error) bool {
-	var target asyncToolInterruptError
-	return errors.As(err, &target)
 }
 
 func (s *system) acceptAsyncToolEntries(ctx context.Context, record *runRecord, entries []toolRunEntry) error {
@@ -367,7 +346,20 @@ func (s *system) hasActiveAsyncContinuationTarget(key asyncContinuationKey) bool
 	return false
 }
 
+// flushAsyncToolResults 在运行主干的安全点把就绪的异步结果回灌进会话并落盘，
+// 随后开启新一轮模型回复。它只承载「数据到达」：把结果并入会话与模型上下文，
+// 不参与循环推进判断。
 func (s *system) flushAsyncToolResults(ctx context.Context, record *runRecord, contextSession *types.Session) (bool, error) {
+	return s.flushReadyAsyncToolResults(ctx, record, contextSession, types.RunStatusRunning, false)
+}
+
+// flushAsyncToolResultsDuringConfirmation 在确认等待期间就地回灌就绪的异步结果。
+// 等待状态不延迟数据落盘；同时保留当前助手消息锚点，让未决工具批继续落在同一条回复上。
+func (s *system) flushAsyncToolResultsDuringConfirmation(ctx context.Context, record *runRecord, contextSession *types.Session) (bool, error) {
+	return s.flushReadyAsyncToolResults(ctx, record, contextSession, types.RunStatusWaitingConfirmation, true)
+}
+
+func (s *system) flushReadyAsyncToolResults(ctx context.Context, record *runRecord, contextSession *types.Session, status types.RunStatus, preserveAssistant bool) (bool, error) {
 	latest, err := s.loadTaskSession(ctx, types.AsyncToolTask{RoleID: record.roleID, GroupID: record.groupID, WorkspaceID: record.workspaceID, SessionID: record.session.ID})
 	if err == nil {
 		latest = s.recoverAsyncToolTasks(latest)
@@ -381,7 +373,9 @@ func (s *system) flushAsyncToolResults(ctx context.Context, record *runRecord, c
 	flushedMessages := make([]types.Message, 0, len(ready))
 	for _, message := range asyncToolResultMessages(ready) {
 		appendRunMessage(record, message)
-		record.activeAssistantID = ""
+		if !preserveAssistant {
+			record.activeAssistantID = ""
+		}
 		flushedMessages = append(flushedMessages, record.messageParent)
 		if contextSession != nil {
 			*contextSession = appendMessage(*contextSession, record.messageParent)
@@ -399,7 +393,7 @@ func (s *system) flushAsyncToolResults(ctx context.Context, record *runRecord, c
 	if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
 		return false, err
 	}
-	if err := s.saveRunSession(ctx, record, types.RunStatusRunning); err != nil {
+	if err := s.saveRunSession(ctx, record, status); err != nil {
 		return false, err
 	}
 	for _, message := range flushedMessages {

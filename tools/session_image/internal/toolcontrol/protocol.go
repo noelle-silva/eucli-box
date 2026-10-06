@@ -38,17 +38,6 @@ const (
 // CapabilityDeniedMessage 是用户未授权某项能力时的统一失败反馈。
 const CapabilityDeniedMessage = "用户未授权此能力，请前往工具设置页开启能力授权"
 
-// MaxOutputUpdates caps how many output update messages a tool may relay per run.
-const MaxOutputUpdates = 10_000
-
-// MaxCapabilityRequests 限制单次执行中工具可发起的能力请求总数，
-// 与输出更新上限同一防线：失控的工具不能无限打满宿主。
-const MaxCapabilityRequests = 10_000
-
-// MaxCapabilityConcurrency 限制宿主同时处理的能力请求数；
-// 超出的请求在队列中等待服务，而不是被丢弃。
-const MaxCapabilityConcurrency = 16
-
 type Message struct {
 	Version    int             `json:"version"`
 	Type       string          `json:"type"`
@@ -61,13 +50,6 @@ type Message struct {
 	Status     string          `json:"status,omitempty"`
 	Error      string          `json:"error,omitempty"`
 	Update     *OutputUpdate   `json:"update,omitempty"`
-}
-
-// CapabilityRequest 是宿主收到的一次运行时能力请求。
-type CapabilityRequest struct {
-	Capability string
-	Access     string
-	Payload    json.RawMessage
 }
 
 // CapabilityResult 是宿主对一次能力请求的裁决与响应数据。
@@ -92,13 +74,6 @@ func newToken() (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
-func validateHello(message Message, expectedToken string) error {
-	if message.Version != ProtocolVersion || message.Type != MessageHello || message.Token == "" || message.Token != expectedToken {
-		return errInvalidMessage
-	}
-	return nil
-}
-
 func validateReady(message Message, expectedToken string) error {
 	if message.Version != ProtocolVersion || message.Type != MessageReady || message.Token == "" || message.Token != expectedToken || message.Sequence != 0 {
 		return errInvalidMessage
@@ -108,30 +83,6 @@ func validateReady(message Message, expectedToken string) error {
 
 func validatePing(message Message, expectedToken string) error {
 	if message.Version != ProtocolVersion || message.Type != MessagePing || message.Token == "" || message.Token != expectedToken || message.Sequence == 0 {
-		return errInvalidMessage
-	}
-	return nil
-}
-
-func validatePong(message Message, expectedToken string, expectedSequence uint64) error {
-	if message.Version != ProtocolVersion || message.Type != MessagePong || message.Token == "" || message.Token != expectedToken || message.Sequence != expectedSequence {
-		return errInvalidMessage
-	}
-	return nil
-}
-
-func validateOutputUpdate(message Message, expectedToken string) error {
-	if message.Version != ProtocolVersion || message.Type != MessageOutputUpdate || message.Token == "" || message.Token != expectedToken || message.Sequence == 0 || message.Update == nil {
-		return errInvalidMessage
-	}
-	return nil
-}
-
-func validateCapabilityRequest(message Message, expectedToken string) error {
-	if message.Version != ProtocolVersion || message.Type != MessageCapabilityRequest || message.Token == "" || message.Token != expectedToken {
-		return errInvalidMessage
-	}
-	if strings.TrimSpace(message.RequestID) == "" || strings.TrimSpace(message.Capability) == "" || strings.TrimSpace(message.Access) == "" {
 		return errInvalidMessage
 	}
 	return nil

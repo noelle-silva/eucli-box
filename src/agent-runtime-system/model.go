@@ -60,6 +60,7 @@ func (s *system) callModelWithRetry(ctx context.Context, record *runRecord, requ
 		if err := ctx.Err(); err != nil {
 			return types.ModelResponse{}, err
 		}
+		rollback := captureAssistantRollback(record)
 		response, err := s.callModelOnce(ctx, record, request)
 		if err == nil {
 			_, _ = s.setRunRetry(record.runID, nil)
@@ -76,6 +77,12 @@ func (s *system) callModelWithRetry(ctx context.Context, record *runRecord, requ
 			_, _ = s.setRunRetry(record.runID, nil)
 			return types.ModelResponse{}, err
 		}
+		// 重试前先把上一次失败尝试写进本条助手消息的正文、思考与工具片段回滚干净，
+		// 让本次重试只保留自己的真实产出，不与失败残留拼接。
+		if err := s.rollbackAssistantOutput(ctx, record, rollback); err != nil {
+			_, _ = s.setRunRetry(record.runID, nil)
+			return types.ModelResponse{}, err
+		}
 		retry := newRunRetryInfo(nextAttempt, maxAttempts, decision.Delay, retryMessage(nextAttempt, maxAttempts, decision.Message), failure)
 		if state, setErr := s.setRunRetry(record.runID, retry); setErr == nil {
 			s.publish(record.runID, "run_retrying", state)
@@ -86,6 +93,73 @@ func (s *system) callModelWithRetry(ctx context.Context, record *runRecord, requ
 			return types.ModelResponse{}, err
 		}
 	}
+}
+
+// assistantRollback 记录一次模型尝试开始前助手消息的状态；
+// 重试时据此把失败尝试写进该消息的产出回滚到尝试前的状态。
+type assistantRollback struct {
+	messageID string
+	message   types.Message
+	existed   bool
+}
+
+func captureAssistantRollback(record *runRecord) assistantRollback {
+	messageID := strings.TrimSpace(record.activeAssistantID)
+	if messageID == "" {
+		return assistantRollback{}
+	}
+	message, ok := messageByID(record.session.Messages, messageID)
+	if !ok || message.Type != "assistant" {
+		return assistantRollback{}
+	}
+	return assistantRollback{messageID: messageID, message: cloneRunMessageSnapshot(message), existed: true}
+}
+
+// rollbackAssistantOutput 把上一次失败尝试写进本条助手消息的正文、思考与工具片段
+// 回滚到尝试前的状态。只作用于本条助手消息，不牵动其它消息与已落定的历史。
+// 若该消息在尝试前并不存在，则清空其产出但保留消息本体，
+// 使紧随其后的重试写回同一条消息，客户端无需新增删除逻辑。
+func (s *system) rollbackAssistantOutput(ctx context.Context, record *runRecord, rollback assistantRollback) error {
+	messageID := strings.TrimSpace(record.activeAssistantID)
+	if messageID == "" {
+		return nil
+	}
+	index := sessionMessageIndex(record.session.Messages, messageID)
+	if index < 0 || record.session.Messages[index].Type != "assistant" {
+		return nil
+	}
+	if rollback.existed && rollback.messageID == messageID {
+		record.session.Messages[index] = cloneRunMessageSnapshot(rollback.message)
+	} else {
+		clearAssistantOutput(&record.session.Messages[index])
+	}
+	now := nowUTC()
+	message := record.session.Messages[index]
+	message.UpdatedAt = now
+	message.TokenEstimate = types.EstimateMessageTokenCount(message)
+	record.session.Messages[index] = message
+	record.messageParent = message
+	record.lastMessageID = message.ID
+	record.session.UpdatedAt = now
+	record.session.LastActive = now
+	return s.saveRunSession(ctx, record, types.RunStatusRunning)
+}
+
+func clearAssistantOutput(message *types.Message) {
+	message.Content = ""
+	message.Parts = nil
+	message.Attachments = nil
+	message.ModelDurationMs = 0
+}
+
+func sessionMessageIndex(messages []types.Message, messageID string) int {
+	messageID = strings.TrimSpace(messageID)
+	for index := range messages {
+		if strings.TrimSpace(messages[index].ID) == messageID {
+			return index
+		}
+	}
+	return -1
 }
 
 func sleepModelRetry(ctx context.Context, delay time.Duration) error {
@@ -356,4 +430,3 @@ func promptImages(images []types.PromptToolImage) []types.PromptImage {
 	}
 	return out
 }
-

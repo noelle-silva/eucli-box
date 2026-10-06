@@ -795,6 +795,46 @@ func TestModelRetryWaitingCanBeCancelled(t *testing.T) {
 	}
 }
 
+// TestStreamRetryRollsBackFailedAttemptOutput 钉住 B4：
+// 流式首次尝试先产出正文再失败，重试只返回工具调用时，
+// 上一次失败尝试写进助手消息的正文必须被回滚干净，不得与本次产出拼在同一条消息上。
+func TestStreamRetryRollsBackFailedAttemptOutput(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.streamEventsBatches = [][]types.ModelStreamEvent{
+		{{Type: types.ModelStreamEventContentDelta, ContentDelta: "stale draft", Content: "stale draft", CreatedAt: time.Now().UTC()}},
+		{},
+		{{Type: types.ModelStreamEventContentDelta, ContentDelta: "final", Content: "final", CreatedAt: time.Now().UTC()}},
+	}
+	fakes.provider.streamPostErrors = []error{retryableProviderServiceError("upstream temporarily busy", "1"), nil, nil}
+	fakes.provider.streamResponses = []types.ModelResponse{
+		{ID: "m1"},
+		{ID: "m2", ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}}}},
+		{ID: "m3", Content: "final"},
+	}
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hi", Stream: types.BoolPtr(true)})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	if got := fakes.provider.callCount(); got != 3 {
+		t.Fatalf("model call count = %d, want 3", got)
+	}
+	session := fakes.storage.lastSession()
+	for _, message := range session.Messages {
+		if strings.Contains(message.Content, "stale draft") {
+			t.Fatalf("failed attempt residue leaked into stored session: %#v", session.Messages)
+		}
+	}
+	part := toolPartByCallIDInSession(session, "intent-1")
+	if part == nil || part.State != "completed" || part.Result == nil {
+		t.Fatalf("tool part = %#v; messages = %#v", part, session.Messages)
+	}
+}
+
 func TestStartRunFromUserMessageAppendsAssistantSibling(t *testing.T) {
 	fakes := newRuntimeFakes()
 	now := time.Now().UTC()
@@ -3473,6 +3513,7 @@ type fakeRuntimeProvider struct {
 	streamResponse      types.ModelResponse
 	streamResponses     []types.ModelResponse
 	streamErrors        []error
+	streamPostErrors    []error
 	callBlocks          []chan struct{}
 	alwaysTool          bool
 	completeDelay       time.Duration
@@ -3578,6 +3619,11 @@ func (f *fakeRuntimeProvider) CompleteStream(ctx context.Context, request types.
 		events = append([]types.ModelStreamEvent(nil), f.streamEventsBatches[0]...)
 		f.streamEventsBatches = f.streamEventsBatches[1:]
 	}
+	var postErr error
+	if len(f.streamPostErrors) > 0 {
+		postErr = f.streamPostErrors[0]
+		f.streamPostErrors = f.streamPostErrors[1:]
+	}
 	eventGap := f.streamEventGap
 	response := f.streamResponse
 	if len(f.streamResponses) > 0 {
@@ -3601,6 +3647,9 @@ func (f *fakeRuntimeProvider) CompleteStream(ctx context.Context, request types.
 				return types.ModelResponse{}, err
 			}
 		}
+	}
+	if postErr != nil {
+		return types.ModelResponse{}, postErr
 	}
 	return response, nil
 }

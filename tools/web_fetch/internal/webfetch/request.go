@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/web_fetch/internal/types"
 )
 
 // fetchRequest 是一次抓取动作的输入参数。

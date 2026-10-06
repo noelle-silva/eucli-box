@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/web_fetch/internal/types"
 )
 
 func TestIsBlockedStatus(t *testing.T) {

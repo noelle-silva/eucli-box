@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/web_fetch/internal/types"
 )
 
 func writeConfig(t *testing.T) string {

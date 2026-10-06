@@ -8,8 +8,8 @@ import (
 	"io"
 	"os"
 
-	"eucli-box/pkg/toolcontrol"
-	"eucli-box/pkg/types"
+	"eucli-box/tools/web_fetch/internal/toolcontrol"
+	"eucli-box/tools/web_fetch/internal/types"
 	webfetch "eucli-box/tools/web_fetch/internal/webfetch"
 )
 

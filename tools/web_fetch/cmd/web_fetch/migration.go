@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"eucli-box/pkg/toolcontrol"
-	"eucli-box/pkg/types"
+	"eucli-box/tools/web_fetch/internal/toolcontrol"
+	"eucli-box/tools/web_fetch/internal/types"
 	"eucli-box/tools/web_fetch/internal/datamigration"
 )
 

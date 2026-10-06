@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/web_fetch/internal/types"
 )
 
 func TestDataMigrationModeInitializesDataVersion(t *testing.T) {

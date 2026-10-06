@@ -10,7 +10,7 @@ import (
 	"context"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/web_fetch/internal/types"
 )
 
 // Execute 执行一次抓取动作。

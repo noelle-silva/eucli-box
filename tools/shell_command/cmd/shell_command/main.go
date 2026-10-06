@@ -10,8 +10,8 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"eucli-box/pkg/toolcontrol"
-	"eucli-box/pkg/types"
+	"eucli-box/tools/shell_command/internal/toolcontrol"
+	"eucli-box/tools/shell_command/internal/types"
 	shellcommand "eucli-box/tools/shell_command/internal/shellcommand"
 )
 

@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/shell_command/internal/types"
 )
 
 type commandRequest struct {

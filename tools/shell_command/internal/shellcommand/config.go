@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/shell_command/internal/types"
 )
 
 type Config struct {

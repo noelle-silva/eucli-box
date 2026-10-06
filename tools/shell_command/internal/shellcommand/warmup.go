@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/shell_command/internal/types"
 )
 
 // WarmupCommand 是预热专用的固定无害命令：让 Provider shell 启动、加载依赖并立即退出，

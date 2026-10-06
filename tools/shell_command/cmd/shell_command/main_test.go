@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/shell_command/internal/types"
 )
 
 func TestExecutableRunsProviderWithUTF8EnvironmentAndOutput(t *testing.T) {

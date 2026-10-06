@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/shell_command/internal/types"
 )
 
 func resolveWorkdir(hostWorkingDirectory string, requestedWorkdir string) (string, error) {

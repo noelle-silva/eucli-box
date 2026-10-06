@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/hypercortex_reader/internal/types"
 )
 
 // stringArg 读取字符串参数；required 为真时空值快速失败。

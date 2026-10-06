@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/hypercortex_reader/internal/types"
 )
 
 // runSearchNotes 搜索笔记：关键词、匹配维度、面类型、收藏夹范围、更新时间范围与分页

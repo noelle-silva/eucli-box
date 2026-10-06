@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/hypercortex_reader/internal/types"
 )
 
 func userConfigInput(t *testing.T, payload string) types.ToolExecutionInput {

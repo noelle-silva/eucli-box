@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/hypercortex_reader/internal/types"
 )
 
 // Config 是随包静态配置（config.json）的读取视图。

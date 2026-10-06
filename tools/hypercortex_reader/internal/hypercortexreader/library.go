@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/hypercortex_reader/internal/types"
 )
 
 // runListFavorites 查看收藏夹结构与其内容。

@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/hypercortex_reader/internal/types"
 )
 
 // Execute 执行一次工具动作。

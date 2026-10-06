@@ -12,7 +12,7 @@ import (
 	"sync"
 	"testing"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/hypercortex_reader/internal/types"
 )
 
 type recordedCall struct {

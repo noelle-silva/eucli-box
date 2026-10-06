@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/hypercortex_reader/internal/types"
 )
 
 // runSearchAssets 搜索附件：文本维度、类型、大小、更新时间范围与分页都是同一个接口的参数；

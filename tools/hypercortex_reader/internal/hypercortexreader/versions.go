@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"eucli-box/pkg/types"
+	"eucli-box/tools/hypercortex_reader/internal/types"
 )
 
 // runListVersions 列出某篇笔记的版本快照（按发布时间倒序）：版本 id、提交名与发布时间。

@@ -3,6 +3,7 @@ package agentruntime
 import (
 	"context"
 	"sync"
+	"time"
 
 	"eucli-box/pkg/types"
 )
@@ -85,7 +86,9 @@ type system struct {
 	asyncTasks         map[string]types.AsyncToolTask
 	asyncContinuations map[asyncContinuationKey]struct{}
 	publishedMu        sync.Mutex
-	publishedMessages  map[string]publishedMessageState
+	// publishedMessages 是各助手消息上一次已发布内容的基线，按产生它的运行归属：
+	// 运行收口即整体释放，不与运行记录的有界保留挂钩。
+	publishedMessages map[string]map[string]publishedMessageState
 }
 
 type runRecord struct {
@@ -95,6 +98,7 @@ type runRecord struct {
 	workspaceID                 string
 	state                       types.RunState
 	session                     types.Session
+	terminalAt                  time.Time
 	messageParent               types.Message
 	inputMessageID              string
 	lastMessageID               string

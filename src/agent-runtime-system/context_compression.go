@@ -120,17 +120,19 @@ func (s *system) continueCompactRun(ctx context.Context, record *runRecord, cont
 	if err != nil {
 		return
 	}
-	s.publish(record.runID, "run_completed", state)
+	s.publish(eventSourceFromRecord(record), "run_completed", state)
+	s.finalizeRun(record)
 }
 
 func (s *system) failCommandRun(record *runRecord, err error) {
+	defer s.finalizeRun(record)
 	reason, payload := runFailureFromError(err, "")
 	state, updateErr := s.updateRunWithError(record.runID, types.RunStatusFailed, reason, payload)
 	if updateErr != nil {
-		s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: reason, Error: cloneErrorPayload(payload)})
+		s.publish(eventSourceFromRecord(record), "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: reason, Error: cloneErrorPayload(payload)})
 		return
 	}
-	s.publish(record.runID, "run_failed", state)
+	s.publish(eventSourceFromRecord(record), "run_failed", state)
 }
 
 func buildContextCompressionPlan(contextSession types.Session, retainRecentMessages int) (contextCompressionPlan, error) {

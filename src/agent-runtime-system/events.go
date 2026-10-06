@@ -170,13 +170,32 @@ func (s *system) Subscribe(ctx context.Context) (<-chan types.RunEvent, func(), 
 	return sub.out, unsubscribe, nil
 }
 
-func (s *system) publish(runID string, eventType string, payload any) {
-	event := types.RunEvent{ID: utils.NewID("event"), RunID: runID, Type: eventType, Payload: payload, CreatedAt: time.Now().UTC()}
-	s.mu.Lock()
-	if record, ok := s.runs[runID]; ok && record != nil {
-		event.GroupID = record.groupID
-		event.WorkspaceID = record.workspaceID
+// eventSource 是一条事件自带的身份：事件归属由事件源自带，不依赖运行记录是否仍在内存，
+// 因此运行记录可以安全回收，晚到的异步事件仍能确定自己的运行、群组与工作区。
+type eventSource struct {
+	runID       string
+	groupID     string
+	workspaceID string
+}
+
+func eventSourceFromRecord(record *runRecord) eventSource {
+	if record == nil {
+		return eventSource{}
 	}
+	return eventSource{runID: record.runID, groupID: record.groupID, workspaceID: record.workspaceID}
+}
+
+func eventSourceFromAsyncTask(task types.AsyncToolTask) eventSource {
+	return eventSource{runID: task.RunID, groupID: task.GroupID, workspaceID: task.WorkspaceID}
+}
+
+func eventSourceFromToolOutput(output toolOutputContext) eventSource {
+	return eventSource{runID: output.runID, groupID: output.groupID, workspaceID: output.workspaceID}
+}
+
+func (s *system) publish(source eventSource, eventType string, payload any) {
+	event := types.RunEvent{ID: utils.NewID("event"), RunID: source.runID, GroupID: source.groupID, WorkspaceID: source.workspaceID, Type: eventType, Payload: payload, CreatedAt: time.Now().UTC()}
+	s.mu.Lock()
 	subs := make([]*eventSubscriber, 0, len(s.subscribers))
 	for sub := range s.subscribers {
 		subs = append(subs, sub)
@@ -192,7 +211,7 @@ func (s *system) publishAssistantMessageUpdate(record *runRecord) {
 	if !ok {
 		return
 	}
-	s.recordPublishedMessage(message)
+	s.recordPublishedMessage(record, message)
 	s.publishRunMessageUpdate(record, "assistant_message_update", message)
 }
 
@@ -206,16 +225,21 @@ type publishedMessageState struct {
 	parts     map[string]types.MessagePart
 }
 
-func (s *system) recordPublishedMessage(message types.Message) {
+func (s *system) recordPublishedMessage(record *runRecord, message types.Message) {
 	mid := strings.TrimSpace(message.ID)
-	if mid == "" {
+	if mid == "" || record == nil {
 		return
 	}
 	s.publishedMu.Lock()
 	if s.publishedMessages == nil {
-		s.publishedMessages = map[string]publishedMessageState{}
+		s.publishedMessages = map[string]map[string]publishedMessageState{}
 	}
-	s.publishedMessages[mid] = publishedMessageSnapshot(message)
+	byRun := s.publishedMessages[record.runID]
+	if byRun == nil {
+		byRun = map[string]publishedMessageState{}
+		s.publishedMessages[record.runID] = byRun
+	}
+	byRun[mid] = publishedMessageSnapshot(message)
 	s.publishedMu.Unlock()
 }
 
@@ -247,11 +271,16 @@ func (s *system) publishAssistantMessageDelta(record *runRecord) {
 	}
 	s.publishedMu.Lock()
 	if s.publishedMessages == nil {
-		s.publishedMessages = map[string]publishedMessageState{}
+		s.publishedMessages = map[string]map[string]publishedMessageState{}
 	}
-	prev := s.publishedMessages[mid]
+	byRun := s.publishedMessages[record.runID]
+	if byRun == nil {
+		byRun = map[string]publishedMessageState{}
+		s.publishedMessages[record.runID] = byRun
+	}
+	prev := byRun[mid]
 	next := publishedMessageSnapshot(message)
-	s.publishedMessages[mid] = next
+	byRun[mid] = next
 	s.publishedMu.Unlock()
 
 	contentDelta := ""
@@ -307,7 +336,7 @@ func (s *system) publishAssistantMessageDelta(record *runRecord) {
 		PartsDelta:         partsDelta,
 		CreatedAt:          time.Now().UTC(),
 	}
-	s.publish(record.runID, "assistant_message_delta", payload)
+	s.publish(eventSourceFromRecord(record), "assistant_message_delta", payload)
 }
 
 func changedToolParts(prev map[string]types.MessagePart, next map[string]types.MessagePart) []types.MessagePart {
@@ -351,7 +380,7 @@ func assistantReasoningSource(message types.Message) string {
 func (s *system) publishRunMessageUpdate(record *runRecord, eventType string, message types.Message) {
 	state, _ := s.getRunState(record.runID)
 	now := time.Now().UTC()
-	s.publish(record.runID, eventType, types.RunAssistantMessageUpdate{RunID: record.runID, RoleID: record.roleID, GroupID: record.groupID, WorkspaceID: record.workspaceID, SessionID: record.session.ID, Stream: record.stream, Status: state.Status, Reason: state.Reason, Retry: cloneRunRetryInfo(state.Retry), Error: cloneErrorPayload(state.Error), Message: cloneRunMessageSnapshot(message), CreatedAt: now})
+	s.publish(eventSourceFromRecord(record), eventType, types.RunAssistantMessageUpdate{RunID: record.runID, RoleID: record.roleID, GroupID: record.groupID, WorkspaceID: record.workspaceID, SessionID: record.session.ID, Stream: record.stream, Status: state.Status, Reason: state.Reason, Retry: cloneRunRetryInfo(state.Retry), Error: cloneErrorPayload(state.Error), Message: cloneRunMessageSnapshot(message), CreatedAt: now})
 }
 
 // toolOutputContext 是工具实时输出广播所需的只读身份快照。
@@ -397,7 +426,7 @@ func (s *system) publishToolOutputUpdate(output toolOutputContext, entry toolRun
 		Preview:     update.Preview,
 		CreatedAt:   time.Now().UTC(),
 	}
-	s.publish(output.runID, "tool_output_update", payload)
+	s.publish(eventSourceFromToolOutput(output), "tool_output_update", payload)
 }
 
 func currentRunAssistantMessage(record *runRecord) (types.Message, bool) {

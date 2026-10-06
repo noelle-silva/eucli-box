@@ -34,7 +34,7 @@ func (s *system) acceptAsyncToolEntries(ctx context.Context, record *runRecord, 
 		if err := s.saveRunSession(ctx, record, types.RunStatusRunning); err != nil {
 			return err
 		}
-		s.publishAsyncToolTaskUpdate(record.runID, task)
+		s.publishAsyncToolTaskUpdate(task)
 		s.publishAssistantMessageDelta(record)
 		go s.executeAsyncToolTask(task)
 	}
@@ -90,7 +90,7 @@ func (s *system) executeAsyncToolTask(task types.AsyncToolTask) {
 	task.Status = types.AsyncToolTaskStatusRunning
 	task.StartedAt = time.Now().UTC()
 	s.upsertRuntimeAsyncToolTask(task)
-	s.publishAsyncToolTaskUpdate(task.RunID, task)
+	s.publishAsyncToolTaskUpdate(task)
 
 	result, err := s.tools.Execute(context.Background(), task.Plan)
 	task.FinishedAt = time.Now().UTC()
@@ -108,7 +108,7 @@ func (s *system) executeAsyncToolTask(task types.AsyncToolTask) {
 	}
 	task.Result = &result
 	s.upsertRuntimeAsyncToolTask(task)
-	s.publishAsyncToolTaskUpdate(task.RunID, task)
+	s.publishAsyncToolTaskUpdate(task)
 	s.notifyAsyncToolReady(task)
 }
 
@@ -381,25 +381,41 @@ func (s *system) flushReadyAsyncToolResults(ctx context.Context, record *runReco
 			*contextSession = appendMessage(*contextSession, record.messageParent)
 		}
 	}
+	completed := make([]types.AsyncToolTask, 0, len(ready))
 	for _, task := range ready {
 		task.Status = types.AsyncToolTaskStatusCompleted
 		task.CompletedAt = time.Now().UTC()
 		record.session.AsyncToolTasks = upsertAsyncToolTask(record.session.AsyncToolTasks, task)
-		s.mu.Lock()
-		s.asyncTasks[task.ID] = task
-		s.mu.Unlock()
-		s.publishAsyncToolTaskUpdate(record.runID, task)
+		completed = append(completed, task)
 	}
 	if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
 		return false, err
 	}
+	// 顺序固定为「落盘 → 广播 → 回收」：落盘成功回灌才算成立，失败则运行期登记原样保留，
+	// 等待后续运行重试，绝不丢结果。
 	if err := s.saveRunSession(ctx, record, status); err != nil {
 		return false, err
 	}
 	for _, message := range flushedMessages {
 		s.publishRunMessageUpdate(record, "run_message_update", message)
 	}
+	for _, task := range completed {
+		s.publishAsyncToolTaskUpdate(task)
+		s.reclaimAsyncToolTask(task.ID)
+	}
 	return true, nil
+}
+
+// reclaimAsyncToolTask 回收一条已完成回灌的异步任务运行期登记；
+// 权威副本已在会话存储，内存登记删除不影响查询与恢复。
+func (s *system) reclaimAsyncToolTask(taskID string) {
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return
+	}
+	s.mu.Lock()
+	delete(s.asyncTasks, taskID)
+	s.mu.Unlock()
 }
 
 func readyAsyncToolTasks(tasks []types.AsyncToolTask) []types.AsyncToolTask {
@@ -463,8 +479,8 @@ func mergeRuntimeAsyncToolTasks(left []types.AsyncToolTask, right []types.AsyncT
 	return left
 }
 
-func (s *system) publishAsyncToolTaskUpdate(runID string, task types.AsyncToolTask) {
-	s.publish(runID, "async_tool_task_update", task)
+func (s *system) publishAsyncToolTaskUpdate(task types.AsyncToolTask) {
+	s.publish(eventSourceFromAsyncTask(task), "async_tool_task_update", task)
 }
 
 func (s *system) ListAsyncToolTasks(ctx context.Context, query types.AsyncToolTaskQuery) ([]types.AsyncToolTask, error) {

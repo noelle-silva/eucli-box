@@ -85,7 +85,7 @@ func (s *system) callModelWithRetry(ctx context.Context, record *runRecord, requ
 		}
 		retry := newRunRetryInfo(nextAttempt, maxAttempts, decision.Delay, retryMessage(nextAttempt, maxAttempts, decision.Message), failure)
 		if state, setErr := s.setRunRetry(record.runID, retry); setErr == nil {
-			s.publish(record.runID, "run_retrying", state)
+			s.publish(eventSourceFromRecord(record), "run_retrying", state)
 			s.publishAssistantMessageUpdate(record)
 		}
 		if err := sleepModelRetry(ctx, decision.Delay); err != nil {

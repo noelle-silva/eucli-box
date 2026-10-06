@@ -96,7 +96,7 @@ func (s *system) waitForConfirmations(ctx context.Context, record *runRecord, co
 	}
 	s.publishAssistantMessageUpdate(record)
 	for _, plan := range plans {
-		s.publish(record.runID, "tool_confirmation_required", plan)
+		s.publish(eventSourceFromRecord(record), "tool_confirmation_required", plan)
 	}
 	confirmedByDecisionID := make(map[string]types.ToolRunPlan, len(plans))
 	for len(confirmedByDecisionID) < len(plans) {
@@ -140,9 +140,9 @@ func (s *system) waitForConfirmations(ctx context.Context, record *runRecord, co
 				if confirmed.PlanStatus == types.ToolPlanStatusNeedsConfirmation {
 					// The next waiting prompt is published after it is registered as pending.
 				} else if confirmed.Decision.Status == types.PermissionStatusAllowed {
-					s.publish(record.runID, "tool_confirmation_applied", confirmed.Decision)
+					s.publish(eventSourceFromRecord(record), "tool_confirmation_applied", confirmed.Decision)
 				} else {
-					s.publish(record.runID, "tool_confirmation_rejected", confirmed.Decision)
+					s.publish(eventSourceFromRecord(record), "tool_confirmation_rejected", confirmed.Decision)
 				}
 			case runEventAsyncReady:
 				// 异步结果就绪只是数据到达：就地回灌并落盘，不推进也不打断本次等待。

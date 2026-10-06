@@ -112,7 +112,7 @@ func (s *system) startRun(ctx context.Context, record *runRecord, request types.
 	if err != nil {
 		return state, types.Session{}, err
 	}
-	s.publish(record.runID, "run_started", state)
+	s.publish(eventSourceFromRecord(record), "run_started", state)
 	compactRun := record.commandName == compactCommandName
 	session, err := s.loadOrCreateSession(ctx, request)
 	if err != nil {
@@ -267,7 +267,7 @@ func (s *system) continueRun(ctx context.Context, record *runRecord, contextSess
 		if assistantOutputRecorded {
 			contextSession = appendMessage(contextSession, assistantParent)
 		}
-		s.publish(record.runID, "model_output", modelResponse)
+		s.publish(eventSourceFromRecord(record), "model_output", modelResponse)
 		if err := s.saveRunSession(ctx, record, types.RunStatusRunning); err != nil {
 			s.failRun(context.Background(), record, record.session, err)
 			return
@@ -509,10 +509,11 @@ func upsertSessionMessage(session types.Session, message types.Message) types.Se
 }
 
 func (s *system) completeRun(ctx context.Context, record *runRecord, session types.Session) {
+	defer s.finalizeRun(record)
 	if err := s.saveRunSession(ctx, record, types.RunStatusCompleted); err != nil {
 		reason, payload := runFailureFromError(err, "save session failed: "+err.Error())
 		state, _ := s.updateRunWithError(record.runID, types.RunStatusFailed, reason, payload)
-		s.publish(record.runID, "run_failed", state)
+		s.publish(eventSourceFromRecord(record), "run_failed", state)
 		return
 	}
 	state, err := s.updateRun(record.runID, types.RunStatusCompleted, "")
@@ -520,7 +521,7 @@ func (s *system) completeRun(ctx context.Context, record *runRecord, session typ
 		return
 	}
 	s.publishAssistantMessageUpdate(record)
-	s.publish(record.runID, "run_completed", state)
+	s.publish(eventSourceFromRecord(record), "run_completed", state)
 }
 
 func (s *system) failRun(ctx context.Context, record *runRecord, session types.Session, err error) {
@@ -534,6 +535,7 @@ func (s *system) failRunMessage(ctx context.Context, record *runRecord, session 
 }
 
 func (s *system) failRunWithPayload(ctx context.Context, record *runRecord, session types.Session, reason string, payload *types.ErrorPayload) {
+	defer s.finalizeRun(record)
 	state, err := s.updateRunWithError(record.runID, types.RunStatusFailed, reason, payload)
 	if err != nil {
 		if session.ID != "" {
@@ -541,7 +543,7 @@ func (s *system) failRunWithPayload(ctx context.Context, record *runRecord, sess
 			_ = s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID)
 			_ = s.saveRunSession(ctx, record, types.RunStatus(session.Status))
 		}
-		s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, InputMessageID: record.inputMessageID, LastMessageID: record.lastMessageID, Status: types.RunStatusFailed, Reason: reason, Error: cloneErrorPayload(payload)})
+		s.publish(eventSourceFromRecord(record), "run_failed", types.RunState{ID: record.runID, InputMessageID: record.inputMessageID, LastMessageID: record.lastMessageID, Status: types.RunStatusFailed, Reason: reason, Error: cloneErrorPayload(payload)})
 		return
 	}
 	if session.ID != "" {
@@ -556,7 +558,7 @@ func (s *system) failRunWithPayload(ctx context.Context, record *runRecord, sess
 		messagesSaved, saveErr := s.saveRunSessionWithStatusFallback(ctx, record, types.RunStatusFailed)
 		if saveErr != nil {
 			saveReason, savePayload := runFailureFromError(saveErr, "save session failed: "+saveErr.Error())
-			s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: saveReason, Error: cloneErrorPayload(savePayload)})
+			s.publish(eventSourceFromRecord(record), "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: saveReason, Error: cloneErrorPayload(savePayload)})
 			return
 		}
 		if messagesSaved {
@@ -565,20 +567,22 @@ func (s *system) failRunWithPayload(ctx context.Context, record *runRecord, sess
 	} else {
 		s.publishAssistantMessageUpdate(record)
 	}
-	s.publish(record.runID, "run_failed", state)
+	s.publish(eventSourceFromRecord(record), "run_failed", state)
 }
 
 func (s *system) failRunStateOnly(record *runRecord, err error) {
+	defer s.finalizeRun(record)
 	reason, payload := runFailureFromError(err, "")
 	state, updateErr := s.updateRunWithError(record.runID, types.RunStatusFailed, reason, payload)
 	if updateErr != nil {
-		s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: reason, Error: cloneErrorPayload(payload)})
+		s.publish(eventSourceFromRecord(record), "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: reason, Error: cloneErrorPayload(payload)})
 		return
 	}
-	s.publish(record.runID, "run_failed", state)
+	s.publish(eventSourceFromRecord(record), "run_failed", state)
 }
 
 func (s *system) cancelRunRecord(ctx context.Context, record *runRecord, session types.Session) {
+	defer s.finalizeRun(record)
 	state, err := s.updateRun(record.runID, types.RunStatusCancelled, "cancelled")
 	if err != nil {
 		return
@@ -595,14 +599,47 @@ func (s *system) cancelRunRecord(ctx context.Context, record *runRecord, session
 		var saveErr error
 		messagesSaved, saveErr = s.saveRunSessionWithStatusFallback(ctx, record, types.RunStatusCancelled)
 		if saveErr != nil {
-			s.publish(record.runID, "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: "save session failed: " + saveErr.Error()})
+			s.publish(eventSourceFromRecord(record), "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: "save session failed: " + saveErr.Error()})
 			return
 		}
 	}
 	if messagesSaved || session.ID == "" {
 		s.publishAssistantMessageUpdate(record)
 	}
-	s.publish(record.runID, "run_cancelled", state)
+	s.publish(eventSourceFromRecord(record), "run_cancelled", state)
+}
+
+// terminalRunRetention 是运行进入终态后的内存保留窗口：
+// 终态运行记录不再参与调度，只在窗口内保留供短时查询，超界由既有锁内的惰性回收删除。
+const terminalRunRetention = 10 * time.Minute
+
+// finalizeRun 是运行收口的统一终结步骤：在所有终态出口完成「终态落定、会话落盘、终态事件发布」
+// 之后调用，释放本运行的运行期派生内存，并让运行记录进入有界保留。
+// 它只删内存，绝不动会话；不新增回收器、定时器或后台扫描。
+func (s *system) finalizeRun(record *runRecord) {
+	if record == nil {
+		return
+	}
+	s.publishedMu.Lock()
+	delete(s.publishedMessages, record.runID)
+	s.publishedMu.Unlock()
+	s.mu.Lock()
+	record.terminalAt = nowUTC()
+	s.reclaimTerminalRunsLocked()
+	s.mu.Unlock()
+}
+
+// reclaimTerminalRunsLocked 在既有锁内惰性回收超出保留窗口的终态运行记录。
+func (s *system) reclaimTerminalRunsLocked() {
+	now := nowUTC()
+	for runID, record := range s.runs {
+		if record == nil || isActiveRunStatus(record.state.Status) || record.terminalAt.IsZero() {
+			continue
+		}
+		if now.Sub(record.terminalAt) >= terminalRunRetention {
+			delete(s.runs, runID)
+		}
+	}
 }
 
 func nowUTC() time.Time {

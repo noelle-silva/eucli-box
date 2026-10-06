@@ -49,7 +49,7 @@ func (s *system) handleToolIntents(ctx context.Context, record *runRecord, conte
 			continue
 		}
 		entries[index].Plan = plan
-		s.publish(record.runID, "tool_requested", plan)
+		s.publish(eventSourceFromRecord(record), "tool_requested", plan)
 		s.applyPreparedToolPlan(record, &entries[index])
 	}
 	if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {

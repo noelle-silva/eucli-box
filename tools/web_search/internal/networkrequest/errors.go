@@ -1,6 +1,6 @@
 package networkrequest
 
-import apperrors "eucli-box/tools/web_search/internal/apperrors"
+import apperrors "eucli-box/tools/web_search/internal/errors"
 
 const systemName = "network-request-system"
 

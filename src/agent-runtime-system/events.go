@@ -17,7 +17,7 @@ import (
 // 独立的投递 goroutine 负责把缓冲里的增量合并后送给消费者。
 // 消费者再慢也不会被删除或断开，最多是缓冲里的变化被合并。
 type eventSubscriber struct {
-	out chan types.RunEvent
+	out  chan types.RunEvent
 	done chan struct{}
 
 	mu      sync.Mutex

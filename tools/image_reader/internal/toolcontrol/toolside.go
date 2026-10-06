@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
 	"eucli-box/tools/image_reader/internal/types"
 )
 

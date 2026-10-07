@@ -11,7 +11,7 @@ func TestLoadReturnsCompleteReleaseRoster(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if catalog.Platform != types.ReleasePlatformWindowsX64 || len(catalog.Artifacts) != 15 {
+	if catalog.Platform != types.ReleasePlatformWindowsX64 || len(catalog.Artifacts) != 16 {
 		t.Fatalf("catalog = %#v", catalog)
 	}
 	for _, identity := range []types.ReleaseArtifactIdentity{

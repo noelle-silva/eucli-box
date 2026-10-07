@@ -396,6 +396,7 @@ func (s *system) resetSessionTailRun(ctx context.Context, record *runRecord) (ty
 	record.deletedMessageIDs = nil
 	record.dependencyIDs = nil
 	record.messageSnapshots = nil
+	s.discardToolConfirmations(record)
 	record.forceBranchReply = false
 	record.forceNewAssistantReply = true
 	markRunDependencyMessages(record, contextSession.Messages)
@@ -737,6 +738,8 @@ func (s *system) finalizeRun(record *runRecord) {
 	delete(s.publishedMessages, record.runID)
 	s.publishedMu.Unlock()
 	s.mu.Lock()
+	// 运行终态统一清账：注销确认决策台账并回绝未落定的提交，不让投递方挂死。
+	s.clearConfirmationsLocked(record)
 	record.terminalAt = nowUTC()
 	s.reclaimTerminalRunsLocked()
 	s.mu.Unlock()

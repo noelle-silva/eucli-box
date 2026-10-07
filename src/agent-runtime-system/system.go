@@ -132,8 +132,11 @@ type runRecord struct {
 	hookPromptPersistPending    bool
 	cancel                      context.CancelFunc
 
-	pendingPlans map[string]types.ToolRunPlan
-	inbox        chan runEvent
+	// confirmationLedger 是本运行的「工具确认决策台账」：一个决策在它对外可见之前登记，
+	// 在被应用/拒绝时注销，运行终态时统一清账。它既是提交侧的路由索引，也是主脑受理
+	// 确认意图的唯一判据；带生命周期，不再只在某段等待窗口内存在。
+	confirmationLedger map[string]types.ToolRunPlan
+	inbox              chan runEvent
 }
 
 func NewSystem(config Config, storage StorageSystem, roles RoleSystem, providers ProviderSystem, tools ToolSystem, placeholders PlaceholderSystem) (System, error) {

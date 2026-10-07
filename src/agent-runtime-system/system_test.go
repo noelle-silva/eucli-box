@@ -1728,6 +1728,72 @@ func TestSubmitToolConfirmationDoesNotHangWhenRunCancelledConcurrently(t *testin
 	}
 }
 
+// TestSubmitToolConfirmationAcceptedBeforeWaitingState 覆盖 B11：
+// 客户端在运行真正进入「等待确认」之前，只要决策已随工具部件对外可见就抢先提交，
+// 也必须被受理（按台账路由），而不是以「运行未在等待确认」被误拒。
+func TestSubmitToolConfirmationAcceptedBeforeWaitingState(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{
+		{ID: "m1", Content: "need tool", ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}}}},
+		{ID: "m2", Content: "final"},
+	}
+	fakes.tool.prepareDecision = types.PermissionDecision{ID: "decision-1", ActionID: "intent-1", ToolName: "file-reader", Status: types.PermissionStatusNeedsConfirmation}
+	fakes.tool.confirmedDecision = types.PermissionDecision{ID: "decision-1", ActionID: "intent-1", ToolName: "file-reader", Status: types.PermissionStatusAllowed}
+
+	// 把主脑卡在「等待确认」的落盘处：此刻决策已对外可见，但主脑尚未进入等待窗口。
+	saved := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	fakes.storage.onSaveMessages = func(save types.SessionMessageSave) {
+		if save.Status != types.RunStatusWaitingConfirmation {
+			return
+		}
+		once.Do(func() {
+			close(saved)
+			<-release
+		})
+	}
+
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use tool"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	select {
+	case <-saved:
+	case <-time.After(3 * time.Second):
+		t.Fatal("run never reached the waiting-confirmation save")
+	}
+
+	submitResult := make(chan error, 1)
+	go func() {
+		submitResult <- system.SubmitToolConfirmation(context.Background(), types.ToolConfirmation{DecisionID: "decision-1", Approved: true})
+	}()
+	// 主脑仍被卡在等待窗口之前：提交必须按台账路由并排队，而非立刻以「未在等待」被拒。
+	select {
+	case err := <-submitResult:
+		t.Fatalf("SubmitToolConfirmation() returned before entering wait window: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+
+	select {
+	case err := <-submitResult:
+		if err != nil {
+			t.Fatalf("SubmitToolConfirmation() error = %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("SubmitToolConfirmation blocked forever")
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	if fakes.tool.executeCount != 1 {
+		t.Fatalf("executeCount = %d", fakes.tool.executeCount)
+	}
+}
+
 func TestRunPreservesNonErrorToolResultStates(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.responses = []types.ModelResponse{

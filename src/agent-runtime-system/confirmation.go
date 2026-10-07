@@ -12,8 +12,9 @@ type toolConfirmationRequest struct {
 	done         chan error
 }
 
-// SubmitToolConfirmation 只把确认决定投进目标运行的唯一队列，并等待主脑回执。
-// 它不修改待确认表、不直接落定状态：确认由该运行的主脑在安全点消费并收口。
+// SubmitToolConfirmation 只按决策台账把确认意图投进目标运行的唯一队列，并等待主脑回执。
+// 它不判运行是否处于等待确认状态：决策一旦登记进台账即对外可见、即可路由；
+// 台账中已无该决策（已落定或运行终态清账）才明确回绝，绝不让投递方空等。
 func (s *system) SubmitToolConfirmation(ctx context.Context, confirmation types.ToolConfirmation) error {
 	if err := ctx.Err(); err != nil {
 		return runtimeInvalid("submit confirmation cancelled", err)
@@ -24,16 +25,9 @@ func (s *system) SubmitToolConfirmation(ctx context.Context, confirmation types.
 	}
 	done := make(chan error, 1)
 	request := &toolConfirmationRequest{confirmation: confirmation, done: done}
-	// 待确认表既是路由索引也是主脑的落定对象：投递与主脑的收口同受 s.mu 保护，
-	// 使「入队」与「收口清表」串行化，确认不会落在无人消费的缝隙里。
+	// 路由与入队同受 s.mu 保护，与主脑的「消费并注销」串行化：确认不会落在无人消费的缝隙里。
 	s.mu.Lock()
-	var target *runRecord
-	for _, record := range s.runs {
-		if _, ok := record.pendingPlans[decisionID]; ok {
-			target = record
-			break
-		}
-	}
+	target := s.confirmationRunLocked(decisionID)
 	if target == nil {
 		s.mu.Unlock()
 		return runtimeNotFound("pending confirmation was not found", nil)
@@ -51,6 +45,90 @@ func (s *system) SubmitToolConfirmation(ctx context.Context, confirmation types.
 	}
 }
 
+// registerToolConfirmation 把一个待确认决策登记进运行台账。调用点必须在任何使该决策
+// 对外可见的动作（发布事件、写工具部件、落盘）之前，保证「可见即可路由」。
+func (s *system) registerToolConfirmation(record *runRecord, plan types.ToolRunPlan) {
+	if record == nil || plan.PlanStatus != types.ToolPlanStatusNeedsConfirmation {
+		return
+	}
+	decisionID := strings.TrimSpace(plan.Decision.ID)
+	if decisionID == "" {
+		return
+	}
+	s.mu.Lock()
+	if record.confirmationLedger == nil {
+		record.confirmationLedger = map[string]types.ToolRunPlan{}
+	}
+	record.confirmationLedger[decisionID] = plan
+	s.mu.Unlock()
+}
+
+// deregisterToolConfirmation 在决策被应用/拒绝后把它从台账注销。
+func (s *system) deregisterToolConfirmation(record *runRecord, decisionID string) {
+	decisionID = strings.TrimSpace(decisionID)
+	if record == nil || decisionID == "" {
+		return
+	}
+	s.mu.Lock()
+	delete(record.confirmationLedger, decisionID)
+	s.mu.Unlock()
+}
+
+// discardToolConfirmations 在运行放弃本次派生状态（如重解析起点重试）时清空台账。
+func (s *system) discardToolConfirmations(record *runRecord) {
+	if record == nil {
+		return
+	}
+	s.mu.Lock()
+	record.confirmationLedger = nil
+	s.mu.Unlock()
+}
+
+// toolConfirmationPending 按台账判定该决策是否仍待确认，是主脑受理确认意图的唯一判据。
+func (s *system) toolConfirmationPending(record *runRecord, decisionID string) bool {
+	decisionID = strings.TrimSpace(decisionID)
+	if record == nil || decisionID == "" {
+		return false
+	}
+	s.mu.Lock()
+	_, ok := record.confirmationLedger[decisionID]
+	s.mu.Unlock()
+	return ok
+}
+
+// confirmationRunLocked 按决策台账定位持有该决策的运行；调用方须持有 s.mu。
+func (s *system) confirmationRunLocked(decisionID string) *runRecord {
+	for _, record := range s.runs {
+		if _, ok := record.confirmationLedger[decisionID]; ok {
+			return record
+		}
+	}
+	return nil
+}
+
+// clearConfirmationsLocked 在运行终态统一清账：注销台账中全部决策，并回绝队列里尚未落定的
+// 提交，让投递方拿到明确错误而非空等。调用方须持有 s.mu，以保证与提交侧「按台账路由并入队」
+// 的串行化，杜绝「已清账却仍被路由进队、进而无人应答」的缝隙。
+func (s *system) clearConfirmationsLocked(record *runRecord) {
+	if record == nil {
+		return
+	}
+	record.confirmationLedger = nil
+	if record.inbox == nil {
+		return
+	}
+	for {
+		select {
+		case event := <-record.inbox:
+			if event.kind == runEventToolConfirmation && event.confirmation != nil {
+				finishToolConfirmationRequest(*event.confirmation, runtimeStateInvalid("run is no longer waiting for confirmation", nil))
+			}
+		default:
+			return
+		}
+	}
+}
+
 func (s *system) waitForConfirmation(ctx context.Context, record *runRecord, contextSession *types.Session, plan types.ToolRunPlan) (types.ToolRunPlan, error) {
 	confirmed, err := s.waitForConfirmations(ctx, record, contextSession, []types.ToolRunPlan{plan})
 	if err != nil {
@@ -62,6 +140,9 @@ func (s *system) waitForConfirmation(ctx context.Context, record *runRecord, con
 	return confirmed[0], nil
 }
 
+// waitForConfirmations 是主脑消费确认意图的安全点：它在安全点读取运行队列里的确认意图，
+// 以「台账中仍存在该决策」为唯一受理判据（而非运行是否正在等待），落定后注销该决策。
+// 台账已在决策对外可见前登记，因此更早提交的确认也会被受理。
 func (s *system) waitForConfirmations(ctx context.Context, record *runRecord, contextSession *types.Session, plans []types.ToolRunPlan) ([]types.ToolRunPlan, error) {
 	if len(plans) == 0 {
 		return nil, nil
@@ -78,17 +159,11 @@ func (s *system) waitForConfirmations(ctx context.Context, record *runRecord, co
 		plansByDecisionID[decisionID] = plan
 	}
 	cleanup := func(err error) {
-		s.mu.Lock()
-		record.pendingPlans = nil
-		s.mu.Unlock()
 		if err != nil {
-			// 收口时把队列里尚未消费的确认意图一并回绝，避免投递方空等。
+			// 收口时把队列里尚未消费的确认意图一并回绝，避免投递方空等；台账随运行终态统一清账。
 			s.drainRunInbox(record)
 		}
 	}
-	s.mu.Lock()
-	record.pendingPlans = clonePendingPlans(plansByDecisionID)
-	s.mu.Unlock()
 	_, err := s.updateRun(record.runID, types.RunStatusWaitingConfirmation, "waiting for tool confirmation")
 	if err != nil {
 		cleanup(err)
@@ -123,6 +198,13 @@ func (s *system) waitForConfirmations(ctx context.Context, record *runRecord, co
 					cleanup(err)
 					return nil, err
 				}
+				// 受理判据是台账中仍存在该决策：已落定/已清账的决策在此被明确回绝。
+				if !s.toolConfirmationPending(record, decisionID) {
+					err := runtimeNotFound("pending confirmation was not found", nil)
+					finishToolConfirmationRequest(*request, err)
+					cleanup(err)
+					return nil, err
+				}
 				confirmed, err := s.tools.ApplyConfirmation(ctx, plan, confirmation)
 				if err != nil {
 					err := runtimeToolFailed("failed to apply tool confirmation", err)
@@ -130,6 +212,8 @@ func (s *system) waitForConfirmations(ctx context.Context, record *runRecord, co
 					cleanup(err)
 					return nil, err
 				}
+				// 决策已落定：先从台账注销，再由 recordAppliedToolConfirmation 登记可能产生的下一层待确认决策。
+				s.deregisterToolConfirmation(record, decisionID)
 				confirmedByDecisionID[decisionID] = confirmed
 				if err := s.recordAppliedToolConfirmation(ctx, record, confirmed); err != nil {
 					finishToolConfirmationRequest(*request, err)
@@ -138,7 +222,7 @@ func (s *system) waitForConfirmations(ctx context.Context, record *runRecord, co
 				}
 				finishToolConfirmationRequest(*request, nil)
 				if confirmed.PlanStatus == types.ToolPlanStatusNeedsConfirmation {
-					// The next waiting prompt is published after it is registered as pending.
+					// 下一层等待提示在登记进台账后才发布。
 				} else if confirmed.Decision.Status == types.PermissionStatusAllowed {
 					s.publish(eventSourceFromRecord(record), "tool_confirmation_applied", confirmed.Decision)
 				} else {
@@ -157,7 +241,6 @@ func (s *system) waitForConfirmations(ctx context.Context, record *runRecord, co
 			return nil, err
 		}
 	}
-	cleanup(nil)
 	if !confirmedPlansNeedMoreConfirmation(confirmedByDecisionID) {
 		_, err = s.updateRun(record.runID, types.RunStatusRunning, "")
 		if err != nil {
@@ -195,6 +278,8 @@ func (s *system) recordAppliedToolConfirmation(ctx context.Context, record *runR
 	} else if plan.Decision.Status == types.PermissionStatusAllowed {
 		state = "approved"
 	}
+	// 若本次确认产生了下一层待确认决策，先登记进台账，再让它对外可见。
+	s.registerToolConfirmation(record, plan)
 	upsertRunToolPart(record, plan.Action, state, &plan.Decision, nil)
 	if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
 		return err
@@ -204,12 +289,4 @@ func (s *system) recordAppliedToolConfirmation(ctx context.Context, record *runR
 	}
 	s.publishAssistantMessageUpdate(record)
 	return nil
-}
-
-func clonePendingPlans(plans map[string]types.ToolRunPlan) map[string]types.ToolRunPlan {
-	cloned := make(map[string]types.ToolRunPlan, len(plans))
-	for decisionID, plan := range plans {
-		cloned[decisionID] = plan
-	}
-	return cloned
 }

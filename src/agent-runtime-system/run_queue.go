@@ -51,13 +51,15 @@ func enqueueRunEvent(record *runRecord, event runEvent) bool {
 }
 
 // drainRunInbox 处理队列里已到达的事件，返回期间是否收到过停止意图。
-// 处理协程在安全点调用它：停止意图转成运行自己的收尾动作；
-// 非等待确认时到达的确认意图当场回绝，保证投递方拿到回执而非空等。
+// 处理协程在安全点调用它：停止意图转成运行自己的收尾动作；确认意图的受理判据是
+// 「台账中仍存在该决策」而非「运行是否正在等待」——台账已无此决策才当场回绝，
+// 台账仍有此决策则留待确认等待点统一消费，保证投递方拿到回执而非空等。
 func (s *system) drainRunInbox(record *runRecord) bool {
 	if record == nil || record.inbox == nil {
 		return false
 	}
 	stop := false
+	var deferred []runEvent
 	for {
 		select {
 		case event := <-record.inbox:
@@ -65,11 +67,19 @@ func (s *system) drainRunInbox(record *runRecord) bool {
 			case runEventStop:
 				stop = true
 			case runEventToolConfirmation:
-				if event.confirmation != nil {
-					finishToolConfirmationRequest(*event.confirmation, runtimeStateInvalid("run is not waiting for confirmation", nil))
+				if event.confirmation == nil {
+					continue
 				}
+				if s.toolConfirmationPending(record, event.confirmation.confirmation.DecisionID) {
+					deferred = append(deferred, event)
+					continue
+				}
+				finishToolConfirmationRequest(*event.confirmation, runtimeNotFound("pending confirmation was not found", nil))
 			}
 		default:
+			for _, event := range deferred {
+				enqueueRunEvent(record, event)
+			}
 			return stop
 		}
 	}

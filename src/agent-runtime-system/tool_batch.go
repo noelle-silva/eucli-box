@@ -50,6 +50,8 @@ func (s *system) handleToolIntents(ctx context.Context, record *runRecord, conte
 			continue
 		}
 		entries[index].Plan = plan
+		// 待确认决策在对外可见前先登记进台账：工具部件一旦落盘/发布，客户端即可提交并被路由。
+		s.registerToolConfirmation(record, plan)
 		s.publish(eventSourceFromRecord(record), "tool_requested", plan)
 		s.applyPreparedToolPlan(record, &entries[index])
 	}

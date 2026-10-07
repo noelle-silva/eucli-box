@@ -2,7 +2,7 @@
   "id": "context7",
   "name": "context7",
   "description": "从 Context7 获取最新的库文档：搜索库 id，并按库 id 查询文档内容。",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "eucliBoxCompatibility": {
     "minimumVersion": "0.1.0",
     "maximumVersionExclusive": "0.2.0"

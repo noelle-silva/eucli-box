@@ -2,7 +2,7 @@
   "id": "web_fetch",
   "name": "web_fetch",
   "description": "获取指定 HTTP(S) 网址的内容并解码为文本，网页会转换为 Markdown；带浏览器身份与 TLS 指纹，被封锁时换身份退避重试。",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "eucliBoxCompatibility": {
     "minimumVersion": "0.1.0",
     "maximumVersionExclusive": "0.3.0"

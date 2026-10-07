@@ -2,7 +2,7 @@
   "id": "shell_command",
   "name": "shell_command",
   "description": "通过一个已启用的内置 shell provider 运行一条非交互式 shell 命令，返回 stdout、stderr、退出码、超时状态与执行元数据。",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "eucliBoxCompatibility": {
     "minimumVersion": "0.1.0",
     "maximumVersionExclusive": "0.2.0"

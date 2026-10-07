@@ -2819,6 +2819,59 @@ func TestRunPanicFallsToFailedAndNotifies(t *testing.T) {
 	}
 }
 
+// TestRunPanicDuringTerminalWrapUpPublishesSingleConsistentTerminalEvent 钉住 B12：
+// 终态收尾途中崩溃（panic）后，顶层兜底重入收口时不得发出第二条矛盾的终态事件；
+// 同一条运行最终恰好发一条终态事件，且事件类型与最终落定状态一致。
+func TestRunPanicDuringTerminalWrapUpPublishesSingleConsistentTerminalEvent(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "hello"}}
+	// 终态收尾的会话落盘处崩溃：此时终态已被认领落定，收尾尚未返回。
+	fakes.storage.onSaveMessages = func(save types.SessionMessageSave) {
+		if save.Status == types.RunStatusCompleted {
+			panic("boom during terminal wrap-up")
+		}
+	}
+	system := newTestRuntime(t, fakes, Config{})
+	events, unsubscribe, err := system.Subscribe(context.Background())
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	defer unsubscribe()
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("final status = %s, want completed", final.Status)
+	}
+	// 排空订阅：终态事件必须恰好一次，且与最终落定状态一致；兜底重入不得补发第二条。
+	terminalEvents := []string{}
+	deadline := time.After(200 * time.Millisecond)
+	for {
+		select {
+		case event := <-events:
+			if event.RunID == state.ID && isTerminalRunEvent(event.Type) {
+				terminalEvents = append(terminalEvents, event.Type)
+			}
+		case <-deadline:
+			if len(terminalEvents) != 1 || terminalEvents[0] != "run_completed" {
+				t.Fatalf("terminal events = %v, want [run_completed]", terminalEvents)
+			}
+			return
+		}
+	}
+}
+
+func isTerminalRunEvent(eventType string) bool {
+	switch eventType {
+	case "run_completed", "run_cancelled", "run_failed":
+		return true
+	default:
+		return false
+	}
+}
+
 func assertNoAssistantUpdateBeforeRunFailed(t *testing.T, events <-chan types.RunEvent, runID string) {
 	t.Helper()
 	deadline := time.After(2 * time.Second)

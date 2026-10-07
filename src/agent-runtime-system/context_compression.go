@@ -112,27 +112,19 @@ func (s *system) continueCompactRun(ctx context.Context, record *runRecord, cont
 		s.failCommandRun(record, err)
 		return
 	}
-	if err := s.saveRunSession(ctx, record, types.RunStatusCompleted); err != nil {
-		s.failCommandRun(record, err)
-		return
-	}
-	state, err := s.updateRun(record.runID, types.RunStatusCompleted, "")
-	if err != nil {
-		return
-	}
-	s.publish(eventSourceFromRecord(record), "run_completed", state)
+	s.settleRunTerminal(record, runTerminalIntent{status: types.RunStatusCompleted}, func() (string, *types.ErrorPayload) {
+		if err := s.saveRunSession(ctx, record, types.RunStatusCompleted); err != nil {
+			return runFailureFromError(err, "save session failed: "+err.Error())
+		}
+		return "", nil
+	})
 	s.finalizeRun(record)
 }
 
 func (s *system) failCommandRun(record *runRecord, err error) {
 	defer s.finalizeRun(record)
 	reason, payload := runFailureFromError(err, "")
-	state, updateErr := s.updateRunWithError(record.runID, types.RunStatusFailed, reason, payload)
-	if updateErr != nil {
-		s.publish(eventSourceFromRecord(record), "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: reason, Error: cloneErrorPayload(payload)})
-		return
-	}
-	s.publish(eventSourceFromRecord(record), "run_failed", state)
+	s.settleRunTerminal(record, runTerminalIntent{status: types.RunStatusFailed, reason: reason, payload: payload}, nil)
 }
 
 func buildContextCompressionPlan(contextSession types.Session, retainRecentMessages int) (contextCompressionPlan, error) {

@@ -624,18 +624,13 @@ func upsertSessionMessage(session types.Session, message types.Message) types.Se
 
 func (s *system) completeRun(ctx context.Context, record *runRecord, session types.Session) {
 	defer s.finalizeRun(record)
-	if err := s.saveRunSession(ctx, record, types.RunStatusCompleted); err != nil {
-		reason, payload := runFailureFromError(err, "save session failed: "+err.Error())
-		state, _ := s.updateRunWithError(record.runID, types.RunStatusFailed, reason, payload)
-		s.publish(eventSourceFromRecord(record), "run_failed", state)
-		return
-	}
-	state, err := s.updateRun(record.runID, types.RunStatusCompleted, "")
-	if err != nil {
-		return
-	}
-	s.publishAssistantMessageUpdate(record)
-	s.publish(eventSourceFromRecord(record), "run_completed", state)
+	s.settleRunTerminal(record, runTerminalIntent{status: types.RunStatusCompleted}, func() (string, *types.ErrorPayload) {
+		if err := s.saveRunSession(ctx, record, types.RunStatusCompleted); err != nil {
+			return runFailureFromError(err, "save session failed: "+err.Error())
+		}
+		s.publishAssistantMessageUpdate(record)
+		return "", nil
+	})
 }
 
 func (s *system) failRun(ctx context.Context, record *runRecord, session types.Session, err error) {
@@ -650,77 +645,107 @@ func (s *system) failRunMessage(ctx context.Context, record *runRecord, session 
 
 func (s *system) failRunWithPayload(ctx context.Context, record *runRecord, session types.Session, reason string, payload *types.ErrorPayload) {
 	defer s.finalizeRun(record)
-	state, err := s.updateRunWithError(record.runID, types.RunStatusFailed, reason, payload)
-	if err != nil {
-		if session.ID != "" {
-			session = markRunFailureMessage(record, session, payload)
-			_ = s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID)
-			_ = s.saveRunSession(ctx, record, types.RunStatus(session.Status))
+	s.settleRunTerminal(record, runTerminalIntent{status: types.RunStatusFailed, reason: reason, payload: payload}, func() (string, *types.ErrorPayload) {
+		if session.ID == "" {
+			s.publishAssistantMessageUpdate(record)
+			return "", nil
 		}
-		s.publish(eventSourceFromRecord(record), "run_failed", types.RunState{ID: record.runID, InputMessageID: record.inputMessageID, LastMessageID: record.lastMessageID, Status: types.RunStatusFailed, Reason: reason, Error: cloneErrorPayload(payload)})
-		return
-	}
-	if session.ID != "" {
 		// 运行失败即收口：未决工具统一落定为失败，不留在未决状态。
 		failRunToolParts(record, reason)
 		session = markRunFailureMessage(record, session, payload)
-		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err == nil {
-			if next, ok := s.getRunState(record.runID); ok {
-				state = next
-			}
-		}
+		_ = s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID)
 		messagesSaved, saveErr := s.saveRunSessionWithStatusFallback(ctx, record, types.RunStatusFailed)
 		if saveErr != nil {
-			saveReason, savePayload := runFailureFromError(saveErr, "save session failed: "+saveErr.Error())
-			s.publish(eventSourceFromRecord(record), "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: saveReason, Error: cloneErrorPayload(savePayload)})
-			return
+			return runFailureFromError(saveErr, "save session failed: "+saveErr.Error())
 		}
 		if messagesSaved {
 			s.publishAssistantMessageUpdate(record)
 		}
-	} else {
-		s.publishAssistantMessageUpdate(record)
-	}
-	s.publish(eventSourceFromRecord(record), "run_failed", state)
+		return "", nil
+	})
 }
 
 func (s *system) failRunStateOnly(record *runRecord, err error) {
 	defer s.finalizeRun(record)
 	reason, payload := runFailureFromError(err, "")
-	state, updateErr := s.updateRunWithError(record.runID, types.RunStatusFailed, reason, payload)
-	if updateErr != nil {
-		s.publish(eventSourceFromRecord(record), "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: reason, Error: cloneErrorPayload(payload)})
-		return
-	}
-	s.publish(eventSourceFromRecord(record), "run_failed", state)
+	s.settleRunTerminal(record, runTerminalIntent{status: types.RunStatusFailed, reason: reason, payload: payload}, nil)
 }
 
 func (s *system) cancelRunRecord(ctx context.Context, record *runRecord, session types.Session) {
 	defer s.finalizeRun(record)
-	state, err := s.updateRun(record.runID, types.RunStatusCancelled, "cancelled")
-	if err != nil {
-		return
-	}
-	if cancelRunToolParts(record, "cancelled by user") {
-		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err == nil {
-			if next, ok := s.getRunState(record.runID); ok {
-				state = next
+	s.settleRunTerminal(record, runTerminalIntent{status: types.RunStatusCancelled, reason: "cancelled"}, func() (string, *types.ErrorPayload) {
+		if cancelRunToolParts(record, "cancelled by user") {
+			_ = s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID)
+		}
+		messagesSaved := false
+		if session.ID != "" {
+			var saveErr error
+			messagesSaved, saveErr = s.saveRunSessionWithStatusFallback(ctx, record, types.RunStatusCancelled)
+			if saveErr != nil {
+				return runFailureFromError(saveErr, "save session failed: "+saveErr.Error())
 			}
 		}
+		if messagesSaved || session.ID == "" {
+			s.publishAssistantMessageUpdate(record)
+		}
+		return "", nil
+	})
+}
+
+// terminalRunEventType 由已落定状态唯一派生终态事件名；调用方不得自行指定事件名。
+func terminalRunEventType(status types.RunStatus) string {
+	switch status {
+	case types.RunStatusCompleted:
+		return "run_completed"
+	case types.RunStatusCancelled:
+		return "run_cancelled"
+	default:
+		return "run_failed"
 	}
-	messagesSaved := false
-	if session.ID != "" {
-		var saveErr error
-		messagesSaved, saveErr = s.saveRunSessionWithStatusFallback(ctx, record, types.RunStatusCancelled)
-		if saveErr != nil {
-			s.publish(eventSourceFromRecord(record), "run_failed", types.RunState{ID: record.runID, Status: types.RunStatusFailed, Reason: "save session failed: " + saveErr.Error()})
-			return
+}
+
+// runTerminalIntent 是运行终态的意图：状态在收尾前先定案，终态事件名由该状态唯一派生，
+// 调用方不得自行指定事件名。
+type runTerminalIntent struct {
+	status  types.RunStatus
+	reason  string
+	payload *types.ErrorPayload
+}
+
+// settleRunTerminal 是运行终态的唯一收口权威：以「运行仍处于活动态」为认领闸门做一次性认领，
+// 只有第一个认领成功的调用者负责落定终态、执行收尾落盘并派生发布终态事件；后续到达的收口请求
+// 静默吸收，绝不发布第二条终态事件。终态意图在收尾前先定案，收尾落盘失败不改变已定终态，
+// 失败原因随终态事件携带。认领成功后终态事件必达：即便收尾途中崩溃，也在展开时补发这一条。
+func (s *system) settleRunTerminal(record *runRecord, intent runTerminalIntent, wrapUp func() (string, *types.ErrorPayload)) {
+	if record == nil {
+		return
+	}
+	s.mu.Lock()
+	if !isActiveRunStatus(record.state.Status) {
+		s.mu.Unlock()
+		return
+	}
+	record.state.Status = intent.status
+	record.state.Reason = intent.reason
+	record.state.Retry = nil
+	record.state.Error = cloneErrorPayload(intent.payload)
+	record.state.UpdatedAt = nowUTC()
+	s.mu.Unlock()
+	// 认领一旦成功，这条终态事件就由本调用者负责发出：收尾正常返回则带最终状态发出，
+	// 收尾途中崩溃也在栈展开时补发，保证同一条运行恰好一条终态事件。
+	defer func() {
+		state, _ := s.getRunState(record.runID)
+		s.publish(eventSourceFromRecord(record), terminalRunEventType(intent.status), state)
+	}()
+	if wrapUp != nil {
+		if reason, payload := wrapUp(); reason != "" || payload != nil {
+			s.mu.Lock()
+			record.state.Reason = reason
+			record.state.Error = cloneErrorPayload(payload)
+			record.state.UpdatedAt = nowUTC()
+			s.mu.Unlock()
 		}
 	}
-	if messagesSaved || session.ID == "" {
-		s.publishAssistantMessageUpdate(record)
-	}
-	s.publish(eventSourceFromRecord(record), "run_cancelled", state)
 }
 
 // terminalRunRetention 是运行进入终态后的内存保留窗口：

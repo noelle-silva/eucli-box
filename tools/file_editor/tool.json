@@ -2,7 +2,7 @@
   "id": "file_editor",
   "name": "file_editor",
   "description": "使用相对路径或绝对路径写入、精确编辑以及按补丁修改受限文本文件。",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "eucliBoxCompatibility": {
     "minimumVersion": "0.1.0",
     "maximumVersionExclusive": "0.2.0"

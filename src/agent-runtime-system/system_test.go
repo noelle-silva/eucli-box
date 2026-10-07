@@ -1372,6 +1372,66 @@ func TestRunExecutesMultipleToolIntentsFromOneModelResponse(t *testing.T) {
 	}
 }
 
+func TestRunKeepsOneToolPartPerCallWhenCallIDsRepeat(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{
+		{ID: "m1", Content: "need tools", ToolIntents: []types.ToolIntent{
+			{ID: "dup", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}},
+			{ID: "dup", ToolName: "file-reader", Arguments: map[string]any{"path": "CHANGELOG.md"}},
+		}},
+		{ID: "m2", Content: "final"},
+	}
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "use tools"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	if fakes.tool.executeCount != 2 || len(fakes.tool.normalizedIntents) != 2 {
+		t.Fatalf("tool flow execute=%d intents=%#v", fakes.tool.executeCount, fakes.tool.normalizedIntents)
+	}
+	session := fakes.storage.lastSession()
+	parts := toolPartsByCallID(session.Messages[1], "dup")
+	if len(parts) != 2 {
+		t.Fatalf("duplicate call id must keep one part per call: %#v", session.Messages[1].Parts)
+	}
+	for _, part := range parts {
+		if part.State != "completed" || part.Result == nil || part.Result.Content != "tool ok" {
+			t.Fatalf("tool part = %#v", part)
+		}
+	}
+	if parts[0].ID == parts[1].ID || parts[0].ID == "" {
+		t.Fatalf("tool parts must carry distinct internal identities: %#v", parts)
+	}
+	second := fakes.provider.lastRequest()
+	var assistant *types.PromptMessage
+	for index := range second.Messages {
+		if second.Messages[index].Role == "assistant" && len(second.Messages[index].Parts) > 0 {
+			assistant = &second.Messages[index]
+			break
+		}
+	}
+	if assistant == nil {
+		t.Fatalf("second request has no assistant tool message: %#v", second.Messages)
+	}
+	promptToolParts := 0
+	for _, part := range assistant.Parts {
+		if part.Type != "tool" {
+			continue
+		}
+		promptToolParts++
+		if part.Result == nil {
+			t.Fatalf("assistant tool part missing result: %#v", part)
+		}
+	}
+	if promptToolParts != 2 {
+		t.Fatalf("assistant tool parts = %#v", assistant.Parts)
+	}
+}
+
 func TestRunWrapsMalformedToolIntentAsFailureAndContinues(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.responses = []types.ModelResponse{
@@ -2461,6 +2521,16 @@ func toolPartByCallID(message types.Message, callID string) *types.MessagePart {
 		}
 	}
 	return nil
+}
+
+func toolPartsByCallID(message types.Message, callID string) []*types.MessagePart {
+	parts := []*types.MessagePart{}
+	for index := range message.Parts {
+		if message.Parts[index].Type == "tool" && message.Parts[index].CallID == callID {
+			parts = append(parts, &message.Parts[index])
+		}
+	}
+	return parts
 }
 
 func reasoningPartByType(message types.Message) *types.MessagePart {

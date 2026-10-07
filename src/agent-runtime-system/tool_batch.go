@@ -25,6 +25,7 @@ func (s *system) handleToolIntents(ctx context.Context, record *runRecord, conte
 			entries = append(entries, failedIntentEntry(record, index, intent, "failed to normalize tool intent: "+err.Error()))
 			continue
 		}
+		action.CallRef = newRuntimeID("tool-call")
 		entries = append(entries, toolRunEntry{Index: index, Action: action})
 		upsertRunToolPart(record, action, "requested", nil, nil)
 	}
@@ -244,7 +245,7 @@ func pendingConfirmationPlans(entries []toolRunEntry) []types.ToolRunPlan {
 func pendingDecisionIDs(plans []types.ToolRunPlan) map[string]string {
 	ids := make(map[string]string, len(plans))
 	for _, plan := range plans {
-		ids[plan.Action.ID] = plan.Decision.ID
+		ids[toolCallRef(plan.Action)] = plan.Decision.ID
 	}
 	return ids
 }
@@ -254,7 +255,7 @@ func toolConfirmationProgressed(previous map[string]string, confirmed []types.To
 		return false
 	}
 	for _, plan := range confirmed {
-		previousID, ok := previous[plan.Action.ID]
+		previousID, ok := previous[toolCallRef(plan.Action)]
 		if !ok {
 			return false
 		}
@@ -268,13 +269,22 @@ func toolConfirmationProgressed(previous map[string]string, confirmed []types.To
 func applyConfirmedPlans(entries []toolRunEntry, plans []types.ToolRunPlan) {
 	confirmed := map[string]types.ToolRunPlan{}
 	for _, plan := range plans {
-		confirmed[plan.Action.ID] = plan
+		confirmed[toolCallRef(plan.Action)] = plan
 	}
 	for index := range entries {
-		if plan, ok := confirmed[entries[index].Action.ID]; ok {
+		if plan, ok := confirmed[toolCallRef(entries[index].Action)]; ok {
 			entries[index].Plan = plan
 		}
 	}
+}
+
+// toolCallRef 返回一次工具调用的内部唯一标识：优先用运行期分配的 CallRef，
+// 缺失时回落到模型给的调用编号。它只用于运行期定位部件，不用于与模型通信。
+func toolCallRef(action types.ToolAction) string {
+	if ref := strings.TrimSpace(action.CallRef); ref != "" {
+		return ref
+	}
+	return strings.TrimSpace(action.ID)
 }
 
 func readyToolEntries(entries []toolRunEntry) []toolRunEntry {
@@ -354,6 +364,7 @@ func failedToolResult(action types.ToolAction, message string) types.ToolResult 
 // 走与正常工具结果同一条回喂通道，不升级为整轮失败，让模型看到并自行纠正。
 func failedIntentEntry(record *runRecord, index int, intent types.ToolIntent, message string) toolRunEntry {
 	action := fallbackToolAction(intent)
+	action.CallRef = newRuntimeID("tool-call")
 	result := failedToolResult(action, message)
 	upsertRunToolPart(record, action, "error", nil, &result)
 	return toolRunEntry{Index: index, Action: action, Result: result, HasResult: true}

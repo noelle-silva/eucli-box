@@ -171,9 +171,13 @@ func isTerminalToolPartState(state string) bool {
 
 func upsertRunToolPart(record *runRecord, action types.ToolAction, state string, decision *types.PermissionDecision, result *types.ToolResult) {
 	ensureRunAssistantMessage(record)
+	callRef := toolCallRef(action)
+	if callRef == "" {
+		callRef = utils.NewID("tool-call")
+	}
 	callID := strings.TrimSpace(action.ID)
 	if callID == "" {
-		callID = utils.NewID("tool-call")
+		callID = callRef
 	}
 	now := time.Now().UTC()
 	messageID := strings.TrimSpace(record.activeAssistantID)
@@ -181,7 +185,7 @@ func upsertRunToolPart(record *runRecord, action types.ToolAction, state string,
 		if record.session.Messages[index].ID != messageID {
 			continue
 		}
-		upsertMessageToolPart(&record.session.Messages[index], action, callID, state, decision, result, now)
+		upsertMessageToolPart(&record.session.Messages[index], action, callRef, callID, state, decision, result, now)
 		appendRunMessageAttachments(&record.session.Messages[index], result)
 		record.session.Messages[index].UpdatedAt = now
 		record.messageParent = record.session.Messages[index]
@@ -219,16 +223,18 @@ func appendRunMessageAttachments(message *types.Message, result *types.ToolResul
 	}
 }
 
-func upsertMessageToolPart(message *types.Message, action types.ToolAction, callID string, state string, decision *types.PermissionDecision, result *types.ToolResult, now time.Time) {
+// upsertMessageToolPart 以调用内部唯一标识（CallRef）定位工具部件：
+// 同一响应内的每个调用各占一个部件，模型给的调用编号重复也不互相覆盖。
+func upsertMessageToolPart(message *types.Message, action types.ToolAction, callRef string, callID string, state string, decision *types.PermissionDecision, result *types.ToolResult, now time.Time) {
 	for index := range message.Parts {
 		part := &message.Parts[index]
-		if part.Type != "tool" || strings.TrimSpace(part.CallID) != callID {
+		if part.Type != "tool" || strings.TrimSpace(part.ID) != callRef {
 			continue
 		}
 		applyToolPart(part, action, callID, state, decision, result, now)
 		return
 	}
-	part := types.MessagePart{ID: utils.NewID("part"), Type: "tool", CreatedAt: now}
+	part := types.MessagePart{ID: callRef, Type: "tool", CreatedAt: now}
 	applyToolPart(&part, action, callID, state, decision, result, now)
 	message.Parts = append(message.Parts, part)
 }

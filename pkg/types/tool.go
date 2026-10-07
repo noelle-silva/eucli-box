@@ -175,7 +175,10 @@ func ValidExplicitToolInvocationMode(mode ToolInvocationMode) bool {
 }
 
 type ToolAction struct {
-	ID             string             `json:"id"`
+	ID string `json:"id"`
+	// CallRef 是运行期为本次工具调用分配的内部唯一标识，用于在助手消息上
+	// 定位该调用独占的工具部件；模型给的 ID 只作对账标记，同一响应内可重复。
+	CallRef        string             `json:"callRef,omitempty"`
 	ToolName       string             `json:"toolName"`
 	Arguments      map[string]any     `json:"arguments,omitempty"`
 	InvocationMode ToolInvocationMode `json:"invocationMode,omitempty"`

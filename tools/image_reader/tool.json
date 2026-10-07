@@ -2,7 +2,7 @@
   "id": "image_reader",
   "name": "image_reader",
   "description": "从文件系统按路径读取一张图片文件，判定格式与大小并按需压缩，然后加载进当前会话供模型查看。",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "eucliBoxCompatibility": {
     "minimumVersion": "0.1.0",
     "maximumVersionExclusive": "0.2.0"

@@ -6,7 +6,6 @@ package systemplugin
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 )
 
@@ -63,11 +62,6 @@ type Message struct {
 	Payload         map[string]any    `json:"payload,omitempty"`
 }
 
-// NewMessage 返回带当前协议版本的消息。
-func NewMessage(messageType string) Message {
-	return Message{ProtocolVersion: ProtocolVersion, Type: messageType}
-}
-
 // Write 把消息按行写入通道。
 func Write(encoder *json.Encoder, message Message) error {
 	if encoder == nil {
@@ -100,86 +94,4 @@ func ValidateHello(message Message, pluginID string) error {
 		return fmt.Errorf("control handshake plugin identity mismatch: host %q, plugin %q", message.PluginID, pluginID)
 	}
 	return nil
-}
-
-// ValidateReady 校验插件应答：版本一致、身份一致、声明能力与清单一致。
-func ValidateReady(message Message, pluginID string, expected []Capability) error {
-	if message.ProtocolVersion != ProtocolVersion {
-		return fmt.Errorf("control protocol version mismatch: plugin %d, host %d", message.ProtocolVersion, ProtocolVersion)
-	}
-	if message.Type != MessageReady {
-		return fmt.Errorf("control handshake expected %q, got %q", MessageReady, message.Type)
-	}
-	if strings.TrimSpace(message.PluginID) != strings.TrimSpace(pluginID) {
-		return fmt.Errorf("control handshake plugin identity mismatch: plugin %q, expected %q", message.PluginID, pluginID)
-	}
-	if !EqualCapabilities(message.Capabilities, expected) {
-		return fmt.Errorf("control handshake capability declaration mismatch: plugin %s, manifest %s", DescribeCapabilities(message.Capabilities), DescribeCapabilities(expected))
-	}
-	return nil
-}
-
-// EqualCapabilities 比较两份能力声明在语义上是否一致；顺序无关，接口集合精确相等。
-func EqualCapabilities(left []Capability, right []Capability) bool {
-	leftNormalized := normalizeCapabilities(left)
-	rightNormalized := normalizeCapabilities(right)
-	if len(leftNormalized) != len(rightNormalized) {
-		return false
-	}
-	for index := range leftNormalized {
-		if leftNormalized[index].Type != rightNormalized[index].Type {
-			return false
-		}
-		if !equalStrings(leftNormalized[index].Interfaces, rightNormalized[index].Interfaces) {
-			return false
-		}
-	}
-	return true
-}
-
-// DescribeCapabilities 生成能力声明的可读描述，用于握手失败信息。
-func DescribeCapabilities(capabilities []Capability) string {
-	normalized := normalizeCapabilities(capabilities)
-	parts := make([]string, 0, len(normalized))
-	for _, capability := range normalized {
-		parts = append(parts, capability.Type+"["+strings.Join(capability.Interfaces, ",")+"]")
-	}
-	if len(parts) == 0 {
-		return "(none)"
-	}
-	return strings.Join(parts, " ")
-}
-
-func normalizeCapabilities(capabilities []Capability) []Capability {
-	out := make([]Capability, 0, len(capabilities))
-	for _, capability := range capabilities {
-		capabilityType := strings.TrimSpace(capability.Type)
-		if capabilityType == "" {
-			continue
-		}
-		interfaces := make([]string, 0, len(capability.Interfaces))
-		for _, item := range capability.Interfaces {
-			item = strings.TrimSpace(item)
-			if item == "" {
-				continue
-			}
-			interfaces = append(interfaces, item)
-		}
-		sort.Strings(interfaces)
-		out = append(out, Capability{Type: capabilityType, Interfaces: interfaces})
-	}
-	sort.SliceStable(out, func(i int, j int) bool { return out[i].Type < out[j].Type })
-	return out
-}
-
-func equalStrings(left []string, right []string) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for index := range left {
-		if left[index] != right[index] {
-			return false
-		}
-	}
-	return true
 }

@@ -2,7 +2,7 @@
   "id": "web_search",
   "name": "web_search",
   "description": "通过选定的搜索供应商搜索网络，返回规范化 Markdown 结果与结构化元数据。",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "eucliBoxCompatibility": {
     "minimumVersion": "0.1.0",
     "maximumVersionExclusive": "0.2.0"

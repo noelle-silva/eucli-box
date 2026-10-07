@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"eucli-box/pkg/systemplugin/pluginrun"
+	"eucli-box/system-plugins/weather-plugin/internal/pluginrun"
 )
 
 const (

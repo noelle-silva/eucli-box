@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"eucli-box/pkg/systemplugin"
-	"eucli-box/pkg/systemplugin/pluginrun"
+	"eucli-box/system-plugins/weather-plugin/internal/pluginrun"
+	"eucli-box/system-plugins/weather-plugin/internal/systemplugin"
 )
 
 const (

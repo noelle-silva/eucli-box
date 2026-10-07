@@ -19,4 +19,4 @@
 - `verify-release-build`：正式成品构建验证。
 - `verify-release-publish`：发布预检与远端成品复核。
 - `verify-tool-plugin-update`：工具与插件首次安装和手动更新验证。
-- `verify-tool-import-boundary`：AI 工具导入边界验证（工具只引用自己文件夹内的仓库代码）。
+- `verify-tool-import-boundary`：导入边界验证（AI 工具与系统插件都只引用自己文件夹内的仓库代码）。

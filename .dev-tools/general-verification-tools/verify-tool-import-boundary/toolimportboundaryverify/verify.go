@@ -1,5 +1,5 @@
-// Package verify 是「AI 工具导入边界」长期验证的编排：
-// 逐个工具扫描源码引用，凡引用本仓库内、但不在该工具自己文件夹里的代码即判定不合格。
+// Package verify 是「导入边界」长期验证的编排：
+// 逐个边界单元（AI 工具与系统插件）扫描源码引用，凡引用本仓库内、但不在该单元自己文件夹里的代码即判定不合格。
 package verify
 
 import (
@@ -16,6 +16,12 @@ const (
 	defaultMode = "default"
 )
 
+// boundaryCategories 是本校验覆盖的全部源码区：AI 工具与系统插件共用同一套校验机制。
+var boundaryCategories = []boundaryCategory{
+	{Key: "tools", Label: "AI 工具"},
+	{Key: "system-plugins", Label: "系统插件"},
+}
+
 // Run 执行导入边界验证。RepositoryRoot 是主仓库根，RunRoot 必须位于该工具在开发运行区的独立 run-* 中。
 func Run(_ context.Context, repositoryRoot string, runRoot string, mode string) error {
 	mode = strings.TrimSpace(mode)
@@ -31,60 +37,68 @@ func Run(_ context.Context, repositoryRoot string, runRoot string, mode string) 
 	}
 	recorder := toolkit.NewVerificationRecorder(toolName, mode, run.Root)
 	root := run.RepositoryRoot
-	fmt.Printf("AI 工具导入边界验证目录：%s\n", run.Root)
-
-	toolsDir := filepath.Join(root, "tools")
-	toolsBefore, snapshotErr := toolkit.DirectorySnapshot(toolsDir)
-	if snapshotErr != nil {
-		recorder.Fail("记录工具源码初始状态", snapshotErr)
-	} else {
-		recorder.Pass("记录工具源码初始状态", "已建立只读完整性快照")
-	}
+	fmt.Printf("导入边界验证目录：%s\n", run.Root)
 
 	rootModule, moduleErr := readModulePath(filepath.Join(root, "go.mod"))
 	if moduleErr != nil {
 		recorder.Fail("读取仓库模块路径", moduleErr)
-	} else {
-		repoModules, modulesErr := discoverRepositoryModules(root)
-		if modulesErr != nil {
-			recorder.Fail("识别仓库内模块", modulesErr)
-		} else {
-			recorder.Pass("识别仓库内模块", strings.Join(repoModules, "、"))
-			tools, toolsErr := discoverTools(toolsDir)
-			if toolsErr != nil {
-				recorder.Fail("枚举 AI 工具", toolsErr)
-			} else {
-				recorder.Pass("枚举 AI 工具", fmt.Sprintf("共 %d 个工具", len(tools)))
-				for _, tool := range tools {
-					checkTool(recorder, root, rootModule, repoModules, tool)
-				}
-			}
-		}
+		return recorder.Finish(run.Evidence, run.DisposableDirectories())
 	}
+	repoModules, modulesErr := discoverRepositoryModules(root)
+	if modulesErr != nil {
+		recorder.Fail("识别仓库内模块", modulesErr)
+		return recorder.Finish(run.Evidence, run.DisposableDirectories())
+	}
+	recorder.Pass("识别仓库内模块", strings.Join(repoModules, "、"))
 
-	if snapshotErr == nil {
-		toolsAfter, afterErr := toolkit.DirectorySnapshot(toolsDir)
-		if afterErr != nil {
-			recorder.Fail("确认工具源码未被校验改动", afterErr)
-		} else if err := toolkit.CompareSnapshots("工具源码目录", toolsBefore, toolsAfter); err != nil {
-			recorder.Fail("确认工具源码未被校验改动", err)
-		} else {
-			recorder.Pass("确认工具源码未被校验改动", "校验只读，工具源码目录未发生任何变化")
-		}
+	for _, category := range boundaryCategories {
+		verifyCategory(recorder, root, rootModule, repoModules, category)
 	}
 
 	return recorder.Finish(run.Evidence, run.DisposableDirectories())
 }
 
-// checkTool 判定单个工具的引用边界并记录一条结论。
-func checkTool(recorder *toolkit.VerificationRecorder, root string, rootModule string, repoModules []string, tool Tool) {
-	name := "工具 " + tool.Name
-	allowedPrefix, err := toolImportPrefix(rootModule, tool)
+// verifyCategory 校验一类源码区：建立只读完整性快照、逐个单元判定、确认源码未被校验改动。
+func verifyCategory(recorder *toolkit.VerificationRecorder, root string, rootModule string, repoModules []string, category boundaryCategory) {
+	categoryDir := filepath.Join(root, category.Key)
+	before, snapshotErr := toolkit.DirectorySnapshot(categoryDir)
+	if snapshotErr != nil {
+		recorder.Fail("记录"+category.Label+"源码初始状态", snapshotErr)
+	} else {
+		recorder.Pass("记录"+category.Label+"源码初始状态", "已建立只读完整性快照")
+	}
+
+	units, unitsErr := discoverUnits(categoryDir)
+	if unitsErr != nil {
+		recorder.Fail("枚举"+category.Label, unitsErr)
+	} else {
+		recorder.Pass("枚举"+category.Label, fmt.Sprintf("共 %d 个", len(units)))
+		for _, target := range units {
+			checkUnit(recorder, root, rootModule, repoModules, category, target)
+		}
+	}
+
+	if snapshotErr == nil {
+		after, afterErr := toolkit.DirectorySnapshot(categoryDir)
+		if afterErr != nil {
+			recorder.Fail("确认"+category.Label+"源码未被校验改动", afterErr)
+		} else if err := toolkit.CompareSnapshots(category.Label+"源码目录", before, after); err != nil {
+			recorder.Fail("确认"+category.Label+"源码未被校验改动", err)
+		} else {
+			recorder.Pass("确认"+category.Label+"源码未被校验改动", "校验只读，源码目录未发生任何变化")
+		}
+	}
+}
+
+// checkUnit 判定单个边界单元的引用边界并记录一条结论。
+func checkUnit(recorder *toolkit.VerificationRecorder, root string, rootModule string, repoModules []string, category boundaryCategory, target unit) {
+	name := category.Label + " " + target.Name
+	allowedPrefix, err := unitImportPrefix(rootModule, category, target)
 	if err != nil {
 		recorder.Fail(name, err)
 		return
 	}
-	violations, err := scanToolImports(root, tool, repoModules, allowedPrefix)
+	violations, err := scanUnitImports(root, target, repoModules, allowedPrefix)
 	if err != nil {
 		recorder.Fail(name, err)
 		return

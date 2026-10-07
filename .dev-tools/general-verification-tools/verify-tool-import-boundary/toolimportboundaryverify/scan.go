@@ -18,46 +18,52 @@ type ImportRef struct {
 	Import string
 }
 
-// Tool 是一个 AI 工具的源码边界：名字与所在文件夹。
-type Tool struct {
+// boundaryCategory 是一类受导入边界约束的源码区：其一级子目录各为一个边界单元。
+type boundaryCategory struct {
+	Key   string
+	Label string
+}
+
+// unit 是一个源码边界单元：名字与所在文件夹。
+type unit struct {
 	Name string
 	Dir  string
 }
 
-// discoverTools 列出 tools 目录下的一级子目录，即全部 AI 工具。
-func discoverTools(toolsDir string) ([]Tool, error) {
-	entries, err := os.ReadDir(toolsDir)
+// discoverUnits 列出源码区目录下的一级子目录，即该源码区下的全部边界单元。
+func discoverUnits(categoryDir string) ([]unit, error) {
+	entries, err := os.ReadDir(categoryDir)
 	if err != nil {
-		return nil, fmt.Errorf("读取工具目录失败：%w", err)
+		return nil, fmt.Errorf("读取源码区目录失败：%w", err)
 	}
-	tools := make([]Tool, 0, len(entries))
+	units := make([]unit, 0, len(entries))
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
-		tools = append(tools, Tool{Name: entry.Name(), Dir: filepath.Join(toolsDir, entry.Name())})
+		units = append(units, unit{Name: entry.Name(), Dir: filepath.Join(categoryDir, entry.Name())})
 	}
-	sort.Slice(tools, func(i, j int) bool { return tools[i].Name < tools[j].Name })
-	return tools, nil
+	sort.Slice(units, func(i, j int) bool { return units[i].Name < units[j].Name })
+	return units, nil
 }
 
-// toolImportPrefix 返回工具源码应处的包路径前缀。
-// 当前工具都是根模块的一部分；工具目录内出现独立 go.mod 说明架构变化，超出本校验约定，直接失败。
-func toolImportPrefix(rootModule string, tool Tool) (string, error) {
-	goModPath := filepath.Join(tool.Dir, "go.mod")
+// unitImportPrefix 返回单元源码应处的包路径前缀。
+// 当前单元都是根模块的一部分；单元目录内出现独立 go.mod 说明架构变化，超出本校验约定，直接失败。
+func unitImportPrefix(rootModule string, category boundaryCategory, target unit) (string, error) {
+	goModPath := filepath.Join(target.Dir, "go.mod")
 	if _, err := os.Stat(goModPath); err == nil {
-		return "", fmt.Errorf("工具 %s 目录内出现独立 go.mod，超出当前校验约定", tool.Name)
+		return "", fmt.Errorf("%s %s 目录内出现独立 go.mod，超出当前校验约定", category.Label, target.Name)
 	} else if !os.IsNotExist(err) {
 		return "", err
 	}
-	return rootModule + "/tools/" + tool.Name, nil
+	return rootModule + "/" + category.Key + "/" + target.Name, nil
 }
 
-// scanToolImports 扫描一个工具文件夹内的全部 Go 源码引用，返回越界引用。
-func scanToolImports(repoRoot string, tool Tool, repoModules []string, allowedPrefix string) ([]ImportRef, error) {
+// scanUnitImports 扫描一个边界单元文件夹内的全部 Go 源码引用，返回越界引用。
+func scanUnitImports(repoRoot string, target unit, repoModules []string, allowedPrefix string) ([]ImportRef, error) {
 	violations := make([]ImportRef, 0)
 	fset := token.NewFileSet()
-	walkErr := filepath.WalkDir(tool.Dir, func(path string, entry os.DirEntry, err error) error {
+	walkErr := filepath.WalkDir(target.Dir, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}

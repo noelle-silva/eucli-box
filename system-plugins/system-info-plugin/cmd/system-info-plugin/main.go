@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"eucli-box/pkg/systemplugin"
-	"eucli-box/pkg/systemplugin/pluginrun"
+	"eucli-box/system-plugins/system-info-plugin/internal/pluginrun"
+	"eucli-box/system-plugins/system-info-plugin/internal/systemplugin"
 )
 
 const systemInfoInterfaceID = "current-system-info"

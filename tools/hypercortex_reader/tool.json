@@ -2,7 +2,7 @@
   "id": "hypercortex_reader",
   "name": "hypercortex_reader",
   "description": "只读访问 HyperCortex 知识库：搜索笔记与附件、读取笔记内容与引用关系、查看收藏夹、附件、版本快照与回收站。",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "eucliBoxCompatibility": {
     "minimumVersion": "0.1.0",
     "maximumVersionExclusive": "0.2.0"

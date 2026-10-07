@@ -26,10 +26,7 @@ const (
 	MessageEvent  = "event"
 )
 
-const (
-	StatusSuccess = "success"
-	StatusFailed  = "failed"
-)
+const StatusSuccess = "success"
 
 // CapabilityPlaceholderValues 是「占位符取值」能力的类型标识。
 const CapabilityPlaceholderValues = "placeholder-values"
@@ -86,20 +83,6 @@ func Read(decoder *json.Decoder) (Message, error) {
 		return Message{}, err
 	}
 	return message, nil
-}
-
-// ValidateHello 校验宿主握手：版本一致、类型正确、插件身份一致。
-func ValidateHello(message Message, pluginID string) error {
-	if message.ProtocolVersion != ProtocolVersion {
-		return fmt.Errorf("control protocol version mismatch: host %d, plugin %d", message.ProtocolVersion, ProtocolVersion)
-	}
-	if message.Type != MessageHello {
-		return fmt.Errorf("control handshake expected %q, got %q", MessageHello, message.Type)
-	}
-	if strings.TrimSpace(message.PluginID) != strings.TrimSpace(pluginID) {
-		return fmt.Errorf("control handshake plugin identity mismatch: host %q, plugin %q", message.PluginID, pluginID)
-	}
-	return nil
 }
 
 // ValidateReady 校验插件应答：版本一致、身份一致、声明能力与清单一致。

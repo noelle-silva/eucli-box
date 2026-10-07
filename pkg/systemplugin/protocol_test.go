@@ -4,17 +4,19 @@ import (
 	"testing"
 )
 
-func TestValidateHello(t *testing.T) {
-	message := NewMessage(MessageHello)
+func TestValidateReadyHandshake(t *testing.T) {
+	expected := []Capability{{Type: CapabilityPlaceholderValues, Interfaces: []string{"a"}}}
+	message := NewMessage(MessageReady)
 	message.PluginID = "demo"
-	if err := ValidateHello(message, "demo"); err != nil {
-		t.Fatalf("ValidateHello() error = %v", err)
+	message.Capabilities = expected
+	if err := ValidateReady(message, "demo", expected); err != nil {
+		t.Fatalf("ValidateReady() error = %v", err)
 	}
-	if err := ValidateHello(message, "other"); err == nil {
+	if err := ValidateReady(message, "other", expected); err == nil {
 		t.Fatalf("expected identity mismatch error")
 	}
 	message.ProtocolVersion = ProtocolVersion + 1
-	if err := ValidateHello(message, "demo"); err == nil {
+	if err := ValidateReady(message, "demo", expected); err == nil {
 		t.Fatalf("expected protocol mismatch error")
 	}
 }

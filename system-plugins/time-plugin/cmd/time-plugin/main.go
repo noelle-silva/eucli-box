@@ -9,8 +9,8 @@ import (
 	"time"
 	_ "time/tzdata"
 
-	"eucli-box/pkg/systemplugin"
-	"eucli-box/pkg/systemplugin/pluginrun"
+	"eucli-box/system-plugins/time-plugin/internal/pluginrun"
+	"eucli-box/system-plugins/time-plugin/internal/systemplugin"
 )
 
 const (

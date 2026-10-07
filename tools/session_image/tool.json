@@ -2,7 +2,7 @@
   "id": "session_image",
   "name": "session_image",
   "description": "会话图片读取工具：传入会话图片 ID，把该图片引用进当前会话，让模型能读取超出图片预算的历史图片。",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "eucliBoxCompatibility": {
     "minimumVersion": "0.1.0",
     "maximumVersionExclusive": "0.2.0"

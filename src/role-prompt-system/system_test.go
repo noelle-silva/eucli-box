@@ -3,6 +3,7 @@ package roleprompt
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -66,6 +67,38 @@ func TestBuildContextUsesOnlyRoleSessionAndPassedTools(t *testing.T) {
 	}
 	if len(ctx.NativeTools) != 1 || ctx.NativeTools[0].Name != "file-reader" {
 		t.Fatalf("native tools = %#v", ctx.NativeTools)
+	}
+}
+
+func TestBuildGroupContextToleratesMissingMemberRole(t *testing.T) {
+	storage := newFakeRoleStorage()
+	providers := newFakeProviderResolver()
+	providers.models["openai-main/gpt-4.1"] = types.ModelInfo{ID: "gpt-4.1", Name: "GPT"}
+	role := validRole()
+	storage.roles[role.ID] = role
+	member := validRole()
+	member.ID = "reviewer"
+	member.Name = "Reviewer"
+	storage.roles[member.ID] = member
+	group := types.ChatGroup{ID: "group-1", MemberRoleIDs: []string{role.ID, member.ID, "ghost"}}
+	storage.groups[group.ID] = group
+	system := newTestRoleSystem(t, storage, providers)
+	session := types.Session{
+		ID: "session-1", RoleID: role.ID, GroupID: group.ID,
+		Messages: []types.Message{
+			{ID: "m1", Type: "assistant", SpeakerRoleID: member.ID, Content: "from reviewer"},
+			{ID: "m2", Type: "assistant", SpeakerRoleID: "ghost", Content: "from ghost"},
+		},
+	}
+	ctx, err := system.BuildContext(context.Background(), role.ID, session, nil)
+	if err != nil {
+		t.Fatalf("BuildContext() error = %v", err)
+	}
+	if !strings.Contains(ctx.Messages[0].Content, "[Reviewer的发言]") {
+		t.Fatalf("member message content = %q, want resolved name", ctx.Messages[0].Content)
+	}
+	if !strings.Contains(ctx.Messages[1].Content, "[ghost的发言]") {
+		t.Fatalf("missing member message content = %q, want fallback role id", ctx.Messages[1].Content)
 	}
 }
 

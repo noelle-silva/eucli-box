@@ -3,9 +3,11 @@ package roleprompt
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
+	"eucli-box/pkg/itemaggregate"
 	"eucli-box/pkg/types"
 	"eucli-box/pkg/workspaceprompt"
 )
@@ -86,10 +88,7 @@ func (s *system) buildGroupContext(ctx context.Context, role types.Role, session
 	if !chatGroupContainsRole(group, role.ID) {
 		return types.RoleContext{}, roleInvalid("requested role is not a group member", nil)
 	}
-	roleNames, err := s.chatGroupRoleNames(ctx, group)
-	if err != nil {
-		return types.RoleContext{}, err
-	}
+	roleNames := s.chatGroupRoleNames(ctx, group)
 	messages, err := groupContextMessages(session.Messages, roleNames, role.ID, role.Name)
 	if err != nil {
 		return types.RoleContext{}, err
@@ -117,20 +116,40 @@ func chatGroupContainsRole(group types.ChatGroup, roleID string) bool {
 	return false
 }
 
-func (s *system) chatGroupRoleNames(ctx context.Context, group types.ChatGroup) (map[string]string, error) {
-	names := map[string]string{}
+// chatGroupRoleNames 是「逐项容错聚合」机制在群组成员角色名加载上的实例：
+// 单个成员角色加载失败只降级为该项不可用，其余成员照常，群组上下文不因此失败。
+func (s *system) chatGroupRoleNames(ctx context.Context, group types.ChatGroup) map[string]string {
+	items := make([]itemaggregate.Item, 0, len(group.MemberRoleIDs))
 	for _, roleID := range group.MemberRoleIDs {
 		roleID = strings.TrimSpace(roleID)
 		if roleID == "" {
 			continue
 		}
-		role, err := s.LoadRole(ctx, roleID)
-		if err != nil {
-			return nil, err
-		}
-		names[roleID] = role.Name
+		items = append(items, itemaggregate.Item{ID: roleID})
 	}
-	return names, nil
+	result := itemaggregate.Aggregate(ctx, items, s.roleNameLoader())
+	for _, outcome := range result.Unavailable() {
+		log.Printf("role-prompt-system: 群组成员角色名加载跳过 %s：%s", outcome.Item.ID, outcome.Reason)
+	}
+	names := make(map[string]string, len(items))
+	for _, outcome := range result.Outcomes {
+		if outcome.IsAvailable() {
+			names[outcome.Item.ID] = outcome.Value
+		}
+	}
+	return names
+}
+
+// roleNameLoader 把成员角色名加载绑定为逐项处理器：加载失败被聚合隔离为该项不可用，
+// 保留在结果中供观测而不丢弃。
+func (s *system) roleNameLoader() itemaggregate.Processor[string] {
+	return func(ctx context.Context, item itemaggregate.Item) (string, error) {
+		role, err := s.LoadRole(ctx, item.ID)
+		if err != nil {
+			return "", err
+		}
+		return role.Name, nil
+	}
 }
 
 func groupContextPrompts(group types.ChatGroup, role types.Role) []types.PromptMessage {
@@ -158,7 +177,7 @@ func groupContextMessages(messages []types.Message, roleNames map[string]string,
 			}
 			speakerName := strings.TrimSpace(roleNames[speakerRoleID])
 			if speakerName == "" {
-				return nil, roleInvalid("group assistant message speakerRoleId is not a group member", nil)
+				speakerName = speakerRoleID
 			}
 			message.Content = fmt.Sprintf("[%s的发言]\n%s", speakerName, message.Content)
 		case "user":

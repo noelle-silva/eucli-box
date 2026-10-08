@@ -38,7 +38,7 @@ func TestCheckManifestRejectsBrokenManifests(t *testing.T) {
 			name: "未知字段",
 			mutate: func(t *testing.T, root string) {
 				rewriteManifest(t, root, func(text string) string {
-					return strings.Replace(text, `"displayMode"`, `"extraField": true, "displayMode"`, 1)
+					return strings.Replace(text, `"commands"`, `"extraField": true, "commands"`, 1)
 				})
 			},
 			message: "解析清单文件失败",
@@ -134,7 +134,7 @@ func TestCheckManifestRejectsBrokenServiceSections(t *testing.T) {
 			root := writeFixture(t, fixtureManifest)
 			rewriteManifest(t, root, func(text string) string {
 				next := strings.Replace(text, `"type": "desktop-app"`, `"type": "service-app"`, 1)
-				return strings.Replace(next, `"displayMode"`, `"service": {`+test.service+`},`+"\n  "+`"displayMode"`, 1)
+				return strings.Replace(next, `"commands"`, `"service": {`+test.service+`},`+"\n  "+`"commands"`, 1)
 			})
 			if _, err := checkManifest(manifestPathOf(root)); err == nil {
 				t.Fatal("checkManifest() 应该失败")
@@ -155,7 +155,6 @@ const fixtureManifest = `{
     "windowsExecutable": "eucli-box.exe",
     "icon": ".fast-window-dev-protocol/assets/icon.svg"
   },
-  "displayMode": "default",
   "commands": []
 }
 `
@@ -175,7 +174,6 @@ const fixtureServiceManifest = `{
     "ready": { "type": "log", "match": "is ready", "timeoutSeconds": 30 },
     "stop": { "type": "terminate" }
   },
-  "displayMode": "default",
   "commands": []
 }
 `

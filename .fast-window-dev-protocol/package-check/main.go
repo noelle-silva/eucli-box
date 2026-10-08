@@ -22,6 +22,7 @@ const (
 var (
 	safeIDPattern        = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 	iconExtensions       = map[string]bool{".png": true, ".svg": true}
+	displayModes         = map[string]bool{"default": true, "window": true, "top": true}
 	formalVersionPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 )
 
@@ -33,6 +34,7 @@ type manifest struct {
 	VersionSource string          `json:"versionSource"`
 	Package       packageSection  `json:"package"`
 	Service       *serviceSection `json:"service"`
+	DisplayMode   string          `json:"displayMode"`
 	Commands      []command       `json:"commands"`
 }
 
@@ -132,6 +134,9 @@ func checkManifest(manifestPath string) (report, error) {
 	}
 	if strings.TrimSpace(parsed.Description) == "" {
 		return report{}, errors.New("description 不能为空")
+	}
+	if !displayModes[strings.TrimSpace(parsed.DisplayMode)] {
+		return report{}, errors.New("displayMode 必须为 default、window 或 top")
 	}
 	executable, err := normalizeRelativePath(parsed.Package.WindowsExecutable, "package.windowsExecutable")
 	if err != nil {

@@ -17,5 +17,6 @@
       "type": "terminate"
     }
   },
+  "displayMode": "default",
   "commands": []
 }

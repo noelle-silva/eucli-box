@@ -37,6 +37,66 @@ func TestStartRunCompletesWithoutTool(t *testing.T) {
 	}
 }
 
+func TestStartRunContinuesWhenSingleToolLoadFails(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.tool.toolSummaries = []types.ToolSummary{
+		{ID: "file-reader", Name: "file-reader", Description: "Read files", Type: "local"},
+		{ID: "broken-tool", Name: "broken-tool", Description: "Broken tool", Type: "local"},
+	}
+	fakes.roles.policy = types.ToolPolicy{
+		Tools:       []string{"file-reader", "broken-tool"},
+		NativeTools: []string{"file-reader", "broken-tool"},
+		RunModes:    map[string]types.ToolRunMode{"file-reader": types.ToolRunAsk, "broken-tool": types.ToolRunAsk},
+	}
+	fakes.tool.loadToolErrors = map[string]error{"broken-tool": errors.New("tool body missing")}
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	tools := fakes.provider.lastRequest().Tools
+	if len(tools) != 1 || tools[0].ID != "file-reader" {
+		t.Fatalf("model tools = %#v, want only file-reader", tools)
+	}
+}
+
+func TestStartRunReusesToolMarkedUnavailableByRegistry(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.tool.toolSummaries = []types.ToolSummary{
+		{ID: "file-reader", Name: "file-reader", Description: "Read files", Type: "local"},
+		{ID: "retired-tool", Name: "retired-tool", Description: "Retired tool", Type: "local", Status: types.ToolAvailabilityUnavailable, StatusMessage: "工具本体资料不可读取"},
+	}
+	fakes.roles.policy = types.ToolPolicy{
+		Tools:       []string{"file-reader", "retired-tool"},
+		NativeTools: []string{"file-reader", "retired-tool"},
+		RunModes:    map[string]types.ToolRunMode{"file-reader": types.ToolRunAsk, "retired-tool": types.ToolRunAsk},
+	}
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	tools := fakes.provider.lastRequest().Tools
+	if len(tools) != 1 || tools[0].ID != "file-reader" {
+		t.Fatalf("model tools = %#v, want only file-reader", tools)
+	}
+	for _, id := range fakes.tool.loadedToolIDSnapshot() {
+		if id == "retired-tool" {
+			t.Fatalf("retired-tool must not be reloaded, loaded = %#v", fakes.tool.loadedToolIDSnapshot())
+		}
+	}
+}
+
 func TestStartRunUsesFirstUserMessageAsSessionTitle(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
@@ -3979,6 +4039,8 @@ type fakeRuntimeTools struct {
 	executeErr          error
 	outputUpdates       []types.ToolOutputUpdate
 	toolSummaries       []types.ToolSummary
+	loadToolErrors      map[string]error
+	loadedToolIDs       []string
 	normalizedIntents   []types.ToolIntent
 }
 
@@ -4148,7 +4210,19 @@ func (f *fakeRuntimeTools) executeCountSnapshot() int {
 	return f.executeCount
 }
 
+func (f *fakeRuntimeTools) loadedToolIDSnapshot() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.loadedToolIDs...)
+}
+
 func (f *fakeRuntimeTools) LoadTool(ctx context.Context, toolID string) (types.ToolDefinition, error) {
+	f.mu.Lock()
+	f.loadedToolIDs = append(f.loadedToolIDs, toolID)
+	f.mu.Unlock()
+	if err, ok := f.loadToolErrors[toolID]; ok {
+		return types.ToolDefinition{}, err
+	}
 	for _, summary := range f.listToolSummaries() {
 		if summary.ID == toolID {
 			return types.ToolDefinition{ID: summary.ID, Name: summary.Name, Description: summary.Description, Type: summary.Type}, nil

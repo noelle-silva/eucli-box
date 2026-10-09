@@ -5,14 +5,19 @@ import "time"
 // DefaultAssistLowTemperature 是 AI 微服务「低温度」开关打开时使用的温度值。
 const DefaultAssistLowTemperature = 0.2
 
-// AssistTemperature 把 AI 微服务的低温度开关解析为模型请求温度：
-// 开关未设置或关闭时返回 nil，表示不发送温度、走模型默认。
-func AssistTemperature(lowTemperature *bool) *float64 {
-	if lowTemperature == nil || !*lowTemperature {
+// OptionalTemperature 把「温度开关 + 温度值」解析为模型请求温度：
+// 仅当开关显式开启时返回温度值；未设置或关闭时返回 nil，表示不发送温度、走模型默认。
+func OptionalTemperature(enabled *bool, value float64) *float64 {
+	if enabled == nil || !*enabled {
 		return nil
 	}
-	value := DefaultAssistLowTemperature
-	return &value
+	resolved := value
+	return &resolved
+}
+
+// AssistTemperature 解析 AI 微服务的低温度开关。
+func AssistTemperature(lowTemperature *bool) *float64 {
+	return OptionalTemperature(lowTemperature, DefaultAssistLowTemperature)
 }
 
 type MermaidFixConfig struct {

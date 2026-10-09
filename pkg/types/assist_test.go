@@ -18,3 +18,20 @@ func TestAssistTemperatureResolvesLowTemperatureSwitch(t *testing.T) {
 		t.Fatalf("enabled switch must send the low temperature: %#v", got)
 	}
 }
+
+func TestOptionalTemperatureResolvesRoleSwitch(t *testing.T) {
+	if got := OptionalTemperature(nil, 0.7); got != nil {
+		t.Fatalf("unset switch must not send temperature: %#v", got)
+	}
+
+	off := false
+	if got := OptionalTemperature(&off, 0.7); got != nil {
+		t.Fatalf("disabled switch must not send temperature: %#v", got)
+	}
+
+	on := true
+	got := OptionalTemperature(&on, 0.7)
+	if got == nil || *got != 0.7 {
+		t.Fatalf("enabled switch must send the configured value: %#v", got)
+	}
+}

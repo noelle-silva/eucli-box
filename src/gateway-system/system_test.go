@@ -684,7 +684,7 @@ func TestStickerRoutes(t *testing.T) {
 		t.Fatalf("load config status = %d body=%s", rec.Code, rec.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodPut, "/api/assist/stickers/name/config", strings.NewReader(`{"enabled":true,"coordinate":{"providerId":"anthropic-main","modelId":"claude-3-5-sonnet"},"systemPrompt":"test","temperature":0.3}`))
+	req = httptest.NewRequest(http.MethodPut, "/api/assist/stickers/name/config", strings.NewReader(`{"enabled":true,"coordinate":{"providerId":"anthropic-main","modelId":"claude-3-5-sonnet"},"systemPrompt":"test"}`))
 	rec = httptest.NewRecorder()
 	system.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "anthropic-main") {
@@ -1820,13 +1820,12 @@ func newFakeGatewayStickers() *fakeGatewayStickers {
 	return &fakeGatewayStickers{
 		categories: map[string]map[string]types.StickerItem{},
 		images:     map[string]string{},
-		config:     types.StickerNamingConfig{Enabled: true, Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, SystemPrompt: types.DefaultStickerNamingSystemPrompt, Temperature: 0.2, UpdatedAt: now},
-		mermaid:    types.MermaidFixConfig{Enabled: true, Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, SystemPrompt: types.DefaultMermaidFixSystemPrompt, Temperature: 0.2, UpdatedAt: now},
-		title:      types.ChatTitleNamingConfig{Enabled: true, Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, SystemPrompt: types.DefaultChatTitleNamingSystemPrompt, Temperature: 0.2, UpdatedAt: now},
+		config:     types.StickerNamingConfig{Enabled: true, Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, SystemPrompt: types.DefaultStickerNamingSystemPrompt, UpdatedAt: now},
+		mermaid:    types.MermaidFixConfig{Enabled: true, Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, SystemPrompt: types.DefaultMermaidFixSystemPrompt, UpdatedAt: now},
+		title:      types.ChatTitleNamingConfig{Enabled: true, Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, SystemPrompt: types.DefaultChatTitleNamingSystemPrompt, UpdatedAt: now},
 		compressionConfig: types.ContextCompressionConfig{
 			Coordinate:           types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"},
 			RetainRecentMessages: types.DefaultContextCompressionRetainRecentMessages,
-			Temperature:          0.2,
 			UpdatedAt:            now,
 		},
 	}

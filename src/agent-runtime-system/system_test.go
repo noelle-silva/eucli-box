@@ -3262,7 +3262,6 @@ func newFakeRuntimeStorage() *fakeRuntimeStorage {
 		compressionConfig: types.ContextCompressionConfig{
 			Coordinate:           types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"},
 			RetainRecentMessages: types.DefaultContextCompressionRetainRecentMessages,
-			Temperature:          0.2,
 			UpdatedAt:            time.Now().UTC(),
 		},
 		conversationImage: types.DefaultConversationImageConfig(),
@@ -3786,7 +3785,7 @@ type fakeRuntimeRoles struct {
 
 func (f *fakeRuntimeRoles) BuildContext(ctx context.Context, roleID string, session types.Session, tools []types.ToolDefinition) (types.RoleContext, error) {
 	policy := f.currentPolicy()
-	return types.RoleContext{RoleID: roleID, RoleName: "Developer", ModelConfig: types.ModelConfig{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Temperature: 0.7}, Messages: session.Messages, Tools: tools, NativeTools: fakeRuntimeNativeTools(tools, policy.NativeTools), ToolPolicy: policy, HookPromptPresetID: f.hookPromptPresetID}, nil
+	return types.RoleContext{RoleID: roleID, RoleName: "Developer", ModelConfig: types.ModelConfig{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}}, Messages: session.Messages, Tools: tools, NativeTools: fakeRuntimeNativeTools(tools, policy.NativeTools), ToolPolicy: policy, HookPromptPresetID: f.hookPromptPresetID}, nil
 }
 
 func (f *fakeRuntimeRoles) GetToolPolicy(ctx context.Context, roleID string) (types.ToolPolicy, error) {

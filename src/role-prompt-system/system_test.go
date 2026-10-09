@@ -135,7 +135,7 @@ func validRole() types.Role {
 		Prompts: []types.PromptMessage{
 			{ID: "p1", Role: "system", Content: "You write clear code", Order: 1},
 		},
-		ModelConfig: types.ModelConfig{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Temperature: 0.7},
+		ModelConfig: types.ModelConfig{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}},
 		ToolPolicy:  types.ToolPolicy{Tools: []string{"file-reader"}, RunModes: map[string]types.ToolRunMode{"file-reader": types.ToolRunAsk}},
 		UpdatedAt:   time.Now().UTC(),
 	}

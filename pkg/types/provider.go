@@ -103,7 +103,7 @@ type ModelGroupMember struct {
 type ModelRequest struct {
 	Coordinate      ModelCoordinate  `json:"coordinate"`
 	Messages        []PromptMessage  `json:"messages"`
-	Temperature     float64          `json:"temperature"`
+	Temperature     *float64         `json:"temperature,omitempty"`
 	ReasoningEffort ReasoningEffort  `json:"reasoningEffort,omitempty"`
 	Tools           []ToolDefinition `json:"tools,omitempty"`
 	Stream          bool             `json:"stream,omitempty"`

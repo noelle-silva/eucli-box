@@ -81,13 +81,9 @@ func (s *system) GenerateStickerName(ctx context.Context, request types.StickerN
 	if prompt == "" {
 		prompt = types.DefaultStickerNamingSystemPrompt
 	}
-	temperature := config.Temperature
-	if temperature <= 0 {
-		temperature = 0.2
-	}
 	response, err := s.models.Complete(ctx, types.ModelRequest{
 		Coordinate:  config.Coordinate,
-		Temperature: temperature,
+		Temperature: types.AssistTemperature(config.LowTemperature),
 		Messages: []types.PromptMessage{
 			{Role: "system", Content: prompt, Order: 0, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
 			{Role: "user", Content: "请根据这张表情包图片取一个名字。", Images: []types.PromptImage{{DataURL: imageDataURL}}, Order: 1, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
@@ -150,7 +146,7 @@ func (s *system) GenerateChatTitle(ctx context.Context, request types.ChatTitleR
 	if transcript == "" {
 		return types.ChatTitleResult{}, assistInvalid("chat transcript is empty", nil)
 	}
-	response, err := s.models.Complete(ctx, types.ModelRequest{Coordinate: config.Coordinate, Temperature: config.Temperature, Messages: []types.PromptMessage{{Role: "system", Content: config.SystemPrompt, Order: 0, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}, {Role: "user", Content: transcript, Order: 1, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}}})
+	response, err := s.models.Complete(ctx, types.ModelRequest{Coordinate: config.Coordinate, Temperature: types.AssistTemperature(config.LowTemperature), Messages: []types.PromptMessage{{Role: "system", Content: config.SystemPrompt, Order: 0, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}, {Role: "user", Content: transcript, Order: 1, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}}})
 	if err != nil {
 		return types.ChatTitleResult{}, assistFailed("failed to generate chat title", err)
 	}
@@ -202,7 +198,7 @@ func (s *system) FixMermaidInMessage(ctx context.Context, request types.MermaidF
 	if text := strings.TrimSpace(request.RenderErrorMsg); text != "" {
 		userContent += "\n\n渲染错误信息：\n" + text
 	}
-	response, err := s.models.Complete(ctx, types.ModelRequest{Coordinate: config.Coordinate, Temperature: config.Temperature, Messages: []types.PromptMessage{{Role: "system", Content: config.SystemPrompt, Order: 0, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}, {Role: "user", Content: userContent, Order: 1, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}}})
+	response, err := s.models.Complete(ctx, types.ModelRequest{Coordinate: config.Coordinate, Temperature: types.AssistTemperature(config.LowTemperature), Messages: []types.PromptMessage{{Role: "system", Content: config.SystemPrompt, Order: 0, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}, {Role: "user", Content: userContent, Order: 1, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}}})
 	if err != nil {
 		return types.MermaidFixResult{}, assistFailed("failed to fix mermaid", err)
 	}

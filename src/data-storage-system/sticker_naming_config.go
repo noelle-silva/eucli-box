@@ -62,8 +62,8 @@ func normalizeStickerNamingConfig(config types.StickerNamingConfig) types.Sticke
 	if config.SystemPrompt == "" {
 		config.SystemPrompt = types.DefaultStickerNamingSystemPrompt
 	}
-	if config.Temperature <= 0 {
-		config.Temperature = 0.2
+	if config.LowTemperature == nil {
+		config.LowTemperature = boolPtr(true)
 	}
 	if config.UpdatedAt.IsZero() {
 		config.UpdatedAt = time.Now().UTC()

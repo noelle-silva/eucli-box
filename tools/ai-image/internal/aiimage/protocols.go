@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"eucli-box/tools/ai-image/internal/types"
 	networkrequest "eucli-box/tools/ai-image/internal/networkrequest"
+	"eucli-box/tools/ai-image/internal/types"
 )
 
 // generationRequest 是一次生成动作的全部输入。

@@ -2,24 +2,37 @@ package types
 
 import "time"
 
+// DefaultAssistLowTemperature 是 AI 微服务「低温度」开关打开时使用的温度值。
+const DefaultAssistLowTemperature = 0.2
+
+// AssistTemperature 把 AI 微服务的低温度开关解析为模型请求温度：
+// 开关未设置或关闭时返回 nil，表示不发送温度、走模型默认。
+func AssistTemperature(lowTemperature *bool) *float64 {
+	if lowTemperature == nil || !*lowTemperature {
+		return nil
+	}
+	value := DefaultAssistLowTemperature
+	return &value
+}
+
 type MermaidFixConfig struct {
-	Enabled       bool            `json:"enabled"`
-	ModelPick     string          `json:"modelPick,omitempty"`
-	CustomModelID string          `json:"customModelId,omitempty"`
-	Coordinate    ModelCoordinate `json:"coordinate"`
-	SystemPrompt  string          `json:"systemPrompt"`
-	Temperature   float64         `json:"temperature"`
-	UpdatedAt     time.Time       `json:"updatedAt"`
+	Enabled        bool            `json:"enabled"`
+	ModelPick      string          `json:"modelPick,omitempty"`
+	CustomModelID  string          `json:"customModelId,omitempty"`
+	Coordinate     ModelCoordinate `json:"coordinate"`
+	SystemPrompt   string          `json:"systemPrompt"`
+	LowTemperature *bool           `json:"lowTemperature,omitempty"`
+	UpdatedAt      time.Time       `json:"updatedAt"`
 }
 
 type ChatTitleNamingConfig struct {
-	Enabled       bool            `json:"enabled"`
-	ModelPick     string          `json:"modelPick,omitempty"`
-	CustomModelID string          `json:"customModelId,omitempty"`
-	Coordinate    ModelCoordinate `json:"coordinate"`
-	SystemPrompt  string          `json:"systemPrompt"`
-	Temperature   float64         `json:"temperature"`
-	UpdatedAt     time.Time       `json:"updatedAt"`
+	Enabled        bool            `json:"enabled"`
+	ModelPick      string          `json:"modelPick,omitempty"`
+	CustomModelID  string          `json:"customModelId,omitempty"`
+	Coordinate     ModelCoordinate `json:"coordinate"`
+	SystemPrompt   string          `json:"systemPrompt"`
+	LowTemperature *bool           `json:"lowTemperature,omitempty"`
+	UpdatedAt      time.Time       `json:"updatedAt"`
 }
 
 const (
@@ -33,7 +46,7 @@ type ContextCompressionConfig struct {
 	CustomModelID        string          `json:"customModelId,omitempty"`
 	Coordinate           ModelCoordinate `json:"coordinate"`
 	RetainRecentMessages int             `json:"retainRecentMessages"`
-	Temperature          float64         `json:"temperature"`
+	LowTemperature       *bool           `json:"lowTemperature,omitempty"`
 	UpdatedAt            time.Time       `json:"updatedAt"`
 }
 

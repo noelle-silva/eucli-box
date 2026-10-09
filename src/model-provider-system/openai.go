@@ -117,8 +117,8 @@ func (openAIAdapter) BuildCompleteRequest(provider types.Provider, request types
 	}
 	if request.ReasoningEffort != "" {
 		body["reasoning_effort"] = openAIReasoningEffort(request.ReasoningEffort)
-	} else {
-		body["temperature"] = request.Temperature
+	} else if request.Temperature != nil {
+		body["temperature"] = *request.Temperature
 	}
 	if request.Stream {
 		body["stream"] = true

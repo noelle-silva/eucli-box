@@ -50,7 +50,7 @@ func (s *system) callModel(ctx context.Context, record *runRecord, roleContext t
 	if override, ok := types.NormalizeModelOverrideCoordinate(record.modelOverride); ok {
 		coordinate = override
 	}
-	request := types.ModelRequest{Coordinate: coordinate, Temperature: roleContext.ModelConfig.Temperature, Messages: messages, ReasoningEffort: record.reasoningEffort, Tools: roleContext.NativeTools, Stream: record.stream}
+	request := types.ModelRequest{Coordinate: coordinate, Messages: messages, ReasoningEffort: record.reasoningEffort, Tools: roleContext.NativeTools, Stream: record.stream}
 	return s.callModelWithRetry(ctx, record, request)
 }
 

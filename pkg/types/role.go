@@ -50,8 +50,7 @@ type ToolPolicy struct {
 }
 
 type ModelConfig struct {
-	Coordinate  ModelCoordinate `json:"coordinate"`
-	Temperature float64         `json:"temperature"`
+	Coordinate ModelCoordinate `json:"coordinate"`
 }
 
 type Role struct {

@@ -12,6 +12,10 @@ import (
 	"eucli-box/pkg/types"
 )
 
+func float64Ptr(value float64) *float64 {
+	return &value
+}
+
 func TestNewSystemRejectsMissingDependencies(t *testing.T) {
 	storage := newFakeProviderStorage()
 	if _, err := NewSystem(Config{}, nil, storage); err == nil {
@@ -152,7 +156,7 @@ func TestCompleteOpenAIWritesToolsIntoRequest(t *testing.T) {
 	response, err := system.Complete(context.Background(), types.ModelRequest{
 		Coordinate:  types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"},
 		Messages:    []types.PromptMessage{{Role: "user", Content: "hi"}},
-		Temperature: 0.7,
+		Temperature: float64Ptr(0.7),
 		Tools:       []types.ToolDefinition{{Name: "file-reader", Description: "Read file", InputSchema: map[string]any{"type": "object"}}},
 	})
 	if err != nil {
@@ -200,7 +204,7 @@ func TestCompleteOpenAIUsesReasoningEffortAndOmitsTemperature(t *testing.T) {
 	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"done"}}]}`)}}
 	system := newTestProviderSystem(t, network, storage)
 
-	_, err := system.Complete(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}, Temperature: 0.7})
+	_, err := system.Complete(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}, Temperature: float64Ptr(0.7)})
 	if err != nil {
 		t.Fatalf("Complete() error = %v", err)
 	}
@@ -213,6 +217,25 @@ func TestCompleteOpenAIUsesReasoningEffortAndOmitsTemperature(t *testing.T) {
 	}
 	if _, ok := body["temperature"]; ok {
 		t.Fatalf("temperature should be omitted when reasoning is enabled: %s", string(network.lastRequest.Body))
+	}
+}
+
+func TestCompleteOpenAISendsTemperatureWhenProvided(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["openai-main"] = testOpenAIProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"done"}}]}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	_, err := system.Complete(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}, Temperature: float64Ptr(0.2)})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(network.lastRequest.Body, &body); err != nil {
+		t.Fatalf("request body is invalid json: %v", err)
+	}
+	if body["temperature"] != 0.2 {
+		t.Fatalf("temperature = %#v body=%s", body["temperature"], string(network.lastRequest.Body))
 	}
 }
 
@@ -263,7 +286,7 @@ func TestCompleteAnthropicUsesReasoningEffortAndOmitsTemperature(t *testing.T) {
 	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"msg-1","content":[{"type":"text","text":"done"}]}`)}}
 	system := newTestProviderSystem(t, network, storage)
 
-	_, err := system.Complete(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}, Temperature: 0.2, ReasoningEffort: types.ReasoningEffortHigh})
+	_, err := system.Complete(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}, Temperature: float64Ptr(0.2), ReasoningEffort: types.ReasoningEffortHigh})
 	if err != nil {
 		t.Fatalf("Complete() error = %v", err)
 	}
@@ -818,7 +841,6 @@ func TestCompleteAnthropicSeparatesSystemPrompt(t *testing.T) {
 			{Role: "system", Content: "You are helpful"},
 			{Role: "user", Content: "hi"},
 		},
-		Temperature: 0.2,
 	})
 	if err != nil {
 		t.Fatalf("Complete() error = %v", err)
@@ -1014,7 +1036,7 @@ data: [DONE]
 
 	events := []string{}
 	reasoningEvents := []string{}
-	response, err := system.CompleteStream(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}, Temperature: 0.7, Tools: []types.ToolDefinition{{Name: "file-reader", Description: "Read file", InputSchema: map[string]any{"type": "object"}}}}, func(event types.ModelStreamEvent) error {
+	response, err := system.CompleteStream(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}, Tools: []types.ToolDefinition{{Name: "file-reader", Description: "Read file", InputSchema: map[string]any{"type": "object"}}}}, func(event types.ModelStreamEvent) error {
 		if event.Type == types.ModelStreamEventContentDelta {
 			events = append(events, event.Content)
 		}
@@ -1094,7 +1116,7 @@ data: {"type":"message_stop"}
 	system := newTestProviderSystem(t, network, storage)
 
 	reasoningStates := []types.ModelStreamEvent{}
-	response, err := system.CompleteStream(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}, Temperature: 0.2}, func(event types.ModelStreamEvent) error {
+	response, err := system.CompleteStream(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}}, func(event types.ModelStreamEvent) error {
 		if event.Type == types.ModelStreamEventReasoningDelta {
 			reasoningStates = append(reasoningStates, event)
 		}
@@ -1152,7 +1174,7 @@ data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text
 
 	events := []string{}
 	reasoningEvents := []string{}
-	response, err := system.CompleteStream(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}, Temperature: 0.2}, func(event types.ModelStreamEvent) error {
+	response, err := system.CompleteStream(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}}, func(event types.ModelStreamEvent) error {
 		if event.Type == types.ModelStreamEventContentDelta {
 			events = append(events, event.Content)
 		}

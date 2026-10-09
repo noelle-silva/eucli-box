@@ -44,13 +44,13 @@ type StickerNameRequest struct {
 }
 
 type StickerNamingConfig struct {
-	Enabled       bool            `json:"enabled"`
-	ModelPick     string          `json:"modelPick,omitempty"`
-	CustomModelID string          `json:"customModelId,omitempty"`
-	Coordinate    ModelCoordinate `json:"coordinate"`
-	SystemPrompt  string          `json:"systemPrompt"`
-	Temperature   float64         `json:"temperature"`
-	UpdatedAt     time.Time       `json:"updatedAt"`
+	Enabled        bool            `json:"enabled"`
+	ModelPick      string          `json:"modelPick,omitempty"`
+	CustomModelID  string          `json:"customModelId,omitempty"`
+	Coordinate     ModelCoordinate `json:"coordinate"`
+	SystemPrompt   string          `json:"systemPrompt"`
+	LowTemperature *bool           `json:"lowTemperature,omitempty"`
+	UpdatedAt      time.Time       `json:"updatedAt"`
 }
 
 type StickerNameResult struct {

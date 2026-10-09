@@ -93,7 +93,7 @@ func (s *system) continueCompactRun(ctx context.Context, record *runRecord, cont
 		s.failCommandRun(record, err)
 		return
 	}
-	response, err := s.providers.Complete(ctx, types.ModelRequest{Coordinate: config.Coordinate, Temperature: config.Temperature, Messages: contextCompressionPromptMessages(plan)})
+	response, err := s.providers.Complete(ctx, types.ModelRequest{Coordinate: config.Coordinate, Temperature: types.AssistTemperature(config.LowTemperature), Messages: contextCompressionPromptMessages(plan)})
 	if err != nil {
 		if ctx.Err() != nil {
 			s.cancelRunRecord(context.Background(), record, record.session)

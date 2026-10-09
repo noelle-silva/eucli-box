@@ -121,8 +121,8 @@ func (anthropicAdapter) BuildCompleteRequest(provider types.Provider, request ty
 	}
 	if request.ReasoningEffort != "" {
 		body["thinking"] = map[string]any{"type": "enabled", "budget_tokens": anthropicThinkingBudgetTokens(request.ReasoningEffort)}
-	} else {
-		body["temperature"] = request.Temperature
+	} else if request.Temperature != nil {
+		body["temperature"] = *request.Temperature
 	}
 	if request.Stream {
 		body["stream"] = true

@@ -82,8 +82,8 @@ func normalizeMermaidFixConfig(config types.MermaidFixConfig) types.MermaidFixCo
 	if config.SystemPrompt == "" {
 		config.SystemPrompt = types.DefaultMermaidFixSystemPrompt
 	}
-	if config.Temperature <= 0 {
-		config.Temperature = 0.2
+	if config.LowTemperature == nil {
+		config.LowTemperature = boolPtr(true)
 	}
 	if config.UpdatedAt.IsZero() {
 		config.UpdatedAt = time.Now().UTC()
@@ -97,8 +97,8 @@ func normalizeChatTitleNamingConfig(config types.ChatTitleNamingConfig) types.Ch
 	if config.SystemPrompt == "" {
 		config.SystemPrompt = types.DefaultChatTitleNamingSystemPrompt
 	}
-	if config.Temperature <= 0 {
-		config.Temperature = 0.2
+	if config.LowTemperature == nil {
+		config.LowTemperature = boolPtr(true)
 	}
 	if config.UpdatedAt.IsZero() {
 		config.UpdatedAt = time.Now().UTC()
@@ -117,8 +117,8 @@ func normalizeContextCompressionConfig(config types.ContextCompressionConfig) ty
 	if config.RetainRecentMessages > types.ContextCompressionRetainRecentMessagesMax {
 		config.RetainRecentMessages = types.ContextCompressionRetainRecentMessagesMax
 	}
-	if config.Temperature <= 0 {
-		config.Temperature = 0.2
+	if config.LowTemperature == nil {
+		config.LowTemperature = boolPtr(true)
 	}
 	if config.UpdatedAt.IsZero() {
 		config.UpdatedAt = time.Now().UTC()
@@ -146,4 +146,8 @@ func normalizeAssistModelSelection(modelPick string, customModelID string, coord
 	}
 	modelPick = coordinate.ModelID
 	return modelPick, "", coordinate
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }

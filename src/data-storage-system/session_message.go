@@ -142,7 +142,6 @@ func normalizeSessionMessages(messages []types.Message, now time.Time) []types.M
 		message.Parts = normalizeSessionMessageParts(message, now)
 		message.BranchID = normalizeBranchID(message.BranchID)
 		message.ParentMessageID = strings.TrimSpace(message.ParentMessageID)
-		message.TokenEstimate = types.EstimateMessageTokenCount(message)
 		if message.ParentMessageID == "" {
 			message.ParentMessageID = lastByBranch[message.BranchID]
 			if message.ParentMessageID == "" {

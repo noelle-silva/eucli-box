@@ -136,7 +136,6 @@ func (s *system) rollbackAssistantOutput(ctx context.Context, record *runRecord,
 	now := nowUTC()
 	message := record.session.Messages[index]
 	message.UpdatedAt = now
-	message.TokenEstimate = types.EstimateMessageTokenCount(message)
 	record.session.Messages[index] = message
 	record.messageParent = message
 	record.lastMessageID = message.ID

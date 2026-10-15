@@ -265,14 +265,18 @@ func (c *capabilitySession) readSessionState(ctx context.Context, payload json.R
 		{Key: types.SessionStateKeyCurrentTime, Description: "宿主当前时间", Value: time.Now().UTC().Format(time.RFC3339)},
 	}
 	if session, err := c.loadSession(ctx); err == nil {
-		tokenEstimate := 0
+		tokenUsage := 0
 		for _, message := range session.Messages {
-			tokenEstimate += message.TokenEstimate
+			tokenUsage += message.TokenEstimate
+		}
+		var tokenUsageValue any
+		if tokenUsage > 0 {
+			tokenUsageValue = tokenUsage
 		}
 		values = append(values,
 			types.SessionStateValue{Key: types.SessionStateKeySessionTitle, Description: "当前会话标题", Value: session.Title},
 			types.SessionStateValue{Key: types.SessionStateKeySessionMessageCount, Description: "当前会话消息数量", Value: len(session.Messages)},
-			types.SessionStateValue{Key: types.SessionStateKeySessionTokenEstimate, Description: "当前会话累计 token 估算", Value: tokenEstimate},
+			types.SessionStateValue{Key: types.SessionStateKeySessionTokenEstimate, Description: "当前会话累计 token 用量", Value: tokenUsageValue},
 		)
 	}
 	if roleID := strings.TrimSpace(c.plan.Scope.RoleID); roleID != "" {

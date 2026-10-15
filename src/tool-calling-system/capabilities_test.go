@@ -201,6 +201,21 @@ func TestSessionStateReadReturnsDeclaredValues(t *testing.T) {
 	}
 }
 
+func TestSessionTokenUsageStaysEmptyWithoutFieldTruth(t *testing.T) {
+	storage := newFakeToolStorage()
+	storage.sessions["session-1"] = types.Session{ID: "session-1", Title: "测试会话", Messages: []types.Message{{ID: "m1"}, {ID: "m2"}}}
+	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestTool()), storage)
+
+	result := session.handle(context.Background(), toolcontrol.CapabilityRequest{Capability: types.ToolCapabilitySessionState, Access: types.ToolCapabilityAccessRead, Payload: json.RawMessage(`{"key":"session-token-estimate"}`)})
+	if result.Status != toolcontrol.CapabilityStatusSuccess {
+		t.Fatalf("state result = %#v", result)
+	}
+	encoded, _ := json.Marshal(result.Payload)
+	if strings.Contains(string(encoded), "\"value\"") {
+		t.Fatalf("token usage must stay empty without field truth: %s", encoded)
+	}
+}
+
 // TestReadWorkspaceReturnsRegisteredDirectories 验证注入类能力（工作区路径）
 // 无需任何用户授权：宿主随执行主动提供的是工作环境事实，不设授权开关。
 func TestReadWorkspaceReturnsRegisteredDirectories(t *testing.T) {

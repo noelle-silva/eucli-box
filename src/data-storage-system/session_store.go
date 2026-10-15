@@ -411,6 +411,10 @@ func (s *system) mergeSessionMessageSave(ctx context.Context, save types.Session
 	}
 	merged.Metadata = applySessionMetadataPatch(merged.Metadata, save.MetadataPatch)
 	merged.AsyncToolTasks = types.MergeAsyncToolTasks(merged.AsyncToolTasks, session.AsyncToolTasks)
+	// 会话级用量真值随会话一并持久化：拿到新真值即整体覆盖旧值，一次会话只留最新一条。
+	if session.TokenUsage != nil {
+		merged.TokenUsage = session.TokenUsage
+	}
 	if merged.Title == "" || merged.Title == types.DefaultSessionTitle {
 		merged.Title = session.Title
 	}

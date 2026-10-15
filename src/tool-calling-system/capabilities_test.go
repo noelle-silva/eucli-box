@@ -182,7 +182,7 @@ func TestSessionAttachmentWriteBudgetIsReleasedOnFailure(t *testing.T) {
 
 func TestSessionStateReadReturnsDeclaredValues(t *testing.T) {
 	storage := newFakeToolStorage()
-	storage.sessions["session-1"] = types.Session{ID: "session-1", Title: "测试会话", Messages: []types.Message{{ID: "m1", TokenEstimate: 12}, {ID: "m2", TokenEstimate: 30}}}
+	storage.sessions["session-1"] = types.Session{ID: "session-1", Title: "测试会话", Messages: []types.Message{{ID: "m1"}, {ID: "m2"}}, TokenUsage: &types.TokenUsage{InputTokens: intPtr(30), OutputTokens: intPtr(12), TotalTokens: intPtr(42)}}
 	storage.roles["developer"] = types.Role{ID: "developer", Name: "开发者"}
 	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestTool()), storage)
 
@@ -196,9 +196,13 @@ func TestSessionStateReadReturnsDeclaredValues(t *testing.T) {
 			t.Fatalf("state payload missing %s: %s", expected, encoded)
 		}
 	}
-	if !strings.Contains(string(encoded), "\"value\":42") {
-		t.Fatalf("state payload missing token estimate: %s", encoded)
+	if !strings.Contains(string(encoded), "\"totalTokens\":42") {
+		t.Fatalf("state payload missing token usage truth: %s", encoded)
 	}
+}
+
+func intPtr(value int) *int {
+	return &value
 }
 
 func TestSessionTokenUsageStaysEmptyWithoutFieldTruth(t *testing.T) {

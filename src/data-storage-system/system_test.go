@@ -355,6 +355,58 @@ func TestSaveSessionStoresMessageTextOnlyInParts(t *testing.T) {
 	}
 }
 
+func TestSessionTokenUsagePersistsLatestTruth(t *testing.T) {
+	system := newTestSystem(t)
+	now := time.Date(2026, 6, 4, 17, 0, 0, 0, time.UTC)
+	inputTokens, outputTokens, totalTokens := 30, 12, 42
+	session := types.Session{
+		ID:         "session-token-usage",
+		RoleID:     "developer",
+		Title:      "Token Usage",
+		Status:     string(types.RunStatusCompleted),
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		LastActive: now,
+		TokenUsage: &types.TokenUsage{InputTokens: &inputTokens, OutputTokens: &outputTokens, TotalTokens: &totalTokens},
+	}
+	if err := system.SaveSession(context.Background(), session); err != nil {
+		t.Fatalf("SaveSession() error = %v", err)
+	}
+
+	loaded, err := system.LoadSession(context.Background(), "developer", "session-token-usage")
+	if err != nil {
+		t.Fatalf("LoadSession() error = %v", err)
+	}
+	if loaded.TokenUsage == nil || loaded.TokenUsage.TotalTokens == nil || *loaded.TokenUsage.TotalTokens != 42 || loaded.TokenUsage.InputTokens == nil || *loaded.TokenUsage.InputTokens != 30 {
+		t.Fatalf("loaded token usage = %#v", loaded.TokenUsage)
+	}
+
+	// 拿到新真值即整体覆盖旧值。
+	nextTotal := 99
+	if err := system.SaveSessionMessages(context.Background(), types.SessionMessageSave{Session: types.Session{ID: "session-token-usage", RoleID: "developer", TokenUsage: &types.TokenUsage{TotalTokens: &nextTotal}}, Status: types.RunStatusRunning}); err != nil {
+		t.Fatalf("SaveSessionMessages() error = %v", err)
+	}
+	loaded, err = system.LoadSession(context.Background(), "developer", "session-token-usage")
+	if err != nil {
+		t.Fatalf("LoadSession() error = %v", err)
+	}
+	if loaded.TokenUsage == nil || loaded.TokenUsage.TotalTokens == nil || *loaded.TokenUsage.TotalTokens != 99 || loaded.TokenUsage.InputTokens != nil {
+		t.Fatalf("overwritten token usage = %#v", loaded.TokenUsage)
+	}
+
+	// 没有新真值时保留既有真值，不被空值顶替。
+	if err := system.SaveSessionMessages(context.Background(), types.SessionMessageSave{Session: types.Session{ID: "session-token-usage", RoleID: "developer"}, Status: types.RunStatusCompleted}); err != nil {
+		t.Fatalf("SaveSessionMessages() error = %v", err)
+	}
+	loaded, err = system.LoadSession(context.Background(), "developer", "session-token-usage")
+	if err != nil {
+		t.Fatalf("LoadSession() error = %v", err)
+	}
+	if loaded.TokenUsage == nil || loaded.TokenUsage.TotalTokens == nil || *loaded.TokenUsage.TotalTokens != 99 {
+		t.Fatalf("retained token usage = %#v", loaded.TokenUsage)
+	}
+}
+
 func TestSaveSessionPreservesAsyncToolResultMessageType(t *testing.T) {
 	system := newTestSystem(t)
 	now := time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC)

@@ -265,13 +265,10 @@ func (c *capabilitySession) readSessionState(ctx context.Context, payload json.R
 		{Key: types.SessionStateKeyCurrentTime, Description: "宿主当前时间", Value: time.Now().UTC().Format(time.RFC3339)},
 	}
 	if session, err := c.loadSession(ctx); err == nil {
-		tokenUsage := 0
-		for _, message := range session.Messages {
-			tokenUsage += message.TokenEstimate
-		}
+		// 对外出口只透会话级用量字段里的真值：不按消息求和、不加工；无真值即留空。
 		var tokenUsageValue any
-		if tokenUsage > 0 {
-			tokenUsageValue = tokenUsage
+		if !session.TokenUsage.IsEmpty() {
+			tokenUsageValue = session.TokenUsage
 		}
 		values = append(values,
 			types.SessionStateValue{Key: types.SessionStateKeySessionTitle, Description: "当前会话标题", Value: session.Title},

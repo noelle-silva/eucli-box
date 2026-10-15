@@ -18,8 +18,26 @@ type anthropicModelListResponse struct {
 	} `json:"data"`
 }
 
+type anthropicUsagePayload struct {
+	InputTokens  *int `json:"input_tokens"`
+	OutputTokens *int `json:"output_tokens"`
+}
+
+// anthropicTokenUsage 把 Anthropic 的用量字段归一为统一容器：原样搬运，不做换算。
+func anthropicTokenUsage(payload *anthropicUsagePayload) *types.TokenUsage {
+	if payload == nil {
+		return nil
+	}
+	usage := &types.TokenUsage{InputTokens: payload.InputTokens, OutputTokens: payload.OutputTokens}
+	if usage.IsEmpty() {
+		return nil
+	}
+	return usage
+}
+
 type anthropicCompleteResponse struct {
-	ID      string `json:"id"`
+	ID      string                 `json:"id"`
+	Usage   *anthropicUsagePayload `json:"usage"`
 	Content []struct {
 		Type      string         `json:"type"`
 		Text      string         `json:"text"`
@@ -35,9 +53,11 @@ type anthropicCompleteResponse struct {
 type anthropicStreamPayload struct {
 	Type    string `json:"type"`
 	Message struct {
-		ID string `json:"id"`
+		ID    string                 `json:"id"`
+		Usage *anthropicUsagePayload `json:"usage"`
 	} `json:"message"`
-	Index        int `json:"index"`
+	Usage        *anthropicUsagePayload `json:"usage"`
+	Index        int                    `json:"index"`
 	ContentBlock struct {
 		Type      string         `json:"type"`
 		Text      string         `json:"text"`
@@ -73,6 +93,7 @@ type anthropicStreamParser struct {
 	reasoningSignature string
 	reasoningData      string
 	toolUses           map[int]*anthropicToolUseBuilder
+	usage              *anthropicUsagePayload
 	createdAt          time.Time
 }
 
@@ -183,7 +204,7 @@ func (p *anthropicStreamParser) Finish(response types.HTTPResponse) (types.Model
 	if err := p.sse.Finish(); err != nil {
 		return types.ModelResponse{}, err
 	}
-	result := types.ModelResponse{ID: p.id, Content: p.content.String(), Reasoning: p.reasoning.String(), ReasoningSource: "an", ReasoningSignature: p.reasoningSignature, ReasoningData: p.reasoningData, Raw: response.Body, CreatedAt: p.createdAt}
+	result := types.ModelResponse{ID: p.id, Content: p.content.String(), Reasoning: p.reasoning.String(), ReasoningSource: "an", ReasoningSignature: p.reasoningSignature, ReasoningData: p.reasoningData, Usage: anthropicTokenUsage(p.usage), Raw: response.Body, CreatedAt: p.createdAt}
 	indexes := make([]int, 0, len(p.toolUses))
 	for index := range p.toolUses {
 		indexes = append(indexes, index)
@@ -222,6 +243,10 @@ func (p *anthropicStreamParser) acceptEvent(event sseEvent) error {
 	if p.id == "" {
 		p.id = payload.Message.ID
 	}
+	// 用量真值分两段带回：message_start 在 message.usage，message_delta 在顶层 usage。
+	// 逐项取最新真值，不丢弃上游任一字段。
+	p.mergeUsage(payload.Message.Usage)
+	p.mergeUsage(payload.Usage)
 	switch payload.Type {
 	case "content_block_start":
 		if payload.ContentBlock.Type == "text" && payload.ContentBlock.Text != "" {
@@ -266,6 +291,22 @@ func (p *anthropicStreamParser) acceptEvent(event sseEvent) error {
 	return nil
 }
 
+// mergeUsage 把一次事件带到的用量字段并入已累积的用量：只覆盖上游本次给出的项。
+func (p *anthropicStreamParser) mergeUsage(payload *anthropicUsagePayload) {
+	if payload == nil {
+		return
+	}
+	if p.usage == nil {
+		p.usage = &anthropicUsagePayload{}
+	}
+	if payload.InputTokens != nil {
+		p.usage.InputTokens = payload.InputTokens
+	}
+	if payload.OutputTokens != nil {
+		p.usage.OutputTokens = payload.OutputTokens
+	}
+}
+
 func (p *anthropicStreamParser) appendText(delta string) error {
 	if delta == "" {
 		return nil
@@ -297,7 +338,7 @@ func (anthropicAdapter) ParseCompleteResponse(response types.HTTPResponse) (type
 		return types.ModelResponse{}, providerParseFailed("failed to parse Anthropic completion", err)
 	}
 	createdAt := time.Now().UTC()
-	result := types.ModelResponse{ID: payload.ID, Raw: response.Body, CreatedAt: createdAt}
+	result := types.ModelResponse{ID: payload.ID, Usage: anthropicTokenUsage(payload.Usage), Raw: response.Body, CreatedAt: createdAt}
 	for _, item := range payload.Content {
 		switch item.Type {
 		case "text":

@@ -138,6 +138,7 @@ type ModelResponse struct {
 	ReasoningSignature string       `json:"reasoningSignature,omitempty"`
 	ReasoningData      string       `json:"reasoningData,omitempty"`
 	ToolIntents        []ToolIntent `json:"toolIntents,omitempty"`
+	Usage              *TokenUsage  `json:"usage,omitempty"`
 	Raw                []byte       `json:"raw,omitempty"`
 	CreatedAt          time.Time    `json:"createdAt"`
 }

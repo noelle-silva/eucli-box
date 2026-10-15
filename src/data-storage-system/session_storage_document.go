@@ -15,6 +15,7 @@ type sessionStorageDocument struct {
 	Status         string                 `json:"status"`
 	Messages       []messageStorageRecord `json:"messages"`
 	AsyncToolTasks []types.AsyncToolTask  `json:"asyncToolTasks,omitempty"`
+	TokenUsage     *types.TokenUsage      `json:"tokenUsage,omitempty"`
 	Metadata       map[string]string      `json:"metadata,omitempty"`
 	CreatedAt      time.Time              `json:"createdAt"`
 	UpdatedAt      time.Time              `json:"updatedAt"`
@@ -56,6 +57,7 @@ func toSessionStorageDocument(session types.Session) sessionStorageDocument {
 		Status:         session.Status,
 		Messages:       messages,
 		AsyncToolTasks: session.AsyncToolTasks,
+		TokenUsage:     session.TokenUsage,
 		Metadata:       session.Metadata,
 		CreatedAt:      session.CreatedAt,
 		UpdatedAt:      session.UpdatedAt,

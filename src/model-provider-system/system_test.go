@@ -1333,6 +1333,88 @@ func (f *fakeProviderStorage) SaveModelGroups(ctx context.Context, groups []type
 	return f.modelGroups, nil
 }
 
+func TestCompleteOpenAIParsesUsage(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["openai-main"] = testOpenAIProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"hi"}}],"usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18}}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	response, err := system.Complete(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	if response.Usage == nil || response.Usage.InputTokens == nil || *response.Usage.InputTokens != 11 || response.Usage.OutputTokens == nil || *response.Usage.OutputTokens != 7 || response.Usage.TotalTokens == nil || *response.Usage.TotalTokens != 18 {
+		t.Fatalf("usage = %#v", response.Usage)
+	}
+}
+
+func TestCompleteStreamOpenAIRequestsUsageAndParsesIt(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["openai-main"] = testOpenAIProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`data: {"id":"chatcmpl-stream","choices":[{"delta":{"content":"hi"}}]}
+
+data: {"id":"chatcmpl-stream","choices":[],"usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18}}
+
+data: [DONE]
+
+`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	response, err := system.CompleteStream(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}}, nil)
+	if err != nil {
+		t.Fatalf("CompleteStream() error = %v", err)
+	}
+	if response.Usage == nil || response.Usage.InputTokens == nil || *response.Usage.InputTokens != 11 || response.Usage.OutputTokens == nil || *response.Usage.OutputTokens != 7 || response.Usage.TotalTokens == nil || *response.Usage.TotalTokens != 18 {
+		t.Fatalf("usage = %#v", response.Usage)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(network.lastRequest.Body, &body); err != nil {
+		t.Fatalf("request body is invalid json: %v", err)
+	}
+	options, _ := body["stream_options"].(map[string]any)
+	if options == nil || options["include_usage"] != true {
+		t.Fatalf("stream_options = %#v body=%s", body["stream_options"], string(network.lastRequest.Body))
+	}
+}
+
+func TestCompleteAnthropicParsesUsage(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["anthropic-main"] = testAnthropicProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"msg-1","content":[{"type":"text","text":"done"}],"usage":{"input_tokens":21,"output_tokens":9}}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	response, err := system.Complete(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	if response.Usage == nil || response.Usage.InputTokens == nil || *response.Usage.InputTokens != 21 || response.Usage.OutputTokens == nil || *response.Usage.OutputTokens != 9 || response.Usage.TotalTokens != nil {
+		t.Fatalf("usage = %#v", response.Usage)
+	}
+}
+
+func TestCompleteStreamAnthropicParsesUsage(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["anthropic-main"] = testAnthropicProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`data: {"type":"message_start","message":{"id":"msg-stream","usage":{"input_tokens":21,"output_tokens":1}}}
+
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"done"}}
+
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":9}}
+
+data: {"type":"message_stop"}
+
+`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	response, err := system.CompleteStream(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}}, nil)
+	if err != nil {
+		t.Fatalf("CompleteStream() error = %v", err)
+	}
+	if response.Usage == nil || response.Usage.InputTokens == nil || *response.Usage.InputTokens != 21 || response.Usage.OutputTokens == nil || *response.Usage.OutputTokens != 9 {
+		t.Fatalf("usage = %#v", response.Usage)
+	}
+}
+
 func assertAppErrorCode(t *testing.T, err error, code string) {
 	t.Helper()
 	var appErr *apperrors.AppError

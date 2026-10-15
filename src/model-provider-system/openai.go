@@ -18,8 +18,15 @@ type openAIModelListResponse struct {
 	} `json:"data"`
 }
 
+type openAIUsagePayload struct {
+	PromptTokens     *int `json:"prompt_tokens"`
+	CompletionTokens *int `json:"completion_tokens"`
+	TotalTokens      *int `json:"total_tokens"`
+}
+
 type openAICompleteResponse struct {
-	ID      string `json:"id"`
+	ID      string              `json:"id"`
+	Usage   *openAIUsagePayload `json:"usage"`
 	Choices []struct {
 		Message struct {
 			Content          string          `json:"content"`
@@ -37,7 +44,8 @@ type openAICompleteResponse struct {
 }
 
 type openAIStreamResponse struct {
-	ID      string `json:"id"`
+	ID      string              `json:"id"`
+	Usage   *openAIUsagePayload `json:"usage"`
 	Choices []struct {
 		Delta struct {
 			Content          string          `json:"content"`
@@ -55,6 +63,18 @@ type openAIStreamResponse struct {
 	} `json:"choices"`
 }
 
+// openAITokenUsage 把 OpenAI 的用量字段归一为统一容器：原样搬运，不做换算。
+func openAITokenUsage(payload *openAIUsagePayload) *types.TokenUsage {
+	if payload == nil {
+		return nil
+	}
+	usage := &types.TokenUsage{InputTokens: payload.PromptTokens, OutputTokens: payload.CompletionTokens, TotalTokens: payload.TotalTokens}
+	if usage.IsEmpty() {
+		return nil
+	}
+	return usage
+}
+
 type openAIToolCallBuilder struct {
 	ID        string
 	Name      string
@@ -69,6 +89,7 @@ type openAIStreamParser struct {
 	reasoning     strings.Builder
 	reasoningData string
 	toolCalls     map[int]*openAIToolCallBuilder
+	usage         *openAIUsagePayload
 	createdAt     time.Time
 }
 
@@ -122,6 +143,8 @@ func (openAIAdapter) BuildCompleteRequest(provider types.Provider, request types
 	}
 	if request.Stream {
 		body["stream"] = true
+		// 主动索取用量：OpenAI 兼容流式响应默认不带用量，打开 include_usage 后末段带回。
+		body["stream_options"] = map[string]any{"include_usage": true}
 	}
 	if len(request.Tools) > 0 {
 		body["tools"] = openAITools(request.Tools)
@@ -172,7 +195,7 @@ func (p *openAIStreamParser) Finish(response types.HTTPResponse) (types.ModelRes
 	if err := p.sse.Finish(); err != nil {
 		return types.ModelResponse{}, err
 	}
-	result := types.ModelResponse{ID: p.id, Content: p.content.String(), Reasoning: p.reasoning.String(), ReasoningSource: "op", ReasoningData: p.reasoningData, Raw: response.Body, CreatedAt: p.createdAt}
+	result := types.ModelResponse{ID: p.id, Content: p.content.String(), Reasoning: p.reasoning.String(), ReasoningSource: "op", ReasoningData: p.reasoningData, Usage: openAITokenUsage(p.usage), Raw: response.Body, CreatedAt: p.createdAt}
 	indexes := make([]int, 0, len(p.toolCalls))
 	for index := range p.toolCalls {
 		indexes = append(indexes, index)
@@ -204,6 +227,9 @@ func (p *openAIStreamParser) acceptEvent(event sseEvent) error {
 	}
 	if p.id == "" {
 		p.id = payload.ID
+	}
+	if payload.Usage != nil {
+		p.usage = payload.Usage
 	}
 	for _, choice := range payload.Choices {
 		if choice.Delta.Content != "" {
@@ -263,7 +289,7 @@ func (openAIAdapter) ParseCompleteResponse(response types.HTTPResponse) (types.M
 	if err := json.Unmarshal(response.Body, &payload); err != nil {
 		return types.ModelResponse{}, providerParseFailed("failed to parse OpenAI completion", err)
 	}
-	result := types.ModelResponse{ID: payload.ID, Raw: response.Body, CreatedAt: time.Now().UTC()}
+	result := types.ModelResponse{ID: payload.ID, Usage: openAITokenUsage(payload.Usage), Raw: response.Body, CreatedAt: time.Now().UTC()}
 	if len(payload.Choices) == 0 {
 		return result, nil
 	}

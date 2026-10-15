@@ -37,6 +37,25 @@ func TestStartRunCompletesWithoutTool(t *testing.T) {
 	}
 }
 
+func TestStartRunPersistsModelUsageTruthIntoSession(t *testing.T) {
+	fakes := newRuntimeFakes()
+	inputTokens, outputTokens, totalTokens := 30, 12, 42
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done", Usage: &types.TokenUsage{InputTokens: &inputTokens, OutputTokens: &outputTokens, TotalTokens: &totalTokens}}}
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	session := fakes.storage.lastSession()
+	if session.TokenUsage == nil || session.TokenUsage.TotalTokens == nil || *session.TokenUsage.TotalTokens != 42 {
+		t.Fatalf("session token usage = %#v", session.TokenUsage)
+	}
+}
+
 func TestStartRunContinuesWhenSingleToolLoadFails(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.tool.toolSummaries = []types.ToolSummary{
@@ -3333,6 +3352,9 @@ func (f *fakeRuntimeStorage) SaveSessionMessages(ctx context.Context, save types
 	merged.Status = string(save.Status)
 	merged.Metadata = fakeApplySessionMetadataPatch(merged.Metadata, save.MetadataPatch)
 	merged.AsyncToolTasks = types.MergeAsyncToolTasks(merged.AsyncToolTasks, session.AsyncToolTasks)
+	if session.TokenUsage != nil {
+		merged.TokenUsage = session.TokenUsage
+	}
 	for _, condition := range save.Conditions {
 		messageID := strings.TrimSpace(condition.MessageID)
 		if messageID == "" && condition.Expected != nil {

@@ -199,18 +199,21 @@ type RunAttachment struct {
 }
 
 type Session struct {
-	ID             string            `json:"id"`
-	RoleID         string            `json:"roleId"`
-	GroupID        string            `json:"groupId,omitempty"`
-	WorkspaceID    string            `json:"workspaceId,omitempty"`
-	Title          string            `json:"title"`
-	Status         string            `json:"status"`
-	Messages       []Message         `json:"messages"`
-	AsyncToolTasks []AsyncToolTask   `json:"asyncToolTasks,omitempty"`
-	Metadata       map[string]string `json:"metadata,omitempty"`
-	CreatedAt      time.Time         `json:"createdAt"`
-	UpdatedAt      time.Time         `json:"updatedAt"`
-	LastActive     time.Time         `json:"lastActive"`
+	ID             string          `json:"id"`
+	RoleID         string          `json:"roleId"`
+	GroupID        string          `json:"groupId,omitempty"`
+	WorkspaceID    string          `json:"workspaceId,omitempty"`
+	Title          string          `json:"title"`
+	Status         string          `json:"status"`
+	Messages       []Message       `json:"messages"`
+	AsyncToolTasks []AsyncToolTask `json:"asyncToolTasks,omitempty"`
+	// TokenUsage 是会话级用量字段：只记录上游返回的用量真值，每次拿到新真值即整体覆盖，
+	// 一次会话只留最新一条；拿不到真值时保持为空。
+	TokenUsage *TokenUsage       `json:"tokenUsage,omitempty"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
+	CreatedAt  time.Time         `json:"createdAt"`
+	UpdatedAt  time.Time         `json:"updatedAt"`
+	LastActive time.Time         `json:"lastActive"`
 }
 
 type AsyncToolTaskStatus string

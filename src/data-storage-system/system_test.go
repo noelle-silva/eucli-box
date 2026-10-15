@@ -394,7 +394,7 @@ func TestSessionTokenUsagePersistsLatestTruth(t *testing.T) {
 		t.Fatalf("overwritten token usage = %#v", loaded.TokenUsage)
 	}
 
-	// 没有新真值时保留既有真值，不被空值顶替。
+	// 无真值即清空：本次会话未携带真值时整体置为无，绝不保留上次旧值。
 	if err := system.SaveSessionMessages(context.Background(), types.SessionMessageSave{Session: types.Session{ID: "session-token-usage", RoleID: "developer"}, Status: types.RunStatusCompleted}); err != nil {
 		t.Fatalf("SaveSessionMessages() error = %v", err)
 	}
@@ -402,8 +402,8 @@ func TestSessionTokenUsagePersistsLatestTruth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadSession() error = %v", err)
 	}
-	if loaded.TokenUsage == nil || loaded.TokenUsage.TotalTokens == nil || *loaded.TokenUsage.TotalTokens != 99 {
-		t.Fatalf("retained token usage = %#v", loaded.TokenUsage)
+	if loaded.TokenUsage != nil {
+		t.Fatalf("token usage should be cleared without truth: %#v", loaded.TokenUsage)
 	}
 }
 

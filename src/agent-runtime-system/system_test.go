@@ -56,6 +56,39 @@ func TestStartRunPersistsModelUsageTruthIntoSession(t *testing.T) {
 	}
 }
 
+func TestStartRunClearsSessionUsageWhenRequestHasNoTruth(t *testing.T) {
+	fakes := newRuntimeFakes()
+	previousTotal := 42
+	now := time.Now().UTC()
+	if err := fakes.storage.SaveSession(context.Background(), types.Session{
+		ID:         "session-usage",
+		RoleID:     "developer",
+		Title:      "Usage",
+		Status:     string(types.RunStatusCompleted),
+		Messages:   []types.Message{},
+		TokenUsage: &types.TokenUsage{TotalTokens: &previousTotal},
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		LastActive: now,
+	}); err != nil {
+		t.Fatalf("SaveSession() error = %v", err)
+	}
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-usage", Stream: types.BoolPtr(false), Message: "hello"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	session := fakes.storage.lastSession()
+	if session.TokenUsage != nil {
+		t.Fatalf("session token usage should be cleared without truth: %#v", session.TokenUsage)
+	}
+}
+
 func TestStartRunContinuesWhenSingleToolLoadFails(t *testing.T) {
 	fakes := newRuntimeFakes()
 	fakes.tool.toolSummaries = []types.ToolSummary{
@@ -3352,9 +3385,7 @@ func (f *fakeRuntimeStorage) SaveSessionMessages(ctx context.Context, save types
 	merged.Status = string(save.Status)
 	merged.Metadata = fakeApplySessionMetadataPatch(merged.Metadata, save.MetadataPatch)
 	merged.AsyncToolTasks = types.MergeAsyncToolTasks(merged.AsyncToolTasks, session.AsyncToolTasks)
-	if session.TokenUsage != nil {
-		merged.TokenUsage = session.TokenUsage
-	}
+	merged.TokenUsage = session.TokenUsage
 	for _, condition := range save.Conditions {
 		messageID := strings.TrimSpace(condition.MessageID)
 		if messageID == "" && condition.Expected != nil {

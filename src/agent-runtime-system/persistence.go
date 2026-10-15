@@ -10,6 +10,7 @@ import (
 
 func (s *system) saveRunSession(ctx context.Context, record *runRecord, status types.RunStatus) error {
 	record.session.Status = string(status)
+	settleRunTokenUsage(record, status)
 	save := runSessionMessageSave(record, status)
 	if err := s.storage.SaveSessionMessages(ctx, save); err != nil {
 		return runtimeStorageFailed("failed to save session", err)
@@ -20,10 +21,23 @@ func (s *system) saveRunSession(ctx context.Context, record *runRecord, status t
 
 func (s *system) saveRunSessionStatus(ctx context.Context, record *runRecord, status types.RunStatus) error {
 	record.session.Status = string(status)
+	settleRunTokenUsage(record, status)
 	if err := s.storage.SaveSessionMessages(ctx, types.SessionMessageSave{Session: record.session, Status: status}); err != nil {
 		return runtimeStorageFailed("failed to save session status", err)
 	}
 	return nil
+}
+
+// settleRunTokenUsage 在运行终态落盘前落定会话级用量字段：本次请求若从未拿到上游真值，
+// 即把该字段置为无，不保留上次旧值；拿到真值则保持已入账的最新真值。
+// 运行未结束（仍为活动态）时不置无，保证置无不早于响应完成。
+func settleRunTokenUsage(record *runRecord, status types.RunStatus) {
+	if record == nil || isActiveRunStatus(status) {
+		return
+	}
+	if !record.tokenUsageObtained {
+		record.session.TokenUsage = nil
+	}
 }
 
 func (s *system) saveRunSessionWithStatusFallback(ctx context.Context, record *runRecord, status types.RunStatus) (bool, error) {

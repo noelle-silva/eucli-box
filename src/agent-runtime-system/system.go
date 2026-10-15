@@ -137,6 +137,10 @@ type runRecord struct {
 	// 确认意图的唯一判据；带生命周期，不再只在某段等待窗口内存在。
 	confirmationLedger map[string]types.ToolRunPlan
 	inbox              chan runEvent
+
+	// tokenUsageObtained 记录本次运行是否从上游拿到过用量真值：终态落盘时若从未拿到，
+	// 则把会话级用量字段置为无（无真值即清空，不保留上次旧值）。
+	tokenUsageObtained bool
 }
 
 func NewSystem(config Config, storage StorageSystem, roles RoleSystem, providers ProviderSystem, tools ToolSystem, placeholders PlaceholderSystem) (System, error) {

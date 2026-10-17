@@ -852,8 +852,16 @@ func TestCompleteAnthropicSeparatesSystemPrompt(t *testing.T) {
 	if err := json.Unmarshal(network.lastRequest.Body, &body); err != nil {
 		t.Fatalf("request body is invalid json: %v", err)
 	}
-	if body["system"] != "You are helpful" {
+	systemBlocks, ok := body["system"].([]any)
+	if !ok || len(systemBlocks) != 1 {
 		t.Fatalf("system = %#v", body["system"])
+	}
+	systemBlock := systemBlocks[0].(map[string]any)
+	if systemBlock["type"] != "text" || systemBlock["text"] != "You are helpful" {
+		t.Fatalf("system block = %#v", systemBlock)
+	}
+	if cacheControl, ok := systemBlock["cache_control"].(map[string]any); !ok || cacheControl["type"] != "ephemeral" {
+		t.Fatalf("system cache_control = %#v", systemBlock["cache_control"])
 	}
 	messages := body["messages"].([]any)
 	if len(messages) != 1 || !strings.Contains(string(network.lastRequest.Body), `"role":"user"`) {

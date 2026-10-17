@@ -161,11 +161,12 @@ func (anthropicAdapter) BuildCompleteRequest(provider types.Provider, request ty
 		body["stream"] = true
 	}
 	if systemText != "" {
-		body["system"] = systemText
+		body["system"] = anthropicSystemContent(systemText)
 	}
 	if len(request.Tools) > 0 {
-		body["tools"] = anthropicTools(request.Tools)
+		body["tools"] = anthropicToolsWithCacheBreakpoint(request.Tools)
 	}
+	anthropicMarkLastMessageCacheBreakpoint(messages)
 	payload, err := encodeJSONBody(body)
 	if err != nil {
 		return types.HTTPRequest{}, err

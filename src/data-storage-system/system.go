@@ -70,6 +70,7 @@ type System interface {
 	SaveRole(ctx context.Context, role types.Role) error
 	LoadRole(ctx context.Context, roleID string) (types.Role, error)
 	ListRoles(ctx context.Context) ([]types.RoleSummary, error)
+	ReorderRoles(ctx context.Context, roleIDs []string) error
 	DeleteRole(ctx context.Context, roleID string) error
 	SaveRoleAvatar(ctx context.Context, roleID string, dataURL string) error
 	LoadRoleAvatar(ctx context.Context, roleID string) (string, error)
@@ -86,6 +87,7 @@ type System interface {
 	SaveWorkspace(ctx context.Context, workspace types.Workspace) error
 	LoadWorkspace(ctx context.Context, workspaceID string) (types.Workspace, error)
 	ListWorkspaces(ctx context.Context) ([]types.WorkspaceSummary, error)
+	ReorderWorkspaces(ctx context.Context, workspaceIDs []string) error
 	PreviewWorkspacePrompt(ctx context.Context, workspace types.Workspace) (string, error)
 	DeleteWorkspace(ctx context.Context, workspaceID string) error
 
@@ -138,6 +140,7 @@ type Config struct {
 
 type system struct {
 	paths           paths
+	entityMu        sync.Mutex
 	sessionMu       sync.Mutex
 	requestRecordMu sync.Mutex
 }

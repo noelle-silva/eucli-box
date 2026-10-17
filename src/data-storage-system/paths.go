@@ -123,6 +123,10 @@ func (p paths) roleDataFile(roleID string) (string, error) {
 	return filepath.Join(dir, "data.json"), nil
 }
 
+func (p paths) roleOrderFile() string {
+	return filepath.Join(p.rolesRoot(), "order.json")
+}
+
 func (p paths) groupDir(groupID string) (string, error) {
 	return p.safeJoin(p.groupsRoot(), groupID)
 }
@@ -145,6 +149,10 @@ func (p paths) workspaceDataFile(workspaceID string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, "data.json"), nil
+}
+
+func (p paths) workspaceOrderFile() string {
+	return filepath.Join(p.workspacesRoot(), "order.json")
 }
 
 func (p paths) sessionRoleDir(roleID string) (string, error) {

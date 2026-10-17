@@ -182,6 +182,10 @@ func (f *fakeRoleStorage) ListRoles(ctx context.Context) ([]types.RoleSummary, e
 	return summaries, nil
 }
 
+func (f *fakeRoleStorage) ReorderRoles(ctx context.Context, roleIDs []string) error {
+	return nil
+}
+
 func (f *fakeRoleStorage) DeleteRole(ctx context.Context, roleID string) error {
 	delete(f.roles, roleID)
 	delete(f.avatars, roleID)

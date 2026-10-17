@@ -10,6 +10,7 @@ type System interface {
 	SaveRole(ctx context.Context, role types.Role) error
 	LoadRole(ctx context.Context, roleID string) (types.Role, error)
 	ListRoles(ctx context.Context) ([]types.RoleSummary, error)
+	ReorderRoles(ctx context.Context, roleIDs []string) error
 	DeleteRole(ctx context.Context, roleID string) error
 	SaveRoleAvatar(ctx context.Context, roleID string, dataURL string) error
 	LoadRoleAvatar(ctx context.Context, roleID string) (string, error)
@@ -24,6 +25,7 @@ type StorageSystem interface {
 	SaveRole(ctx context.Context, role types.Role) error
 	LoadRole(ctx context.Context, roleID string) (types.Role, error)
 	ListRoles(ctx context.Context) ([]types.RoleSummary, error)
+	ReorderRoles(ctx context.Context, roleIDs []string) error
 	DeleteRole(ctx context.Context, roleID string) error
 	SaveRoleAvatar(ctx context.Context, roleID string, dataURL string) error
 	LoadRoleAvatar(ctx context.Context, roleID string) (string, error)

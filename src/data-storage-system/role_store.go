@@ -3,7 +3,6 @@ package datastorage
 import (
 	"context"
 	"path/filepath"
-	"sort"
 
 	"eucli-box/pkg/types"
 )
@@ -16,6 +15,10 @@ func (s *system) SaveRole(ctx context.Context, role types.Role) error {
 	if err != nil {
 		return err
 	}
+	s.entityMu.Lock()
+	defer s.entityMu.Unlock()
+
+	isNew := !dataFileExists(target)
 	if err := writeJSON(ctx, target, role); err != nil {
 		return err
 	}
@@ -25,6 +28,9 @@ func (s *system) SaveRole(ctx context.Context, role types.Role) error {
 	}
 	if err := ensureDirs(filepath.Join(roleDir, "attachments")); err != nil {
 		return storageWriteFailed("failed to create role attachments directory", err)
+	}
+	if err := s.syncOrderAfterSave(ctx, s.paths.rolesRoot(), s.paths.roleOrderFile(), role.ID, isNew); err != nil {
+		return err
 	}
 	return s.rebuildRoleIndex(ctx)
 }
@@ -42,12 +48,31 @@ func (s *system) ListRoles(ctx context.Context) ([]types.RoleSummary, error) {
 	if err != nil {
 		return nil, err
 	}
-	summaries := make([]types.RoleSummary, 0, len(roles))
+	byID := make(map[string]types.RoleSummary, len(roles))
 	for _, role := range roles {
-		summaries = append(summaries, types.RoleSummary{ID: role.ID, Name: role.Name, UpdatedAt: role.UpdatedAt})
+		byID[role.ID] = types.RoleSummary{ID: role.ID, Name: role.Name, UpdatedAt: role.UpdatedAt}
 	}
-	sort.Slice(summaries, func(i, j int) bool { return summaries[i].ID < summaries[j].ID })
+	ids, err := orderedObjectIDs(ctx, s.paths.rolesRoot(), s.paths.roleOrderFile())
+	if err != nil {
+		return nil, err
+	}
+	summaries := make([]types.RoleSummary, 0, len(ids))
+	for _, id := range ids {
+		if summary, ok := byID[id]; ok {
+			summaries = append(summaries, summary)
+		}
+	}
 	return summaries, nil
+}
+
+func (s *system) ReorderRoles(ctx context.Context, roleIDs []string) error {
+	s.entityMu.Lock()
+	defer s.entityMu.Unlock()
+
+	if err := s.reorderObjects(ctx, s.paths.rolesRoot(), s.paths.roleOrderFile(), roleIDs); err != nil {
+		return err
+	}
+	return s.rebuildRoleIndex(ctx)
 }
 
 func (s *system) DeleteRole(ctx context.Context, roleID string) error {
@@ -55,7 +80,13 @@ func (s *system) DeleteRole(ctx context.Context, roleID string) error {
 	if err != nil {
 		return err
 	}
+	s.entityMu.Lock()
+	defer s.entityMu.Unlock()
+
 	if err := moveToRecycle(ctx, s.paths, types.StorageItemRole, roleID, dir); err != nil {
+		return err
+	}
+	if err := s.syncOrderAfterDelete(ctx, s.paths.rolesRoot(), s.paths.roleOrderFile()); err != nil {
 		return err
 	}
 	return s.rebuildRoleIndex(ctx)

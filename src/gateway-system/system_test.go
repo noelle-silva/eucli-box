@@ -592,6 +592,38 @@ func TestRoleRoutes(t *testing.T) {
 	}
 }
 
+func TestReorderRoutes(t *testing.T) {
+	fakes := newGatewayFakes()
+	system := newTestGateway(t, fakes)
+
+	roleReq := httptest.NewRequest(http.MethodPut, "/api/roles/order", strings.NewReader(`{"ids":["role-b","role-a"]}`))
+	roleRec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(roleRec, roleReq)
+	if roleRec.Code != http.StatusNoContent {
+		t.Fatalf("role order status = %d body=%s", roleRec.Code, roleRec.Body.String())
+	}
+	if len(fakes.roles.order) != 2 || fakes.roles.order[0] != "role-b" || fakes.roles.order[1] != "role-a" {
+		t.Fatalf("role order = %#v", fakes.roles.order)
+	}
+
+	workspaceReq := httptest.NewRequest(http.MethodPut, "/api/workspaces/order", strings.NewReader(`{"ids":["workspace-b","workspace-a"]}`))
+	workspaceRec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(workspaceRec, workspaceReq)
+	if workspaceRec.Code != http.StatusNoContent {
+		t.Fatalf("workspace order status = %d body=%s", workspaceRec.Code, workspaceRec.Body.String())
+	}
+	if len(fakes.workspaces.order) != 2 || fakes.workspaces.order[0] != "workspace-b" || fakes.workspaces.order[1] != "workspace-a" {
+		t.Fatalf("workspace order = %#v", fakes.workspaces.order)
+	}
+
+	invalidReq := httptest.NewRequest(http.MethodPut, "/api/roles/order", strings.NewReader(`{"ids":[],"extra":true}`))
+	invalidRec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(invalidRec, invalidReq)
+	if invalidRec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid order status = %d body=%s", invalidRec.Code, invalidRec.Body.String())
+	}
+}
+
 func TestInvalidJSONReturnsBadRequest(t *testing.T) {
 	system := newTestGateway(t, newGatewayFakes())
 	req := httptest.NewRequest(http.MethodPost, "/api/runs", strings.NewReader(`{"roleId":"developer","extra":true}`))
@@ -1127,6 +1159,7 @@ func (f *fakeGatewaySystemPlugins) PluginActivity(ctx context.Context, pluginID 
 
 type fakeGatewayWorkspaces struct {
 	workspaces map[string]types.Workspace
+	order      []string
 }
 
 func newFakeGatewayWorkspaces() *fakeGatewayWorkspaces {
@@ -1152,6 +1185,11 @@ func (f *fakeGatewayWorkspaces) ListWorkspaces(ctx context.Context) ([]types.Wor
 		out = append(out, types.WorkspaceSummary{ID: workspace.ID, Name: workspace.Name, UpdatedAt: workspace.UpdatedAt})
 	}
 	return out, nil
+}
+
+func (f *fakeGatewayWorkspaces) ReorderWorkspaces(ctx context.Context, workspaceIDs []string) error {
+	f.order = append([]string(nil), workspaceIDs...)
+	return nil
 }
 
 func (f *fakeGatewayWorkspaces) PreviewWorkspacePrompt(ctx context.Context, workspace types.Workspace) (string, error) {
@@ -1561,6 +1599,7 @@ func (f *fakeGatewayRuntime) publish(event types.RunEvent) {
 type fakeGatewayRoles struct {
 	roles   map[string]types.Role
 	avatars map[string]string
+	order   []string
 }
 
 func newFakeGatewayRoles() *fakeGatewayRoles {
@@ -1579,6 +1618,10 @@ func (f *fakeGatewayRoles) ListRoles(ctx context.Context) ([]types.RoleSummary, 
 		roles = append(roles, types.RoleSummary{ID: role.ID, Name: role.Name})
 	}
 	return roles, nil
+}
+func (f *fakeGatewayRoles) ReorderRoles(ctx context.Context, roleIDs []string) error {
+	f.order = append([]string(nil), roleIDs...)
+	return nil
 }
 func (f *fakeGatewayRoles) DeleteRole(ctx context.Context, roleID string) error {
 	delete(f.roles, roleID)

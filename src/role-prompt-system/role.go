@@ -43,6 +43,13 @@ func (s *system) ListRoles(ctx context.Context) ([]types.RoleSummary, error) {
 	return roles, nil
 }
 
+func (s *system) ReorderRoles(ctx context.Context, roleIDs []string) error {
+	if err := s.storage.ReorderRoles(ctx, roleIDs); err != nil {
+		return roleStorageFailed("failed to reorder roles", err)
+	}
+	return nil
+}
+
 func (s *system) DeleteRole(ctx context.Context, roleID string) error {
 	if strings.TrimSpace(roleID) == "" {
 		return roleInvalid("role id is required", nil)

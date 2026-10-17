@@ -52,6 +52,7 @@ func (s *system) registerRoutes() {
 
 	s.mux.HandleFunc("GET /api/roles", s.authWrap(s.handleListRoles))
 	s.mux.HandleFunc("POST /api/roles", s.authWrap(s.handleSaveRole))
+	s.mux.HandleFunc("PUT /api/roles/order", s.authWrap(s.handleReorderRoles))
 	s.mux.HandleFunc("GET /api/roles/{roleID}", s.authWrap(s.handleLoadRole))
 	s.mux.HandleFunc("DELETE /api/roles/{roleID}", s.authWrap(s.handleDeleteRole))
 	s.mux.HandleFunc("GET /api/roles/{roleID}/avatar", s.authWrap(s.handleLoadRoleAvatar))
@@ -79,6 +80,7 @@ func (s *system) registerRoutes() {
 
 	s.mux.HandleFunc("GET /api/workspaces", s.authWrap(s.handleListWorkspaces))
 	s.mux.HandleFunc("POST /api/workspaces", s.authWrap(s.handleSaveWorkspace))
+	s.mux.HandleFunc("PUT /api/workspaces/order", s.authWrap(s.handleReorderWorkspaces))
 	s.mux.HandleFunc("POST /api/workspaces/prompt-preview", s.authWrap(s.handlePreviewWorkspacePrompt))
 	s.mux.HandleFunc("GET /api/workspaces/{workspaceID}", s.authWrap(s.handleLoadWorkspace))
 	s.mux.HandleFunc("DELETE /api/workspaces/{workspaceID}", s.authWrap(s.handleDeleteWorkspace))

@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -21,7 +20,14 @@ func (s *system) SaveWorkspace(ctx context.Context, workspace types.Workspace) e
 	if err != nil {
 		return err
 	}
+	s.entityMu.Lock()
+	defer s.entityMu.Unlock()
+
+	isNew := !dataFileExists(target)
 	if err := writeJSON(ctx, target, workspace); err != nil {
+		return err
+	}
+	if err := s.syncOrderAfterSave(ctx, s.paths.workspacesRoot(), s.paths.workspaceOrderFile(), workspace.ID, isNew); err != nil {
 		return err
 	}
 	return s.rebuildWorkspaceIndex(ctx)
@@ -44,15 +50,24 @@ func (s *system) ListWorkspaces(ctx context.Context) ([]types.WorkspaceSummary, 
 	if err != nil {
 		return nil, err
 	}
-	summaries := make([]types.WorkspaceSummary, 0, len(workspaces))
+	byID := make(map[string]types.WorkspaceSummary, len(workspaces))
 	for _, workspace := range workspaces {
 		workspace, err = normalizeWorkspaceForStorage(workspace, time.Now().UTC())
 		if err != nil {
 			return nil, err
 		}
-		summaries = append(summaries, types.WorkspaceSummary{ID: workspace.ID, Name: workspace.Name, UpdatedAt: workspace.UpdatedAt})
+		byID[workspace.ID] = types.WorkspaceSummary{ID: workspace.ID, Name: workspace.Name, UpdatedAt: workspace.UpdatedAt}
 	}
-	sort.Slice(summaries, func(i, j int) bool { return summaries[i].ID < summaries[j].ID })
+	ids, err := orderedObjectIDs(ctx, s.paths.workspacesRoot(), s.paths.workspaceOrderFile())
+	if err != nil {
+		return nil, err
+	}
+	summaries := make([]types.WorkspaceSummary, 0, len(ids))
+	for _, id := range ids {
+		if summary, ok := byID[id]; ok {
+			summaries = append(summaries, summary)
+		}
+	}
 	return summaries, nil
 }
 
@@ -67,12 +82,28 @@ func (s *system) PreviewWorkspacePrompt(ctx context.Context, workspace types.Wor
 	return workspaceprompt.Content(workspace), nil
 }
 
+func (s *system) ReorderWorkspaces(ctx context.Context, workspaceIDs []string) error {
+	s.entityMu.Lock()
+	defer s.entityMu.Unlock()
+
+	if err := s.reorderObjects(ctx, s.paths.workspacesRoot(), s.paths.workspaceOrderFile(), workspaceIDs); err != nil {
+		return err
+	}
+	return s.rebuildWorkspaceIndex(ctx)
+}
+
 func (s *system) DeleteWorkspace(ctx context.Context, workspaceID string) error {
 	dir, err := s.paths.workspaceDir(workspaceID)
 	if err != nil {
 		return err
 	}
+	s.entityMu.Lock()
+	defer s.entityMu.Unlock()
+
 	if err := moveToRecycle(ctx, s.paths, types.StorageItemWorkspace, workspaceID, dir); err != nil {
+		return err
+	}
+	if err := s.syncOrderAfterDelete(ctx, s.paths.workspacesRoot(), s.paths.workspaceOrderFile()); err != nil {
 		return err
 	}
 	return s.rebuildWorkspaceIndex(ctx)

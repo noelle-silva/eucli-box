@@ -414,6 +414,8 @@ func (s *system) mergeSessionMessageSave(ctx context.Context, save types.Session
 	// 会话级用量真值随会话一并持久化：以本次会话携带的用量为准（未拿到真值即为无），
 	// 一次会话只留最新一条，绝不保留上次旧值。
 	merged.TokenUsage = session.TokenUsage
+	// 会话级缓存率同理：以本次会话携带的缓存率为准，新值整体覆盖，无真值即为无。
+	merged.CacheRate = session.CacheRate
 	if merged.Title == "" || merged.Title == types.DefaultSessionTitle {
 		merged.Title = session.Title
 	}

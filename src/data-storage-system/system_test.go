@@ -407,6 +407,58 @@ func TestSessionTokenUsagePersistsLatestTruth(t *testing.T) {
 	}
 }
 
+func TestSessionCacheRatePersistsLatestTruth(t *testing.T) {
+	system := newTestSystem(t)
+	now := time.Date(2026, 6, 4, 17, 0, 0, 0, time.UTC)
+	rate := 0.8
+	session := types.Session{
+		ID:         "session-cache-rate",
+		RoleID:     "developer",
+		Title:      "Cache Rate",
+		Status:     string(types.RunStatusCompleted),
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		LastActive: now,
+		CacheRate:  &rate,
+	}
+	if err := system.SaveSession(context.Background(), session); err != nil {
+		t.Fatalf("SaveSession() error = %v", err)
+	}
+
+	loaded, err := system.LoadSession(context.Background(), "developer", "session-cache-rate")
+	if err != nil {
+		t.Fatalf("LoadSession() error = %v", err)
+	}
+	if loaded.CacheRate == nil || *loaded.CacheRate != 0.8 {
+		t.Fatalf("loaded cache rate = %#v", loaded.CacheRate)
+	}
+
+	// 拿到新真值即整体覆盖旧值。
+	nextRate := 0.25
+	if err := system.SaveSessionMessages(context.Background(), types.SessionMessageSave{Session: types.Session{ID: "session-cache-rate", RoleID: "developer", CacheRate: &nextRate}, Status: types.RunStatusRunning}); err != nil {
+		t.Fatalf("SaveSessionMessages() error = %v", err)
+	}
+	loaded, err = system.LoadSession(context.Background(), "developer", "session-cache-rate")
+	if err != nil {
+		t.Fatalf("LoadSession() error = %v", err)
+	}
+	if loaded.CacheRate == nil || *loaded.CacheRate != 0.25 {
+		t.Fatalf("overwritten cache rate = %#v", loaded.CacheRate)
+	}
+
+	// 无真值即清空：本次会话未携带缓存率时整体置为无，绝不保留上次旧值。
+	if err := system.SaveSessionMessages(context.Background(), types.SessionMessageSave{Session: types.Session{ID: "session-cache-rate", RoleID: "developer"}, Status: types.RunStatusCompleted}); err != nil {
+		t.Fatalf("SaveSessionMessages() error = %v", err)
+	}
+	loaded, err = system.LoadSession(context.Background(), "developer", "session-cache-rate")
+	if err != nil {
+		t.Fatalf("LoadSession() error = %v", err)
+	}
+	if loaded.CacheRate != nil {
+		t.Fatalf("cache rate should be cleared without truth: %#v", loaded.CacheRate)
+	}
+}
+
 func TestSaveSessionPreservesAsyncToolResultMessageType(t *testing.T) {
 	system := newTestSystem(t)
 	now := time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC)

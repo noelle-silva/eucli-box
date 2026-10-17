@@ -141,6 +141,9 @@ type runRecord struct {
 	// tokenUsageObtained 记录本次运行是否从上游拿到过用量真值：终态落盘时若从未拿到，
 	// 则把会话级用量字段置为无（无真值即清空，不保留上次旧值）。
 	tokenUsageObtained bool
+	// cacheRateObtained 记录本次运行是否从上游拿到过缓存数据：终态落盘时若从未拿到，
+	// 则把会话级缓存率字段置为无（无真值即清空，不推算、不保留上次旧值）。
+	cacheRateObtained bool
 }
 
 func NewSystem(config Config, storage StorageSystem, roles RoleSystem, providers ProviderSystem, tools ToolSystem, placeholders PlaceholderSystem) (System, error) {

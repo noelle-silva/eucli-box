@@ -139,8 +139,10 @@ type ModelResponse struct {
 	ReasoningData      string       `json:"reasoningData,omitempty"`
 	ToolIntents        []ToolIntent `json:"toolIntents,omitempty"`
 	Usage              *TokenUsage  `json:"usage,omitempty"`
-	Raw                []byte       `json:"raw,omitempty"`
-	CreatedAt          time.Time    `json:"createdAt"`
+	// CacheRate 是本次调用由上游缓存命中/未命中量算出的缓存率；上游没有缓存数据时为 nil。
+	CacheRate *float64  `json:"cacheRate,omitempty"`
+	Raw       []byte    `json:"raw,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 type ModelStreamEventType string

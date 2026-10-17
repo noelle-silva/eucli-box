@@ -1346,6 +1346,22 @@ func TestCompleteOpenAIParsesUsage(t *testing.T) {
 	if response.Usage == nil || response.Usage.InputTokens == nil || *response.Usage.InputTokens != 11 || response.Usage.OutputTokens == nil || *response.Usage.OutputTokens != 7 || response.Usage.TotalTokens == nil || *response.Usage.TotalTokens != 18 {
 		t.Fatalf("usage = %#v", response.Usage)
 	}
+	if response.CacheRate != nil {
+		t.Fatalf("cache rate should be absent without upstream cache data: %#v", response.CacheRate)
+	}
+}
+
+func TestCompleteOpenAIParsesCacheRate(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["openai-main"] = testOpenAIProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-cache","choices":[{"message":{"content":"hi"}}],"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":{"cached_tokens":80}}}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	response, err := system.Complete(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	assertCacheRate(t, response.CacheRate, 0.8)
 }
 
 func TestCompleteStreamOpenAIRequestsUsageAndParsesIt(t *testing.T) {
@@ -1367,6 +1383,9 @@ data: [DONE]
 	if response.Usage == nil || response.Usage.InputTokens == nil || *response.Usage.InputTokens != 11 || response.Usage.OutputTokens == nil || *response.Usage.OutputTokens != 7 || response.Usage.TotalTokens == nil || *response.Usage.TotalTokens != 18 {
 		t.Fatalf("usage = %#v", response.Usage)
 	}
+	if response.CacheRate != nil {
+		t.Fatalf("cache rate should be absent without upstream cache data: %#v", response.CacheRate)
+	}
 	var body map[string]any
 	if err := json.Unmarshal(network.lastRequest.Body, &body); err != nil {
 		t.Fatalf("request body is invalid json: %v", err)
@@ -1375,6 +1394,25 @@ data: [DONE]
 	if options == nil || options["include_usage"] != true {
 		t.Fatalf("stream_options = %#v body=%s", body["stream_options"], string(network.lastRequest.Body))
 	}
+}
+
+func TestCompleteStreamOpenAIParsesCacheRate(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["openai-main"] = testOpenAIProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`data: {"id":"chatcmpl-stream","choices":[{"delta":{"content":"hi"}}]}
+
+data: {"id":"chatcmpl-stream","choices":[],"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":{"cached_tokens":80}}}
+
+data: [DONE]
+
+`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	response, err := system.CompleteStream(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}}, nil)
+	if err != nil {
+		t.Fatalf("CompleteStream() error = %v", err)
+	}
+	assertCacheRate(t, response.CacheRate, 0.8)
 }
 
 func TestCompleteAnthropicParsesUsage(t *testing.T) {
@@ -1390,6 +1428,22 @@ func TestCompleteAnthropicParsesUsage(t *testing.T) {
 	if response.Usage == nil || response.Usage.InputTokens == nil || *response.Usage.InputTokens != 21 || response.Usage.OutputTokens == nil || *response.Usage.OutputTokens != 9 || response.Usage.TotalTokens != nil {
 		t.Fatalf("usage = %#v", response.Usage)
 	}
+	if response.CacheRate != nil {
+		t.Fatalf("cache rate should be absent without upstream cache data: %#v", response.CacheRate)
+	}
+}
+
+func TestCompleteAnthropicParsesCacheRate(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["anthropic-main"] = testAnthropicProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"msg-cache","content":[{"type":"text","text":"done"}],"usage":{"input_tokens":20,"output_tokens":9,"cache_creation_input_tokens":20,"cache_read_input_tokens":60}}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	response, err := system.Complete(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	assertCacheRate(t, response.CacheRate, 0.6)
 }
 
 func TestCompleteStreamAnthropicParsesUsage(t *testing.T) {
@@ -1412,6 +1466,40 @@ data: {"type":"message_stop"}
 	}
 	if response.Usage == nil || response.Usage.InputTokens == nil || *response.Usage.InputTokens != 21 || response.Usage.OutputTokens == nil || *response.Usage.OutputTokens != 9 {
 		t.Fatalf("usage = %#v", response.Usage)
+	}
+	if response.CacheRate != nil {
+		t.Fatalf("cache rate should be absent without upstream cache data: %#v", response.CacheRate)
+	}
+}
+
+func TestCompleteStreamAnthropicParsesCacheRate(t *testing.T) {
+	storage := newFakeProviderStorage()
+	storage.providers["anthropic-main"] = testAnthropicProvider()
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`data: {"type":"message_start","message":{"id":"msg-stream","usage":{"input_tokens":20,"output_tokens":1,"cache_creation_input_tokens":20,"cache_read_input_tokens":60}}}
+
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"done"}}
+
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":9}}
+
+data: {"type":"message_stop"}
+
+`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	response, err := system.CompleteStream(context.Background(), types.ModelRequest{Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude-3-5-sonnet"}, Messages: []types.PromptMessage{{Role: "user", Content: "hi"}}}, nil)
+	if err != nil {
+		t.Fatalf("CompleteStream() error = %v", err)
+	}
+	assertCacheRate(t, response.CacheRate, 0.6)
+}
+
+func assertCacheRate(t *testing.T, rate *float64, want float64) {
+	t.Helper()
+	if rate == nil {
+		t.Fatalf("cache rate = nil, want %v", want)
+	}
+	if diff := *rate - want; diff < -1e-9 || diff > 1e-9 {
+		t.Fatalf("cache rate = %v, want %v", *rate, want)
 	}
 }
 

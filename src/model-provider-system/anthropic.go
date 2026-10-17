@@ -19,8 +19,10 @@ type anthropicModelListResponse struct {
 }
 
 type anthropicUsagePayload struct {
-	InputTokens  *int `json:"input_tokens"`
-	OutputTokens *int `json:"output_tokens"`
+	InputTokens              *int `json:"input_tokens"`
+	OutputTokens             *int `json:"output_tokens"`
+	CacheCreationInputTokens *int `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     *int `json:"cache_read_input_tokens"`
 }
 
 // anthropicTokenUsage 把 Anthropic 的用量字段归一为统一容器：原样搬运，不做换算。
@@ -33,6 +35,16 @@ func anthropicTokenUsage(payload *anthropicUsagePayload) *types.TokenUsage {
 		return nil
 	}
 	return usage
+}
+
+// anthropicCacheRate 从 Anthropic 用量里取出缓存命中量与未命中量：
+// 命中量 = 从缓存读取量；未命中量 = 新鲜输入量 + 写入缓存量。
+// 任一项缺失即视为没有缓存真值。
+func anthropicCacheRate(payload *anthropicUsagePayload) *float64 {
+	if payload == nil || payload.InputTokens == nil || payload.CacheReadInputTokens == nil || payload.CacheCreationInputTokens == nil {
+		return nil
+	}
+	return types.CacheRateFromHitMiss(*payload.CacheReadInputTokens, *payload.InputTokens+*payload.CacheCreationInputTokens)
 }
 
 type anthropicCompleteResponse struct {
@@ -204,7 +216,7 @@ func (p *anthropicStreamParser) Finish(response types.HTTPResponse) (types.Model
 	if err := p.sse.Finish(); err != nil {
 		return types.ModelResponse{}, err
 	}
-	result := types.ModelResponse{ID: p.id, Content: p.content.String(), Reasoning: p.reasoning.String(), ReasoningSource: "an", ReasoningSignature: p.reasoningSignature, ReasoningData: p.reasoningData, Usage: anthropicTokenUsage(p.usage), Raw: response.Body, CreatedAt: p.createdAt}
+	result := types.ModelResponse{ID: p.id, Content: p.content.String(), Reasoning: p.reasoning.String(), ReasoningSource: "an", ReasoningSignature: p.reasoningSignature, ReasoningData: p.reasoningData, Usage: anthropicTokenUsage(p.usage), CacheRate: anthropicCacheRate(p.usage), Raw: response.Body, CreatedAt: p.createdAt}
 	indexes := make([]int, 0, len(p.toolUses))
 	for index := range p.toolUses {
 		indexes = append(indexes, index)
@@ -305,6 +317,12 @@ func (p *anthropicStreamParser) mergeUsage(payload *anthropicUsagePayload) {
 	if payload.OutputTokens != nil {
 		p.usage.OutputTokens = payload.OutputTokens
 	}
+	if payload.CacheCreationInputTokens != nil {
+		p.usage.CacheCreationInputTokens = payload.CacheCreationInputTokens
+	}
+	if payload.CacheReadInputTokens != nil {
+		p.usage.CacheReadInputTokens = payload.CacheReadInputTokens
+	}
 }
 
 func (p *anthropicStreamParser) appendText(delta string) error {
@@ -338,7 +356,7 @@ func (anthropicAdapter) ParseCompleteResponse(response types.HTTPResponse) (type
 		return types.ModelResponse{}, providerParseFailed("failed to parse Anthropic completion", err)
 	}
 	createdAt := time.Now().UTC()
-	result := types.ModelResponse{ID: payload.ID, Usage: anthropicTokenUsage(payload.Usage), Raw: response.Body, CreatedAt: createdAt}
+	result := types.ModelResponse{ID: payload.ID, Usage: anthropicTokenUsage(payload.Usage), CacheRate: anthropicCacheRate(payload.Usage), Raw: response.Body, CreatedAt: createdAt}
 	for _, item := range payload.Content {
 		switch item.Type {
 		case "text":

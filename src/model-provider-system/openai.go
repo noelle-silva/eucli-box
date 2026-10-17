@@ -19,9 +19,14 @@ type openAIModelListResponse struct {
 }
 
 type openAIUsagePayload struct {
-	PromptTokens     *int `json:"prompt_tokens"`
-	CompletionTokens *int `json:"completion_tokens"`
-	TotalTokens      *int `json:"total_tokens"`
+	PromptTokens        *int                       `json:"prompt_tokens"`
+	CompletionTokens    *int                       `json:"completion_tokens"`
+	TotalTokens         *int                       `json:"total_tokens"`
+	PromptTokensDetails *openAIPromptTokensDetails `json:"prompt_tokens_details"`
+}
+
+type openAIPromptTokensDetails struct {
+	CachedTokens *int `json:"cached_tokens"`
 }
 
 type openAICompleteResponse struct {
@@ -73,6 +78,17 @@ func openAITokenUsage(payload *openAIUsagePayload) *types.TokenUsage {
 		return nil
 	}
 	return usage
+}
+
+// openAICacheRate 从 OpenAI 用量里取出缓存命中量与总输入量：
+// 未命中量 = 总输入量 − 命中量；任一项缺失即视为没有缓存真值。
+func openAICacheRate(payload *openAIUsagePayload) *float64 {
+	if payload == nil || payload.PromptTokens == nil || payload.PromptTokensDetails == nil || payload.PromptTokensDetails.CachedTokens == nil {
+		return nil
+	}
+	hit := *payload.PromptTokensDetails.CachedTokens
+	miss := *payload.PromptTokens - hit
+	return types.CacheRateFromHitMiss(hit, miss)
 }
 
 type openAIToolCallBuilder struct {
@@ -195,7 +211,7 @@ func (p *openAIStreamParser) Finish(response types.HTTPResponse) (types.ModelRes
 	if err := p.sse.Finish(); err != nil {
 		return types.ModelResponse{}, err
 	}
-	result := types.ModelResponse{ID: p.id, Content: p.content.String(), Reasoning: p.reasoning.String(), ReasoningSource: "op", ReasoningData: p.reasoningData, Usage: openAITokenUsage(p.usage), Raw: response.Body, CreatedAt: p.createdAt}
+	result := types.ModelResponse{ID: p.id, Content: p.content.String(), Reasoning: p.reasoning.String(), ReasoningSource: "op", ReasoningData: p.reasoningData, Usage: openAITokenUsage(p.usage), CacheRate: openAICacheRate(p.usage), Raw: response.Body, CreatedAt: p.createdAt}
 	indexes := make([]int, 0, len(p.toolCalls))
 	for index := range p.toolCalls {
 		indexes = append(indexes, index)
@@ -289,7 +305,7 @@ func (openAIAdapter) ParseCompleteResponse(response types.HTTPResponse) (types.M
 	if err := json.Unmarshal(response.Body, &payload); err != nil {
 		return types.ModelResponse{}, providerParseFailed("failed to parse OpenAI completion", err)
 	}
-	result := types.ModelResponse{ID: payload.ID, Usage: openAITokenUsage(payload.Usage), Raw: response.Body, CreatedAt: time.Now().UTC()}
+	result := types.ModelResponse{ID: payload.ID, Usage: openAITokenUsage(payload.Usage), CacheRate: openAICacheRate(payload.Usage), Raw: response.Body, CreatedAt: time.Now().UTC()}
 	if len(payload.Choices) == 0 {
 		return result, nil
 	}

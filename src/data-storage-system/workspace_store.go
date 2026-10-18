@@ -12,7 +12,7 @@ import (
 )
 
 func (s *system) SaveWorkspace(ctx context.Context, workspace types.Workspace) error {
-	workspace, err := normalizeWorkspaceForStorage(workspace, time.Now().UTC())
+	workspace, err := s.normalizeWorkspaceForStorage(workspace, time.Now().UTC())
 	if err != nil {
 		return err
 	}
@@ -42,7 +42,7 @@ func (s *system) LoadWorkspace(ctx context.Context, workspaceID string) (types.W
 	if err != nil {
 		return types.Workspace{}, err
 	}
-	return normalizeWorkspaceForStorage(workspace, time.Now().UTC())
+	return s.normalizeWorkspaceForStorage(workspace, time.Now().UTC())
 }
 
 func (s *system) ListWorkspaces(ctx context.Context) ([]types.WorkspaceSummary, error) {
@@ -52,7 +52,7 @@ func (s *system) ListWorkspaces(ctx context.Context) ([]types.WorkspaceSummary, 
 	}
 	byID := make(map[string]types.WorkspaceSummary, len(workspaces))
 	for _, workspace := range workspaces {
-		workspace, err = normalizeWorkspaceForStorage(workspace, time.Now().UTC())
+		workspace, err = s.normalizeWorkspaceForStorage(workspace, time.Now().UTC())
 		if err != nil {
 			return nil, err
 		}
@@ -75,7 +75,7 @@ func (s *system) PreviewWorkspacePrompt(ctx context.Context, workspace types.Wor
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	workspace, err := normalizeWorkspaceForStorage(workspace, time.Now().UTC())
+	workspace, err := s.normalizeWorkspaceForStorage(workspace, time.Now().UTC())
 	if err != nil {
 		return "", err
 	}
@@ -117,7 +117,7 @@ func (s *system) rebuildWorkspaceIndex(ctx context.Context) error {
 	return writeIndex(ctx, filepath.Join(s.paths.workspacesRoot(), "index.json"), rootIndex[types.WorkspaceSummary]{Items: workspaces})
 }
 
-func normalizeWorkspaceForStorage(workspace types.Workspace, now time.Time) (types.Workspace, error) {
+func (s *system) normalizeWorkspaceForStorage(workspace types.Workspace, now time.Time) (types.Workspace, error) {
 	workspace.ID = strings.TrimSpace(workspace.ID)
 	if _, err := cleanID(workspace.ID); err != nil {
 		return types.Workspace{}, err
@@ -132,6 +132,7 @@ func normalizeWorkspaceForStorage(workspace types.Workspace, now time.Time) (typ
 	}
 	workspace.Directories = directories
 	workspace.Prompt = strings.TrimSpace(workspace.Prompt)
+	workspace.RegisteredRoleIDs = s.normalizeWorkspaceRegisteredRoleIDs(workspace.RegisteredRoleIDs)
 	baseline := firstNonZeroTime(workspace.CreatedAt, workspace.UpdatedAt, now)
 	if workspace.CreatedAt.IsZero() {
 		workspace.CreatedAt = baseline
@@ -140,6 +141,29 @@ func normalizeWorkspaceForStorage(workspace types.Workspace, now time.Time) (typ
 		workspace.UpdatedAt = baseline
 	}
 	return workspace, nil
+}
+
+// normalizeWorkspaceRegisteredRoleIDs 只保留真实存在的角色并去重：
+// 工作区清单里不保留已不存在的角色，同一角色只出现一次。
+func (s *system) normalizeWorkspaceRegisteredRoleIDs(roleIDs []string) []string {
+	result := make([]string, 0, len(roleIDs))
+	seen := make(map[string]struct{}, len(roleIDs))
+	for _, rawRoleID := range roleIDs {
+		roleID := strings.TrimSpace(rawRoleID)
+		if roleID == "" {
+			continue
+		}
+		if _, ok := seen[roleID]; ok {
+			continue
+		}
+		target, err := s.paths.roleDataFile(roleID)
+		if err != nil || !dataFileExists(target) {
+			continue
+		}
+		seen[roleID] = struct{}{}
+		result = append(result, roleID)
+	}
+	return result
 }
 
 func normalizeWorkspaceDirectories(directories []types.WorkspaceDirectory) ([]types.WorkspaceDirectory, error) {

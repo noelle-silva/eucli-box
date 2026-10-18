@@ -9,12 +9,13 @@ type WorkspaceDirectory struct {
 }
 
 type Workspace struct {
-	ID          string               `json:"id"`
-	Name        string               `json:"name"`
-	Directories []WorkspaceDirectory `json:"directories"`
-	Prompt      string               `json:"prompt,omitempty"`
-	CreatedAt   time.Time            `json:"createdAt"`
-	UpdatedAt   time.Time            `json:"updatedAt"`
+	ID                string               `json:"id"`
+	Name              string               `json:"name"`
+	Directories       []WorkspaceDirectory `json:"directories"`
+	Prompt            string               `json:"prompt,omitempty"`
+	RegisteredRoleIDs []string             `json:"registeredRoleIds"`
+	CreatedAt         time.Time            `json:"createdAt"`
+	UpdatedAt         time.Time            `json:"updatedAt"`
 }
 
 type WorkspaceSummary struct {

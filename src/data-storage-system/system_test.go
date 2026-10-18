@@ -61,6 +61,97 @@ func TestSaveLoadListAndDeleteRole(t *testing.T) {
 	}
 }
 
+func TestWorkspaceRegisteredRoleIDsPersistExistingRolesOnce(t *testing.T) {
+	system := newTestSystem(t)
+	ctx := context.Background()
+	for _, roleID := range []string{"role-a", "role-b"} {
+		if err := system.SaveRole(ctx, types.Role{ID: roleID, Name: roleID}); err != nil {
+			t.Fatalf("SaveRole(%s) error = %v", roleID, err)
+		}
+	}
+	directory := t.TempDir()
+	workspace := types.Workspace{
+		ID:                "workspace-roles",
+		Name:              "项目工作区",
+		Prompt:            "遵守项目约定",
+		Directories:       []types.WorkspaceDirectory{{Path: directory, Alias: "主目录", Description: "项目代码"}},
+		RegisteredRoleIDs: []string{"role-a", " role-b ", "role-a", "role-missing", ""},
+	}
+	if err := system.SaveWorkspace(ctx, workspace); err != nil {
+		t.Fatalf("SaveWorkspace() error = %v", err)
+	}
+
+	loaded, err := system.LoadWorkspace(ctx, workspace.ID)
+	if err != nil {
+		t.Fatalf("LoadWorkspace() error = %v", err)
+	}
+	if len(loaded.RegisteredRoleIDs) != 2 || loaded.RegisteredRoleIDs[0] != "role-a" || loaded.RegisteredRoleIDs[1] != "role-b" {
+		t.Fatalf("registeredRoleIds = %#v", loaded.RegisteredRoleIDs)
+	}
+	if loaded.Name != workspace.Name || loaded.Prompt != workspace.Prompt || len(loaded.Directories) != 1 || loaded.Directories[0].Path != directory {
+		t.Fatalf("workspace data changed: %#v", loaded)
+	}
+
+	target, err := system.paths.workspaceDataFile(workspace.ID)
+	if err != nil {
+		t.Fatalf("workspaceDataFile() error = %v", err)
+	}
+	stored, err := readJSON[types.Workspace](ctx, target)
+	if err != nil {
+		t.Fatalf("read stored workspace error = %v", err)
+	}
+	if len(stored.RegisteredRoleIDs) != 2 || stored.RegisteredRoleIDs[0] != "role-a" || stored.RegisteredRoleIDs[1] != "role-b" {
+		t.Fatalf("stored registeredRoleIds = %#v", stored.RegisteredRoleIDs)
+	}
+}
+
+func TestWorkspaceRegisteredRoleIDsAllowEmptyList(t *testing.T) {
+	system := newTestSystem(t)
+	ctx := context.Background()
+	workspace := types.Workspace{ID: "workspace-empty-roles", Name: "空清单工作区", Prompt: "提示词", RegisteredRoleIDs: []string{}}
+	if err := system.SaveWorkspace(ctx, workspace); err != nil {
+		t.Fatalf("SaveWorkspace() error = %v", err)
+	}
+	loaded, err := system.LoadWorkspace(ctx, workspace.ID)
+	if err != nil {
+		t.Fatalf("LoadWorkspace() error = %v", err)
+	}
+	if len(loaded.RegisteredRoleIDs) != 0 {
+		t.Fatalf("registeredRoleIds = %#v, want empty", loaded.RegisteredRoleIDs)
+	}
+	if loaded.Name != workspace.Name || loaded.Prompt != workspace.Prompt {
+		t.Fatalf("workspace data changed: %#v", loaded)
+	}
+}
+
+func TestLoadWorkspaceIgnoresRegisteredRolesThatNoLongerExist(t *testing.T) {
+	system := newTestSystem(t)
+	ctx := context.Background()
+	if err := system.SaveRole(ctx, types.Role{ID: "role-a", Name: "角色A"}); err != nil {
+		t.Fatalf("SaveRole() error = %v", err)
+	}
+	target, err := system.paths.workspaceDataFile("workspace-read-roles")
+	if err != nil {
+		t.Fatalf("workspaceDataFile() error = %v", err)
+	}
+	if err := writeJSON(ctx, target, types.Workspace{
+		ID:                "workspace-read-roles",
+		Name:              "读取工作区",
+		Directories:       []types.WorkspaceDirectory{},
+		Prompt:            "提示词",
+		RegisteredRoleIDs: []string{"role-a", "role-missing", "role-a"},
+	}); err != nil {
+		t.Fatalf("writeJSON() error = %v", err)
+	}
+	loaded, err := system.LoadWorkspace(ctx, "workspace-read-roles")
+	if err != nil {
+		t.Fatalf("LoadWorkspace() error = %v", err)
+	}
+	if len(loaded.RegisteredRoleIDs) != 1 || loaded.RegisteredRoleIDs[0] != "role-a" {
+		t.Fatalf("registeredRoleIds = %#v", loaded.RegisteredRoleIDs)
+	}
+}
+
 func TestSaveLoadAndDeleteRoleAvatarImageFile(t *testing.T) {
 	system := newTestSystem(t)
 	role := types.Role{ID: "developer", Name: "Developer"}
@@ -257,6 +348,91 @@ func TestWorkspaceSessionLifecycleKeepsPureWorkspaceIdentity(t *testing.T) {
 	if err := system.DeleteWorkspaceSession(ctx, "workspace-1", "developer", session.ID); err != nil {
 		t.Fatalf("DeleteWorkspaceSession() error = %v", err)
 	}
+}
+
+func TestWorkspaceRoleRegistrationChangesKeepSessionsAndAttachments(t *testing.T) {
+	system := newTestSystem(t)
+	ctx := context.Background()
+	if err := system.SaveRole(ctx, types.Role{ID: "role-a", Name: "角色A"}); err != nil {
+		t.Fatalf("SaveRole() error = %v", err)
+	}
+	if _, err := system.SaveConversationImageConfig(ctx, types.ConversationImageConfig{MultiVersionEnabled: false}); err != nil {
+		t.Fatalf("SaveConversationImageConfig() error = %v", err)
+	}
+	workspace := types.Workspace{ID: "workspace-role-registration", Name: "注册变化工作区", RegisteredRoleIDs: []string{"role-a"}}
+	if err := system.SaveWorkspace(ctx, workspace); err != nil {
+		t.Fatalf("SaveWorkspace() error = %v", err)
+	}
+
+	session, err := system.CreateWorkspaceSession(ctx, workspace.ID, "role-a", "保留的会话")
+	if err != nil {
+		t.Fatalf("CreateWorkspaceSession() error = %v", err)
+	}
+	now := time.Now().UTC()
+	session.Messages = []types.Message{{ID: "message-keep", Type: "user", Content: "历史消息", BranchID: "main", CreatedAt: now, UpdatedAt: now}}
+	session.UpdatedAt = now
+	session.LastActive = now
+	if err := system.SaveSession(ctx, session); err != nil {
+		t.Fatalf("SaveSession() error = %v", err)
+	}
+	attachment, err := system.SaveWorkspaceSessionMessageAttachment(ctx, workspace.ID, "role-a", session.ID, types.RunAttachment{
+		Kind:    "image",
+		Name:    "截图.png",
+		DataURL: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lz2YNgAAAABJRU5ErkJggg==",
+	})
+	if err != nil {
+		t.Fatalf("SaveWorkspaceSessionMessageAttachment() error = %v", err)
+	}
+	attachmentFile := filepath.Join(system.paths.root, filepath.FromSlash(attachment.Path))
+	assertFile(t, attachmentFile)
+
+	workspace.RegisteredRoleIDs = nil
+	if err := system.SaveWorkspace(ctx, workspace); err != nil {
+		t.Fatalf("SaveWorkspace(unregister) error = %v", err)
+	}
+	loadedWorkspace, err := system.LoadWorkspace(ctx, workspace.ID)
+	if err != nil {
+		t.Fatalf("LoadWorkspace(unregister) error = %v", err)
+	}
+	if len(loadedWorkspace.RegisteredRoleIDs) != 0 {
+		t.Fatalf("registeredRoleIds after unregister = %#v", loadedWorkspace.RegisteredRoleIDs)
+	}
+	assertWorkspaceSessionPreserved(t, system, workspace.ID, "role-a", session.ID, attachmentFile)
+
+	workspace.RegisteredRoleIDs = []string{"role-a"}
+	if err := system.SaveWorkspace(ctx, workspace); err != nil {
+		t.Fatalf("SaveWorkspace(re-register) error = %v", err)
+	}
+	loadedWorkspace, err = system.LoadWorkspace(ctx, workspace.ID)
+	if err != nil {
+		t.Fatalf("LoadWorkspace(re-register) error = %v", err)
+	}
+	if len(loadedWorkspace.RegisteredRoleIDs) != 1 || loadedWorkspace.RegisteredRoleIDs[0] != "role-a" {
+		t.Fatalf("registeredRoleIds after re-register = %#v", loadedWorkspace.RegisteredRoleIDs)
+	}
+	assertWorkspaceSessionPreserved(t, system, workspace.ID, "role-a", session.ID, attachmentFile)
+}
+
+func assertWorkspaceSessionPreserved(t *testing.T, system *system, workspaceID string, roleID string, sessionID string, attachmentFile string) {
+	t.Helper()
+	summaries, err := system.ListWorkspaceSessions(context.Background(), workspaceID, roleID)
+	if err != nil {
+		t.Fatalf("ListWorkspaceSessions() error = %v", err)
+	}
+	if len(summaries) != 1 || summaries[0].ID != sessionID || summaries[0].WorkspaceID != workspaceID || summaries[0].RoleID != roleID {
+		t.Fatalf("summaries = %#v", summaries)
+	}
+	loaded, err := system.LoadWorkspaceSession(context.Background(), workspaceID, roleID, sessionID)
+	if err != nil {
+		t.Fatalf("LoadWorkspaceSession() error = %v", err)
+	}
+	if loaded.WorkspaceID != workspaceID || loaded.RoleID != roleID {
+		t.Fatalf("session identity = workspaceId:%q roleId:%q", loaded.WorkspaceID, loaded.RoleID)
+	}
+	if len(loaded.Messages) != 1 || loaded.Messages[0].Content != "历史消息" {
+		t.Fatalf("messages = %#v", loaded.Messages)
+	}
+	assertFile(t, attachmentFile)
 }
 
 func TestUpdateSessionSettingsChangesOnlySessionMetadata(t *testing.T) {

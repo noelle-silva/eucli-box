@@ -58,7 +58,86 @@ func (s *system) ListPlugins(ctx context.Context) ([]types.SystemPluginSummary, 
 			Enabled:               record.enabled,
 		})
 	}
-	return summaries, nil
+	return s.orderPluginSummaries(ctx, summaries)
+}
+
+// orderPluginSummaries 按集合顺序文件重排插件摘要；未登记的新插件按当前发现顺序追加。
+func (s *system) orderPluginSummaries(ctx context.Context, summaries []types.SystemPluginSummary) ([]types.SystemPluginSummary, error) {
+	byID := make(map[string]types.SystemPluginSummary, len(summaries))
+	ids := make([]string, 0, len(summaries))
+	for _, summary := range summaries {
+		id := summary.ID
+		if id == "" {
+			id = summary.SourceID
+		}
+		if id == "" {
+			continue
+		}
+		byID[id] = summary
+		ids = append(ids, id)
+	}
+	order, err := s.readOrderIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ordered := mergeOrderIDs(order, ids)
+	result := make([]types.SystemPluginSummary, 0, len(ordered))
+	for _, id := range ordered {
+		if summary, ok := byID[id]; ok {
+			result = append(result, summary)
+		}
+	}
+	return result, nil
+}
+
+func (s *system) ReorderPlugins(ctx context.Context, pluginIDs []string) error {
+	s.orderMu.Lock()
+	defer s.orderMu.Unlock()
+
+	summaries, err := s.ListPlugins(ctx)
+	if err != nil {
+		return err
+	}
+	existing := make([]string, 0, len(summaries))
+	for _, summary := range summaries {
+		id := summary.ID
+		if id == "" {
+			id = summary.SourceID
+		}
+		if id != "" {
+			existing = append(existing, id)
+		}
+	}
+	requested := normalizeOrderIDs(pluginIDs)
+	if len(requested) == 0 {
+		return pluginInvalid("order ids are required", nil)
+	}
+	present := make(map[string]struct{}, len(existing))
+	for _, id := range existing {
+		present[id] = struct{}{}
+	}
+	seen := make(map[string]struct{}, len(requested))
+	for _, id := range requested {
+		if _, ok := present[id]; !ok {
+			return pluginInvalid("order id does not exist: "+id, nil)
+		}
+		if _, ok := seen[id]; ok {
+			return pluginInvalid("order ids contain duplicate: "+id, nil)
+		}
+		seen[id] = struct{}{}
+	}
+	order, err := s.readOrderIDs(ctx)
+	if err != nil {
+		return err
+	}
+	current := mergeOrderIDs(order, existing)
+	remaining := make([]string, 0, len(current)-len(requested))
+	for _, id := range current {
+		if _, ok := seen[id]; !ok {
+			remaining = append(remaining, id)
+		}
+	}
+	return s.writeOrderIDs(ctx, append(requested, remaining...))
 }
 
 func (s *system) LoadPlugin(ctx context.Context, pluginID string) (types.SystemPluginView, error) {

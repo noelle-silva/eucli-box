@@ -73,6 +73,7 @@ type ProviderSystem interface {
 	SaveProvider(ctx context.Context, provider types.Provider) error
 	LoadProvider(ctx context.Context, providerID string) (types.Provider, error)
 	ListProviders(ctx context.Context) ([]types.ProviderSummary, error)
+	ReorderProviders(ctx context.Context, providerIDs []string) error
 	DeleteProvider(ctx context.Context, providerID string) error
 	LoadModelRequestConfig(ctx context.Context) (types.ModelRequestConfig, error)
 	SaveModelRequestConfig(ctx context.Context, config types.ModelRequestConfig) (types.ModelRequestConfig, error)
@@ -92,6 +93,7 @@ type ToolSystem interface {
 	SaveTool(ctx context.Context, tool types.ToolDefinition) error
 	LoadTool(ctx context.Context, toolID string) (types.ToolDefinition, error)
 	ListTools(ctx context.Context) ([]types.ToolSummary, error)
+	ReorderTools(ctx context.Context, toolIDs []string) error
 	SaveToolUserSettings(ctx context.Context, toolID string, settings types.ToolUserSettings) (types.ToolDefinition, error)
 	LoadToolConfigFiles(ctx context.Context, toolID string) ([]types.ToolConfigFile, error)
 	LoadToolWorkDirectoryConfig(ctx context.Context) (types.ToolWorkDirectoryConfig, error)
@@ -145,9 +147,11 @@ type SessionSystem interface {
 type StickerSystem interface {
 	CreateStickerCategory(ctx context.Context, categoryName string) (types.StickerCategory, error)
 	ListStickerCategories(ctx context.Context) ([]types.StickerCategorySummary, error)
+	ReorderStickerCategories(ctx context.Context, names []string) error
 	LoadStickerCategory(ctx context.Context, categoryName string) (types.StickerCategory, error)
 	LoadStickerLibrary(ctx context.Context) (types.StickerLibrary, error)
 	AddSticker(ctx context.Context, categoryName string, stickerName string, dataURL string) (types.StickerItem, error)
+	ReorderStickers(ctx context.Context, categoryName string, names []string) error
 	RenameSticker(ctx context.Context, categoryName string, oldStickerName string, newStickerName string) (types.StickerItem, error)
 	DeleteSticker(ctx context.Context, categoryName string, stickerName string) error
 	DeleteStickerCategory(ctx context.Context, categoryName string) error
@@ -165,11 +169,13 @@ type StickerSystem interface {
 type HookPromptSystem interface {
 	LoadHookPromptLibrary(ctx context.Context) (types.HookPromptLibrary, error)
 	SaveHookPromptLibrary(ctx context.Context, library types.HookPromptLibrary) (types.HookPromptLibrary, error)
+	ReorderHookPromptPresets(ctx context.Context, presetIDs []string) (types.HookPromptLibrary, error)
 }
 
 type PlaceholderSystem interface {
 	LoadPlaceholderLibrary(ctx context.Context) (types.PlaceholderLibrary, error)
 	SavePlaceholderLibrary(ctx context.Context, library types.PlaceholderLibrary) (types.PlaceholderLibrary, error)
+	ReorderPlaceholders(ctx context.Context, names []string) (types.PlaceholderLibrary, error)
 	ResolveText(ctx context.Context, text string) (types.PlaceholderResolveResult, error)
 	Problems(ctx context.Context) ([]types.PlaceholderProblem, error)
 	DependencyTree(ctx context.Context, name string) (types.PlaceholderDependencyNode, error)
@@ -177,6 +183,7 @@ type PlaceholderSystem interface {
 
 type SystemPluginSystem interface {
 	ListPlugins(ctx context.Context) ([]types.SystemPluginSummary, error)
+	ReorderPlugins(ctx context.Context, pluginIDs []string) error
 	LoadPlugin(ctx context.Context, pluginID string) (types.SystemPluginView, error)
 	SavePluginUserConfig(ctx context.Context, pluginID string, config types.SystemPluginUserConfig) (types.SystemPluginView, error)
 	EnablePlugin(ctx context.Context, pluginID string) (types.SystemPluginView, error)

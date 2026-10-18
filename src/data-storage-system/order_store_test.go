@@ -64,6 +64,44 @@ func TestWorkspaceOrderIsPersistedAsCollectionFact(t *testing.T) {
 	assertWorkspaceIDs(t, system, []string{"workspace-c", "workspace-a"})
 }
 
+func TestProviderOrderIsPersistedAsCollectionFact(t *testing.T) {
+	system := newTestSystem(t)
+	ctx := context.Background()
+	for _, provider := range []types.Provider{{ID: "provider-a", Name: "A"}, {ID: "provider-b", Name: "B"}} {
+		if err := system.SaveProvider(ctx, provider); err != nil {
+			t.Fatalf("SaveProvider(%s) error = %v", provider.ID, err)
+		}
+	}
+	assertProviderIDs(t, system, []string{"provider-b", "provider-a"})
+	if err := system.ReorderProviders(ctx, []string{"provider-a", "provider-b"}); err != nil {
+		t.Fatalf("ReorderProviders() error = %v", err)
+	}
+	assertProviderIDs(t, system, []string{"provider-a", "provider-b"})
+	if err := system.SaveProvider(ctx, types.Provider{ID: "provider-c", Name: "C"}); err != nil {
+		t.Fatalf("SaveProvider(new) error = %v", err)
+	}
+	assertProviderIDs(t, system, []string{"provider-c", "provider-a", "provider-b"})
+	if err := system.DeleteProvider(ctx, "provider-a"); err != nil {
+		t.Fatalf("DeleteProvider() error = %v", err)
+	}
+	assertProviderIDs(t, system, []string{"provider-c", "provider-b"})
+}
+
+func TestToolOrderIsPersistedAsCollectionFact(t *testing.T) {
+	system := newTestSystem(t)
+	ctx := context.Background()
+	for _, tool := range []types.ToolDefinition{{ID: "tool-a", Name: "A"}, {ID: "tool-b", Name: "B"}} {
+		if err := system.SaveTool(ctx, tool); err != nil {
+			t.Fatalf("SaveTool(%s) error = %v", tool.ID, err)
+		}
+	}
+	assertToolIDs(t, system, []string{"tool-a", "tool-b"})
+	if err := system.ReorderTools(ctx, []string{"tool-b", "tool-a"}); err != nil {
+		t.Fatalf("ReorderTools() error = %v", err)
+	}
+	assertToolIDs(t, system, []string{"tool-b", "tool-a"})
+}
+
 func TestReorderRejectsUnknownOrDuplicateIDs(t *testing.T) {
 	system := newTestSystem(t)
 	ctx := context.Background()
@@ -104,6 +142,32 @@ func assertWorkspaceIDs(t *testing.T, system System, expected []string) {
 	actual := make([]string, 0, len(workspaces))
 	for _, workspace := range workspaces {
 		actual = append(actual, workspace.ID)
+	}
+	assertIDs(t, actual, expected)
+}
+
+func assertProviderIDs(t *testing.T, system System, expected []string) {
+	t.Helper()
+	providers, err := system.ListProviders(context.Background())
+	if err != nil {
+		t.Fatalf("ListProviders() error = %v", err)
+	}
+	actual := make([]string, 0, len(providers))
+	for _, provider := range providers {
+		actual = append(actual, provider.ID)
+	}
+	assertIDs(t, actual, expected)
+}
+
+func assertToolIDs(t *testing.T, system System, expected []string) {
+	t.Helper()
+	tools, err := system.ListTools(context.Background())
+	if err != nil {
+		t.Fatalf("ListTools() error = %v", err)
+	}
+	actual := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		actual = append(actual, tool.ID)
 	}
 	assertIDs(t, actual, expected)
 }

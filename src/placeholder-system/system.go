@@ -12,6 +12,7 @@ import (
 type System interface {
 	LoadPlaceholderLibrary(ctx context.Context) (types.PlaceholderLibrary, error)
 	SavePlaceholderLibrary(ctx context.Context, library types.PlaceholderLibrary) (types.PlaceholderLibrary, error)
+	ReorderPlaceholders(ctx context.Context, names []string) (types.PlaceholderLibrary, error)
 	ResolveText(ctx context.Context, text string) (types.PlaceholderResolveResult, error)
 	ResolvePromptMessages(ctx context.Context, messages []types.PromptMessage) ([]types.PromptMessage, error)
 	Problems(ctx context.Context) ([]types.PlaceholderProblem, error)

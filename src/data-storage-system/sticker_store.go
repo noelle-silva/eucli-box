@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -45,6 +44,17 @@ func (s *system) CreateStickerCategory(ctx context.Context, categoryName string)
 	if err := writeStickerCategoryIndex(ctx, dir, category); err != nil {
 		return types.StickerCategory{}, err
 	}
+	categories, err := s.ListStickerCategories(ctx)
+	if err != nil {
+		return types.StickerCategory{}, err
+	}
+	names := make([]string, 0, len(categories))
+	for _, summary := range categories {
+		names = append(names, summary.Name)
+	}
+	if err := prependOrderID(ctx, s.paths.stickerCategoriesOrderFile(), name, names); err != nil {
+		return types.StickerCategory{}, err
+	}
 	if err := s.rebuildStickerIndexes(ctx); err != nil {
 		return types.StickerCategory{}, err
 	}
@@ -77,8 +87,70 @@ func (s *system) ListStickerCategories(ctx context.Context) ([]types.StickerCate
 		}
 		summaries = append(summaries, types.StickerCategorySummary{Name: name, Count: len(category.Items), UpdatedAt: category.UpdatedAt})
 	}
-	sort.Slice(summaries, func(i, j int) bool { return summaries[i].Name < summaries[j].Name })
-	return summaries, nil
+	byName := make(map[string]types.StickerCategorySummary, len(summaries))
+	names := make([]string, 0, len(summaries))
+	for _, summary := range summaries {
+		byName[summary.Name] = summary
+		names = append(names, summary.Name)
+	}
+	ordered, err := orderedIDsForExisting(ctx, s.paths.stickerCategoriesOrderFile(), names)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]types.StickerCategorySummary, 0, len(ordered))
+	for _, name := range ordered {
+		if summary, ok := byName[name]; ok {
+			result = append(result, summary)
+		}
+	}
+	return result, nil
+}
+
+func (s *system) ReorderStickerCategories(ctx context.Context, names []string) error {
+	s.entityMu.Lock()
+	defer s.entityMu.Unlock()
+
+	categories, err := s.ListStickerCategories(ctx)
+	if err != nil {
+		return err
+	}
+	existing := make([]string, 0, len(categories))
+	for _, summary := range categories {
+		existing = append(existing, summary.Name)
+	}
+	if err := reorderExistingIDs(ctx, s.paths.stickerCategoriesOrderFile(), names, existing); err != nil {
+		return err
+	}
+	return s.rebuildStickerIndexes(ctx)
+}
+
+func (s *system) ReorderStickers(ctx context.Context, categoryName string, names []string) error {
+	s.entityMu.Lock()
+	defer s.entityMu.Unlock()
+
+	category, err := s.LoadStickerCategory(ctx, categoryName)
+	if err != nil {
+		return err
+	}
+	existing := make([]string, 0, len(category.Items))
+	for _, item := range category.Items {
+		existing = append(existing, item.Name)
+	}
+	orderTarget, err := s.paths.stickerItemsOrderFile(categoryName)
+	if err != nil {
+		return err
+	}
+	if err := reorderExistingIDs(ctx, orderTarget, names, existing); err != nil {
+		return err
+	}
+	dir, err := s.paths.stickerCategoryDir(categoryName)
+	if err != nil {
+		return err
+	}
+	if err := s.rebuildStickerCategoryIndex(ctx, categoryName, dir); err != nil {
+		return err
+	}
+	return s.rebuildStickerIndexes(ctx)
 }
 
 func (s *system) LoadStickerCategory(ctx context.Context, categoryName string) (types.StickerCategory, error) {
@@ -90,7 +162,26 @@ func (s *system) LoadStickerCategory(ctx context.Context, categoryName string) (
 	if err != nil {
 		return types.StickerCategory{}, err
 	}
-	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
+	orderTarget, err := s.paths.stickerItemsOrderFile(name)
+	if err != nil {
+		return types.StickerCategory{}, err
+	}
+	byName := make(map[string]types.StickerItem, len(items))
+	names := make([]string, 0, len(items))
+	for _, item := range items {
+		byName[item.Name] = item
+		names = append(names, item.Name)
+	}
+	orderedNames, err := orderedIDsForExisting(ctx, orderTarget, names)
+	if err != nil {
+		return types.StickerCategory{}, err
+	}
+	items = items[:0]
+	for _, itemName := range orderedNames {
+		if item, ok := byName[itemName]; ok {
+			items = append(items, item)
+		}
+	}
 	updatedAt := time.Time{}
 	if dataFileExists(filepath.Join(dir, "index.json")) {
 		index, err := readJSON[stickerCategoryIndex](ctx, filepath.Join(dir, "index.json"))
@@ -168,6 +259,22 @@ func (s *system) AddSticker(ctx context.Context, categoryName string, stickerNam
 		_ = os.RemoveAll(itemDir)
 		return types.StickerItem{}, err
 	}
+	category, err := s.LoadStickerCategory(ctx, name)
+	if err != nil {
+		_ = os.RemoveAll(itemDir)
+		return types.StickerItem{}, err
+	}
+	itemNames := make([]string, 0, len(category.Items))
+	for _, current := range category.Items {
+		itemNames = append(itemNames, current.Name)
+	}
+	orderTarget, err := s.paths.stickerItemsOrderFile(name)
+	if err != nil {
+		return types.StickerItem{}, err
+	}
+	if err := prependOrderID(ctx, orderTarget, stickerName, itemNames); err != nil {
+		return types.StickerItem{}, err
+	}
 	if err := s.rebuildStickerCategoryIndex(ctx, name, dir); err != nil {
 		return types.StickerItem{}, err
 	}
@@ -211,6 +318,21 @@ func (s *system) RenameSticker(ctx context.Context, categoryName string, oldStic
 	if err := writeJSON(ctx, target, item); err != nil {
 		return types.StickerItem{}, err
 	}
+	category, err := s.LoadStickerCategory(ctx, name)
+	if err != nil {
+		return types.StickerItem{}, err
+	}
+	itemNames := make([]string, 0, len(category.Items))
+	for _, current := range category.Items {
+		itemNames = append(itemNames, current.Name)
+	}
+	orderTarget, err := s.paths.stickerItemsOrderFile(name)
+	if err != nil {
+		return types.StickerItem{}, err
+	}
+	if err := replaceOrderID(ctx, orderTarget, oldStickerName, newStickerName, itemNames); err != nil {
+		return types.StickerItem{}, err
+	}
 	if err := s.rebuildStickerCategoryIndex(ctx, name, dir); err != nil {
 		return types.StickerItem{}, err
 	}
@@ -240,6 +362,21 @@ func (s *system) DeleteSticker(ctx context.Context, categoryName string, sticker
 	if err := moveToRecycle(ctx, s.paths, types.StorageItemSticker, item.ID, itemDir); err != nil {
 		return err
 	}
+	category, err := s.LoadStickerCategory(ctx, name)
+	if err != nil {
+		return err
+	}
+	itemNames := make([]string, 0, len(category.Items))
+	for _, current := range category.Items {
+		itemNames = append(itemNames, current.Name)
+	}
+	orderTarget, err := s.paths.stickerItemsOrderFile(name)
+	if err != nil {
+		return err
+	}
+	if err := removeOrderID(ctx, orderTarget, stickerName, itemNames); err != nil {
+		return err
+	}
 	if err := s.rebuildStickerCategoryIndex(ctx, name, dir); err != nil {
 		return err
 	}
@@ -252,6 +389,17 @@ func (s *system) DeleteStickerCategory(ctx context.Context, categoryName string)
 		return err
 	}
 	if err := moveToRecycle(ctx, s.paths, types.StorageItemStickerCategory, name, dir); err != nil {
+		return err
+	}
+	categories, err := s.ListStickerCategories(ctx)
+	if err != nil {
+		return err
+	}
+	names := make([]string, 0, len(categories))
+	for _, summary := range categories {
+		names = append(names, summary.Name)
+	}
+	if err := removeOrderID(ctx, s.paths.stickerCategoriesOrderFile(), name, names); err != nil {
 		return err
 	}
 	return s.rebuildStickerIndexes(ctx)

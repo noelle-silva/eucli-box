@@ -2,7 +2,6 @@ package datastorage
 
 import (
 	"context"
-	"sort"
 
 	"eucli-box/pkg/types"
 )
@@ -15,7 +14,14 @@ func (s *system) SaveProvider(ctx context.Context, provider types.Provider) erro
 	if err != nil {
 		return err
 	}
+	s.entityMu.Lock()
+	defer s.entityMu.Unlock()
+
+	isNew := !dataFileExists(target)
 	if err := writeJSON(ctx, target, provider); err != nil {
+		return err
+	}
+	if err := s.syncOrderAfterSave(ctx, s.paths.providersRoot(), s.paths.providerOrderFile(), provider.ID, isNew); err != nil {
 		return err
 	}
 	return s.rebuildProviderIndex(ctx)
@@ -34,12 +40,31 @@ func (s *system) ListProviders(ctx context.Context) ([]types.ProviderSummary, er
 	if err != nil {
 		return nil, err
 	}
-	summaries := make([]types.ProviderSummary, 0, len(providers))
+	byID := make(map[string]types.ProviderSummary, len(providers))
 	for _, provider := range providers {
-		summaries = append(summaries, providerSummary(provider))
+		byID[provider.ID] = providerSummary(provider)
 	}
-	sort.Slice(summaries, func(i, j int) bool { return summaries[i].ID < summaries[j].ID })
+	ids, err := orderedObjectIDs(ctx, s.paths.providersRoot(), s.paths.providerOrderFile())
+	if err != nil {
+		return nil, err
+	}
+	summaries := make([]types.ProviderSummary, 0, len(ids))
+	for _, id := range ids {
+		if summary, ok := byID[id]; ok {
+			summaries = append(summaries, summary)
+		}
+	}
 	return summaries, nil
+}
+
+func (s *system) ReorderProviders(ctx context.Context, providerIDs []string) error {
+	s.entityMu.Lock()
+	defer s.entityMu.Unlock()
+
+	if err := s.reorderObjects(ctx, s.paths.providersRoot(), s.paths.providerOrderFile(), providerIDs); err != nil {
+		return err
+	}
+	return s.rebuildProviderIndex(ctx)
 }
 
 func providerSummary(provider types.Provider) types.ProviderSummary {
@@ -70,7 +95,13 @@ func (s *system) DeleteProvider(ctx context.Context, providerID string) error {
 	if err != nil {
 		return err
 	}
+	s.entityMu.Lock()
+	defer s.entityMu.Unlock()
+
 	if err := moveToRecycle(ctx, s.paths, types.StorageItemProvider, providerID, dir); err != nil {
+		return err
+	}
+	if err := s.syncOrderAfterDelete(ctx, s.paths.providersRoot(), s.paths.providerOrderFile()); err != nil {
 		return err
 	}
 	return s.rebuildProviderIndex(ctx)

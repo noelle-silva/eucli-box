@@ -116,7 +116,7 @@ func (s *system) listDevTools(ctx context.Context) ([]types.ToolSummary, error) 
 		summaries = append(summaries, summary)
 	}
 	sort.Slice(summaries, func(i, j int) bool { return summaries[i].ID < summaries[j].ID })
-	return summaries, nil
+	return s.orderToolSummaries(ctx, summaries)
 }
 
 // listManagedTools 是受托模式的工具列表：只列出有有效当前版本记录的已安装工具。
@@ -154,7 +154,46 @@ func (s *system) listManagedTools(ctx context.Context) ([]types.ToolSummary, err
 		summaries = append(summaries, summary)
 	}
 	sort.Slice(summaries, func(i, j int) bool { return summaries[i].ID < summaries[j].ID })
-	return summaries, nil
+	return s.orderToolSummaries(ctx, summaries)
+}
+
+// orderToolSummaries 按集合顺序文件重排工具摘要；未登记的新工具按 ID 追加。
+func (s *system) orderToolSummaries(ctx context.Context, summaries []types.ToolSummary) ([]types.ToolSummary, error) {
+	byID := make(map[string]types.ToolSummary, len(summaries))
+	ids := make([]string, 0, len(summaries))
+	for _, summary := range summaries {
+		byID[summary.ID] = summary
+		ids = append(ids, summary.ID)
+	}
+	ordered, err := orderedIDsForExisting(ctx, s.paths.toolOrderFile(), ids)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]types.ToolSummary, 0, len(ordered))
+	for _, id := range ordered {
+		if summary, ok := byID[id]; ok {
+			result = append(result, summary)
+		}
+	}
+	return result, nil
+}
+
+func (s *system) ReorderTools(ctx context.Context, toolIDs []string) error {
+	s.entityMu.Lock()
+	defer s.entityMu.Unlock()
+
+	summaries, err := s.ListTools(ctx)
+	if err != nil {
+		return err
+	}
+	existing := make([]string, 0, len(summaries))
+	for _, summary := range summaries {
+		existing = append(existing, summary.ID)
+	}
+	if err := reorderExistingIDs(ctx, s.paths.toolOrderFile(), toolIDs, existing); err != nil {
+		return err
+	}
+	return s.rebuildToolIndex(ctx)
 }
 
 // toolSummaryFromDefinition 从已加载的定义和用户设置构造摘要；设置不可读时返回真实原因。

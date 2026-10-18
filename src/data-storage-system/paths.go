@@ -291,8 +291,16 @@ func (p paths) providerDataFile(providerID string) (string, error) {
 	return filepath.Join(dir, "data.json"), nil
 }
 
+func (p paths) providerOrderFile() string {
+	return filepath.Join(p.providersRoot(), "order.json")
+}
+
 func (p paths) toolBodyDir(toolID string) (string, error) {
 	return p.safeJoin(p.toolProgramsRoot(), toolID)
+}
+
+func (p paths) toolOrderFile() string {
+	return filepath.Join(p.toolProgramsRoot(), "order.json")
 }
 
 func (p paths) toolBodyDefinitionFile(toolID string) (string, error) {
@@ -325,6 +333,18 @@ func (p paths) stickerCategoryDir(categoryName string) (string, error) {
 		return "", storageInvalid("path escapes stickers root", nil)
 	}
 	return joined, nil
+}
+
+func (p paths) stickerCategoriesOrderFile() string {
+	return filepath.Join(p.stickersRoot(), "order.json")
+}
+
+func (p paths) stickerItemsOrderFile(categoryName string) (string, error) {
+	dir, err := p.stickerCategoryDir(categoryName)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "order.json"), nil
 }
 
 func (p paths) stickerItemDir(categoryName string, stickerID string) (string, error) {

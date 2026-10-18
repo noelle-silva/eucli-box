@@ -1323,6 +1323,10 @@ func (f *fakeProviderStorage) DeleteProvider(ctx context.Context, providerID str
 	return nil
 }
 
+func (f *fakeProviderStorage) ReorderProviders(ctx context.Context, providerIDs []string) error {
+	return nil
+}
+
 func (f *fakeProviderStorage) LoadModelRequestConfig(ctx context.Context) (types.ModelRequestConfig, error) {
 	return f.modelRequestConfig, nil
 }

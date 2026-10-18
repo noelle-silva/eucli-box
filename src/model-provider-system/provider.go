@@ -53,6 +53,13 @@ func (s *system) ListProviders(ctx context.Context) ([]types.ProviderSummary, er
 	return providers, nil
 }
 
+func (s *system) ReorderProviders(ctx context.Context, providerIDs []string) error {
+	if err := s.storage.ReorderProviders(ctx, providerIDs); err != nil {
+		return providerStorageFailed("failed to reorder providers", err)
+	}
+	return nil
+}
+
 func (s *system) DeleteProvider(ctx context.Context, providerID string) error {
 	if strings.TrimSpace(providerID) == "" {
 		return providerInvalid("provider id is required", nil)

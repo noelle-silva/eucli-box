@@ -23,6 +23,7 @@ type System interface {
 	SaveTool(ctx context.Context, tool types.ToolDefinition) error
 	LoadTool(ctx context.Context, toolID string) (types.ToolDefinition, error)
 	ListTools(ctx context.Context) ([]types.ToolSummary, error)
+	ReorderTools(ctx context.Context, toolIDs []string) error
 	SaveToolUserSettings(ctx context.Context, toolID string, settings types.ToolUserSettings) (types.ToolDefinition, error)
 	LoadToolConfigFiles(ctx context.Context, toolID string) ([]types.ToolConfigFile, error)
 	LoadToolWorkDirectoryConfig(ctx context.Context) (types.ToolWorkDirectoryConfig, error)
@@ -50,6 +51,7 @@ type StorageSystem interface {
 	SaveTool(ctx context.Context, tool types.ToolDefinition) error
 	LoadTool(ctx context.Context, toolID string) (types.ToolDefinition, error)
 	ListTools(ctx context.Context) ([]types.ToolSummary, error)
+	ReorderTools(ctx context.Context, toolIDs []string) error
 	SaveToolUserSettings(ctx context.Context, toolID string, settings types.ToolUserSettings) (types.ToolDefinition, error)
 	LoadToolConfigFiles(ctx context.Context, toolID string) ([]types.ToolConfigFile, error)
 	LoadToolWorkDirectoryConfig(ctx context.Context) (types.ToolWorkDirectoryConfig, error)

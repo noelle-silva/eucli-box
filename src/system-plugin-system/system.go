@@ -23,6 +23,7 @@ const (
 type System interface {
 	Start(ctx context.Context) error
 	ListPlugins(ctx context.Context) ([]types.SystemPluginSummary, error)
+	ReorderPlugins(ctx context.Context, pluginIDs []string) error
 	LoadPlugin(ctx context.Context, pluginID string) (types.SystemPluginView, error)
 	SavePluginUserConfig(ctx context.Context, pluginID string, config types.SystemPluginUserConfig) (types.SystemPluginView, error)
 	EnablePlugin(ctx context.Context, pluginID string) (types.SystemPluginView, error)
@@ -68,6 +69,7 @@ type system struct {
 	onEvent     EventObserver
 
 	mu                sync.Mutex
+	orderMu           sync.Mutex
 	residents         map[string]*session
 	failures          map[string]string
 	activities        map[string]*pluginActivity

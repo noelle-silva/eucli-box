@@ -13,6 +13,7 @@ type System interface {
 	SaveProvider(ctx context.Context, provider types.Provider) error
 	LoadProvider(ctx context.Context, providerID string) (types.Provider, error)
 	ListProviders(ctx context.Context) ([]types.ProviderSummary, error)
+	ReorderProviders(ctx context.Context, providerIDs []string) error
 	DeleteProvider(ctx context.Context, providerID string) error
 	LoadModelRequestConfig(ctx context.Context) (types.ModelRequestConfig, error)
 	SaveModelRequestConfig(ctx context.Context, config types.ModelRequestConfig) (types.ModelRequestConfig, error)
@@ -34,6 +35,7 @@ type StorageSystem interface {
 	SaveProvider(ctx context.Context, provider types.Provider) error
 	LoadProvider(ctx context.Context, providerID string) (types.Provider, error)
 	ListProviders(ctx context.Context) ([]types.ProviderSummary, error)
+	ReorderProviders(ctx context.Context, providerIDs []string) error
 	DeleteProvider(ctx context.Context, providerID string) error
 	LoadModelRequestConfig(ctx context.Context) (types.ModelRequestConfig, error)
 	SaveModelRequestConfig(ctx context.Context, config types.ModelRequestConfig) (types.ModelRequestConfig, error)

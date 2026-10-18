@@ -616,6 +616,34 @@ func TestReorderRoutes(t *testing.T) {
 		t.Fatalf("workspace order = %#v", fakes.workspaces.order)
 	}
 
+	for _, test := range []struct {
+		path  string
+		body  string
+		check func() bool
+	}{
+		{path: "/api/providers/order", body: `{"ids":["provider-b","provider-a"]}`, check: func() bool { return len(fakes.providers.order) == 2 && fakes.providers.order[0] == "provider-b" }},
+		{path: "/api/tools/order", body: `{"ids":["tool-b","tool-a"]}`, check: func() bool { return len(fakes.tools.order) == 2 && fakes.tools.order[0] == "tool-b" }},
+		{path: "/api/system-plugins/order", body: `{"ids":["plugin-b","plugin-a"]}`, check: func() bool { return len(fakes.systemPlugins.order) == 2 && fakes.systemPlugins.order[0] == "plugin-b" }},
+		{path: "/api/stickers/categories/order", body: `{"ids":["cat-b","cat-a"]}`, check: func() bool {
+			return len(fakes.stickers.categoryOrder) == 2 && fakes.stickers.categoryOrder[0] == "cat-b"
+		}},
+		{path: "/api/stickers/items/order", body: `{"categoryName":"cat-a","names":["b","a"]}`, check: func() bool {
+			return len(fakes.stickers.itemOrders["cat-a"]) == 2 && fakes.stickers.itemOrders["cat-a"][0] == "b"
+		}},
+		{path: "/api/placeholders/order", body: `{"ids":["b","a"]}`, check: func() bool { return true }},
+		{path: "/api/hook-prompts/order", body: `{"ids":["preset-b","preset-a"]}`, check: func() bool { return len(fakes.hooks.order) == 2 && fakes.hooks.order[0] == "preset-b" }},
+	} {
+		req := httptest.NewRequest(http.MethodPut, test.path, strings.NewReader(test.body))
+		rec := httptest.NewRecorder()
+		system.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusNoContent && rec.Code != http.StatusOK {
+			t.Fatalf("%s status = %d body=%s", test.path, rec.Code, rec.Body.String())
+		}
+		if !test.check() {
+			t.Fatalf("%s order was not applied", test.path)
+		}
+	}
+
 	invalidReq := httptest.NewRequest(http.MethodPut, "/api/roles/order", strings.NewReader(`{"ids":[],"extra":true}`))
 	invalidRec := httptest.NewRecorder()
 	system.Handler().ServeHTTP(invalidRec, invalidReq)
@@ -1032,6 +1060,7 @@ func (f *fakeGatewayReleaseSource) ListCandidates(_ context.Context, kind string
 
 type fakeGatewayHooks struct {
 	library types.HookPromptLibrary
+	order   []string
 }
 
 func (f *fakeGatewayHooks) LoadHookPromptLibrary(ctx context.Context) (types.HookPromptLibrary, error) {
@@ -1040,6 +1069,11 @@ func (f *fakeGatewayHooks) LoadHookPromptLibrary(ctx context.Context) (types.Hoo
 
 func (f *fakeGatewayHooks) SaveHookPromptLibrary(ctx context.Context, library types.HookPromptLibrary) (types.HookPromptLibrary, error) {
 	f.library = library
+	return f.library, nil
+}
+
+func (f *fakeGatewayHooks) ReorderHookPromptPresets(ctx context.Context, presetIDs []string) (types.HookPromptLibrary, error) {
+	f.order = append([]string(nil), presetIDs...)
 	return f.library, nil
 }
 
@@ -1053,6 +1087,10 @@ func (f *fakeGatewayPlaceholders) LoadPlaceholderLibrary(ctx context.Context) (t
 
 func (f *fakeGatewayPlaceholders) SavePlaceholderLibrary(ctx context.Context, library types.PlaceholderLibrary) (types.PlaceholderLibrary, error) {
 	f.library = library
+	return f.library, nil
+}
+
+func (f *fakeGatewayPlaceholders) ReorderPlaceholders(ctx context.Context, names []string) (types.PlaceholderLibrary, error) {
 	return f.library, nil
 }
 
@@ -1072,10 +1110,16 @@ type fakeGatewaySystemPlugins struct {
 	plugins         []types.SystemPluginSummary
 	views           map[string]types.SystemPluginView
 	lastImportBytes []byte
+	order           []string
 }
 
 func (f *fakeGatewaySystemPlugins) ListPlugins(ctx context.Context) ([]types.SystemPluginSummary, error) {
 	return f.plugins, nil
+}
+
+func (f *fakeGatewaySystemPlugins) ReorderPlugins(ctx context.Context, pluginIDs []string) error {
+	f.order = append([]string(nil), pluginIDs...)
+	return nil
 }
 
 func (f *fakeGatewaySystemPlugins) LoadPlugin(ctx context.Context, pluginID string) (types.SystemPluginView, error) {
@@ -1694,6 +1738,7 @@ type fakeGatewayProviders struct {
 	providers          map[string]types.Provider
 	modelGroups        []types.ModelGroup
 	modelRequestConfig types.ModelRequestConfig
+	order              []string
 }
 
 func newFakeGatewayProviders() *fakeGatewayProviders {
@@ -1724,6 +1769,10 @@ func (f *fakeGatewayProviders) ListProviders(ctx context.Context) ([]types.Provi
 	}
 	return providers, nil
 }
+func (f *fakeGatewayProviders) ReorderProviders(ctx context.Context, providerIDs []string) error {
+	f.order = append([]string(nil), providerIDs...)
+	return nil
+}
 func (f *fakeGatewayProviders) DeleteProvider(ctx context.Context, providerID string) error {
 	delete(f.providers, providerID)
 	return nil
@@ -1749,6 +1798,7 @@ func (f *fakeGatewayProviders) RefreshModels(ctx context.Context, providerID str
 type fakeGatewayTools struct {
 	tools           map[string]types.ToolDefinition
 	lastImportBytes []byte
+	order           []string
 }
 
 func newFakeGatewayTools() *fakeGatewayTools {
@@ -1767,6 +1817,11 @@ func (f *fakeGatewayTools) ListTools(ctx context.Context) ([]types.ToolSummary, 
 		tools = append(tools, types.ToolSummary{ID: tool.ID, Name: tool.Name, Description: tool.Description, Type: tool.Type})
 	}
 	return tools, nil
+}
+
+func (f *fakeGatewayTools) ReorderTools(ctx context.Context, toolIDs []string) error {
+	f.order = append([]string(nil), toolIDs...)
+	return nil
 }
 
 func (f *fakeGatewayTools) SaveToolUserSettings(ctx context.Context, toolID string, settings types.ToolUserSettings) (types.ToolDefinition, error) {
@@ -1856,6 +1911,8 @@ type fakeGatewayStickers struct {
 	mermaid           types.MermaidFixConfig
 	title             types.ChatTitleNamingConfig
 	compressionConfig types.ContextCompressionConfig
+	categoryOrder     []string
+	itemOrders        map[string][]string
 }
 
 func newFakeGatewayStickers() *fakeGatewayStickers {
@@ -1893,6 +1950,11 @@ func (f *fakeGatewayStickers) ListStickerCategories(ctx context.Context) ([]type
 	return summaries, nil
 }
 
+func (f *fakeGatewayStickers) ReorderStickerCategories(ctx context.Context, names []string) error {
+	f.categoryOrder = append([]string(nil), names...)
+	return nil
+}
+
 func (f *fakeGatewayStickers) LoadStickerCategory(ctx context.Context, categoryName string) (types.StickerCategory, error) {
 	name := strings.TrimSpace(categoryName)
 	itemsByName := f.categories[name]
@@ -1923,6 +1985,14 @@ func (f *fakeGatewayStickers) AddSticker(ctx context.Context, categoryName strin
 	f.categories[categoryName][stickerName] = item
 	f.images[item.RelPath] = dataURL
 	return item, nil
+}
+
+func (f *fakeGatewayStickers) ReorderStickers(ctx context.Context, categoryName string, names []string) error {
+	if f.itemOrders == nil {
+		f.itemOrders = map[string][]string{}
+	}
+	f.itemOrders[categoryName] = append([]string(nil), names...)
+	return nil
 }
 
 func (f *fakeGatewayStickers) RenameSticker(ctx context.Context, categoryName string, oldStickerName string, newStickerName string) (types.StickerItem, error) {

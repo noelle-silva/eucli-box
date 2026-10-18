@@ -38,6 +38,13 @@ func (s *system) LoadTool(ctx context.Context, toolID string) (types.ToolDefinit
 	return s.annotateTool(tool), nil
 }
 
+func (s *system) ReorderTools(ctx context.Context, toolIDs []string) error {
+	if err := s.storage.ReorderTools(ctx, toolIDs); err != nil {
+		return toolStorageFailed("failed to reorder tools", err)
+	}
+	return nil
+}
+
 func (s *system) ListTools(ctx context.Context) ([]types.ToolSummary, error) {
 	summaries, err := s.storage.ListTools(ctx)
 	if err != nil {

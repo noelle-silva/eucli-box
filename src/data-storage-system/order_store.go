@@ -144,6 +144,15 @@ func (s *system) syncOrderAfterDelete(ctx context.Context, root string, orderTar
 }
 
 func (s *system) reorderObjects(ctx context.Context, root string, orderTarget string, ids []string) error {
+	existing, err := listObjectIDs(ctx, root)
+	if err != nil {
+		return err
+	}
+	return reorderExistingIDs(ctx, orderTarget, ids, existing)
+}
+
+// reorderExistingIDs 校验并写入集合顺序；existing 是该集合当前实际存在的 ID。
+func reorderExistingIDs(ctx context.Context, orderTarget string, ids []string, existing []string) error {
 	requested := make([]string, 0, len(ids))
 	seen := make(map[string]struct{}, len(ids))
 	for _, id := range ids {
@@ -159,10 +168,6 @@ func (s *system) reorderObjects(ctx context.Context, root string, orderTarget st
 	}
 	if len(requested) == 0 {
 		return storageInvalid("order ids are required", nil)
-	}
-	existing, err := listObjectIDs(ctx, root)
-	if err != nil {
-		return err
 	}
 	present := make(map[string]struct{}, len(existing))
 	for _, id := range existing {
@@ -185,4 +190,59 @@ func (s *system) reorderObjects(ctx context.Context, root string, orderTarget st
 		}
 	}
 	return writeOrderIDs(ctx, orderTarget, append(requested, remaining...))
+}
+
+func orderedIDsForExisting(ctx context.Context, orderTarget string, existing []string) ([]string, error) {
+	order, err := readOrderIDs(ctx, orderTarget)
+	if err != nil {
+		return nil, err
+	}
+	return mergeOrderIDs(order, existing), nil
+}
+
+func prependOrderID(ctx context.Context, orderTarget string, id string, existing []string) error {
+	order, err := readOrderIDs(ctx, orderTarget)
+	if err != nil {
+		return err
+	}
+	return writeOrderIDs(ctx, orderTarget, mergeOrderIDs(append([]string{id}, order...), existing))
+}
+
+func removeOrderID(ctx context.Context, orderTarget string, id string, existing []string) error {
+	order, err := readOrderIDs(ctx, orderTarget)
+	if err != nil {
+		return err
+	}
+	filtered := make([]string, 0, len(order))
+	for _, item := range order {
+		if item != id {
+			filtered = append(filtered, item)
+		}
+	}
+	return writeOrderIDs(ctx, orderTarget, mergeOrderIDs(filtered, existing))
+}
+
+func replaceOrderID(ctx context.Context, orderTarget string, oldID string, newID string, existing []string) error {
+	order, err := readOrderIDs(ctx, orderTarget)
+	if err != nil {
+		return err
+	}
+	replaced := make([]string, 0, len(order)+1)
+	found := false
+	for _, item := range order {
+		if item == oldID {
+			if !found {
+				replaced = append(replaced, newID)
+				found = true
+			}
+			continue
+		}
+		if item != newID {
+			replaced = append(replaced, item)
+		}
+	}
+	if !found {
+		replaced = append([]string{newID}, replaced...)
+	}
+	return writeOrderIDs(ctx, orderTarget, mergeOrderIDs(replaced, existing))
 }

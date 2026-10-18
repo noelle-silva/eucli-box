@@ -733,6 +733,10 @@ func (f *fakeToolStorage) ListTools(ctx context.Context) ([]types.ToolSummary, e
 	return summaries, nil
 }
 
+func (f *fakeToolStorage) ReorderTools(ctx context.Context, toolIDs []string) error {
+	return nil
+}
+
 func (f *fakeToolStorage) SaveToolUserSettings(ctx context.Context, toolID string, settings types.ToolUserSettings) (types.ToolDefinition, error) {
 	tool, ok := f.tools[toolID]
 	if !ok {

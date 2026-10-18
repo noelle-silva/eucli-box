@@ -48,6 +48,48 @@ func (s *system) SavePlaceholderLibrary(ctx context.Context, library types.Place
 	return library, nil
 }
 
+// ReorderPlaceholders 只调整集合顺序，不改动占位符内容与收藏夹归属。
+func (s *system) ReorderPlaceholders(ctx context.Context, names []string) (types.PlaceholderLibrary, error) {
+	library, err := s.LoadPlaceholderLibrary(ctx)
+	if err != nil {
+		return types.PlaceholderLibrary{}, err
+	}
+	byName := make(map[string]types.PlaceholderItem, len(library.Placeholders))
+	for _, item := range library.Placeholders {
+		byName[item.Name] = item
+	}
+	requested := make([]string, 0, len(names))
+	seen := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return types.PlaceholderLibrary{}, placeholderInvalid("placeholder name is required", nil)
+		}
+		if _, ok := byName[name]; !ok {
+			return types.PlaceholderLibrary{}, placeholderInvalid("placeholder does not exist: "+name, nil)
+		}
+		if _, ok := seen[name]; ok {
+			return types.PlaceholderLibrary{}, placeholderInvalid("placeholder order contains duplicate: "+name, nil)
+		}
+		seen[name] = struct{}{}
+		requested = append(requested, name)
+	}
+	if len(requested) == 0 {
+		return types.PlaceholderLibrary{}, placeholderInvalid("placeholder order is required", nil)
+	}
+	ordered := make([]types.PlaceholderItem, 0, len(library.Placeholders))
+	for _, name := range requested {
+		ordered = append(ordered, byName[name])
+	}
+	for _, item := range library.Placeholders {
+		if _, ok := seen[item.Name]; !ok {
+			ordered = append(ordered, item)
+		}
+	}
+	library.Placeholders = ordered
+	return s.SavePlaceholderLibrary(ctx, library)
+}
+
 func writeJSON(ctx context.Context, target string, value any) error {
 	if err := ctx.Err(); err != nil {
 		return placeholderWriteFailed("write cancelled", err)
@@ -106,9 +148,6 @@ func normalizePlaceholderItems(items []types.PlaceholderItem) []types.Placeholde
 		}
 		out = append(out, item)
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		return out[i].Name < out[j].Name
-	})
 	return out
 }
 

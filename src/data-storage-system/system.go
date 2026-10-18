@@ -60,6 +60,7 @@ type System interface {
 	SaveSessionFavorites(ctx context.Context, favorites types.SessionFavorites) (types.SessionFavorites, error)
 	LoadHookPromptLibrary(ctx context.Context) (types.HookPromptLibrary, error)
 	SaveHookPromptLibrary(ctx context.Context, library types.HookPromptLibrary) (types.HookPromptLibrary, error)
+	ReorderHookPromptPresets(ctx context.Context, presetIDs []string) (types.HookPromptLibrary, error)
 
 	LoadRequestRecordConfig(ctx context.Context) (types.RequestRecordConfig, error)
 	SaveRequestRecordConfig(ctx context.Context, config types.RequestRecordConfig) (types.RequestRecordConfig, error)
@@ -94,20 +95,24 @@ type System interface {
 	SaveProvider(ctx context.Context, provider types.Provider) error
 	LoadProvider(ctx context.Context, providerID string) (types.Provider, error)
 	ListProviders(ctx context.Context) ([]types.ProviderSummary, error)
+	ReorderProviders(ctx context.Context, providerIDs []string) error
 	DeleteProvider(ctx context.Context, providerID string) error
 
 	SaveTool(ctx context.Context, tool types.ToolDefinition) error
 	LoadTool(ctx context.Context, toolID string) (types.ToolDefinition, error)
 	ListTools(ctx context.Context) ([]types.ToolSummary, error)
+	ReorderTools(ctx context.Context, toolIDs []string) error
 	SaveToolUserSettings(ctx context.Context, toolID string, settings types.ToolUserSettings) (types.ToolDefinition, error)
 	LoadToolConfigFiles(ctx context.Context, toolID string) ([]types.ToolConfigFile, error)
 	DeleteTool(ctx context.Context, toolID string) error
 
 	CreateStickerCategory(ctx context.Context, categoryName string) (types.StickerCategory, error)
 	ListStickerCategories(ctx context.Context) ([]types.StickerCategorySummary, error)
+	ReorderStickerCategories(ctx context.Context, names []string) error
 	LoadStickerCategory(ctx context.Context, categoryName string) (types.StickerCategory, error)
 	LoadStickerLibrary(ctx context.Context) (types.StickerLibrary, error)
 	AddSticker(ctx context.Context, categoryName string, stickerName string, dataURL string) (types.StickerItem, error)
+	ReorderStickers(ctx context.Context, categoryName string, names []string) error
 	RenameSticker(ctx context.Context, categoryName string, oldStickerName string, newStickerName string) (types.StickerItem, error)
 	DeleteSticker(ctx context.Context, categoryName string, stickerName string) error
 	DeleteStickerCategory(ctx context.Context, categoryName string) error

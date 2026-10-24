@@ -808,11 +808,31 @@ func TestAssistRoutes(t *testing.T) {
 		t.Fatalf("chat title status = %d body=%s", rec.Code, rec.Body.String())
 	}
 
+	req = httptest.NewRequest(http.MethodPost, "/api/assist/chat-title", strings.NewReader(`{"workspaceId":"workspace-1","roleId":"role-1","sessionId":"session-1"}`))
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "AI 标题") {
+		t.Fatalf("workspace chat title status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if fakes.assist.lastChatTitle.WorkspaceID != "workspace-1" || fakes.assist.lastChatTitle.RoleID != "role-1" {
+		t.Fatalf("workspace chat title request = %#v", fakes.assist.lastChatTitle)
+	}
+
 	req = httptest.NewRequest(http.MethodPost, "/api/assist/mermaid-fix", strings.NewReader(`{"roleId":"developer","sessionId":"session-1","messageId":"m1","mermaidSource":"graph TD\nA-->C"}`))
 	rec = httptest.NewRecorder()
 	system.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "graph TD") {
 		t.Fatalf("mermaid fix status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/assist/mermaid-fix", strings.NewReader(`{"workspaceId":"workspace-1","roleId":"role-1","sessionId":"session-1","messageId":"m1","mermaidSource":"graph TD\nA-->C"}`))
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "graph TD") {
+		t.Fatalf("workspace mermaid fix status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if fakes.assist.lastMermaid.WorkspaceID != "workspace-1" || fakes.assist.lastMermaid.RoleID != "role-1" {
+		t.Fatalf("workspace mermaid fix request = %#v", fakes.assist.lastMermaid)
 	}
 }
 
@@ -2055,7 +2075,11 @@ func (f *fakeGatewayStickers) SaveContextCompressionConfig(ctx context.Context, 
 	return f.compressionConfig, nil
 }
 
-type fakeGatewayAssist struct{ stickers *fakeGatewayStickers }
+type fakeGatewayAssist struct {
+	stickers      *fakeGatewayStickers
+	lastChatTitle types.ChatTitleRequest
+	lastMermaid   types.MermaidFixRequest
+}
 
 func (f *fakeGatewayAssist) GenerateStickerName(ctx context.Context, request types.StickerNameRequest) (types.StickerNameResult, error) {
 	if !f.stickers.config.Enabled {
@@ -2069,6 +2093,7 @@ func (f *fakeGatewayAssist) GenerateStickerName(ctx context.Context, request typ
 }
 
 func (f *fakeGatewayAssist) GenerateChatTitle(ctx context.Context, request types.ChatTitleRequest) (types.ChatTitleResult, error) {
+	f.lastChatTitle = request
 	if !f.stickers.title.Enabled {
 		return types.ChatTitleResult{}, errors.New("disabled")
 	}
@@ -2076,6 +2101,7 @@ func (f *fakeGatewayAssist) GenerateChatTitle(ctx context.Context, request types
 }
 
 func (f *fakeGatewayAssist) FixMermaidInMessage(ctx context.Context, request types.MermaidFixRequest) (types.MermaidFixResult, error) {
+	f.lastMermaid = request
 	if !f.stickers.mermaid.Enabled {
 		return types.MermaidFixResult{}, errors.New("disabled")
 	}

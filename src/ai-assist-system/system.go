@@ -17,8 +17,11 @@ type System interface {
 
 type StickerStorage interface {
 	LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error)
+	LoadWorkspaceSession(ctx context.Context, workspaceID string, roleID string, sessionID string) (types.Session, error)
 	UpdateSessionTitle(ctx context.Context, roleID string, sessionID string, title string) (types.Session, error)
+	UpdateWorkspaceSessionTitle(ctx context.Context, workspaceID string, roleID string, sessionID string, title string) (types.Session, error)
 	UpdateSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string, patch types.SessionMessagePatch) (types.Message, error)
+	UpdateWorkspaceSessionMessage(ctx context.Context, workspaceID string, roleID string, sessionID string, messageID string, patch types.SessionMessagePatch) (types.Message, error)
 	LoadMermaidFixConfig(ctx context.Context) (types.MermaidFixConfig, error)
 	LoadChatTitleNamingConfig(ctx context.Context) (types.ChatTitleNamingConfig, error)
 	LoadStickerCategory(ctx context.Context, categoryName string) (types.StickerCategory, error)
@@ -108,6 +111,7 @@ func (s *system) GenerateStickerName(ctx context.Context, request types.StickerN
 }
 
 func (s *system) GenerateChatTitle(ctx context.Context, request types.ChatTitleRequest) (types.ChatTitleResult, error) {
+	workspaceID := strings.TrimSpace(request.WorkspaceID)
 	roleID := strings.TrimSpace(request.RoleID)
 	sessionID := strings.TrimSpace(request.SessionID)
 	if roleID == "" || sessionID == "" {
@@ -123,7 +127,12 @@ func (s *system) GenerateChatTitle(ctx context.Context, request types.ChatTitleR
 	if !types.HasCompleteModelCoordinate(config.Coordinate) {
 		return types.ChatTitleResult{}, assistInvalid("model coordinate is required", nil)
 	}
-	session, err := s.storage.LoadSession(ctx, roleID, sessionID)
+	var session types.Session
+	if workspaceID != "" {
+		session, err = s.storage.LoadWorkspaceSession(ctx, workspaceID, roleID, sessionID)
+	} else {
+		session, err = s.storage.LoadSession(ctx, roleID, sessionID)
+	}
 	if err != nil {
 		return types.ChatTitleResult{}, err
 	}
@@ -154,13 +163,18 @@ func (s *system) GenerateChatTitle(ctx context.Context, request types.ChatTitleR
 	if title == "" {
 		return types.ChatTitleResult{}, assistInvalid("generated chat title is empty", nil)
 	}
-	if _, err := s.storage.UpdateSessionTitle(ctx, roleID, sessionID, title); err != nil {
+	if workspaceID != "" {
+		if _, err := s.storage.UpdateWorkspaceSessionTitle(ctx, workspaceID, roleID, sessionID, title); err != nil {
+			return types.ChatTitleResult{}, err
+		}
+	} else if _, err := s.storage.UpdateSessionTitle(ctx, roleID, sessionID, title); err != nil {
 		return types.ChatTitleResult{}, err
 	}
 	return types.ChatTitleResult{Title: title}, nil
 }
 
 func (s *system) FixMermaidInMessage(ctx context.Context, request types.MermaidFixRequest) (types.MermaidFixResult, error) {
+	workspaceID := strings.TrimSpace(request.WorkspaceID)
 	roleID := strings.TrimSpace(request.RoleID)
 	sessionID := strings.TrimSpace(request.SessionID)
 	messageID := strings.TrimSpace(request.MessageID)
@@ -178,7 +192,12 @@ func (s *system) FixMermaidInMessage(ctx context.Context, request types.MermaidF
 	if !types.HasCompleteModelCoordinate(config.Coordinate) {
 		return types.MermaidFixResult{}, assistInvalid("model coordinate is required", nil)
 	}
-	session, err := s.storage.LoadSession(ctx, roleID, sessionID)
+	var session types.Session
+	if workspaceID != "" {
+		session, err = s.storage.LoadWorkspaceSession(ctx, workspaceID, roleID, sessionID)
+	} else {
+		session, err = s.storage.LoadSession(ctx, roleID, sessionID)
+	}
 	if err != nil {
 		return types.MermaidFixResult{}, err
 	}
@@ -210,7 +229,11 @@ func (s *system) FixMermaidInMessage(ctx context.Context, request types.MermaidF
 	if !replaced {
 		return types.MermaidFixResult{}, assistInvalid("target mermaid block was not found in message content", nil)
 	}
-	if _, err := s.storage.UpdateSessionMessage(ctx, roleID, sessionID, messageID, types.SessionMessagePatch{Content: &updatedContent}); err != nil {
+	if workspaceID != "" {
+		if _, err := s.storage.UpdateWorkspaceSessionMessage(ctx, workspaceID, roleID, sessionID, messageID, types.SessionMessagePatch{Content: &updatedContent}); err != nil {
+			return types.MermaidFixResult{}, err
+		}
+	} else if _, err := s.storage.UpdateSessionMessage(ctx, roleID, sessionID, messageID, types.SessionMessagePatch{Content: &updatedContent}); err != nil {
 		return types.MermaidFixResult{}, err
 	}
 	return types.MermaidFixResult{MessageID: messageID, MermaidSource: newCode, UpdatedContent: updatedContent}, nil

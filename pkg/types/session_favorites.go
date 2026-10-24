@@ -16,6 +16,7 @@ type SessionFavoriteFolder struct {
 type SessionFavoriteChatRef struct {
 	TargetKind string `json:"targetKind"`
 	TargetID   string `json:"targetId"`
+	RoleID     string `json:"roleId,omitempty"`
 	ChatID     string `json:"chatId"`
 	AddedAt    int64  `json:"addedAt"`
 }

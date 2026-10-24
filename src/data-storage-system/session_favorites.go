@@ -152,7 +152,7 @@ func normalizeSessionFavoriteChatRefs(refs []types.SessionFavoriteChatRef) ([]ty
 	seen := map[string]struct{}{}
 	for _, ref := range refs {
 		kind := strings.TrimSpace(ref.TargetKind)
-		if kind != "role" && kind != "group" {
+		if kind != "role" && kind != "group" && kind != "workspace" {
 			return nil, storageInvalid("favorite chat target kind is invalid", nil)
 		}
 		targetID, err := cleanID(ref.TargetID)
@@ -163,15 +163,26 @@ func normalizeSessionFavoriteChatRefs(refs []types.SessionFavoriteChatRef) ([]ty
 		if err != nil {
 			return nil, storageInvalid("favorite chat id is invalid", err)
 		}
+		roleID := strings.TrimSpace(ref.RoleID)
+		if kind == "workspace" {
+			if roleID == "" {
+				return nil, storageInvalid("favorite chat role id is required", nil)
+			}
+			if roleID, err = cleanID(roleID); err != nil {
+				return nil, storageInvalid("favorite chat role id is invalid", err)
+			}
+		} else if roleID != "" {
+			return nil, storageInvalid("favorite chat role id is only allowed for workspace", nil)
+		}
 		if ref.AddedAt <= 0 {
 			return nil, storageInvalid("favorite chat added timestamp is required", nil)
 		}
-		key := fmt.Sprintf("%s::%s::%s", kind, targetID, chatID)
+		key := fmt.Sprintf("%s::%s::%s::%s", kind, targetID, roleID, chatID)
 		if _, exists := seen[key]; exists {
 			return nil, storageInvalid("favorite chat ref is duplicated", nil)
 		}
 		seen[key] = struct{}{}
-		out = append(out, types.SessionFavoriteChatRef{TargetKind: kind, TargetID: targetID, ChatID: chatID, AddedAt: ref.AddedAt})
+		out = append(out, types.SessionFavoriteChatRef{TargetKind: kind, TargetID: targetID, RoleID: roleID, ChatID: chatID, AddedAt: ref.AddedAt})
 	}
 	return out, nil
 }

@@ -724,6 +724,44 @@ func TestSessionFavoritesStore(t *testing.T) {
 	}
 }
 
+func TestSessionFavoritesWorkspaceRefKeepsWorkspaceAndRoleIdentity(t *testing.T) {
+	system := newTestSystem(t)
+	favorites := types.SessionFavorites{
+		Folders: []types.SessionFavoriteFolder{{ID: "favf-1", Name: "Workspace", CreatedAt: 1, UpdatedAt: 1}},
+		ChatRefsByFolderID: map[string][]types.SessionFavoriteChatRef{
+			"favf-1": {{TargetKind: "workspace", TargetID: "workspace-1", RoleID: "role-1", ChatID: "session-1", AddedAt: 2}},
+		},
+	}
+
+	saved, err := system.SaveSessionFavorites(context.Background(), favorites)
+	if err != nil {
+		t.Fatalf("SaveSessionFavorites() error = %v", err)
+	}
+	ref := saved.ChatRefsByFolderID["favf-1"][0]
+	if ref.TargetKind != "workspace" || ref.TargetID != "workspace-1" || ref.RoleID != "role-1" {
+		t.Fatalf("saved workspace favorite ref = %#v", ref)
+	}
+
+	loaded, err := system.LoadSessionFavorites(context.Background())
+	if err != nil {
+		t.Fatalf("LoadSessionFavorites() error = %v", err)
+	}
+	ref = loaded.ChatRefsByFolderID["favf-1"][0]
+	if ref.TargetID != "workspace-1" || ref.RoleID != "role-1" || ref.ChatID != "session-1" {
+		t.Fatalf("loaded workspace favorite ref = %#v", ref)
+	}
+
+	invalid := types.SessionFavorites{
+		Folders: []types.SessionFavoriteFolder{{ID: "favf-1", Name: "Workspace", CreatedAt: 1, UpdatedAt: 1}},
+		ChatRefsByFolderID: map[string][]types.SessionFavoriteChatRef{
+			"favf-1": {{TargetKind: "workspace", TargetID: "workspace-1", ChatID: "session-1", AddedAt: 2}},
+		},
+	}
+	if _, err := system.SaveSessionFavorites(context.Background(), invalid); err == nil {
+		t.Fatal("SaveSessionFavorites(workspace without role) should fail")
+	}
+}
+
 func TestSessionMessageRootActions(t *testing.T) {
 	system := newTestSystem(t)
 	now := time.Date(2026, 5, 30, 9, 0, 0, 0, time.UTC)

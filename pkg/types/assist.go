@@ -62,8 +62,9 @@ const DefaultChatTitleNamingSystemPrompt = "你是“聊天标题生成器”。
 const DefaultContextCompressionSystemPrompt = "You are an expert software development context summarizer.\n\nYour task is to compress an ongoing coding conversation into a concise handoff summary that preserves all information needed to continue the work.\n\nWrite the summary in the same language as the conversation when possible.\n\nUse exactly these sections:\n## Goal\n## Constraints & Preferences\n## Progress\n## Key Decisions\n## Next Steps\n## Critical Context\n## Relevant Files\n\nRules:\n- Preserve concrete requirements, decisions, blockers, and verification status.\n- Preserve file paths, commands, errors, and pending work when they matter.\n- Do not invent facts.\n- Do not include commentary about the summarization process.\n- Output only the updated summary, with no Markdown code fence."
 
 type ChatTitleRequest struct {
-	RoleID    string `json:"roleId"`
-	SessionID string `json:"sessionId"`
+	WorkspaceID string `json:"workspaceId,omitempty"`
+	RoleID      string `json:"roleId"`
+	SessionID   string `json:"sessionId"`
 }
 
 type ChatTitleResult struct {
@@ -71,6 +72,7 @@ type ChatTitleResult struct {
 }
 
 type MermaidFixRequest struct {
+	WorkspaceID    string `json:"workspaceId,omitempty"`
 	RoleID         string `json:"roleId"`
 	SessionID      string `json:"sessionId"`
 	MessageID      string `json:"messageId"`

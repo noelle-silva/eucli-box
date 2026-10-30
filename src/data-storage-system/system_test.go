@@ -1264,7 +1264,7 @@ func TestRejectsUnsafeIDs(t *testing.T) {
 	assertAppErrorCode(t, err, "storage.invalid_request")
 }
 
-func newTestSystem(t *testing.T) *system {
+func newTestSystem(t testing.TB) *system {
 	t.Helper()
 	root := t.TempDir()
 	now := time.Now().UTC()

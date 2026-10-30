@@ -8,14 +8,18 @@ import (
 	"eucli-box/pkg/types"
 )
 
-func TestSessionReadsWaitForSessionWriteLock(t *testing.T) {
+func TestSessionReadsWaitForScopeFileReplacement(t *testing.T) {
 	system := newTestSystem(t)
 	session := types.Session{ID: "session-lock", RoleID: "developer", Title: "lock"}
 	if err := system.SaveSession(context.Background(), session); err != nil {
 		t.Fatalf("SaveSession() error = %v", err)
 	}
 
-	system.sessionMu.Lock()
+	lock, err := system.scopeLock(roleSessionScope("developer"))
+	if err != nil {
+		t.Fatalf("scopeLock() error = %v", err)
+	}
+	lock.mu.Lock()
 	loaded := make(chan error, 1)
 	go func() {
 		_, err := system.LoadSession(context.Background(), "developer", session.ID)
@@ -24,10 +28,10 @@ func TestSessionReadsWaitForSessionWriteLock(t *testing.T) {
 
 	select {
 	case err := <-loaded:
-		t.Fatalf("LoadSession() returned while session lock was held: %v", err)
+		t.Fatalf("LoadSession() returned while scope file replacement was in progress: %v", err)
 	case <-time.After(50 * time.Millisecond):
 	}
-	system.sessionMu.Unlock()
+	lock.mu.Unlock()
 
 	select {
 	case err := <-loaded:
@@ -35,18 +39,22 @@ func TestSessionReadsWaitForSessionWriteLock(t *testing.T) {
 			t.Fatalf("LoadSession() error = %v", err)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("LoadSession() did not proceed after session lock was released")
+		t.Fatal("LoadSession() did not proceed after scope lock was released")
 	}
 }
 
-func TestSessionListReadsWaitForSessionWriteLock(t *testing.T) {
+func TestSessionListReadsWaitForScopeFileReplacement(t *testing.T) {
 	system := newTestSystem(t)
 	session := types.Session{ID: "session-list-lock", RoleID: "developer", Title: "lock"}
 	if err := system.SaveSession(context.Background(), session); err != nil {
 		t.Fatalf("SaveSession() error = %v", err)
 	}
 
-	system.sessionMu.Lock()
+	lock, err := system.scopeLock(roleSessionScope("developer"))
+	if err != nil {
+		t.Fatalf("scopeLock() error = %v", err)
+	}
+	lock.mu.Lock()
 	listed := make(chan error, 1)
 	go func() {
 		_, err := system.ListSessions(context.Background(), "developer")
@@ -55,10 +63,10 @@ func TestSessionListReadsWaitForSessionWriteLock(t *testing.T) {
 
 	select {
 	case err := <-listed:
-		t.Fatalf("ListSessions() returned while session lock was held: %v", err)
+		t.Fatalf("ListSessions() returned while scope file replacement was in progress: %v", err)
 	case <-time.After(50 * time.Millisecond):
 	}
-	system.sessionMu.Unlock()
+	lock.mu.Unlock()
 
 	select {
 	case err := <-listed:
@@ -66,6 +74,6 @@ func TestSessionListReadsWaitForSessionWriteLock(t *testing.T) {
 			t.Fatalf("ListSessions() error = %v", err)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("ListSessions() did not proceed after session lock was released")
+		t.Fatal("ListSessions() did not proceed after scope lock was released")
 	}
 }

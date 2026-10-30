@@ -22,11 +22,6 @@ type roleFolder struct {
 	ID string `json:"id"`
 }
 
-type sessionIndex struct {
-	Sessions []types.SessionSummary `json:"sessions"`
-	Sort     string                 `json:"sort"`
-}
-
 type workspaceRoleSessionIndex struct {
 	Roles []roleFolder `json:"roles"`
 }
@@ -50,10 +45,7 @@ func (s *system) RebuildIndexes(ctx context.Context) error {
 	if err := s.rebuildStickerIndexes(ctx); err != nil {
 		return err
 	}
-	s.sessionMu.Lock()
-	err := s.rebuildAllSessionIndexes(ctx)
-	s.sessionMu.Unlock()
-	if err != nil {
+	if err := s.rebuildSessionIndexes(ctx); err != nil {
 		return err
 	}
 	if err := s.rebuildRequestRecordIndex(ctx); err != nil {
@@ -88,158 +80,6 @@ func (s *system) rebuildToolIndex(ctx context.Context) error {
 		root = s.paths.toolDataRoot()
 	}
 	return writeIndex(ctx, filepath.Join(root, "index.json"), rootIndex[types.ToolSummary]{Items: tools})
-}
-
-func (s *system) rebuildAllSessionIndexes(ctx context.Context) error {
-	entries, err := os.ReadDir(s.paths.sessionRolesRoot())
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return storageIndexFailed("failed to scan role sessions root", err)
-	}
-	folders := make([]roleFolder, 0, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		roleID := entry.Name()
-		folders = append(folders, roleFolder{ID: roleID})
-		if err := s.rebuildSessionIndexes(ctx, roleID); err != nil {
-			return err
-		}
-	}
-	sort.Slice(folders, func(i, j int) bool { return folders[i].ID < folders[j].ID })
-	if err := writeIndex(ctx, filepath.Join(s.paths.sessionRolesRoot(), "index.json"), sessionRoleIndex{Folders: folders}); err != nil {
-		return err
-	}
-	if err := s.rebuildAllGroupSessionIndexes(ctx); err != nil {
-		return err
-	}
-	return s.rebuildAllWorkspaceSessionIndexes(ctx)
-}
-
-func (s *system) rebuildSessionIndexes(ctx context.Context, roleID string) error {
-	sessions, err := s.listSessions(ctx, roleSessionScope(roleID))
-	if err != nil {
-		return err
-	}
-	roleDir, err := s.paths.sessionRoleDir(roleID)
-	if err != nil {
-		return err
-	}
-	return writeIndex(ctx, filepath.Join(roleDir, "index.json"), sessionIndex{Sessions: sessions, Sort: "lastActive"})
-}
-
-func (s *system) rebuildSessionIndexesForScope(ctx context.Context, scope sessionScope) error {
-	scope, err := cleanSessionScope(scope)
-	if err != nil {
-		return err
-	}
-	if scope.Kind == sessionScopeGroup {
-		return s.rebuildGroupSessionIndexes(ctx, scope.ID)
-	}
-	if scope.Kind == sessionScopeWorkspace {
-		return s.rebuildWorkspaceSessionIndexes(ctx, scope.WorkspaceID)
-	}
-	return s.rebuildSessionIndexes(ctx, scope.ID)
-}
-
-func (s *system) rebuildAllGroupSessionIndexes(ctx context.Context) error {
-	entries, err := os.ReadDir(s.paths.sessionGroupsRoot())
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return storageIndexFailed("failed to scan group sessions root", err)
-	}
-	folders := make([]roleFolder, 0, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		groupID := entry.Name()
-		folders = append(folders, roleFolder{ID: groupID})
-		if err := s.rebuildGroupSessionIndexes(ctx, groupID); err != nil {
-			return err
-		}
-	}
-	sort.Slice(folders, func(i, j int) bool { return folders[i].ID < folders[j].ID })
-	return writeIndex(ctx, filepath.Join(s.paths.sessionGroupsRoot(), "index.json"), sessionRoleIndex{Folders: folders})
-}
-
-func (s *system) rebuildGroupSessionIndexes(ctx context.Context, groupID string) error {
-	sessions, err := s.listSessions(ctx, groupSessionScope(groupID))
-	if err != nil {
-		return err
-	}
-	groupDir, err := s.paths.sessionGroupDir(groupID)
-	if err != nil {
-		return err
-	}
-	return writeIndex(ctx, filepath.Join(groupDir, "index.json"), sessionIndex{Sessions: sessions, Sort: "lastActive"})
-}
-
-func (s *system) rebuildAllWorkspaceSessionIndexes(ctx context.Context) error {
-	entries, err := os.ReadDir(s.paths.sessionWorkspacesRoot())
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return storageIndexFailed("failed to scan workspace sessions root", err)
-	}
-	folders := make([]roleFolder, 0, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		workspaceID := entry.Name()
-		folders = append(folders, roleFolder{ID: workspaceID})
-		if err := s.rebuildWorkspaceSessionIndexes(ctx, workspaceID); err != nil {
-			return err
-		}
-	}
-	sort.Slice(folders, func(i, j int) bool { return folders[i].ID < folders[j].ID })
-	return writeIndex(ctx, filepath.Join(s.paths.sessionWorkspacesRoot(), "index.json"), sessionRoleIndex{Folders: folders})
-}
-
-func (s *system) rebuildWorkspaceSessionIndexes(ctx context.Context, workspaceID string) error {
-	workspaceDir, err := s.paths.safeJoin(s.paths.sessionWorkspacesRoot(), workspaceID)
-	if err != nil {
-		return err
-	}
-	entries, err := os.ReadDir(workspaceDir)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return storageIndexFailed("failed to scan workspace role sessions root", err)
-	}
-	roleFolders := make([]roleFolder, 0, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		roleID := entry.Name()
-		roleFolders = append(roleFolders, roleFolder{ID: roleID})
-		if err := s.rebuildWorkspaceRoleSessionIndex(ctx, workspaceID, roleID); err != nil {
-			return err
-		}
-	}
-	sort.Slice(roleFolders, func(i, j int) bool { return roleFolders[i].ID < roleFolders[j].ID })
-	return writeIndex(ctx, filepath.Join(workspaceDir, "index.json"), workspaceRoleSessionIndex{Roles: roleFolders})
-}
-
-func (s *system) rebuildWorkspaceRoleSessionIndex(ctx context.Context, workspaceID string, roleID string) error {
-	sessions, err := s.listSessions(ctx, workspaceSessionScope(workspaceID, roleID))
-	if err != nil {
-		return err
-	}
-	roleDir, err := s.paths.workspaceRoleSessionsDir(workspaceID, roleID)
-	if err != nil {
-		return err
-	}
-	return writeIndex(ctx, filepath.Join(roleDir, "index.json"), sessionIndex{Sessions: sessions, Sort: "lastActive"})
 }
 
 func rebuildRecycleIndex(ctx context.Context, paths paths) error {

@@ -146,8 +146,11 @@ type Config struct {
 type system struct {
 	paths           paths
 	entityMu        sync.Mutex
-	sessionMu       sync.Mutex
+	catalogMu       sync.RWMutex
+	scopeLocks      scopeLockRegistry
+	recycleMu       sync.Mutex
 	requestRecordMu sync.Mutex
+	sessionMetrics  sessionStorageMetrics
 }
 
 func NewSystem(config Config) (System, error) {

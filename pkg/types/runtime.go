@@ -328,8 +328,13 @@ type SessionSummary struct {
 	Title              string    `json:"title"`
 	LastMessagePreview string    `json:"lastMessagePreview"`
 	Status             string    `json:"status"`
+	CreatedAt          time.Time `json:"createdAt"`
 	UpdatedAt          time.Time `json:"updatedAt"`
 	LastActive         time.Time `json:"lastActive"`
+	MessageCount       int       `json:"messageCount"`
+	// Source 是会话所属 scope 的指纹（role:/group:/workspace:）。
+	// 索引条目必须自证来源，错放的索引在读取时会被判为无效并重建。
+	Source string `json:"source,omitempty"`
 }
 
 type RunStatus string

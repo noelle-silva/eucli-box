@@ -255,7 +255,7 @@ func (s *system) DeleteTool(ctx context.Context, toolID string) error {
 	if err != nil {
 		return err
 	}
-	if err := moveToRecycle(ctx, s.paths, types.StorageItemTool, id, bodyDir); err != nil {
+	if err := s.moveToRecycle(ctx, types.StorageItemTool, id, bodyDir); err != nil {
 		return err
 	}
 	if dataInfo, err := os.Stat(dataDir); err == nil && dataInfo.IsDir() {

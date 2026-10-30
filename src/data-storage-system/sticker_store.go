@@ -359,7 +359,7 @@ func (s *system) DeleteSticker(ctx context.Context, categoryName string, sticker
 	if err != nil {
 		return err
 	}
-	if err := moveToRecycle(ctx, s.paths, types.StorageItemSticker, item.ID, itemDir); err != nil {
+	if err := s.moveToRecycle(ctx, types.StorageItemSticker, item.ID, itemDir); err != nil {
 		return err
 	}
 	category, err := s.LoadStickerCategory(ctx, name)
@@ -388,7 +388,7 @@ func (s *system) DeleteStickerCategory(ctx context.Context, categoryName string)
 	if err != nil {
 		return err
 	}
-	if err := moveToRecycle(ctx, s.paths, types.StorageItemStickerCategory, name, dir); err != nil {
+	if err := s.moveToRecycle(ctx, types.StorageItemStickerCategory, name, dir); err != nil {
 		return err
 	}
 	categories, err := s.ListStickerCategories(ctx)

@@ -3,141 +3,14 @@ package datastorage
 import (
 	"context"
 	"errors"
+	"log"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
 	"eucli-box/pkg/types"
 	"eucli-box/pkg/utils"
 )
-
-type sessionScopeKind string
-
-const (
-	sessionScopeRole      sessionScopeKind = "role"
-	sessionScopeGroup     sessionScopeKind = "group"
-	sessionScopeWorkspace sessionScopeKind = "workspace"
-)
-
-type sessionScope struct {
-	Kind        sessionScopeKind
-	ID          string
-	WorkspaceID string
-	RoleID      string
-}
-
-func roleSessionScope(roleID string) sessionScope {
-	return sessionScope{Kind: sessionScopeRole, ID: strings.TrimSpace(roleID)}
-}
-
-func groupSessionScope(groupID string) sessionScope {
-	return sessionScope{Kind: sessionScopeGroup, ID: strings.TrimSpace(groupID)}
-}
-
-func workspaceSessionScope(workspaceID string, roleID string) sessionScope {
-	return sessionScope{Kind: sessionScopeWorkspace, WorkspaceID: strings.TrimSpace(workspaceID), RoleID: strings.TrimSpace(roleID)}
-}
-
-func sessionScopeFromSession(session types.Session) (sessionScope, error) {
-	groupID := strings.TrimSpace(session.GroupID)
-	workspaceID := strings.TrimSpace(session.WorkspaceID)
-	roleID := strings.TrimSpace(session.RoleID)
-	if groupID != "" {
-		if roleID != "" {
-			return sessionScope{}, storageInvalid("session cannot belong to both role and group", nil)
-		}
-		if workspaceID != "" {
-			return sessionScope{}, storageInvalid("session cannot belong to both group and workspace", nil)
-		}
-		return cleanSessionScope(groupSessionScope(groupID))
-	}
-	if workspaceID != "" {
-		if roleID == "" {
-			return sessionScope{}, storageInvalid("workspace session roleId is required", nil)
-		}
-		return cleanSessionScope(workspaceSessionScope(workspaceID, roleID))
-	}
-	return cleanSessionScope(roleSessionScope(roleID))
-}
-
-func cleanSessionScope(scope sessionScope) (sessionScope, error) {
-	scope.ID = strings.TrimSpace(scope.ID)
-	scope.WorkspaceID = strings.TrimSpace(scope.WorkspaceID)
-	scope.RoleID = strings.TrimSpace(scope.RoleID)
-	if scope.Kind != sessionScopeRole && scope.Kind != sessionScopeGroup && scope.Kind != sessionScopeWorkspace {
-		return sessionScope{}, storageInvalid("session scope is invalid", nil)
-	}
-	if scope.Kind == sessionScopeWorkspace {
-		if _, err := cleanID(scope.WorkspaceID); err != nil {
-			return sessionScope{}, err
-		}
-		if _, err := cleanID(scope.RoleID); err != nil {
-			return sessionScope{}, err
-		}
-		return scope, nil
-	}
-	if _, err := cleanID(scope.ID); err != nil {
-		return sessionScope{}, err
-	}
-	return scope, nil
-}
-
-func (s *system) sessionDataFile(scope sessionScope, sessionID string) (string, error) {
-	scope, err := cleanSessionScope(scope)
-	if err != nil {
-		return "", err
-	}
-	if scope.Kind == sessionScopeGroup {
-		return s.paths.groupSessionDataFile(scope.ID, sessionID)
-	}
-	if scope.Kind == sessionScopeWorkspace {
-		return s.paths.workspaceSessionDataFile(scope.WorkspaceID, scope.RoleID, sessionID)
-	}
-	return s.paths.sessionDataFile(scope.ID, sessionID)
-}
-
-func (s *system) sessionDir(scope sessionScope, sessionID string) (string, error) {
-	scope, err := cleanSessionScope(scope)
-	if err != nil {
-		return "", err
-	}
-	if scope.Kind == sessionScopeGroup {
-		return s.paths.groupSessionDir(scope.ID, sessionID)
-	}
-	if scope.Kind == sessionScopeWorkspace {
-		return s.paths.workspaceSessionDir(scope.WorkspaceID, scope.RoleID, sessionID)
-	}
-	return s.paths.sessionDir(scope.ID, sessionID)
-}
-
-func (s *system) sessionAttachmentsDir(scope sessionScope, sessionID string) (string, error) {
-	scope, err := cleanSessionScope(scope)
-	if err != nil {
-		return "", err
-	}
-	if scope.Kind == sessionScopeGroup {
-		return s.paths.groupSessionAttachmentsDir(scope.ID, sessionID)
-	}
-	if scope.Kind == sessionScopeWorkspace {
-		return s.paths.workspaceSessionAttachmentsDir(scope.WorkspaceID, scope.RoleID, sessionID)
-	}
-	return s.paths.sessionAttachmentsDir(scope.ID, sessionID)
-}
-
-func (s *system) sessionScopeDir(scope sessionScope) (string, error) {
-	scope, err := cleanSessionScope(scope)
-	if err != nil {
-		return "", err
-	}
-	if scope.Kind == sessionScopeGroup {
-		return s.paths.sessionGroupDir(scope.ID)
-	}
-	if scope.Kind == sessionScopeWorkspace {
-		return s.paths.workspaceRoleSessionsDir(scope.WorkspaceID, scope.RoleID)
-	}
-	return s.paths.sessionRoleDir(scope.ID)
-}
 
 func (s *system) CreateSession(ctx context.Context, roleID string, title string) (types.Session, error) {
 	scope, err := cleanSessionScope(roleSessionScope(roleID))
@@ -193,26 +66,145 @@ func (s *system) createSession(ctx context.Context, scope sessionScope, title st
 }
 
 func (s *system) SaveSession(ctx context.Context, session types.Session) error {
-	s.sessionMu.Lock()
-	defer s.sessionMu.Unlock()
-	if _, err := s.writeSessionData(ctx, session, time.Now().UTC()); err != nil {
-		return err
-	}
-	return s.rebuildAllSessionIndexes(ctx)
+	_, err := s.persistSession(ctx, session, time.Now().UTC())
+	return err
 }
 
-func (s *system) SaveSessionMessages(ctx context.Context, save types.SessionMessageSave) error {
-	s.sessionMu.Lock()
-	defer s.sessionMu.Unlock()
-	now := time.Now().UTC()
-	merged, err := s.mergeSessionMessageSave(ctx, save, now)
+// persistSession 是整份会话覆盖写：写 data.json，并把本 scope 索引里的单条摘要 upsert。
+// 它不读回旧会话，也不触发任何全库重建。
+func (s *system) persistSession(ctx context.Context, session types.Session, now time.Time) (types.Session, error) {
+	session = normalizeSessionForWrite(session, now)
+	scope, err := sessionScopeFromSession(session)
+	if err != nil {
+		return types.Session{}, err
+	}
+	if _, err := cleanID(session.ID); err != nil {
+		return types.Session{}, err
+	}
+	if err := s.ensureScopeCatalog(ctx, scope); err != nil {
+		return types.Session{}, err
+	}
+	lock, err := s.scopeLock(scope)
+	if err != nil {
+		return types.Session{}, err
+	}
+	lock.writers.Lock()
+	defer lock.writers.Unlock()
+	if err := s.commitSessionLocked(ctx, scope, session, lock); err != nil {
+		return types.Session{}, err
+	}
+	return session, nil
+}
+
+// commitSessionLocked 假定调用方已持有 scope 写者锁。
+// 写序严格为：索引 dirty=true → 数据 → 索引 dirty=false，
+// 三份文档的编码与 fsync 都在锁外，临界区内只有三次 rename。
+func (s *system) commitSessionLocked(ctx context.Context, scope sessionScope, session types.Session, lock *scopeLock) error {
+	indexFile, err := s.sessionIndexFile(scope)
 	if err != nil {
 		return err
 	}
-	if _, err := s.writeSessionData(ctx, merged, now); err != nil {
+	dataFile, err := s.sessionDataFile(scope, session.ID)
+	if err != nil {
 		return err
 	}
-	return s.rebuildAllSessionIndexes(ctx)
+	current, err := s.readScopeIndexForWriteLocked(ctx, scope, lock)
+	if err != nil {
+		return err
+	}
+	next := current
+	next.SchemaVersion = sessionIndexSchemaVersion
+	next.Sort = sessionIndexSort
+	next.Dirty = false
+	next.Rev = current.Rev + 1
+	next.Sessions = sortSessionSummaries(upsertSessionSummary(append([]types.SessionSummary(nil), current.Sessions...), sessionSummaryFromStored(session, scope)))
+
+	dirty := current
+	dirty.SchemaVersion = sessionIndexSchemaVersion
+	dirty.Sort = sessionIndexSort
+	dirty.Dirty = true
+
+	dirtyTemp, err := prepareJSON(ctx, indexFile, dirty)
+	if err != nil {
+		return s.failSessionWrite("failed to prepare session index dirty marker", err)
+	}
+	defer func() { _ = os.Remove(dirtyTemp) }()
+	dataTemp, err := prepareJSON(ctx, dataFile, toSessionStorageDocument(session))
+	if err != nil {
+		return storageWriteFailed("failed to prepare session data", err)
+	}
+	defer func() { _ = os.Remove(dataTemp) }()
+	// dirty 位必须先于数据持久化，否则崩溃后「数据已写、脏位丢失」会变成静默过期；
+	// 最终索引是派生缓存，不 fsync：丢了会被 dirty 位或结构校验识别并重建。
+	nextTemp, err := prepareJSONDerived(ctx, indexFile, next)
+	if err != nil {
+		return s.failSessionWrite("failed to prepare session index", err)
+	}
+	defer func() { _ = os.Remove(nextTemp) }()
+
+	lock.mu.Lock()
+	if err := commitJSON(dirtyTemp, indexFile); err != nil {
+		lock.mu.Unlock()
+		return s.failSessionWrite("failed to write session index dirty marker", err)
+	}
+	if err := commitJSON(dataTemp, dataFile); err != nil {
+		lock.mu.Unlock()
+		return storageWriteFailed("failed to replace session data", err)
+	}
+	if err := commitJSON(nextTemp, indexFile); err != nil {
+		lock.mu.Unlock()
+		return s.failSessionWrite("failed to write session index", err)
+	}
+	lock.mu.Unlock()
+
+	s.sessionMetrics.indexWrites.Add(1)
+	s.sessionMetrics.dataWrites.Add(1)
+	attachmentsDir, err := s.sessionAttachmentsDir(scope, session.ID)
+	if err != nil {
+		return err
+	}
+	if err := ensureDirs(attachmentsDir); err != nil {
+		return storageWriteFailed("failed to create session attachments directory", err)
+	}
+	return nil
+}
+
+// failSessionWrite 统一索引写失败的出口：绝不吞错、绝不降级为只写数据，
+// 计数并记日志后如实返回 storage.index_failed，调用方可整文档重试（幂等）。
+func (s *system) failSessionWrite(message string, err error) error {
+	s.sessionMetrics.indexFailures.Add(1)
+	log.Printf("data-storage-system: %s: %v", message, err)
+	return storageIndexFailed(message, err)
+}
+
+func (s *system) SaveSessionMessages(ctx context.Context, save types.SessionMessageSave) error {
+	scope, err := sessionScopeFromSession(save.Session)
+	if err != nil {
+		return err
+	}
+	if _, err := cleanID(save.Session.ID); err != nil {
+		return err
+	}
+	if err := s.ensureScopeCatalog(ctx, scope); err != nil {
+		return err
+	}
+	lock, err := s.scopeLock(scope)
+	if err != nil {
+		return err
+	}
+	lock.writers.Lock()
+	defer lock.writers.Unlock()
+
+	now := time.Now().UTC()
+	stored, exists, err := s.readSessionIfExistsLocked(ctx, scope, save.Session.ID, lock)
+	if err != nil {
+		return err
+	}
+	merged, err := s.mergeSessionMessageSave(save, stored, exists, now)
+	if err != nil {
+		return err
+	}
+	return s.commitSessionLocked(ctx, scope, normalizeSessionForWrite(merged, now), lock)
 }
 
 func (s *system) UpdateSessionSettings(ctx context.Context, roleID string, sessionID string, patch types.SessionSettingsPatch) (types.Session, error) {
@@ -228,7 +220,7 @@ func (s *system) UpdateWorkspaceSessionSettings(ctx context.Context, workspaceID
 }
 
 func (s *system) updateSessionSettings(ctx context.Context, scope sessionScope, sessionID string, patch types.SessionSettingsPatch) (types.Session, error) {
-	return s.updateSessionAtomically(ctx, scope, sessionID, func(session *types.Session) error {
+	return s.updateSessionAtomically(ctx, scope, sessionID, func(session *types.Session, _ time.Time) error {
 		if patch.StreamEnabled != nil {
 			session.Metadata = types.PutStreamEnabledSessionMetadata(session.Metadata, *patch.StreamEnabled)
 		}
@@ -273,7 +265,7 @@ func (s *system) UpdateWorkspaceSessionHookPrompt(ctx context.Context, workspace
 }
 
 func (s *system) updateSessionHookPrompt(ctx context.Context, scope sessionScope, sessionID string, selection types.HookPromptSelection) (types.Session, error) {
-	return s.updateSessionAtomically(ctx, scope, sessionID, func(session *types.Session) error {
+	return s.updateSessionAtomically(ctx, scope, sessionID, func(session *types.Session, _ time.Time) error {
 		session.Metadata = types.PutHookPromptSessionMetadata(session.Metadata, selection)
 		return nil
 	})
@@ -295,113 +287,124 @@ func (s *system) updateSessionToolAuthorization(ctx context.Context, scope sessi
 	if strings.TrimSpace(toolID) == "" {
 		return types.Session{}, storageInvalid("tool id is required", nil)
 	}
-	return s.updateSessionAtomically(ctx, scope, sessionID, func(session *types.Session) error {
+	return s.updateSessionAtomically(ctx, scope, sessionID, func(session *types.Session, _ time.Time) error {
 		session.Metadata = types.PutSessionToolAuthorization(session.Metadata, toolID, authorized)
 		return nil
 	})
 }
 
-func (s *system) updateSessionAtomically(ctx context.Context, scope sessionScope, sessionID string, mutate func(*types.Session) error) (types.Session, error) {
-	s.sessionMu.Lock()
-	defer s.sessionMu.Unlock()
+func (s *system) updateSessionAtomically(ctx context.Context, scope sessionScope, sessionID string, mutate func(*types.Session, time.Time) error) (types.Session, error) {
+	session, _, err := s.mutateSession(ctx, scope, sessionID, func(current *types.Session, now time.Time) (bool, error) {
+		if err := mutate(current, now); err != nil {
+			return false, err
+		}
+		return true, nil
+	})
+	return session, err
+}
 
-	cleanedScope, err := cleanSessionScope(scope)
+// mutateSession 是「读快照 → 内存变更 → 落名」的唯一写原语。
+// 写者锁覆盖整段以保证读改写不丢更新；编解码与 fsync 全在 mu 之外。
+func (s *system) mutateSession(ctx context.Context, scope sessionScope, sessionID string, mutate func(*types.Session, time.Time) (bool, error)) (types.Session, bool, error) {
+	scope, err := cleanSessionScope(scope)
 	if err != nil {
-		return types.Session{}, err
+		return types.Session{}, false, err
 	}
-	session, err := s.loadSession(ctx, cleanedScope, sessionID)
+	if _, err := cleanID(sessionID); err != nil {
+		return types.Session{}, false, err
+	}
+	lock, err := s.scopeLock(scope)
 	if err != nil {
-		return types.Session{}, err
+		return types.Session{}, false, err
 	}
-	if mutate == nil {
-		return types.Session{}, storageInvalid("session update action is required", nil)
-	}
-	if err := mutate(&session); err != nil {
-		return types.Session{}, err
+	lock.writers.Lock()
+	defer lock.writers.Unlock()
+
+	current, err := s.readSessionLocked(ctx, scope, sessionID, lock)
+	if err != nil {
+		return types.Session{}, false, err
 	}
 	now := time.Now().UTC()
-	session.UpdatedAt = now
-	if session.LastActive.Before(now) {
-		session.LastActive = now
+	write, err := mutate(&current, now)
+	if err != nil {
+		return types.Session{}, false, err
 	}
-	if _, err := s.writeSessionData(ctx, session, now); err != nil {
-		return types.Session{}, err
+	if !write {
+		return current, false, nil
 	}
-	if err := s.rebuildSessionIndexesForScope(ctx, cleanedScope); err != nil {
-		return types.Session{}, err
+	current.UpdatedAt = now
+	if current.LastActive.Before(now) {
+		current.LastActive = now
 	}
-	return s.loadSession(ctx, cleanedScope, sessionID)
+	next := normalizeSessionForWrite(current, now)
+	if err := s.commitSessionLocked(ctx, scope, next, lock); err != nil {
+		return types.Session{}, false, err
+	}
+	return next, true, nil
 }
 
-func (s *system) writeSessionData(ctx context.Context, session types.Session, now time.Time) (types.Session, error) {
-	session = normalizeSessionForStorage(session, now)
-	scope, err := sessionScopeFromSession(session)
-	if err != nil {
-		return types.Session{}, err
-	}
-	if _, err := cleanID(session.ID); err != nil {
-		return types.Session{}, err
-	}
-	target, err := s.sessionDataFile(scope, session.ID)
-	if err != nil {
-		return types.Session{}, err
-	}
-	if err := writeJSON(ctx, target, toSessionStorageDocument(session)); err != nil {
-		return types.Session{}, err
-	}
-	attachmentsDir, err := s.sessionAttachmentsDir(scope, session.ID)
-	if err != nil {
-		return types.Session{}, err
-	}
-	if err := ensureDirs(attachmentsDir); err != nil {
-		return types.Session{}, storageWriteFailed("failed to create session attachments directory", err)
-	}
-	return session, nil
-}
-
-// 公开会话读取与写入共用 sessionMu。Windows 下读取句柄默认不共享删除，
-// 与会话文件的临时文件替换并发时会把一次正常保存放大成落盘失败。
+// 公开会话读取只持 scope 读锁做一次 ReadFile，解码与归一化全在锁外。
 func (s *system) LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error) {
-	s.sessionMu.Lock()
-	defer s.sessionMu.Unlock()
 	return s.loadSession(ctx, roleSessionScope(roleID), sessionID)
 }
 
 func (s *system) LoadGroupSession(ctx context.Context, groupID string, sessionID string) (types.Session, error) {
-	s.sessionMu.Lock()
-	defer s.sessionMu.Unlock()
 	return s.loadSession(ctx, groupSessionScope(groupID), sessionID)
 }
 
 func (s *system) LoadWorkspaceSession(ctx context.Context, workspaceID string, roleID string, sessionID string) (types.Session, error) {
-	s.sessionMu.Lock()
-	defer s.sessionMu.Unlock()
 	return s.loadSession(ctx, workspaceSessionScope(workspaceID, roleID), sessionID)
 }
 
 func (s *system) loadSession(ctx context.Context, scope sessionScope, sessionID string) (types.Session, error) {
+	scope, err := cleanSessionScope(scope)
+	if err != nil {
+		return types.Session{}, err
+	}
+	lock, err := s.scopeLock(scope)
+	if err != nil {
+		return types.Session{}, err
+	}
+	return s.readSessionLocked(ctx, scope, sessionID, lock)
+}
+
+func (s *system) readSessionLocked(ctx context.Context, scope sessionScope, sessionID string, lock *scopeLock) (types.Session, error) {
 	target, err := s.sessionDataFile(scope, sessionID)
 	if err != nil {
 		return types.Session{}, err
 	}
-	session, err := readJSON[types.Session](ctx, target)
-	if err != nil {
-		return types.Session{}, err
+	lock.mu.RLock()
+	payload, readErr := readFileBytes(ctx, target)
+	lock.mu.RUnlock()
+	if readErr != nil {
+		return types.Session{}, readErr
 	}
-	return normalizeSessionForStorage(session, time.Now().UTC()), nil
+	session, decodeErr := decodeJSON[types.Session](payload)
+	if decodeErr != nil {
+		return types.Session{}, decodeErr
+	}
+	s.sessionMetrics.dataReads.Add(1)
+	return normalizeSessionStored(session), nil
 }
 
-func (s *system) mergeSessionMessageSave(ctx context.Context, save types.SessionMessageSave, now time.Time) (types.Session, error) {
+func (s *system) readSessionIfExistsLocked(ctx context.Context, scope sessionScope, sessionID string, lock *scopeLock) (types.Session, bool, error) {
+	session, err := s.readSessionLocked(ctx, scope, sessionID, lock)
+	if err == nil {
+		return session, true, nil
+	}
+	if !isMissingSessionData(err) {
+		return types.Session{}, false, err
+	}
+	return types.Session{}, false, nil
+}
+
+func (s *system) mergeSessionMessageSave(save types.SessionMessageSave, stored types.Session, storedExists bool, now time.Time) (types.Session, error) {
 	session := save.Session
-	if _, err := sessionScopeFromSession(session); err != nil {
-		return types.Session{}, err
-	}
-	if _, err := cleanID(session.ID); err != nil {
-		return types.Session{}, err
-	}
-	merged, loaded, err := s.readSessionForMessageSave(ctx, session, now)
-	if err != nil {
-		return types.Session{}, err
+	merged := stored
+	loaded := storedExists
+	if !loaded {
+		session.Messages = nil
+		merged = normalizeSessionForWrite(session, now)
 	}
 	merged.Status = string(save.Status)
 	if loaded {
@@ -451,22 +454,6 @@ func (s *system) mergeSessionMessageSave(ctx context.Context, save types.Session
 		merged.UpdatedAt = now
 	}
 	return merged, nil
-}
-
-func (s *system) readSessionForMessageSave(ctx context.Context, fallback types.Session, now time.Time) (types.Session, bool, error) {
-	scope, err := sessionScopeFromSession(fallback)
-	if err != nil {
-		return types.Session{}, false, err
-	}
-	loaded, err := s.loadSession(ctx, scope, fallback.ID)
-	if err == nil {
-		return loaded, true, nil
-	}
-	if !isMissingSessionData(err) {
-		return types.Session{}, false, err
-	}
-	fallback.Messages = nil
-	return normalizeSessionForStorage(fallback, now), false, nil
 }
 
 func isMissingSessionData(err error) bool {
@@ -696,68 +683,170 @@ func upsertStoredSessionMessage(session types.Session, message types.Message) ty
 }
 
 func (s *system) ListSessions(ctx context.Context, roleID string) ([]types.SessionSummary, error) {
-	s.sessionMu.Lock()
-	defer s.sessionMu.Unlock()
 	return s.listSessions(ctx, roleSessionScope(roleID))
 }
 
 func (s *system) ListGroupSessions(ctx context.Context, groupID string) ([]types.SessionSummary, error) {
-	s.sessionMu.Lock()
-	defer s.sessionMu.Unlock()
 	return s.listSessions(ctx, groupSessionScope(groupID))
 }
 
 func (s *system) ListWorkspaceSessions(ctx context.Context, workspaceID string, roleID string) ([]types.SessionSummary, error) {
-	s.sessionMu.Lock()
-	defer s.sessionMu.Unlock()
 	return s.listSessions(ctx, workspaceSessionScope(workspaceID, roleID))
 }
 
+// listSessions 只读 scope 索引：索引不可信时按数据目录重建，索引条目悬空时过滤并修复。
+// 列表路径不再逐个读取 data.json。
 func (s *system) listSessions(ctx context.Context, scope sessionScope) ([]types.SessionSummary, error) {
+	scope, err := cleanSessionScope(scope)
+	if err != nil {
+		return nil, err
+	}
+	lock, err := s.scopeLock(scope)
+	if err != nil {
+		return nil, err
+	}
+	document, ok := s.readScopeIndex(ctx, scope, lock)
+	if !ok {
+		return s.rebuildScopeIndex(ctx, scope, lock, false)
+	}
 	scopeDir, err := s.sessionScopeDir(scope)
 	if err != nil {
 		return nil, err
 	}
-	sessions, err := readObjects[types.Session](ctx, scopeDir)
+	ids, err := scopeSessionIDs(scopeDir)
 	if err != nil {
 		return nil, err
 	}
-	summaries := make([]types.SessionSummary, 0, len(sessions))
-	for _, session := range sessions {
-		session = normalizeSessionForStorage(session, time.Now().UTC())
-		summaries = append(summaries, types.SessionSummary{ID: session.ID, RoleID: session.RoleID, GroupID: session.GroupID, WorkspaceID: session.WorkspaceID, Title: session.Title, LastMessagePreview: sessionLastMessagePreview(session.Messages), Status: session.Status, UpdatedAt: session.UpdatedAt, LastActive: session.LastActive})
+	if !hasDanglingSummary(document.Sessions, ids) {
+		return sortSessionSummaries(document.Sessions), nil
 	}
-	sort.Slice(summaries, func(i, j int) bool {
-		return summaries[i].LastActive.After(summaries[j].LastActive)
-	})
-	return summaries, nil
+	// 悬空条目意味着索引与目录事实已经分叉：走一次权威重建，
+	// 而不是在无写者锁的情况下改写索引（那会覆盖并发写者的新条目）。
+	s.sessionMetrics.indexRepairs.Add(1)
+	log.Printf("data-storage-system: 会话索引存在悬空条目，按数据目录重建：scope=%s", scope.key())
+	return s.rebuildScopeIndex(ctx, scope, lock, false)
 }
 
 func (s *system) DeleteSession(ctx context.Context, roleID string, sessionID string) error {
-	return s.deleteSession(ctx, roleSessionScope(roleID), sessionID)
+	return s.removeSession(ctx, roleSessionScope(roleID), sessionID)
 }
 
 func (s *system) DeleteGroupSession(ctx context.Context, groupID string, sessionID string) error {
-	return s.deleteSession(ctx, groupSessionScope(groupID), sessionID)
+	return s.removeSession(ctx, groupSessionScope(groupID), sessionID)
 }
 
 func (s *system) DeleteWorkspaceSession(ctx context.Context, workspaceID string, roleID string, sessionID string) error {
-	return s.deleteSession(ctx, workspaceSessionScope(workspaceID, roleID), sessionID)
+	return s.removeSession(ctx, workspaceSessionScope(workspaceID, roleID), sessionID)
 }
 
-func (s *system) deleteSession(ctx context.Context, scope sessionScope, sessionID string) error {
+// removeSession 是删除的唯一原语，与保存共用同一个 scope 写者锁，写序为：
+// 索引 dirty=true → rename 目录到回收站 → 回收站元数据 → 从索引移除条目。
+func (s *system) removeSession(ctx context.Context, scope sessionScope, sessionID string) error {
+	scope, err := cleanSessionScope(scope)
+	if err != nil {
+		return err
+	}
+	if _, err := cleanID(sessionID); err != nil {
+		return err
+	}
 	dir, err := s.sessionDir(scope, sessionID)
 	if err != nil {
 		return err
 	}
-	recycleID := sessionID
-	if scope.Kind == sessionScopeGroup {
-		recycleID = "groups-" + scope.ID + "-" + sessionID
-	} else if scope.Kind == sessionScopeWorkspace {
-		recycleID = "workspaces-" + scope.WorkspaceID + "-" + scope.RoleID + "-" + sessionID
-	}
-	if err := moveToRecycle(ctx, s.paths, types.StorageItemSession, recycleID, dir); err != nil {
+	indexFile, err := s.sessionIndexFile(scope)
+	if err != nil {
 		return err
 	}
-	return s.rebuildAllSessionIndexes(ctx)
+	lock, err := s.scopeLock(scope)
+	if err != nil {
+		return err
+	}
+	lock.writers.Lock()
+	defer lock.writers.Unlock()
+
+	document, err := s.readScopeIndexForWriteLocked(ctx, scope, lock)
+	if err != nil {
+		return err
+	}
+	relocation, err := s.prepareRecycleRelocation(ctx, types.StorageItemSession, recycleOriginalID(scope, sessionID), dir)
+	if err != nil {
+		return err
+	}
+	dirty := document
+	dirty.SchemaVersion = sessionIndexSchemaVersion
+	dirty.Sort = sessionIndexSort
+	dirty.Dirty = true
+	dirtyTemp, err := prepareJSON(ctx, indexFile, dirty)
+	if err != nil {
+		return s.failSessionWrite("failed to prepare session index dirty marker", err)
+	}
+	defer func() { _ = os.Remove(dirtyTemp) }()
+
+	lock.mu.Lock()
+	if err := commitJSON(dirtyTemp, indexFile); err != nil {
+		lock.mu.Unlock()
+		return s.failSessionWrite("failed to write session index dirty marker", err)
+	}
+	relocateErr := relocation.commit()
+	lock.mu.Unlock()
+	if relocateErr != nil {
+		return relocateErr
+	}
+
+	if err := s.writeRecycleMetadata(ctx, relocation); err != nil {
+		return s.rollbackSessionDelete(ctx, scope, relocation, document, lock, err)
+	}
+
+	next := newSessionIndexDocument(document.Rev+1, removeSessionSummary(document.Sessions, sessionID))
+	nextTemp, err := prepareJSONDerived(ctx, indexFile, next)
+	if err != nil {
+		return s.failSessionWrite("failed to prepare session index", err)
+	}
+	defer func() { _ = os.Remove(nextTemp) }()
+	lock.mu.Lock()
+	err = commitJSON(nextTemp, indexFile)
+	lock.mu.Unlock()
+	if err != nil {
+		return s.failSessionWrite("failed to write session index", err)
+	}
+	s.sessionMetrics.indexWrites.Add(1)
+	return nil
+}
+
+// rollbackSessionDelete 在回收站元数据失败时把目录搬回原位并恢复索引。
+func (s *system) rollbackSessionDelete(ctx context.Context, scope sessionScope, relocation recycleRelocation, document sessionIndexDocument, lock *scopeLock, cause error) error {
+	restored := document
+	restored.SchemaVersion = sessionIndexSchemaVersion
+	restored.Sort = sessionIndexSort
+	restored.Dirty = false
+	indexFile, err := s.sessionIndexFile(scope)
+	if err != nil {
+		return cause
+	}
+	restoreTemp, prepareErr := prepareJSON(ctx, indexFile, restored)
+	if prepareErr != nil {
+		return cause
+	}
+	defer func() { _ = os.Remove(restoreTemp) }()
+	lock.mu.Lock()
+	defer lock.mu.Unlock()
+	if err := relocation.rollback(); err != nil {
+		return storageDeleteFailed("failed to rollback session delete", err)
+	}
+	if err := commitJSON(restoreTemp, indexFile); err != nil {
+		s.sessionMetrics.indexFailures.Add(1)
+		log.Printf("data-storage-system: 会话删除回滚后索引恢复失败（dirty 位会在下次读取时自愈）：scope=%s err=%v", scope.key(), err)
+	}
+	return cause
+}
+
+func recycleOriginalID(scope sessionScope, sessionID string) string {
+	switch scope.Kind {
+	case sessionScopeGroup:
+		return "groups-" + scope.ID + "-" + sessionID
+	case sessionScopeWorkspace:
+		return "workspaces-" + scope.WorkspaceID + "-" + scope.RoleID + "-" + sessionID
+	default:
+		return sessionID
+	}
 }

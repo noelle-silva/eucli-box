@@ -98,7 +98,7 @@ func (s *system) DeleteProvider(ctx context.Context, providerID string) error {
 	s.entityMu.Lock()
 	defer s.entityMu.Unlock()
 
-	if err := moveToRecycle(ctx, s.paths, types.StorageItemProvider, providerID, dir); err != nil {
+	if err := s.moveToRecycle(ctx, types.StorageItemProvider, providerID, dir); err != nil {
 		return err
 	}
 	if err := s.syncOrderAfterDelete(ctx, s.paths.providersRoot(), s.paths.providerOrderFile()); err != nil {

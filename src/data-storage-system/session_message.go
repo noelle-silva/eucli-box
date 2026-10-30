@@ -2,6 +2,7 @@ package datastorage
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -11,7 +12,18 @@ import (
 
 const defaultSessionBranchID = "main"
 
-func normalizeSessionForStorage(session types.Session, now time.Time) types.Session {
+// normalizeSessionForWrite 是写路径归一化：缺失时间戳用本次写入时刻补齐。
+func normalizeSessionForWrite(session types.Session, now time.Time) types.Session {
+	return normalizeSession(session, now, false)
+}
+
+// normalizeSessionStored 是读路径归一化：绝不引入 time.Now，
+// 同一份落盘数据两次读取必然得到同一结果。
+func normalizeSessionStored(session types.Session) types.Session {
+	return normalizeSession(session, time.Time{}, true)
+}
+
+func normalizeSession(session types.Session, clock time.Time, pure bool) types.Session {
 	session.ID = strings.TrimSpace(session.ID)
 	session.RoleID = strings.TrimSpace(session.RoleID)
 	session.GroupID = strings.TrimSpace(session.GroupID)
@@ -20,7 +32,7 @@ func normalizeSessionForStorage(session types.Session, now time.Time) types.Sess
 	if session.Status == "" {
 		session.Status = string(types.RunStatusCreated)
 	}
-	baseline := firstNonZeroTime(session.CreatedAt, session.LastActive, session.UpdatedAt, now)
+	baseline := firstNonZeroTimeOrZero(session.CreatedAt, session.LastActive, session.UpdatedAt, clock)
 	if session.CreatedAt.IsZero() {
 		session.CreatedAt = baseline
 	}
@@ -30,9 +42,10 @@ func normalizeSessionForStorage(session types.Session, now time.Time) types.Sess
 	if session.LastActive.IsZero() {
 		session.LastActive = baseline
 	}
+	messageClock := firstNonZeroTimeOrZero(clock, baseline)
 	session.Metadata = normalizeSessionMetadata(session.Metadata)
-	session.Messages = normalizeSessionMessages(session.Messages, now)
-	session.AsyncToolTasks = normalizeAsyncToolTasks(session.AsyncToolTasks, session, now)
+	session.Messages = normalizeSessionMessages(session.Messages, messageClock, pure)
+	session.AsyncToolTasks = normalizeAsyncToolTasks(session.AsyncToolTasks, session, messageClock, pure)
 	for _, message := range session.Messages {
 		if message.CreatedAt.After(session.LastActive) {
 			session.LastActive = message.CreatedAt
@@ -47,19 +60,29 @@ func normalizeSessionForStorage(session types.Session, now time.Time) types.Sess
 	return session
 }
 
-func normalizeAsyncToolTasks(tasks []types.AsyncToolTask, session types.Session, now time.Time) []types.AsyncToolTask {
+func normalizeAsyncToolTasks(tasks []types.AsyncToolTask, session types.Session, clock time.Time, pure bool) []types.AsyncToolTask {
 	if len(tasks) == 0 {
 		return nil
 	}
 	result := make([]types.AsyncToolTask, 0, len(tasks))
 	seen := map[string]struct{}{}
+	sequence := 0
+	nextTaskID := func() string {
+		for {
+			id := fallbackAsyncToolTaskID(pure, sequence)
+			sequence++
+			if _, exists := seen[id]; !exists {
+				return id
+			}
+		}
+	}
 	for _, task := range tasks {
 		task.ID = strings.TrimSpace(task.ID)
 		if task.ID == "" {
-			task.ID = utils.NewID("async-tool-task")
+			task.ID = nextTaskID()
 		}
 		if _, exists := seen[task.ID]; exists {
-			task.ID = utils.NewID("async-tool-task")
+			task.ID = nextTaskID()
 		}
 		seen[task.ID] = struct{}{}
 		task.RunID = strings.TrimSpace(task.RunID)
@@ -74,8 +97,8 @@ func normalizeAsyncToolTasks(tasks []types.AsyncToolTask, session types.Session,
 		}
 		task.ToolName = strings.TrimSpace(task.ToolName)
 		task.Status = normalizeAsyncToolTaskStatus(task.Status)
-		if task.SubmittedAt.IsZero() {
-			task.SubmittedAt = now
+		if task.SubmittedAt.IsZero() && !clock.IsZero() {
+			task.SubmittedAt = clock
 		}
 		result = append(result, task)
 	}
@@ -107,27 +130,46 @@ func firstNonEmpty(values ...string) string {
 }
 
 func firstNonZeroTime(values ...time.Time) time.Time {
+	if value := firstNonZeroTimeOrZero(values...); !value.IsZero() {
+		return value
+	}
+	return time.Now().UTC()
+}
+
+// firstNonZeroTimeOrZero 与 firstNonZeroTime 的区别是：全部为零时返回零值，
+// 不偷偷引入当前时刻。读路径依赖这个性质保持纯函数。
+func firstNonZeroTimeOrZero(values ...time.Time) time.Time {
 	for _, value := range values {
 		if !value.IsZero() {
 			return value
 		}
 	}
-	return time.Now().UTC()
+	return time.Time{}
 }
 
-func normalizeSessionMessages(messages []types.Message, now time.Time) []types.Message {
+func normalizeSessionMessages(messages []types.Message, clock time.Time, pure bool) []types.Message {
 	result := make([]types.Message, 0, len(messages))
 	seen := map[string]struct{}{}
 	lastMessageID := ""
 	lastByBranch := map[string]string{}
+	sequence := 0
+	nextMessageID := func() string {
+		for {
+			id := sessionMessageFallbackID(pure, sequence)
+			sequence++
+			if _, exists := seen[id]; !exists {
+				return id
+			}
+		}
+	}
 
 	for _, message := range messages {
 		message.ID = strings.TrimSpace(message.ID)
 		if message.ID == "" {
-			message.ID = utils.NewID("message")
+			message.ID = nextMessageID()
 		}
-		if _, ok := seen[message.ID]; ok {
-			message.ID = utils.NewID("message")
+		if _, exists := seen[message.ID]; exists {
+			message.ID = nextMessageID()
 		}
 		seen[message.ID] = struct{}{}
 
@@ -135,11 +177,11 @@ func normalizeSessionMessages(messages []types.Message, now time.Time) []types.M
 		message.SpeakerRoleID = strings.TrimSpace(message.SpeakerRoleID)
 		message.Control = normalizeMessageControl(message.Type, message.Control)
 		message.Error = normalizeErrorPayload(message.Error)
-		message.Attachments = normalizeSessionMessageAttachments(message.Attachments)
+		message.Attachments = normalizeSessionMessageAttachments(message.Attachments, pure)
 		if message.Content == "" {
 			message.Content = textProjectionFromParts(message.Parts)
 		}
-		message.Parts = normalizeSessionMessageParts(message, now)
+		message.Parts = normalizeSessionMessageParts(message, clock, pure)
 		message.BranchID = normalizeBranchID(message.BranchID)
 		message.ParentMessageID = strings.TrimSpace(message.ParentMessageID)
 		if message.ParentMessageID == "" {
@@ -148,8 +190,8 @@ func normalizeSessionMessages(messages []types.Message, now time.Time) []types.M
 				message.ParentMessageID = lastMessageID
 			}
 		}
-		if message.CreatedAt.IsZero() {
-			message.CreatedAt = now
+		if message.CreatedAt.IsZero() && !clock.IsZero() {
+			message.CreatedAt = clock
 		}
 		if message.UpdatedAt.IsZero() {
 			message.UpdatedAt = message.CreatedAt
@@ -191,21 +233,61 @@ func normalizeErrorPayloads(errorPayloads []*types.ErrorPayload) []*types.ErrorP
 	return result
 }
 
-func normalizeSessionMessageParts(message types.Message, now time.Time) []types.MessagePart {
+func normalizeSessionMessageParts(message types.Message, clock time.Time, pure bool) []types.MessagePart {
 	parts := make([]types.MessagePart, 0, len(message.Parts)+1)
 	seen := map[string]struct{}{}
+	sequence := 0
+	nextPartID := func() string {
+		for {
+			id := sessionPartFallbackID(pure, sequence)
+			sequence++
+			if _, exists := seen[id]; !exists {
+				return id
+			}
+		}
+	}
 	if (message.Type == "user" || message.Type == "assistant") && message.Content != "" {
-		parts = append(parts, normalizeTextPart(firstPartOfType(message.Parts, "text"), message.Content, now, seen))
+		parts = append(parts, normalizeTextPart(firstPartOfType(message.Parts, "text"), message.Content, clock, seen, nextPartID))
 	}
 	for _, part := range message.Parts {
 		switch strings.TrimSpace(part.Type) {
 		case "tool":
-			parts = append(parts, normalizeToolPart(part, now, seen))
+			parts = append(parts, normalizeToolPart(part, clock, seen, nextPartID))
 		case "reasoning":
-			parts = append(parts, normalizeReasoningPart(part, now, seen))
+			parts = append(parts, normalizeReasoningPart(part, clock, seen, nextPartID))
 		}
 	}
 	return parts
+}
+
+// sessionMessageFallbackID / sessionPartFallbackID 在「纯读取」时使用位置派生的
+// 稳定标识，保证同一份落盘数据两次读取得到同一结果；写路径仍用随机新 ID。
+func sessionMessageFallbackID(pure bool, sequence int) string {
+	if pure {
+		return fmt.Sprintf("legacy-message-%d", sequence)
+	}
+	return utils.NewID("message")
+}
+
+func sessionPartFallbackID(pure bool, sequence int) string {
+	if pure {
+		return fmt.Sprintf("legacy-part-%d", sequence)
+	}
+	return utils.NewID("part")
+}
+
+func fallbackAsyncToolTaskID(pure bool, sequence int) string {
+	if pure {
+		return fmt.Sprintf("legacy-async-tool-task-%d", sequence)
+	}
+	return utils.NewID("async-tool-task")
+}
+
+func fallbackAttachmentID(pure bool, sequence int) string {
+	if pure {
+		return fmt.Sprintf("legacy-att-%d", sequence)
+	}
+	return utils.NewID("att")
 }
 
 func firstPartOfType(parts []types.MessagePart, partType string) types.MessagePart {
@@ -217,12 +299,12 @@ func firstPartOfType(parts []types.MessagePart, partType string) types.MessagePa
 	return types.MessagePart{}
 }
 
-func normalizeTextPart(part types.MessagePart, text string, now time.Time, seen map[string]struct{}) types.MessagePart {
+func normalizeTextPart(part types.MessagePart, text string, clock time.Time, seen map[string]struct{}, nextPartID func() string) types.MessagePart {
 	part.Type = "text"
 	part.Text = text
-	part.ID = normalizeMessagePartID(part.ID, seen)
-	if part.CreatedAt.IsZero() {
-		part.CreatedAt = now
+	part.ID = normalizeMessagePartID(part.ID, seen, nextPartID)
+	if part.CreatedAt.IsZero() && !clock.IsZero() {
+		part.CreatedAt = clock
 	}
 	if part.UpdatedAt.IsZero() {
 		part.UpdatedAt = part.CreatedAt
@@ -238,9 +320,9 @@ func normalizeTextPart(part types.MessagePart, text string, now time.Time, seen 
 	return part
 }
 
-func normalizeToolPart(part types.MessagePart, now time.Time, seen map[string]struct{}) types.MessagePart {
+func normalizeToolPart(part types.MessagePart, clock time.Time, seen map[string]struct{}, nextPartID func() string) types.MessagePart {
 	part.Type = "tool"
-	part.ID = normalizeMessagePartID(part.ID, seen)
+	part.ID = normalizeMessagePartID(part.ID, seen, nextPartID)
 	part.CallID = strings.TrimSpace(part.CallID)
 	part.ToolName = strings.TrimSpace(part.ToolName)
 	part.State = strings.TrimSpace(part.State)
@@ -267,8 +349,8 @@ func normalizeToolPart(part types.MessagePart, now time.Time, seen map[string]st
 	if len(part.Display) == 0 {
 		part.Display = nil
 	}
-	if part.CreatedAt.IsZero() {
-		part.CreatedAt = now
+	if part.CreatedAt.IsZero() && !clock.IsZero() {
+		part.CreatedAt = clock
 	}
 	if part.UpdatedAt.IsZero() {
 		part.UpdatedAt = part.CreatedAt
@@ -276,9 +358,9 @@ func normalizeToolPart(part types.MessagePart, now time.Time, seen map[string]st
 	return part
 }
 
-func normalizeReasoningPart(part types.MessagePart, now time.Time, seen map[string]struct{}) types.MessagePart {
+func normalizeReasoningPart(part types.MessagePart, clock time.Time, seen map[string]struct{}, nextPartID func() string) types.MessagePart {
 	part.Type = "reasoning"
-	part.ID = normalizeMessagePartID(part.ID, seen)
+	part.ID = normalizeMessagePartID(part.ID, seen, nextPartID)
 	part.Text = strings.TrimSpace(part.Text)
 	part.CallID = ""
 	part.ToolName = ""
@@ -293,8 +375,8 @@ func normalizeReasoningPart(part types.MessagePart, now time.Time, seen map[stri
 	if len(part.Display) == 0 {
 		part.Display = nil
 	}
-	if part.CreatedAt.IsZero() {
-		part.CreatedAt = now
+	if part.CreatedAt.IsZero() && !clock.IsZero() {
+		part.CreatedAt = clock
 	}
 	if part.UpdatedAt.IsZero() {
 		part.UpdatedAt = part.CreatedAt
@@ -302,13 +384,13 @@ func normalizeReasoningPart(part types.MessagePart, now time.Time, seen map[stri
 	return part
 }
 
-func normalizeMessagePartID(id string, seen map[string]struct{}) string {
+func normalizeMessagePartID(id string, seen map[string]struct{}, nextPartID func() string) string {
 	id = strings.TrimSpace(id)
 	if id == "" {
-		id = utils.NewID("part")
+		id = nextPartID()
 	}
 	if _, ok := seen[id]; ok {
-		id = utils.NewID("part")
+		id = nextPartID()
 	}
 	seen[id] = struct{}{}
 	return id
@@ -414,19 +496,29 @@ func normalizeMessageControl(messageType string, control *types.MessageControl) 
 	return &normalized
 }
 
-func normalizeSessionMessageAttachments(attachments []types.MessageAttachment) []types.MessageAttachment {
+func normalizeSessionMessageAttachments(attachments []types.MessageAttachment, pure bool) []types.MessageAttachment {
 	result := make([]types.MessageAttachment, 0, len(attachments))
 	seen := map[string]struct{}{}
+	sequence := 0
+	nextAttachmentID := func() string {
+		for {
+			id := fallbackAttachmentID(pure, sequence)
+			sequence++
+			if _, exists := seen[id]; !exists {
+				return id
+			}
+		}
+	}
 	for _, attachment := range attachments {
 		if !isImageAttachmentKind(attachment.Kind) {
 			continue
 		}
 		attachment.ID = strings.TrimSpace(attachment.ID)
 		if attachment.ID == "" {
-			attachment.ID = utils.NewID("att")
+			attachment.ID = nextAttachmentID()
 		}
 		if _, ok := seen[attachment.ID]; ok {
-			attachment.ID = utils.NewID("att")
+			attachment.ID = nextAttachmentID()
 		}
 		seen[attachment.ID] = struct{}{}
 
@@ -468,29 +560,10 @@ func (s *system) UpdateWorkspaceSessionTitle(ctx context.Context, workspaceID st
 }
 
 func (s *system) updateSessionTitle(ctx context.Context, scope sessionScope, sessionID string, title string) (types.Session, error) {
-	s.sessionMu.Lock()
-	defer s.sessionMu.Unlock()
-	scope, err := cleanSessionScope(scope)
-	if err != nil {
-		return types.Session{}, err
-	}
-	session, err := s.loadSession(ctx, scope, sessionID)
-	if err != nil {
-		return types.Session{}, err
-	}
-	now := time.Now().UTC()
-	session.Title = types.NormalizeSessionTitle(title)
-	session.UpdatedAt = now
-	if session.LastActive.Before(now) {
-		session.LastActive = now
-	}
-	if _, err := s.writeSessionData(ctx, session, now); err != nil {
-		return types.Session{}, err
-	}
-	if err := s.rebuildSessionIndexesForScope(ctx, scope); err != nil {
-		return types.Session{}, err
-	}
-	return s.loadSession(ctx, scope, sessionID)
+	return s.updateSessionAtomically(ctx, scope, sessionID, func(session *types.Session, _ time.Time) error {
+		session.Title = types.NormalizeSessionTitle(title)
+		return nil
+	})
 }
 
 func normalizeSessionMetadata(metadata map[string]string) map[string]string {
@@ -536,12 +609,6 @@ func (s *system) UpdateWorkspaceSessionMessage(ctx context.Context, workspaceID 
 }
 
 func (s *system) updateSessionMessage(ctx context.Context, scope sessionScope, sessionID string, messageID string, patch types.SessionMessagePatch) (types.Message, error) {
-	s.sessionMu.Lock()
-	defer s.sessionMu.Unlock()
-	scope, err := cleanSessionScope(scope)
-	if err != nil {
-		return types.Message{}, err
-	}
 	messageID = strings.TrimSpace(messageID)
 	if messageID == "" {
 		return types.Message{}, storageInvalid("message id is required", nil)
@@ -549,55 +616,38 @@ func (s *system) updateSessionMessage(ctx context.Context, scope sessionScope, s
 	if patch.Content == nil && patch.Parts == nil {
 		return types.Message{}, storageInvalid("message patch is empty", nil)
 	}
-	session, err := s.loadSession(ctx, scope, sessionID)
+	session, _, err := s.mutateSession(ctx, scope, sessionID, func(current *types.Session, now time.Time) (bool, error) {
+		if reason := protectedSessionMessageMutationReason(*current, messageID); reason != "" {
+			return false, storageInvalid(reason, nil)
+		}
+		updatedIndex := -1
+		for i := range current.Messages {
+			if current.Messages[i].ID != messageID {
+				continue
+			}
+			if patch.Content != nil {
+				current.Messages[i].Content = *patch.Content
+			}
+			if patch.Parts != nil {
+				current.Messages[i].Parts = append([]types.MessagePart(nil), (*patch.Parts)...)
+			}
+			current.Messages[i].UpdatedAt = now
+			updatedIndex = i
+			break
+		}
+		if updatedIndex < 0 {
+			return false, storageNotFound("message was not found", nil)
+		}
+		return true, nil
+	})
 	if err != nil {
 		return types.Message{}, err
 	}
-	now := time.Now().UTC()
-	session = normalizeSessionForStorage(session, now)
-	if reason := protectedSessionMessageMutationReason(session, messageID); reason != "" {
-		return types.Message{}, storageInvalid(reason, nil)
-	}
-	updatedIndex := -1
-	for i := range session.Messages {
-		if session.Messages[i].ID != messageID {
-			continue
-		}
-		if patch.Content != nil {
-			session.Messages[i].Content = *patch.Content
-		}
-		if patch.Parts != nil {
-			session.Messages[i].Parts = append([]types.MessagePart(nil), (*patch.Parts)...)
-		}
-		session.Messages[i].UpdatedAt = now
-		updatedIndex = i
-		break
-	}
-	if updatedIndex < 0 {
+	updated, ok := storedSessionMessageByID(session, messageID)
+	if !ok {
 		return types.Message{}, storageNotFound("message was not found", nil)
 	}
-	session.UpdatedAt = now
-	if session.LastActive.Before(now) {
-		session.LastActive = now
-	}
-	session = normalizeSessionForStorage(session, now)
-	updatedMessage := types.Message{}
-	for _, message := range session.Messages {
-		if message.ID == messageID {
-			updatedMessage = message
-			break
-		}
-	}
-	if updatedMessage.ID == "" {
-		return types.Message{}, storageNotFound("message was not found", nil)
-	}
-	if _, err := s.writeSessionData(ctx, session, now); err != nil {
-		return types.Message{}, err
-	}
-	if err := s.rebuildSessionIndexesForScope(ctx, scope); err != nil {
-		return types.Message{}, err
-	}
-	return updatedMessage, nil
+	return updated, nil
 }
 
 func (s *system) DeleteSessionMessage(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error) {
@@ -613,61 +663,44 @@ func (s *system) DeleteWorkspaceSessionMessage(ctx context.Context, workspaceID 
 }
 
 func (s *system) deleteSessionMessage(ctx context.Context, scope sessionScope, sessionID string, messageID string) (types.Session, error) {
-	s.sessionMu.Lock()
-	defer s.sessionMu.Unlock()
-	scope, err := cleanSessionScope(scope)
-	if err != nil {
-		return types.Session{}, err
-	}
 	messageID = strings.TrimSpace(messageID)
 	if messageID == "" {
 		return types.Session{}, storageInvalid("message id is required", nil)
 	}
-	session, err := s.loadSession(ctx, scope, sessionID)
+	session, _, err := s.mutateSession(ctx, scope, sessionID, func(current *types.Session, now time.Time) (bool, error) {
+		if reason := protectedSessionMessageMutationReason(*current, messageID); reason != "" {
+			return false, storageInvalid(reason, nil)
+		}
+		parentID := ""
+		found := false
+		for _, message := range current.Messages {
+			if message.ID == messageID {
+				parentID = message.ParentMessageID
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false, storageNotFound("message was not found", nil)
+		}
+		next := make([]types.Message, 0, len(current.Messages)-1)
+		for _, message := range current.Messages {
+			if message.ID == messageID {
+				continue
+			}
+			if message.ParentMessageID == messageID {
+				message.ParentMessageID = parentID
+				message.UpdatedAt = now
+			}
+			next = append(next, message)
+		}
+		current.Messages = next
+		return true, nil
+	})
 	if err != nil {
 		return types.Session{}, err
 	}
-	now := time.Now().UTC()
-	session = normalizeSessionForStorage(session, now)
-	if reason := protectedSessionMessageMutationReason(session, messageID); reason != "" {
-		return types.Session{}, storageInvalid(reason, nil)
-	}
-	parentID := ""
-	found := false
-	for _, message := range session.Messages {
-		if message.ID == messageID {
-			parentID = message.ParentMessageID
-			found = true
-			break
-		}
-	}
-	if !found {
-		return types.Session{}, storageNotFound("message was not found", nil)
-	}
-
-	next := make([]types.Message, 0, len(session.Messages)-1)
-	for _, message := range session.Messages {
-		if message.ID == messageID {
-			continue
-		}
-		if message.ParentMessageID == messageID {
-			message.ParentMessageID = parentID
-			message.UpdatedAt = now
-		}
-		next = append(next, message)
-	}
-	session.Messages = next
-	session.UpdatedAt = now
-	if session.LastActive.Before(now) {
-		session.LastActive = now
-	}
-	if _, err := s.writeSessionData(ctx, session, now); err != nil {
-		return types.Session{}, err
-	}
-	if err := s.rebuildSessionIndexesForScope(ctx, scope); err != nil {
-		return types.Session{}, err
-	}
-	return s.loadSession(ctx, scope, sessionID)
+	return session, nil
 }
 
 func (s *system) DeleteSessionMessageSubtree(ctx context.Context, roleID string, sessionID string, messageID string) (types.Session, error) {
@@ -683,72 +716,56 @@ func (s *system) DeleteWorkspaceSessionMessageSubtree(ctx context.Context, works
 }
 
 func (s *system) deleteSessionMessageSubtree(ctx context.Context, scope sessionScope, sessionID string, messageID string) (types.Session, error) {
-	s.sessionMu.Lock()
-	defer s.sessionMu.Unlock()
-	scope, err := cleanSessionScope(scope)
-	if err != nil {
-		return types.Session{}, err
-	}
 	messageID = strings.TrimSpace(messageID)
 	if messageID == "" {
 		return types.Session{}, storageInvalid("message id is required", nil)
 	}
-	session, err := s.loadSession(ctx, scope, sessionID)
+	session, _, err := s.mutateSession(ctx, scope, sessionID, func(current *types.Session, _ time.Time) (bool, error) {
+		if reason := protectedSessionMessageSubtreeMutationReason(*current, messageID); reason != "" {
+			return false, storageInvalid(reason, nil)
+		}
+		children := map[string][]string{}
+		found := false
+		for _, message := range current.Messages {
+			if message.ID == messageID {
+				found = true
+			}
+			if message.ParentMessageID == "" {
+				continue
+			}
+			children[message.ParentMessageID] = append(children[message.ParentMessageID], message.ID)
+		}
+		if !found {
+			return false, storageNotFound("message was not found", nil)
+		}
+
+		deleted := map[string]struct{}{}
+		stack := []string{messageID}
+		for len(stack) > 0 {
+			currentID := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			if currentID == "" {
+				continue
+			}
+			if _, ok := deleted[currentID]; ok {
+				continue
+			}
+			deleted[currentID] = struct{}{}
+			stack = append(stack, children[currentID]...)
+		}
+
+		next := make([]types.Message, 0, len(current.Messages)-len(deleted))
+		for _, message := range current.Messages {
+			if _, ok := deleted[message.ID]; ok {
+				continue
+			}
+			next = append(next, message)
+		}
+		current.Messages = next
+		return true, nil
+	})
 	if err != nil {
 		return types.Session{}, err
 	}
-	now := time.Now().UTC()
-	session = normalizeSessionForStorage(session, now)
-	if reason := protectedSessionMessageSubtreeMutationReason(session, messageID); reason != "" {
-		return types.Session{}, storageInvalid(reason, nil)
-	}
-	children := map[string][]string{}
-	found := false
-	for _, message := range session.Messages {
-		if message.ID == messageID {
-			found = true
-		}
-		if message.ParentMessageID == "" {
-			continue
-		}
-		children[message.ParentMessageID] = append(children[message.ParentMessageID], message.ID)
-	}
-	if !found {
-		return types.Session{}, storageNotFound("message was not found", nil)
-	}
-
-	deleted := map[string]struct{}{}
-	stack := []string{messageID}
-	for len(stack) > 0 {
-		current := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		if current == "" {
-			continue
-		}
-		if _, ok := deleted[current]; ok {
-			continue
-		}
-		deleted[current] = struct{}{}
-		stack = append(stack, children[current]...)
-	}
-
-	next := make([]types.Message, 0, len(session.Messages)-len(deleted))
-	for _, message := range session.Messages {
-		if _, ok := deleted[message.ID]; ok {
-			continue
-		}
-		next = append(next, message)
-	}
-	session.Messages = next
-	session.UpdatedAt = now
-	if session.LastActive.Before(now) {
-		session.LastActive = now
-	}
-	if _, err := s.writeSessionData(ctx, session, now); err != nil {
-		return types.Session{}, err
-	}
-	if err := s.rebuildSessionIndexesForScope(ctx, scope); err != nil {
-		return types.Session{}, err
-	}
-	return s.loadSession(ctx, scope, sessionID)
+	return session, nil
 }

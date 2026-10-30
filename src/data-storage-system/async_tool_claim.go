@@ -21,32 +21,24 @@ func (s *system) ClaimAsyncToolResult(ctx context.Context, session types.Session
 	if err != nil {
 		return false, err
 	}
-	s.sessionMu.Lock()
-	defer s.sessionMu.Unlock()
-	loaded, err := s.loadSession(ctx, cleaned, session.ID)
+	_, wrote, err := s.mutateSession(ctx, cleaned, session.ID, func(loaded *types.Session, now time.Time) (bool, error) {
+		index := storedAsyncToolTaskIndex(loaded.AsyncToolTasks, taskID)
+		if index < 0 {
+			return false, nil
+		}
+		task := loaded.AsyncToolTasks[index]
+		if !task.CompletedAt.IsZero() || !task.InjectionClaimedAt.IsZero() {
+			return false, nil
+		}
+		task.InjectionClaimedAt = now
+		task.InjectionClaimRunID = strings.TrimSpace(runID)
+		loaded.AsyncToolTasks[index] = task
+		return true, nil
+	})
 	if err != nil {
 		return false, err
 	}
-	index := storedAsyncToolTaskIndex(loaded.AsyncToolTasks, taskID)
-	if index < 0 {
-		return false, nil
-	}
-	task := loaded.AsyncToolTasks[index]
-	if !task.CompletedAt.IsZero() || !task.InjectionClaimedAt.IsZero() {
-		return false, nil
-	}
-	now := time.Now().UTC()
-	task.InjectionClaimedAt = now
-	task.InjectionClaimRunID = strings.TrimSpace(runID)
-	loaded.AsyncToolTasks[index] = task
-	loaded.UpdatedAt = now
-	if _, err := s.writeSessionData(ctx, loaded, now); err != nil {
-		return false, err
-	}
-	if err := s.rebuildSessionIndexesForScope(ctx, cleaned); err != nil {
-		return false, err
-	}
-	return true, nil
+	return wrote, nil
 }
 
 // ReleaseAsyncToolResultClaim 回退一次回灌认领：
@@ -60,32 +52,24 @@ func (s *system) ReleaseAsyncToolResultClaim(ctx context.Context, session types.
 	if err != nil {
 		return err
 	}
-	s.sessionMu.Lock()
-	defer s.sessionMu.Unlock()
-	loaded, err := s.loadSession(ctx, cleaned, session.ID)
-	if err != nil {
-		return err
-	}
-	index := storedAsyncToolTaskIndex(loaded.AsyncToolTasks, taskID)
-	if index < 0 {
-		return nil
-	}
-	task := loaded.AsyncToolTasks[index]
-	if !task.CompletedAt.IsZero() || task.InjectionClaimedAt.IsZero() {
-		return nil
-	}
-	if owner := strings.TrimSpace(task.InjectionClaimRunID); owner != "" && owner != strings.TrimSpace(runID) {
-		return nil
-	}
-	now := time.Now().UTC()
-	task.InjectionClaimedAt = time.Time{}
-	task.InjectionClaimRunID = ""
-	loaded.AsyncToolTasks[index] = task
-	loaded.UpdatedAt = now
-	if _, err := s.writeSessionData(ctx, loaded, now); err != nil {
-		return err
-	}
-	return s.rebuildSessionIndexesForScope(ctx, cleaned)
+	_, _, err = s.mutateSession(ctx, cleaned, session.ID, func(loaded *types.Session, _ time.Time) (bool, error) {
+		index := storedAsyncToolTaskIndex(loaded.AsyncToolTasks, taskID)
+		if index < 0 {
+			return false, nil
+		}
+		task := loaded.AsyncToolTasks[index]
+		if !task.CompletedAt.IsZero() || task.InjectionClaimedAt.IsZero() {
+			return false, nil
+		}
+		if owner := strings.TrimSpace(task.InjectionClaimRunID); owner != "" && owner != strings.TrimSpace(runID) {
+			return false, nil
+		}
+		task.InjectionClaimedAt = time.Time{}
+		task.InjectionClaimRunID = ""
+		loaded.AsyncToolTasks[index] = task
+		return true, nil
+	})
+	return err
 }
 
 func cleanSessionScopeFromSession(session types.Session) (sessionScope, error) {

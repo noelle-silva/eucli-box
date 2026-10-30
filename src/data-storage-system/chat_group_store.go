@@ -69,7 +69,7 @@ func (s *system) DeleteChatGroup(ctx context.Context, groupID string) error {
 	if err != nil {
 		return err
 	}
-	if err := moveToRecycle(ctx, s.paths, types.StorageItemGroup, groupID, dir); err != nil {
+	if err := s.moveToRecycle(ctx, types.StorageItemGroup, groupID, dir); err != nil {
 		return err
 	}
 	return s.rebuildChatGroupIndex(ctx)

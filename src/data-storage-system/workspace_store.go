@@ -100,7 +100,7 @@ func (s *system) DeleteWorkspace(ctx context.Context, workspaceID string) error 
 	s.entityMu.Lock()
 	defer s.entityMu.Unlock()
 
-	if err := moveToRecycle(ctx, s.paths, types.StorageItemWorkspace, workspaceID, dir); err != nil {
+	if err := s.moveToRecycle(ctx, types.StorageItemWorkspace, workspaceID, dir); err != nil {
 		return err
 	}
 	if err := s.syncOrderAfterDelete(ctx, s.paths.workspacesRoot(), s.paths.workspaceOrderFile()); err != nil {

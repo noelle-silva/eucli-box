@@ -83,7 +83,7 @@ func (s *system) DeleteRole(ctx context.Context, roleID string) error {
 	s.entityMu.Lock()
 	defer s.entityMu.Unlock()
 
-	if err := moveToRecycle(ctx, s.paths, types.StorageItemRole, roleID, dir); err != nil {
+	if err := s.moveToRecycle(ctx, types.StorageItemRole, roleID, dir); err != nil {
 		return err
 	}
 	if err := s.syncOrderAfterDelete(ctx, s.paths.rolesRoot(), s.paths.roleOrderFile()); err != nil {

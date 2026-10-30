@@ -49,12 +49,6 @@ type ToolPolicy struct {
 	RunModes    map[string]ToolRunMode `json:"runModes,omitempty"`
 }
 
-type ModelConfig struct {
-	Coordinate         ModelCoordinate `json:"coordinate"`
-	Temperature        float64         `json:"temperature"`
-	TemperatureEnabled *bool           `json:"temperatureEnabled,omitempty"`
-}
-
 type Role struct {
 	ID                 string          `json:"id"`
 	Name               string          `json:"name"`

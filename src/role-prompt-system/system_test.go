@@ -135,9 +135,13 @@ func validRole() types.Role {
 		Prompts: []types.PromptMessage{
 			{ID: "p1", Role: "system", Content: "You write clear code", Order: 1},
 		},
-		ModelConfig: types.ModelConfig{Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}, Temperature: 0.7},
-		ToolPolicy:  types.ToolPolicy{Tools: []string{"file-reader"}, RunModes: map[string]types.ToolRunMode{"file-reader": types.ToolRunAsk}},
-		UpdatedAt:   time.Now().UTC(),
+		ModelConfig: types.ModelConfig{
+			Candidates:         []types.RoleModelCandidate{{ID: "cand-primary", Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}}},
+			DefaultCandidateID: "cand-primary",
+			Temperature:        0.7,
+		},
+		ToolPolicy: types.ToolPolicy{Tools: []string{"file-reader"}, RunModes: map[string]types.ToolRunMode{"file-reader": types.ToolRunAsk}},
+		UpdatedAt:  time.Now().UTC(),
 	}
 }
 
@@ -148,6 +152,68 @@ func newTestRoleSystem(t *testing.T, storage StorageSystem, providers ProviderSy
 		t.Fatalf("NewSystem() error = %v", err)
 	}
 	return system
+}
+
+// TestSaveRoleValidatesEveryCandidate 钉住候选池逐项校验：两个候选都必须可解析。
+func TestSaveRoleValidatesEveryCandidate(t *testing.T) {
+	storage := newFakeRoleStorage()
+	providers := newFakeProviderResolver()
+	providers.models["openai-main/gpt-4.1"] = types.ModelInfo{ID: "gpt-4.1", Name: "GPT"}
+	providers.models["anthropic-main/claude"] = types.ModelInfo{ID: "claude", Name: "Claude"}
+	system := newTestRoleSystem(t, storage, providers)
+	role := validRole()
+	role.ModelConfig.Candidates = []types.RoleModelCandidate{
+		{ID: "cand-primary", Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}},
+		{ID: "cand-backup", Coordinate: types.ModelCoordinate{ProviderID: "anthropic-main", ModelID: "claude"}},
+	}
+	if err := system.SaveRole(context.Background(), role); err != nil {
+		t.Fatalf("SaveRole() error = %v", err)
+	}
+	if providers.resolveCount != 2 {
+		t.Fatalf("resolveCount = %d, want 2", providers.resolveCount)
+	}
+}
+
+// TestSaveRoleRejectsUnavailableCandidate 钉住候选池不静默剔除：任一候选不可用即拒绝。
+func TestSaveRoleRejectsUnavailableCandidate(t *testing.T) {
+	storage := newFakeRoleStorage()
+	providers := newFakeProviderResolver()
+	providers.models["openai-main/gpt-4.1"] = types.ModelInfo{ID: "gpt-4.1", Name: "GPT"}
+	system := newTestRoleSystem(t, storage, providers)
+	role := validRole()
+	role.ModelConfig.Candidates = []types.RoleModelCandidate{
+		{ID: "cand-primary", Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}},
+		{ID: "cand-backup", Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "missing"}},
+	}
+	err := system.SaveRole(context.Background(), role)
+	assertAppErrorCode(t, err, "role.model_invalid")
+}
+
+// TestSaveRoleRejectsMissingDefaultCandidate 钉住默认候选必须是池内成员。
+func TestSaveRoleRejectsMissingDefaultCandidate(t *testing.T) {
+	storage := newFakeRoleStorage()
+	providers := newFakeProviderResolver()
+	providers.models["openai-main/gpt-4.1"] = types.ModelInfo{ID: "gpt-4.1", Name: "GPT"}
+	system := newTestRoleSystem(t, storage, providers)
+	role := validRole()
+	role.ModelConfig.DefaultCandidateID = "cand-absent"
+	err := system.SaveRole(context.Background(), role)
+	assertAppErrorCode(t, err, "role.model_invalid")
+}
+
+// TestSaveRoleRejectsDuplicateCandidate 钉住候选标识与坐标都不允许重复。
+func TestSaveRoleRejectsDuplicateCandidate(t *testing.T) {
+	storage := newFakeRoleStorage()
+	providers := newFakeProviderResolver()
+	providers.models["openai-main/gpt-4.1"] = types.ModelInfo{ID: "gpt-4.1", Name: "GPT"}
+	system := newTestRoleSystem(t, storage, providers)
+	role := validRole()
+	role.ModelConfig.Candidates = []types.RoleModelCandidate{
+		{ID: "cand-primary", Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}},
+		{ID: "cand-primary", Coordinate: types.ModelCoordinate{ProviderID: "openai-main", ModelID: "gpt-4.1"}},
+	}
+	err := system.SaveRole(context.Background(), role)
+	assertAppErrorCode(t, err, "role.model_invalid")
 }
 
 type fakeRoleStorage struct {

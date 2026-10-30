@@ -46,12 +46,25 @@ func (s *system) callModel(ctx context.Context, record *runRecord, roleContext t
 	if err != nil {
 		return types.ModelResponse{}, err
 	}
-	coordinate := roleContext.ModelConfig.Coordinate
+	coordinate, err := roleModelCoordinate(roleContext.ModelConfig)
+	if err != nil {
+		return types.ModelResponse{}, err
+	}
 	if override, ok := types.NormalizeModelOverrideCoordinate(record.modelOverride); ok {
 		coordinate = override
 	}
 	request := types.ModelRequest{Coordinate: coordinate, Temperature: types.OptionalTemperature(roleContext.ModelConfig.TemperatureEnabled, roleContext.ModelConfig.Temperature), Messages: messages, ReasoningEffort: record.reasoningEffort, Tools: roleContext.NativeTools, Stream: record.stream}
 	return s.callModelWithRetry(ctx, record, request)
+}
+
+// roleModelCoordinate 取角色默认候选的坐标；默认候选缺失即快速失败，
+// 不在运行时静默退到候选池里的其它模型。
+func roleModelCoordinate(config types.ModelConfig) (types.ModelCoordinate, error) {
+	candidate, ok := config.DefaultCandidate()
+	if !ok {
+		return types.ModelCoordinate{}, runtimeRoleFailed("role default model candidate is missing", nil)
+	}
+	return candidate.Coordinate, nil
 }
 
 func (s *system) callModelWithRetry(ctx context.Context, record *runRecord, request types.ModelRequest) (types.ModelResponse, error) {

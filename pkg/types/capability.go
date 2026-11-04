@@ -11,6 +11,9 @@ const (
 	ToolCapabilityWorkspace          = "workspace"
 	ToolCapabilitySessionAttachments = "session-attachments"
 	ToolCapabilitySessionState       = "session-state"
+	// ToolCapabilitySessionMessage 是发送会话消息能力：工具请宿主把一个角色
+	// 当成真实会话消息发送，并把角色停下后的最新一条消息交给工具。
+	ToolCapabilitySessionMessage = "session-message"
 )
 
 // 能力访问方式：声明与授权都以读、写、引用显式分离。
@@ -80,6 +83,8 @@ func IsStandardToolCapability(id string, access string) bool {
 		return access == ToolCapabilityAccessRead || access == ToolCapabilityAccessWrite || access == ToolCapabilityAccessReference
 	case ToolCapabilitySessionState:
 		return strings.TrimSpace(access) == ToolCapabilityAccessRead
+	case ToolCapabilitySessionMessage:
+		return strings.TrimSpace(access) == ToolCapabilityAccessWrite
 	default:
 		return false
 	}
@@ -215,4 +220,21 @@ type SessionAttachmentWriteRequest struct {
 // 不落盘、ID 不变、路径不变，只让它在本次回复处再出现一次。
 type SessionAttachmentReferenceRequest struct {
 	AttachmentID string `json:"attachmentId"`
+}
+
+// ToolMessageRequest 是发送会话消息的意图：工作区标识与会话标识都可留空，
+// 会话标识留空即“新建会话”，因此新建与指定会话共用同一份结构。
+type ToolMessageRequest struct {
+	RoleID      string `json:"roleId"`
+	WorkspaceID string `json:"workspaceId,omitempty"`
+	SessionID   string `json:"sessionId,omitempty"`
+	Message     string `json:"message"`
+}
+
+// ToolMessageResult 是角色停止输出后交还给工具的最新一条消息。
+type ToolMessageResult struct {
+	SessionID string `json:"sessionId"`
+	MessageID string `json:"messageId"`
+	RoleID    string `json:"roleId"`
+	Message   string `json:"message"`
 }

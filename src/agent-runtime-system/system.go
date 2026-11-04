@@ -10,6 +10,7 @@ import (
 
 type System interface {
 	StartRun(ctx context.Context, request types.RunRequest) (types.RunState, error)
+	DeliverToolMessage(ctx context.Context, request types.ToolMessageRequest) (types.ToolMessageResult, error)
 	SubmitToolConfirmation(ctx context.Context, confirmation types.ToolConfirmation) error
 	CancelRun(ctx context.Context, runID string) error
 	GetRun(ctx context.Context, runID string) (types.RunState, error)

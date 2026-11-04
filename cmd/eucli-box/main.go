@@ -204,6 +204,9 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("start agent runtime system: %w", err)
 	}
+	if err := toolSystem.SetMessageSystem(runtimeSystem); err != nil {
+		return fmt.Errorf("connect tool message capability: %w", err)
+	}
 	log.Printf("[10/13] agent-runtime-system    ✓")
 
 	assistSystem, err := aiassist.NewSystem(aiassist.Config{}, storageSystem, providerSystem)

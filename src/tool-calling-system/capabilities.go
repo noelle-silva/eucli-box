@@ -23,8 +23,9 @@ const (
 // 宿主是服务方，只应答工具主动发起的请求；写入类请求由宿主代写，
 // 产物登记进本次执行结果，工具不持有任何直接写句柄。
 type capabilitySession struct {
-	plan    types.ToolRunPlan
-	storage StorageSystem
+	plan     types.ToolRunPlan
+	storage  StorageSystem
+	messages MessageSystem
 
 	mu               sync.Mutex
 	produced         []types.MessageAttachment
@@ -32,8 +33,8 @@ type capabilitySession struct {
 	attachmentQuota  int
 }
 
-func newCapabilitySession(plan types.ToolRunPlan, storage StorageSystem) *capabilitySession {
-	return &capabilitySession{plan: plan, storage: storage, attachmentBudget: maxSessionAttachmentWriteBytes, attachmentQuota: maxSessionAttachmentDataURLBytes}
+func newCapabilitySession(plan types.ToolRunPlan, storage StorageSystem, messages MessageSystem) *capabilitySession {
+	return &capabilitySession{plan: plan, storage: storage, messages: messages, attachmentBudget: maxSessionAttachmentWriteBytes, attachmentQuota: maxSessionAttachmentDataURLBytes}
 }
 
 func (c *capabilitySession) handle(ctx context.Context, request toolcontrol.CapabilityRequest) toolcontrol.CapabilityResult {
@@ -61,6 +62,8 @@ func (c *capabilitySession) handle(ctx context.Context, request toolcontrol.Capa
 		return c.referenceSessionAttachment(ctx, request.Payload)
 	case capability == types.ToolCapabilitySessionState && access == types.ToolCapabilityAccessRead:
 		return c.readSessionState(ctx, request.Payload)
+	case capability == types.ToolCapabilitySessionMessage && access == types.ToolCapabilityAccessWrite:
+		return c.sendSessionMessage(ctx, request.Payload)
 	default:
 		return capabilityFailed("能力服务不支持该请求：" + capability + ":" + access)
 	}

@@ -13,6 +13,7 @@ type sessionStorageDocument struct {
 	WorkspaceID    string                 `json:"workspaceId,omitempty"`
 	Title          string                 `json:"title"`
 	Status         string                 `json:"status"`
+	Version        uint64                 `json:"version"`
 	Messages       []messageStorageRecord `json:"messages"`
 	AsyncToolTasks []types.AsyncToolTask  `json:"asyncToolTasks,omitempty"`
 	TokenUsage     *types.TokenUsage      `json:"tokenUsage,omitempty"`
@@ -56,6 +57,7 @@ func toSessionStorageDocument(session types.Session) sessionStorageDocument {
 		WorkspaceID:    session.WorkspaceID,
 		Title:          session.Title,
 		Status:         session.Status,
+		Version:        session.Version,
 		Messages:       messages,
 		AsyncToolTasks: session.AsyncToolTasks,
 		TokenUsage:     session.TokenUsage,

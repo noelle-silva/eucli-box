@@ -33,12 +33,7 @@ func (s *system) CreateWorkspaceSession(ctx context.Context, workspaceID string,
 	if err != nil {
 		return types.Session{}, err
 	}
-	now := time.Now().UTC()
-	session := types.Session{ID: utils.NewID("session"), WorkspaceID: scope.WorkspaceID, RoleID: scope.RoleID, Title: types.NormalizeSessionTitle(title), Status: string(types.RunStatusCreated), Messages: []types.Message{}, CreatedAt: now, UpdatedAt: now, LastActive: now}
-	if err := s.SaveSession(ctx, session); err != nil {
-		return types.Session{}, err
-	}
-	return session, nil
+	return s.createSession(ctx, scope, title)
 }
 
 func (s *system) createSession(ctx context.Context, scope sessionScope, title string) (types.Session, error) {
@@ -56,13 +51,15 @@ func (s *system) createSession(ctx context.Context, scope sessionScope, title st
 		session.GroupID = scope.ID
 	} else if scope.Kind == sessionScopeWorkspace {
 		session.WorkspaceID = scope.WorkspaceID
+		session.RoleID = scope.RoleID
 	} else {
 		session.RoleID = scope.ID
 	}
-	if err := s.SaveSession(ctx, session); err != nil {
+	saved, err := s.persistSession(ctx, session, now)
+	if err != nil {
 		return types.Session{}, err
 	}
-	return session, nil
+	return saved, nil
 }
 
 func (s *system) SaveSession(ctx context.Context, session types.Session) error {
@@ -90,28 +87,31 @@ func (s *system) persistSession(ctx context.Context, session types.Session, now 
 	}
 	lock.writers.Lock()
 	defer lock.writers.Unlock()
-	if err := s.commitSessionLocked(ctx, scope, session, lock); err != nil {
+	saved, err := s.commitSessionLocked(ctx, scope, session, lock)
+	if err != nil {
 		return types.Session{}, err
 	}
-	return session, nil
+	return saved, nil
 }
 
 // commitSessionLocked 假定调用方已持有 scope 写者锁。
 // 写序严格为：索引 dirty=true → 数据 → 索引 dirty=false，
 // 三份文档的编码与 fsync 都在锁外，临界区内只有三次 rename。
-func (s *system) commitSessionLocked(ctx context.Context, scope sessionScope, session types.Session, lock *scopeLock) error {
+// 版本号由索引里的当前版本推进，不接受调用方携带值，保证每次写入严格递增。
+func (s *system) commitSessionLocked(ctx context.Context, scope sessionScope, session types.Session, lock *scopeLock) (types.Session, error) {
 	indexFile, err := s.sessionIndexFile(scope)
 	if err != nil {
-		return err
+		return types.Session{}, err
 	}
 	dataFile, err := s.sessionDataFile(scope, session.ID)
 	if err != nil {
-		return err
+		return types.Session{}, err
 	}
 	current, err := s.readScopeIndexForWriteLocked(ctx, scope, lock)
 	if err != nil {
-		return err
+		return types.Session{}, err
 	}
+	session.Version = nextSessionVersion(current.Sessions, session.ID)
 	next := current
 	next.SchemaVersion = sessionIndexSchemaVersion
 	next.Sort = sessionIndexSort
@@ -126,34 +126,34 @@ func (s *system) commitSessionLocked(ctx context.Context, scope sessionScope, se
 
 	dirtyTemp, err := prepareJSON(ctx, indexFile, dirty)
 	if err != nil {
-		return s.failSessionWrite("failed to prepare session index dirty marker", err)
+		return types.Session{}, s.failSessionWrite("failed to prepare session index dirty marker", err)
 	}
 	defer func() { _ = os.Remove(dirtyTemp) }()
 	dataTemp, err := prepareJSON(ctx, dataFile, toSessionStorageDocument(session))
 	if err != nil {
-		return storageWriteFailed("failed to prepare session data", err)
+		return types.Session{}, storageWriteFailed("failed to prepare session data", err)
 	}
 	defer func() { _ = os.Remove(dataTemp) }()
 	// dirty 位必须先于数据持久化，否则崩溃后「数据已写、脏位丢失」会变成静默过期；
 	// 最终索引是派生缓存，不 fsync：丢了会被 dirty 位或结构校验识别并重建。
 	nextTemp, err := prepareJSONDerived(ctx, indexFile, next)
 	if err != nil {
-		return s.failSessionWrite("failed to prepare session index", err)
+		return types.Session{}, s.failSessionWrite("failed to prepare session index", err)
 	}
 	defer func() { _ = os.Remove(nextTemp) }()
 
 	lock.mu.Lock()
 	if err := commitJSON(dirtyTemp, indexFile); err != nil {
 		lock.mu.Unlock()
-		return s.failSessionWrite("failed to write session index dirty marker", err)
+		return types.Session{}, s.failSessionWrite("failed to write session index dirty marker", err)
 	}
 	if err := commitJSON(dataTemp, dataFile); err != nil {
 		lock.mu.Unlock()
-		return storageWriteFailed("failed to replace session data", err)
+		return types.Session{}, storageWriteFailed("failed to replace session data", err)
 	}
 	if err := commitJSON(nextTemp, indexFile); err != nil {
 		lock.mu.Unlock()
-		return s.failSessionWrite("failed to write session index", err)
+		return types.Session{}, s.failSessionWrite("failed to write session index", err)
 	}
 	lock.mu.Unlock()
 
@@ -161,12 +161,23 @@ func (s *system) commitSessionLocked(ctx context.Context, scope sessionScope, se
 	s.sessionMetrics.dataWrites.Add(1)
 	attachmentsDir, err := s.sessionAttachmentsDir(scope, session.ID)
 	if err != nil {
-		return err
+		return types.Session{}, err
 	}
 	if err := ensureDirs(attachmentsDir); err != nil {
-		return storageWriteFailed("failed to create session attachments directory", err)
+		return types.Session{}, storageWriteFailed("failed to create session attachments directory", err)
 	}
-	return nil
+	return session, nil
+}
+
+// nextSessionVersion 由当前索引里的版本推进：新会话从 1 开始，
+// 已有会话严格加一，调用方传入的版本号不参与判定。
+func nextSessionVersion(summaries []types.SessionSummary, sessionID string) uint64 {
+	for _, summary := range summaries {
+		if summary.ID == sessionID {
+			return summary.Version + 1
+		}
+	}
+	return 1
 }
 
 // failSessionWrite 统一索引写失败的出口：绝不吞错、绝不降级为只写数据，
@@ -204,7 +215,8 @@ func (s *system) SaveSessionMessages(ctx context.Context, save types.SessionMess
 	if err != nil {
 		return err
 	}
-	return s.commitSessionLocked(ctx, scope, normalizeSessionForWrite(merged, now), lock)
+	_, err = s.commitSessionLocked(ctx, scope, normalizeSessionForWrite(merged, now), lock)
+	return err
 }
 
 func (s *system) UpdateSessionSettings(ctx context.Context, roleID string, sessionID string, patch types.SessionSettingsPatch) (types.Session, error) {
@@ -337,10 +349,11 @@ func (s *system) mutateSession(ctx context.Context, scope sessionScope, sessionI
 		current.LastActive = now
 	}
 	next := normalizeSessionForWrite(current, now)
-	if err := s.commitSessionLocked(ctx, scope, next, lock); err != nil {
+	saved, err := s.commitSessionLocked(ctx, scope, next, lock)
+	if err != nil {
 		return types.Session{}, false, err
 	}
-	return next, true, nil
+	return saved, true, nil
 }
 
 // 公开会话读取只持 scope 读锁做一次 ReadFile，解码与归一化全在锁外。

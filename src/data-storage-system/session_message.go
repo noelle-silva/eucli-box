@@ -32,6 +32,9 @@ func normalizeSession(session types.Session, clock time.Time, pure bool) types.S
 	if session.Status == "" {
 		session.Status = string(types.RunStatusCreated)
 	}
+	if session.Version == 0 {
+		session.Version = 1
+	}
 	baseline := firstNonZeroTimeOrZero(session.CreatedAt, session.LastActive, session.UpdatedAt, clock)
 	if session.CreatedAt.IsZero() {
 		session.CreatedAt = baseline

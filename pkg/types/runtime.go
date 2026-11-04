@@ -199,12 +199,14 @@ type RunAttachment struct {
 }
 
 type Session struct {
-	ID             string          `json:"id"`
-	RoleID         string          `json:"roleId"`
-	GroupID        string          `json:"groupId,omitempty"`
-	WorkspaceID    string          `json:"workspaceId,omitempty"`
-	Title          string          `json:"title"`
-	Status         string          `json:"status"`
+	ID          string `json:"id"`
+	RoleID      string `json:"roleId"`
+	GroupID     string `json:"groupId,omitempty"`
+	WorkspaceID string `json:"workspaceId,omitempty"`
+	Title       string `json:"title"`
+	Status      string `json:"status"`
+	// Version 是会话事实版本号：每次会话写入严格递增，数值越大代表事实越新。
+	Version        uint64          `json:"version"`
 	Messages       []Message       `json:"messages"`
 	AsyncToolTasks []AsyncToolTask `json:"asyncToolTasks,omitempty"`
 	// TokenUsage 是会话级用量字段：只记录上游返回的用量真值，每次拿到新真值即整体覆盖，
@@ -328,6 +330,7 @@ type SessionSummary struct {
 	Title              string    `json:"title"`
 	LastMessagePreview string    `json:"lastMessagePreview"`
 	Status             string    `json:"status"`
+	Version            uint64    `json:"version"`
 	CreatedAt          time.Time `json:"createdAt"`
 	UpdatedAt          time.Time `json:"updatedAt"`
 	LastActive         time.Time `json:"lastActive"`

@@ -43,7 +43,7 @@ func TestSessionAttachmentReferenceDoesNotWriteFiles(t *testing.T) {
 	storage := newFakeToolStorage()
 	existing := types.MessageAttachment{ID: "att-9", Kind: "image", Name: "历史图", Mime: "image/png", Path: "sessions/roles/developer/session-1/attachments/att-9/image.png"}
 	storage.sessions["session-1"] = types.Session{ID: "session-1", Messages: []types.Message{{ID: "m1", Attachments: []types.MessageAttachment{existing}}}}
-	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestTool()), storage)
+	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestTool()), storage, nil)
 
 	payload, _ := json.Marshal(types.SessionAttachmentReferenceRequest{AttachmentID: "att-9"})
 	result := session.handle(context.Background(), toolcontrol.CapabilityRequest{Capability: types.ToolCapabilitySessionAttachments, Access: types.ToolCapabilityAccessReference, Payload: payload})
@@ -67,7 +67,7 @@ func TestSessionAttachmentReferenceDoesNotWriteFiles(t *testing.T) {
 func TestSessionAttachmentReferenceRequiresDeclarationAndGrant(t *testing.T) {
 	storage := newFakeToolStorage()
 	tool := types.ToolDefinition{ID: "plain-tool", Name: "plain-tool"}
-	session := newCapabilitySession(capabilityTestPlan(storage, tool), storage)
+	session := newCapabilitySession(capabilityTestPlan(storage, tool), storage, nil)
 	payload, _ := json.Marshal(types.SessionAttachmentReferenceRequest{AttachmentID: "att-9"})
 	result := session.handle(context.Background(), toolcontrol.CapabilityRequest{Capability: types.ToolCapabilitySessionAttachments, Access: types.ToolCapabilityAccessReference, Payload: payload})
 	if result.Status != toolcontrol.CapabilityStatusFailed || !strings.Contains(result.Error, "未声明") {
@@ -75,7 +75,7 @@ func TestSessionAttachmentReferenceRequiresDeclarationAndGrant(t *testing.T) {
 	}
 
 	declared := types.ToolDefinition{ID: "image-worker", Name: "image-worker", Capabilities: []types.ToolCapability{{ID: types.ToolCapabilitySessionAttachments, Access: types.ToolCapabilityAccessReference, Name: "引用会话图片"}}}
-	session = newCapabilitySession(capabilityTestPlan(storage, declared), storage)
+	session = newCapabilitySession(capabilityTestPlan(storage, declared), storage, nil)
 	result = session.handle(context.Background(), toolcontrol.CapabilityRequest{Capability: types.ToolCapabilitySessionAttachments, Access: types.ToolCapabilityAccessReference, Payload: payload})
 	if result.Status != toolcontrol.CapabilityStatusDenied || result.Error != toolcontrol.CapabilityDeniedMessage {
 		t.Fatalf("ungranted reference result = %#v", result)
@@ -85,7 +85,7 @@ func TestSessionAttachmentReferenceRequiresDeclarationAndGrant(t *testing.T) {
 func TestCapabilityRequestRequiresDeclaration(t *testing.T) {
 	storage := newFakeToolStorage()
 	tool := types.ToolDefinition{ID: "plain-tool", Name: "plain-tool"}
-	session := newCapabilitySession(capabilityTestPlan(storage, tool), storage)
+	session := newCapabilitySession(capabilityTestPlan(storage, tool), storage, nil)
 	result := session.handle(context.Background(), toolcontrol.CapabilityRequest{Capability: types.ToolCapabilitySessionAttachments, Access: types.ToolCapabilityAccessRead, Payload: json.RawMessage(`{"operation":"list"}`)})
 	if result.Status != toolcontrol.CapabilityStatusFailed || !strings.Contains(result.Error, "未声明") {
 		t.Fatalf("undeclared capability result = %#v", result)
@@ -95,7 +95,7 @@ func TestCapabilityRequestRequiresDeclaration(t *testing.T) {
 func TestCapabilityRequestRequiresUserGrant(t *testing.T) {
 	storage := newFakeToolStorage()
 	tool := types.ToolDefinition{ID: "image-worker", Name: "image-worker", Capabilities: capabilityTestTool().Capabilities}
-	session := newCapabilitySession(capabilityTestPlan(storage, tool), storage)
+	session := newCapabilitySession(capabilityTestPlan(storage, tool), storage, nil)
 	result := session.handle(context.Background(), toolcontrol.CapabilityRequest{Capability: types.ToolCapabilitySessionAttachments, Access: types.ToolCapabilityAccessRead, Payload: json.RawMessage(`{"operation":"list"}`)})
 	if result.Status != toolcontrol.CapabilityStatusDenied || result.Error != toolcontrol.CapabilityDeniedMessage {
 		t.Fatalf("ungranted capability result = %#v", result)
@@ -107,7 +107,7 @@ func TestSessionAttachmentsReadListsAndReadsImages(t *testing.T) {
 	dataURL := "data:image/png;base64,aGVsbG8="
 	storage.images["sessions/roles/developer/session-1/attachments/att-9/image.png"] = dataURL
 	storage.sessions["session-1"] = types.Session{ID: "session-1", Messages: []types.Message{{ID: "m1", Attachments: []types.MessageAttachment{{ID: "att-9", Kind: "image", Name: "参考图", Mime: "image/png", Path: "sessions/roles/developer/session-1/attachments/att-9/image.png"}}}}}
-	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestTool()), storage)
+	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestTool()), storage, nil)
 
 	list := session.handle(context.Background(), toolcontrol.CapabilityRequest{Capability: types.ToolCapabilitySessionAttachments, Access: types.ToolCapabilityAccessRead, Payload: json.RawMessage(`{"operation":"list"}`)})
 	if list.Status != toolcontrol.CapabilityStatusSuccess {
@@ -127,7 +127,7 @@ func TestSessionAttachmentsReadListsAndReadsImages(t *testing.T) {
 
 func TestSessionAttachmentWriteIsProxiedAndCollected(t *testing.T) {
 	storage := newFakeToolStorage()
-	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestTool()), storage)
+	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestTool()), storage, nil)
 	result := session.handle(context.Background(), toolcontrol.CapabilityRequest{Capability: types.ToolCapabilitySessionAttachments, Access: types.ToolCapabilityAccessWrite, Payload: json.RawMessage(`{"name":"生成图","dataUrl":"data:image/png;base64,aGVsbG8="}`)})
 	if result.Status != toolcontrol.CapabilityStatusSuccess {
 		t.Fatalf("write result = %#v", result)
@@ -143,7 +143,7 @@ func TestSessionAttachmentWriteIsProxiedAndCollected(t *testing.T) {
 
 func TestSessionAttachmentWriteRejectsOversizePayload(t *testing.T) {
 	storage := newFakeToolStorage()
-	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestTool()), storage)
+	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestTool()), storage, nil)
 	session.attachmentQuota = 32
 	payload, _ := json.Marshal(types.SessionAttachmentWriteRequest{Name: "大图", DataURL: "data:image/png;base64," + strings.Repeat("A", 64)})
 	result := session.handle(context.Background(), toolcontrol.CapabilityRequest{Capability: types.ToolCapabilitySessionAttachments, Access: types.ToolCapabilityAccessWrite, Payload: payload})
@@ -159,7 +159,7 @@ func TestSessionAttachmentWriteRejectsOversizePayload(t *testing.T) {
 // 失败写入原额退回，成功写入计入预算，预算耗尽后拒绝。
 func TestSessionAttachmentWriteBudgetIsReleasedOnFailure(t *testing.T) {
 	storage := newFakeToolStorage()
-	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestTool()), storage)
+	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestTool()), storage, nil)
 	session.attachmentBudget = 23
 
 	failedPayload, _ := json.Marshal(types.SessionAttachmentWriteRequest{Name: "非法", DataURL: "data:text/plain;base64,"})
@@ -184,7 +184,7 @@ func TestSessionStateReadReturnsDeclaredValues(t *testing.T) {
 	storage := newFakeToolStorage()
 	storage.sessions["session-1"] = types.Session{ID: "session-1", Title: "测试会话", Messages: []types.Message{{ID: "m1"}, {ID: "m2"}}, TokenUsage: &types.TokenUsage{InputTokens: intPtr(30), OutputTokens: intPtr(12), TotalTokens: intPtr(42)}}
 	storage.roles["developer"] = types.Role{ID: "developer", Name: "开发者"}
-	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestTool()), storage)
+	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestTool()), storage, nil)
 
 	result := session.handle(context.Background(), toolcontrol.CapabilityRequest{Capability: types.ToolCapabilitySessionState, Access: types.ToolCapabilityAccessRead, Payload: json.RawMessage(`{}`)})
 	if result.Status != toolcontrol.CapabilityStatusSuccess {
@@ -208,7 +208,7 @@ func intPtr(value int) *int {
 func TestSessionTokenUsageStaysEmptyWithoutFieldTruth(t *testing.T) {
 	storage := newFakeToolStorage()
 	storage.sessions["session-1"] = types.Session{ID: "session-1", Title: "测试会话", Messages: []types.Message{{ID: "m1"}, {ID: "m2"}}}
-	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestTool()), storage)
+	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestTool()), storage, nil)
 
 	result := session.handle(context.Background(), toolcontrol.CapabilityRequest{Capability: types.ToolCapabilitySessionState, Access: types.ToolCapabilityAccessRead, Payload: json.RawMessage(`{"key":"session-token-estimate"}`)})
 	if result.Status != toolcontrol.CapabilityStatusSuccess {
@@ -227,7 +227,7 @@ func TestReadWorkspaceReturnsRegisteredDirectories(t *testing.T) {
 	storage.workspaces["workspace-1"] = types.Workspace{ID: "workspace-1", Name: "工作区", Directories: []types.WorkspaceDirectory{{Path: "C:/work", Alias: "work"}}}
 	plan := capabilityTestPlan(storage, capabilityTestTool())
 	plan.Scope.WorkspaceID = "workspace-1"
-	session := newCapabilitySession(plan, storage)
+	session := newCapabilitySession(plan, storage, nil)
 
 	result := session.handle(context.Background(), toolcontrol.CapabilityRequest{Capability: types.ToolCapabilityWorkspace, Access: types.ToolCapabilityAccessRead})
 	encoded, _ := json.Marshal(result.Payload)

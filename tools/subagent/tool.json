@@ -1,0 +1,46 @@
+{
+  "id": "subagent",
+  "name": "subagent",
+  "description": "子代理工具：把一条消息真正发给指定角色，等它整轮停下后取回它最新的回复。",
+  "version": "0.1.0",
+  "eucliBoxCompatibility": {
+    "minimumVersion": "0.1.0",
+    "maximumVersionExclusive": "0.2.0"
+  },
+  "promptDescription": "子代理工具：把一个角色当成子代理来用。传入角色 ID 与消息内容，宿主会把这条消息真正发进该角色的会话，等它整轮停下，再把它的最新一条回复交回。\n\n用途：\n把一段独立的工作交给另一个角色去做，并拿到它的答复，不需要主人手动转发。\n\n参数：\n- roleId（必填）：目标角色 ID。\n- message（必填）：要发出去的消息内容。\n- sessionId（可空）：留空即新建会话，适合一次性的独立任务；填写则续接该会话，适合连续追问同一个子代理。\n- workspaceId（可空）：留空是普通会话；填写则在指定工作区的会话里发言。\n\n结果：\n返回会话标识、消息标识、角色标识与角色最新回复的全文。\n\n失败区分：\n角色不存在、会话不存在等由宿主回执，原因原样带回；等待期间被取消，宿主按停止按钮同一入口停下该运行，返回已取消。",
+  "defaultInvocationMode": "sync",
+  "type": "local",
+  "capabilities": [
+    {
+      "id": "session-message",
+      "access": "write",
+      "name": "发送会话消息",
+      "description": "把一条消息真正发进指定角色的会话，等该角色停下后取回它最新的回复。"
+    }
+  ],
+  "bodyDirectory": ".",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "roleId": {
+        "type": "string",
+        "description": "目标角色 ID。"
+      },
+      "message": {
+        "type": "string",
+        "description": "要发给该角色的消息内容。"
+      },
+      "sessionId": {
+        "type": "string",
+        "description": "可空。留空即新建会话；填写则续接该会话继续追问。"
+      },
+      "workspaceId": {
+        "type": "string",
+        "description": "可空。留空是普通会话；填写则在指定工作区的会话里发言。"
+      }
+    },
+    "required": ["roleId", "message"],
+    "additionalProperties": false
+  },
+  "binaries": []
+}

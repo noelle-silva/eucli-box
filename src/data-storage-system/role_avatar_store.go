@@ -9,9 +9,8 @@ import (
 	"strings"
 )
 
-var roleAvatarFiles = []string{"avatar.png", "avatar.jpg", "avatar.webp", "avatar.bin", "avatar.json"}
-
-var roleAvatarAllowedImageMIMEs = map[string]string{"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
+// roleAvatarBaseName 是角色头像的文件基名：目录内只保留一个扩展名。
+const roleAvatarBaseName = "avatar"
 
 func (s *system) SaveRoleAvatar(ctx context.Context, roleID string, dataURL string) error {
 	if err := ctx.Err(); err != nil {
@@ -20,7 +19,7 @@ func (s *system) SaveRoleAvatar(ctx context.Context, roleID string, dataURL stri
 	if err := s.requireRoleExists(roleID); err != nil {
 		return err
 	}
-	image, err := decodeImageDataURL(dataURL, roleAvatarAllowedImageMIMEs)
+	image, err := decodeImageDataURL(dataURL, entityIconImageFormats)
 	if err != nil {
 		return storageInvalid("avatar image must be a png, jpg, or webp data url", err)
 	}
@@ -31,7 +30,7 @@ func (s *system) SaveRoleAvatar(ctx context.Context, roleID string, dataURL stri
 	if err := ensureDirs(dir); err != nil {
 		return storageWriteFailed("failed to create role avatar directory", err)
 	}
-	if err := writeRoleAvatarFile(ctx, dir, image); err != nil {
+	if err := writeEntityIconFile(ctx, dir, roleAvatarBaseName, image); err != nil {
 		return storageWriteFailed("failed to write role avatar", err)
 	}
 	return nil
@@ -98,34 +97,6 @@ func (s *system) roleAvatarDir(roleID string) (string, error) {
 	return filepath.Join(dir, "attachments", "avatar"), nil
 }
 
-func writeRoleAvatarFile(ctx context.Context, dir string, image storedImage) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	target := filepath.Join(dir, "avatar."+image.Ext)
-	tmp, err := os.CreateTemp(dir, ".avatar-*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }()
-	if _, err := tmp.Write(image.Payload); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := removeRoleAvatarNamedFiles(dir); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, target)
-}
-
 func findRoleAvatarFile(dir string) (string, string, error) {
 	candidates := []struct {
 		Name string
@@ -148,21 +119,10 @@ func findRoleAvatarFile(dir string) (string, string, error) {
 }
 
 func removeRoleAvatarFiles(dir string) error {
-	if err := removeRoleAvatarNamedFiles(dir); err != nil {
+	if err := removeEntityIconFiles(dir, roleAvatarBaseName); err != nil {
 		return err
 	}
 	return removeRoleAvatarTempFiles(dir)
-}
-
-func removeRoleAvatarNamedFiles(dir string) error {
-	for _, fileName := range roleAvatarFiles {
-		err := os.Remove(filepath.Join(dir, fileName))
-		if err == nil || errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		return err
-	}
-	return nil
 }
 
 func removeRoleAvatarTempFiles(dir string) error {
@@ -173,8 +133,9 @@ func removeRoleAvatarTempFiles(dir string) error {
 		}
 		return err
 	}
+	prefix := "." + roleAvatarBaseName + "-"
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasPrefix(entry.Name(), ".avatar-") || !strings.HasSuffix(entry.Name(), ".tmp") {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), prefix) || !strings.HasSuffix(entry.Name(), ".tmp") {
 			continue
 		}
 		err := os.Remove(filepath.Join(dir, entry.Name()))

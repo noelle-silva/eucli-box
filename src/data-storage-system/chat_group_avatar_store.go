@@ -15,7 +15,7 @@ func (s *system) SaveChatGroupAvatar(ctx context.Context, groupID string, dataUR
 	if err := s.requireChatGroupExists(groupID); err != nil {
 		return err
 	}
-	image, err := decodeImageDataURL(dataURL, roleAvatarAllowedImageMIMEs)
+	image, err := decodeImageDataURL(dataURL, entityIconImageFormats)
 	if err != nil {
 		return storageInvalid("avatar image must be a png, jpg, or webp data url", err)
 	}
@@ -26,7 +26,7 @@ func (s *system) SaveChatGroupAvatar(ctx context.Context, groupID string, dataUR
 	if err := ensureDirs(dir); err != nil {
 		return storageWriteFailed("failed to create group avatar directory", err)
 	}
-	if err := writeRoleAvatarFile(ctx, dir, image); err != nil {
+	if err := writeEntityIconFile(ctx, dir, roleAvatarBaseName, image); err != nil {
 		return storageWriteFailed("failed to write group avatar", err)
 	}
 	return nil

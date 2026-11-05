@@ -42,6 +42,8 @@
 
 ## 未发布
 
+- 工作区身份图标（业务端先行）：工作区新增图标能力，两种载体——图像图标（上传后落在工作区数据目录 `attachments/icon/image.<png|jpg|webp>`，存储事实只记相对工作区数据目录的路径）与内联 SVG 图标（源码内联保存在 `attachments/icon/icon.json`）。图标是独立资源，读写走 `GET/PUT/DELETE /api/workspaces/{workspaceID}/icon`，与角色头像、群组头像同一形态；全量保存工作区的请求碰不到图标，客户端未适配期间也不会被静默清空。SVG 在写入时校验：脚本、事件属性、`<style>`、`<foreignObject>`、外部引用（含 `url(...)` 外链）、DOCTYPE 与实体声明一律拒绝（上限 64 KB）；图像复用实体图标白名单（png/jpg/webp）。无图标以 404 表达。
+
 - everything 工具不再自带 Everything 发布物、权限管家、专属实例与保活机制：移除 `providers/everything/` 与全部打包资产声明、`authorize` / `index` 动作、权限管家与保护区引擎安装、工具专属运行实例与保活守卫；动作收口为单一搜索（删除 `action` 参数），配置收口为访问地址（endpoint）+ 访问钥匙（key）。工具改为通过 Everything 应用开放接口（本机 HTTP JSON-RPC + Bearer）执行搜索，`timeoutMs` 只作用于对应用的请求、不再打穿控制通道。发布链同步：删除 `everything-root` 发行资产配方与 Everything 专属的 `existing` 资产类别；工具升版 0.5.0。
 
 - ai-image 加固：参考图本地校验（格式与最短边 64 像素，不合规本地拒绝不发上游）；timeoutMs 显式取值范围校验（5000-3600000 毫秒，越界返回参数错误，不再静默钳制）；生图请求遇连接中断与 502/503/504 自动重试一次并标注；配置写入跨进程串行化（并发编辑不再静默丢失）与替换退避重试；错误反馈收口（只呈现配置区逻辑路径、失败附可重试标记与建议动作）。

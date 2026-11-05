@@ -97,6 +97,18 @@ func (scope sessionScope) fingerprint() string {
 	return scope.key()
 }
 
+// location 把 scope 事实投影成会话变更事件的完整定位。
+func (scope sessionScope) location(sessionID string) types.SessionLocation {
+	switch scope.Kind {
+	case sessionScopeGroup:
+		return types.GroupSessionLocation(scope.ID, sessionID)
+	case sessionScopeWorkspace:
+		return types.WorkspaceSessionLocation(scope.WorkspaceID, scope.RoleID, sessionID)
+	default:
+		return types.RoleSessionLocation(scope.ID, sessionID)
+	}
+}
+
 func (s *system) sessionDataFile(scope sessionScope, sessionID string) (string, error) {
 	scope, err := cleanSessionScope(scope)
 	if err != nil {

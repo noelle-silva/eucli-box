@@ -563,7 +563,7 @@ func (s *system) UpdateWorkspaceSessionTitle(ctx context.Context, workspaceID st
 }
 
 func (s *system) updateSessionTitle(ctx context.Context, scope sessionScope, sessionID string, title string) (types.Session, error) {
-	return s.updateSessionAtomically(ctx, scope, sessionID, func(session *types.Session, _ time.Time) error {
+	return s.updateSessionAtomically(ctx, scope, sessionID, types.SessionChangeSessionPersisted, func(session *types.Session, _ time.Time) error {
 		session.Title = types.NormalizeSessionTitle(title)
 		return nil
 	})
@@ -619,7 +619,7 @@ func (s *system) updateSessionMessage(ctx context.Context, scope sessionScope, s
 	if patch.Content == nil && patch.Parts == nil {
 		return types.Message{}, storageInvalid("message patch is empty", nil)
 	}
-	session, _, err := s.mutateSession(ctx, scope, sessionID, func(current *types.Session, now time.Time) (bool, error) {
+	session, _, err := s.mutateSession(ctx, scope, sessionID, types.SessionChangeMessageEdited, func(current *types.Session, now time.Time) (bool, error) {
 		if reason := protectedSessionMessageMutationReason(*current, messageID); reason != "" {
 			return false, storageInvalid(reason, nil)
 		}
@@ -670,7 +670,7 @@ func (s *system) deleteSessionMessage(ctx context.Context, scope sessionScope, s
 	if messageID == "" {
 		return types.Session{}, storageInvalid("message id is required", nil)
 	}
-	session, _, err := s.mutateSession(ctx, scope, sessionID, func(current *types.Session, now time.Time) (bool, error) {
+	session, _, err := s.mutateSession(ctx, scope, sessionID, types.SessionChangeMessageDeleted, func(current *types.Session, now time.Time) (bool, error) {
 		if reason := protectedSessionMessageMutationReason(*current, messageID); reason != "" {
 			return false, storageInvalid(reason, nil)
 		}
@@ -723,7 +723,7 @@ func (s *system) deleteSessionMessageSubtree(ctx context.Context, scope sessionS
 	if messageID == "" {
 		return types.Session{}, storageInvalid("message id is required", nil)
 	}
-	session, _, err := s.mutateSession(ctx, scope, sessionID, func(current *types.Session, _ time.Time) (bool, error) {
+	session, _, err := s.mutateSession(ctx, scope, sessionID, types.SessionChangeMessageSubtreeDeleted, func(current *types.Session, _ time.Time) (bool, error) {
 		if reason := protectedSessionMessageSubtreeMutationReason(*current, messageID); reason != "" {
 			return false, storageInvalid(reason, nil)
 		}

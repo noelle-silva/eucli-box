@@ -67,6 +67,12 @@ func (s *system) SaveSession(ctx context.Context, session types.Session) error {
 	return err
 }
 
+// sessionWrite 是会话写入管线的唯一输入：归一化后的会话事实与本次变更类型。
+type sessionWrite struct {
+	Session    types.Session
+	ChangeType types.SessionChangeType
+}
+
 // persistSession 是整份会话覆盖写：写 data.json，并把本 scope 索引里的单条摘要 upsert。
 // 它不读回旧会话，也不触发任何全库重建。
 func (s *system) persistSession(ctx context.Context, session types.Session, now time.Time) (types.Session, error) {
@@ -87,7 +93,7 @@ func (s *system) persistSession(ctx context.Context, session types.Session, now 
 	}
 	lock.writers.Lock()
 	defer lock.writers.Unlock()
-	saved, err := s.commitSessionLocked(ctx, scope, session, lock)
+	saved, err := s.commitSessionLocked(ctx, scope, sessionWrite{Session: session, ChangeType: types.SessionChangeSessionPersisted}, lock)
 	if err != nil {
 		return types.Session{}, err
 	}
@@ -98,7 +104,9 @@ func (s *system) persistSession(ctx context.Context, session types.Session, now 
 // 写序严格为：索引 dirty=true → 数据 → 索引 dirty=false，
 // 三份文档的编码与 fsync 都在锁外，临界区内只有三次 rename。
 // 版本号由索引里的当前版本推进，不接受调用方携带值，保证每次写入严格递增。
-func (s *system) commitSessionLocked(ctx context.Context, scope sessionScope, session types.Session, lock *scopeLock) (types.Session, error) {
+// 写盘成功后才投递一条与本次变更事实对应的已就绪事件。
+func (s *system) commitSessionLocked(ctx context.Context, scope sessionScope, write sessionWrite, lock *scopeLock) (types.Session, error) {
+	session := write.Session
 	indexFile, err := s.sessionIndexFile(scope)
 	if err != nil {
 		return types.Session{}, err
@@ -112,6 +120,10 @@ func (s *system) commitSessionLocked(ctx context.Context, scope sessionScope, se
 		return types.Session{}, err
 	}
 	session.Version = nextSessionVersion(current.Sessions, session.ID)
+	changeEvent, err := newSessionChangeEvent(scope, session.ID, write.ChangeType, session.Version, time.Now().UTC())
+	if err != nil {
+		return types.Session{}, err
+	}
 	next := current
 	next.SchemaVersion = sessionIndexSchemaVersion
 	next.Sort = sessionIndexSort
@@ -123,6 +135,14 @@ func (s *system) commitSessionLocked(ctx context.Context, scope sessionScope, se
 	dirty.SchemaVersion = sessionIndexSchemaVersion
 	dirty.Sort = sessionIndexSort
 	dirty.Dirty = true
+
+	attachmentsDir, err := s.sessionAttachmentsDir(scope, session.ID)
+	if err != nil {
+		return types.Session{}, err
+	}
+	if err := ensureDirs(attachmentsDir); err != nil {
+		return types.Session{}, storageWriteFailed("failed to create session attachments directory", err)
+	}
 
 	dirtyTemp, err := prepareJSON(ctx, indexFile, dirty)
 	if err != nil {
@@ -159,13 +179,7 @@ func (s *system) commitSessionLocked(ctx context.Context, scope sessionScope, se
 
 	s.sessionMetrics.indexWrites.Add(1)
 	s.sessionMetrics.dataWrites.Add(1)
-	attachmentsDir, err := s.sessionAttachmentsDir(scope, session.ID)
-	if err != nil {
-		return types.Session{}, err
-	}
-	if err := ensureDirs(attachmentsDir); err != nil {
-		return types.Session{}, storageWriteFailed("failed to create session attachments directory", err)
-	}
+	s.publishSessionChange(changeEvent)
 	return session, nil
 }
 
@@ -215,8 +229,26 @@ func (s *system) SaveSessionMessages(ctx context.Context, save types.SessionMess
 	if err != nil {
 		return err
 	}
-	_, err = s.commitSessionLocked(ctx, scope, normalizeSessionForWrite(merged, now), lock)
+	_, err = s.commitSessionLocked(ctx, scope, sessionWrite{Session: normalizeSessionForWrite(merged, now), ChangeType: sessionMessageSaveChangeType(save)}, lock)
 	return err
+}
+
+// sessionMessageSaveChangeType 按本次写入携带的变更种类判定唯一变更事实：
+// 只含新增消息记 message_added，只含删除记 message_deleted；
+// 混合变更或仅落盘状态/元数据时，事实是整份会话被持久化。
+func sessionMessageSaveChangeType(save types.SessionMessageSave) types.SessionChangeType {
+	hasWrites := len(save.Writes) > 0
+	hasDeletes := len(save.Deletes) > 0
+	switch {
+	case hasWrites && hasDeletes:
+		return types.SessionChangeSessionPersisted
+	case hasWrites:
+		return types.SessionChangeMessageAdded
+	case hasDeletes:
+		return types.SessionChangeMessageDeleted
+	default:
+		return types.SessionChangeSessionPersisted
+	}
 }
 
 func (s *system) UpdateSessionSettings(ctx context.Context, roleID string, sessionID string, patch types.SessionSettingsPatch) (types.Session, error) {
@@ -232,7 +264,7 @@ func (s *system) UpdateWorkspaceSessionSettings(ctx context.Context, workspaceID
 }
 
 func (s *system) updateSessionSettings(ctx context.Context, scope sessionScope, sessionID string, patch types.SessionSettingsPatch) (types.Session, error) {
-	return s.updateSessionAtomically(ctx, scope, sessionID, func(session *types.Session, _ time.Time) error {
+	return s.updateSessionAtomically(ctx, scope, sessionID, types.SessionChangeSessionPersisted, func(session *types.Session, _ time.Time) error {
 		if patch.StreamEnabled != nil {
 			session.Metadata = types.PutStreamEnabledSessionMetadata(session.Metadata, *patch.StreamEnabled)
 		}
@@ -277,7 +309,7 @@ func (s *system) UpdateWorkspaceSessionHookPrompt(ctx context.Context, workspace
 }
 
 func (s *system) updateSessionHookPrompt(ctx context.Context, scope sessionScope, sessionID string, selection types.HookPromptSelection) (types.Session, error) {
-	return s.updateSessionAtomically(ctx, scope, sessionID, func(session *types.Session, _ time.Time) error {
+	return s.updateSessionAtomically(ctx, scope, sessionID, types.SessionChangeSessionPersisted, func(session *types.Session, _ time.Time) error {
 		session.Metadata = types.PutHookPromptSessionMetadata(session.Metadata, selection)
 		return nil
 	})
@@ -299,14 +331,14 @@ func (s *system) updateSessionToolAuthorization(ctx context.Context, scope sessi
 	if strings.TrimSpace(toolID) == "" {
 		return types.Session{}, storageInvalid("tool id is required", nil)
 	}
-	return s.updateSessionAtomically(ctx, scope, sessionID, func(session *types.Session, _ time.Time) error {
+	return s.updateSessionAtomically(ctx, scope, sessionID, types.SessionChangeSessionPersisted, func(session *types.Session, _ time.Time) error {
 		session.Metadata = types.PutSessionToolAuthorization(session.Metadata, toolID, authorized)
 		return nil
 	})
 }
 
-func (s *system) updateSessionAtomically(ctx context.Context, scope sessionScope, sessionID string, mutate func(*types.Session, time.Time) error) (types.Session, error) {
-	session, _, err := s.mutateSession(ctx, scope, sessionID, func(current *types.Session, now time.Time) (bool, error) {
+func (s *system) updateSessionAtomically(ctx context.Context, scope sessionScope, sessionID string, changeType types.SessionChangeType, mutate func(*types.Session, time.Time) error) (types.Session, error) {
+	session, _, err := s.mutateSession(ctx, scope, sessionID, changeType, func(current *types.Session, now time.Time) (bool, error) {
 		if err := mutate(current, now); err != nil {
 			return false, err
 		}
@@ -317,7 +349,7 @@ func (s *system) updateSessionAtomically(ctx context.Context, scope sessionScope
 
 // mutateSession 是「读快照 → 内存变更 → 落名」的唯一写原语。
 // 写者锁覆盖整段以保证读改写不丢更新；编解码与 fsync 全在 mu 之外。
-func (s *system) mutateSession(ctx context.Context, scope sessionScope, sessionID string, mutate func(*types.Session, time.Time) (bool, error)) (types.Session, bool, error) {
+func (s *system) mutateSession(ctx context.Context, scope sessionScope, sessionID string, changeType types.SessionChangeType, mutate func(*types.Session, time.Time) (bool, error)) (types.Session, bool, error) {
 	scope, err := cleanSessionScope(scope)
 	if err != nil {
 		return types.Session{}, false, err
@@ -349,7 +381,7 @@ func (s *system) mutateSession(ctx context.Context, scope sessionScope, sessionI
 		current.LastActive = now
 	}
 	next := normalizeSessionForWrite(current, now)
-	saved, err := s.commitSessionLocked(ctx, scope, next, lock)
+	saved, err := s.commitSessionLocked(ctx, scope, sessionWrite{Session: next, ChangeType: changeType}, lock)
 	if err != nil {
 		return types.Session{}, false, err
 	}

@@ -17,6 +17,7 @@ type System interface {
 	CreateSession(ctx context.Context, roleID string, title string) (types.Session, error)
 	CreateGroupSession(ctx context.Context, groupID string, title string) (types.Session, error)
 	CreateWorkspaceSession(ctx context.Context, workspaceID string, roleID string, title string) (types.Session, error)
+	SubscribeSessionChanges(ctx context.Context) (<-chan types.SessionChangeEvent, func(), error)
 	SaveSession(ctx context.Context, session types.Session) error
 	SaveSessionMessages(ctx context.Context, save types.SessionMessageSave) error
 	ClaimAsyncToolResult(ctx context.Context, session types.Session, taskID string, runID string) (bool, error)
@@ -151,6 +152,9 @@ type system struct {
 	recycleMu       sync.Mutex
 	requestRecordMu sync.Mutex
 	sessionMetrics  sessionStorageMetrics
+
+	sessionChangesMu sync.Mutex
+	sessionChanges   map[*sessionChangeSubscriber]struct{}
 }
 
 func NewSystem(config Config) (System, error) {

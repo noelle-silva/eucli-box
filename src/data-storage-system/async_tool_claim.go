@@ -21,7 +21,7 @@ func (s *system) ClaimAsyncToolResult(ctx context.Context, session types.Session
 	if err != nil {
 		return false, err
 	}
-	_, wrote, err := s.mutateSession(ctx, cleaned, session.ID, func(loaded *types.Session, now time.Time) (bool, error) {
+	_, wrote, err := s.mutateSession(ctx, cleaned, session.ID, types.SessionChangeSessionPersisted, func(loaded *types.Session, now time.Time) (bool, error) {
 		index := storedAsyncToolTaskIndex(loaded.AsyncToolTasks, taskID)
 		if index < 0 {
 			return false, nil
@@ -52,7 +52,7 @@ func (s *system) ReleaseAsyncToolResultClaim(ctx context.Context, session types.
 	if err != nil {
 		return err
 	}
-	_, _, err = s.mutateSession(ctx, cleaned, session.ID, func(loaded *types.Session, _ time.Time) (bool, error) {
+	_, _, err = s.mutateSession(ctx, cleaned, session.ID, types.SessionChangeSessionPersisted, func(loaded *types.Session, _ time.Time) (bool, error) {
 		index := storedAsyncToolTaskIndex(loaded.AsyncToolTasks, taskID)
 		if index < 0 {
 			return false, nil

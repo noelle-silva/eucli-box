@@ -888,7 +888,7 @@ func newTestGateway(t *testing.T, fakes *gatewayFakes) System {
 		}
 		sources[types.ReleaseArtifactKindPlugin] = fakes.installSourcePlugin
 	}
-	system, err := NewSystem(Config{Addr: "127.0.0.1:0", InstallSources: sources}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseSource, fakes.requestRecords)
+	system, err := NewSystem(Config{Addr: "127.0.0.1:0", InstallSources: sources, SessionChanges: fakes.sessionChanges}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseSource, fakes.requestRecords)
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -912,11 +912,12 @@ type gatewayFakes struct {
 	requestRecords      *fakeGatewayRequestRecords
 	installSource       *fakeGatewayInstallSource
 	installSourcePlugin *fakeGatewayInstallSource
+	sessionChanges      *fakeGatewaySessionChanges
 }
 
 func newGatewayFakes() *gatewayFakes {
 	stickers := newFakeGatewayStickers()
-	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), groups: newFakeGatewayGroups(), workspaces: newFakeGatewayWorkspaces(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, hooks: &fakeGatewayHooks{}, placeholders: &fakeGatewayPlaceholders{}, systemPlugins: &fakeGatewaySystemPlugins{}, assist: &fakeGatewayAssist{stickers: stickers}, releaseSource: &fakeGatewayReleaseSource{}, requestRecords: newFakeGatewayRequestRecords(), installSource: newFakeGatewayInstallSource(), installSourcePlugin: newFakeGatewayInstallSource()}
+	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), groups: newFakeGatewayGroups(), workspaces: newFakeGatewayWorkspaces(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, hooks: &fakeGatewayHooks{}, placeholders: &fakeGatewayPlaceholders{}, systemPlugins: &fakeGatewaySystemPlugins{}, assist: &fakeGatewayAssist{stickers: stickers}, releaseSource: &fakeGatewayReleaseSource{}, requestRecords: newFakeGatewayRequestRecords(), installSource: newFakeGatewayInstallSource(), installSourcePlugin: newFakeGatewayInstallSource(), sessionChanges: newFakeGatewaySessionChanges()}
 }
 
 type fakeGatewayInstallSource struct {

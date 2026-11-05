@@ -108,6 +108,12 @@ type ToolSystem interface {
 	StopToolExecution(ctx context.Context, toolID string) (types.ToolStopResult, error)
 }
 
+// SessionChangeSource 是存储层会话变更事件的唯一来源：
+// 网关只订阅并原样转发，不筛选、不改写、不重组事件事实。
+type SessionChangeSource interface {
+	SubscribeSessionChanges(ctx context.Context) (<-chan types.SessionChangeEvent, func(), error)
+}
+
 type SessionSystem interface {
 	CreateSession(ctx context.Context, roleID string, title string) (types.Session, error)
 	CreateGroupSession(ctx context.Context, groupID string, title string) (types.Session, error)
@@ -261,6 +267,7 @@ type Config struct {
 	WriteTimeout   time.Duration
 	Access         AccessSystem
 	InstallSources map[string]InstallSourceSystem
+	SessionChanges SessionChangeSource
 }
 
 type system struct {
@@ -280,6 +287,7 @@ type system struct {
 	assist         AIAssistSystem
 	releaseSource  ReleaseSourceSystem
 	requestRecords RequestRecordSystem
+	sessionChanges SessionChangeSource
 	access         AccessSystem
 	mux            *http.ServeMux
 	server         *http.Server
@@ -333,6 +341,9 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups Ch
 	if requestRecords == nil {
 		return nil, gatewayInvalid("request record system dependency is required", nil)
 	}
+	if config.SessionChanges == nil {
+		return nil, gatewayInvalid("session change source dependency is required", nil)
+	}
 	if strings.TrimSpace(config.Addr) == "" {
 		return nil, gatewayInvalid("gateway listen address is required", nil)
 	}
@@ -376,6 +387,7 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups Ch
 		assist:         assist,
 		releaseSource:  releaseSource,
 		requestRecords: requestRecords,
+		sessionChanges: config.SessionChanges,
 		placeholders:   placeholders,
 		systemPlugins:  systemPlugins,
 		access:         config.Access,

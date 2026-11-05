@@ -33,8 +33,8 @@ import (
 	networkrequest "eucli-box/src/network-request-system"
 	permission "eucli-box/src/permission-system"
 	placeholdersystem "eucli-box/src/placeholder-system"
-	requestrecord "eucli-box/src/request-record-system"
 	releasesourcesystem "eucli-box/src/release-source-system"
+	requestrecord "eucli-box/src/request-record-system"
 	roleprompt "eucli-box/src/role-prompt-system"
 	systemplugin "eucli-box/src/system-plugin-system"
 	toolcalling "eucli-box/src/tool-calling-system"
@@ -238,10 +238,11 @@ func run() error {
 		return fmt.Errorf("准备启动配置画像失败：%w", err)
 	}
 	gatewayConfig := gateway.Config{
-		Addr:       profile.ListenAddr(),
-		Key:        profile.Key,
-		BoxVersion: boxRelease.Version,
-		Access:     accessSystem,
+		Addr:           profile.ListenAddr(),
+		Key:            profile.Key,
+		BoxVersion:     boxRelease.Version,
+		Access:         accessSystem,
+		SessionChanges: storageSystem,
 		InstallSources: map[string]gateway.InstallSourceSystem{
 			types.ReleaseArtifactKindTool:   toolSourceState,
 			types.ReleaseArtifactKindPlugin: pluginSourceState,

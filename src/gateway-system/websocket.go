@@ -44,6 +44,12 @@ func (s *system) handleEventsWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer unsubscribe()
+	sessionChanges, unsubscribeSessionChanges, err := s.sessionChanges.SubscribeSessionChanges(ctx)
+	if err != nil {
+		_ = conn.WriteJSON(errorResponse{Error: errorPayloadForResponse(gatewayWebSocketFailed("failed to subscribe session changes", err))})
+		return
+	}
+	defer unsubscribeSessionChanges()
 	go func() {
 		for {
 			if _, _, err := conn.ReadMessage(); err != nil {
@@ -52,9 +58,27 @@ func (s *system) handleEventsWebSocket(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}()
-	for event := range events {
-		if err := conn.WriteJSON(event); err != nil {
+	// 运行事件与会话变更事件共用同一条长连接写出，事件一到就发，不攒批、不改写。
+	for events != nil || sessionChanges != nil {
+		select {
+		case <-ctx.Done():
 			return
+		case event, ok := <-events:
+			if !ok {
+				events = nil
+				continue
+			}
+			if err := conn.WriteJSON(event); err != nil {
+				return
+			}
+		case change, ok := <-sessionChanges:
+			if !ok {
+				sessionChanges = nil
+				continue
+			}
+			if err := conn.WriteJSON(change); err != nil {
+				return
+			}
 		}
 	}
 }

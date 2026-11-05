@@ -46,6 +46,8 @@
 
 ## 未发布
 
+- 角色与工作区新增「描述」字段（人类可见备注）：角色此前只有字段、无人读写，本次把它定成真正的备注语义（保存时只规范首尾空白）；工作区新增同义字段。两者都只随实体存储与回读，不参与提示词组装、不发给模型：`workspaceprompt.Content` 不拼工作区描述，角色提示词只来自 `Prompts`。工作区目录描述保持原样（那是业务字段，照旧进入提示词），两处类型注释已写明区别。
+
 - 工作区身份图标（业务端先行）：工作区新增图标能力，两种载体——图像图标（上传后落在工作区数据目录 `attachments/icon/image.<png|jpg|webp>`，存储事实只记相对工作区数据目录的路径）与内联 SVG 图标（源码内联保存在 `attachments/icon/icon.json`）。图标是独立资源，读写走 `GET/PUT/DELETE /api/workspaces/{workspaceID}/icon`，与角色头像、群组头像同一形态；全量保存工作区的请求碰不到图标，客户端未适配期间也不会被静默清空。SVG 在写入时校验：脚本、事件属性、`<style>`、`<foreignObject>`、外部引用（含 `url(...)` 外链）、DOCTYPE 与实体声明一律拒绝（上限 64 KB）；图像复用实体图标白名单（png/jpg/webp）。无图标以 404 表达。
 
 - everything 工具不再自带 Everything 发布物、权限管家、专属实例与保活机制：移除 `providers/everything/` 与全部打包资产声明、`authorize` / `index` 动作、权限管家与保护区引擎安装、工具专属运行实例与保活守卫；动作收口为单一搜索（删除 `action` 参数），配置收口为访问地址（endpoint）+ 访问钥匙（key）。工具改为通过 Everything 应用开放接口（本机 HTTP JSON-RPC + Bearer）执行搜索，`timeoutMs` 只作用于对应用的请求、不再打穿控制通道。发布链同步：删除 `everything-root` 发行资产配方与 Everything 专属的 `existing` 资产类别；工具升版 0.5.0。

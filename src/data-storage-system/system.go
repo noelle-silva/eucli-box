@@ -92,6 +92,9 @@ type System interface {
 	ReorderWorkspaces(ctx context.Context, workspaceIDs []string) error
 	PreviewWorkspacePrompt(ctx context.Context, workspace types.Workspace) (string, error)
 	DeleteWorkspace(ctx context.Context, workspaceID string) error
+	SaveWorkspaceIcon(ctx context.Context, workspaceID string, content types.WorkspaceIconContent) error
+	LoadWorkspaceIcon(ctx context.Context, workspaceID string) (types.WorkspaceIconContent, error)
+	DeleteWorkspaceIcon(ctx context.Context, workspaceID string) error
 
 	SaveProvider(ctx context.Context, provider types.Provider) error
 	LoadProvider(ctx context.Context, providerID string) (types.Provider, error)

@@ -155,6 +155,18 @@ func (p paths) workspaceOrderFile() string {
 	return filepath.Join(p.workspacesRoot(), "order.json")
 }
 
+// workspaceIconRelativeDir 是工作区图标资源相对工作区数据目录的路径。
+// 它既是图标目录的落点，也是图标存储事实里路径字段的基准。
+const workspaceIconRelativeDir = "attachments/icon"
+
+func (p paths) workspaceIconDir(workspaceID string) (string, error) {
+	dir, err := p.workspaceDir(workspaceID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, filepath.FromSlash(workspaceIconRelativeDir)), nil
+}
+
 func (p paths) sessionRoleDir(roleID string) (string, error) {
 	return p.safeJoin(p.sessionRolesRoot(), roleID)
 }

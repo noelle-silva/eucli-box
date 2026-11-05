@@ -16,6 +16,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"eucli-box/internal/boxrelease"
+	apperrors "eucli-box/pkg/errors"
 	"eucli-box/pkg/installsource"
 	"eucli-box/pkg/types"
 	"eucli-box/pkg/workspaceprompt"
@@ -315,6 +316,44 @@ func TestLoadWorkspaceReturnsDirectoryHealth(t *testing.T) {
 	}
 	if body.Health.Directories[1].Status != types.WorkspaceDirectoryMissing {
 		t.Fatalf("missing directory health = %#v", body.Health.Directories[1])
+	}
+}
+
+// TestWorkspaceIconRoutes 验证工作区图标是独立资源：写入、读取、删除都不经过工作区配置保存。
+func TestWorkspaceIconRoutes(t *testing.T) {
+	fakes := newGatewayFakes()
+	fakes.workspaces.workspaces["workspace-icon"] = types.Workspace{ID: "workspace-icon", Name: "带图标的工作区"}
+	system := newTestGateway(t, fakes)
+
+	putReq := httptest.NewRequest(http.MethodPut, "/api/workspaces/workspace-icon/icon", strings.NewReader(`{"kind":"svg","svg":"<svg xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0 0h1v1z\"/></svg>"}`))
+	putRec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(putRec, putReq)
+	if putRec.Code != http.StatusNoContent {
+		t.Fatalf("PUT status = %d body=%s", putRec.Code, putRec.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-icon/icon", nil)
+	getRec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("GET status = %d body=%s", getRec.Code, getRec.Body.String())
+	}
+	content := decodeResponseData[types.WorkspaceIconContent](t, getRec.Body.String())
+	if content.Kind != types.WorkspaceIconKindSVG || content.SVG == "" {
+		t.Fatalf("loaded icon = %#v", content)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/workspaces/workspace-icon/icon", nil)
+	deleteRec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusNoContent {
+		t.Fatalf("DELETE status = %d body=%s", deleteRec.Code, deleteRec.Body.String())
+	}
+
+	missingRec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(missingRec, httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-icon/icon", nil))
+	if missingRec.Code != http.StatusNotFound {
+		t.Fatalf("GET after delete status = %d body=%s", missingRec.Code, missingRec.Body.String())
 	}
 }
 
@@ -1261,11 +1300,12 @@ func (f *fakeGatewaySystemPlugins) PluginActivity(ctx context.Context, pluginID 
 
 type fakeGatewayWorkspaces struct {
 	workspaces map[string]types.Workspace
+	icons      map[string]types.WorkspaceIconContent
 	order      []string
 }
 
 func newFakeGatewayWorkspaces() *fakeGatewayWorkspaces {
-	return &fakeGatewayWorkspaces{workspaces: map[string]types.Workspace{}}
+	return &fakeGatewayWorkspaces{workspaces: map[string]types.Workspace{}, icons: map[string]types.WorkspaceIconContent{}}
 }
 
 func (f *fakeGatewayWorkspaces) SaveWorkspace(ctx context.Context, workspace types.Workspace) error {
@@ -1300,6 +1340,24 @@ func (f *fakeGatewayWorkspaces) PreviewWorkspacePrompt(ctx context.Context, work
 
 func (f *fakeGatewayWorkspaces) DeleteWorkspace(ctx context.Context, workspaceID string) error {
 	delete(f.workspaces, workspaceID)
+	return nil
+}
+
+func (f *fakeGatewayWorkspaces) SaveWorkspaceIcon(ctx context.Context, workspaceID string, content types.WorkspaceIconContent) error {
+	f.icons[workspaceID] = content
+	return nil
+}
+
+func (f *fakeGatewayWorkspaces) LoadWorkspaceIcon(ctx context.Context, workspaceID string) (types.WorkspaceIconContent, error) {
+	content, ok := f.icons[workspaceID]
+	if !ok {
+		return types.WorkspaceIconContent{}, apperrors.New("workspace-system", "workspace.icon_not_found", "workspace icon missing")
+	}
+	return content, nil
+}
+
+func (f *fakeGatewayWorkspaces) DeleteWorkspaceIcon(ctx context.Context, workspaceID string) error {
+	delete(f.icons, workspaceID)
 	return nil
 }
 

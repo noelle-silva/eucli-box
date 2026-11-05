@@ -3,14 +3,20 @@ package types
 import "time"
 
 type WorkspaceDirectory struct {
-	Path        string `json:"path"`
-	Alias       string `json:"alias"`
+	Path  string `json:"path"`
+	Alias string `json:"alias"`
+	// Description 是目录的业务说明，会随工作区提示词一起交给模型。
+	// 它是业务字段，不是备注；工作区自身的备注看 Workspace.Description。
 	Description string `json:"description,omitempty"`
 }
 
 type Workspace struct {
-	ID                string               `json:"id"`
-	Name              string               `json:"name"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Description 是给人看的备注（这个工作区是用来干什么的）：
+	// 只随实体存储与回读，不参与提示词组装，也不会发给模型。
+	// 想影响模型请用 Prompt；两者互不替代。
+	Description       string               `json:"description,omitempty"`
 	Directories       []WorkspaceDirectory `json:"directories"`
 	Prompt            string               `json:"prompt,omitempty"`
 	RegisteredRoleIDs []string             `json:"registeredRoleIds"`

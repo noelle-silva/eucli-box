@@ -66,6 +66,40 @@ func TestListWorkspacesToleratesDirectoryThatDisappearsAfterSave(t *testing.T) {
 	}
 }
 
+// 工作区描述随实体存储与回读，只做首尾空白规范化，内部换行原样保留。
+func TestSaveWorkspaceKeepsDescriptionAsNote(t *testing.T) {
+	system := newTestSystem(t)
+	ctx := context.Background()
+	workspace := types.Workspace{
+		ID:          "workspace-described",
+		Name:        "带备注的工作区",
+		Description: "  \n临时重构项目，搞完就删\n第二行备注\n  ",
+		Prompt:      "遵守项目约定",
+	}
+	if err := system.SaveWorkspace(ctx, workspace); err != nil {
+		t.Fatalf("SaveWorkspace() error = %v", err)
+	}
+
+	loaded, err := system.LoadWorkspace(ctx, workspace.ID)
+	if err != nil {
+		t.Fatalf("LoadWorkspace() error = %v", err)
+	}
+	if want := "临时重构项目，搞完就删\n第二行备注"; loaded.Description != want {
+		t.Fatalf("description = %q, want %q", loaded.Description, want)
+	}
+	if loaded.Prompt != "遵守项目约定" {
+		t.Fatalf("prompt = %q, want untouched prompt", loaded.Prompt)
+	}
+
+	workspaces, err := system.ListWorkspaces(ctx)
+	if err != nil {
+		t.Fatalf("ListWorkspaces() error = %v", err)
+	}
+	if len(workspaces) != 1 || workspaces[0].ID != workspace.ID {
+		t.Fatalf("workspaces = %#v", workspaces)
+	}
+}
+
 func TestSaveWorkspaceKeepsEntityOrderAndIndexConsistent(t *testing.T) {
 	system := newTestSystem(t)
 	ctx := context.Background()

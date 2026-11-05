@@ -12,6 +12,8 @@ func (s *system) SaveRole(ctx context.Context, role types.Role) error {
 	if err := validateRole(ctx, s.providers, role); err != nil {
 		return err
 	}
+	// 描述是给人看的备注：只做首尾空白规范化，不参与校验，也不进提示词。
+	role.Description = strings.TrimSpace(role.Description)
 	role.HookPromptPresetID = strings.TrimSpace(role.HookPromptPresetID)
 	now := time.Now().UTC()
 	if role.CreatedAt.IsZero() {

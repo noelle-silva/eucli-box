@@ -38,6 +38,21 @@ func TestSaveRoleRejectsMissingPrompt(t *testing.T) {
 	assertAppErrorCode(t, err, "role.invalid_request")
 }
 
+func TestSaveRoleTrimsDescription(t *testing.T) {
+	storage := newFakeRoleStorage()
+	providers := newFakeProviderResolver()
+	providers.models["openai-main/gpt-4.1"] = types.ModelInfo{ID: "gpt-4.1", Name: "GPT"}
+	system := newTestRoleSystem(t, storage, providers)
+	role := validRole()
+	role.Description = "  专门改文案的备注  "
+	if err := system.SaveRole(context.Background(), role); err != nil {
+		t.Fatalf("SaveRole() error = %v", err)
+	}
+	if got := storage.roles[role.ID].Description; got != "专门改文案的备注" {
+		t.Fatalf("description = %q", got)
+	}
+}
+
 func TestBuildContextUsesOnlyRoleSessionAndPassedTools(t *testing.T) {
 	storage := newFakeRoleStorage()
 	providers := newFakeProviderResolver()

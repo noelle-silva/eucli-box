@@ -187,6 +187,8 @@ func (s *system) normalizeWorkspaceForStorage(workspace types.Workspace, now tim
 		return types.Workspace{}, err
 	}
 	workspace.Directories = directories
+	// 描述是给人看的备注：只做首尾空白规范化，不参与校验，也不进提示词。
+	workspace.Description = strings.TrimSpace(workspace.Description)
 	workspace.Prompt = strings.TrimSpace(workspace.Prompt)
 	workspace.RegisteredRoleIDs = s.normalizeWorkspaceRegisteredRoleIDs(workspace.RegisteredRoleIDs)
 	baseline := firstNonZeroTime(workspace.CreatedAt, workspace.UpdatedAt, now)

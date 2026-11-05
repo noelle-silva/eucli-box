@@ -50,8 +50,11 @@ type ToolPolicy struct {
 }
 
 type Role struct {
-	ID                 string          `json:"id"`
-	Name               string          `json:"name"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Description 是给人看的备注（这个角色是用来干什么的）：
+	// 只随实体存储与回读，不参与提示词组装，也不会发给模型。
+	// 角色的提示词只有 Prompts。
 	Description        string          `json:"description"`
 	Prompts            []PromptMessage `json:"prompts"`
 	ModelConfig        ModelConfig     `json:"modelConfig"`

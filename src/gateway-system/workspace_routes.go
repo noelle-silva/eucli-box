@@ -1,15 +1,18 @@
 package gateway
 
 import (
+	"context"
 	"net/http"
 
 	"eucli-box/pkg/types"
+	"eucli-box/pkg/workspacehealth"
 	"eucli-box/pkg/workspaceprompt"
 )
 
 type workspaceResponse struct {
 	types.Workspace
-	ActualPrompt string `json:"actualPrompt"`
+	ActualPrompt string                `json:"actualPrompt"`
+	Health       types.WorkspaceHealth `json:"health"`
 }
 
 type workspacePromptPreviewResponse struct {
@@ -57,7 +60,7 @@ func (s *system) handleLoadWorkspace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, http.StatusOK, workspaceView(workspace))
+	writeData(w, http.StatusOK, workspaceView(r.Context(), workspace))
 }
 
 func (s *system) handlePreviewWorkspacePrompt(w http.ResponseWriter, r *http.Request) {
@@ -247,8 +250,12 @@ func workspaceRolePathValues(r *http.Request) (string, string, error) {
 	return workspaceID, roleID, nil
 }
 
-func workspaceView(workspace types.Workspace) workspaceResponse {
-	return workspaceResponse{Workspace: workspace, ActualPrompt: workspaceprompt.Content(workspace)}
+func workspaceView(ctx context.Context, workspace types.Workspace) workspaceResponse {
+	return workspaceResponse{
+		Workspace:    workspace,
+		ActualPrompt: workspaceprompt.Content(workspace),
+		Health:       workspacehealth.Probe(ctx, workspace.Directories),
+	}
 }
 
 func workspaceRoleSessionPathValues(w http.ResponseWriter, r *http.Request) (string, string, string, bool) {

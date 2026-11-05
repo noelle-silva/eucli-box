@@ -2,7 +2,6 @@ package datastorage
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -12,7 +11,8 @@ import (
 )
 
 func (s *system) SaveWorkspace(ctx context.Context, workspace types.Workspace) error {
-	workspace, err := s.normalizeWorkspaceForStorage(workspace, time.Now().UTC())
+	now := time.Now().UTC()
+	workspace, err := s.normalizeWorkspaceForStorage(workspace, now)
 	if err != nil {
 		return err
 	}
@@ -24,13 +24,69 @@ func (s *system) SaveWorkspace(ctx context.Context, workspace types.Workspace) e
 	defer s.entityMu.Unlock()
 
 	isNew := !dataFileExists(target)
-	if err := writeJSON(ctx, target, workspace); err != nil {
+	orderedIDs, summaries, err := s.workspaceCollectionForSave(ctx, workspace, isNew, now)
+	if err != nil {
 		return err
 	}
-	if err := s.syncOrderAfterSave(ctx, s.paths.workspacesRoot(), s.paths.workspaceOrderFile(), workspace.ID, isNew); err != nil {
+	tx := newFileTransaction()
+	defer tx.Discard()
+	if err := tx.StageJSON(ctx, target, workspace); err != nil {
 		return err
 	}
-	return s.rebuildWorkspaceIndex(ctx)
+	if err := tx.StageJSON(ctx, s.paths.workspaceOrderFile(), orderFile{IDs: orderedIDs}); err != nil {
+		return err
+	}
+	indexTarget := filepath.Join(s.paths.workspacesRoot(), "index.json")
+	if err := tx.StageJSON(ctx, indexTarget, rootIndex[types.WorkspaceSummary]{Items: summaries}); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// workspaceCollectionForSave 在内存中推导保存后的集合顺序与索引摘要：
+// 实体数据、顺序事实与派生索引必须来自同一份待提交快照，
+// 不能等实体落盘后再各自回读，否则失败时会留下半吊子记录。
+func (s *system) workspaceCollectionForSave(ctx context.Context, workspace types.Workspace, isNew bool, now time.Time) ([]string, []types.WorkspaceSummary, error) {
+	workspaces, err := readObjects[types.Workspace](ctx, s.paths.workspacesRoot())
+	if err != nil {
+		return nil, nil, err
+	}
+	byID := make(map[string]types.WorkspaceSummary, len(workspaces)+1)
+	for _, existing := range workspaces {
+		normalized, err := s.normalizeWorkspaceForStorage(existing, now)
+		if err != nil {
+			return nil, nil, err
+		}
+		byID[normalized.ID] = workspaceSummary(normalized)
+	}
+	byID[workspace.ID] = workspaceSummary(workspace)
+
+	existingIDs, err := listObjectIDs(ctx, s.paths.workspacesRoot())
+	if err != nil {
+		return nil, nil, err
+	}
+	if isNew {
+		existingIDs = append(existingIDs, workspace.ID)
+	}
+	order, err := readOrderIDs(ctx, s.paths.workspaceOrderFile())
+	if err != nil {
+		return nil, nil, err
+	}
+	if isNew {
+		order = append([]string{workspace.ID}, order...)
+	}
+	orderedIDs := mergeOrderIDs(order, existingIDs)
+	summaries := make([]types.WorkspaceSummary, 0, len(orderedIDs))
+	for _, id := range orderedIDs {
+		if summary, ok := byID[id]; ok {
+			summaries = append(summaries, summary)
+		}
+	}
+	return orderedIDs, summaries, nil
+}
+
+func workspaceSummary(workspace types.Workspace) types.WorkspaceSummary {
+	return types.WorkspaceSummary{ID: workspace.ID, Name: workspace.Name, UpdatedAt: workspace.UpdatedAt}
 }
 
 func (s *system) LoadWorkspace(ctx context.Context, workspaceID string) (types.Workspace, error) {
@@ -56,7 +112,7 @@ func (s *system) ListWorkspaces(ctx context.Context) ([]types.WorkspaceSummary, 
 		if err != nil {
 			return nil, err
 		}
-		byID[workspace.ID] = types.WorkspaceSummary{ID: workspace.ID, Name: workspace.Name, UpdatedAt: workspace.UpdatedAt}
+		byID[workspace.ID] = workspaceSummary(workspace)
 	}
 	ids, err := orderedObjectIDs(ctx, s.paths.workspacesRoot(), s.paths.workspaceOrderFile())
 	if err != nil {
@@ -202,13 +258,8 @@ func normalizeWorkspaceDirectory(directory types.WorkspaceDirectory) (types.Work
 		return types.WorkspaceDirectory{}, storageInvalid("failed to resolve workspace directory path", err)
 	}
 	absPath = filepath.Clean(absPath)
-	info, err := os.Stat(absPath)
-	if err != nil {
-		return types.WorkspaceDirectory{}, storageInvalid("workspace directory path must exist", err)
-	}
-	if !info.IsDir() {
-		return types.WorkspaceDirectory{}, storageInvalid("workspace directory path must be a directory", nil)
-	}
+	// 这里只校验登记事实（路径字符串/绝对路径/别名），不探测磁盘：
+	// 目录移动、改名或拔盘属于运行时健康，由 workspacehealth 单独报告。
 	alias := strings.Join(strings.Fields(directory.Alias), " ")
 	if alias == "" {
 		alias = filepath.Base(absPath)

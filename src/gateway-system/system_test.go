@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -278,6 +279,42 @@ func TestLoadWorkspaceReturnsActualPrompt(t *testing.T) {
 	}](t, rec.Body.String())
 	if !strings.Contains(body.ActualPrompt, "当前工作区：项目工作区") || !strings.Contains(body.ActualPrompt, "工作区自定义提示词：\n遵守项目约定") {
 		t.Fatalf("actual prompt = %q", body.ActualPrompt)
+	}
+}
+
+func TestLoadWorkspaceReturnsDirectoryHealth(t *testing.T) {
+	available := t.TempDir()
+	missing := filepath.Join(available, "moved-away")
+	fakes := newGatewayFakes()
+	fakes.workspaces.workspaces["workspace-health"] = types.Workspace{
+		ID:   "workspace-health",
+		Name: "健康探测工作区",
+		Directories: []types.WorkspaceDirectory{
+			{Path: available, Alias: "可用"},
+			{Path: missing, Alias: "已失联"},
+		},
+	}
+	system := newTestGateway(t, fakes)
+	req := httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-health", nil)
+	rec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	body := decodeResponseData[struct {
+		Health types.WorkspaceHealth `json:"health"`
+	}](t, rec.Body.String())
+	if body.Health.Status != types.WorkspaceHealthDegraded {
+		t.Fatalf("health status = %q, want %q", body.Health.Status, types.WorkspaceHealthDegraded)
+	}
+	if len(body.Health.Directories) != 2 {
+		t.Fatalf("health directories = %#v", body.Health.Directories)
+	}
+	if body.Health.Directories[0].Status != types.WorkspaceDirectoryAvailable {
+		t.Fatalf("available directory health = %#v", body.Health.Directories[0])
+	}
+	if body.Health.Directories[1].Status != types.WorkspaceDirectoryMissing {
+		t.Fatalf("missing directory health = %#v", body.Health.Directories[1])
 	}
 }
 

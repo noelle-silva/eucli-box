@@ -1,81 +1,51 @@
-// Package subagent 是 subagent 工具的业务动作实现：单一职责——
-// 把一条消息发给指定角色，等它停下，再把它的最新回复交回。
+// Package subagent 是 subagent 工具的业务动作实现：两个动作共用同一份底座。
+//   - send：把一条消息发给指定角色，等它停下，再把它的最新回复交回；
+//   - list：按当前工作区范围列出角色名、标识与描述。
 package subagent
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 
 	"eucli-box/tools/subagent/internal/toolcontrol"
 	"eucli-box/tools/subagent/internal/types"
 )
 
-// SessionService 是工具访问宿主会话能力的窄接口：由控制通道客户端实现；
-// 独立运行（无宿主控制通道）时为 nil，发送动作明确失败。
+// SessionService 是工具访问宿主能力的窄接口：由控制通道客户端实现；
+// 独立运行（无宿主控制通道）时为 nil，需要宿主的能力动作明确失败。
 type SessionService interface {
 	Request(ctx context.Context, capability string, access string, payload any) (toolcontrol.CapabilityResult, error)
 }
+
+// 动作名：发送消息是默认动作，列出角色是第二个动作。
+const (
+	ActionSend = "send"
+	ActionList = "list"
+)
 
 // Execute 执行一次 subagent 工具动作。
 func Execute(ctx context.Context, input types.ToolExecutionInput, session SessionService) types.ToolExecutionOutput {
 	if err := ctx.Err(); err != nil {
 		return failure("tool execution cancelled", err, nil)
 	}
-	request, err := parseRequest(input.Arguments)
-	if err != nil {
-		return failure("解析 subagent 请求失败", err, nil)
-	}
-	if session == nil {
-		return failure("当前没有宿主控制通道，无法发送会话消息", nil, nil)
-	}
-	result, err := session.Request(ctx, types.ToolCapabilitySessionMessage, types.ToolCapabilityAccessWrite, request)
-	if err != nil {
-		return failure("发送会话消息失败", err, nil)
-	}
-	if err := capabilityFailure(result); err != nil {
-		return failure("发送会话消息失败", err, nil)
-	}
-	payload, err := json.Marshal(result.Payload)
-	if err != nil {
-		return failure("会话消息响应无效", err, nil)
-	}
-	var answer types.ToolMessageResult
-	if err := json.Unmarshal(payload, &answer); err != nil {
-		return failure("会话消息响应无效", err, nil)
-	}
-	content := fmt.Sprintf("角色 %s 已回复（会话 %s，消息 %s）：\n%s", answer.RoleID, answer.SessionID, answer.MessageID, answer.Message)
-	return types.ToolExecutionOutput{
-		Status:  types.ToolStatusSuccess,
-		Content: content,
-		Metadata: map[string]any{
-			"roleId":    answer.RoleID,
-			"sessionId": answer.SessionID,
-			"messageId": answer.MessageID,
-			"message":   answer.Message,
-		},
+	switch actionOf(input.Arguments) {
+	case ActionList:
+		return executeList(ctx, input, session)
+	case ActionSend:
+		return executeSend(ctx, input, session)
+	default:
+		return failure("解析 subagent 请求失败", errors.New("action 只能是 send 或 list"), nil)
 	}
 }
 
-// parseRequest 只校验工具自己必须有的两件事：发给谁、说什么；
-// 工作区与会话的定位口径留给宿主，工具不猜。
-func parseRequest(arguments map[string]any) (types.ToolMessageRequest, error) {
-	roleID := strings.TrimSpace(stringValue(arguments["roleId"]))
-	message := strings.TrimSpace(stringValue(arguments["message"]))
-	if roleID == "" {
-		return types.ToolMessageRequest{}, errors.New("roleId 不能为空")
+// actionOf 归一化动作名：未指定即发送，保持旧调用不需要改参数。
+func actionOf(arguments map[string]any) string {
+	action := strings.TrimSpace(stringValue(arguments["action"]))
+	if action == "" {
+		return ActionSend
 	}
-	if message == "" {
-		return types.ToolMessageRequest{}, errors.New("message 不能为空")
-	}
-	return types.ToolMessageRequest{
-		RoleID:      roleID,
-		WorkspaceID: strings.TrimSpace(stringValue(arguments["workspaceId"])),
-		SessionID:   strings.TrimSpace(stringValue(arguments["sessionId"])),
-		Message:     message,
-	}, nil
+	return action
 }
 
 // capabilityFailure 把能力裁决翻译成工具侧错误：宿主给出的原因原样保留。

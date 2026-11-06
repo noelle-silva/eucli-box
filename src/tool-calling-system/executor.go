@@ -60,6 +60,7 @@ func (s *system) ExecuteWithOutputUpdate(ctx context.Context, plan types.ToolRun
 		return types.ToolResult{}, err
 	}
 	executionInput.Workspace = workspace
+	executionInput.WorkspaceID = s.workspaceIdentityForTool(plan)
 	input, err := json.Marshal(executionInput)
 	if err != nil {
 		return types.ToolResult{}, toolExecutionInvalid("failed to encode tool input", err)
@@ -82,6 +83,15 @@ func (s *system) ExecuteWithOutputUpdate(ctx context.Context, plan types.ToolRun
 	result.ProducedAttachments = capabilities.attachments()
 	result.DurationMs = time.Since(startedAt).Milliseconds()
 	return result, nil
+}
+
+// workspaceIdentityForTool 只对声明了工作区身份能力的工具注入工作区标识；
+// 不在工作区会话里就没有标识可注入，工具拿不到这个字段。
+func (s *system) workspaceIdentityForTool(plan types.ToolRunPlan) string {
+	if !types.ToolDeclaresCapability(plan.Tool, types.ToolCapabilityWorkspaceIdentity, types.ToolCapabilityAccessRead) {
+		return ""
+	}
+	return strings.TrimSpace(plan.Scope.WorkspaceID)
 }
 
 // workspaceContextForTool 只对声明了工作区能力的工具注入工作区路径值；

@@ -65,6 +65,7 @@ type StorageSystem interface {
 	SaveToolWorkDirectoryConfig(ctx context.Context, config types.ToolWorkDirectoryConfig) (types.ToolWorkDirectoryConfig, error)
 	LoadWorkspace(ctx context.Context, workspaceID string) (types.Workspace, error)
 	LoadRole(ctx context.Context, roleID string) (types.Role, error)
+	ListRoles(ctx context.Context) ([]types.RoleSummary, error)
 	LoadChatGroup(ctx context.Context, groupID string) (types.ChatGroup, error)
 	LoadSession(ctx context.Context, roleID string, sessionID string) (types.Session, error)
 	LoadGroupSession(ctx context.Context, groupID string, sessionID string) (types.Session, error)

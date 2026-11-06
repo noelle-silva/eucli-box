@@ -64,6 +64,8 @@ func (c *capabilitySession) handle(ctx context.Context, request toolcontrol.Capa
 		return c.readSessionState(ctx, request.Payload)
 	case capability == types.ToolCapabilitySessionMessage && access == types.ToolCapabilityAccessWrite:
 		return c.sendSessionMessage(ctx, request.Payload)
+	case capability == types.ToolCapabilityRoleDirectory && access == types.ToolCapabilityAccessRead:
+		return c.readRoleDirectory(ctx, request.Payload)
 	default:
 		return capabilityFailed("能力服务不支持该请求：" + capability + ":" + access)
 	}

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -783,6 +784,21 @@ func (f *fakeToolStorage) LoadRole(ctx context.Context, roleID string) (types.Ro
 		return types.Role{}, errors.New("role missing")
 	}
 	return role, nil
+}
+
+// ListRoles 按标识排序返回角色摘要：名册顺序必须稳定，测试才能钉住事实。
+func (f *fakeToolStorage) ListRoles(ctx context.Context) ([]types.RoleSummary, error) {
+	ids := make([]string, 0, len(f.roles))
+	for id := range f.roles {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	out := make([]types.RoleSummary, 0, len(ids))
+	for _, id := range ids {
+		role := f.roles[id]
+		out = append(out, types.RoleSummary{ID: role.ID, Name: role.Name, UpdatedAt: role.UpdatedAt})
+	}
+	return out, nil
 }
 
 func (f *fakeToolStorage) LoadChatGroup(ctx context.Context, groupID string) (types.ChatGroup, error) {

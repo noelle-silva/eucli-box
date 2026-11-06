@@ -90,8 +90,11 @@ type ToolExecutionInput struct {
 	ToolDataDirectory    string                `json:"toolDataDirectory"`
 	HostWorkingDirectory string                `json:"hostWorkingDirectory"`
 	Workspace            *ToolWorkspaceContext `json:"workspace,omitempty"`
-	TimeoutMs            int64                 `json:"timeoutMs,omitempty"`
-	RequestKind          string                `json:"requestKind,omitempty"`
+	// WorkspaceID 是声明了工作区身份能力时注入的当前工作区标识；
+	// 不在工作区会话里就没有这个字段。
+	WorkspaceID string `json:"workspaceId,omitempty"`
+	TimeoutMs   int64  `json:"timeoutMs,omitempty"`
+	RequestKind string `json:"requestKind,omitempty"`
 }
 
 // IsToolWarmupRequest reports whether a tool input is a warm-up request.

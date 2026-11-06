@@ -14,6 +14,12 @@ const (
 	// ToolCapabilitySessionMessage 是发送会话消息能力：工具请宿主把一个角色
 	// 当成真实会话消息发送，并把角色停下后的最新一条消息交给工具。
 	ToolCapabilitySessionMessage = "session-message"
+	// ToolCapabilityWorkspaceIdentity 是工作区身份注入能力：声明后宿主把当前会话
+	// 所在工作区标识随执行注入；不在工作区会话里就不注入。
+	ToolCapabilityWorkspaceIdentity = "workspace-identity"
+	// ToolCapabilityRoleDirectory 是角色名册读取能力：工具按工作区限定向宿主
+	// 索取角色名、角色标识与角色描述。
+	ToolCapabilityRoleDirectory = "role-directory"
 )
 
 // 能力访问方式：声明与授权都以读、写、引用显式分离。
@@ -37,10 +43,15 @@ type ToolCapability struct {
 }
 
 // ToolCapabilityGrantRequired 判定一项标准能力是否需要用户授权：
-// 注入类能力（宿主启动时主动提供的工作环境事实，如工作区路径）不需要授权；
-// 索取类能力（工具运行中主动索取的宿主资源）由用户授权开关把关。
+// 注入类能力（宿主随执行主动提供的工作环境事实，如工作区路径与工作区标识）
+// 不需要授权；索取类能力（工具运行中主动索取的宿主资源）由用户授权开关把关。
 func ToolCapabilityGrantRequired(id string, access string) bool {
-	return strings.TrimSpace(id) != ToolCapabilityWorkspace
+	switch strings.TrimSpace(id) {
+	case ToolCapabilityWorkspace, ToolCapabilityWorkspaceIdentity:
+		return false
+	default:
+		return true
+	}
 }
 
 // DecorateToolCapabilities 生成带运行时视图的能力列表：按标准能力性质
@@ -85,6 +96,10 @@ func IsStandardToolCapability(id string, access string) bool {
 		return strings.TrimSpace(access) == ToolCapabilityAccessRead
 	case ToolCapabilitySessionMessage:
 		return strings.TrimSpace(access) == ToolCapabilityAccessWrite
+	case ToolCapabilityWorkspaceIdentity:
+		return strings.TrimSpace(access) == ToolCapabilityAccessRead
+	case ToolCapabilityRoleDirectory:
+		return strings.TrimSpace(access) == ToolCapabilityAccessRead
 	default:
 		return false
 	}
@@ -237,4 +252,23 @@ type ToolMessageResult struct {
 	MessageID string `json:"messageId"`
 	RoleID    string `json:"roleId"`
 	Message   string `json:"message"`
+}
+
+// ToolRoleInfo 是角色名册里的一项：名、标识与角色自己的描述。
+type ToolRoleInfo struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+// ToolRoleDirectoryRequest 是角色名册读取请求：工作区标识留空即索取全局名册，
+// 带上则只索取注册在该工作区里的角色。
+type ToolRoleDirectoryRequest struct {
+	WorkspaceID string `json:"workspaceId,omitempty"`
+}
+
+// ToolRoleDirectoryResult 是角色名册响应：带回本次索取的范围与角色清单。
+type ToolRoleDirectoryResult struct {
+	WorkspaceID string         `json:"workspaceId,omitempty"`
+	Roles       []ToolRoleInfo `json:"roles"`
 }

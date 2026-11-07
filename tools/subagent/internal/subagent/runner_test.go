@@ -91,3 +91,47 @@ func TestRequestErrorSurfaces(t *testing.T) {
 		t.Fatalf("transport error must surface: %#v", output)
 	}
 }
+
+// runInWorkspace 带注入的工作区标识执行一次动作：模拟工作区会话里的工具输入。
+func runInWorkspace(session SessionService, workspaceID string, arguments map[string]any) types.ToolExecutionOutput {
+	input := types.ToolExecutionInput{ActionID: "t", ToolName: "subagent", Arguments: arguments, WorkspaceID: workspaceID}
+	return Execute(context.Background(), input, session)
+}
+
+// TestSendFallsBackToInjectedWorkspace 钉住回落语义：工作区会话里调用方
+// 不必重复交代工作区，宿主注入的标识就是默认落脚点。
+func TestSendFallsBackToInjectedWorkspace(t *testing.T) {
+	session := &fakeSession{result: toolcontrol.CapabilityResult{Status: toolcontrol.CapabilityStatusSuccess, Payload: types.ToolMessageResult{SessionID: "session-1", MessageID: "message-1", RoleID: "role-b", Message: "收到"}}}
+	output := runInWorkspace(session, "workspace-1", map[string]any{"roleId": "role-b", "message": "在吗"})
+	if output.Status != types.ToolStatusSuccess {
+		t.Fatalf("send result = %#v", output)
+	}
+	if session.request.WorkspaceID != "workspace-1" {
+		t.Fatalf("send must fall back to the injected workspace, got %#v", session.request)
+	}
+}
+
+// TestSendExplicitWorkspaceWins 验证调用方写明的工作区优先于注入值，
+// 保留「故意发给别的工作区」的可能。
+func TestSendExplicitWorkspaceWins(t *testing.T) {
+	session := &fakeSession{result: toolcontrol.CapabilityResult{Status: toolcontrol.CapabilityStatusSuccess, Payload: types.ToolMessageResult{SessionID: "session-1", MessageID: "message-1", RoleID: "role-b", Message: "收到"}}}
+	output := runInWorkspace(session, "workspace-1", map[string]any{"roleId": "role-b", "message": "在吗", "workspaceId": "workspace-2"})
+	if output.Status != types.ToolStatusSuccess {
+		t.Fatalf("send result = %#v", output)
+	}
+	if session.request.WorkspaceID != "workspace-2" {
+		t.Fatalf("explicit workspace must win, got %#v", session.request)
+	}
+}
+
+// TestSendOutsideWorkspaceStaysPlain 验证没有注入时照常走普通会话。
+func TestSendOutsideWorkspaceStaysPlain(t *testing.T) {
+	session := &fakeSession{result: toolcontrol.CapabilityResult{Status: toolcontrol.CapabilityStatusSuccess, Payload: types.ToolMessageResult{SessionID: "session-1", MessageID: "message-1", RoleID: "role-b", Message: "收到"}}}
+	output := runInWorkspace(session, "", map[string]any{"roleId": "role-b", "message": "在吗"})
+	if output.Status != types.ToolStatusSuccess {
+		t.Fatalf("send result = %#v", output)
+	}
+	if session.request.WorkspaceID != "" {
+		t.Fatalf("plain session must stay plain, got %#v", session.request)
+	}
+}

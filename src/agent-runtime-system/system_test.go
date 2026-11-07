@@ -37,77 +37,6 @@ func TestStartRunCompletesWithoutTool(t *testing.T) {
 	}
 }
 
-func TestStartRunPersistsModelUsageTruthIntoSession(t *testing.T) {
-	fakes := newRuntimeFakes()
-	inputTokens, outputTokens, totalTokens := 30, 12, 42
-	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done", Usage: &types.TokenUsage{InputTokens: &inputTokens, OutputTokens: &outputTokens, TotalTokens: &totalTokens}}}
-	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
-	if err != nil {
-		t.Fatalf("StartRun() error = %v", err)
-	}
-	final := waitRun(t, system, state.ID)
-	if final.Status != types.RunStatusCompleted {
-		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
-	}
-	session := fakes.storage.lastSession()
-	if session.TokenUsage == nil || session.TokenUsage.TotalTokens == nil || *session.TokenUsage.TotalTokens != 42 {
-		t.Fatalf("session token usage = %#v", session.TokenUsage)
-	}
-}
-
-func TestStartRunClearsSessionUsageWhenRequestHasNoTruth(t *testing.T) {
-	fakes := newRuntimeFakes()
-	previousTotal := 42
-	now := time.Now().UTC()
-	if err := fakes.storage.SaveSession(context.Background(), types.Session{
-		ID:         "session-usage",
-		RoleID:     "developer",
-		Title:      "Usage",
-		Status:     string(types.RunStatusCompleted),
-		Messages:   []types.Message{},
-		TokenUsage: &types.TokenUsage{TotalTokens: &previousTotal},
-		CreatedAt:  now,
-		UpdatedAt:  now,
-		LastActive: now,
-	}); err != nil {
-		t.Fatalf("SaveSession() error = %v", err)
-	}
-	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
-	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-usage", Stream: types.BoolPtr(false), Message: "hello"})
-	if err != nil {
-		t.Fatalf("StartRun() error = %v", err)
-	}
-	final := waitRun(t, system, state.ID)
-	if final.Status != types.RunStatusCompleted {
-		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
-	}
-	session := fakes.storage.lastSession()
-	if session.TokenUsage != nil {
-		t.Fatalf("session token usage should be cleared without truth: %#v", session.TokenUsage)
-	}
-}
-
-func TestStartRunPersistsModelCacheRateIntoSession(t *testing.T) {
-	fakes := newRuntimeFakes()
-	rate := 0.75
-	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done", CacheRate: &rate}}
-	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
-	if err != nil {
-		t.Fatalf("StartRun() error = %v", err)
-	}
-	final := waitRun(t, system, state.ID)
-	if final.Status != types.RunStatusCompleted {
-		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
-	}
-	session := fakes.storage.lastSession()
-	if session.CacheRate == nil || *session.CacheRate != 0.75 {
-		t.Fatalf("session cache rate = %#v", session.CacheRate)
-	}
-}
-
 func TestStartRunPersistsContextFactsOnInputAndReplyMessages(t *testing.T) {
 	fakes := newRuntimeFakes()
 	rate := 0.75
@@ -197,39 +126,6 @@ func TestStartRunSettlesReplyContextFromLatestModelCall(t *testing.T) {
 	}
 	if reply.ContextTokens == nil || *reply.ContextTokens != 2200 {
 		t.Fatalf("reply context tokens = %#v", reply.ContextTokens)
-	}
-}
-
-func TestStartRunClearsSessionCacheRateWhenRequestHasNoTruth(t *testing.T) {
-	fakes := newRuntimeFakes()
-	previousRate := 0.75
-	now := time.Now().UTC()
-	if err := fakes.storage.SaveSession(context.Background(), types.Session{
-		ID:         "session-cache-rate",
-		RoleID:     "developer",
-		Title:      "Cache Rate",
-		Status:     string(types.RunStatusCompleted),
-		Messages:   []types.Message{},
-		CacheRate:  &previousRate,
-		CreatedAt:  now,
-		UpdatedAt:  now,
-		LastActive: now,
-	}); err != nil {
-		t.Fatalf("SaveSession() error = %v", err)
-	}
-	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
-	system := newTestRuntime(t, fakes, Config{})
-	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", SessionID: "session-cache-rate", Stream: types.BoolPtr(false), Message: "hello"})
-	if err != nil {
-		t.Fatalf("StartRun() error = %v", err)
-	}
-	final := waitRun(t, system, state.ID)
-	if final.Status != types.RunStatusCompleted {
-		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
-	}
-	session := fakes.storage.lastSession()
-	if session.CacheRate != nil {
-		t.Fatalf("session cache rate should be cleared without truth: %#v", session.CacheRate)
 	}
 }
 
@@ -3538,8 +3434,6 @@ func (f *fakeRuntimeStorage) SaveSessionMessages(ctx context.Context, save types
 	merged.Status = string(save.Status)
 	merged.Metadata = fakeApplySessionMetadataPatch(merged.Metadata, save.MetadataPatch)
 	merged.AsyncToolTasks = types.MergeAsyncToolTasks(merged.AsyncToolTasks, session.AsyncToolTasks)
-	merged.TokenUsage = session.TokenUsage
-	merged.CacheRate = session.CacheRate
 	for _, condition := range save.Conditions {
 		messageID := strings.TrimSpace(condition.MessageID)
 		if messageID == "" && condition.Expected != nil {

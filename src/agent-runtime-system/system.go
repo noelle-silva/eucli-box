@@ -100,17 +100,17 @@ type system struct {
 }
 
 type runRecord struct {
-	runID                       string
-	roleID                      string
-	groupID                     string
-	workspaceID                 string
-	state                       types.RunState
-	session                     types.Session
-	terminalAt                  time.Time
-	origin                      types.RunOrigin
+	runID       string
+	roleID      string
+	groupID     string
+	workspaceID string
+	state       types.RunState
+	session     types.Session
+	terminalAt  time.Time
+	origin      types.RunOrigin
 	// sessionMu 保护会话与消息部件的写入：工具执行协程在运行期会并发地
 	// 把别处的待确认投影到本运行的部件上，与主干的工具结果写入互斥。
-	sessionMu sync.Mutex
+	sessionMu                   sync.Mutex
 	persistedAssistantOutput    bool
 	messageParent               types.Message
 	inputMessageID              string
@@ -146,13 +146,6 @@ type runRecord struct {
 	// 确认意图的唯一判据；带生命周期，不再只在某段等待窗口内存在。
 	confirmationLedger map[string]types.ToolRunPlan
 	inbox              chan runEvent
-
-	// tokenUsageObtained 记录本次运行是否从上游拿到过用量真值：终态落盘时若从未拿到，
-	// 则把会话级用量字段置为无（无真值即清空，不保留上次旧值）。
-	tokenUsageObtained bool
-	// cacheRateObtained 记录本次运行是否从上游拿到过缓存数据：终态落盘时若从未拿到，
-	// 则把会话级缓存率字段置为无（无真值即清空，不推算、不保留上次旧值）。
-	cacheRateObtained bool
 }
 
 func NewSystem(config Config, storage StorageSystem, roles RoleSystem, providers ProviderSystem, tools ToolSystem, placeholders PlaceholderSystem) (System, error) {

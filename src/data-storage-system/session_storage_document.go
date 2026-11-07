@@ -16,8 +16,6 @@ type sessionStorageDocument struct {
 	Version        uint64                 `json:"version"`
 	Messages       []messageStorageRecord `json:"messages"`
 	AsyncToolTasks []types.AsyncToolTask  `json:"asyncToolTasks,omitempty"`
-	TokenUsage     *types.TokenUsage      `json:"tokenUsage,omitempty"`
-	CacheRate      *float64               `json:"cacheRate,omitempty"`
 	Metadata       map[string]string      `json:"metadata,omitempty"`
 	CreatedAt      time.Time              `json:"createdAt"`
 	UpdatedAt      time.Time              `json:"updatedAt"`
@@ -63,8 +61,6 @@ func toSessionStorageDocument(session types.Session) sessionStorageDocument {
 		Version:        session.Version,
 		Messages:       messages,
 		AsyncToolTasks: session.AsyncToolTasks,
-		TokenUsage:     session.TokenUsage,
-		CacheRate:      session.CacheRate,
 		Metadata:       session.Metadata,
 		CreatedAt:      session.CreatedAt,
 		UpdatedAt:      session.UpdatedAt,

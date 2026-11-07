@@ -273,15 +273,19 @@ func (c *capabilitySession) readSessionState(ctx context.Context, payload json.R
 		{Key: types.SessionStateKeyCurrentTime, Description: "宿主当前时间", Value: time.Now().UTC().Format(time.RFC3339)},
 	}
 	if session, err := c.loadSession(ctx); err == nil {
-		// 对外出口只透会话级用量字段里的真值：不按消息求和、不加工；无真值即留空。
-		var tokenUsageValue any
-		if !session.TokenUsage.IsEmpty() {
-			tokenUsageValue = session.TokenUsage
+		// 上下文规模的真值只挂在消息上：取最后一条带真值的消息，不按消息求和、不加工。
+		var contextTokensValue any
+		for index := len(session.Messages) - 1; index >= 0; index-- {
+			if session.Messages[index].ContextTokens == nil {
+				continue
+			}
+			contextTokensValue = *session.Messages[index].ContextTokens
+			break
 		}
 		values = append(values,
 			types.SessionStateValue{Key: types.SessionStateKeySessionTitle, Description: "当前会话标题", Value: session.Title},
 			types.SessionStateValue{Key: types.SessionStateKeySessionMessageCount, Description: "当前会话消息数量", Value: len(session.Messages)},
-			types.SessionStateValue{Key: types.SessionStateKeySessionTokenEstimate, Description: "当前会话累计 token 用量", Value: tokenUsageValue},
+			types.SessionStateValue{Key: types.SessionStateKeySessionTokenEstimate, Description: "当前上下文规模（token）", Value: contextTokensValue},
 		)
 	}
 	if roleID := strings.TrimSpace(c.plan.Scope.RoleID); roleID != "" {

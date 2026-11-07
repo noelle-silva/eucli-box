@@ -532,58 +532,6 @@ func TestSaveSessionStoresMessageTextOnlyInParts(t *testing.T) {
 	}
 }
 
-func TestSessionTokenUsagePersistsLatestTruth(t *testing.T) {
-	system := newTestSystem(t)
-	now := time.Date(2026, 6, 4, 17, 0, 0, 0, time.UTC)
-	inputTokens, outputTokens, totalTokens := 30, 12, 42
-	session := types.Session{
-		ID:         "session-token-usage",
-		RoleID:     "developer",
-		Title:      "Token Usage",
-		Status:     string(types.RunStatusCompleted),
-		CreatedAt:  now,
-		UpdatedAt:  now,
-		LastActive: now,
-		TokenUsage: &types.TokenUsage{InputTokens: &inputTokens, OutputTokens: &outputTokens, TotalTokens: &totalTokens},
-	}
-	if err := system.SaveSession(context.Background(), session); err != nil {
-		t.Fatalf("SaveSession() error = %v", err)
-	}
-
-	loaded, err := system.LoadSession(context.Background(), "developer", "session-token-usage")
-	if err != nil {
-		t.Fatalf("LoadSession() error = %v", err)
-	}
-	if loaded.TokenUsage == nil || loaded.TokenUsage.TotalTokens == nil || *loaded.TokenUsage.TotalTokens != 42 || loaded.TokenUsage.InputTokens == nil || *loaded.TokenUsage.InputTokens != 30 {
-		t.Fatalf("loaded token usage = %#v", loaded.TokenUsage)
-	}
-
-	// 拿到新真值即整体覆盖旧值。
-	nextTotal := 99
-	if err := system.SaveSessionMessages(context.Background(), types.SessionMessageSave{Session: types.Session{ID: "session-token-usage", RoleID: "developer", TokenUsage: &types.TokenUsage{TotalTokens: &nextTotal}}, Status: types.RunStatusRunning}); err != nil {
-		t.Fatalf("SaveSessionMessages() error = %v", err)
-	}
-	loaded, err = system.LoadSession(context.Background(), "developer", "session-token-usage")
-	if err != nil {
-		t.Fatalf("LoadSession() error = %v", err)
-	}
-	if loaded.TokenUsage == nil || loaded.TokenUsage.TotalTokens == nil || *loaded.TokenUsage.TotalTokens != 99 || loaded.TokenUsage.InputTokens != nil {
-		t.Fatalf("overwritten token usage = %#v", loaded.TokenUsage)
-	}
-
-	// 无真值即清空：本次会话未携带真值时整体置为无，绝不保留上次旧值。
-	if err := system.SaveSessionMessages(context.Background(), types.SessionMessageSave{Session: types.Session{ID: "session-token-usage", RoleID: "developer"}, Status: types.RunStatusCompleted}); err != nil {
-		t.Fatalf("SaveSessionMessages() error = %v", err)
-	}
-	loaded, err = system.LoadSession(context.Background(), "developer", "session-token-usage")
-	if err != nil {
-		t.Fatalf("LoadSession() error = %v", err)
-	}
-	if loaded.TokenUsage != nil {
-		t.Fatalf("token usage should be cleared without truth: %#v", loaded.TokenUsage)
-	}
-}
-
 func TestSessionMessageCacheAndContextFactsRoundTrip(t *testing.T) {
 	system := newTestSystem(t)
 	now := time.Date(2026, 6, 4, 18, 0, 0, 0, time.UTC)
@@ -638,58 +586,6 @@ func TestSessionMessageCacheAndContextFactsRoundTrip(t *testing.T) {
 	// 没有上游真值的消息读回来必须仍为空，不能凭空补值。
 	if unmeasured.CacheRate != nil || unmeasured.ContextTokens != nil {
 		t.Fatalf("unmeasured message facts = cacheRate %#v contextTokens %#v", unmeasured.CacheRate, unmeasured.ContextTokens)
-	}
-}
-
-func TestSessionCacheRatePersistsLatestTruth(t *testing.T) {
-	system := newTestSystem(t)
-	now := time.Date(2026, 6, 4, 17, 0, 0, 0, time.UTC)
-	rate := 0.8
-	session := types.Session{
-		ID:         "session-cache-rate",
-		RoleID:     "developer",
-		Title:      "Cache Rate",
-		Status:     string(types.RunStatusCompleted),
-		CreatedAt:  now,
-		UpdatedAt:  now,
-		LastActive: now,
-		CacheRate:  &rate,
-	}
-	if err := system.SaveSession(context.Background(), session); err != nil {
-		t.Fatalf("SaveSession() error = %v", err)
-	}
-
-	loaded, err := system.LoadSession(context.Background(), "developer", "session-cache-rate")
-	if err != nil {
-		t.Fatalf("LoadSession() error = %v", err)
-	}
-	if loaded.CacheRate == nil || *loaded.CacheRate != 0.8 {
-		t.Fatalf("loaded cache rate = %#v", loaded.CacheRate)
-	}
-
-	// 拿到新真值即整体覆盖旧值。
-	nextRate := 0.25
-	if err := system.SaveSessionMessages(context.Background(), types.SessionMessageSave{Session: types.Session{ID: "session-cache-rate", RoleID: "developer", CacheRate: &nextRate}, Status: types.RunStatusRunning}); err != nil {
-		t.Fatalf("SaveSessionMessages() error = %v", err)
-	}
-	loaded, err = system.LoadSession(context.Background(), "developer", "session-cache-rate")
-	if err != nil {
-		t.Fatalf("LoadSession() error = %v", err)
-	}
-	if loaded.CacheRate == nil || *loaded.CacheRate != 0.25 {
-		t.Fatalf("overwritten cache rate = %#v", loaded.CacheRate)
-	}
-
-	// 无真值即清空：本次会话未携带缓存率时整体置为无，绝不保留上次旧值。
-	if err := system.SaveSessionMessages(context.Background(), types.SessionMessageSave{Session: types.Session{ID: "session-cache-rate", RoleID: "developer"}, Status: types.RunStatusCompleted}); err != nil {
-		t.Fatalf("SaveSessionMessages() error = %v", err)
-	}
-	loaded, err = system.LoadSession(context.Background(), "developer", "session-cache-rate")
-	if err != nil {
-		t.Fatalf("LoadSession() error = %v", err)
-	}
-	if loaded.CacheRate != nil {
-		t.Fatalf("cache rate should be cleared without truth: %#v", loaded.CacheRate)
 	}
 }
 

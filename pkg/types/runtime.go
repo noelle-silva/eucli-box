@@ -51,8 +51,8 @@ type Message struct {
 	ContextTokens *int `json:"contextTokens,omitempty"`
 	// RequestModel 是产出这条回复时实际发往的供应商与模型。
 	RequestModel *RequestModel `json:"requestModel,omitempty"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
+	CreatedAt    time.Time     `json:"createdAt"`
+	UpdatedAt    time.Time     `json:"updatedAt"`
 }
 
 const (
@@ -217,12 +217,8 @@ type Session struct {
 	Version        uint64          `json:"version"`
 	Messages       []Message       `json:"messages"`
 	AsyncToolTasks []AsyncToolTask `json:"asyncToolTasks,omitempty"`
-	// TokenUsage 是会话级用量字段：只记录上游返回的用量真值，每次拿到新真值即整体覆盖，
-	// 一次会话只留最新一条；拿不到真值时保持为空。
-	TokenUsage *TokenUsage `json:"tokenUsage,omitempty"`
-	// CacheRate 是会话级缓存率字段：只记录最近一次由上游命中/未命中量算出的真值，
-	// 新值到来即整体覆盖；上游没有缓存数据时保持为空，不推算、不沿用旧值。
-	CacheRate  *float64          `json:"cacheRate,omitempty"`
+	// 用量与缓存率的真值只挂在消息上（每条消息记它那一刻的事实），
+	// 会话不再另存一份汇总，避免同一件事出现两个来源。
 	Metadata   map[string]string `json:"metadata,omitempty"`
 	CreatedAt  time.Time         `json:"createdAt"`
 	UpdatedAt  time.Time         `json:"updatedAt"`

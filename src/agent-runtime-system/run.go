@@ -275,17 +275,6 @@ func (s *system) runConversation(ctx context.Context, record *runRecord, context
 			s.failRun(context.Background(), record, record.session, err)
 			return false, nil
 		}
-		// 拿到上游真值才入账：整体覆盖会话级用量字段，一次会话只留最新一条。
-		// 流式响应在 callModel 返回时已结束，因此这里落值天然满足「未完成不落值」。
-		if modelResponse.Usage != nil {
-			record.session.TokenUsage = modelResponse.Usage
-			record.tokenUsageObtained = true
-		}
-		// 缓存率同样是会话级真值：拿到上游缓存数据才入账，整体覆盖旧值。
-		if modelResponse.CacheRate != nil {
-			record.session.CacheRate = modelResponse.CacheRate
-			record.cacheRateObtained = true
-		}
 		if err := ctx.Err(); err != nil {
 			s.cancelRunRecord(context.Background(), record, record.session)
 			return false, nil

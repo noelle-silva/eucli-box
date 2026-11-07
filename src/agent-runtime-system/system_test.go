@@ -108,11 +108,12 @@ func TestStartRunPersistsModelCacheRateIntoSession(t *testing.T) {
 	}
 }
 
-func TestStartRunPersistsMessageCacheAndContextFacts(t *testing.T) {
+func TestStartRunPersistsContextFactsOnInputAndReplyMessages(t *testing.T) {
 	fakes := newRuntimeFakes()
 	rate := 0.75
-	contextTokens := 12000
-	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done", CacheRate: &rate, ContextTokens: &contextTokens}}
+	inputTokens := 12000
+	totalTokens := 12500
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done", CacheRate: &rate, ContextTokens: &inputTokens, ContextTotalTokens: &totalTokens}}
 	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
 	if err != nil {
@@ -122,12 +123,17 @@ func TestStartRunPersistsMessageCacheAndContextFacts(t *testing.T) {
 	if final.Status != types.RunStatusCompleted {
 		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
 	}
-	reply := lastAssistantMessage(fakes.storage.lastSession())
+	session := fakes.storage.lastSession()
+	user := userMessageInSession(session)
+	if user.ContextTokens == nil || *user.ContextTokens != 12000 {
+		t.Fatalf("user message context tokens = %#v", user.ContextTokens)
+	}
+	reply := lastAssistantMessage(session)
 	if reply.CacheRate == nil || *reply.CacheRate != 0.75 {
 		t.Fatalf("message cache rate = %#v", reply.CacheRate)
 	}
-	if reply.ContextTokens == nil || *reply.ContextTokens != 12000 {
-		t.Fatalf("message context tokens = %#v", reply.ContextTokens)
+	if reply.ContextTokens == nil || *reply.ContextTokens != 12500 {
+		t.Fatalf("reply context tokens = %#v", reply.ContextTokens)
 	}
 }
 
@@ -143,21 +149,28 @@ func TestStartRunLeavesMessageFactsEmptyWithoutUpstreamTruth(t *testing.T) {
 	if final.Status != types.RunStatusCompleted {
 		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
 	}
-	reply := lastAssistantMessage(fakes.storage.lastSession())
+	session := fakes.storage.lastSession()
+	user := userMessageInSession(session)
+	if user.ContextTokens != nil {
+		t.Fatalf("user message context tokens should stay empty without truth: %#v", user.ContextTokens)
+	}
+	reply := lastAssistantMessage(session)
 	if reply.CacheRate != nil || reply.ContextTokens != nil {
-		t.Fatalf("message facts should stay empty without truth: cacheRate=%#v contextTokens=%#v", reply.CacheRate, reply.ContextTokens)
+		t.Fatalf("reply facts should stay empty without truth: cacheRate=%#v contextTokens=%#v", reply.CacheRate, reply.ContextTokens)
 	}
 }
 
-func TestStartRunSettlesMessageFactsFromLatestModelCall(t *testing.T) {
+func TestStartRunSettlesReplyContextFromLatestModelCall(t *testing.T) {
 	fakes := newRuntimeFakes()
 	firstRate := 0.2
-	firstContextTokens := 1000
+	firstInputTokens := 1000
+	firstTotalTokens := 1100
 	secondRate := 0.9
-	secondContextTokens := 2000
+	secondInputTokens := 2000
+	secondTotalTokens := 2200
 	fakes.provider.responses = []types.ModelResponse{
-		{ID: "m1", CacheRate: &firstRate, ContextTokens: &firstContextTokens, ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}}}},
-		{ID: "m2", Content: "final", CacheRate: &secondRate, ContextTokens: &secondContextTokens},
+		{ID: "m1", CacheRate: &firstRate, ContextTokens: &firstInputTokens, ContextTotalTokens: &firstTotalTokens, ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}}}},
+		{ID: "m2", Content: "final", CacheRate: &secondRate, ContextTokens: &secondInputTokens, ContextTotalTokens: &secondTotalTokens},
 	}
 	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
@@ -168,12 +181,18 @@ func TestStartRunSettlesMessageFactsFromLatestModelCall(t *testing.T) {
 	if final.Status != types.RunStatusCompleted {
 		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
 	}
-	reply := lastAssistantMessage(fakes.storage.lastSession())
-	if reply.CacheRate == nil || *reply.CacheRate != 0.9 {
-		t.Fatalf("message cache rate = %#v", reply.CacheRate)
+	session := fakes.storage.lastSession()
+	// 用户消息记「发出去那一刻」的规模，工具回合不再改写它。
+	user := userMessageInSession(session)
+	if user.ContextTokens == nil || *user.ContextTokens != 1000 {
+		t.Fatalf("user message context tokens = %#v", user.ContextTokens)
 	}
-	if reply.ContextTokens == nil || *reply.ContextTokens != 2000 {
-		t.Fatalf("message context tokens = %#v", reply.ContextTokens)
+	reply := lastAssistantMessage(session)
+	if reply.CacheRate == nil || *reply.CacheRate != 0.9 {
+		t.Fatalf("reply cache rate = %#v", reply.CacheRate)
+	}
+	if reply.ContextTokens == nil || *reply.ContextTokens != 2200 {
+		t.Fatalf("reply context tokens = %#v", reply.ContextTokens)
 	}
 }
 
@@ -2872,6 +2891,15 @@ func toolPartByCallIDInSession(session types.Session, callID string) *types.Mess
 func asyncResultMessage(session types.Session) types.Message {
 	for _, message := range session.Messages {
 		if message.Type == types.MessageTypeAsyncToolResult {
+			return message
+		}
+	}
+	return types.Message{}
+}
+
+func userMessageInSession(session types.Session) types.Message {
+	for _, message := range session.Messages {
+		if message.Type == "user" {
 			return message
 		}
 	}

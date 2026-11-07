@@ -1362,6 +1362,7 @@ func TestCompleteOpenAIParsesUsage(t *testing.T) {
 		t.Fatalf("cache rate should be absent without upstream cache data: %#v", response.CacheRate)
 	}
 	assertContextTokens(t, response.ContextTokens, 11)
+	assertContextTotalTokens(t, response.ContextTotalTokens, 18)
 }
 
 func TestCompleteOpenAIParsesCacheRate(t *testing.T) {
@@ -1376,6 +1377,7 @@ func TestCompleteOpenAIParsesCacheRate(t *testing.T) {
 	}
 	assertCacheRate(t, response.CacheRate, 0.8)
 	assertContextTokens(t, response.ContextTokens, 100)
+	assertContextTotalTokens(t, response.ContextTotalTokens, 107)
 }
 
 func TestCompleteStreamOpenAIRequestsUsageAndParsesIt(t *testing.T) {
@@ -1428,6 +1430,7 @@ data: [DONE]
 	}
 	assertCacheRate(t, response.CacheRate, 0.8)
 	assertContextTokens(t, response.ContextTokens, 100)
+	assertContextTotalTokens(t, response.ContextTotalTokens, 107)
 }
 
 func TestCompleteAnthropicParsesUsage(t *testing.T) {
@@ -1447,6 +1450,7 @@ func TestCompleteAnthropicParsesUsage(t *testing.T) {
 		t.Fatalf("cache rate should be absent without upstream cache data: %#v", response.CacheRate)
 	}
 	assertContextTokens(t, response.ContextTokens, 21)
+	assertContextTotalTokens(t, response.ContextTotalTokens, 30)
 }
 
 func TestCompleteAnthropicParsesCacheRate(t *testing.T) {
@@ -1461,6 +1465,7 @@ func TestCompleteAnthropicParsesCacheRate(t *testing.T) {
 	}
 	assertCacheRate(t, response.CacheRate, 0.6)
 	assertContextTokens(t, response.ContextTokens, 100)
+	assertContextTotalTokens(t, response.ContextTotalTokens, 109)
 }
 
 func TestCompleteStreamAnthropicParsesUsage(t *testing.T) {
@@ -1509,6 +1514,7 @@ data: {"type":"message_stop"}
 	}
 	assertCacheRate(t, response.CacheRate, 0.6)
 	assertContextTokens(t, response.ContextTokens, 100)
+	assertContextTotalTokens(t, response.ContextTotalTokens, 109)
 }
 
 func assertCacheRate(t *testing.T, rate *float64, want float64) {
@@ -1539,5 +1545,15 @@ func assertContextTokens(t *testing.T, tokens *int, want int) {
 	}
 	if *tokens != want {
 		t.Fatalf("context tokens = %v, want %v", *tokens, want)
+	}
+}
+
+func assertContextTotalTokens(t *testing.T, tokens *int, want int) {
+	t.Helper()
+	if tokens == nil {
+		t.Fatalf("context total tokens = nil, want %v", want)
+	}
+	if *tokens != want {
+		t.Fatalf("context total tokens = %v, want %v", *tokens, want)
 	}
 }

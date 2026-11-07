@@ -45,7 +45,9 @@ type Message struct {
 	ModelDurationMs int64  `json:"modelDurationMs,omitempty"`
 	// CacheRate 是本条回复对应那次模型调用的缓存率真值；上游没有缓存数据时为空，不推算。
 	CacheRate *float64 `json:"cacheRate,omitempty"`
-	// ContextTokens 是本条回复对应那次模型调用的输入上下文规模真值；上游没有用量数据时为空。
+	// ContextTokens 是「到这条消息为止的上下文规模」真值，两种角色都是同一个口径：
+	// 用户消息记本轮请求发出时模型读到的全部内容（不含本轮回复）；
+	// 助手消息记本轮回复完成后的规模（含本轮回复自身输出）。上游没有用量数据时为空。
 	ContextTokens *int      `json:"contextTokens,omitempty"`
 	CreatedAt     time.Time `json:"createdAt"`
 	UpdatedAt     time.Time `json:"updatedAt"`

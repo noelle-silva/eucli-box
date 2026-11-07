@@ -143,9 +143,12 @@ type ModelResponse struct {
 	CacheRate *float64 `json:"cacheRate,omitempty"`
 	// ContextTokens 是本次调用的输入上下文规模真值，按各服务商自身上游字段口径归一：
 	// 口径差异只存在于适配器内部，消费方只读这个数，不再二次换算。上游没有用量数据时为 nil。
-	ContextTokens *int      `json:"contextTokens,omitempty"`
-	Raw           []byte    `json:"raw,omitempty"`
-	CreatedAt     time.Time `json:"createdAt"`
+	ContextTokens *int `json:"contextTokens,omitempty"`
+	// ContextTotalTokens 是本次回复完成后的上下文规模真值：输入上下文加上本次输出。
+	// 它回答「这条回复之后，上下文已经到多少」，同样由适配器按上游口径归一。
+	ContextTotalTokens *int      `json:"contextTotalTokens,omitempty"`
+	Raw                []byte    `json:"raw,omitempty"`
+	CreatedAt          time.Time `json:"createdAt"`
 }
 
 type ModelStreamEventType string

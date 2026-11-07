@@ -65,6 +65,18 @@ func anthropicContextTokens(payload *anthropicUsagePayload) *int {
 	return &total
 }
 
+// anthropicContextTotalTokens 计算本轮回复完成后的上下文规模：
+// 模型这次读到的输入上下文加上它这次写出来的输出，也就是回复之后上下文到达的量。
+// 输入侧或输出量任一项缺失即没有真值，不虚构。
+func anthropicContextTotalTokens(payload *anthropicUsagePayload) *int {
+	input := anthropicContextTokens(payload)
+	if input == nil || payload.OutputTokens == nil {
+		return nil
+	}
+	total := *input + *payload.OutputTokens
+	return &total
+}
+
 type anthropicCompleteResponse struct {
 	ID      string                 `json:"id"`
 	Usage   *anthropicUsagePayload `json:"usage"`
@@ -235,7 +247,7 @@ func (p *anthropicStreamParser) Finish(response types.HTTPResponse) (types.Model
 	if err := p.sse.Finish(); err != nil {
 		return types.ModelResponse{}, err
 	}
-	result := types.ModelResponse{ID: p.id, Content: p.content.String(), Reasoning: p.reasoning.String(), ReasoningSource: "an", ReasoningSignature: p.reasoningSignature, ReasoningData: p.reasoningData, Usage: anthropicTokenUsage(p.usage), CacheRate: anthropicCacheRate(p.usage), ContextTokens: anthropicContextTokens(p.usage), Raw: response.Body, CreatedAt: p.createdAt}
+	result := types.ModelResponse{ID: p.id, Content: p.content.String(), Reasoning: p.reasoning.String(), ReasoningSource: "an", ReasoningSignature: p.reasoningSignature, ReasoningData: p.reasoningData, Usage: anthropicTokenUsage(p.usage), CacheRate: anthropicCacheRate(p.usage), ContextTokens: anthropicContextTokens(p.usage), ContextTotalTokens: anthropicContextTotalTokens(p.usage), Raw: response.Body, CreatedAt: p.createdAt}
 	indexes := make([]int, 0, len(p.toolUses))
 	for index := range p.toolUses {
 		indexes = append(indexes, index)
@@ -375,7 +387,7 @@ func (anthropicAdapter) ParseCompleteResponse(response types.HTTPResponse) (type
 		return types.ModelResponse{}, providerParseFailed("failed to parse Anthropic completion", err)
 	}
 	createdAt := time.Now().UTC()
-	result := types.ModelResponse{ID: payload.ID, Usage: anthropicTokenUsage(payload.Usage), CacheRate: anthropicCacheRate(payload.Usage), ContextTokens: anthropicContextTokens(payload.Usage), Raw: response.Body, CreatedAt: createdAt}
+	result := types.ModelResponse{ID: payload.ID, Usage: anthropicTokenUsage(payload.Usage), CacheRate: anthropicCacheRate(payload.Usage), ContextTokens: anthropicContextTokens(payload.Usage), ContextTotalTokens: anthropicContextTotalTokens(payload.Usage), Raw: response.Body, CreatedAt: createdAt}
 	for _, item := range payload.Content {
 		switch item.Type {
 		case "text":

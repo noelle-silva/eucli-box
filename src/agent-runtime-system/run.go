@@ -303,9 +303,9 @@ func (s *system) runConversation(ctx context.Context, record *runRecord, context
 		} else {
 			dropEmptyAssistantOutput(record)
 		}
-		if assistantOutputRecorded {
-			applyRunModelFacts(record, modelResponse)
-		}
+		// 一次响应回来就结算：输入侧上下文无条件记到本轮起点消息，
+		// 助手侧事实落到本轮消息（该消息尚未诞生时自动跳过）。
+		applyRunModelFacts(record, modelResponse)
 		assistantParent = record.messageParent
 		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, assistantParent.ID); err != nil {
 			s.failRun(context.Background(), record, record.session, err)

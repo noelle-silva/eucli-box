@@ -181,6 +181,13 @@ type HookPromptSystem interface {
 	ReorderHookPromptPresets(ctx context.Context, presetIDs []string) (types.HookPromptLibrary, error)
 }
 
+// PromptLibrarySystem 是提示词仓库的搬运接口：同一组动作吃三个作用域。
+type PromptLibrarySystem interface {
+	LoadPromptLibrary(ctx context.Context, scope string, ownerID string) (types.PromptLibrary, error)
+	SavePromptLibrary(ctx context.Context, scope string, ownerID string, library types.PromptLibrary) (types.PromptLibrary, error)
+	DeletePrompt(ctx context.Context, scope string, ownerID string, promptID string) (types.PromptLibrary, error)
+}
+
 type PlaceholderSystem interface {
 	LoadPlaceholderLibrary(ctx context.Context) (types.PlaceholderLibrary, error)
 	SavePlaceholderLibrary(ctx context.Context, library types.PlaceholderLibrary) (types.PlaceholderLibrary, error)
@@ -299,9 +306,11 @@ type system struct {
 
 	wsMu        sync.Mutex
 	connections map[*websocket.Conn]struct{}
+
+	promptLibraries PromptLibrarySystem
 }
 
-func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups ChatGroupSystem, workspaces WorkspaceSystem, providers ProviderSystem, tools ToolSystem, sessions SessionSystem, stickers StickerSystem, hooks HookPromptSystem, placeholders PlaceholderSystem, systemPlugins SystemPluginSystem, assist AIAssistSystem, releaseSource ReleaseSourceSystem, requestRecords RequestRecordSystem) (System, error) {
+func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups ChatGroupSystem, workspaces WorkspaceSystem, providers ProviderSystem, tools ToolSystem, sessions SessionSystem, stickers StickerSystem, hooks HookPromptSystem, placeholders PlaceholderSystem, systemPlugins SystemPluginSystem, assist AIAssistSystem, releaseSource ReleaseSourceSystem, requestRecords RequestRecordSystem, promptLibraries PromptLibrarySystem) (System, error) {
 	if runtime == nil {
 		return nil, gatewayInvalid("runtime system dependency is required", nil)
 	}
@@ -343,6 +352,9 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups Ch
 	}
 	if requestRecords == nil {
 		return nil, gatewayInvalid("request record system dependency is required", nil)
+	}
+	if promptLibraries == nil {
+		return nil, gatewayInvalid("prompt library system dependency is required", nil)
 	}
 	if config.SessionChanges == nil {
 		return nil, gatewayInvalid("session change source dependency is required", nil)
@@ -397,6 +409,8 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups Ch
 		mux:            http.NewServeMux(),
 		upgrader:       websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
 		connections:    map[*websocket.Conn]struct{}{},
+
+		promptLibraries: promptLibraries,
 	}
 	s.registerRoutes()
 	s.server = &http.Server{Addr: config.Addr, Handler: s.mux, ReadTimeout: config.ReadTimeout, WriteTimeout: config.WriteTimeout}

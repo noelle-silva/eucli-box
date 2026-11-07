@@ -964,7 +964,7 @@ func newTestGateway(t *testing.T, fakes *gatewayFakes) System {
 		}
 		sources[types.ReleaseArtifactKindPlugin] = fakes.installSourcePlugin
 	}
-	system, err := NewSystem(Config{Addr: "127.0.0.1:0", InstallSources: sources, SessionChanges: fakes.sessionChanges}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseSource, fakes.requestRecords)
+	system, err := NewSystem(Config{Addr: "127.0.0.1:0", InstallSources: sources, SessionChanges: fakes.sessionChanges}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseSource, fakes.requestRecords, fakes.promptLibraries)
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -989,11 +989,13 @@ type gatewayFakes struct {
 	installSource       *fakeGatewayInstallSource
 	installSourcePlugin *fakeGatewayInstallSource
 	sessionChanges      *fakeGatewaySessionChanges
+
+	promptLibraries *fakeGatewayPromptLibraries
 }
 
 func newGatewayFakes() *gatewayFakes {
 	stickers := newFakeGatewayStickers()
-	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), groups: newFakeGatewayGroups(), workspaces: newFakeGatewayWorkspaces(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, hooks: &fakeGatewayHooks{}, placeholders: &fakeGatewayPlaceholders{}, systemPlugins: &fakeGatewaySystemPlugins{}, assist: &fakeGatewayAssist{stickers: stickers}, releaseSource: &fakeGatewayReleaseSource{}, requestRecords: newFakeGatewayRequestRecords(), installSource: newFakeGatewayInstallSource(), installSourcePlugin: newFakeGatewayInstallSource(), sessionChanges: newFakeGatewaySessionChanges()}
+	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), groups: newFakeGatewayGroups(), workspaces: newFakeGatewayWorkspaces(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, hooks: &fakeGatewayHooks{}, placeholders: &fakeGatewayPlaceholders{}, systemPlugins: &fakeGatewaySystemPlugins{}, assist: &fakeGatewayAssist{stickers: stickers}, releaseSource: &fakeGatewayReleaseSource{}, requestRecords: newFakeGatewayRequestRecords(), promptLibraries: newFakeGatewayPromptLibraries(), installSource: newFakeGatewayInstallSource(), installSourcePlugin: newFakeGatewayInstallSource(), sessionChanges: newFakeGatewaySessionChanges()}
 }
 
 type fakeGatewayInstallSource struct {
@@ -2213,4 +2215,37 @@ func decodeResponseData[T any](t *testing.T, body string) T {
 		t.Fatalf("json decode failed: %v", err)
 	}
 	return payload.Data
+}
+
+type fakeGatewayPromptLibraries struct {
+	library   types.PromptLibrary
+	scope     string
+	ownerID   string
+	deletedID string
+}
+
+func newFakeGatewayPromptLibraries() *fakeGatewayPromptLibraries {
+	return &fakeGatewayPromptLibraries{library: types.PromptLibrary{Prompts: []types.Prompt{}}}
+}
+
+func (f *fakeGatewayPromptLibraries) LoadPromptLibrary(ctx context.Context, scope string, ownerID string) (types.PromptLibrary, error) {
+	f.scope, f.ownerID = scope, ownerID
+	return f.library, nil
+}
+
+func (f *fakeGatewayPromptLibraries) SavePromptLibrary(ctx context.Context, scope string, ownerID string, library types.PromptLibrary) (types.PromptLibrary, error) {
+	f.scope, f.ownerID, f.library = scope, ownerID, library
+	return f.library, nil
+}
+
+func (f *fakeGatewayPromptLibraries) DeletePrompt(ctx context.Context, scope string, ownerID string, promptID string) (types.PromptLibrary, error) {
+	f.scope, f.ownerID, f.deletedID = scope, ownerID, promptID
+	remaining := make([]types.Prompt, 0, len(f.library.Prompts))
+	for _, prompt := range f.library.Prompts {
+		if prompt.ID != promptID {
+			remaining = append(remaining, prompt)
+		}
+	}
+	f.library = types.PromptLibrary{Prompts: remaining}
+	return f.library, nil
 }

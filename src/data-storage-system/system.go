@@ -63,6 +63,10 @@ type System interface {
 	SaveHookPromptLibrary(ctx context.Context, library types.HookPromptLibrary) (types.HookPromptLibrary, error)
 	ReorderHookPromptPresets(ctx context.Context, presetIDs []string) (types.HookPromptLibrary, error)
 
+	LoadPromptLibrary(ctx context.Context, scope string, ownerID string) (types.PromptLibrary, error)
+	SavePromptLibrary(ctx context.Context, scope string, ownerID string, library types.PromptLibrary) (types.PromptLibrary, error)
+	DeletePrompt(ctx context.Context, scope string, ownerID string, promptID string) (types.PromptLibrary, error)
+
 	LoadRequestRecordConfig(ctx context.Context) (types.RequestRecordConfig, error)
 	SaveRequestRecordConfig(ctx context.Context, config types.RequestRecordConfig) (types.RequestRecordConfig, error)
 	AppendRequestRecord(ctx context.Context, record types.RequestRecord) (types.RequestRecord, error)

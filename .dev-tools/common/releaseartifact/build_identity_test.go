@@ -1,14 +1,13 @@
 package releaseartifact
 
 import (
-	"strings"
 	"testing"
 
 	"eucli-box/pkg/types"
 )
 
-// TestResolveBuildIdentityDevBuildBypassesRoster 钉住开发构建不查名册：
-// 名册之外的发布物也能按 kind:id 直接解析并本地铺货。
+// TestResolveBuildIdentityDevBuildParsesDirectly 钉住开发构建按 kind:id 直接解析：
+// 仓库里新增的工具不需要任何登记就能本地铺货。
 func TestResolveBuildIdentityDevBuildBypassesRoster(t *testing.T) {
 	identity, err := resolveBuildIdentity("tool:not-in-roster", true)
 	if err != nil {
@@ -35,19 +34,19 @@ func TestResolveBuildIdentityDevBuildRejectsInvalidTarget(t *testing.T) {
 	}
 }
 
-// TestResolveBuildIdentityFormalBuildKeepsRosterGate 钉住正式构建仍以名册为闸门：
-// 名册外发布物拒绝，名册内发布物放行。
-func TestResolveBuildIdentityFormalBuildKeepsRosterGate(t *testing.T) {
-	if _, err := resolveBuildIdentity("tool:not-in-roster", false); err == nil {
-		t.Fatal("formal build must reject an artifact outside the roster")
-	} else if !strings.Contains(err.Error(), "白名单") {
-		t.Fatalf("formal build rejection should mention the roster: %v", err)
-	}
-	identity, err := resolveBuildIdentity("tool:context7", false)
+// TestResolveBuildIdentityFormalBuildHasNoRosterGate 钉住正式构建不再查名单：
+// 任何合法的 kind:id 都能解析，能发布什么由仓库里存在的东西决定。
+func TestResolveBuildIdentityFormalBuildHasNoRosterGate(t *testing.T) {
+	identity, err := resolveBuildIdentity("tool:subagent", false)
 	if err != nil {
-		t.Fatalf("resolveBuildIdentity(context7) error = %v", err)
+		t.Fatalf("resolveBuildIdentity(subagent) error = %v", err)
 	}
-	if identity.Kind != types.ReleaseArtifactKindTool || identity.ID != "context7" {
+	if identity.Kind != types.ReleaseArtifactKindTool || identity.ID != "subagent" {
 		t.Fatalf("identity = %#v", identity)
+	}
+	for _, target := range []string{"eucli-box", "tool:", "box:whatever"} {
+		if _, err := resolveBuildIdentity(target, false); err == nil {
+			t.Fatalf("target %q must still be rejected", target)
+		}
 	}
 }

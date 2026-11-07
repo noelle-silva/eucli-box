@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
+	"devtools/common/artifactdiscovery"
 	"devtools/common/releaseartifact"
 	"devtools/common/releaseasset"
-	"eucli-box/pkg/artifactcatalog"
 	"eucli-box/pkg/releasecatalog"
 	"eucli-box/pkg/types"
 	"eucli-box/pkg/workspace"
@@ -49,12 +49,11 @@ func VerifyReleaseBuild(ctx context.Context, repositoryRoot string, runRoot stri
 		recorder.pass("记录源码初始状态", "已记录当前工作区状态")
 	}
 
-	roster, rosterErr := artifactcatalog.Load()
-	if rosterErr != nil {
-		recorder.fail("读取正式发布物名册", rosterErr)
+	artifacts, discoverErr := artifactdiscovery.Discover(repositoryRoot)
+	if discoverErr != nil {
+		recorder.fail("扫描仓库发布物", discoverErr)
 	} else {
-		recorder.pass("读取正式发布物名册", fmt.Sprintf("共 %d 个 Windows x64 独立发布物", len(roster.Artifacts)))
-		artifacts := roster.SortedArtifacts()
+		recorder.pass("扫描仓库发布物", fmt.Sprintf("共 %d 个 Windows x64 独立发布物", len(artifacts)))
 		// 先串行预取全部外部附带内容，再并发制作，避免并发时资产准备互相竞争。
 		prefetchAssets(ctx, repositoryRoot, artifacts, paths)
 		buildArtifactsConcurrently(ctx, repositoryRoot, artifacts, paths, recorder)

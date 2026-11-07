@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"devtools/common/artifactdiscovery"
 	"devtools/common/releaseartifact"
 	"devtools/common/releasecredentials"
 	"devtools/common/releaseops"
 	"devtools/common/releasepublish"
-	"eucli-box/pkg/artifactcatalog"
 	"eucli-box/pkg/releasecatalog"
 )
 
@@ -106,12 +106,11 @@ func runReleasePublishRemote(ctx context.Context, root string, paths runPaths, r
 		recorder.fail("读取远端复核凭据", err)
 		return
 	}
-	roster, err := artifactcatalog.Load()
+	artifacts, err := artifactdiscovery.Discover(root)
 	if err != nil {
-		recorder.fail("读取正式发布物名册", err)
+		recorder.fail("扫描仓库发布物", err)
 		return
 	}
-	artifacts := roster.SortedArtifacts()
 	for index, identity := range artifacts {
 		target := releasecatalog.Target(identity)
 		fail := func(reason string, err error) {

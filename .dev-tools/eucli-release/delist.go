@@ -57,7 +57,7 @@ func runDelist(ctx context.Context, args []string) error {
 	return printJSON(result)
 }
 
-// resolveDelistTarget 解析下架目标：不经过发布白名单校验，白名单之外的旧发布物同样可以下架。
+// resolveDelistTarget 解析下架目标：不经过任何名单校验，已从仓库移除的旧发布物同样可以下架。
 func resolveDelistTarget(value string) (releasecatalog.Sources, types.ReleaseArtifactIdentity, error) {
 	sources, err := releasecatalog.LoadSources()
 	if err != nil {

@@ -39,7 +39,7 @@ type DelistedRelease struct {
 
 // Delist 把一个发布物或其中一个正式版本从官方来源彻底下架：
 // 先移除统一版本索引记录，再删除对应远端发行与标签，最后复核三方均已清空。
-// 目标允许不在当前白名单中（下架的正是被移除的旧发布物）；
+// 目标不经过任何名单校验（下架的往往就是已移除的旧发布物）；
 // 对已经部分下架的对象重跑会补齐残留，不会破坏既有资料。
 func (p *Publisher) Delist(ctx context.Context, source types.OfficialReleaseSource, input DelistInput) (DelistResult, error) {
 	if ctx == nil {

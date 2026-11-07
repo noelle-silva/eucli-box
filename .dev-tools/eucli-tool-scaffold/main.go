@@ -84,7 +84,7 @@ func run(args []string) error {
 		return err
 	}
 	fmt.Printf("已生成新工具 %s -> %s\n", opts.id, result.Directory)
-	fmt.Println("提示：脚手架不登记发布名册；需要正式发布时，请另行把该工具加入名册。")
+	fmt.Println("提示：脚手架不登记任何发布清单；工具放进仓库即可直接构建与发布。")
 	return nil
 }
 

@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"devtools/common/artifactdiscovery"
 	"devtools/common/releasecredentials"
 	"devtools/common/toolruntime"
-	"eucli-box/pkg/artifactcatalog"
 	"eucli-box/pkg/releasecatalog"
 	"eucli-box/pkg/types"
 )
@@ -22,11 +22,7 @@ func resolveTarget(value string) (releasecatalog.Sources, types.ReleaseArtifactI
 	if err != nil {
 		return releasecatalog.Sources{}, types.ReleaseArtifactIdentity{}, err
 	}
-	roster, err := artifactcatalog.Load()
-	if err != nil {
-		return releasecatalog.Sources{}, types.ReleaseArtifactIdentity{}, err
-	}
-	identity, err := roster.ResolveTarget(value)
+	identity, err := artifactdiscovery.ParseTarget(value)
 	if err != nil {
 		return releasecatalog.Sources{}, types.ReleaseArtifactIdentity{}, err
 	}

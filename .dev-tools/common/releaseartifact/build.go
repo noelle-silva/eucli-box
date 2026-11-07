@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"devtools/common/artifactdiscovery"
 	"devtools/common/releaseasset"
 	"devtools/common/releaseops"
-	"eucli-box/pkg/artifactcatalog"
 	"eucli-box/pkg/release"
 	"eucli-box/pkg/releasecatalog"
 	"eucli-box/pkg/types"
@@ -250,23 +250,16 @@ func Build(ctx context.Context, options BuildOptions) (BuildResult, error) {
 	return result, nil
 }
 
-// resolveBuildIdentity 解析构建目标身份：正式构建以名册为闸门（只有名册收录的
-// 发布物可正式制作）；开发构建（VersionOverride 非空）按 kind:id 直接解析，
-// 不查名册，让仓库内任意工具都能本地铺货。
+// resolveBuildIdentity 解析构建目标身份：开发构建与正式构建走同一套解析，
+// 只校验 kind:id 形态与身份合法性——能构建什么由仓库里存在的东西决定。
+// resolveBuildIdentity 解析构建目标身份：只校验 kind:id 形态与身份合法性，
+// 开发构建与正式构建走同一套解析——能构建什么由仓库里存在的东西决定。
 func resolveBuildIdentity(target string, devBuild bool) (types.ReleaseArtifactIdentity, error) {
-	if !devBuild {
-		roster, err := artifactcatalog.Load()
-		if err != nil {
-			return types.ReleaseArtifactIdentity{}, err
+	identity, err := artifactdiscovery.ParseTarget(target)
+	if err != nil {
+		if devBuild {
+			return types.ReleaseArtifactIdentity{}, fmt.Errorf("开发构建目标必须是 tool:<id> 或 plugin:<id>：%w", err)
 		}
-		return roster.ResolveTarget(target)
-	}
-	kind, id, ok := strings.Cut(strings.TrimSpace(target), ":")
-	identity := types.ReleaseArtifactIdentity{Kind: strings.TrimSpace(kind), ID: strings.TrimSpace(id)}
-	if !ok {
-		return types.ReleaseArtifactIdentity{}, fmt.Errorf("开发构建目标必须是 tool:<id> 或 plugin:<id>")
-	}
-	if err := releasecatalog.ValidateArtifactIdentity(identity); err != nil {
 		return types.ReleaseArtifactIdentity{}, err
 	}
 	return identity, nil

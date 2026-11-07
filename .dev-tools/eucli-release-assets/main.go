@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"devtools/common/artifactdiscovery"
 	"devtools/common/releaseasset"
-	"eucli-box/pkg/artifactcatalog"
 	"eucli-box/pkg/releasecatalog"
 	"eucli-box/pkg/types"
 	"eucli-box/pkg/workspace"
@@ -39,23 +39,12 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	roster, err := artifactcatalog.Load()
+	identity, err := artifactdiscovery.ParseTarget(*target)
 	if err != nil {
 		return err
 	}
-	identity, err := roster.ResolveTarget(*target)
-	if err != nil {
-		// 资产库按配方服务任意发布物；正式发行白名单未收录时，
-		// 允许按 kind:id 直接解析工具发布物，只要配方中存在对应项。
-		kind, id, ok := strings.Cut(strings.TrimSpace(*target), ":")
-		if !ok || strings.TrimSpace(kind) != types.ReleaseArtifactKindTool || strings.TrimSpace(id) == "" {
-			return err
-		}
-		direct := types.ReleaseArtifactIdentity{Kind: strings.TrimSpace(kind), ID: strings.TrimSpace(id)}
-		if len(assetRecipesFor(direct)) == 0 {
-			return err
-		}
-		identity = direct
+	if len(assetRecipesFor(identity)) == 0 {
+		return fmt.Errorf("目标 %s 没有对应的资产配方", releasecatalog.Target(identity))
 	}
 	base := workspace.AssetRoot(repositoryRoot)
 	if strings.TrimSpace(*output) == "" {
@@ -87,7 +76,7 @@ func run(ctx context.Context, args []string) error {
 	return nil
 }
 
-// assetRecipesFor 绕过白名单判断某发布物是否存在外部配方。
+// assetRecipesFor 判断某发布物是否存在外部资产配方。
 func assetRecipesFor(identity types.ReleaseArtifactIdentity) []releaseasset.Recipe {
 	catalog, err := releaseasset.LoadCatalog()
 	if err != nil {

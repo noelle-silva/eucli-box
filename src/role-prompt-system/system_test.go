@@ -23,8 +23,8 @@ func TestSaveRoleValidatesModelAndStoresRole(t *testing.T) {
 	if _, ok := storage.roles[role.ID]; !ok {
 		t.Fatalf("role was not saved")
 	}
-	if providers.resolveCount != 1 {
-		t.Fatalf("resolveCount = %d", providers.resolveCount)
+	if providers.validateCount != 1 {
+		t.Fatalf("validateCount = %d", providers.validateCount)
 	}
 }
 
@@ -82,6 +82,25 @@ func TestBuildContextUsesOnlyRoleSessionAndPassedTools(t *testing.T) {
 	}
 	if len(ctx.NativeTools) != 1 || ctx.NativeTools[0].Name != "file-reader" {
 		t.Fatalf("native tools = %#v", ctx.NativeTools)
+	}
+}
+
+// TestBuildContextDoesNotValidateModelAvailability 钉住运行期不再校验模型可用性：
+// 该校验会推进模型组轮询游标，只属于保存角色时的职责。
+func TestBuildContextDoesNotValidateModelAvailability(t *testing.T) {
+	storage := newFakeRoleStorage()
+	providers := newFakeProviderResolver()
+	providers.models["openai-main/gpt-4.1"] = types.ModelInfo{ID: "gpt-4.1", Name: "GPT"}
+	role := validRole()
+	storage.roles[role.ID] = role
+	system := newTestRoleSystem(t, storage, providers)
+	session := types.Session{ID: "session-1", RoleID: role.ID}
+
+	if _, err := system.BuildContext(context.Background(), role.ID, session, nil); err != nil {
+		t.Fatalf("BuildContext() error = %v", err)
+	}
+	if providers.validateCount != 0 {
+		t.Fatalf("validateCount = %d, want 0（运行期不得触碰模型可用性校验）", providers.validateCount)
 	}
 }
 
@@ -184,8 +203,8 @@ func TestSaveRoleValidatesEveryCandidate(t *testing.T) {
 	if err := system.SaveRole(context.Background(), role); err != nil {
 		t.Fatalf("SaveRole() error = %v", err)
 	}
-	if providers.resolveCount != 2 {
-		t.Fatalf("resolveCount = %d, want 2", providers.resolveCount)
+	if providers.validateCount != 2 {
+		t.Fatalf("validateCount = %d, want 2", providers.validateCount)
 	}
 }
 
@@ -308,21 +327,20 @@ func (f *fakeRoleStorage) LoadWorkspace(ctx context.Context, workspaceID string)
 }
 
 type fakeProviderResolver struct {
-	models       map[string]types.ModelInfo
-	resolveCount int
+	models        map[string]types.ModelInfo
+	validateCount int
 }
 
 func newFakeProviderResolver() *fakeProviderResolver {
 	return &fakeProviderResolver{models: map[string]types.ModelInfo{}}
 }
 
-func (f *fakeProviderResolver) ResolveModel(ctx context.Context, coordinate types.ModelCoordinate) (types.Provider, types.ModelInfo, error) {
-	f.resolveCount++
-	model, ok := f.models[coordinate.ProviderID+"/"+coordinate.ModelID]
-	if !ok {
-		return types.Provider{}, types.ModelInfo{}, errors.New("model missing")
+func (f *fakeProviderResolver) ValidateCoordinate(ctx context.Context, coordinate types.ModelCoordinate) error {
+	f.validateCount++
+	if _, ok := f.models[coordinate.ProviderID+"/"+coordinate.ModelID]; !ok {
+		return errors.New("model missing")
 	}
-	return types.Provider{ID: coordinate.ProviderID}, model, nil
+	return nil
 }
 
 func assertAppErrorCode(t *testing.T, err error, code string) {

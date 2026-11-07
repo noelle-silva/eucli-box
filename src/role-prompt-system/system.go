@@ -34,8 +34,10 @@ type StorageSystem interface {
 	LoadWorkspace(ctx context.Context, workspaceID string) (types.Workspace, error)
 }
 
+// ProviderSystem 是角色系统对模型侧的唯一依赖：只问坐标能不能用。
+// 这里刻意不暴露 ResolveModel——角色系统不该有能力触发轮询选择。
 type ProviderSystem interface {
-	ResolveModel(ctx context.Context, coordinate types.ModelCoordinate) (types.Provider, types.ModelInfo, error)
+	ValidateCoordinate(ctx context.Context, coordinate types.ModelCoordinate) error
 }
 
 type Config struct{}

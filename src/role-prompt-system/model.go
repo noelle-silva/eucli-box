@@ -43,8 +43,9 @@ func validateModelConfig(ctx context.Context, providers ProviderSystem, config t
 }
 
 // validateModelCandidateCoordinate 校验单个候选坐标的形态与可解析性。
+// 只问"能不能用"，不触发任何轮询选择：校验不得改变运行期的轮询顺序。
 func validateModelCandidateCoordinate(ctx context.Context, providers ProviderSystem, coordinate types.ModelCoordinate) error {
-	if strings.TrimSpace(coordinate.Kind) == "model_group" || strings.TrimSpace(coordinate.GroupID) != "" {
+	if strings.TrimSpace(coordinate.Kind) == types.ModelCoordinateKindGroup || strings.TrimSpace(coordinate.GroupID) != "" {
 		if strings.TrimSpace(coordinate.GroupID) == "" {
 			return roleModelInvalid("model group id is required", nil)
 		}
@@ -54,7 +55,7 @@ func validateModelCandidateCoordinate(ctx context.Context, providers ProviderSys
 	if strings.TrimSpace(coordinate.ModelID) == "" {
 		return roleModelInvalid("model id is required", nil)
 	}
-	if _, _, err := providers.ResolveModel(ctx, coordinate); err != nil {
+	if err := providers.ValidateCoordinate(ctx, coordinate); err != nil {
 		return roleModelInvalid("role model candidate coordinate is not available", err)
 	}
 	return nil

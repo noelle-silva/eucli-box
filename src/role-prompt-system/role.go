@@ -62,7 +62,17 @@ func (s *system) DeleteRole(ctx context.Context, roleID string) error {
 	return nil
 }
 
+// validateRole 校验角色的完整定义：结构与本地约束，外加模型坐标可用性。
+// 只在保存角色时使用：模型可用性必须在这里落定，运行期不再重复校验。
 func validateRole(ctx context.Context, providers ProviderSystem, role types.Role) error {
+	if err := validateRoleShape(role); err != nil {
+		return err
+	}
+	return validateModelConfig(ctx, providers, role.ModelConfig)
+}
+
+// validateRoleShape 只校验角色自身的结构与本地约束：纯内存判断，不碰模型供应商，也没有任何副作用。
+func validateRoleShape(role types.Role) error {
 	if strings.TrimSpace(role.ID) == "" {
 		return roleInvalid("role id is required", nil)
 	}
@@ -70,9 +80,6 @@ func validateRole(ctx context.Context, providers ProviderSystem, role types.Role
 		return roleInvalid("role name is required", nil)
 	}
 	if err := validatePrompts(role.Prompts); err != nil {
-		return err
-	}
-	if err := validateModelConfig(ctx, providers, role.ModelConfig); err != nil {
 		return err
 	}
 	return validateToolPolicy(role.ToolPolicy)

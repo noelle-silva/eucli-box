@@ -7,10 +7,35 @@ import (
 	"eucli-box/pkg/types"
 )
 
+// ResolveModel 解析一次模型坐标，并在坐标指向模型组时推进该组的轮询游标：
+// 它是"这一轮轮到谁"的唯一出口。
+// 只想知道坐标能不能用的调用方（配置校验等）必须走 ValidateCoordinate，
+// 否则校验行为会吃掉一次轮询顺序。
 func (s *system) ResolveModel(ctx context.Context, coordinate types.ModelCoordinate) (types.Provider, types.ModelInfo, error) {
-	if strings.TrimSpace(coordinate.Kind) == "model_group" || strings.TrimSpace(coordinate.GroupID) != "" {
+	if isModelGroupCoordinate(coordinate) {
 		return s.resolveModelGroup(ctx, coordinate)
 	}
+	return s.resolveProviderCoordinate(ctx, coordinate)
+}
+
+// ValidateCoordinate 校验坐标当前是否可用：不参与轮询选择，不推进任何轮询游标。
+func (s *system) ValidateCoordinate(ctx context.Context, coordinate types.ModelCoordinate) error {
+	if isModelGroupCoordinate(coordinate) {
+		return s.validateModelGroupCoordinate(ctx, coordinate)
+	}
+	_, _, err := s.resolveProviderCoordinate(ctx, coordinate)
+	return err
+}
+
+// isModelGroupCoordinate 判断坐标是否指向模型组。
+func isModelGroupCoordinate(coordinate types.ModelCoordinate) bool {
+	return strings.TrimSpace(coordinate.Kind) == types.ModelCoordinateKindGroup ||
+		strings.TrimSpace(coordinate.GroupID) != ""
+}
+
+// resolveProviderCoordinate 解析具体供应商下的注册模型；
+// 只处理供应商坐标，不涉及模型组，也没有任何轮询副作用。
+func (s *system) resolveProviderCoordinate(ctx context.Context, coordinate types.ModelCoordinate) (types.Provider, types.ModelInfo, error) {
 	if strings.TrimSpace(coordinate.ModelID) == "" {
 		return types.Provider{}, types.ModelInfo{}, providerInvalid("model id is required", nil)
 	}

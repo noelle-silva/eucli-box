@@ -17,7 +17,9 @@ func (s *system) BuildContext(ctx context.Context, roleID string, session types.
 	if err != nil {
 		return types.RoleContext{}, err
 	}
-	if err := validateRole(ctx, s.providers, role); err != nil {
+	// 运行期只守角色自身的结构约束：模型坐标可用性属于保存时的职责，
+	// 在这里重复校验会白白吃掉模型组的轮询顺序。
+	if err := validateRoleShape(role); err != nil {
 		return types.RoleContext{}, err
 	}
 	if strings.TrimSpace(session.GroupID) != "" {

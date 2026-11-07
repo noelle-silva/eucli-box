@@ -21,7 +21,10 @@ type System interface {
 	SaveModelGroups(ctx context.Context, groups []types.ModelGroup) ([]types.ModelGroup, error)
 
 	RefreshModels(ctx context.Context, providerID string) ([]types.ModelInfo, error)
+	// ResolveModel 解析坐标并推进模型组轮询：只有真正要用模型时才调用。
 	ResolveModel(ctx context.Context, coordinate types.ModelCoordinate) (types.Provider, types.ModelInfo, error)
+	// ValidateCoordinate 只校验坐标是否可用，不推进轮询游标：配置校验一律走这里。
+	ValidateCoordinate(ctx context.Context, coordinate types.ModelCoordinate) error
 	Complete(ctx context.Context, request types.ModelRequest) (types.ModelResponse, error)
 	CompleteStream(ctx context.Context, request types.ModelRequest, onEvent types.ModelStreamHandler) (types.ModelResponse, error)
 }

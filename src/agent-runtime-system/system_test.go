@@ -4346,3 +4346,47 @@ func (f *fakeRuntimeTools) listToolSummaries() []types.ToolSummary {
 	}
 	return []types.ToolSummary{{ID: "file-reader", Name: "file-reader", Description: "Read files", Type: "local"}}
 }
+
+// TestRunStartedEventCarriesSessionIdentity 钉住启动通知的身份完整性：
+// 新建会话的运行，公布启动时必须已经带上会话标识——否则订阅方无法把它挂到
+// 任何会话上，停止入口与运行占位都会凭空消失。
+func TestRunStartedEventCarriesSessionIdentity(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
+	system := newTestRuntime(t, fakes, Config{})
+	events, unsubscribe, err := system.Subscribe(context.Background())
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	defer unsubscribe()
+
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	deadline := time.After(3 * time.Second)
+	for {
+		select {
+		case event, ok := <-events:
+			if !ok {
+				t.Fatal("event stream closed before run_started")
+			}
+			if event.RunID != state.ID || event.Type != "run_started" {
+				continue
+			}
+			snapshot, ok := event.Payload.(types.RunState)
+			if !ok {
+				t.Fatalf("run_started payload = %#v", event.Payload)
+			}
+			if strings.TrimSpace(snapshot.SessionID) == "" {
+				t.Fatal("run_started must carry the session identity")
+			}
+			if strings.TrimSpace(snapshot.RoleID) == "" {
+				t.Fatal("run_started must carry the role identity")
+			}
+			return
+		case <-deadline:
+			t.Fatal("run_started was never published")
+		}
+	}
+}

@@ -114,7 +114,6 @@ func (s *system) startRun(ctx context.Context, record *runRecord, request types.
 	if err != nil {
 		return state, types.Session{}, err
 	}
-	s.publish(eventSourceFromRecord(record), "run_started", state)
 	compactRun := record.commandName == compactCommandName
 	session, err := s.loadOrCreateSession(ctx, request)
 	if err != nil {
@@ -131,6 +130,11 @@ func (s *system) startRun(ctx context.Context, record *runRecord, request types.
 		if err := s.setRunSessionID(record.runID, session.ID); err != nil {
 			return state, types.Session{}, err
 		}
+	}
+	// 会话身份已确定：此刻才对外公布启动，保证每条启动通知都带完整身份。
+	// 提前公布会让新建会话的运行少一个会话标识，订阅方无法把它挂到任何会话上。
+	if fresh, ok := s.getRunState(record.runID); ok {
+		s.publish(eventSourceFromRecord(record), "run_started", fresh)
 	}
 	var contextSession types.Session
 	var assistantParent types.Message

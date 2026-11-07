@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"eucli-box/pkg/datapaths"
+	"eucli-box/pkg/types"
 )
 
 type paths struct {
@@ -165,6 +166,37 @@ func (p paths) workspaceIconDir(workspaceID string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, filepath.FromSlash(workspaceIconRelativeDir)), nil
+}
+
+// promptLibraryLocation 是一个作用域的提示词仓库落点：
+// file 是库文件位置，ownerDir 是归属实体目录（全局作用域为空）。
+type promptLibraryLocation struct {
+	file     string
+	ownerDir string
+}
+
+// promptLibraryLocation 解析「作用域 → 落点」。这套映射只在本方法内存在：
+// 全局落在 .meta，角色与工作区落在各自实体目录，归属 id 经 safeJoin 校验，
+// 未知作用域直接报错。
+func (p paths) promptLibraryLocation(scope string, ownerID string) (promptLibraryLocation, error) {
+	switch scope {
+	case types.PromptScopeGlobal:
+		return promptLibraryLocation{file: datapaths.GlobalPromptLibraryFile(p.root)}, nil
+	case types.PromptScopeRole:
+		dir, err := p.roleDir(ownerID)
+		if err != nil {
+			return promptLibraryLocation{}, err
+		}
+		return promptLibraryLocation{file: filepath.Join(dir, datapaths.RelPromptLibraryFile), ownerDir: dir}, nil
+	case types.PromptScopeWorkspace:
+		dir, err := p.workspaceDir(ownerID)
+		if err != nil {
+			return promptLibraryLocation{}, err
+		}
+		return promptLibraryLocation{file: filepath.Join(dir, datapaths.RelPromptLibraryFile), ownerDir: dir}, nil
+	default:
+		return promptLibraryLocation{}, storageInvalid("unsupported prompt library scope: "+scope, nil)
+	}
 }
 
 func (p paths) sessionRoleDir(roleID string) (string, error) {

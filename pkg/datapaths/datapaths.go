@@ -45,6 +45,12 @@ const (
 	RelSystemPluginsDataDir   = "system-plugins-data"
 )
 
+// 提示词仓库的文件名：一个作用域一个库文件，作用域落点由数据存储层解析。
+const (
+	RelGlobalPromptLibraryFile = ".meta/prompt-library.json"
+	RelPromptLibraryFile       = "prompt-library.json"
+)
+
 // Join 以数据根目录为基准合并相对路径。
 func Join(root string, rel string) string {
 	return filepath.Join(root, filepath.FromSlash(rel))
@@ -150,6 +156,12 @@ func ModelGroupsFile(root string) string {
 // HookPromptsFile 返回 Hook 提示词库文件。
 func HookPromptsFile(root string) string {
 	return Join(root, RelHookPromptsFile)
+}
+
+// GlobalPromptLibraryFile 返回全局作用域提示词仓库文件。
+// 角色与工作区作用域的落点由数据存储层按实体目录解析。
+func GlobalPromptLibraryFile(root string) string {
+	return Join(root, RelGlobalPromptLibraryFile)
 }
 
 // RequestRecordFile 返回模型请求记录配置文件。

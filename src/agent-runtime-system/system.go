@@ -11,6 +11,7 @@ import (
 type System interface {
 	StartRun(ctx context.Context, request types.RunRequest) (types.RunState, error)
 	DeliverToolMessage(ctx context.Context, request types.ToolMessageRequest) (types.ToolMessageResult, error)
+	RelayToolConfirmation(ctx context.Context, plan types.ToolRunPlan, fact types.ToolConfirmationFact) (types.ToolConfirmationOutcome, error)
 	SubmitToolConfirmation(ctx context.Context, confirmation types.ToolConfirmation) error
 	CancelRun(ctx context.Context, runID string) error
 	GetRun(ctx context.Context, runID string) (types.RunState, error)
@@ -88,7 +89,11 @@ type system struct {
 	subscribers        map[*eventSubscriber]struct{}
 	asyncTasks         map[string]types.AsyncToolTask
 	asyncContinuations map[asyncContinuationKey]struct{}
-	publishedMu        sync.Mutex
+	// confirmationOutcomes 记录刚刚落定的外部确认结论：转呈确认的工具需要把
+	// 「同意还是拒绝」带回自己的进程，而台账在落定那一刻已经注销。
+	// 只在内存里短暂存在，随宿主进程结束而消失，不参与任何事实判定。
+	confirmationOutcomes map[string]types.ToolConfirmationOutcome
+	publishedMu          sync.Mutex
 	// publishedMessages 是各助手消息上一次已发布内容的基线，按产生它的运行归属：
 	// 运行收口即整体释放，不与运行记录的有界保留挂钩。
 	publishedMessages map[string]map[string]publishedMessageState
@@ -103,6 +108,9 @@ type runRecord struct {
 	session                     types.Session
 	terminalAt                  time.Time
 	origin                      types.RunOrigin
+	// sessionMu 保护会话与消息部件的写入：工具执行协程在运行期会并发地
+	// 把别处的待确认投影到本运行的部件上，与主干的工具结果写入互斥。
+	sessionMu sync.Mutex
 	persistedAssistantOutput    bool
 	messageParent               types.Message
 	inputMessageID              string
@@ -169,7 +177,7 @@ func NewSystem(config Config, storage StorageSystem, roles RoleSystem, providers
 	if config.MaxParallelTools == 0 {
 		config.MaxParallelTools = 4
 	}
-	runtime := &system{config: config, storage: storage, roles: roles, providers: providers, tools: tools, placeholders: placeholders, runs: map[string]*runRecord{}, subscribers: map[*eventSubscriber]struct{}{}, asyncTasks: map[string]types.AsyncToolTask{}, asyncContinuations: map[asyncContinuationKey]struct{}{}}
+	runtime := &system{config: config, storage: storage, roles: roles, providers: providers, tools: tools, placeholders: placeholders, runs: map[string]*runRecord{}, subscribers: map[*eventSubscriber]struct{}{}, asyncTasks: map[string]types.AsyncToolTask{}, asyncContinuations: map[asyncContinuationKey]struct{}{}, confirmationOutcomes: map[string]types.ToolConfirmationOutcome{}}
 	// 异步任务恢复是启动维护动作，不是启动关键：坏数据只记录日志并跳过，不阻断启动。
 	runtime.recoverPersistedAsyncToolTasks(context.Background())
 	return runtime, nil

@@ -21,6 +21,7 @@ type System interface {
 	Execute(ctx context.Context, plan types.ToolRunPlan) (types.ToolResult, error)
 	ExecuteWithOutputUpdate(ctx context.Context, plan types.ToolRunPlan, onUpdate func(update types.ToolOutputUpdate)) (types.ToolResult, error)
 	SetMessageSystem(messenger MessageSystem) error
+	SetConfirmationBridge(bridge ConfirmationBridge) error
 	SaveTool(ctx context.Context, tool types.ToolDefinition) error
 	LoadTool(ctx context.Context, toolID string) (types.ToolDefinition, error)
 	ListTools(ctx context.Context) ([]types.ToolSummary, error)
@@ -52,6 +53,12 @@ type PermissionSystem interface {
 // 发送消息、等待角色停下、取回最新消息全部由它按日常发送口径完成。
 type MessageSystem interface {
 	DeliverToolMessage(ctx context.Context, request types.ToolMessageRequest) (types.ToolMessageResult, error)
+}
+
+// ConfirmationBridge 是宿主对「工具转呈外部确认」的实现：工具把别处待确认的
+// 决策交上来，由它摆到发起这次调用的运行上，等用户裁决后把结论交回工具。
+type ConfirmationBridge interface {
+	RelayToolConfirmation(ctx context.Context, plan types.ToolRunPlan, fact types.ToolConfirmationFact) (types.ToolConfirmationOutcome, error)
 }
 
 type StorageSystem interface {
@@ -97,6 +104,8 @@ type system struct {
 	storage          StorageSystem
 	messageMu        sync.RWMutex
 	message          MessageSystem
+	confirmationMu   sync.RWMutex
+	confirmation     ConfirmationBridge
 	activities       map[string]*toolActivity
 	activeExecutions map[string]map[*toolRunContext]struct{}
 	mu               sync.Mutex

@@ -63,7 +63,7 @@ func readDirectory(t *testing.T, result toolcontrol.CapabilityResult) types.Tool
 // 只返回注册在该工作区里的角色，不把全局角色混进来。
 func TestRoleDirectoryIsLimitedByWorkspace(t *testing.T) {
 	storage := directoryStorage(t)
-	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestDirectoryTool()), storage, nil)
+	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestDirectoryTool()), storage, nil, nil)
 
 	directory := readDirectory(t, session.handle(context.Background(), roleDirectoryRequest(t, types.ToolRoleDirectoryRequest{WorkspaceID: "workspace-1"})))
 	if directory.WorkspaceID != "workspace-1" {
@@ -81,7 +81,7 @@ func TestRoleDirectoryIsLimitedByWorkspace(t *testing.T) {
 // 返回宿主注册的全部角色。
 func TestRoleDirectoryWithoutWorkspaceReturnsEveryRole(t *testing.T) {
 	storage := directoryStorage(t)
-	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestDirectoryTool()), storage, nil)
+	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestDirectoryTool()), storage, nil, nil)
 
 	directory := readDirectory(t, session.handle(context.Background(), roleDirectoryRequest(t, types.ToolRoleDirectoryRequest{})))
 	if directory.WorkspaceID != "" {
@@ -97,7 +97,7 @@ func TestRoleDirectoryWithoutWorkspaceReturnsEveryRole(t *testing.T) {
 func TestRoleDirectorySkipsVanishedRole(t *testing.T) {
 	storage := directoryStorage(t)
 	storage.workspaces["workspace-1"] = types.Workspace{ID: "workspace-1", RegisteredRoleIDs: []string{"role-in", "role-gone"}}
-	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestDirectoryTool()), storage, nil)
+	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestDirectoryTool()), storage, nil, nil)
 
 	directory := readDirectory(t, session.handle(context.Background(), roleDirectoryRequest(t, types.ToolRoleDirectoryRequest{WorkspaceID: "workspace-1"})))
 	if len(directory.Roles) != 1 || directory.Roles[0].ID != "role-in" {
@@ -110,7 +110,7 @@ func TestRoleDirectoryRequiresGrant(t *testing.T) {
 	storage := directoryStorage(t)
 	tool := capabilityTestDirectoryTool()
 	tool.CapabilityGrants = nil
-	session := newCapabilitySession(capabilityTestPlan(storage, tool), storage, nil)
+	session := newCapabilitySession(capabilityTestPlan(storage, tool), storage, nil, nil)
 
 	result := session.handle(context.Background(), roleDirectoryRequest(t, types.ToolRoleDirectoryRequest{}))
 	if result.Status != toolcontrol.CapabilityStatusDenied {

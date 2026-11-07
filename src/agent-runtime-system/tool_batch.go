@@ -37,7 +37,7 @@ func (s *system) handleToolIntents(ctx context.Context, record *runRecord, conte
 		if entries[index].HasResult {
 			continue
 		}
-		scope := types.ToolRunScope{RoleID: record.roleID, GroupID: record.groupID, WorkspaceID: record.workspaceID, SessionID: record.session.ID}
+		scope := types.ToolRunScope{RunID: record.runID, RoleID: record.roleID, GroupID: record.groupID, WorkspaceID: record.workspaceID, SessionID: record.session.ID}
 		plan, err := s.tools.Prepare(ctx, scope, entries[index].Action)
 		if err != nil {
 			if isToolContextCancelled(err) {
@@ -83,6 +83,8 @@ func (s *system) handleToolIntents(ctx context.Context, record *runRecord, conte
 	}
 	s.publishAssistantMessageDelta(record)
 	executed, updateErr := s.executeReadyTools(ctx, record, ready, func(result toolExecutionResult) error {
+		record.sessionMu.Lock()
+		defer record.sessionMu.Unlock()
 		upsertRunToolPart(record, result.Entry.Action, toolResultPartState(result), &result.Entry.Plan.Decision, &result.Result)
 		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
 			return err

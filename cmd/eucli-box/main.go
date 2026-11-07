@@ -207,6 +207,9 @@ func run() error {
 	if err := toolSystem.SetMessageSystem(runtimeSystem); err != nil {
 		return fmt.Errorf("connect tool message capability: %w", err)
 	}
+	if err := toolSystem.SetConfirmationBridge(runtimeSystem); err != nil {
+		return fmt.Errorf("connect tool confirmation capability: %w", err)
+	}
 	log.Printf("[10/13] agent-runtime-system    ✓")
 
 	assistSystem, err := aiassist.NewSystem(aiassist.Config{}, storageSystem, providerSystem)

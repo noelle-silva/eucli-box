@@ -50,7 +50,7 @@ func messageCapabilityRequest(t *testing.T, request types.ToolMessageRequest) to
 func TestSendSessionMessageForwardsIntent(t *testing.T) {
 	storage := newFakeToolStorage()
 	messenger := &fakeMessageSystem{result: types.ToolMessageResult{SessionID: "session-2", MessageID: "message-9", RoleID: "role-b", Message: "收到啦"}}
-	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestMessageTool()), storage, messenger)
+	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestMessageTool()), storage, messenger, nil)
 	request := types.ToolMessageRequest{RoleID: "role-b", WorkspaceID: "workspace-1", SessionID: "session-2", Message: "你在吗"}
 
 	result := session.handle(context.Background(), messageCapabilityRequest(t, request))
@@ -74,7 +74,7 @@ func TestSendSessionMessageForwardsIntent(t *testing.T) {
 func TestSendSessionMessageReturnsImplementationError(t *testing.T) {
 	storage := newFakeToolStorage()
 	messenger := &fakeMessageSystem{err: errors.New("角色不存在：role-x")}
-	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestMessageTool()), storage, messenger)
+	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestMessageTool()), storage, messenger, nil)
 
 	result := session.handle(context.Background(), messageCapabilityRequest(t, types.ToolMessageRequest{RoleID: "role-x", Message: "在吗"}))
 	if result.Status != toolcontrol.CapabilityStatusFailed {
@@ -89,7 +89,7 @@ func TestSendSessionMessageReturnsImplementationError(t *testing.T) {
 // 不静默伪造一条结果。
 func TestSendSessionMessageFailsWithoutImplementation(t *testing.T) {
 	storage := newFakeToolStorage()
-	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestMessageTool()), storage, nil)
+	session := newCapabilitySession(capabilityTestPlan(storage, capabilityTestMessageTool()), storage, nil, nil)
 
 	result := session.handle(context.Background(), messageCapabilityRequest(t, types.ToolMessageRequest{RoleID: "role-b", Message: "在吗"}))
 	if result.Status != toolcontrol.CapabilityStatusFailed {
@@ -107,7 +107,7 @@ func TestSendSessionMessageRequiresGrant(t *testing.T) {
 	tool := capabilityTestMessageTool()
 	tool.CapabilityGrants = nil
 	messenger := &fakeMessageSystem{}
-	session := newCapabilitySession(capabilityTestPlan(storage, tool), storage, messenger)
+	session := newCapabilitySession(capabilityTestPlan(storage, tool), storage, messenger, nil)
 
 	result := session.handle(context.Background(), messageCapabilityRequest(t, types.ToolMessageRequest{RoleID: "role-b", Message: "在吗"}))
 	if result.Status != toolcontrol.CapabilityStatusDenied {

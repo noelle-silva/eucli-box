@@ -66,7 +66,7 @@ func (s *system) ExecuteWithOutputUpdate(ctx context.Context, plan types.ToolRun
 		return types.ToolResult{}, toolExecutionInvalid("failed to encode tool input", err)
 	}
 	startedAt := time.Now()
-	capabilities := newCapabilitySession(plan, s.storage, s.messageSystem())
+	capabilities := newCapabilitySession(plan, s.storage, s.messageSystem(), s.confirmationBridge())
 	outcome := s.executeToolProcess(ctx, plan.Tool.ID, plan.Executable, plan.Tool.BodyDirectory, input, capabilities, func(update types.ToolOutputUpdate) {
 		var relayed types.ToolOutputUpdate
 		relayed.CallID = plan.Action.ID

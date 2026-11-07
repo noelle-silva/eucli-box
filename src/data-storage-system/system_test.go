@@ -599,7 +599,7 @@ func TestSessionMessageCacheAndContextFactsRoundTrip(t *testing.T) {
 		LastActive: now,
 		Messages: []types.Message{
 			{ID: "u1", Type: "user", Content: "hi", CreatedAt: now, UpdatedAt: now},
-			{ID: "a1", Type: "assistant", Content: "measured", ParentMessageID: "u1", ModelDurationMs: 1234, CacheRate: &rate, ContextTokens: &contextTokens, CreatedAt: now, UpdatedAt: now},
+			{ID: "a1", Type: "assistant", Content: "measured", ParentMessageID: "u1", ModelDurationMs: 1234, CacheRate: &rate, ContextTokens: &contextTokens, RequestModel: &types.RequestModel{ProviderID: "openai-main", ProviderName: "主供应商", ModelID: "gpt-4.1"}, CreatedAt: now, UpdatedAt: now},
 			{ID: "a2", Type: "assistant", Content: "unmeasured", ParentMessageID: "u1", CreatedAt: now, UpdatedAt: now},
 		},
 	}
@@ -631,6 +631,9 @@ func TestSessionMessageCacheAndContextFactsRoundTrip(t *testing.T) {
 	}
 	if measured.ModelDurationMs != 1234 {
 		t.Fatalf("loaded message duration = %d", measured.ModelDurationMs)
+	}
+	if measured.RequestModel == nil || measured.RequestModel.ProviderID != "openai-main" || measured.RequestModel.ProviderName != "主供应商" || measured.RequestModel.ModelID != "gpt-4.1" {
+		t.Fatalf("loaded message request model = %#v", measured.RequestModel)
 	}
 	// 没有上游真值的消息读回来必须仍为空，不能凭空补值。
 	if unmeasured.CacheRate != nil || unmeasured.ContextTokens != nil {

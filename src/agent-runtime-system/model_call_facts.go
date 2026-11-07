@@ -12,6 +12,7 @@ type modelCallFacts struct {
 	cacheRate          *float64
 	contextTokens      *int
 	contextTotalTokens *int
+	requestModel       *types.RequestModel
 }
 
 // applyRunModelFacts 把一个模型响应的全部事实落到本轮消息上：
@@ -21,6 +22,7 @@ func applyRunModelFacts(record *runRecord, response types.ModelResponse) {
 		cacheRate:          response.CacheRate,
 		contextTokens:      response.ContextTokens,
 		contextTotalTokens: response.ContextTotalTokens,
+		requestModel:       response.RequestModel,
 	})
 }
 
@@ -49,6 +51,11 @@ func settleRunModelFacts(record *runRecord, facts modelCallFacts) {
 		if facts.contextTotalTokens != nil {
 			tokens := *facts.contextTotalTokens
 			message.ContextTokens = &tokens
+			applied = true
+		}
+		if facts.requestModel != nil {
+			requestModel := *facts.requestModel
+			message.RequestModel = &requestModel
 			applied = true
 		}
 	}

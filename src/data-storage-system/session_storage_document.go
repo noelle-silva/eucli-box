@@ -43,6 +43,7 @@ type messageStorageRecord struct {
 	ModelDurationMs int64                     `json:"modelDurationMs,omitempty"`
 	CacheRate       *float64                  `json:"cacheRate,omitempty"`
 	ContextTokens   *int                      `json:"contextTokens,omitempty"`
+	RequestModel    *types.RequestModel       `json:"requestModel,omitempty"`
 	CreatedAt       time.Time                 `json:"createdAt"`
 	UpdatedAt       time.Time                 `json:"updatedAt"`
 }
@@ -95,6 +96,7 @@ func toMessageStorageRecord(message types.Message) messageStorageRecord {
 		ModelDurationMs: message.ModelDurationMs,
 		CacheRate:       message.CacheRate,
 		ContextTokens:   message.ContextTokens,
+		RequestModel:    message.RequestModel,
 		CreatedAt:       message.CreatedAt,
 		UpdatedAt:       message.UpdatedAt,
 	}

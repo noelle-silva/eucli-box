@@ -113,7 +113,8 @@ func TestStartRunPersistsContextFactsOnInputAndReplyMessages(t *testing.T) {
 	rate := 0.75
 	inputTokens := 12000
 	totalTokens := 12500
-	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done", CacheRate: &rate, ContextTokens: &inputTokens, ContextTotalTokens: &totalTokens}}
+	requestModel := types.RequestModel{ProviderID: "openai-main", ProviderName: "主供应商", ModelID: "gpt-4.1"}
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done", CacheRate: &rate, ContextTokens: &inputTokens, ContextTotalTokens: &totalTokens, RequestModel: &requestModel}}
 	system := newTestRuntime(t, fakes, Config{})
 	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
 	if err != nil {
@@ -134,6 +135,9 @@ func TestStartRunPersistsContextFactsOnInputAndReplyMessages(t *testing.T) {
 	}
 	if reply.ContextTokens == nil || *reply.ContextTokens != 12500 {
 		t.Fatalf("reply context tokens = %#v", reply.ContextTokens)
+	}
+	if reply.RequestModel == nil || reply.RequestModel.ProviderID != "openai-main" || reply.RequestModel.ModelID != "gpt-4.1" {
+		t.Fatalf("reply request model = %#v", reply.RequestModel)
 	}
 }
 

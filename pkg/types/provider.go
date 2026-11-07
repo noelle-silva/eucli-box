@@ -130,6 +130,14 @@ type ModelRequestConfig struct {
 	UpdatedAt           time.Time `json:"updatedAt"`
 }
 
+// RequestModel 是一次实际请求真正发往的供应商与模型。
+// 坐标指向模型组时，组已在解析阶段落成具体一家，这里记录的永远是实际发出的那一个。
+type RequestModel struct {
+	ProviderID   string `json:"providerId"`
+	ProviderName string `json:"providerName,omitempty"`
+	ModelID      string `json:"modelId"`
+}
+
 type ModelResponse struct {
 	ID                 string       `json:"id"`
 	Content            string       `json:"content"`
@@ -146,9 +154,11 @@ type ModelResponse struct {
 	ContextTokens *int `json:"contextTokens,omitempty"`
 	// ContextTotalTokens 是本次回复完成后的上下文规模真值：输入上下文加上本次输出。
 	// 它回答「这条回复之后，上下文已经到多少」，同样由适配器按上游口径归一。
-	ContextTotalTokens *int      `json:"contextTotalTokens,omitempty"`
-	Raw                []byte    `json:"raw,omitempty"`
-	CreatedAt          time.Time `json:"createdAt"`
+	ContextTotalTokens *int `json:"contextTotalTokens,omitempty"`
+	// RequestModel 是这次实际发出去的供应商与模型：坐标是模型组时也已落成具体一家。
+	RequestModel *RequestModel `json:"requestModel,omitempty"`
+	Raw          []byte        `json:"raw,omitempty"`
+	CreatedAt    time.Time     `json:"createdAt"`
 }
 
 type ModelStreamEventType string

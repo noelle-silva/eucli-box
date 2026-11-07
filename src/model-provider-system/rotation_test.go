@@ -91,3 +91,40 @@ func TestValidateCoordinateRejectsUnavailableGroupMember(t *testing.T) {
 	}
 	assertAppErrorCode(t, err, "provider.invalid_request")
 }
+
+// TestCompleteRecordsResolvedRequestModelForModelGroup 钉住：坐标指向模型组时，
+// 响应记录的是实际发出去的那一家供应商与模型，而不是组本身。
+func TestCompleteRecordsResolvedRequestModelForModelGroup(t *testing.T) {
+	storage := newFakeProviderStorage()
+	provider := testOpenAIProvider()
+	provider.ID = "provider-0"
+	provider.Name = "主供应商"
+	provider.RegisteredModels = []types.ProviderRegisteredModel{{ID: "exposed", Name: "exposed", SourceModelID: "gpt-4.1"}}
+	storage.providers["provider-0"] = provider
+	storage.modelGroups = []types.ModelGroup{{
+		ID:   "group",
+		Name: "Group",
+		Models: []types.ModelGroupModel{{
+			ID:       "exposed",
+			Name:     "Exposed",
+			Strategy: types.RotationStrategySequential,
+			Members:  []types.ModelGroupMember{{ProviderID: "provider-0", ModelID: "exposed", Weight: 1}},
+		}},
+	}}
+	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-group","choices":[{"message":{"content":"hi"}}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`)}}
+	system := newTestProviderSystem(t, network, storage)
+
+	response, err := system.Complete(context.Background(), types.ModelRequest{
+		Coordinate: types.ModelCoordinate{Kind: types.ModelCoordinateKindGroup, GroupID: "group", ModelID: "exposed"},
+		Messages:   []types.PromptMessage{{Role: "user", Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	if response.RequestModel == nil {
+		t.Fatalf("request model = nil")
+	}
+	if response.RequestModel.ProviderID != "provider-0" || response.RequestModel.ProviderName != "主供应商" || response.RequestModel.ModelID == "" {
+		t.Fatalf("request model = %#v", response.RequestModel)
+	}
+}

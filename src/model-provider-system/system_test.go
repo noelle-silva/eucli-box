@@ -1378,6 +1378,9 @@ func TestCompleteOpenAIParsesCacheRate(t *testing.T) {
 	assertCacheRate(t, response.CacheRate, 0.8)
 	assertContextTokens(t, response.ContextTokens, 100)
 	assertContextTotalTokens(t, response.ContextTotalTokens, 107)
+	if response.RequestModel == nil || response.RequestModel.ProviderID != "openai-main" || response.RequestModel.ModelID != "gpt-4.1" {
+		t.Fatalf("request model = %#v", response.RequestModel)
+	}
 }
 
 func TestCompleteStreamOpenAIRequestsUsageAndParsesIt(t *testing.T) {

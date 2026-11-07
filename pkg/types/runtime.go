@@ -48,7 +48,9 @@ type Message struct {
 	// ContextTokens 是「到这条消息为止的上下文规模」真值，两种角色都是同一个口径：
 	// 用户消息记本轮请求发出时模型读到的全部内容（不含本轮回复）；
 	// 助手消息记本轮回复完成后的规模（含本轮回复自身输出）。上游没有用量数据时为空。
-	ContextTokens *int      `json:"contextTokens,omitempty"`
+	ContextTokens *int `json:"contextTokens,omitempty"`
+	// RequestModel 是产出这条回复时实际发往的供应商与模型。
+	RequestModel *RequestModel `json:"requestModel,omitempty"`
 	CreatedAt     time.Time `json:"createdAt"`
 	UpdatedAt     time.Time `json:"updatedAt"`
 }

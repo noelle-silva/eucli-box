@@ -15,6 +15,8 @@ func (s *system) Complete(ctx context.Context, request types.ModelRequest) (type
 	request.Coordinate.ProviderID = provider.ID
 	request.Coordinate.ProviderName = provider.Name
 	request.Coordinate.ModelID = resolved.ID
+	// 实际发出去的就是这一家：模型组已在上一步解析成具体供应商与模型。
+	requestModel := &types.RequestModel{ProviderID: provider.ID, ProviderName: provider.Name, ModelID: resolved.ID}
 	if err := applyResolvedReasoning(&request, resolved); err != nil {
 		return types.ModelResponse{}, err
 	}
@@ -42,6 +44,7 @@ func (s *system) Complete(ctx context.Context, request types.ModelRequest) (type
 	if parseErr != nil {
 		return types.ModelResponse{}, parseErr
 	}
+	response.RequestModel = requestModel
 	return response, nil
 }
 
@@ -54,6 +57,8 @@ func (s *system) CompleteStream(ctx context.Context, request types.ModelRequest,
 	request.Coordinate.ProviderID = provider.ID
 	request.Coordinate.ProviderName = provider.Name
 	request.Coordinate.ModelID = resolved.ID
+	// 实际发出去的就是这一家：模型组已在上一步解析成具体供应商与模型。
+	requestModel := &types.RequestModel{ProviderID: provider.ID, ProviderName: provider.Name, ModelID: resolved.ID}
 	if err := applyResolvedReasoning(&request, resolved); err != nil {
 		return types.ModelResponse{}, err
 	}
@@ -92,6 +97,7 @@ func (s *system) CompleteStream(ctx context.Context, request types.ModelRequest,
 	if parseErr != nil {
 		return types.ModelResponse{}, parseErr
 	}
+	response.RequestModel = requestModel
 	return response, nil
 }
 

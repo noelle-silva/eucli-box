@@ -457,6 +457,10 @@ func cloneRunMessageSnapshot(message types.Message) types.Message {
 		tokens := *message.ContextTokens
 		message.ContextTokens = &tokens
 	}
+	if message.RequestModel != nil {
+		requestModel := *message.RequestModel
+		message.RequestModel = &requestModel
+	}
 	message.Error = cloneErrorPayload(message.Error)
 	message.Parts = cloneRunMessageParts(message.Parts)
 	if len(message.Attachments) > 0 {

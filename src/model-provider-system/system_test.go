@@ -1361,6 +1361,7 @@ func TestCompleteOpenAIParsesUsage(t *testing.T) {
 	if response.CacheRate != nil {
 		t.Fatalf("cache rate should be absent without upstream cache data: %#v", response.CacheRate)
 	}
+	assertContextTokens(t, response.ContextTokens, 11)
 }
 
 func TestCompleteOpenAIParsesCacheRate(t *testing.T) {
@@ -1374,6 +1375,7 @@ func TestCompleteOpenAIParsesCacheRate(t *testing.T) {
 		t.Fatalf("Complete() error = %v", err)
 	}
 	assertCacheRate(t, response.CacheRate, 0.8)
+	assertContextTokens(t, response.ContextTokens, 100)
 }
 
 func TestCompleteStreamOpenAIRequestsUsageAndParsesIt(t *testing.T) {
@@ -1425,6 +1427,7 @@ data: [DONE]
 		t.Fatalf("CompleteStream() error = %v", err)
 	}
 	assertCacheRate(t, response.CacheRate, 0.8)
+	assertContextTokens(t, response.ContextTokens, 100)
 }
 
 func TestCompleteAnthropicParsesUsage(t *testing.T) {
@@ -1443,6 +1446,7 @@ func TestCompleteAnthropicParsesUsage(t *testing.T) {
 	if response.CacheRate != nil {
 		t.Fatalf("cache rate should be absent without upstream cache data: %#v", response.CacheRate)
 	}
+	assertContextTokens(t, response.ContextTokens, 21)
 }
 
 func TestCompleteAnthropicParsesCacheRate(t *testing.T) {
@@ -1456,6 +1460,7 @@ func TestCompleteAnthropicParsesCacheRate(t *testing.T) {
 		t.Fatalf("Complete() error = %v", err)
 	}
 	assertCacheRate(t, response.CacheRate, 0.6)
+	assertContextTokens(t, response.ContextTokens, 100)
 }
 
 func TestCompleteStreamAnthropicParsesUsage(t *testing.T) {
@@ -1503,6 +1508,7 @@ data: {"type":"message_stop"}
 		t.Fatalf("CompleteStream() error = %v", err)
 	}
 	assertCacheRate(t, response.CacheRate, 0.6)
+	assertContextTokens(t, response.ContextTokens, 100)
 }
 
 func assertCacheRate(t *testing.T, rate *float64, want float64) {
@@ -1523,5 +1529,15 @@ func assertAppErrorCode(t *testing.T, err error, code string) {
 	}
 	if appErr.Code != code {
 		t.Fatalf("code = %s, want %s", appErr.Code, code)
+	}
+}
+
+func assertContextTokens(t *testing.T, tokens *int, want int) {
+	t.Helper()
+	if tokens == nil {
+		t.Fatalf("context tokens = nil, want %v", want)
+	}
+	if *tokens != want {
+		t.Fatalf("context tokens = %v, want %v", *tokens, want)
 	}
 }

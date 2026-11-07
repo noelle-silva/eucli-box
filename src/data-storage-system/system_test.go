@@ -584,6 +584,60 @@ func TestSessionTokenUsagePersistsLatestTruth(t *testing.T) {
 	}
 }
 
+func TestSessionMessageCacheAndContextFactsRoundTrip(t *testing.T) {
+	system := newTestSystem(t)
+	now := time.Date(2026, 6, 4, 18, 0, 0, 0, time.UTC)
+	rate := 0.42
+	contextTokens := 32000
+	session := types.Session{
+		ID:         "session-message-facts",
+		RoleID:     "developer",
+		Title:      "Message Facts",
+		Status:     string(types.RunStatusCompleted),
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		LastActive: now,
+		Messages: []types.Message{
+			{ID: "u1", Type: "user", Content: "hi", CreatedAt: now, UpdatedAt: now},
+			{ID: "a1", Type: "assistant", Content: "measured", ParentMessageID: "u1", ModelDurationMs: 1234, CacheRate: &rate, ContextTokens: &contextTokens, CreatedAt: now, UpdatedAt: now},
+			{ID: "a2", Type: "assistant", Content: "unmeasured", ParentMessageID: "u1", CreatedAt: now, UpdatedAt: now},
+		},
+	}
+	if err := system.SaveSession(context.Background(), session); err != nil {
+		t.Fatalf("SaveSession() error = %v", err)
+	}
+
+	loaded, err := system.LoadSession(context.Background(), "developer", "session-message-facts")
+	if err != nil {
+		t.Fatalf("LoadSession() error = %v", err)
+	}
+	measured, unmeasured := types.Message{ID: ""}, types.Message{ID: ""}
+	for _, message := range loaded.Messages {
+		switch message.ID {
+		case "a1":
+			measured = message
+		case "a2":
+			unmeasured = message
+		}
+	}
+	if measured.ID != "a1" || unmeasured.ID != "a2" {
+		t.Fatalf("loaded messages = %#v", loaded.Messages)
+	}
+	if measured.CacheRate == nil || *measured.CacheRate != 0.42 {
+		t.Fatalf("loaded message cache rate = %#v", measured.CacheRate)
+	}
+	if measured.ContextTokens == nil || *measured.ContextTokens != 32000 {
+		t.Fatalf("loaded message context tokens = %#v", measured.ContextTokens)
+	}
+	if measured.ModelDurationMs != 1234 {
+		t.Fatalf("loaded message duration = %d", measured.ModelDurationMs)
+	}
+	// 没有上游真值的消息读回来必须仍为空，不能凭空补值。
+	if unmeasured.CacheRate != nil || unmeasured.ContextTokens != nil {
+		t.Fatalf("unmeasured message facts = cacheRate %#v contextTokens %#v", unmeasured.CacheRate, unmeasured.ContextTokens)
+	}
+}
+
 func TestSessionCacheRatePersistsLatestTruth(t *testing.T) {
 	system := newTestSystem(t)
 	now := time.Date(2026, 6, 4, 17, 0, 0, 0, time.UTC)

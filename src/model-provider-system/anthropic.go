@@ -47,6 +47,24 @@ func anthropicCacheRate(payload *anthropicUsagePayload) *float64 {
 	return types.CacheRateFromHitMiss(*payload.CacheReadInputTokens, *payload.InputTokens+*payload.CacheCreationInputTokens)
 }
 
+// anthropicContextTokens 把 Anthropic 用量归一成这次调用的输入上下文规模：
+// input_tokens 只统计新鲜输入，缓存读取量与缓存写入量同样是本次请求带给模型的上下文，
+// 三者之和才是上下文真值。input_tokens 缺失即视为没有真值；
+// 两个缓存计数在未启用缓存时上游不返回，缺失即视为 0。
+func anthropicContextTokens(payload *anthropicUsagePayload) *int {
+	if payload == nil || payload.InputTokens == nil {
+		return nil
+	}
+	total := *payload.InputTokens
+	if payload.CacheCreationInputTokens != nil {
+		total += *payload.CacheCreationInputTokens
+	}
+	if payload.CacheReadInputTokens != nil {
+		total += *payload.CacheReadInputTokens
+	}
+	return &total
+}
+
 type anthropicCompleteResponse struct {
 	ID      string                 `json:"id"`
 	Usage   *anthropicUsagePayload `json:"usage"`
@@ -217,7 +235,7 @@ func (p *anthropicStreamParser) Finish(response types.HTTPResponse) (types.Model
 	if err := p.sse.Finish(); err != nil {
 		return types.ModelResponse{}, err
 	}
-	result := types.ModelResponse{ID: p.id, Content: p.content.String(), Reasoning: p.reasoning.String(), ReasoningSource: "an", ReasoningSignature: p.reasoningSignature, ReasoningData: p.reasoningData, Usage: anthropicTokenUsage(p.usage), CacheRate: anthropicCacheRate(p.usage), Raw: response.Body, CreatedAt: p.createdAt}
+	result := types.ModelResponse{ID: p.id, Content: p.content.String(), Reasoning: p.reasoning.String(), ReasoningSource: "an", ReasoningSignature: p.reasoningSignature, ReasoningData: p.reasoningData, Usage: anthropicTokenUsage(p.usage), CacheRate: anthropicCacheRate(p.usage), ContextTokens: anthropicContextTokens(p.usage), Raw: response.Body, CreatedAt: p.createdAt}
 	indexes := make([]int, 0, len(p.toolUses))
 	for index := range p.toolUses {
 		indexes = append(indexes, index)
@@ -357,7 +375,7 @@ func (anthropicAdapter) ParseCompleteResponse(response types.HTTPResponse) (type
 		return types.ModelResponse{}, providerParseFailed("failed to parse Anthropic completion", err)
 	}
 	createdAt := time.Now().UTC()
-	result := types.ModelResponse{ID: payload.ID, Usage: anthropicTokenUsage(payload.Usage), CacheRate: anthropicCacheRate(payload.Usage), Raw: response.Body, CreatedAt: createdAt}
+	result := types.ModelResponse{ID: payload.ID, Usage: anthropicTokenUsage(payload.Usage), CacheRate: anthropicCacheRate(payload.Usage), ContextTokens: anthropicContextTokens(payload.Usage), Raw: response.Body, CreatedAt: createdAt}
 	for _, item := range payload.Content {
 		switch item.Type {
 		case "text":

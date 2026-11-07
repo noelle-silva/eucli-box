@@ -1,10 +1,7 @@
 package agentruntime
 
 import (
-	"strings"
 	"time"
-
-	"eucli-box/pkg/types"
 )
 
 // modelCallTiming 记录一轮模型调用的墙钟耗时与各输出阶段的时间跨度。
@@ -61,56 +58,4 @@ func spanMilliseconds(start time.Time, end time.Time) int64 {
 		return 0
 	}
 	return end.Sub(start).Milliseconds()
-}
-
-// applyRunModelTiming 把最近一次模型调用的耗时事实落到本轮助手消息与对应部件上。
-func applyRunModelTiming(record *runRecord) {
-	if record == nil {
-		return
-	}
-	timing := record.modelTiming
-	totalMs := timing.totalMs()
-	if totalMs <= 0 {
-		return
-	}
-	messageID := strings.TrimSpace(record.activeAssistantID)
-	if messageID == "" && record.messageParent.Type == "assistant" {
-		messageID = strings.TrimSpace(record.messageParent.ID)
-	}
-	if messageID == "" {
-		return
-	}
-	now := nowUTC()
-	for index := range record.session.Messages {
-		if record.session.Messages[index].ID != messageID {
-			continue
-		}
-		message := &record.session.Messages[index]
-		message.ModelDurationMs = totalMs
-		applyMessagePartDurations(message, timing)
-		message.UpdatedAt = now
-		record.messageParent = *message
-		record.lastMessageID = message.ID
-		record.session.UpdatedAt = now
-		record.session.LastActive = now
-		return
-	}
-}
-
-func applyMessagePartDurations(message *types.Message, timing modelCallTiming) {
-	reasoningMs := timing.reasoningMs()
-	contentMs := timing.contentMs()
-	for index := range message.Parts {
-		part := &message.Parts[index]
-		switch part.Type {
-		case "reasoning":
-			if reasoningMs > 0 {
-				part.DurationMs = reasoningMs
-			}
-		case "text":
-			if contentMs > 0 {
-				part.DurationMs = contentMs
-			}
-		}
-	}
 }

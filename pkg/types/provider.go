@@ -140,9 +140,12 @@ type ModelResponse struct {
 	ToolIntents        []ToolIntent `json:"toolIntents,omitempty"`
 	Usage              *TokenUsage  `json:"usage,omitempty"`
 	// CacheRate 是本次调用由上游缓存命中/未命中量算出的缓存率；上游没有缓存数据时为 nil。
-	CacheRate *float64  `json:"cacheRate,omitempty"`
-	Raw       []byte    `json:"raw,omitempty"`
-	CreatedAt time.Time `json:"createdAt"`
+	CacheRate *float64 `json:"cacheRate,omitempty"`
+	// ContextTokens 是本次调用的输入上下文规模真值，按各服务商自身上游字段口径归一：
+	// 口径差异只存在于适配器内部，消费方只读这个数，不再二次换算。上游没有用量数据时为 nil。
+	ContextTokens *int      `json:"contextTokens,omitempty"`
+	Raw           []byte    `json:"raw,omitempty"`
+	CreatedAt     time.Time `json:"createdAt"`
 }
 
 type ModelStreamEventType string

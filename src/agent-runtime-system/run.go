@@ -304,7 +304,7 @@ func (s *system) runConversation(ctx context.Context, record *runRecord, context
 			dropEmptyAssistantOutput(record)
 		}
 		if assistantOutputRecorded {
-			applyRunModelTiming(record)
+			applyRunModelFacts(record, modelResponse)
 		}
 		assistantParent = record.messageParent
 		if err := s.setRunMessageIDs(record.runID, record.inputMessageID, assistantParent.ID); err != nil {

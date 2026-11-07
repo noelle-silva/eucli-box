@@ -91,6 +91,16 @@ func openAICacheRate(payload *openAIUsagePayload) *float64 {
 	return types.CacheRateFromHitMiss(hit, miss)
 }
 
+// openAIContextTokens 把 OpenAI 用量归一成这次调用的输入上下文规模：
+// prompt_tokens 已经包含命中缓存的令牌，本身就是本次请求的上下文规模，不做加减。
+func openAIContextTokens(payload *openAIUsagePayload) *int {
+	if payload == nil || payload.PromptTokens == nil {
+		return nil
+	}
+	total := *payload.PromptTokens
+	return &total
+}
+
 type openAIToolCallBuilder struct {
 	ID        string
 	Name      string
@@ -211,7 +221,7 @@ func (p *openAIStreamParser) Finish(response types.HTTPResponse) (types.ModelRes
 	if err := p.sse.Finish(); err != nil {
 		return types.ModelResponse{}, err
 	}
-	result := types.ModelResponse{ID: p.id, Content: p.content.String(), Reasoning: p.reasoning.String(), ReasoningSource: "op", ReasoningData: p.reasoningData, Usage: openAITokenUsage(p.usage), CacheRate: openAICacheRate(p.usage), Raw: response.Body, CreatedAt: p.createdAt}
+	result := types.ModelResponse{ID: p.id, Content: p.content.String(), Reasoning: p.reasoning.String(), ReasoningSource: "op", ReasoningData: p.reasoningData, Usage: openAITokenUsage(p.usage), CacheRate: openAICacheRate(p.usage), ContextTokens: openAIContextTokens(p.usage), Raw: response.Body, CreatedAt: p.createdAt}
 	indexes := make([]int, 0, len(p.toolCalls))
 	for index := range p.toolCalls {
 		indexes = append(indexes, index)
@@ -305,7 +315,7 @@ func (openAIAdapter) ParseCompleteResponse(response types.HTTPResponse) (types.M
 	if err := json.Unmarshal(response.Body, &payload); err != nil {
 		return types.ModelResponse{}, providerParseFailed("failed to parse OpenAI completion", err)
 	}
-	result := types.ModelResponse{ID: payload.ID, Usage: openAITokenUsage(payload.Usage), CacheRate: openAICacheRate(payload.Usage), Raw: response.Body, CreatedAt: time.Now().UTC()}
+	result := types.ModelResponse{ID: payload.ID, Usage: openAITokenUsage(payload.Usage), CacheRate: openAICacheRate(payload.Usage), ContextTokens: openAIContextTokens(payload.Usage), Raw: response.Body, CreatedAt: time.Now().UTC()}
 	if len(payload.Choices) == 0 {
 		return result, nil
 	}

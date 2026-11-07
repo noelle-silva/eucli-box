@@ -39,12 +39,16 @@ type Message struct {
 	ToolID          string              `json:"toolId,omitempty"`
 	ToolName        string              `json:"toolName,omitempty"`
 	// AsyncToolTaskID 把异步结果消息与其来源任务绑定，作为回灌幂等的第二道防线。
-	AsyncToolTaskID string    `json:"asyncToolTaskId,omitempty"`
-	Reason          string    `json:"reason,omitempty"`
-	TokenEstimate   int       `json:"tokenEstimate,omitempty"`
-	ModelDurationMs int64     `json:"modelDurationMs,omitempty"`
-	CreatedAt       time.Time `json:"createdAt"`
-	UpdatedAt       time.Time `json:"updatedAt"`
+	AsyncToolTaskID string `json:"asyncToolTaskId,omitempty"`
+	Reason          string `json:"reason,omitempty"`
+	TokenEstimate   int    `json:"tokenEstimate,omitempty"`
+	ModelDurationMs int64  `json:"modelDurationMs,omitempty"`
+	// CacheRate 是本条回复对应那次模型调用的缓存率真值；上游没有缓存数据时为空，不推算。
+	CacheRate *float64 `json:"cacheRate,omitempty"`
+	// ContextTokens 是本条回复对应那次模型调用的输入上下文规模真值；上游没有用量数据时为空。
+	ContextTokens *int      `json:"contextTokens,omitempty"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
 }
 
 const (

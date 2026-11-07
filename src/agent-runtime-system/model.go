@@ -162,6 +162,9 @@ func clearAssistantOutput(message *types.Message) {
 	message.Parts = nil
 	message.Attachments = nil
 	message.ModelDurationMs = 0
+	// 上次失败尝试的用量真值随产出一起作废，重试只认本次调用给的数据。
+	message.CacheRate = nil
+	message.ContextTokens = nil
 }
 
 func sessionMessageIndex(messages []types.Message, messageID string) int {

@@ -449,6 +449,14 @@ func cloneRunMessageSnapshot(message types.Message) types.Message {
 		control := *message.Control
 		message.Control = &control
 	}
+	if message.CacheRate != nil {
+		rate := *message.CacheRate
+		message.CacheRate = &rate
+	}
+	if message.ContextTokens != nil {
+		tokens := *message.ContextTokens
+		message.ContextTokens = &tokens
+	}
 	message.Error = cloneErrorPayload(message.Error)
 	message.Parts = cloneRunMessageParts(message.Parts)
 	if len(message.Attachments) > 0 {

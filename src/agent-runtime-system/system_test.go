@@ -108,6 +108,75 @@ func TestStartRunPersistsModelCacheRateIntoSession(t *testing.T) {
 	}
 }
 
+func TestStartRunPersistsMessageCacheAndContextFacts(t *testing.T) {
+	fakes := newRuntimeFakes()
+	rate := 0.75
+	contextTokens := 12000
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done", CacheRate: &rate, ContextTokens: &contextTokens}}
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	reply := lastAssistantMessage(fakes.storage.lastSession())
+	if reply.CacheRate == nil || *reply.CacheRate != 0.75 {
+		t.Fatalf("message cache rate = %#v", reply.CacheRate)
+	}
+	if reply.ContextTokens == nil || *reply.ContextTokens != 12000 {
+		t.Fatalf("message context tokens = %#v", reply.ContextTokens)
+	}
+}
+
+func TestStartRunLeavesMessageFactsEmptyWithoutUpstreamTruth(t *testing.T) {
+	fakes := newRuntimeFakes()
+	fakes.provider.responses = []types.ModelResponse{{ID: "m1", Content: "done"}}
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	reply := lastAssistantMessage(fakes.storage.lastSession())
+	if reply.CacheRate != nil || reply.ContextTokens != nil {
+		t.Fatalf("message facts should stay empty without truth: cacheRate=%#v contextTokens=%#v", reply.CacheRate, reply.ContextTokens)
+	}
+}
+
+func TestStartRunSettlesMessageFactsFromLatestModelCall(t *testing.T) {
+	fakes := newRuntimeFakes()
+	firstRate := 0.2
+	firstContextTokens := 1000
+	secondRate := 0.9
+	secondContextTokens := 2000
+	fakes.provider.responses = []types.ModelResponse{
+		{ID: "m1", CacheRate: &firstRate, ContextTokens: &firstContextTokens, ToolIntents: []types.ToolIntent{{ID: "intent-1", ToolName: "file-reader", Arguments: map[string]any{"path": "README.md"}}}},
+		{ID: "m2", Content: "final", CacheRate: &secondRate, ContextTokens: &secondContextTokens},
+	}
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Stream: types.BoolPtr(false), Message: "hello"})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("status = %s reason=%s", final.Status, final.Reason)
+	}
+	reply := lastAssistantMessage(fakes.storage.lastSession())
+	if reply.CacheRate == nil || *reply.CacheRate != 0.9 {
+		t.Fatalf("message cache rate = %#v", reply.CacheRate)
+	}
+	if reply.ContextTokens == nil || *reply.ContextTokens != 2000 {
+		t.Fatalf("message context tokens = %#v", reply.ContextTokens)
+	}
+}
+
 func TestStartRunClearsSessionCacheRateWhenRequestHasNoTruth(t *testing.T) {
 	fakes := newRuntimeFakes()
 	previousRate := 0.75

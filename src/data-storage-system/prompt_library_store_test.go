@@ -158,7 +158,7 @@ func TestPromptLibraryRejectsUnknownScopeAndOwner(t *testing.T) {
 	}
 	if _, err := system.SavePromptLibrary(ctx, "planet", "", library); err == nil {
 		t.Fatal("SavePromptLibrary() with unknown scope = nil error, want failure")
-	} else if !strings.Contains(err.Error(), "unsupported prompt library scope") {
+	} else if !strings.Contains(err.Error(), "unsupported prompt scope") {
 		t.Fatalf("unknown scope error = %v", err)
 	}
 	if _, err := system.SavePromptLibrary(ctx, types.PromptScopeRole, "../escape", library); err == nil {

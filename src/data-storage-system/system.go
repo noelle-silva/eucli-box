@@ -69,6 +69,9 @@ type System interface {
 	SavePromptLibrary(ctx context.Context, scope string, ownerID string, library types.PromptLibrary) (types.PromptLibrary, error)
 	DeletePrompt(ctx context.Context, scope string, ownerID string, promptID string) (types.PromptLibrary, error)
 
+	LoadPromptFolders(ctx context.Context, scope string, ownerID string) (types.PromptFolderLibrary, error)
+	SavePromptFolders(ctx context.Context, scope string, ownerID string, library types.PromptFolderLibrary) (types.PromptFolderLibrary, error)
+
 	LoadRequestRecordConfig(ctx context.Context) (types.RequestRecordConfig, error)
 	SaveRequestRecordConfig(ctx context.Context, config types.RequestRecordConfig) (types.RequestRecordConfig, error)
 	AppendRequestRecord(ctx context.Context, record types.RequestRecord) (types.RequestRecord, error)

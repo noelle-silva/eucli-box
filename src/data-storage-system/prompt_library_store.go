@@ -5,26 +5,27 @@ import (
 	"strings"
 	"time"
 
+	"eucli-box/pkg/datapaths"
 	"eucli-box/pkg/types"
 )
 
 // 提示词仓库：全局、角色、工作区三个作用域共用同一套读、写、删动作。
-// 作用域只决定文件落点（由 paths.promptLibraryTarget 单点解析），
+// 作用域只决定文件落点（由 paths.promptScopeFile 单点解析），
 // 不改变条目内容语义，也不在作用域之间做继承或覆盖。
 
 // LoadPromptLibrary 读取某个作用域的提示词仓库；文件尚不存在时返回空库。
 func (s *system) LoadPromptLibrary(ctx context.Context, scope string, ownerID string) (types.PromptLibrary, error) {
-	target, err := s.promptLibraryTarget(scope, ownerID)
+	file, err := s.promptScopeFile(scope, ownerID, datapaths.RelPromptLibraryFile)
 	if err != nil {
 		return types.PromptLibrary{}, err
 	}
-	return readPromptLibrary(ctx, target.file)
+	return readPromptLibrary(ctx, file)
 }
 
 // SavePromptLibrary 整库保存某个作用域的提示词仓库。
 // 条目时间由存储维护：新条目补创建时间，内容或备注真的变了才刷新更新时间。
 func (s *system) SavePromptLibrary(ctx context.Context, scope string, ownerID string, library types.PromptLibrary) (types.PromptLibrary, error) {
-	target, err := s.promptLibraryTarget(scope, ownerID)
+	file, err := s.promptScopeFile(scope, ownerID, datapaths.RelPromptLibraryFile)
 	if err != nil {
 		return types.PromptLibrary{}, err
 	}
@@ -32,7 +33,7 @@ func (s *system) SavePromptLibrary(ctx context.Context, scope string, ownerID st
 	s.entityMu.Lock()
 	defer s.entityMu.Unlock()
 
-	previous, err := readPromptLibrary(ctx, target.file)
+	previous, err := readPromptLibrary(ctx, file)
 	if err != nil {
 		return types.PromptLibrary{}, err
 	}
@@ -40,20 +41,25 @@ func (s *system) SavePromptLibrary(ctx context.Context, scope string, ownerID st
 	if err != nil {
 		return types.PromptLibrary{}, err
 	}
-	if err := writeJSON(ctx, target.file, normalized); err != nil {
+	if err := writeJSON(ctx, file, normalized); err != nil {
 		return types.PromptLibrary{}, storageWriteFailed("failed to save prompt library", err)
 	}
 	return normalized, nil
 }
 
 // DeletePrompt 删除某条提示词：读、改、写在同一把实体锁内完成。
-// 条目不存在时明确报错，不静默成功。
+// 收藏夹是索引，本体删除时同步摘掉所有指向它的索引，两个文件同事务提交，
+// 不留下「本体已删、索引还在」的中间态。条目不存在时明确报错。
 func (s *system) DeletePrompt(ctx context.Context, scope string, ownerID string, promptID string) (types.PromptLibrary, error) {
 	promptID = strings.TrimSpace(promptID)
 	if promptID == "" {
 		return types.PromptLibrary{}, storageInvalid("prompt id is required", nil)
 	}
-	target, err := s.promptLibraryTarget(scope, ownerID)
+	file, err := s.promptScopeFile(scope, ownerID, datapaths.RelPromptLibraryFile)
+	if err != nil {
+		return types.PromptLibrary{}, err
+	}
+	foldersFile, _, err := s.paths.promptScopeFile(scope, ownerID, datapaths.RelPromptFoldersFile)
 	if err != nil {
 		return types.PromptLibrary{}, err
 	}
@@ -61,7 +67,7 @@ func (s *system) DeletePrompt(ctx context.Context, scope string, ownerID string,
 	s.entityMu.Lock()
 	defer s.entityMu.Unlock()
 
-	library, err := readPromptLibrary(ctx, target.file)
+	library, err := readPromptLibrary(ctx, file)
 	if err != nil {
 		return types.PromptLibrary{}, err
 	}
@@ -78,24 +84,42 @@ func (s *system) DeletePrompt(ctx context.Context, scope string, ownerID string,
 		return types.PromptLibrary{}, storageInvalid("prompt does not exist: "+promptID, nil)
 	}
 	updated := types.PromptLibrary{Prompts: remaining}
-	if err := writeJSON(ctx, target.file, updated); err != nil {
+
+	tx := newFileTransaction()
+	defer tx.Discard()
+	if err := tx.StageJSON(ctx, file, updated); err != nil {
+		return types.PromptLibrary{}, err
+	}
+	if dataFileExists(foldersFile) {
+		folders, err := readPromptFolderLibrary(ctx, foldersFile)
+		if err != nil {
+			return types.PromptLibrary{}, err
+		}
+		detached, changed := detachPromptFromFolders(folders, promptID, time.Now().UTC().Format(time.RFC3339))
+		if changed {
+			if err := tx.StageJSON(ctx, foldersFile, detached); err != nil {
+				return types.PromptLibrary{}, err
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
 		return types.PromptLibrary{}, storageWriteFailed("failed to save prompt library", err)
 	}
 	return updated, nil
 }
 
-// promptLibraryTarget 解析落点并确认归属实体存在：
-// 写入或读取一个不存在的角色/工作区的提示词仓库，属于调用方给错了归属，
+// promptScopeFile 解析作用域文件落点并确认归属实体存在：
+// 读写一个不存在的角色或工作区的数据，属于调用方给错了归属，
 // 如实报错，不在数据区凭空生成实体目录。
-func (s *system) promptLibraryTarget(scope string, ownerID string) (promptLibraryLocation, error) {
-	target, err := s.paths.promptLibraryLocation(scope, ownerID)
+func (s *system) promptScopeFile(scope string, ownerID string, fileName string) (string, error) {
+	file, ownerDir, err := s.paths.promptScopeFile(scope, ownerID, fileName)
 	if err != nil {
-		return promptLibraryLocation{}, err
+		return "", err
 	}
-	if target.ownerDir != "" && !directoryExists(target.ownerDir) {
-		return promptLibraryLocation{}, storageInvalid("prompt library owner does not exist for scope "+scope, nil)
+	if ownerDir != "" && !directoryExists(ownerDir) {
+		return "", storageInvalid("prompt scope owner does not exist for scope "+scope, nil)
 	}
-	return target, nil
+	return file, nil
 }
 
 // readPromptLibrary 读取库文件并校验其内容。

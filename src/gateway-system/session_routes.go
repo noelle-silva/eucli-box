@@ -434,6 +434,29 @@ func (s *system) handleSaveSessionFavorites(w http.ResponseWriter, r *http.Reque
 	writeData(w, http.StatusOK, saved)
 }
 
+func (s *system) handleLoadSessionDesks(w http.ResponseWriter, r *http.Request) {
+	desks, err := s.sessions.LoadSessionDesks(r.Context())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, desks)
+}
+
+func (s *system) handleSaveSessionDesks(w http.ResponseWriter, r *http.Request) {
+	desks, err := decodeJSON[types.SessionDesks](r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	saved, err := s.sessions.SaveSessionDesks(r.Context(), desks)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, saved)
+}
+
 func (s *system) handleLoadSessionAttachmentImage(w http.ResponseWriter, r *http.Request) {
 	relPath := r.URL.Query().Get("path")
 	dataURL, err := s.sessions.LoadSessionAttachmentImage(r.Context(), relPath)

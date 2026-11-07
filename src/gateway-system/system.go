@@ -151,6 +151,8 @@ type SessionSystem interface {
 	LoadSessionAttachmentImage(ctx context.Context, relPath string) (string, error)
 	LoadSessionFavorites(ctx context.Context) (types.SessionFavorites, error)
 	SaveSessionFavorites(ctx context.Context, favorites types.SessionFavorites) (types.SessionFavorites, error)
+	LoadSessionDesks(ctx context.Context) (types.SessionDesks, error)
+	SaveSessionDesks(ctx context.Context, desks types.SessionDesks) (types.SessionDesks, error)
 }
 
 type StickerSystem interface {

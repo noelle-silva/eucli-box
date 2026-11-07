@@ -480,6 +480,28 @@ func TestSessionFavoritesRoutes(t *testing.T) {
 	}
 }
 
+func TestSessionDesksRoutes(t *testing.T) {
+	fakes := newGatewayFakes()
+	system := newTestGateway(t, fakes)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/sessions/desks", strings.NewReader(`{"folders":[{"id":"deskf-1","name":"Important","parentId":"","createdAt":1,"updatedAt":1}],"chatRefsByFolderId":{"deskf-1":[{"targetKind":"role","targetId":"developer","chatId":"session-1","addedAt":2}]}}`))
+	rec := httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("save desks status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(fakes.sessions.desks.Folders) != 1 || fakes.sessions.desks.ChatRefsByFolderID["deskf-1"][0].ChatID != "session-1" {
+		t.Fatalf("desks = %#v", fakes.sessions.desks)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/sessions/desks", nil)
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "deskf-1") {
+		t.Fatalf("load desks status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestHookPromptLibraryRoutes(t *testing.T) {
 	fakes := newGatewayFakes()
 	system := newTestGateway(t, fakes)
@@ -1366,10 +1388,11 @@ func (f *fakeGatewayWorkspaces) DeleteWorkspaceIcon(ctx context.Context, workspa
 type fakeGatewaySessions struct {
 	sessions  map[string]types.Session
 	favorites types.SessionFavorites
+	desks     types.SessionDesks
 }
 
 func newFakeGatewaySessions() *fakeGatewaySessions {
-	return &fakeGatewaySessions{sessions: map[string]types.Session{}, favorites: types.SessionFavorites{Folders: []types.SessionFavoriteFolder{}, ChatRefsByFolderID: map[string][]types.SessionFavoriteChatRef{}}}
+	return &fakeGatewaySessions{sessions: map[string]types.Session{}, favorites: types.SessionFavorites{Folders: []types.SessionFavoriteFolder{}, ChatRefsByFolderID: map[string][]types.SessionFavoriteChatRef{}}, desks: types.SessionDesks{Folders: []types.SessionDeskFolder{}, ChatRefsByFolderID: map[string][]types.SessionDeskChatRef{}}}
 }
 
 func (f *fakeGatewaySessions) CreateSession(ctx context.Context, roleID string, title string) (types.Session, error) {
@@ -1655,6 +1678,15 @@ func (f *fakeGatewaySessions) LoadSessionFavorites(ctx context.Context) (types.S
 func (f *fakeGatewaySessions) SaveSessionFavorites(ctx context.Context, favorites types.SessionFavorites) (types.SessionFavorites, error) {
 	f.favorites = favorites
 	return f.favorites, nil
+}
+
+func (f *fakeGatewaySessions) LoadSessionDesks(ctx context.Context) (types.SessionDesks, error) {
+	return f.desks, nil
+}
+
+func (f *fakeGatewaySessions) SaveSessionDesks(ctx context.Context, desks types.SessionDesks) (types.SessionDesks, error) {
+	f.desks = desks
+	return f.desks, nil
 }
 
 type fakeGatewayRuntime struct {

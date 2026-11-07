@@ -986,7 +986,7 @@ func newTestGateway(t *testing.T, fakes *gatewayFakes) System {
 		}
 		sources[types.ReleaseArtifactKindPlugin] = fakes.installSourcePlugin
 	}
-	system, err := NewSystem(Config{Addr: "127.0.0.1:0", InstallSources: sources, SessionChanges: fakes.sessionChanges}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseSource, fakes.requestRecords, fakes.promptLibraries)
+	system, err := NewSystem(Config{Addr: "127.0.0.1:0", InstallSources: sources, SessionChanges: fakes.sessionChanges}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseSource, fakes.requestRecords, fakes.promptLibraries, fakes.promptFolders)
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -1013,11 +1013,12 @@ type gatewayFakes struct {
 	sessionChanges      *fakeGatewaySessionChanges
 
 	promptLibraries *fakeGatewayPromptLibraries
+	promptFolders   *fakeGatewayPromptFolders
 }
 
 func newGatewayFakes() *gatewayFakes {
 	stickers := newFakeGatewayStickers()
-	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), groups: newFakeGatewayGroups(), workspaces: newFakeGatewayWorkspaces(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, hooks: &fakeGatewayHooks{}, placeholders: &fakeGatewayPlaceholders{}, systemPlugins: &fakeGatewaySystemPlugins{}, assist: &fakeGatewayAssist{stickers: stickers}, releaseSource: &fakeGatewayReleaseSource{}, requestRecords: newFakeGatewayRequestRecords(), promptLibraries: newFakeGatewayPromptLibraries(), installSource: newFakeGatewayInstallSource(), installSourcePlugin: newFakeGatewayInstallSource(), sessionChanges: newFakeGatewaySessionChanges()}
+	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), groups: newFakeGatewayGroups(), workspaces: newFakeGatewayWorkspaces(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, hooks: &fakeGatewayHooks{}, placeholders: &fakeGatewayPlaceholders{}, systemPlugins: &fakeGatewaySystemPlugins{}, assist: &fakeGatewayAssist{stickers: stickers}, releaseSource: &fakeGatewayReleaseSource{}, requestRecords: newFakeGatewayRequestRecords(), promptLibraries: newFakeGatewayPromptLibraries(), promptFolders: newFakeGatewayPromptFolders(), installSource: newFakeGatewayInstallSource(), installSourcePlugin: newFakeGatewayInstallSource(), sessionChanges: newFakeGatewaySessionChanges()}
 }
 
 type fakeGatewayInstallSource struct {
@@ -2279,5 +2280,25 @@ func (f *fakeGatewayPromptLibraries) DeletePrompt(ctx context.Context, scope str
 		}
 	}
 	f.library = types.PromptLibrary{Prompts: remaining}
+	return f.library, nil
+}
+
+type fakeGatewayPromptFolders struct {
+	library types.PromptFolderLibrary
+	scope   string
+	ownerID string
+}
+
+func newFakeGatewayPromptFolders() *fakeGatewayPromptFolders {
+	return &fakeGatewayPromptFolders{library: types.PromptFolderLibrary{RootFolderIDs: []string{}, Folders: []types.PromptFolder{}}}
+}
+
+func (f *fakeGatewayPromptFolders) LoadPromptFolders(ctx context.Context, scope string, ownerID string) (types.PromptFolderLibrary, error) {
+	f.scope, f.ownerID = scope, ownerID
+	return f.library, nil
+}
+
+func (f *fakeGatewayPromptFolders) SavePromptFolders(ctx context.Context, scope string, ownerID string, library types.PromptFolderLibrary) (types.PromptFolderLibrary, error) {
+	f.scope, f.ownerID, f.library = scope, ownerID, library
 	return f.library, nil
 }

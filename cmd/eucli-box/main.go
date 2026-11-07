@@ -251,7 +251,7 @@ func run() error {
 			types.ReleaseArtifactKindPlugin: pluginSourceState,
 		},
 	}
-	gatewaySystem, err := gateway.NewSystem(gatewayConfig, runtimeSystem, roleSystem, storageSystem, storageSystem, providerSystem, toolSystem, storageSystem, storageSystem, storageSystem, placeholderSystem, systemPluginSystem, assistSystem, releaseSourceSystem, requestRecordSystem, storageSystem)
+	gatewaySystem, err := gateway.NewSystem(gatewayConfig, runtimeSystem, roleSystem, storageSystem, storageSystem, providerSystem, toolSystem, storageSystem, storageSystem, storageSystem, placeholderSystem, systemPluginSystem, assistSystem, releaseSourceSystem, requestRecordSystem, storageSystem, storageSystem)
 	if err != nil {
 		return fmt.Errorf("start gateway system: %w", err)
 	}

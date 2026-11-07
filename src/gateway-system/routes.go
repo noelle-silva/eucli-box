@@ -176,6 +176,8 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("GET /api/prompt-library/{scope}", s.authWrap(s.handleLoadPromptLibrary))
 	s.mux.HandleFunc("PUT /api/prompt-library/{scope}", s.authWrap(s.handleSavePromptLibrary))
 	s.mux.HandleFunc("DELETE /api/prompt-library/{scope}/prompts/{promptID}", s.authWrap(s.handleDeletePrompt))
+	s.mux.HandleFunc("GET /api/prompt-folders/{scope}", s.authWrap(s.handleLoadPromptFolders))
+	s.mux.HandleFunc("PUT /api/prompt-folders/{scope}", s.authWrap(s.handleSavePromptFolders))
 	s.mux.HandleFunc("GET /api/placeholders", s.authWrap(s.handleLoadPlaceholderLibrary))
 	s.mux.HandleFunc("PUT /api/placeholders", s.authWrap(s.handleSavePlaceholderLibrary))
 	s.mux.HandleFunc("PUT /api/placeholders/order", s.authWrap(s.handleReorderPlaceholders))

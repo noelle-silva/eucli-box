@@ -66,6 +66,10 @@ func (p paths) sessionFavoritesFile() string {
 	return filepath.Join(p.sessionsRoot(), "favorites.json")
 }
 
+func (p paths) sessionDesksFile() string {
+	return filepath.Join(p.sessionsRoot(), "desks.json")
+}
+
 func (p paths) stickerNamingConfigFile() string {
 	return datapaths.StickerNamingFile(p.root)
 }

@@ -190,7 +190,9 @@ type ToolAction struct {
 }
 
 // ToolRunScope 是一次工具执行的会话身份：能力服务以此访问会话资源。
+// RunID 是发起这次工具调用的运行：外部确认要摆回这条运行上，才有人能看见。
 type ToolRunScope struct {
+	RunID       string `json:"runId,omitempty"`
 	RoleID      string `json:"roleId,omitempty"`
 	GroupID     string `json:"groupId,omitempty"`
 	WorkspaceID string `json:"workspaceId,omitempty"`

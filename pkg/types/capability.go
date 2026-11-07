@@ -20,6 +20,9 @@ const (
 	// ToolCapabilityRoleDirectory 是角色名册读取能力：工具按工作区限定向宿主
 	// 索取角色名、角色标识与角色描述。
 	ToolCapabilityRoleDirectory = "role-directory"
+	// ToolCapabilityToolConfirmation 是外部确认转呈能力：工具把「别处有件事要人点头」
+	// 交给宿主摆到台面上，并等用户裁决后拿回结果。
+	ToolCapabilityToolConfirmation = "tool-confirmation"
 )
 
 // 能力访问方式：声明与授权都以读、写、引用显式分离。
@@ -100,6 +103,8 @@ func IsStandardToolCapability(id string, access string) bool {
 		return strings.TrimSpace(access) == ToolCapabilityAccessRead
 	case ToolCapabilityRoleDirectory:
 		return strings.TrimSpace(access) == ToolCapabilityAccessRead
+	case ToolCapabilityToolConfirmation:
+		return strings.TrimSpace(access) == ToolCapabilityAccessWrite
 	default:
 		return false
 	}
@@ -243,15 +248,58 @@ type ToolMessageRequest struct {
 	RoleID      string `json:"roleId"`
 	WorkspaceID string `json:"workspaceId,omitempty"`
 	SessionID   string `json:"sessionId,omitempty"`
-	Message     string `json:"message"`
+	Message     string `json:"message,omitempty"`
+	// ResumeRunID 非空表示「不再发新消息，只接着等这条运行」：
+	// 转呈确认之后用它续等，避免重复发消息。
+	ResumeRunID string `json:"resumeRunId,omitempty"`
 }
 
-// ToolMessageResult 是角色停止输出后交还给工具的最新一条消息。
+// ToolMessageStatus 是发送会话消息的结果状态：
+// 角色已经答复，或者角色那边卡在一件需要用户点头的事上。
+const (
+	ToolMessageStatusReplied              = "replied"
+	ToolMessageStatusConfirmationRequired = "confirmation_required"
+)
+
+// ToolConfirmationFact 是「角色那边正在等确认」这件事的完整事实：
+// 哪个决策、哪个工具、被拦下的原因与入参，以及在哪个会话里等。
+type ToolConfirmationFact struct {
+	DecisionID string         `json:"decisionId"`
+	ToolName   string         `json:"toolName"`
+	Reason     string         `json:"reason,omitempty"`
+	Arguments  map[string]any `json:"arguments,omitempty"`
+	SessionID  string         `json:"sessionId"`
+	RoleID     string         `json:"roleId"`
+}
+
+// ToolMessageResult 是发送会话消息的响应：状态决定其余字段的含义。
+//   - replied：带回角色停下后最新的一条消息；
+//   - confirmation_required：带回待确认的决策事实，消息字段留空。
 type ToolMessageResult struct {
-	SessionID string `json:"sessionId"`
-	MessageID string `json:"messageId"`
-	RoleID    string `json:"roleId"`
-	Message   string `json:"message"`
+	Status       string                   `json:"status"`
+	RunID        string                   `json:"runId,omitempty"`
+	SessionID    string                   `json:"sessionId"`
+	MessageID    string                   `json:"messageId,omitempty"`
+	RoleID       string                   `json:"roleId"`
+	Message      string                   `json:"message,omitempty"`
+	Confirmation *ToolConfirmationFact `json:"confirmation,omitempty"`
+}
+
+// ToolConfirmationOutcome 是外部确认的落定结论：宿主把用户裁决原样交回工具。
+const (
+	ToolConfirmationStatusApproved = "approved"
+	ToolConfirmationStatusRejected = "rejected"
+	// ToolConfirmationStatusExpired 表示该决策在台面上已不存在（已失效或已收尾）。
+	ToolConfirmationStatusExpired = "expired"
+	// ToolConfirmationStatusFailed 表示裁决已被受理，但应用裁决这一步出错：
+	// 原因如实带回，不与「失效」混为一谈。
+	ToolConfirmationStatusFailed = "failed"
+)
+
+type ToolConfirmationOutcome struct {
+	Status     string `json:"status"`
+	DecisionID string `json:"decisionId"`
+	Reason     string `json:"reason,omitempty"`
 }
 
 // ToolRoleInfo 是角色名册里的一项：名、标识与角色自己的描述。

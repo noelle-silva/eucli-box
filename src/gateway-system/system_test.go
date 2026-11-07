@@ -2284,9 +2284,13 @@ func (f *fakeGatewayPromptLibraries) DeletePrompt(ctx context.Context, scope str
 }
 
 type fakeGatewayPromptFolders struct {
-	library types.PromptFolderLibrary
-	scope   string
-	ownerID string
+	library  types.PromptFolderLibrary
+	scope    string
+	ownerID  string
+	folderID string
+	name     string
+	parentID string
+	order    []string
 }
 
 func newFakeGatewayPromptFolders() *fakeGatewayPromptFolders {
@@ -2300,5 +2304,25 @@ func (f *fakeGatewayPromptFolders) LoadPromptFolders(ctx context.Context, scope 
 
 func (f *fakeGatewayPromptFolders) SavePromptFolders(ctx context.Context, scope string, ownerID string, library types.PromptFolderLibrary) (types.PromptFolderLibrary, error) {
 	f.scope, f.ownerID, f.library = scope, ownerID, library
+	return f.library, nil
+}
+
+func (f *fakeGatewayPromptFolders) DeletePromptFolder(ctx context.Context, scope string, ownerID string, folderID string) (types.PromptFolderLibrary, error) {
+	f.scope, f.ownerID, f.folderID = scope, ownerID, folderID
+	return f.library, nil
+}
+
+func (f *fakeGatewayPromptFolders) RenamePromptFolder(ctx context.Context, scope string, ownerID string, folderID string, name string) (types.PromptFolderLibrary, error) {
+	f.scope, f.ownerID, f.folderID, f.name = scope, ownerID, folderID, name
+	return f.library, nil
+}
+
+func (f *fakeGatewayPromptFolders) ReorderPromptFolders(ctx context.Context, scope string, ownerID string, parentID string, folderIDs []string) (types.PromptFolderLibrary, error) {
+	f.scope, f.ownerID, f.parentID, f.order = scope, ownerID, parentID, folderIDs
+	return f.library, nil
+}
+
+func (f *fakeGatewayPromptFolders) ReorderFolderPrompts(ctx context.Context, scope string, ownerID string, folderID string, promptIDs []string) (types.PromptFolderLibrary, error) {
+	f.scope, f.ownerID, f.folderID, f.order = scope, ownerID, folderID, promptIDs
 	return f.library, nil
 }

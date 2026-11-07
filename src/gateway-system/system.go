@@ -194,6 +194,10 @@ type PromptLibrarySystem interface {
 type PromptFolderSystem interface {
 	LoadPromptFolders(ctx context.Context, scope string, ownerID string) (types.PromptFolderLibrary, error)
 	SavePromptFolders(ctx context.Context, scope string, ownerID string, library types.PromptFolderLibrary) (types.PromptFolderLibrary, error)
+	DeletePromptFolder(ctx context.Context, scope string, ownerID string, folderID string) (types.PromptFolderLibrary, error)
+	RenamePromptFolder(ctx context.Context, scope string, ownerID string, folderID string, name string) (types.PromptFolderLibrary, error)
+	ReorderPromptFolders(ctx context.Context, scope string, ownerID string, parentID string, folderIDs []string) (types.PromptFolderLibrary, error)
+	ReorderFolderPrompts(ctx context.Context, scope string, ownerID string, folderID string, promptIDs []string) (types.PromptFolderLibrary, error)
 }
 
 type PlaceholderSystem interface {

@@ -172,35 +172,45 @@ func (p paths) workspaceIconDir(workspaceID string) (string, error) {
 	return filepath.Join(dir, filepath.FromSlash(workspaceIconRelativeDir)), nil
 }
 
-// promptLibraryLocation 是一个作用域的提示词仓库落点：
-// file 是库文件位置，ownerDir 是归属实体目录（全局作用域为空）。
-type promptLibraryLocation struct {
-	file     string
+// promptScopeLocation 是一个作用域的文件落点事实：
+// dir 是作用域目录（全局为 .meta），ownerDir 是归属实体目录（全局为空）。
+type promptScopeLocation struct {
+	dir      string
 	ownerDir string
 }
 
-// promptLibraryLocation 解析「作用域 → 落点」。这套映射只在本方法内存在：
+// promptScopeLocation 解析「作用域 → 目录」。这套映射只存在这一处：
 // 全局落在 .meta，角色与工作区落在各自实体目录，归属 id 经 safeJoin 校验，
 // 未知作用域直接报错。
-func (p paths) promptLibraryLocation(scope string, ownerID string) (promptLibraryLocation, error) {
+func (p paths) promptScopeLocation(scope string, ownerID string) (promptScopeLocation, error) {
 	switch scope {
 	case types.PromptScopeGlobal:
-		return promptLibraryLocation{file: datapaths.GlobalPromptLibraryFile(p.root)}, nil
+		return promptScopeLocation{dir: p.metaRoot()}, nil
 	case types.PromptScopeRole:
 		dir, err := p.roleDir(ownerID)
 		if err != nil {
-			return promptLibraryLocation{}, err
+			return promptScopeLocation{}, err
 		}
-		return promptLibraryLocation{file: filepath.Join(dir, datapaths.RelPromptLibraryFile), ownerDir: dir}, nil
+		return promptScopeLocation{dir: dir, ownerDir: dir}, nil
 	case types.PromptScopeWorkspace:
 		dir, err := p.workspaceDir(ownerID)
 		if err != nil {
-			return promptLibraryLocation{}, err
+			return promptScopeLocation{}, err
 		}
-		return promptLibraryLocation{file: filepath.Join(dir, datapaths.RelPromptLibraryFile), ownerDir: dir}, nil
+		return promptScopeLocation{dir: dir, ownerDir: dir}, nil
 	default:
-		return promptLibraryLocation{}, storageInvalid("unsupported prompt library scope: "+scope, nil)
+		return promptScopeLocation{}, storageInvalid("unsupported prompt scope: "+scope, nil)
 	}
+}
+
+// promptScopeFile 返回作用域目录下一个具体文件的位置与归属目录。
+// 提示词本体与收藏夹共用这一条落点解析，文件名由调用方给出。
+func (p paths) promptScopeFile(scope string, ownerID string, fileName string) (string, string, error) {
+	location, err := p.promptScopeLocation(scope, ownerID)
+	if err != nil {
+		return "", "", err
+	}
+	return filepath.Join(location.dir, fileName), location.ownerDir, nil
 }
 
 func (p paths) sessionRoleDir(roleID string) (string, error) {

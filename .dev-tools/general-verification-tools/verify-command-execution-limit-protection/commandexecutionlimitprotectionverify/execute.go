@@ -146,6 +146,26 @@ func (f *fakeToolStorage) LoadRole(ctx context.Context, roleID string) (types.Ro
 	return types.Role{}, fmt.Errorf("role %s not found", roleID)
 }
 
+func (f *fakeToolStorage) ListRoles(ctx context.Context) ([]types.RoleSummary, error) {
+	return nil, nil
+}
+
+func (f *fakeToolStorage) ReorderTools(ctx context.Context, toolIDs []string) error {
+	return nil
+}
+func (f *fakeToolStorage) UpdateSessionToolAuthorization(ctx context.Context, roleID string, sessionID string, toolID string, authorized bool) (types.Session, error) {
+	return types.Session{}, nil
+}
+
+func (f *fakeToolStorage) UpdateGroupSessionToolAuthorization(ctx context.Context, groupID string, sessionID string, toolID string, authorized bool) (types.Session, error) {
+	return types.Session{}, nil
+}
+
+func (f *fakeToolStorage) UpdateWorkspaceSessionToolAuthorization(ctx context.Context, workspaceID string, roleID string, sessionID string, toolID string, authorized bool) (types.Session, error) {
+	return types.Session{}, nil
+}
+
+
 func (f *fakeToolStorage) LoadChatGroup(ctx context.Context, groupID string) (types.ChatGroup, error) {
 	return types.ChatGroup{}, fmt.Errorf("group %s not found", groupID)
 }

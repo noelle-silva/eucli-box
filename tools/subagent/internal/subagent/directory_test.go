@@ -87,7 +87,7 @@ func TestUnknownActionRejected(t *testing.T) {
 
 // TestSendStillDefaultWithoutAction 验证未指定动作时仍按发送处理，旧调用不受影响。
 func TestSendStillDefaultWithoutAction(t *testing.T) {
-	session := &fakeSession{result: toolcontrol.CapabilityResult{Status: toolcontrol.CapabilityStatusSuccess, Payload: types.ToolMessageResult{SessionID: "session-1", MessageID: "message-1", RoleID: "role-b", Message: "收到"}}}
+	session := &fakeSession{result: toolcontrol.CapabilityResult{Status: toolcontrol.CapabilityStatusSuccess, Payload: types.ToolMessageResult{Status: types.ToolMessageStatusReplied, SessionID: "session-1", MessageID: "message-1", RoleID: "role-b", Message: "收到"}}}
 	output := Execute(context.Background(), types.ToolExecutionInput{Arguments: map[string]any{"roleId": "role-b", "message": "在吗"}}, session)
 	if output.Status != types.ToolStatusSuccess {
 		t.Fatalf("default action = %#v", output)

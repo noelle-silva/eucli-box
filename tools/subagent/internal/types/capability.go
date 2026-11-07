@@ -6,6 +6,9 @@ const ToolCapabilitySessionMessage = "session-message"
 // ToolCapabilityRoleDirectory 是角色名册读取的能力标识。
 const ToolCapabilityRoleDirectory = "role-directory"
 
+// ToolCapabilityToolConfirmation 是外部确认转呈的能力标识。
+const ToolCapabilityToolConfirmation = "tool-confirmation"
+
 // ToolCapabilityAccessWrite 是写入访问方式：把一条消息真正发进会话。
 const ToolCapabilityAccessWrite = "write"
 
@@ -18,15 +21,51 @@ type ToolMessageRequest struct {
 	RoleID      string `json:"roleId"`
 	WorkspaceID string `json:"workspaceId,omitempty"`
 	SessionID   string `json:"sessionId,omitempty"`
-	Message     string `json:"message"`
+	Message     string `json:"message,omitempty"`
+	// ResumeRunID 非空表示不再发新消息，只接着等这条运行。
+	ResumeRunID string `json:"resumeRunId,omitempty"`
 }
 
-// ToolMessageResult 是角色停下后交还给工具的最新一条消息。
+// 发送结果状态：角色已回答，或角色那边卡在一件需要用户点头的事上。
+const (
+	ToolMessageStatusReplied              = "replied"
+	ToolMessageStatusConfirmationRequired = "confirmation_required"
+)
+
+// ToolConfirmationFact 是「角色那边正在等确认」的完整事实。
+type ToolConfirmationFact struct {
+	DecisionID string         `json:"decisionId"`
+	ToolName   string         `json:"toolName"`
+	Reason     string         `json:"reason,omitempty"`
+	Arguments  map[string]any `json:"arguments,omitempty"`
+	SessionID  string         `json:"sessionId"`
+	RoleID     string         `json:"roleId"`
+}
+
+// ToolMessageResult 是角色停下后交还给工具的结果：状态决定其余字段的含义。
 type ToolMessageResult struct {
-	SessionID string `json:"sessionId"`
-	MessageID string `json:"messageId"`
-	RoleID    string `json:"roleId"`
-	Message   string `json:"message"`
+	Status       string                `json:"status"`
+	RunID        string                `json:"runId,omitempty"`
+	SessionID    string                `json:"sessionId"`
+	MessageID    string                `json:"messageId,omitempty"`
+	RoleID       string                `json:"roleId"`
+	Message      string                `json:"message,omitempty"`
+	Confirmation *ToolConfirmationFact `json:"confirmation,omitempty"`
+}
+
+// 外部确认的落定结论。
+const (
+	ToolConfirmationStatusApproved = "approved"
+	ToolConfirmationStatusRejected = "rejected"
+	ToolConfirmationStatusExpired  = "expired"
+	ToolConfirmationStatusFailed   = "failed"
+)
+
+// ToolConfirmationOutcome 是宿主交回的外部确认结论。
+type ToolConfirmationOutcome struct {
+	Status     string `json:"status"`
+	DecisionID string `json:"decisionId"`
+	Reason     string `json:"reason,omitempty"`
 }
 
 // ToolRoleInfo 是角色名册里的一项：名、标识与角色自己的描述。

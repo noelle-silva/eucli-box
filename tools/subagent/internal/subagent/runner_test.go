@@ -44,7 +44,7 @@ func TestRequestRequiresRoleAndMessage(t *testing.T) {
 // TestRequestCarriesSessionLocator 验证会话定位原样透传：
 // 会话标识留空即新建，填写即续接，工具不改写、不补默认值。
 func TestRequestCarriesSessionLocator(t *testing.T) {
-	session := &fakeSession{result: toolcontrol.CapabilityResult{Status: toolcontrol.CapabilityStatusSuccess, Payload: types.ToolMessageResult{SessionID: "session-2", MessageID: "message-9", RoleID: "role-b", Message: "收到"}}}
+	session := &fakeSession{result: toolcontrol.CapabilityResult{Status: toolcontrol.CapabilityStatusSuccess, Payload: types.ToolMessageResult{Status: types.ToolMessageStatusReplied, SessionID: "session-2", MessageID: "message-9", RoleID: "role-b", Message: "收到"}}}
 	output := runWith(session, map[string]any{"roleId": "role-b", "workspaceId": "workspace-1", "sessionId": "session-2", "message": "在吗"})
 	if output.Status != types.ToolStatusSuccess {
 		t.Fatalf("success result = %#v", output)
@@ -101,7 +101,7 @@ func runInWorkspace(session SessionService, workspaceID string, arguments map[st
 // TestSendFallsBackToInjectedWorkspace 钉住回落语义：工作区会话里调用方
 // 不必重复交代工作区，宿主注入的标识就是默认落脚点。
 func TestSendFallsBackToInjectedWorkspace(t *testing.T) {
-	session := &fakeSession{result: toolcontrol.CapabilityResult{Status: toolcontrol.CapabilityStatusSuccess, Payload: types.ToolMessageResult{SessionID: "session-1", MessageID: "message-1", RoleID: "role-b", Message: "收到"}}}
+	session := &fakeSession{result: toolcontrol.CapabilityResult{Status: toolcontrol.CapabilityStatusSuccess, Payload: types.ToolMessageResult{Status: types.ToolMessageStatusReplied, SessionID: "session-1", MessageID: "message-1", RoleID: "role-b", Message: "收到"}}}
 	output := runInWorkspace(session, "workspace-1", map[string]any{"roleId": "role-b", "message": "在吗"})
 	if output.Status != types.ToolStatusSuccess {
 		t.Fatalf("send result = %#v", output)
@@ -114,7 +114,7 @@ func TestSendFallsBackToInjectedWorkspace(t *testing.T) {
 // TestSendExplicitWorkspaceWins 验证调用方写明的工作区优先于注入值，
 // 保留「故意发给别的工作区」的可能。
 func TestSendExplicitWorkspaceWins(t *testing.T) {
-	session := &fakeSession{result: toolcontrol.CapabilityResult{Status: toolcontrol.CapabilityStatusSuccess, Payload: types.ToolMessageResult{SessionID: "session-1", MessageID: "message-1", RoleID: "role-b", Message: "收到"}}}
+	session := &fakeSession{result: toolcontrol.CapabilityResult{Status: toolcontrol.CapabilityStatusSuccess, Payload: types.ToolMessageResult{Status: types.ToolMessageStatusReplied, SessionID: "session-1", MessageID: "message-1", RoleID: "role-b", Message: "收到"}}}
 	output := runInWorkspace(session, "workspace-1", map[string]any{"roleId": "role-b", "message": "在吗", "workspaceId": "workspace-2"})
 	if output.Status != types.ToolStatusSuccess {
 		t.Fatalf("send result = %#v", output)
@@ -126,7 +126,7 @@ func TestSendExplicitWorkspaceWins(t *testing.T) {
 
 // TestSendOutsideWorkspaceStaysPlain 验证没有注入时照常走普通会话。
 func TestSendOutsideWorkspaceStaysPlain(t *testing.T) {
-	session := &fakeSession{result: toolcontrol.CapabilityResult{Status: toolcontrol.CapabilityStatusSuccess, Payload: types.ToolMessageResult{SessionID: "session-1", MessageID: "message-1", RoleID: "role-b", Message: "收到"}}}
+	session := &fakeSession{result: toolcontrol.CapabilityResult{Status: toolcontrol.CapabilityStatusSuccess, Payload: types.ToolMessageResult{Status: types.ToolMessageStatusReplied, SessionID: "session-1", MessageID: "message-1", RoleID: "role-b", Message: "收到"}}}
 	output := runInWorkspace(session, "", map[string]any{"roleId": "role-b", "message": "在吗"})
 	if output.Status != types.ToolStatusSuccess {
 		t.Fatalf("send result = %#v", output)

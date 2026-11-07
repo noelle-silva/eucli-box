@@ -59,6 +59,8 @@ type System interface {
 	LoadSessionAttachmentPreviewImage(ctx context.Context, relPath string) (string, error)
 	LoadSessionFavorites(ctx context.Context) (types.SessionFavorites, error)
 	SaveSessionFavorites(ctx context.Context, favorites types.SessionFavorites) (types.SessionFavorites, error)
+	LoadSessionDesks(ctx context.Context) (types.SessionDesks, error)
+	SaveSessionDesks(ctx context.Context, desks types.SessionDesks) (types.SessionDesks, error)
 	LoadHookPromptLibrary(ctx context.Context) (types.HookPromptLibrary, error)
 	SaveHookPromptLibrary(ctx context.Context, library types.HookPromptLibrary) (types.HookPromptLibrary, error)
 	ReorderHookPromptPresets(ctx context.Context, presetIDs []string) (types.HookPromptLibrary, error)
@@ -189,6 +191,9 @@ func (s *system) Initialize(ctx context.Context) error {
 		return storageInitFailed("data version fact is missing or invalid", errors.New("meta/version.json does not exist"))
 	}
 	if err := s.ensureSessionFavoritesFile(ctx); err != nil {
+		return err
+	}
+	if err := s.ensureSessionDesksFile(ctx); err != nil {
 		return err
 	}
 	// 索引重建是启动维护动作，不是启动关键：任一领域的数据损坏不应阻断本体启动，

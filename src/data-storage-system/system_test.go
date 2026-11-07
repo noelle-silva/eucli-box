@@ -24,6 +24,7 @@ func TestInitializeCreatesStorageLayout(t *testing.T) {
 	}
 	assertFile(t, datapaths.VersionFile(system.paths.root))
 	assertFile(t, filepath.Join(system.paths.root, "sessions", "favorites.json"))
+	assertFile(t, filepath.Join(system.paths.root, "sessions", "desks.json"))
 }
 
 func TestSaveLoadListAndDeleteRole(t *testing.T) {
@@ -759,6 +760,71 @@ func TestSessionFavoritesWorkspaceRefKeepsWorkspaceAndRoleIdentity(t *testing.T)
 	}
 	if _, err := system.SaveSessionFavorites(context.Background(), invalid); err == nil {
 		t.Fatal("SaveSessionFavorites(workspace without role) should fail")
+	}
+}
+
+func TestSessionDesksStore(t *testing.T) {
+	system := newTestSystem(t)
+	desks := types.SessionDesks{
+		Folders: []types.SessionDeskFolder{{ID: "deskf-1", Name: "Important", CreatedAt: 1, UpdatedAt: 1}},
+		ChatRefsByFolderID: map[string][]types.SessionDeskChatRef{
+			"deskf-1": {{TargetKind: "role", TargetID: "developer", ChatID: "session-1", AddedAt: 2}},
+		},
+	}
+
+	saved, err := system.SaveSessionDesks(context.Background(), desks)
+	if err != nil {
+		t.Fatalf("SaveSessionDesks() error = %v", err)
+	}
+	if len(saved.Folders) != 1 || saved.Folders[0].ID != "deskf-1" || len(saved.ChatRefsByFolderID["deskf-1"]) != 1 {
+		t.Fatalf("saved desks = %#v", saved)
+	}
+	assertFile(t, filepath.Join(system.paths.root, "sessions", "desks.json"))
+
+	loaded, err := system.LoadSessionDesks(context.Background())
+	if err != nil {
+		t.Fatalf("LoadSessionDesks() error = %v", err)
+	}
+	if len(loaded.Folders) != 1 || loaded.ChatRefsByFolderID["deskf-1"][0].ChatID != "session-1" {
+		t.Fatalf("loaded desks = %#v", loaded)
+	}
+}
+
+func TestSessionDesksWorkspaceRefKeepsWorkspaceAndRoleIdentity(t *testing.T) {
+	system := newTestSystem(t)
+	desks := types.SessionDesks{
+		Folders: []types.SessionDeskFolder{{ID: "deskf-1", Name: "Workspace", CreatedAt: 1, UpdatedAt: 1}},
+		ChatRefsByFolderID: map[string][]types.SessionDeskChatRef{
+			"deskf-1": {{TargetKind: "workspace", TargetID: "workspace-1", RoleID: "role-1", ChatID: "session-1", AddedAt: 2}},
+		},
+	}
+
+	saved, err := system.SaveSessionDesks(context.Background(), desks)
+	if err != nil {
+		t.Fatalf("SaveSessionDesks() error = %v", err)
+	}
+	ref := saved.ChatRefsByFolderID["deskf-1"][0]
+	if ref.TargetKind != "workspace" || ref.TargetID != "workspace-1" || ref.RoleID != "role-1" {
+		t.Fatalf("saved workspace desk ref = %#v", ref)
+	}
+
+	loaded, err := system.LoadSessionDesks(context.Background())
+	if err != nil {
+		t.Fatalf("LoadSessionDesks() error = %v", err)
+	}
+	ref = loaded.ChatRefsByFolderID["deskf-1"][0]
+	if ref.TargetID != "workspace-1" || ref.RoleID != "role-1" || ref.ChatID != "session-1" {
+		t.Fatalf("loaded workspace desk ref = %#v", ref)
+	}
+
+	invalid := types.SessionDesks{
+		Folders: []types.SessionDeskFolder{{ID: "deskf-1", Name: "Workspace", CreatedAt: 1, UpdatedAt: 1}},
+		ChatRefsByFolderID: map[string][]types.SessionDeskChatRef{
+			"deskf-1": {{TargetKind: "workspace", TargetID: "workspace-1", ChatID: "session-1", AddedAt: 2}},
+		},
+	}
+	if _, err := system.SaveSessionDesks(context.Background(), invalid); err == nil {
+		t.Fatal("SaveSessionDesks(workspace without role) should fail")
 	}
 }
 

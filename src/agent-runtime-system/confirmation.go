@@ -171,7 +171,7 @@ func (s *system) waitForConfirmations(ctx context.Context, record *runRecord, co
 	}
 	s.publishAssistantMessageUpdate(record)
 	for _, plan := range plans {
-		s.publish(eventSourceFromRecord(record), "tool_confirmation_required", plan)
+		s.publish(eventSourceFromRecord(record), toolConfirmationRequiredEventType, plan)
 	}
 	confirmedByDecisionID := make(map[string]types.ToolRunPlan, len(plans))
 	for len(confirmedByDecisionID) < len(plans) {
@@ -207,12 +207,18 @@ func (s *system) waitForConfirmations(ctx context.Context, record *runRecord, co
 				}
 				confirmed, err := s.tools.ApplyConfirmation(ctx, plan, confirmation)
 				if err != nil {
+					// 裁决已被受理但应用失败：如实把原因登记给等它的转呈方，
+					// 不让对方误读成「审批单失效」。
+					s.recordConfirmationFailure(decisionID, mostSpecificErrorMessage(errorPayloadFromError(err, "")))
 					err := runtimeToolFailed("failed to apply tool confirmation", err)
 					finishToolConfirmationRequest(*request, err)
 					cleanup(err)
 					return nil, err
 				}
-				// 决策已落定：先从台账注销，再由 recordAppliedToolConfirmation 登记可能产生的下一层待确认决策。
+				// 决策已落定：先按「被受理的那个决策编号」登记结论，再从台账注销。
+				// 围栏确认应用后会重新裁决并产生新的决策编号，结论必须落在旧号上，
+				// 否则等它的转呈方会等成「已失效」。
+				s.recordConfirmationOutcome(decisionID, confirmation.Approved)
 				s.deregisterToolConfirmation(record, decisionID)
 				confirmedByDecisionID[decisionID] = confirmed
 				if err := s.recordAppliedToolConfirmation(ctx, record, confirmed); err != nil {
@@ -280,6 +286,8 @@ func (s *system) recordAppliedToolConfirmation(ctx context.Context, record *runR
 	}
 	// 若本次确认产生了下一层待确认决策，先登记进台账，再让它对外可见。
 	s.registerToolConfirmation(record, plan)
+	record.sessionMu.Lock()
+	defer record.sessionMu.Unlock()
 	upsertRunToolPart(record, plan.Action, state, &plan.Decision, nil)
 	if err := s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID); err != nil {
 		return err

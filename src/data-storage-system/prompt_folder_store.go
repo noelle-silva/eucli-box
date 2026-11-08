@@ -77,10 +77,71 @@ func emptyPromptFolderLibrary() types.PromptFolderLibrary {
 	return types.PromptFolderLibrary{RootFolderIDs: []string{}, Folders: []types.PromptFolder{}}
 }
 
+// completePromptFolderLibrary 让定点动作在完整顺序上做增删改。
+// 根级顺序跟着提示词本体走：本体新增或删除条目后，根顺序同步补齐或摘除，
+// 这是「根级集合＝根收藏夹＋全部提示词」这条规则的自动维护，不是掩盖错误。
+// 夹内顺序只补「完全缺失」的层；写了一半的视为数据损坏，交给保存校验如实报错。
+func completePromptFolderLibrary(library types.PromptFolderLibrary, prompts types.PromptLibrary) types.PromptFolderLibrary {
+	library.RootEntryOrder = syncRootEntryOrder(library.RootEntryOrder, library.RootFolderIDs, prompts)
+	for index := range library.Folders {
+		if len(library.Folders[index].EntryOrder) == 0 {
+			library.Folders[index].EntryOrder = deriveEntryOrder(library.Folders[index].FolderIDs, library.Folders[index].PromptIDs)
+		}
+	}
+	return library
+}
+
+// syncRootEntryOrder 把根级顺序同步到「根收藏夹＋全部提示词」：
+// 保留仍有效的项与原顺序，丢掉已不存在的项，缺失项按「收藏夹在前、条目在后」补到末尾。
+func syncRootEntryOrder(order []string, rootFolderIDs []string, promptLibrary types.PromptLibrary) []string {
+	expected := make(map[string]struct{}, len(rootFolderIDs)+len(promptLibrary.Prompts))
+	for _, id := range rootFolderIDs {
+		expected[promptEntryKey(promptEntryKindFolder, id)] = struct{}{}
+	}
+	for _, prompt := range promptLibrary.Prompts {
+		expected[promptEntryKey(promptEntryKindPrompt, prompt.ID)] = struct{}{}
+	}
+
+	seen := make(map[string]struct{}, len(expected))
+	order = append([]string{}, order...)
+	result := make([]string, 0, len(expected))
+	for _, item := range order {
+		key := strings.TrimSpace(item)
+		if _, ok := expected[key]; !ok {
+			continue
+		}
+		if _, duplicated := seen[key]; duplicated {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, key)
+	}
+	for _, id := range rootFolderIDs {
+		key := promptEntryKey(promptEntryKindFolder, id)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, key)
+	}
+	for _, prompt := range promptLibrary.Prompts {
+		key := promptEntryKey(promptEntryKindPrompt, prompt.ID)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, key)
+	}
+	return result
+}
+
 // normalizeEmptyCollections 把空集合归位成空切片，避免 JSON 里出现 null。
 func normalizeEmptyCollections(library types.PromptFolderLibrary) types.PromptFolderLibrary {
 	if library.RootFolderIDs == nil {
 		library.RootFolderIDs = []string{}
+	}
+	if library.RootEntryOrder == nil {
+		library.RootEntryOrder = []string{}
 	}
 	if library.Folders == nil {
 		library.Folders = []types.PromptFolder{}
@@ -92,6 +153,9 @@ func normalizeEmptyCollections(library types.PromptFolderLibrary) types.PromptFo
 		if library.Folders[index].PromptIDs == nil {
 			library.Folders[index].PromptIDs = []string{}
 		}
+		if library.Folders[index].EntryOrder == nil {
+			library.Folders[index].EntryOrder = []string{}
+		}
 	}
 	return library
 }
@@ -101,6 +165,14 @@ func validateStoredPromptFolderLibrary(library types.PromptFolderLibrary) error 
 	byID, err := indexPromptFolders(library.Folders)
 	if err != nil {
 		return err
+	}
+	if err := validateStoredEntryOrder(library.RootEntryOrder, "stored root entry order"); err != nil {
+		return err
+	}
+	for _, folder := range library.Folders {
+		if err := validateStoredEntryOrder(folder.EntryOrder, "stored prompt folder "+folder.ID+" entry order"); err != nil {
+			return err
+		}
 	}
 	return validatePromptFolderTree(library, byID)
 }
@@ -145,6 +217,10 @@ func normalizePromptFolderLibraryForSave(library types.PromptFolderLibrary, prev
 		if err != nil {
 			return types.PromptFolderLibrary{}, err
 		}
+		folder.EntryOrder, err = normalizeEntryOrder(folder.EntryOrder, folder.FolderIDs, folder.PromptIDs, "prompt folder "+folder.ID+" entry order")
+		if err != nil {
+			return types.PromptFolderLibrary{}, err
+		}
 
 		existing, exists := previousByID[folder.ID]
 		switch {
@@ -161,7 +237,11 @@ func normalizePromptFolderLibraryForSave(library types.PromptFolderLibrary, prev
 		folders = append(folders, folder)
 	}
 
-	normalized := types.PromptFolderLibrary{RootFolderIDs: rootIDs, Folders: folders}
+	rootOrder, err := normalizeRootEntryOrder(library.RootEntryOrder, rootIDs, prompts, "root entry order")
+	if err != nil {
+		return types.PromptFolderLibrary{}, err
+	}
+	normalized := types.PromptFolderLibrary{RootFolderIDs: rootIDs, RootEntryOrder: rootOrder, Folders: folders}
 	byID := make(map[string]types.PromptFolder, len(folders))
 	for _, folder := range folders {
 		byID[folder.ID] = folder
@@ -187,36 +267,24 @@ func indexPromptFolders(folders []types.PromptFolder) (map[string]types.PromptFo
 	return byID, nil
 }
 
-// validatePromptFolderTree 校验树的完整性：
-// 每个收藏夹恰好被一个父级引用，且必须从根级可达，成环与孤儿都拒绝。
+// validatePromptFolderTree 校验收藏夹之间的引用关系。
+// 收藏夹是索引，同一个收藏夹可以被多个上级收录，因此不要求唯一父级；
+// 引用必须存在、不能自引用、不能成环。
 func validatePromptFolderTree(library types.PromptFolderLibrary, byID map[string]types.PromptFolder) error {
-	parentOf := make(map[string]string, len(byID))
-	mount := func(childID string, parentID string) error {
-		childID = strings.TrimSpace(childID)
-		if childID == "" {
-			return storageInvalid("prompt folder reference is required", nil)
-		}
-		if _, ok := byID[childID]; !ok {
-			return storageInvalid("prompt folder references missing folder: "+childID, nil)
-		}
-		if existing, ok := parentOf[childID]; ok {
-			return storageInvalid("prompt folder is mounted more than once: "+childID+" (parents "+existing+", "+parentID+")", nil)
-		}
-		parentOf[childID] = parentID
-		return nil
-	}
 	for _, rootID := range library.RootFolderIDs {
-		if err := mount(rootID, ""); err != nil {
-			return err
+		rootID = strings.TrimSpace(rootID)
+		if _, ok := byID[rootID]; !ok {
+			return storageInvalid("prompt folder references missing folder: "+rootID, nil)
 		}
 	}
 	for _, folder := range library.Folders {
 		for _, childID := range folder.FolderIDs {
-			if strings.TrimSpace(childID) == strings.TrimSpace(folder.ID) {
+			childID = strings.TrimSpace(childID)
+			if childID == strings.TrimSpace(folder.ID) {
 				return storageInvalid("prompt folder cannot contain itself: "+folder.ID, nil)
 			}
-			if err := mount(childID, folder.ID); err != nil {
-				return err
+			if _, ok := byID[childID]; !ok {
+				return storageInvalid("prompt folder references missing folder: "+childID, nil)
 			}
 		}
 	}
@@ -248,14 +316,9 @@ func validatePromptFolderTree(library types.PromptFolderLibrary, byID map[string
 		state[id] = done
 		return nil
 	}
-	for _, rootID := range library.RootFolderIDs {
-		if err := walk(strings.TrimSpace(rootID)); err != nil {
-			return err
-		}
-	}
 	for id := range byID {
-		if state[id] != done {
-			return storageInvalid("prompt folder is unreachable from root: "+id, nil)
+		if err := walk(id); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -310,7 +373,12 @@ func promptFolderChanged(previous types.PromptFolder, current types.PromptFolder
 // detachPromptFromFolders 从所有收藏夹摘掉指向某个提示词的索引。
 // 其余条目的相对顺序保持不变，受影响的收藏夹刷新更新时间。
 func detachPromptFromFolders(library types.PromptFolderLibrary, promptID string, now string) (types.PromptFolderLibrary, bool) {
+	key := promptEntryKey(promptEntryKindPrompt, promptID)
 	changed := false
+	if next, removed := removeEntryKey(library.RootEntryOrder, key); removed {
+		library.RootEntryOrder = next
+		changed = true
+	}
 	folders := make([]types.PromptFolder, 0, len(library.Folders))
 	for _, folder := range library.Folders {
 		if !slices.Contains(folder.PromptIDs, promptID) {
@@ -324,6 +392,9 @@ func detachPromptFromFolders(library types.PromptFolderLibrary, promptID string,
 			}
 		}
 		folder.PromptIDs = remaining
+		if next, removed := removeEntryKey(folder.EntryOrder, key); removed {
+			folder.EntryOrder = next
+		}
 		folder.UpdatedAt = now
 		changed = true
 		folders = append(folders, folder)

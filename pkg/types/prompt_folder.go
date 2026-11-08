@@ -5,6 +5,9 @@ package types
 type PromptFolderLibrary struct {
 	// RootFolderIDs 是根级收藏夹的显式顺序。
 	RootFolderIDs []string       `json:"rootFolderIds"`
+	// RootEntryOrder 是根级的混排顺序：收藏夹与提示词条目同处一个列表。
+	// 每项形如 folder:<id> 或 prompt:<id>；缺省时按「收藏夹在前、条目在后」派生。
+	RootEntryOrder []string       `json:"rootEntryOrder,omitempty"`
 	Folders       []PromptFolder `json:"folders"`
 }
 
@@ -16,6 +19,9 @@ type PromptFolder struct {
 	Name      string   `json:"name"`
 	FolderIDs []string `json:"folderIds"`
 	PromptIDs []string `json:"promptIds"`
+	// EntryOrder 是本夹内的混排顺序，元素形如 folder:<id> 或 prompt:<id>。
+	// 它是显示的单一事实源；FolderIDs 与 PromptIDs 保持为索引事实。
+	EntryOrder []string `json:"entryOrder,omitempty"`
 	CreatedAt string   `json:"createdAt,omitempty"`
 	UpdatedAt string   `json:"updatedAt,omitempty"`
 }

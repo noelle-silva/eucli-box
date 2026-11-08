@@ -99,29 +99,6 @@ func TestPromptFoldersRejectBrokenStructures(t *testing.T) {
 		want    string
 	}{
 		{
-			"mounted twice",
-			types.PromptFolderLibrary{
-				RootFolderIDs: []string{"a", "c"},
-				Folders: []types.PromptFolder{
-					{ID: "a", Name: "甲", FolderIDs: []string{"b"}, PromptIDs: []string{}},
-					{ID: "b", Name: "乙", FolderIDs: []string{}, PromptIDs: []string{}},
-					{ID: "c", Name: "丙", FolderIDs: []string{"b"}, PromptIDs: []string{}},
-				},
-			},
-			"mounted more than once",
-		},
-		{
-			"orphan",
-			types.PromptFolderLibrary{
-				RootFolderIDs: []string{"a"},
-				Folders: []types.PromptFolder{
-					{ID: "a", Name: "甲", FolderIDs: []string{}, PromptIDs: []string{}},
-					{ID: "lost", Name: "孤儿", FolderIDs: []string{}, PromptIDs: []string{}},
-				},
-			},
-			"unreachable from root",
-		},
-		{
 			"missing child",
 			types.PromptFolderLibrary{
 				RootFolderIDs: []string{"a"},
@@ -353,7 +330,7 @@ func TestDeletePromptFolderScenarios(t *testing.T) {
 		t.Fatalf("referenced child error = %v", err)
 	}
 
-	// 删掉中间夹却把子夹留在库里：子夹没有任何父级引用。
+	// 删掉中间夹后，子夹仍可存在：收藏夹是索引，允许不出现在根级下面。
 	orphanChild := types.PromptFolderLibrary{
 		RootFolderIDs: []string{"c"},
 		Folders: []types.PromptFolder{
@@ -361,10 +338,8 @@ func TestDeletePromptFolderScenarios(t *testing.T) {
 			{ID: "c", Name: "丙", FolderIDs: []string{}, PromptIDs: []string{}},
 		},
 	}
-	if _, err := system.SavePromptFolders(ctx, types.PromptScopeGlobal, "", orphanChild); err == nil {
-		t.Fatal("deleting a parent folder leaving an orphan = nil error, want failure")
-	} else if !strings.Contains(err.Error(), "unreachable from root") {
-		t.Fatalf("orphan child error = %v", err)
+	if _, err := system.SavePromptFolders(ctx, types.PromptScopeGlobal, "", orphanChild); err != nil {
+		t.Fatalf("SavePromptFolders() with detached folder error = %v", err)
 	}
 
 	// 正确删除：父的 FolderIDs 一并摘掉子夹，子夹从库里消失。

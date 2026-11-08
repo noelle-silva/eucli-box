@@ -126,7 +126,6 @@ func TestPromptLibraryRejectsInvalidEntries(t *testing.T) {
 	}{
 		{"missing id", types.PromptLibrary{Prompts: []types.Prompt{{Name: "名称", Content: "内容"}}}, "prompt id is required"},
 		{"missing name", types.PromptLibrary{Prompts: []types.Prompt{{ID: "p1", Content: "内容"}}}, "prompt name is required"},
-		{"missing content", types.PromptLibrary{Prompts: []types.Prompt{{ID: "p1", Name: "名称", Content: "  "}}}, "prompt content is required"},
 		{"duplicate id", types.PromptLibrary{Prompts: []types.Prompt{
 			{ID: "p1", Name: "名称", Content: "内容"},
 			{ID: "p1", Name: "另一个", Content: "内容"},

@@ -155,9 +155,6 @@ func validateStoredPromptLibrary(library types.PromptLibrary) error {
 		if strings.TrimSpace(prompt.Name) == "" {
 			return storageInvalid("stored prompt library entry "+prompt.ID+" has no name", nil)
 		}
-		if strings.TrimSpace(prompt.Content) == "" {
-			return storageInvalid("stored prompt library entry "+prompt.ID+" has no content", nil)
-		}
 	}
 	return nil
 }
@@ -181,9 +178,6 @@ func normalizePromptLibraryForSave(library types.PromptLibrary, previous types.P
 		}
 		if prompt.Name == "" {
 			return types.PromptLibrary{}, storageInvalid("prompt name is required: "+prompt.ID, nil)
-		}
-		if strings.TrimSpace(prompt.Content) == "" {
-			return types.PromptLibrary{}, storageInvalid("prompt content is required: "+prompt.ID, nil)
 		}
 		if _, ok := seen[prompt.ID]; ok {
 			return types.PromptLibrary{}, storageInvalid("duplicate prompt id: "+prompt.ID, nil)

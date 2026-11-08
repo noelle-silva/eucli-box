@@ -196,8 +196,12 @@ type PromptFolderSystem interface {
 	SavePromptFolders(ctx context.Context, scope string, ownerID string, library types.PromptFolderLibrary) (types.PromptFolderLibrary, error)
 	DeletePromptFolder(ctx context.Context, scope string, ownerID string, folderID string) (types.PromptFolderLibrary, error)
 	RenamePromptFolder(ctx context.Context, scope string, ownerID string, folderID string, name string) (types.PromptFolderLibrary, error)
-	ReorderPromptFolders(ctx context.Context, scope string, ownerID string, parentID string, folderIDs []string) (types.PromptFolderLibrary, error)
-	ReorderFolderPrompts(ctx context.Context, scope string, ownerID string, folderID string, promptIDs []string) (types.PromptFolderLibrary, error)
+	ReorderPromptFolderEntries(ctx context.Context, scope string, ownerID string, parentID string, entryOrder []string) (types.PromptFolderLibrary, error)
+	AddPromptToFolder(ctx context.Context, scope string, ownerID string, folderID string, promptID string) (types.PromptFolderLibrary, error)
+	RemovePromptFromFolder(ctx context.Context, scope string, ownerID string, folderID string, promptID string) (types.PromptFolderLibrary, error)
+	MovePromptFolder(ctx context.Context, scope string, ownerID string, folderID string, fromParentID string, toParentID string) (types.PromptFolderLibrary, error)
+	AddFolderToFolder(ctx context.Context, scope string, ownerID string, folderID string, parentID string) (types.PromptFolderLibrary, error)
+	MovePromptToFolder(ctx context.Context, scope string, ownerID string, promptID string, fromFolderID string, toFolderID string) (types.PromptFolderLibrary, error)
 }
 
 type PlaceholderSystem interface {

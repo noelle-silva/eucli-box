@@ -39,7 +39,7 @@ func TestPromptFolderRoutesForwardScopeAndOwner(t *testing.T) {
 	}
 }
 
-// 四个定点动作都只带必要参数到达业务层：删除、改名、兄弟排序、夹内条目排序。
+// 定点动作只带必要参数到达业务层：删除、改名、混排排序、收藏、取消收藏。
 func TestPromptFolderActionRoutesForwardParameters(t *testing.T) {
 	fakes := newGatewayFakes()
 	system := newTestGateway(t, fakes)
@@ -64,25 +64,67 @@ func TestPromptFolderActionRoutesForwardParameters(t *testing.T) {
 		t.Fatalf("rename = id %q name %q", fakes.promptFolders.folderID, fakes.promptFolders.name)
 	}
 
-	req = httptest.NewRequest(http.MethodPut, "/api/prompt-folders/global/order?parentId=p1", strings.NewReader(`{"folderIds":["y","x"]}`))
+	req = httptest.NewRequest(http.MethodPut, "/api/prompt-folders/global/order?parentId=p1", strings.NewReader(`{"entryOrder":["prompt:p2","folder:f9"]}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
 	system.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("PUT folder order status = %d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("PUT entry order status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	if fakes.promptFolders.parentID != "p1" || strings.Join(fakes.promptFolders.order, ",") != "y,x" {
-		t.Fatalf("folder order call = parent %q order %v", fakes.promptFolders.parentID, fakes.promptFolders.order)
+	if fakes.promptFolders.parentID != "p1" || strings.Join(fakes.promptFolders.order, ",") != "prompt:p2,folder:f9" {
+		t.Fatalf("entry order call = parent %q order %v", fakes.promptFolders.parentID, fakes.promptFolders.order)
 	}
 
-	req = httptest.NewRequest(http.MethodPut, "/api/prompt-folders/global/prompts/order?folderId=f3", strings.NewReader(`{"promptIds":["p2","p1"]}`))
+	req = httptest.NewRequest(http.MethodPost, "/api/prompt-folders/workspace/folders/f3/prompts?ownerId=w1", strings.NewReader(`{"promptId":"p7"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
 	system.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("PUT prompt order status = %d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("POST folder prompt status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	if fakes.promptFolders.folderID != "f3" || strings.Join(fakes.promptFolders.order, ",") != "p2,p1" {
-		t.Fatalf("prompt order call = folder %q order %v", fakes.promptFolders.folderID, fakes.promptFolders.order)
+	if fakes.promptFolders.folderID != "f3" || fakes.promptFolders.promptID != "p7" {
+		t.Fatalf("add prompt call = folder %q prompt %q", fakes.promptFolders.folderID, fakes.promptFolders.promptID)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/prompt-folders/global/folders/f5/move", strings.NewReader(`{"fromParentId":"p9","toParentId":"p10"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST folder move status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if fakes.promptFolders.folderID != "f5" || fakes.promptFolders.parentID != "p10" {
+		t.Fatalf("move call = folder %q parent %q", fakes.promptFolders.folderID, fakes.promptFolders.parentID)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/prompt-folders/global/prompts/p1/move", strings.NewReader(`{"fromFolderId":"f6","toFolderId":"f7"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST prompt move status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if fakes.promptFolders.promptID != "p1" || fakes.promptFolders.folderID != "f6" || fakes.promptFolders.parentID != "f7" {
+		t.Fatalf("prompt move call = prompt %q from %q to %q", fakes.promptFolders.promptID, fakes.promptFolders.folderID, fakes.promptFolders.parentID)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/prompt-folders/global/folders/f11/collect", strings.NewReader(`{"parentId":"f12"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST folder collect status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if fakes.promptFolders.folderID != "f11" || fakes.promptFolders.parentID != "f12" {
+		t.Fatalf("collect call = folder %q parent %q", fakes.promptFolders.folderID, fakes.promptFolders.parentID)
+	}
+
+	rec = httptest.NewRecorder()
+	system.Handler().ServeHTTP(rec, accessRequest(http.MethodDelete, "/api/prompt-folders/global/folders/f4/prompts/p8", ""))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("DELETE folder prompt status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if fakes.promptFolders.folderID != "f4" || fakes.promptFolders.promptID != "p8" {
+		t.Fatalf("remove prompt call = folder %q prompt %q", fakes.promptFolders.folderID, fakes.promptFolders.promptID)
 	}
 }

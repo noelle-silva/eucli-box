@@ -2288,6 +2288,7 @@ type fakeGatewayPromptFolders struct {
 	scope    string
 	ownerID  string
 	folderID string
+	promptID string
 	name     string
 	parentID string
 	order    []string
@@ -2317,12 +2318,32 @@ func (f *fakeGatewayPromptFolders) RenamePromptFolder(ctx context.Context, scope
 	return f.library, nil
 }
 
-func (f *fakeGatewayPromptFolders) ReorderPromptFolders(ctx context.Context, scope string, ownerID string, parentID string, folderIDs []string) (types.PromptFolderLibrary, error) {
-	f.scope, f.ownerID, f.parentID, f.order = scope, ownerID, parentID, folderIDs
+func (f *fakeGatewayPromptFolders) ReorderPromptFolderEntries(ctx context.Context, scope string, ownerID string, parentID string, entryOrder []string) (types.PromptFolderLibrary, error) {
+	f.scope, f.ownerID, f.parentID, f.order = scope, ownerID, parentID, entryOrder
 	return f.library, nil
 }
 
-func (f *fakeGatewayPromptFolders) ReorderFolderPrompts(ctx context.Context, scope string, ownerID string, folderID string, promptIDs []string) (types.PromptFolderLibrary, error) {
-	f.scope, f.ownerID, f.folderID, f.order = scope, ownerID, folderID, promptIDs
+func (f *fakeGatewayPromptFolders) AddPromptToFolder(ctx context.Context, scope string, ownerID string, folderID string, promptID string) (types.PromptFolderLibrary, error) {
+	f.scope, f.ownerID, f.folderID, f.promptID = scope, ownerID, folderID, promptID
+	return f.library, nil
+}
+
+func (f *fakeGatewayPromptFolders) RemovePromptFromFolder(ctx context.Context, scope string, ownerID string, folderID string, promptID string) (types.PromptFolderLibrary, error) {
+	f.scope, f.ownerID, f.folderID, f.promptID = scope, ownerID, folderID, promptID
+	return f.library, nil
+}
+
+func (f *fakeGatewayPromptFolders) MovePromptFolder(ctx context.Context, scope string, ownerID string, folderID string, fromParentID string, toParentID string) (types.PromptFolderLibrary, error) {
+	f.scope, f.ownerID, f.folderID, f.parentID = scope, ownerID, folderID, toParentID
+	return f.library, nil
+}
+
+func (f *fakeGatewayPromptFolders) AddFolderToFolder(ctx context.Context, scope string, ownerID string, folderID string, parentID string) (types.PromptFolderLibrary, error) {
+	f.scope, f.ownerID, f.folderID, f.parentID = scope, ownerID, folderID, parentID
+	return f.library, nil
+}
+
+func (f *fakeGatewayPromptFolders) MovePromptToFolder(ctx context.Context, scope string, ownerID string, promptID string, fromFolderID string, toFolderID string) (types.PromptFolderLibrary, error) {
+	f.scope, f.ownerID, f.promptID, f.folderID, f.parentID = scope, ownerID, promptID, fromFolderID, toFolderID
 	return f.library, nil
 }

@@ -225,6 +225,49 @@ func (s *system) AddFolderToFolder(ctx context.Context, scope string, ownerID st
 	})
 }
 
+// RemoveFolderFromParent 从指定位置摘掉收藏夹的索引：parentID 为空表示根级。
+// 只摘这一处，收藏夹本身与它在别处的引用都保留。
+func (s *system) RemoveFolderFromParent(ctx context.Context, scope string, ownerID string, folderID string, parentID string) (types.PromptFolderLibrary, error) {
+	folderID = strings.TrimSpace(folderID)
+	parentID = strings.TrimSpace(parentID)
+	if folderID == "" {
+		return types.PromptFolderLibrary{}, storageInvalid("prompt folder id is required", nil)
+	}
+	return s.mutatePromptFolders(ctx, scope, ownerID, func(library types.PromptFolderLibrary) (types.PromptFolderLibrary, error) {
+		if _, found := findPromptFolder(library, folderID); !found {
+			return types.PromptFolderLibrary{}, storageInvalid("prompt folder does not exist: "+folderID, nil)
+		}
+		targetKey := promptEntryKey(promptEntryKindFolder, folderID)
+		if parentID == "" {
+			index := indexOfID(library.RootFolderIDs, folderID)
+			if index < 0 {
+				return types.PromptFolderLibrary{}, storageInvalid("prompt folder is not listed under root: "+folderID, nil)
+			}
+			library.RootFolderIDs = spliceIDs(library.RootFolderIDs, index, 1)
+			if next, removed := removeEntryKey(library.RootEntryOrder, targetKey); removed {
+				library.RootEntryOrder = next
+			}
+			return library, nil
+		}
+		for position := range library.Folders {
+			parent := &library.Folders[position]
+			if parent.ID != parentID {
+				continue
+			}
+			index := indexOfID(parent.FolderIDs, folderID)
+			if index < 0 {
+				return types.PromptFolderLibrary{}, storageInvalid("prompt folder "+parentID+" does not contain: "+folderID, nil)
+			}
+			parent.FolderIDs = spliceIDs(parent.FolderIDs, index, 1)
+			if next, removed := removeEntryKey(parent.EntryOrder, targetKey); removed {
+				parent.EntryOrder = next
+			}
+			return library, nil
+		}
+		return types.PromptFolderLibrary{}, storageInvalid("prompt folder does not exist: "+parentID, nil)
+	})
+}
+
 // AddPromptToFolder 把一条提示词收进收藏夹：追加到索引与混排顺序的末尾。
 func (s *system) AddPromptToFolder(ctx context.Context, scope string, ownerID string, folderID string, promptID string) (types.PromptFolderLibrary, error) {
 	folderID = strings.TrimSpace(folderID)

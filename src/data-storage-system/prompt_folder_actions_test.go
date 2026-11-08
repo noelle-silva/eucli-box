@@ -376,3 +376,29 @@ func TestFolderCanBeCollectedInMultiplePlaces(t *testing.T) {
 		t.Fatal("AddFolderToFolder() duplicate = nil error, want failure")
 	}
 }
+
+// 摘除只影响指定位置：别处的引用与夹本身都保留。
+func TestRemoveFolderFromParentKeepsOtherReferences(t *testing.T) {
+	system := newTestSystem(t)
+	ctx := context.Background()
+	seedFolderActions(t, system)
+
+	if _, err := system.AddFolderToFolder(ctx, types.PromptScopeGlobal, "", "c", "z"); err != nil {
+		t.Fatalf("AddFolderToFolder() error = %v", err)
+	}
+	saved, err := system.RemoveFolderFromParent(ctx, types.PromptScopeGlobal, "", "c", "z")
+	if err != nil {
+		t.Fatalf("RemoveFolderFromParent() error = %v", err)
+	}
+	for _, folder := range saved.Folders {
+		if folder.ID == "z" && len(folder.FolderIDs) != 0 {
+			t.Fatalf("folder z children = %v, want empty", folder.FolderIDs)
+		}
+		if folder.ID == "b" && strings.Join(folder.FolderIDs, ",") != "c" {
+			t.Fatalf("folder b children = %v, want c kept", folder.FolderIDs)
+		}
+	}
+	if _, err := system.RemoveFolderFromParent(ctx, types.PromptScopeGlobal, "", "c", "z"); err == nil {
+		t.Fatal("RemoveFolderFromParent() twice = nil error, want failure")
+	}
+}

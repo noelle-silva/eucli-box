@@ -78,6 +78,7 @@ type System interface {
 	RemovePromptFromFolder(ctx context.Context, scope string, ownerID string, folderID string, promptID string) (types.PromptFolderLibrary, error)
 	MovePromptFolder(ctx context.Context, scope string, ownerID string, folderID string, fromParentID string, toParentID string) (types.PromptFolderLibrary, error)
 	AddFolderToFolder(ctx context.Context, scope string, ownerID string, folderID string, parentID string) (types.PromptFolderLibrary, error)
+	RemoveFolderFromParent(ctx context.Context, scope string, ownerID string, folderID string, parentID string) (types.PromptFolderLibrary, error)
 	MovePromptToFolder(ctx context.Context, scope string, ownerID string, promptID string, fromFolderID string, toFolderID string) (types.PromptFolderLibrary, error)
 
 	LoadRequestRecordConfig(ctx context.Context) (types.RequestRecordConfig, error)

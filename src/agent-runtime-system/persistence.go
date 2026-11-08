@@ -50,8 +50,7 @@ func runMetadataPatch(record *runRecord) map[string]string {
 	}
 	patch := map[string]string{}
 	if record.reasoningPersistPending {
-		effort := types.TrimReasoningEffort(record.reasoningEffort)
-		if effort != "" {
+		if effort := types.CanonicalReasoningEffort(record.reasoningEffort); effort != "" {
 			patch[types.SessionMetadataReasoningEffort] = string(effort)
 		}
 	}

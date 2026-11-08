@@ -178,15 +178,19 @@ func (anthropicAdapter) BuildCompleteRequest(provider types.Provider, request ty
 		return types.HTTPRequest{}, err
 	}
 	body := map[string]any{
-		"model":      request.Coordinate.ModelID,
-		"messages":   messages,
-		"max_tokens": 4096,
+		"model":    request.Coordinate.ModelID,
+		"messages": messages,
 	}
+	// Anthropic 要求 thinking 预算必须小于 max_tokens，输出上限因此由预算推导，
+	// 避免高档位预算撞上固定上限触发 400 而不是静默降级。
+	thinkingBudgetTokens := 0
 	if request.ReasoningEffort != "" {
-		body["thinking"] = map[string]any{"type": "enabled", "budget_tokens": anthropicThinkingBudgetTokens(request.ReasoningEffort)}
+		thinkingBudgetTokens = anthropicThinkingBudgetTokens(request.ReasoningEffort)
+		body["thinking"] = map[string]any{"type": "enabled", "budget_tokens": thinkingBudgetTokens}
 	} else if request.Temperature != nil {
 		body["temperature"] = *request.Temperature
 	}
+	body["max_tokens"] = thinkingBudgetTokens + anthropicReplyTokenReserve
 	if request.Stream {
 		body["stream"] = true
 	}
@@ -215,16 +219,23 @@ func (anthropicAdapter) BuildCompleteRequest(provider types.Provider, request ty
 	}, nil
 }
 
+// anthropicReplyTokenReserve 是思考预算之外留给正文输出的 token 余量。
+const anthropicReplyTokenReserve = 4096
+
 func anthropicThinkingBudgetTokens(effort types.ReasoningEffort) int {
 	switch types.NormalizeReasoningEffort(effort, types.DefaultReasoningEffort) {
-	case types.ReasoningEffortVeryLow:
+	case types.ReasoningEffortMinimal:
 		return 1024
 	case types.ReasoningEffortLow:
 		return 1536
 	case types.ReasoningEffortHigh:
 		return 3072
-	case types.ReasoningEffortVeryHigh:
-		return 3584
+	case types.ReasoningEffortXHigh:
+		return 4096
+	case types.ReasoningEffortMax:
+		return 6144
+	case types.ReasoningEffortUltra:
+		return 8192
 	default:
 		return 2048
 	}

@@ -206,19 +206,14 @@ func (openAIAdapter) BuildCompleteRequest(provider types.Provider, request types
 	}, nil
 }
 
+// openAIReasoningEffort 把统一等级映射成 OpenAI 兼容端点的 reasoning_effort 字面量。
+// 除 ultra 之外全部同名直通；ultra 是词汇表最上档，OpenAI 侧最高只认 max，落地下传 max。
 func openAIReasoningEffort(effort types.ReasoningEffort) string {
-	switch types.NormalizeReasoningEffort(effort, types.DefaultReasoningEffort) {
-	case types.ReasoningEffortVeryLow:
-		return "minimal"
-	case types.ReasoningEffortLow:
-		return "low"
-	case types.ReasoningEffortHigh:
-		return "high"
-	case types.ReasoningEffortVeryHigh:
-		return "xhigh"
-	default:
-		return "medium"
+	normalized := types.NormalizeReasoningEffort(effort, types.DefaultReasoningEffort)
+	if normalized == types.ReasoningEffortUltra {
+		return "max"
 	}
+	return string(normalized)
 }
 
 func (openAIAdapter) NewCompleteStreamParser(onEvent types.ModelStreamHandler) completeStreamParser {

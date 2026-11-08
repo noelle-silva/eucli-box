@@ -269,8 +269,9 @@ func (s *system) updateSessionSettings(ctx context.Context, scope sessionScope, 
 			session.Metadata = types.PutStreamEnabledSessionMetadata(session.Metadata, *patch.StreamEnabled)
 		}
 		if patch.ReasoningEffort != nil {
-			effort := types.TrimReasoningEffort(types.ReasoningEffort(*patch.ReasoningEffort))
-			if effort != "" && !types.IsReasoningEffort(effort) {
+			raw := strings.TrimSpace(*patch.ReasoningEffort)
+			effort := types.CanonicalReasoningEffort(types.ReasoningEffort(raw))
+			if raw != "" && effort == "" {
 				return storageInvalid("reasoning effort is invalid", nil)
 			}
 			if len(session.Metadata) == 0 {

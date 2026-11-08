@@ -518,9 +518,9 @@ func applyRunReasoningEffort(record *runRecord, session *types.Session) {
 		return
 	}
 	const key = types.SessionMetadataReasoningEffort
-	effort := types.TrimReasoningEffort(record.reasoningEffort)
+	effort := types.CanonicalReasoningEffort(record.reasoningEffort)
 	if effort == "" && session.Metadata != nil {
-		effort = types.TrimReasoningEffort(types.ReasoningEffort(session.Metadata[key]))
+		effort = types.CanonicalReasoningEffort(types.ReasoningEffort(session.Metadata[key]))
 	}
 	if effort == "" {
 		return

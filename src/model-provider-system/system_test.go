@@ -135,14 +135,14 @@ func TestResolveModelGroupOverridesReasoningProfile(t *testing.T) {
 	provider := testOpenAIProvider()
 	provider.RegisteredModels = []types.ProviderRegisteredModel{{ID: "gpt-4.1", Name: "gpt-4.1", SourceModelID: "gpt-4.1", SupportsReasoning: true, DefaultReasoningEffort: types.ReasoningEffortLow}}
 	storage.providers["openai-main"] = provider
-	storage.modelGroups = []types.ModelGroup{{ID: "main-group", Name: "Main Group", Models: []types.ModelGroupModel{{ID: "balanced", Name: "Balanced", Strategy: types.RotationStrategySequential, SupportsReasoning: true, DefaultReasoningEffort: types.ReasoningEffortVeryHigh, Members: []types.ModelGroupMember{{ProviderID: "openai-main", ModelID: "gpt-4.1", Weight: 1}}}}}}
+	storage.modelGroups = []types.ModelGroup{{ID: "main-group", Name: "Main Group", Models: []types.ModelGroupModel{{ID: "balanced", Name: "Balanced", Strategy: types.RotationStrategySequential, SupportsReasoning: true, DefaultReasoningEffort: types.ReasoningEffortXHigh, Members: []types.ModelGroupMember{{ProviderID: "openai-main", ModelID: "gpt-4.1", Weight: 1}}}}}}
 	system := newTestProviderSystem(t, &fakeNetwork{}, storage)
 
 	_, model, err := system.ResolveModel(context.Background(), types.ModelCoordinate{Kind: "model_group", GroupID: "main-group", ModelID: "balanced"})
 	if err != nil {
 		t.Fatalf("ResolveModel() error = %v", err)
 	}
-	if !model.SupportsReasoning || model.DefaultReasoningEffort != types.ReasoningEffortVeryHigh {
+	if !model.SupportsReasoning || model.DefaultReasoningEffort != types.ReasoningEffortXHigh {
 		t.Fatalf("model group reasoning profile = %#v", model)
 	}
 }
@@ -199,7 +199,7 @@ func TestCompleteOpenAIUsesReasoningEffortAndOmitsTemperature(t *testing.T) {
 	storage := newFakeProviderStorage()
 	provider := testOpenAIProvider()
 	provider.RegisteredModels[0].SupportsReasoning = true
-	provider.RegisteredModels[0].DefaultReasoningEffort = types.ReasoningEffortVeryHigh
+	provider.RegisteredModels[0].DefaultReasoningEffort = types.ReasoningEffortXHigh
 	storage.providers["openai-main"] = provider
 	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"done"}}]}`)}}
 	system := newTestProviderSystem(t, network, storage)

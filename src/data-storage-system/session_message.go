@@ -581,8 +581,7 @@ func normalizeSessionMetadata(metadata map[string]string) map[string]string {
 			continue
 		}
 		if key == types.SessionMetadataReasoningEffort {
-			effort := types.TrimReasoningEffort(types.ReasoningEffort(value))
-			if types.IsReasoningEffort(effort) {
+			if effort := types.CanonicalReasoningEffort(types.ReasoningEffort(value)); effort != "" {
 				out[key] = string(effort)
 			}
 			continue

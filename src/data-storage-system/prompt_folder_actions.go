@@ -91,7 +91,11 @@ func (s *system) ReorderPromptFolderEntries(ctx context.Context, scope string, o
 	parentID = strings.TrimSpace(parentID)
 	order := make([]string, 0, len(entryOrder))
 	for _, item := range entryOrder {
-		order = append(order, strings.TrimSpace(item))
+		key := strings.TrimSpace(item)
+		if _, _, ok := parsePromptEntryKey(key); !ok {
+			return types.PromptFolderLibrary{}, storageInvalid("entry order contains an invalid entry: "+key, nil)
+		}
+		order = append(order, key)
 	}
 	return s.mutatePromptFolders(ctx, scope, ownerID, func(library types.PromptFolderLibrary) (types.PromptFolderLibrary, error) {
 		if parentID == "" {
@@ -430,7 +434,14 @@ func (s *system) mutatePromptFolders(ctx context.Context, scope string, ownerID 
 	if err != nil {
 		return types.PromptFolderLibrary{}, err
 	}
-	normalized, err := normalizePromptFolderLibraryForSave(next, previous, prompts, time.Now().UTC().Format(time.RFC3339))
+	// 归属变化会改变根层集合（收进收藏夹就离开根层，摘下就回到根层），
+	// 因此保存前再按新归属同步一次根顺序，再走整库校验。
+	normalized, err := normalizePromptFolderLibraryForSave(
+		completePromptFolderLibrary(next, prompts),
+		previous,
+		prompts,
+		time.Now().UTC().Format(time.RFC3339),
+	)
 	if err != nil {
 		return types.PromptFolderLibrary{}, err
 	}

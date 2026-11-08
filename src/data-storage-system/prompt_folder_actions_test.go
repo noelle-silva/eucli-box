@@ -102,13 +102,22 @@ func TestReorderPromptFolderEntries(t *testing.T) {
 	ctx := context.Background()
 	seedFolderActions(t, system)
 
-	rootOrder := []string{"folder:a", "prompt:p1", "folder:z", "prompt:p2"}
+	rootOrder := []string{"folder:z", "folder:a"}
 	saved, err := system.ReorderPromptFolderEntries(ctx, types.PromptScopeGlobal, "", "", rootOrder)
 	if err != nil {
 		t.Fatalf("ReorderPromptFolderEntries() error = %v", err)
 	}
 	if strings.Join(saved.RootEntryOrder, ",") != strings.Join(rootOrder, ",") {
 		t.Fatalf("root entry order = %v, want %v", saved.RootEntryOrder, rootOrder)
+	}
+
+	// 根层级只认直属内容：已经被收藏夹收走的提示词即使写进根顺序也会被裁掉。
+	stale, err := system.ReorderPromptFolderEntries(ctx, types.PromptScopeGlobal, "", "", []string{"prompt:p1", "folder:a", "folder:z"})
+	if err != nil {
+		t.Fatalf("ReorderPromptFolderEntries() with collected prompt error = %v", err)
+	}
+	if strings.Join(stale.RootEntryOrder, ",") != "folder:a,folder:z" {
+		t.Fatalf("root entry order = %v, want folder:a,folder:z", stale.RootEntryOrder)
 	}
 
 	insideOrder := []string{"prompt:p1", "folder:b"}
@@ -125,20 +134,24 @@ func TestReorderPromptFolderEntries(t *testing.T) {
 		}
 	}
 
-	// 少一项
-	if _, err := system.ReorderPromptFolderEntries(ctx, types.PromptScopeGlobal, "", "", []string{"folder:a"}); err == nil {
+	// 夹内少一项：根层顺序跟着归属自动维护，夹内顺序必须逐项交代。
+	if _, err := system.ReorderPromptFolderEntries(ctx, types.PromptScopeGlobal, "", "a", []string{"prompt:p1"}); err == nil {
 		t.Fatal("ReorderPromptFolderEntries() with missing entries = nil error, want failure")
 	} else if !strings.Contains(err.Error(), "must list every entry") {
 		t.Fatalf("missing entries error = %v", err)
 	}
 
-	// 重复项
+	// 根级重复项与已归属条目都被归一到「根层直属集合」，不留下脏顺序。
 	duplicated := []string{"folder:a", "folder:a", "prompt:p1", "prompt:p2", "folder:z"}
-	if _, err := system.ReorderPromptFolderEntries(ctx, types.PromptScopeGlobal, "", "", duplicated); err == nil {
-		t.Fatal("ReorderPromptFolderEntries() with duplicate entry = nil error, want failure")
+	deduped, err := system.ReorderPromptFolderEntries(ctx, types.PromptScopeGlobal, "", "", duplicated)
+	if err != nil {
+		t.Fatalf("ReorderPromptFolderEntries() with duplicate entry error = %v", err)
+	}
+	if strings.Join(deduped.RootEntryOrder, ",") != "folder:a,folder:z" {
+		t.Fatalf("root entry order = %v, want folder:a,folder:z", deduped.RootEntryOrder)
 	}
 
-	// 非法前缀
+	// 非法前缀：格式不对直接拒绝，不猜测意图。
 	if _, err := system.ReorderPromptFolderEntries(ctx, types.PromptScopeGlobal, "", "", []string{"x:a", "prompt:p1", "folder:z", "prompt:p2"}); err == nil {
 		t.Fatal("ReorderPromptFolderEntries() with invalid prefix = nil error, want failure")
 	}
@@ -304,7 +317,7 @@ func TestMovePromptToFolder(t *testing.T) {
 	}
 }
 
-// 本体新增条目后，根级顺序要自动跟上：否则任何收藏夹动作都会因顺序不完整被拒。
+// 本体新增条目后，根级顺序要自动跟上；收进收藏夹后又要从根顺序里离场。
 func TestAddPromptToFolderAfterNewPromptSyncsRootOrder(t *testing.T) {
 	system := newTestSystem(t)
 	ctx := context.Background()
@@ -318,19 +331,30 @@ func TestAddPromptToFolderAfterNewPromptSyncsRootOrder(t *testing.T) {
 		t.Fatalf("SavePromptLibrary() error = %v", err)
 	}
 
+	beforeAdd, err := system.LoadPromptFolders(ctx, types.PromptScopeGlobal, "")
+	if err != nil {
+		t.Fatalf("LoadPromptFolders() error = %v", err)
+	}
+	if !containsKey(beforeAdd.RootEntryOrder, "prompt:p3") {
+		t.Fatalf("root entry order = %v, want prompt:p3 included before collection", beforeAdd.RootEntryOrder)
+	}
+
 	saved, err := system.AddPromptToFolder(ctx, types.PromptScopeGlobal, "", "a", "p3")
 	if err != nil {
 		t.Fatalf("AddPromptToFolder() after new prompt error = %v", err)
 	}
-	hasNewEntry := false
-	for _, key := range saved.RootEntryOrder {
-		if key == "prompt:p3" {
-			hasNewEntry = true
+	if containsKey(saved.RootEntryOrder, "prompt:p3") {
+		t.Fatalf("root entry order = %v, want prompt:p3 removed after collection", saved.RootEntryOrder)
+	}
+}
+
+func containsKey(keys []string, want string) bool {
+	for _, key := range keys {
+		if key == want {
+			return true
 		}
 	}
-	if !hasNewEntry {
-		t.Fatalf("root entry order = %v, want prompt:p3 included", saved.RootEntryOrder)
-	}
+	return false
 }
 
 // 收藏夹可被多个上级收录：同一个夹同时挂在根级与别的夹下面是合法的。

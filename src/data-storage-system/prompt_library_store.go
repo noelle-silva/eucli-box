@@ -29,6 +29,10 @@ func (s *system) SavePromptLibrary(ctx context.Context, scope string, ownerID st
 	if err != nil {
 		return types.PromptLibrary{}, err
 	}
+	foldersFile, _, err := s.paths.promptScopeFile(scope, ownerID, datapaths.RelPromptFoldersFile)
+	if err != nil {
+		return types.PromptLibrary{}, err
+	}
 
 	s.entityMu.Lock()
 	defer s.entityMu.Unlock()
@@ -41,7 +45,24 @@ func (s *system) SavePromptLibrary(ctx context.Context, scope string, ownerID st
 	if err != nil {
 		return types.PromptLibrary{}, err
 	}
-	if err := writeJSON(ctx, file, normalized); err != nil {
+
+	tx := newFileTransaction()
+	defer tx.Discard()
+	if err := tx.StageJSON(ctx, file, normalized); err != nil {
+		return types.PromptLibrary{}, err
+	}
+	// 提示词本体变了，根层集合也随之变化（新增的直属根层、删除的自动离场），
+	// 两个文件同事务提交，不留下「本体已有、根顺序没有」的中间态。
+	if dataFileExists(foldersFile) {
+		folders, err := readPromptFolderLibrary(ctx, foldersFile)
+		if err != nil {
+			return types.PromptLibrary{}, err
+		}
+		if err := tx.StageJSON(ctx, foldersFile, completePromptFolderLibrary(folders, normalized)); err != nil {
+			return types.PromptLibrary{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
 		return types.PromptLibrary{}, storageWriteFailed("failed to save prompt library", err)
 	}
 	return normalized, nil

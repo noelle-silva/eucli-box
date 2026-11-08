@@ -82,28 +82,44 @@ func normalizeEntryOrder(raw []string, folderIDs []string, promptIDs []string, l
 	return order, nil
 }
 
-// deriveRootEntryOrder 给出根级缺省顺序：根收藏夹在前、全部提示词在后。
-func deriveRootEntryOrder(rootFolderIDs []string, promptLibrary types.PromptLibrary) []string {
-	order := make([]string, 0, len(rootFolderIDs)+len(promptLibrary.Prompts))
+// rootLayerPromptIDs 给出根层级直属的提示词：没有被任何收藏夹收录的那些。
+// 根层级是收藏夹树的最外层，只承载自己直接持有的内容：
+// 收进收藏夹就从根层离开，摘下收藏夹就重新回到根层，不做全库兜底。
+func rootLayerPromptIDs(library types.PromptFolderLibrary, promptLibrary types.PromptLibrary) []string {
+	filed := make(map[string]struct{})
+	for _, folder := range library.Folders {
+		for _, id := range folder.PromptIDs {
+			filed[strings.TrimSpace(id)] = struct{}{}
+		}
+	}
+	ids := make([]string, 0, len(promptLibrary.Prompts))
+	for _, prompt := range promptLibrary.Prompts {
+		if _, ok := filed[prompt.ID]; ok {
+			continue
+		}
+		ids = append(ids, prompt.ID)
+	}
+	return ids
+}
+
+// deriveRootEntryOrder 给出根级缺省顺序：根收藏夹在前、根层直属提示词在后。
+func deriveRootEntryOrder(rootFolderIDs []string, rootPromptIDs []string) []string {
+	order := make([]string, 0, len(rootFolderIDs)+len(rootPromptIDs))
 	for _, id := range rootFolderIDs {
 		order = append(order, promptEntryKey(promptEntryKindFolder, id))
 	}
-	for _, prompt := range promptLibrary.Prompts {
-		order = append(order, promptEntryKey(promptEntryKindPrompt, prompt.ID))
+	for _, id := range rootPromptIDs {
+		order = append(order, promptEntryKey(promptEntryKindPrompt, id))
 	}
 	return order
 }
 
-// normalizeRootEntryOrder 校验根级混排顺序：必须覆盖根收藏夹与全部提示词。
-func normalizeRootEntryOrder(raw []string, rootFolderIDs []string, promptLibrary types.PromptLibrary, label string) ([]string, error) {
+// normalizeRootEntryOrder 校验根级混排顺序：必须覆盖根收藏夹与根层直属提示词。
+func normalizeRootEntryOrder(raw []string, rootFolderIDs []string, rootPromptIDs []string, label string) ([]string, error) {
 	if len(raw) == 0 {
-		return deriveRootEntryOrder(rootFolderIDs, promptLibrary), nil
+		return deriveRootEntryOrder(rootFolderIDs, rootPromptIDs), nil
 	}
-	promptIDs := make([]string, 0, len(promptLibrary.Prompts))
-	for _, prompt := range promptLibrary.Prompts {
-		promptIDs = append(promptIDs, prompt.ID)
-	}
-	return normalizeEntryOrder(raw, rootFolderIDs, promptIDs, label)
+	return normalizeEntryOrder(raw, rootFolderIDs, rootPromptIDs, label)
 }
 
 // removeEntryKey 从顺序里摘掉一项；返回新顺序与是否发生变化。

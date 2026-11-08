@@ -78,11 +78,11 @@ func emptyPromptFolderLibrary() types.PromptFolderLibrary {
 }
 
 // completePromptFolderLibrary 让定点动作在完整顺序上做增删改。
-// 根级顺序跟着提示词本体走：本体新增或删除条目后，根顺序同步补齐或摘除，
-// 这是「根级集合＝根收藏夹＋全部提示词」这条规则的自动维护，不是掩盖错误。
+// 根级顺序跟着「归属」走：收藏夹收录或释放提示词后，根顺序同步补齐或摘除，
+// 这是「根级集合＝根收藏夹＋未被任何收藏夹收录的提示词」这条规则的自动维护，不是掩盖错误。
 // 夹内顺序只补「完全缺失」的层；写了一半的视为数据损坏，交给保存校验如实报错。
 func completePromptFolderLibrary(library types.PromptFolderLibrary, prompts types.PromptLibrary) types.PromptFolderLibrary {
-	library.RootEntryOrder = syncRootEntryOrder(library.RootEntryOrder, library.RootFolderIDs, prompts)
+	library.RootEntryOrder = syncRootEntryOrder(library.RootEntryOrder, library.RootFolderIDs, rootLayerPromptIDs(library, prompts))
 	for index := range library.Folders {
 		if len(library.Folders[index].EntryOrder) == 0 {
 			library.Folders[index].EntryOrder = deriveEntryOrder(library.Folders[index].FolderIDs, library.Folders[index].PromptIDs)
@@ -91,15 +91,16 @@ func completePromptFolderLibrary(library types.PromptFolderLibrary, prompts type
 	return library
 }
 
-// syncRootEntryOrder 把根级顺序同步到「根收藏夹＋全部提示词」：
-// 保留仍有效的项与原顺序，丢掉已不存在的项，缺失项按「收藏夹在前、条目在后」补到末尾。
-func syncRootEntryOrder(order []string, rootFolderIDs []string, promptLibrary types.PromptLibrary) []string {
-	expected := make(map[string]struct{}, len(rootFolderIDs)+len(promptLibrary.Prompts))
+// syncRootEntryOrder 把根级顺序同步到「根收藏夹＋根层直属提示词」：
+// 保留仍有效的项与原顺序，丢掉已收进收藏夹（或本体已删）的项，
+// 缺失项按「收藏夹在前、条目在后」补到末尾。
+func syncRootEntryOrder(order []string, rootFolderIDs []string, rootPromptIDs []string) []string {
+	expected := make(map[string]struct{}, len(rootFolderIDs)+len(rootPromptIDs))
 	for _, id := range rootFolderIDs {
 		expected[promptEntryKey(promptEntryKindFolder, id)] = struct{}{}
 	}
-	for _, prompt := range promptLibrary.Prompts {
-		expected[promptEntryKey(promptEntryKindPrompt, prompt.ID)] = struct{}{}
+	for _, id := range rootPromptIDs {
+		expected[promptEntryKey(promptEntryKindPrompt, id)] = struct{}{}
 	}
 
 	seen := make(map[string]struct{}, len(expected))
@@ -124,8 +125,8 @@ func syncRootEntryOrder(order []string, rootFolderIDs []string, promptLibrary ty
 		seen[key] = struct{}{}
 		result = append(result, key)
 	}
-	for _, prompt := range promptLibrary.Prompts {
-		key := promptEntryKey(promptEntryKindPrompt, prompt.ID)
+	for _, id := range rootPromptIDs {
+		key := promptEntryKey(promptEntryKindPrompt, id)
 		if _, ok := seen[key]; ok {
 			continue
 		}
@@ -237,7 +238,9 @@ func normalizePromptFolderLibraryForSave(library types.PromptFolderLibrary, prev
 		folders = append(folders, folder)
 	}
 
-	rootOrder, err := normalizeRootEntryOrder(library.RootEntryOrder, rootIDs, prompts, "root entry order")
+	// 根层直属提示词按「规范化之后的收藏夹索引」判定：这次保存里刚收进夹的条目不再属于根层。
+	rootPromptIDs := rootLayerPromptIDs(types.PromptFolderLibrary{Folders: folders}, prompts)
+	rootOrder, err := normalizeRootEntryOrder(library.RootEntryOrder, rootIDs, rootPromptIDs, "root entry order")
 	if err != nil {
 		return types.PromptFolderLibrary{}, err
 	}

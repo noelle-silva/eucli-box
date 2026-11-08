@@ -185,6 +185,7 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("DELETE /api/prompt-folders/{scope}/folders/{folderID}/prompts/{promptID}", s.authWrap(s.handleRemovePromptFromFolder))
 	s.mux.HandleFunc("POST /api/prompt-folders/{scope}/folders/{folderID}/move", s.authWrap(s.handleMovePromptFolder))
 	s.mux.HandleFunc("POST /api/prompt-folders/{scope}/folders/{folderID}/collect", s.authWrap(s.handleAddFolderToFolder))
+	s.mux.HandleFunc("DELETE /api/prompt-folders/{scope}/folders/{folderID}/collect", s.authWrap(s.handleRemoveFolderFromParent))
 	s.mux.HandleFunc("POST /api/prompt-folders/{scope}/prompts/{promptID}/move", s.authWrap(s.handleMovePromptToFolder))
 	s.mux.HandleFunc("GET /api/placeholders", s.authWrap(s.handleLoadPlaceholderLibrary))
 	s.mux.HandleFunc("PUT /api/placeholders", s.authWrap(s.handleSavePlaceholderLibrary))

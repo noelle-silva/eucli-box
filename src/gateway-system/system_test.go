@@ -2347,3 +2347,8 @@ func (f *fakeGatewayPromptFolders) MovePromptToFolder(ctx context.Context, scope
 	f.scope, f.ownerID, f.promptID, f.folderID, f.parentID = scope, ownerID, promptID, fromFolderID, toFolderID
 	return f.library, nil
 }
+
+func (f *fakeGatewayPromptFolders) RemoveFolderFromParent(ctx context.Context, scope string, ownerID string, folderID string, parentID string) (types.PromptFolderLibrary, error) {
+	f.scope, f.ownerID, f.folderID, f.parentID = scope, ownerID, folderID, parentID
+	return f.library, nil
+}

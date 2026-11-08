@@ -140,3 +140,13 @@ func (s *system) handleMovePromptToFolder(w http.ResponseWriter, r *http.Request
 	}
 	writeData(w, http.StatusOK, library)
 }
+
+// handleRemoveFolderFromParent 把收藏夹从指定位置摘掉：parentId 为空表示根级。
+func (s *system) handleRemoveFolderFromParent(w http.ResponseWriter, r *http.Request) {
+	library, err := s.promptFolders.RemoveFolderFromParent(r.Context(), promptLibraryScope(r), promptLibraryOwnerID(r), r.PathValue("folderID"), r.URL.Query().Get("parentId"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, library)
+}

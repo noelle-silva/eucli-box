@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -1257,27 +1258,70 @@ type fakeNetwork struct {
 	lastRequest types.HTTPRequest
 	response    types.HTTPResponse
 	err         error
+	// byHost 按请求 URL 的主机名分流响应，命中时优先于 response/err；
+	// 用于让不同供应商成员各自返回不同结果。
+	byHost map[string]fakeNetworkReply
+	// calls 按顺序记录所有出站请求，便于断言打了几次、打到了谁。
+	calls []types.HTTPRequest
 }
 
 func (f *fakeNetwork) Do(ctx context.Context, req types.HTTPRequest) (types.HTTPResponse, error) {
-	f.lastRequest = req
-	if f.err != nil {
-		return types.HTTPResponse{}, f.err
+	reply := f.record(req)
+	if reply.err != nil {
+		return types.HTTPResponse{}, reply.err
 	}
-	return f.response, nil
+	return reply.response, nil
 }
 
 func (f *fakeNetwork) DoStream(ctx context.Context, req types.HTTPRequest, onChunk types.HTTPStreamHandler) (types.HTTPResponse, error) {
-	f.lastRequest = req
-	if f.err != nil {
-		return types.HTTPResponse{}, f.err
+	reply := f.record(req)
+	if reply.err != nil {
+		return types.HTTPResponse{}, reply.err
 	}
-	if onChunk != nil && len(f.response.Body) > 0 {
-		if err := onChunk(types.HTTPStreamChunk{Data: f.response.Body}); err != nil {
+	chunks := reply.streamChunks
+	if len(chunks) == 0 && len(reply.response.Body) > 0 {
+		chunks = []string{string(reply.response.Body)}
+	}
+	for _, chunk := range chunks {
+		if onChunk == nil {
+			continue
+		}
+		if err := onChunk(types.HTTPStreamChunk{Data: []byte(chunk)}); err != nil {
 			return types.HTTPResponse{}, err
 		}
 	}
-	return f.response, nil
+	if reply.streamErr != nil {
+		return types.HTTPResponse{}, reply.streamErr
+	}
+	return reply.response, nil
+}
+
+// record 记下这次请求并给出它该拿到的响应。
+func (f *fakeNetwork) record(req types.HTTPRequest) fakeNetworkReply {
+	f.lastRequest = req
+	f.calls = append(f.calls, req)
+	if reply, ok := f.byHost[hostOfURL(req.URL)]; ok {
+		return reply
+	}
+	return fakeNetworkReply{response: f.response, err: f.err}
+}
+
+// fakeNetworkReply 是某个主机名下的一次响应安排。
+type fakeNetworkReply struct {
+	response types.HTTPResponse
+	err      error
+	// streamChunks 是流式请求依次回放的块；为空时回放 response.Body。
+	streamChunks []string
+	// streamErr 在回放完所有块之后交出的错误，用来模拟"已经吐了内容再断"。
+	streamErr error
+}
+
+func hostOfURL(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return parsed.Host
 }
 
 type fakeProviderStorage struct {

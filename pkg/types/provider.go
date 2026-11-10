@@ -38,6 +38,9 @@ type RotationStrategy string
 const (
 	RotationStrategySequential     RotationStrategy = "sequential"
 	RotationStrategyWeightedRandom RotationStrategy = "weighted_random"
+	// RotationStrategyFallback 按成员顺序顺位兜底：每次都从第一个成员开始，
+	// 它失败才换下一个，整条链都失败才报错。
+	RotationStrategyFallback RotationStrategy = "fallback"
 )
 
 type ProviderAPIKey struct {

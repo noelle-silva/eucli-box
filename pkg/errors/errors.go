@@ -47,6 +47,38 @@ func WrapWithDetails(system string, code string, message string, cause error, de
 	return &AppError{System: system, Code: code, Message: message, Cause: cause, Details: details}
 }
 
+// WrapWithCauses 构造一个携带多个并列原因的错误；原因会展开成 ErrorPayload.Causes，
+// 便于一次看清每个来源各自是怎么失败的。
+func WrapWithCauses(system string, code string, message string, causes []error) error {
+	return &multiCauseError{system: system, code: code, message: message, causes: causes}
+}
+
+// multiCauseError 是一个错误码 + 多个并列原因的复合错误。
+type multiCauseError struct {
+	system  string
+	code    string
+	message string
+	causes  []error
+}
+
+func (e *multiCauseError) Error() string {
+	return fmt.Sprintf("%s: %s: %s", e.system, e.code, e.message)
+}
+
+func (e *multiCauseError) Unwrap() []error {
+	return e.causes
+}
+
+func (e *multiCauseError) ErrorIdentity() (string, string, string) {
+	return e.system, e.code, e.message
+}
+
+// codedError 暴露错误身份，供 BuildErrorPayload 还原出错误码。
+type codedError interface {
+	error
+	ErrorIdentity() (system string, code string, message string)
+}
+
 func BuildErrorPayload(err error) *types.ErrorPayload {
 	if err == nil {
 		return nil
@@ -57,6 +89,12 @@ func BuildErrorPayload(err error) *types.ErrorPayload {
 func buildErrorPayload(err error) *types.ErrorPayload {
 	if err == nil {
 		return nil
+	}
+	if coded, ok := err.(codedError); ok {
+		system, code, message := coded.ErrorIdentity()
+		payload := &types.ErrorPayload{Code: code, Message: message, System: system}
+		attachErrorPayloadCauses(payload, errorPayloadCauses(err))
+		return payload
 	}
 	if appErr, ok := err.(*AppError); ok {
 		payload := &types.ErrorPayload{Code: appErr.Code, Message: appErr.Message, System: appErr.System, Details: appErr.Details}

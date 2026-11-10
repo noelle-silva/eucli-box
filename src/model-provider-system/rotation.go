@@ -8,10 +8,14 @@ import (
 )
 
 func normalizeRotationStrategy(strategy types.RotationStrategy) types.RotationStrategy {
-	if strategy == types.RotationStrategyWeightedRandom {
+	switch strategy {
+	case types.RotationStrategyWeightedRandom:
 		return types.RotationStrategyWeightedRandom
+	case types.RotationStrategyFallback:
+		return types.RotationStrategyFallback
+	default:
+		return types.RotationStrategySequential
 	}
-	return types.RotationStrategySequential
 }
 
 func positiveWeight(value int) int {
@@ -21,6 +25,7 @@ func positiveWeight(value int) int {
 	return value
 }
 
+// pickRotatedIndex 按轮询类策略选位置：fallback 不走这里，它的顺序由兜底链自己决定。
 func (s *system) pickRotatedIndex(cursorKey string, strategy types.RotationStrategy, weights []int) (int, error) {
 	if len(weights) == 0 {
 		return -1, providerInvalid("rotation candidate is required", nil)
@@ -42,6 +47,8 @@ func (s *system) pickRotatedIndex(cursorKey string, strategy types.RotationStrat
 	return index, nil
 }
 
+// pickProviderKeyIndex 在供应商的多把 API Key 之间选一把。
+// fallback 只描述模型间的兜底关系，对同供应商的 Key 没有意义，这里会退化成顺序轮换。
 func (s *system) pickProviderKeyIndex(providerID string, strategy types.RotationStrategy, weights []int) (int, error) {
 	if len(weights) == 0 {
 		return -1, providerInvalid("provider has no enabled api key", nil)

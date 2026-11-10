@@ -7,15 +7,17 @@ import (
 	"eucli-box/pkg/types"
 )
 
-// ResolveModel 解析一次模型坐标，并在坐标指向模型组时推进该组的轮询游标：
-// 它是"这一轮轮到谁"的唯一出口。
+// ResolveModel 解析坐标并回答"这一次会用哪一个"：模型组按策略选出本轮成员，
+// 轮询类策略会推进游标，fallback 组给出链首成员。
+// 真正的请求执行走 planRequest，两者共用同一套选择逻辑，结果不会互相偏离。
 // 只想知道坐标能不能用的调用方（配置校验等）必须走 ValidateCoordinate，
 // 否则校验行为会吃掉一次轮询顺序。
 func (s *system) ResolveModel(ctx context.Context, coordinate types.ModelCoordinate) (types.Provider, types.ModelInfo, error) {
-	if isModelGroupCoordinate(coordinate) {
-		return s.resolveModelGroup(ctx, coordinate)
+	plan, err := s.planRequest(ctx, coordinate)
+	if err != nil {
+		return types.Provider{}, types.ModelInfo{}, err
 	}
-	return s.resolveProviderCoordinate(ctx, coordinate)
+	return plan.candidates[0].provider, plan.candidates[0].model, nil
 }
 
 // ValidateCoordinate 校验坐标当前是否可用：不参与轮询选择，不推进任何轮询游标。

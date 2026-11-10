@@ -59,25 +59,49 @@ func (s *system) loadModelGroupModel(ctx context.Context, coordinate types.Model
 	return types.ModelGroup{}, types.ModelGroupModel{}, providerModelNotFound("model group coordinate does not exist", nil)
 }
 
-// resolveModelGroup 按策略选出本轮成员并解析；这是模型组唯一的轮询选择入口。
-func (s *system) resolveModelGroup(ctx context.Context, coordinate types.ModelCoordinate) (types.Provider, types.ModelInfo, error) {
-	group, model, err := s.loadModelGroupModel(ctx, coordinate)
-	if err != nil {
-		return types.Provider{}, types.ModelInfo{}, err
-	}
+// selectGroupMember 按轮询类策略选出本轮成员并解析；这是模型组唯一的轮询选择入口。
+func (s *system) selectGroupMember(ctx context.Context, group types.ModelGroup, model types.ModelGroupModel) (planCandidate, error) {
 	weights := make([]int, 0, len(model.Members))
 	for _, member := range model.Members {
 		weights = append(weights, member.Weight)
 	}
 	index, err := s.pickRotatedIndex("group:"+group.ID+":"+model.ID, model.Strategy, weights)
 	if err != nil {
-		return types.Provider{}, types.ModelInfo{}, err
+		return planCandidate{}, err
 	}
 	member := model.Members[index]
 	provider, resolved, err := s.resolveProviderCoordinate(ctx, types.ModelCoordinate{ProviderID: member.ProviderID, ModelID: member.ModelID})
 	if err != nil {
-		return types.Provider{}, types.ModelInfo{}, err
+		return planCandidate{}, err
 	}
+	return planCandidate{provider: provider, model: applyGroupReasoningProfile(model, resolved)}, nil
+}
+
+// buildFallbackChain 把 fallback 组成员按配置顺序展开成候选链：
+// 第一个永远是首选，往下都是它的兜底。
+// 解析不出来的成员直接跳过——它本身已经坏了，正是兜底链要绕开的东西。
+func (s *system) buildFallbackChain(ctx context.Context, model types.ModelGroupModel) (requestPlan, error) {
+	candidates := make([]planCandidate, 0, len(model.Members))
+	var firstErr error
+	for _, member := range model.Members {
+		provider, resolved, err := s.resolveProviderCoordinate(ctx, types.ModelCoordinate{ProviderID: member.ProviderID, ModelID: member.ModelID})
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		candidates = append(candidates, planCandidate{provider: provider, model: applyGroupReasoningProfile(model, resolved)})
+	}
+	if len(candidates) == 0 {
+		return requestPlan{}, providerModelNotFound("no fallback member is available", firstErr)
+	}
+	return requestPlan{candidates: candidates}, nil
+}
+
+// applyGroupReasoningProfile 用模型组暴露的能力声明覆盖成员自身的推理配置：
+// 对外的模型是一个整体，推理能力以组上的声明为准。
+func applyGroupReasoningProfile(model types.ModelGroupModel, resolved types.ModelInfo) types.ModelInfo {
 	if model.SupportsReasoning {
 		resolved.SupportsReasoning = true
 		resolved.DefaultReasoningEffort = types.NormalizeReasoningEffort(model.DefaultReasoningEffort, types.DefaultReasoningEffort)
@@ -85,7 +109,7 @@ func (s *system) resolveModelGroup(ctx context.Context, coordinate types.ModelCo
 		resolved.SupportsReasoning = false
 		resolved.DefaultReasoningEffort = ""
 	}
-	return provider, resolved, nil
+	return resolved
 }
 
 // validateModelGroupCoordinate 校验模型组坐标可用：组与暴露模型存在，且每个成员模型都可解析。

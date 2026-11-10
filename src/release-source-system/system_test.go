@@ -3,6 +3,8 @@ package releasesourcesystem
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -175,7 +177,7 @@ func TestLocalCandidatesReportUnknownShelf(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListCandidates() error = %v", err)
 	}
-	if len(list.Candidates) != 1 || !strings.Contains(list.Candidates[0].FailureReason, "不是已注册货架") {
+	if len(list.Candidates) != 1 || !strings.Contains(list.Candidates[0].FailureReason, "不是已注册来源") {
 		t.Fatalf("candidates = %#v", list.Candidates)
 	}
 }
@@ -246,6 +248,8 @@ type testOptions struct {
 	candidateErr        map[string]error
 	shelves             []installsource.Shelf
 	pluginShelves       []installsource.Shelf
+	sources             []installsource.Source
+	remoteClient        releasecheck.HTTPDoer
 }
 
 // fakeSourceState 是某类别来源状态的测试替身。
@@ -253,17 +257,23 @@ type fakeSourceState struct {
 	source  string
 	problem string
 	shelves []installsource.Shelf
+	sources []installsource.Source
 }
 
 func (f fakeSourceState) CurrentSource() string { return f.source }
 func (f fakeSourceState) Problem() string       { return f.problem }
-func (f fakeSourceState) ShelfPath(name string) (string, bool) {
-	for _, shelf := range f.shelves {
-		if shelf.Name == name {
-			return shelf.Path, true
+func (f fakeSourceState) Source(name string) (installsource.Source, bool) {
+	for _, source := range f.sources {
+		if source.Name == name {
+			return source, true
 		}
 	}
-	return "", false
+	for _, shelf := range f.shelves {
+		if shelf.Name == name {
+			return installsource.Source{Name: shelf.Name, Kind: installsource.SourceKindShelf, Path: shelf.Path}, true
+		}
+	}
+	return installsource.Source{}, false
 }
 
 func newTestSystem(t *testing.T, options testOptions) System {
@@ -277,7 +287,7 @@ func newTestSystem(t *testing.T, options testOptions) System {
 		currentSource = installsource.OfficialSource
 	}
 	states := map[string]SourceState{
-		types.ReleaseArtifactKindTool: fakeSourceState{source: currentSource, problem: options.sourceProblem, shelves: options.shelves},
+		types.ReleaseArtifactKindTool: fakeSourceState{source: currentSource, problem: options.sourceProblem, shelves: options.shelves, sources: options.sources},
 	}
 	if options.pluginCurrentSource != "" || len(options.pluginShelves) > 0 {
 		pluginSource := options.pluginCurrentSource
@@ -289,8 +299,9 @@ func newTestSystem(t *testing.T, options testOptions) System {
 	checker := &fakeCandidateLister{candidates: options.candidates, errors: options.candidateErr}
 	system, err := NewSystemWithChecker(
 		Config{
-			BoxVersion: boxVersion,
-			States:     states,
+			BoxVersion:   boxVersion,
+			RemoteClient: options.remoteClient,
+			States:       states,
 		},
 		checker,
 		&fakeToolSystem{tools: options.tools, err: options.toolErr},
@@ -386,4 +397,80 @@ func findCandidate(t *testing.T, list types.ArtifactCandidateList, kind string, 
 	}
 	t.Fatalf("missing candidate %s:%s in %#v", kind, id, list)
 	return types.ArtifactReleaseCandidate{}
+}
+
+// remoteIndexPayload 是一份可由普通文件服务器托管的最小版本 2 清单。
+func remoteIndexPayload(downloadBase string) string {
+	return fmt.Sprintf(`{
+		"schemaVersion": 2,
+		"updatedAt": "2026-01-01T00:00:00Z",
+		"downloadBase": %q,
+		"artifacts": [{
+			"kind": "tool",
+			"id": "remote-demo",
+			"versions": [{
+				"version": "0.2.0",
+				"publishedAt": "2026-01-01T00:00:00Z",
+				"compatibility": {"minimumVersion": "0.1.0", "maximumVersionExclusive": "0.3.0"},
+				"packages": [{
+					"platform": "windows-x64",
+					"fileName": "tool-remote-demo_0.2.0_windows-x64.zip",
+					"sizeBytes": 12,
+					"sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+				}]
+			}]
+		}]
+	}`, downloadBase)
+}
+
+func TestListCandidatesReadsRemoteSource(t *testing.T) {
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(remoteIndexPayload(server.URL + "/files")))
+	}))
+	defer server.Close()
+	system := newTestSystem(t, testOptions{
+		currentSource: "社区商店",
+		sources:       []installsource.Source{{Name: "社区商店", Kind: installsource.SourceKindRemote, IndexURL: server.URL + "/store/index.json"}},
+		remoteClient:  server.Client(),
+	})
+	list, err := system.ListCandidates(context.Background(), types.ReleaseArtifactKindTool)
+	if err != nil {
+		t.Fatalf("ListCandidates() error = %v", err)
+	}
+	if list.SourceKind != "社区商店" || len(list.Candidates) != 1 {
+		t.Fatalf("list = %#v", list)
+	}
+	candidate := list.Candidates[0]
+	if candidate.Status != types.ReleaseCandidateStatusCompleted || candidate.LatestVersion != "0.2.0" {
+		t.Fatalf("candidate = %#v", candidate)
+	}
+	if candidate.Source.Name != "社区商店" || candidate.Source.Kind != types.ReleaseSourceKindRemote {
+		t.Fatalf("source = %#v", candidate.Source)
+	}
+	if candidate.UpdateAvailable != true || candidate.Installed {
+		t.Fatalf("comparison = %#v", candidate)
+	}
+}
+
+func TestRemoteSourceFailureDoesNotFallBack(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer server.Close()
+	system := newTestSystem(t, testOptions{
+		currentSource: "社区商店",
+		sources:       []installsource.Source{{Name: "社区商店", Kind: installsource.SourceKindRemote, IndexURL: server.URL + "/store/index.json"}},
+		remoteClient:  server.Client(),
+	})
+	list, err := system.ListCandidates(context.Background(), types.ReleaseArtifactKindTool)
+	if err != nil {
+		t.Fatalf("ListCandidates() error = %v", err)
+	}
+	if len(list.Candidates) != 1 || list.Candidates[0].Status != types.ReleaseCandidateStatusFailed {
+		t.Fatalf("candidates = %#v", list.Candidates)
+	}
+	if !strings.Contains(list.Candidates[0].FailureReason, "读取网络来源") {
+		t.Fatalf("failure = %q", list.Candidates[0].FailureReason)
+	}
 }

@@ -254,12 +254,18 @@ type ReleaseSourceSystem interface {
 	ListCandidates(ctx context.Context, kind string) (types.ArtifactCandidateList, error)
 }
 
-// InstallSourceSystem 是某类别安装来源状态的网关视图：来源选择与货架注册表的读写。
+// InstallSourceSystem 是某类别安装来源状态的网关视图：来源选择与来源注册表的读写。
 // Problem 非空表示该类别来源配置不可用，读取接口照常应答并携带原因，写入接口可完成重建。
 type InstallSourceSystem interface {
 	CurrentSource() string
 	Problem() string
 	SetSource(ctx context.Context, source string) (string, error)
+
+	Sources() []installsource.Source
+	AddSource(ctx context.Context, source installsource.Source) ([]installsource.Source, error)
+	UpdateSource(ctx context.Context, name string, patch installsource.SourcePatch) ([]installsource.Source, error)
+	RemoveSource(ctx context.Context, name string) ([]installsource.Source, error)
+
 	Shelves() []installsource.Shelf
 	AddShelf(ctx context.Context, name string, path string) ([]installsource.Shelf, error)
 	UpdateShelf(ctx context.Context, name string, newName *string, newPath *string) ([]installsource.Shelf, error)

@@ -34,6 +34,10 @@ func (s *system) registerRoutes() {
 	if len(s.config.InstallSources) > 0 {
 		s.mux.HandleFunc("GET /api/install-source/{kind}", s.authWrap(s.handleInstallSource))
 		s.mux.HandleFunc("PUT /api/install-source/{kind}", s.authWrap(s.handleSetInstallSource))
+		s.mux.HandleFunc("GET /api/sources/{kind}", s.authWrap(s.handleListSources))
+		s.mux.HandleFunc("POST /api/sources/{kind}", s.authWrap(s.handleAddSource))
+		s.mux.HandleFunc("PATCH /api/sources/{kind}", s.authWrap(s.handleUpdateSource))
+		s.mux.HandleFunc("DELETE /api/sources/{kind}", s.authWrap(s.handleRemoveSource))
 		s.mux.HandleFunc("GET /api/shelves/{kind}", s.authWrap(s.handleListShelves))
 		s.mux.HandleFunc("POST /api/shelves/{kind}", s.authWrap(s.handleAddShelf))
 		s.mux.HandleFunc("PATCH /api/shelves/{kind}", s.authWrap(s.handleUpdateShelf))

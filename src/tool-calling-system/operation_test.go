@@ -200,7 +200,7 @@ func (f *toolOperationFixture) makeToolCandidateFromSource(id string, version st
 		SourceRepository: product.Source.Repository,
 		Compatibility:    product.Compatibility,
 		ReleaseNotes:     "release notes " + version,
-		OfficialSource:   product.OfficialSource,
+		Source:           types.ReleaseSourceRef{Name: types.ReleaseSourceOfficialName, Kind: types.ReleaseSourceKindGithub, Repository: product.OfficialSource},
 		ArchiveURL:       f.server.URL + "/archive/" + id,
 		SizeBytes:        int64(len(f.archiveBytes)),
 		SHA256:           release.SHA256(f.archiveBytes),
@@ -389,7 +389,7 @@ func TestInstallToolFromLocalStore(t *testing.T) {
 		t.Fatalf("write manifest: %v", err)
 	}
 
-	reader, err := releasecheck.NewLocalSourceReader(storeRoot, types.ReleaseArtifactKindTool)
+	reader, err := releasecheck.NewLocalSourceReader("开发货架", storeRoot, types.ReleaseArtifactKindTool)
 	if err != nil {
 		t.Fatalf("NewLocalSourceReader() error = %v", err)
 	}

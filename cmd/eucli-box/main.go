@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -131,11 +132,13 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	toolCandidates, err := installsource.NewCandidateSelector(toolSourceState, officialChecker, types.ReleaseArtifactKindTool)
+	remoteStores := newRemoteStoreDoer(networkSystem, toolSourceState, pluginSourceState)
+	fetchDoer := releaseFetchDoer{official: officialDoer, remote: remoteStores}
+	toolCandidates, err := installsource.NewCandidateSelector(toolSourceState, officialChecker, remoteStores, types.ReleaseArtifactKindTool)
 	if err != nil {
 		return err
 	}
-	pluginCandidates, err := installsource.NewCandidateSelector(pluginSourceState, officialChecker, types.ReleaseArtifactKindPlugin)
+	pluginCandidates, err := installsource.NewCandidateSelector(pluginSourceState, officialChecker, remoteStores, types.ReleaseArtifactKindPlugin)
 	if err != nil {
 		return err
 	}
@@ -165,7 +168,7 @@ func run() error {
 	}
 	log.Printf("[6/13] permission-system       ✓")
 
-	toolSystem, err := toolcalling.NewSystem(toolcalling.Config{BoxVersion: boxRelease.Version, ProgramRoot: toolProgramRoot, DataRoot: dataDir, Candidates: toolCandidates, HTTPClient: officialDoer}, permissionSystem, storageSystem)
+	toolSystem, err := toolcalling.NewSystem(toolcalling.Config{BoxVersion: boxRelease.Version, ProgramRoot: toolProgramRoot, DataRoot: dataDir, Candidates: toolCandidates, HTTPClient: fetchDoer}, permissionSystem, storageSystem)
 	if err != nil {
 		return fmt.Errorf("start tool calling system: %w", err)
 	}
@@ -181,7 +184,7 @@ func run() error {
 		BoxVersion:  boxRelease.Version,
 		ProgramRoot: pluginSourceDir,
 		Candidates:  pluginCandidates,
-		HTTPClient:  officialDoer,
+		HTTPClient:  fetchDoer,
 		OnEvent: func(pluginID string, event string, _ map[string]any) {
 			log.Printf("[system-plugin:%s] event %s", pluginID, event)
 		},
@@ -219,7 +222,8 @@ func run() error {
 	log.Printf("[11/13] ai-assist-system        ✓")
 
 	releaseSourceSystem, err := releasesourcesystem.NewSystemWithChecker(releasesourcesystem.Config{
-		BoxVersion: boxRelease.Version,
+		BoxVersion:   boxRelease.Version,
+		RemoteClient: remoteStores,
 		States: map[string]releasesourcesystem.SourceState{
 			types.ReleaseArtifactKindTool:   toolSourceState,
 			types.ReleaseArtifactKindPlugin: pluginSourceState,
@@ -331,18 +335,20 @@ func programStatusLabel(programsRoot string) string {
 	return "✓  (" + programsRoot + ")"
 }
 
+// networkDoer 是业务端网络系统的最小请求能力。
+type networkDoer interface {
+	Do(ctx context.Context, request types.HTTPRequest) (types.HTTPResponse, error)
+}
+
 // boxOfficialHTTPDoer 是业务端网络系统对官方发行检查的只读适配器；
 // 只允许固定官方 HTTPS 地址和隔离验证地址，不能成为通用请求通道。
 type boxOfficialHTTPDoer struct {
-	network interface {
-		Do(ctx context.Context, request types.HTTPRequest) (types.HTTPResponse, error)
-	}
+	network networkDoer
 }
 
 func (d boxOfficialHTTPDoer) Do(request *http.Request) (*http.Response, error) {
 	target := request.URL.String()
-	allowed := strings.HasPrefix(target, "https://api.github.com/") || strings.HasPrefix(target, "https://github.com/") || strings.HasPrefix(target, "https://raw.githubusercontent.com/") || strings.HasPrefix(target, "http://127.0.0.1:")
-	if !allowed {
+	if !d.allows(target) {
 		return nil, fmt.Errorf("发行检查只能访问固定官方地址")
 	}
 	headers := make(map[string]string, len(request.Header))
@@ -363,4 +369,84 @@ func (d boxOfficialHTTPDoer) Do(request *http.Request) (*http.Response, error) {
 	}, nil
 }
 
+// allows 判断地址是否属于固定官方发行地址与隔离验证地址。
+func (d boxOfficialHTTPDoer) allows(target string) bool {
+	return strings.HasPrefix(target, "https://api.github.com/") ||
+		strings.HasPrefix(target, "https://github.com/") ||
+		strings.HasPrefix(target, "https://raw.githubusercontent.com/") ||
+		strings.HasPrefix(target, "http://127.0.0.1:")
+}
+
 var _ release.HTTPDoer = boxOfficialHTTPDoer{}
+
+// remoteStoreDoer 是网络商店的只读适配器：只放行已注册网络来源的清单主机。
+// 官方来源与网络来源各自约束自己的范围，互不扩张对方。
+type remoteStoreDoer struct {
+	network networkDoer
+	states  []*installsource.State
+}
+
+func newRemoteStoreDoer(network networkDoer, states ...*installsource.State) remoteStoreDoer {
+	return remoteStoreDoer{network: network, states: states}
+}
+
+func (d remoteStoreDoer) Do(request *http.Request) (*http.Response, error) {
+	if request.URL.Scheme != "https" {
+		return nil, fmt.Errorf("网络商店只能访问 HTTPS 地址")
+	}
+	if !d.allowsHost(request.URL.Hostname()) {
+		return nil, fmt.Errorf("网络商店只能访问已注册来源的主机")
+	}
+	headers := make(map[string]string, len(request.Header))
+	for name, values := range request.Header {
+		if len(values) > 0 {
+			headers[name] = values[0]
+		}
+	}
+	response, err := d.network.Do(request.Context(), types.HTTPRequest{Method: request.Method, URL: request.URL.String(), Headers: headers})
+	if err != nil {
+		return nil, err
+	}
+	return &http.Response{
+		StatusCode: response.StatusCode,
+		Header:     http.Header(response.Headers),
+		Body:       io.NopCloser(bytes.NewReader(response.Body)),
+		Request:    request,
+	}, nil
+}
+
+// allowsHost 判断主机是否属于任一已注册网络来源的清单地址。
+func (d remoteStoreDoer) allowsHost(host string) bool {
+	for _, state := range d.states {
+		if state == nil {
+			continue
+		}
+		for _, source := range state.Sources() {
+			if source.Kind != installsource.SourceKindRemote {
+				continue
+			}
+			parsed, err := url.Parse(source.IndexURL)
+			if err != nil {
+				continue
+			}
+			if strings.EqualFold(parsed.Hostname(), host) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// releaseFetchDoer 是发行读取与下载的统一门控：
+// 官方地址走固定白名单，已注册网络来源的主机走来源门控，其余一律拒绝。
+type releaseFetchDoer struct {
+	official boxOfficialHTTPDoer
+	remote   remoteStoreDoer
+}
+
+func (d releaseFetchDoer) Do(request *http.Request) (*http.Response, error) {
+	if d.official.allows(request.URL.String()) {
+		return d.official.Do(request)
+	}
+	return d.remote.Do(request)
+}

@@ -39,28 +39,30 @@ type CandidateLister interface {
 	ListCandidates(ctx context.Context, kind string) ([]releasecheck.CandidateRecord, error)
 }
 
-// SourceState 是某类别安装来源的只读视图：当前选择、不可用原因、货架路径。
+// SourceState 是某类别安装来源的只读视图：当前选择、不可用原因、来源记录。
 type SourceState interface {
 	CurrentSource() string
 	Problem() string
-	ShelfPath(name string) (string, bool)
+	Source(name string) (installsource.Source, bool)
 }
 
 // Config 是发行来源读取的装配事实；States 按发布物类别给出该类别的来源状态，
 // 缺少某类别的状态时按始终使用官方源处理。
 type Config struct {
-	BoxVersion string
-	IndexBase  string
-	States     map[string]SourceState
+	BoxVersion   string
+	IndexBase    string
+	RemoteClient releasecheck.HTTPDoer
+	States       map[string]SourceState
 }
 
 type system struct {
-	boxVersion string
-	checker    CandidateLister
-	sources    releasecatalog.Sources
-	tools      ToolSystem
-	plugins    PluginSystem
-	states     map[string]SourceState
+	boxVersion   string
+	checker      CandidateLister
+	sources      releasecatalog.Sources
+	remoteClient releasecheck.HTTPDoer
+	tools        ToolSystem
+	plugins      PluginSystem
+	states       map[string]SourceState
 }
 
 // NewSystem 创建发行来源读取系统：装配官方候选读取器，并持有工具与插件状态读取能力。
@@ -92,12 +94,13 @@ func NewSystemWithChecker(config Config, checker CandidateLister, tools ToolSyst
 		return nil, err
 	}
 	return &system{
-		boxVersion: boxVersion,
-		checker:    checker,
-		sources:    sources,
-		tools:      tools,
-		plugins:    plugins,
-		states:     config.States,
+		boxVersion:   boxVersion,
+		checker:      checker,
+		sources:      sources,
+		remoteClient: config.RemoteClient,
+		tools:        tools,
+		plugins:      plugins,
+		states:       config.States,
 	}, nil
 }
 
@@ -126,10 +129,22 @@ func (s *system) ListCandidates(ctx context.Context, kind string) (types.Artifac
 		candidates = []types.ArtifactReleaseCandidate{s.failedArtifactCandidate(types.ReleaseArtifactIdentity{Kind: kind, ID: kind}, installedByIdentity, "安装来源配置不可用："+s.sourceProblemText(kind))}
 	case sourceName == "":
 		candidates = []types.ArtifactReleaseCandidate{s.failedArtifactCandidate(types.ReleaseArtifactIdentity{Kind: kind, ID: kind}, installedByIdentity, "安装来源配置不可用")}
-	case sourceName != installsource.OfficialSource:
-		candidates = s.localCandidates(ctx, kind, installed, installedByIdentity)
-	default:
+	case sourceName == types.ReleaseSourceOfficialName:
 		candidates = s.officialCandidates(ctx, kind, installed, installedByIdentity)
+	default:
+		source, ok := s.currentSource(kind)
+		if !ok {
+			candidates = []types.ArtifactReleaseCandidate{s.failedArtifactCandidate(types.ReleaseArtifactIdentity{Kind: kind, ID: kind}, installedByIdentity, fmt.Sprintf("当前商店来源 %q 不是已注册来源", sourceName))}
+			break
+		}
+		switch source.Kind {
+		case types.ReleaseSourceKindShelf:
+			candidates = s.shelfCandidates(ctx, kind, source, installed, installedByIdentity)
+		case types.ReleaseSourceKindRemote:
+			candidates = s.remoteCandidates(ctx, kind, source, installed, installedByIdentity)
+		default:
+			candidates = []types.ArtifactReleaseCandidate{s.failedArtifactCandidate(types.ReleaseArtifactIdentity{Kind: kind, ID: kind}, installedByIdentity, fmt.Sprintf("来源 %q 的提供方式 %q 无效", source.Name, source.Kind))}
+		}
 	}
 	sort.Slice(candidates, func(i int, j int) bool {
 		if candidates[i].Artifact.Kind != candidates[j].Artifact.Kind {
@@ -157,15 +172,14 @@ func (s *system) officialCandidates(ctx context.Context, kind string, installed 
 	return candidates
 }
 
-func (s *system) localCandidates(ctx context.Context, kind string, installed []types.ArtifactInstallation, installedByIdentity map[string]types.ArtifactInstallation) []types.ArtifactReleaseCandidate {
-	source := s.currentSourceName(kind)
-	reader, err := s.shelfReader(kind, source)
+func (s *system) shelfCandidates(ctx context.Context, kind string, source installsource.Source, installed []types.ArtifactInstallation, installedByIdentity map[string]types.ArtifactInstallation) []types.ArtifactReleaseCandidate {
+	reader, err := releasecheck.NewLocalSourceReader(source.Name, source.Path, kind)
 	if err != nil {
-		return []types.ArtifactReleaseCandidate{s.failedArtifactCandidate(types.ReleaseArtifactIdentity{Kind: kind, ID: kind}, installedByIdentity, err.Error())}
+		return []types.ArtifactReleaseCandidate{s.failedArtifactCandidate(types.ReleaseArtifactIdentity{Kind: kind, ID: kind}, installedByIdentity, fmt.Sprintf("货架 %q 不可用：%s", source.Name, err.Error()))}
 	}
 	items, err := reader.List(ctx)
 	if err != nil {
-		return []types.ArtifactReleaseCandidate{s.failedArtifactCandidate(types.ReleaseArtifactIdentity{Kind: kind, ID: kind}, installedByIdentity, fmt.Sprintf("读取货架 %q 失败：%s", source, err.Error()))}
+		return []types.ArtifactReleaseCandidate{s.failedArtifactCandidate(types.ReleaseArtifactIdentity{Kind: kind, ID: kind}, installedByIdentity, fmt.Sprintf("读取货架 %q 失败：%s", source.Name, err.Error()))}
 	}
 	candidates := make([]types.ArtifactReleaseCandidate, 0)
 	for _, item := range items {
@@ -178,26 +192,48 @@ func (s *system) localCandidates(ctx context.Context, kind string, installed []t
 		if item.Artifact.Kind != kind || hasCandidateFor(candidates, item.Artifact) {
 			continue
 		}
-		candidates = append(candidates, s.installedOnlyCandidate(item, fmt.Sprintf("货架 %q 没有该发布物的候选成品", source)))
+		candidates = append(candidates, s.installedOnlyCandidate(item, fmt.Sprintf("货架 %q 没有该发布物的候选成品", source.Name)))
 	}
 	return candidates
 }
 
-// shelfReader 按当前选择的货架路径现场构造该类别的货架读取器；路径失效时如实报错，不回退官方。
-func (s *system) shelfReader(kind string, name string) (releasecheck.LocalShelf, error) {
+// remoteCandidates 读取网络来源的清单并给出候选；失败如实报告，不回退官方。
+func (s *system) remoteCandidates(ctx context.Context, kind string, source installsource.Source, installed []types.ArtifactInstallation, installedByIdentity map[string]types.ArtifactInstallation) []types.ArtifactReleaseCandidate {
+	if s.remoteClient == nil {
+		return []types.ArtifactReleaseCandidate{s.failedArtifactCandidate(types.ReleaseArtifactIdentity{Kind: kind, ID: kind}, installedByIdentity, fmt.Sprintf("网络来源 %q 缺少网络请求能力", source.Name))}
+	}
+	reader, err := releasecheck.NewSourceReader(releasecheck.IndexSource{
+		Name:     source.Name,
+		Kind:     types.ReleaseSourceKindRemote,
+		IndexURL: source.IndexURL,
+	}, releasecheck.Config{Client: s.remoteClient})
+	if err != nil {
+		return []types.ArtifactReleaseCandidate{s.failedArtifactCandidate(types.ReleaseArtifactIdentity{Kind: kind, ID: kind}, installedByIdentity, fmt.Sprintf("网络来源 %q 不可用：%s", source.Name, err.Error()))}
+	}
+	records, err := reader.ListCandidates(ctx, kind)
+	if err != nil {
+		return []types.ArtifactReleaseCandidate{s.failedArtifactCandidate(types.ReleaseArtifactIdentity{Kind: kind, ID: kind}, installedByIdentity, fmt.Sprintf("读取网络来源 %q 失败：%s", source.Name, err.Error()))}
+	}
+	candidates := make([]types.ArtifactReleaseCandidate, 0, len(records))
+	for _, record := range records {
+		candidates = append(candidates, s.candidateFor(record, installedByIdentity))
+	}
+	for _, item := range installed {
+		if item.Artifact.Kind != kind || hasCandidateFor(candidates, item.Artifact) {
+			continue
+		}
+		candidates = append(candidates, s.installedOnlyCandidate(item, fmt.Sprintf("网络来源 %q 没有该发布物的候选成品", source.Name)))
+	}
+	return candidates
+}
+
+// currentSource 返回该类别的当前来源记录；未装配或未注册时返回 false。
+func (s *system) currentSource(kind string) (installsource.Source, bool) {
 	state := s.states[kind]
 	if state == nil {
-		return nil, fmt.Errorf("货架来源未装配")
+		return installsource.Source{}, false
 	}
-	path, ok := state.ShelfPath(name)
-	if !ok {
-		return nil, fmt.Errorf("当前商店来源 %q 不是已注册货架", name)
-	}
-	reader, err := releasecheck.NewLocalSourceReader(path, kind)
-	if err != nil {
-		return nil, fmt.Errorf("货架 %q 不可用：%w", name, err)
-	}
-	return reader, nil
+	return state.Source(s.currentSourceName(kind))
 }
 
 func (s *system) candidateFor(record releasecheck.CandidateRecord, installedByIdentity map[string]types.ArtifactInstallation) types.ArtifactReleaseCandidate {
@@ -210,15 +246,13 @@ func (s *system) candidateFor(record releasecheck.CandidateRecord, installedById
 func (s *system) candidateFromReleaseCandidate(artifact types.ReleaseArtifactIdentity, source *releasecheck.ReleaseCandidate, installedByIdentity map[string]types.ArtifactInstallation) types.ArtifactReleaseCandidate {
 	candidate := types.ArtifactReleaseCandidate{
 		Artifact:      artifact,
+		Source:        source.Source,
 		LatestVersion: source.Version,
 		Status:        types.ReleaseCandidateStatusCompleted,
 		PublishedAt:   source.PublishedAt,
 		ReleaseURL:    source.ReleaseURL,
 		ReleaseNotes:  source.ReleaseNotes,
 		DownloadSize:  source.SizeBytes,
-	}
-	if official, err := s.sources.SourceFor(artifact.Kind); err == nil {
-		candidate.Source = official
 	}
 	if installed, ok := installedByIdentity[identityKey(artifact)]; ok {
 		candidate.Installed = true
@@ -243,13 +277,11 @@ func (s *system) candidateFromReleaseCandidate(artifact types.ReleaseArtifactIde
 func (s *system) installedOnlyCandidate(installed types.ArtifactInstallation, reason string) types.ArtifactReleaseCandidate {
 	candidate := types.ArtifactReleaseCandidate{
 		Artifact:       installed.Artifact,
+		Source:         s.currentSourceRef(installed.Artifact.Kind),
 		Installed:      true,
 		CurrentVersion: installed.Version,
 		Status:         types.ReleaseCandidateStatusFailed,
 		FailureReason:  reason,
-	}
-	if official, err := s.sources.SourceFor(installed.Artifact.Kind); err == nil {
-		candidate.Source = official
 	}
 	return candidate
 }
@@ -258,6 +290,7 @@ func (s *system) installedOnlyCandidate(installed types.ArtifactInstallation, re
 func (s *system) failedArtifactCandidate(artifact types.ReleaseArtifactIdentity, installedByIdentity map[string]types.ArtifactInstallation, reason string) types.ArtifactReleaseCandidate {
 	candidate := types.ArtifactReleaseCandidate{
 		Artifact:      artifact,
+		Source:        s.currentSourceRef(artifact.Kind),
 		Status:        types.ReleaseCandidateStatusFailed,
 		FailureReason: reason,
 	}
@@ -265,10 +298,31 @@ func (s *system) failedArtifactCandidate(artifact types.ReleaseArtifactIdentity,
 		candidate.Installed = true
 		candidate.CurrentVersion = installed.Version
 	}
-	if official, err := s.sources.SourceFor(artifact.Kind); err == nil {
-		candidate.Source = official
-	}
 	return candidate
+}
+
+// currentSourceRef 返回该类别当前来源的对外描述；配置不可用或未注册时只保留名字。
+func (s *system) currentSourceRef(kind string) types.ReleaseSourceRef {
+	name := s.currentSourceName(kind)
+	if name == "" {
+		return types.ReleaseSourceRef{}
+	}
+	if name == types.ReleaseSourceOfficialName {
+		official, err := s.sources.SourceFor(kind)
+		if err != nil {
+			return types.ReleaseSourceRef{Name: name, Kind: types.ReleaseSourceKindGithub}
+		}
+		return types.ReleaseSourceRef{Name: name, Kind: types.ReleaseSourceKindGithub, Repository: official.Repository, Ref: official.Ref}
+	}
+	source, ok := s.currentSource(kind)
+	if !ok {
+		return types.ReleaseSourceRef{Name: name}
+	}
+	reference := types.ReleaseSourceRef{Name: source.Name, Kind: source.Kind}
+	if source.Kind == types.ReleaseSourceKindRemote {
+		reference.IndexURL = source.IndexURL
+	}
+	return reference
 }
 
 // installedArtifacts 读取可用工具与已装插件的真实版本事实。

@@ -140,11 +140,13 @@ func TestInstallSourceCategoriesAreIndependent(t *testing.T) {
 		t.Fatalf("PUT plugin source status = %d body=%s", recorder.Code, recorder.Body.String())
 	}
 
-	if len(fakes.installSource.shelves) != 1 || fakes.installSource.shelves[0].Path != "D:/tools" {
-		t.Fatalf("tool shelves = %#v", fakes.installSource.shelves)
+	toolSources := fakes.installSource.Sources()
+	if len(toolSources) != 1 || toolSources[0].Path != "D:/tools" {
+		t.Fatalf("tool sources = %#v", toolSources)
 	}
-	if len(fakes.installSourcePlugin.shelves) != 1 || fakes.installSourcePlugin.shelves[0].Path != "D:/plugins" {
-		t.Fatalf("plugin shelves = %#v", fakes.installSourcePlugin.shelves)
+	pluginSources := fakes.installSourcePlugin.Sources()
+	if len(pluginSources) != 1 || pluginSources[0].Path != "D:/plugins" {
+		t.Fatalf("plugin sources = %#v", pluginSources)
 	}
 	_, payload = requestGateway(t, system, http.MethodGet, "/api/install-source/tool", "")
 	if sourceData(t, payload) != "共享架" {

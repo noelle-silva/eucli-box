@@ -70,10 +70,7 @@ func prepareJSONDocument(ctx context.Context, target string, value any, sync boo
 }
 
 func commitJSON(temp string, target string) error {
-	if err := os.Rename(temp, target); err != nil {
-		return storageWriteFailed("failed to replace json file", err)
-	}
-	return nil
+	return commitJSONWithRetry(temp, target)
 }
 
 func writeJSON(ctx context.Context, target string, value any) error {

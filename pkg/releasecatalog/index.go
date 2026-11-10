@@ -285,9 +285,9 @@ func validateSourceRevision(value string) error {
 	return nil
 }
 
-// IndexRawURL 构造代码托管仓库统一版本索引的原始文件地址。
+// RepositoryIndexURL 构造代码托管仓库统一版本索引的原始文件地址。
 // 读取索引不使用仓库接口，也不调用发行列表接口。
-func IndexRawURL(base string, repository Repository, ref string) (string, error) {
+func RepositoryIndexURL(base string, repository Repository, ref string) (string, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		return "", fmt.Errorf("索引引用不能为空")
@@ -302,9 +302,9 @@ func IndexRawURL(base string, repository Repository, ref string) (string, error)
 	return fmt.Sprintf("%s/%s/%s/%s/%s", base, url.PathEscape(repository.Owner), url.PathEscape(repository.Name), url.PathEscape(ref), IndexPath), nil
 }
 
-// ReadIndex 从代码托管仓库读取一份统一版本索引并完成完整校验。
-func ReadIndex(ctx context.Context, client HTTPDoer, repository Repository, ref string, base string) (Index, error) {
-	endpoint, err := IndexRawURL(base, repository, ref)
+// ReadRepositoryIndex 从代码托管仓库读取一份统一版本索引并完成完整校验。
+func ReadRepositoryIndex(ctx context.Context, client HTTPDoer, repository Repository, ref string, base string) (Index, error) {
+	endpoint, err := RepositoryIndexURL(base, repository, ref)
 	if err != nil {
 		return Index{}, err
 	}
@@ -398,9 +398,9 @@ func (v IndexVersion) PackageFor(platform string) (IndexPackage, bool) {
 	return IndexPackage{}, false
 }
 
-// DownloadURL 解析压缩包下载地址：索引自带地址优先，其次索引下载基址，
+// ResolveDownloadURL 解析压缩包下载地址：索引自带地址优先，其次索引下载基址，
 // 最后按代码托管仓库的发行路径拼装。base 非空时覆盖仓库地址。
-func DownloadURL(base string, repository string, downloadBase string, pkg IndexPackage) (string, error) {
+func ResolveDownloadURL(base string, repository string, downloadBase string, pkg IndexPackage) (string, error) {
 	if strings.TrimSpace(pkg.URL) != "" {
 		return strings.TrimSpace(pkg.URL), nil
 	}
@@ -438,4 +438,30 @@ func (i Index) SortedArtifactKeys() []types.ReleaseArtifactIdentity {
 		return keys[a].ID < keys[b].ID
 	})
 	return keys
+}
+
+// IndexRawURL 是 RepositoryIndexURL 的旧签名入口，保留给既有调用方。
+// Deprecated: 新代码使用 RepositoryIndexURL；本入口随下一个主版本移除。
+func IndexRawURL(base string, source types.OfficialReleaseSource) (string, error) {
+	repository, err := ParseRepository(source.Repository)
+	if err != nil {
+		return "", err
+	}
+	return RepositoryIndexURL(base, repository, source.Ref)
+}
+
+// ReadIndex 是 ReadRepositoryIndex 的旧签名入口，保留给既有调用方。
+// Deprecated: 新代码使用 ReadRepositoryIndex；本入口随下一个主版本移除。
+func ReadIndex(ctx context.Context, client HTTPDoer, source types.OfficialReleaseSource, base string) (Index, error) {
+	repository, err := ParseRepository(source.Repository)
+	if err != nil {
+		return Index{}, err
+	}
+	return ReadRepositoryIndex(ctx, client, repository, source.Ref, base)
+}
+
+// DownloadURL 是 ResolveDownloadURL 的旧签名入口，保留给既有调用方。
+// Deprecated: 新代码使用 ResolveDownloadURL；本入口随下一个主版本移除。
+func DownloadURL(base string, source types.OfficialReleaseSource, pkg IndexPackage) (string, error) {
+	return ResolveDownloadURL(base, source.Repository, "", pkg)
 }

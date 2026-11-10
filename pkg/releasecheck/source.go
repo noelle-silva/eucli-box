@@ -71,7 +71,7 @@ func (s IndexSource) readIndex(ctx context.Context, client HTTPDoer, indexBase s
 		if err != nil {
 			return releasecatalog.Index{}, err
 		}
-		return releasecatalog.ReadIndex(ctx, client, repository, s.Ref, indexBase)
+		return releasecatalog.ReadRepositoryIndex(ctx, client, repository, s.Ref, indexBase)
 	case types.ReleaseSourceKindRemote:
 		return releasecatalog.ReadIndexURL(ctx, client, s.IndexURL, s.Name)
 	default:
@@ -82,7 +82,7 @@ func (s IndexSource) readIndex(ctx context.Context, client HTTPDoer, indexBase s
 // downloadURL 解析该来源下某个压缩包的下载地址。
 // 网络来源的压缩包必须与清单同一主机：网络门控只放行清单主机。
 func (s IndexSource) downloadURL(index releasecatalog.Index, pkg releasecatalog.IndexPackage, downloadBase string) (string, error) {
-	value, err := releasecatalog.DownloadURL(downloadBase, s.Repository, index.DownloadBase, pkg)
+	value, err := releasecatalog.ResolveDownloadURL(downloadBase, s.Repository, index.DownloadBase, pkg)
 	if err != nil {
 		return "", err
 	}

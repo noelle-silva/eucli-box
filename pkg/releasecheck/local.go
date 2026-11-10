@@ -20,13 +20,15 @@ import (
 // LocalCandidate 从货架（用户注册的目录）的货品清单与压缩包
 // 读取单个货架候选；货品与官方源使用同一货品格式。
 type LocalCandidate struct {
+	SourceName   string
 	ManifestPath string
 	ArchivePath  string
 }
 
 // NewLocalCandidate 构造本地候选读取器；路径可为空，会在使用时报告。
-func NewLocalCandidate(manifestPath string, archivePath string) *LocalCandidate {
+func NewLocalCandidate(sourceName string, manifestPath string, archivePath string) *LocalCandidate {
 	return &LocalCandidate{
+		SourceName:   strings.TrimSpace(sourceName),
 		ManifestPath: strings.TrimSpace(manifestPath),
 		ArchivePath:  strings.TrimSpace(archivePath),
 	}
@@ -62,7 +64,7 @@ func (s *LocalCandidate) LatestCandidate(ctx context.Context, identity types.Rel
 		SourceRepository: manifest.Source.Repository,
 		DataVersion:      manifest.DataVersion,
 		Compatibility:    manifest.Compatibility,
-		OfficialSource:   manifest.OfficialSource,
+		Source:           types.ReleaseSourceRef{Name: s.SourceName, Kind: types.ReleaseSourceKindShelf, Repository: manifest.OfficialSource},
 		ReleaseURL:       "",
 		ArchiveURL:       s.ArchivePath,
 		SizeBytes:        size,
@@ -103,12 +105,13 @@ func validateLocalManifest(manifest types.ReleaseManifest, identity types.Releas
 // LocalSourceReader 从单类别货架按发布物构造候选；货架根下直接是
 // <id>/<version>/，版本目录内放货品清单与压缩包。
 type LocalSourceReader struct {
+	name string
 	root string
 	kind string
 }
 
 // NewLocalSourceReader 构造单类别货架候选读取器。
-func NewLocalSourceReader(packageRoot string, kind string) (*LocalSourceReader, error) {
+func NewLocalSourceReader(sourceName string, packageRoot string, kind string) (*LocalSourceReader, error) {
 	kind = strings.TrimSpace(kind)
 	if kind != types.ReleaseArtifactKindTool && kind != types.ReleaseArtifactKindPlugin {
 		return nil, fmt.Errorf("货架不支持发布物类别 %q", kind)
@@ -124,7 +127,7 @@ func NewLocalSourceReader(packageRoot string, kind string) (*LocalSourceReader, 
 	if !info.IsDir() {
 		return nil, errors.New("货架路径不是目录")
 	}
-	return &LocalSourceReader{root: root, kind: kind}, nil
+	return &LocalSourceReader{name: strings.TrimSpace(sourceName), root: root, kind: kind}, nil
 }
 
 // LatestCandidate 读取目标发布物在货架上的最高版本候选；只服务本货架类别。
@@ -146,7 +149,7 @@ func (s *LocalSourceReader) LatestCandidate(ctx context.Context, identity types.
 		}
 		return left > 0
 	})
-	return localCandidate(ctx, identity, candidates[0])
+	return s.localCandidate(ctx, identity, candidates[0])
 }
 
 type localCandidateFile struct {
@@ -217,8 +220,8 @@ func locateLocalArtifact(dir string) (localCandidateFile, bool) {
 	return localCandidateFile{}, false
 }
 
-func localCandidate(ctx context.Context, identity types.ReleaseArtifactIdentity, file localCandidateFile) (*ReleaseCandidate, error) {
-	reader := NewLocalCandidate(file.manifest, file.archive)
+func (s *LocalSourceReader) localCandidate(ctx context.Context, identity types.ReleaseArtifactIdentity, file localCandidateFile) (*ReleaseCandidate, error) {
+	reader := NewLocalCandidate(s.name, file.manifest, file.archive)
 	return reader.LatestCandidate(ctx, identity)
 }
 
@@ -266,7 +269,7 @@ func (s *LocalSourceReader) List(ctx context.Context) ([]LocalShelfItem, error) 
 			}
 			return left > 0
 		})
-		candidate, err := localCandidate(ctx, identity, candidates[0])
+		candidate, err := s.localCandidate(ctx, identity, candidates[0])
 		if err != nil {
 			continue
 		}
@@ -288,10 +291,14 @@ func LocalSource(candidate *ReleaseCandidate) (release.ArtifactPackageSource, er
 		Artifact:       candidate.Artifact,
 		Version:        candidate.Version,
 		Platform:       types.ReleasePlatformWindowsX64,
-		OfficialSource: candidate.OfficialSource,
+		OfficialSource: candidate.Source.Address(),
 		Compatibility:  candidate.Compatibility,
-		Source:         types.ReleaseSourceRecord{Repository: candidate.SourceRepository, Commit: candidate.SourceRevision},
-		DataVersion:    candidate.DataVersion,
+		Source: types.ReleaseSourceRecord{
+			Repository: candidate.SourceRepository,
+			Commit:     candidate.SourceRevision,
+			Recorded:   strings.TrimSpace(candidate.SourceRepository) != "" && strings.TrimSpace(candidate.SourceRevision) != "",
+		},
+		DataVersion: candidate.DataVersion,
 	}
 	source := release.ArtifactPackageSource{
 		Artifact:   candidate.Artifact,

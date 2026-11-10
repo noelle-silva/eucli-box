@@ -10,8 +10,8 @@ import (
 	"eucli-box/pkg/types"
 )
 
-// ReleaseCandidate 是已经由官方统一版本索引确认过的可下载事实；
-// 不携带任何来自 Release 附属清单的信息。
+// ReleaseCandidate 是已经由统一版本索引确认过的可下载事实；
+// 不携带任何来自发行附属清单的信息。
 type ReleaseCandidate struct {
 	Artifact         types.ReleaseArtifactIdentity
 	Version          string
@@ -21,17 +21,18 @@ type ReleaseCandidate struct {
 	DataVersion      string
 	Compatibility    *types.EucliBoxCompatibility
 	ReleaseNotes     string
-	OfficialSource   string
+	Source           types.ReleaseSourceRef
 	ReleaseURL       string
 	ArchiveURL       string
 	SizeBytes        int64
 	SHA256           string
-	// Local 标记候选来自货架，取货使用本地文件复制。
+	// Local 标记候选来自本机货架，取货使用本地文件复制。
 	Local bool
 }
 
 // PackageSource 把已核对候选转换成可下载事实；不执行网络请求。
 func (c ReleaseCandidate) PackageSource() (release.ArtifactPackageSource, error) {
+	recorded := strings.TrimSpace(c.SourceRepository) != "" && strings.TrimSpace(c.SourceRevision) != ""
 	source := release.ArtifactPackageSource{
 		Artifact: c.Artifact,
 		Product: types.ReleaseProductRecord{
@@ -39,9 +40,9 @@ func (c ReleaseCandidate) PackageSource() (release.ArtifactPackageSource, error)
 			Artifact:       c.Artifact,
 			Version:        c.Version,
 			Platform:       types.ReleasePlatformWindowsX64,
-			OfficialSource: c.OfficialSource,
+			OfficialSource: c.Source.Address(),
 			Compatibility:  c.Compatibility,
-			Source:         types.ReleaseSourceRecord{Repository: c.SourceRepository, Commit: c.SourceRevision, Recorded: true},
+			Source:         types.ReleaseSourceRecord{Repository: c.SourceRepository, Commit: c.SourceRevision, Recorded: recorded},
 			DataVersion:    c.DataVersion,
 		},
 		ArchiveURL: c.ArchiveURL,
@@ -54,13 +55,16 @@ func (c ReleaseCandidate) PackageSource() (release.ArtifactPackageSource, error)
 	return source, nil
 }
 
-func releaseTagURL(source types.OfficialReleaseSource, tag string) (string, error) {
-	if strings.TrimSpace(tag) == "" {
-		return "", fmt.Errorf("发行标签不能为空")
+// releaseTagURL 构造代码托管仓库的发行页地址；静态清单没有发行页。
+func releaseTagURL(repository string, tag string) (string, error) {
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return "", nil
 	}
-	parsed, err := url.Parse(strings.TrimSuffix(source.Repository, "/"))
+	repository = strings.TrimSuffix(strings.TrimSpace(repository), "/")
+	parsed, err := url.Parse(repository)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return "", fmt.Errorf("官方来源地址无效")
+		return "", fmt.Errorf("来源地址无效")
 	}
-	return fmt.Sprintf("%s/releases/tag/%s", strings.TrimSuffix(source.Repository, "/"), url.PathEscape(tag)), nil
+	return fmt.Sprintf("%s/releases/tag/%s", repository, url.PathEscape(tag)), nil
 }

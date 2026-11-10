@@ -73,7 +73,7 @@ func TestPackageSourceRejectsInvalidCandidate(t *testing.T) {
 		SourceRevision:   "0123456789abcdef0123456789abcdef01234567",
 		SourceRepository: "https://github.com/noelle-silva/eucli-box",
 		Compatibility:    &compatibility,
-		OfficialSource:   "https://github.com/noelle-silva/eucli-box-ai-tools",
+		Source:           types.ReleaseSourceRef{Name: types.ReleaseSourceOfficialName, Kind: types.ReleaseSourceKindGithub, Repository: "https://github.com/noelle-silva/eucli-box-ai-tools", Ref: "main"},
 		ArchiveURL:       "https://github.com/noelle-silva/eucli-box-ai-tools/releases/download/demo/v0.1.0/demo_0.1.0_windows-x64.zip",
 		SizeBytes:        123,
 		SHA256:           release.SHA256([]byte("archive")),

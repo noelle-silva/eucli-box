@@ -205,6 +205,16 @@ type PromptFolderSystem interface {
 	MovePromptToFolder(ctx context.Context, scope string, ownerID string, promptID string, fromFolderID string, toFolderID string) (types.PromptFolderLibrary, error)
 }
 
+// TaskTreeSystem 是任务树的搬运接口：只有角色与工作区两个作用域，各自一棵树。
+type TaskTreeSystem interface {
+	LoadTaskTree(ctx context.Context, scope string, ownerID string) (types.TaskTree, error)
+	SaveTaskTree(ctx context.Context, scope string, ownerID string, tree types.TaskTree) (types.TaskTree, error)
+	CreateTaskNode(ctx context.Context, scope string, ownerID string, parentID string, node types.TaskNode) (types.TaskTree, error)
+	DeleteTaskNode(ctx context.Context, scope string, ownerID string, taskID string) (types.TaskTree, error)
+	MoveTaskNode(ctx context.Context, scope string, ownerID string, taskID string, toParentID string) (types.TaskTree, error)
+	ReorderTaskChildren(ctx context.Context, scope string, ownerID string, parentID string, taskIDs []string) (types.TaskTree, error)
+}
+
 type PlaceholderSystem interface {
 	LoadPlaceholderLibrary(ctx context.Context) (types.PlaceholderLibrary, error)
 	SavePlaceholderLibrary(ctx context.Context, library types.PlaceholderLibrary) (types.PlaceholderLibrary, error)
@@ -326,9 +336,10 @@ type system struct {
 
 	promptLibraries PromptLibrarySystem
 	promptFolders   PromptFolderSystem
+	taskTrees       TaskTreeSystem
 }
 
-func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups ChatGroupSystem, workspaces WorkspaceSystem, providers ProviderSystem, tools ToolSystem, sessions SessionSystem, stickers StickerSystem, hooks HookPromptSystem, placeholders PlaceholderSystem, systemPlugins SystemPluginSystem, assist AIAssistSystem, releaseSource ReleaseSourceSystem, requestRecords RequestRecordSystem, promptLibraries PromptLibrarySystem, promptFolders PromptFolderSystem) (System, error) {
+func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups ChatGroupSystem, workspaces WorkspaceSystem, providers ProviderSystem, tools ToolSystem, sessions SessionSystem, stickers StickerSystem, hooks HookPromptSystem, placeholders PlaceholderSystem, systemPlugins SystemPluginSystem, assist AIAssistSystem, releaseSource ReleaseSourceSystem, requestRecords RequestRecordSystem, promptLibraries PromptLibrarySystem, promptFolders PromptFolderSystem, taskTrees TaskTreeSystem) (System, error) {
 	if runtime == nil {
 		return nil, gatewayInvalid("runtime system dependency is required", nil)
 	}
@@ -376,6 +387,9 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups Ch
 	}
 	if promptFolders == nil {
 		return nil, gatewayInvalid("prompt folder system dependency is required", nil)
+	}
+	if taskTrees == nil {
+		return nil, gatewayInvalid("task tree system dependency is required", nil)
 	}
 	if config.SessionChanges == nil {
 		return nil, gatewayInvalid("session change source dependency is required", nil)
@@ -433,6 +447,7 @@ func NewSystem(config Config, runtime RuntimeSystem, roles RoleSystem, groups Ch
 
 		promptLibraries: promptLibraries,
 		promptFolders:   promptFolders,
+		taskTrees:       taskTrees,
 	}
 	s.registerRoutes()
 	s.server = &http.Server{Addr: config.Addr, Handler: s.mux, ReadTimeout: config.ReadTimeout, WriteTimeout: config.WriteTimeout}

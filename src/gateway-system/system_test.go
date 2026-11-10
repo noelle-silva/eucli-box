@@ -986,7 +986,7 @@ func newTestGateway(t *testing.T, fakes *gatewayFakes) System {
 		}
 		sources[types.ReleaseArtifactKindPlugin] = fakes.installSourcePlugin
 	}
-	system, err := NewSystem(Config{Addr: "127.0.0.1:0", InstallSources: sources, SessionChanges: fakes.sessionChanges}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseSource, fakes.requestRecords, fakes.promptLibraries, fakes.promptFolders)
+	system, err := NewSystem(Config{Addr: "127.0.0.1:0", InstallSources: sources, SessionChanges: fakes.sessionChanges}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseSource, fakes.requestRecords, fakes.promptLibraries, fakes.promptFolders, fakes.taskTrees)
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -1014,11 +1014,12 @@ type gatewayFakes struct {
 
 	promptLibraries *fakeGatewayPromptLibraries
 	promptFolders   *fakeGatewayPromptFolders
+	taskTrees       *fakeGatewayTaskTrees
 }
 
 func newGatewayFakes() *gatewayFakes {
 	stickers := newFakeGatewayStickers()
-	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), groups: newFakeGatewayGroups(), workspaces: newFakeGatewayWorkspaces(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, hooks: &fakeGatewayHooks{}, placeholders: &fakeGatewayPlaceholders{}, systemPlugins: &fakeGatewaySystemPlugins{}, assist: &fakeGatewayAssist{stickers: stickers}, releaseSource: &fakeGatewayReleaseSource{}, requestRecords: newFakeGatewayRequestRecords(), promptLibraries: newFakeGatewayPromptLibraries(), promptFolders: newFakeGatewayPromptFolders(), installSource: newFakeGatewayInstallSource(), installSourcePlugin: newFakeGatewayInstallSource(), sessionChanges: newFakeGatewaySessionChanges()}
+	return &gatewayFakes{runtime: newFakeGatewayRuntime(), roles: newFakeGatewayRoles(), groups: newFakeGatewayGroups(), workspaces: newFakeGatewayWorkspaces(), providers: newFakeGatewayProviders(), tools: newFakeGatewayTools(), sessions: newFakeGatewaySessions(), stickers: stickers, hooks: &fakeGatewayHooks{}, placeholders: &fakeGatewayPlaceholders{}, systemPlugins: &fakeGatewaySystemPlugins{}, assist: &fakeGatewayAssist{stickers: stickers}, releaseSource: &fakeGatewayReleaseSource{}, requestRecords: newFakeGatewayRequestRecords(), promptLibraries: newFakeGatewayPromptLibraries(), promptFolders: newFakeGatewayPromptFolders(), taskTrees: newFakeGatewayTaskTrees(), installSource: newFakeGatewayInstallSource(), installSourcePlugin: newFakeGatewayInstallSource(), sessionChanges: newFakeGatewaySessionChanges()}
 }
 
 type fakeGatewayInstallSource struct {
@@ -2351,4 +2352,50 @@ func (f *fakeGatewayPromptFolders) MovePromptToFolder(ctx context.Context, scope
 func (f *fakeGatewayPromptFolders) RemoveFolderFromParent(ctx context.Context, scope string, ownerID string, folderID string, parentID string) (types.PromptFolderLibrary, error) {
 	f.scope, f.ownerID, f.folderID, f.parentID = scope, ownerID, folderID, parentID
 	return f.library, nil
+}
+
+// fakeGatewayTaskTrees 只记录网关搬运过来的作用域、归属与参数，判定规矩留给存储层。
+type fakeGatewayTaskTrees struct {
+	tree       types.TaskTree
+	scope      string
+	ownerID    string
+	parentID   string
+	taskID     string
+	toParentID string
+	node       types.TaskNode
+	order      []string
+}
+
+func newFakeGatewayTaskTrees() *fakeGatewayTaskTrees {
+	return &fakeGatewayTaskTrees{tree: types.TaskTree{Tasks: []types.TaskNode{}}}
+}
+
+func (f *fakeGatewayTaskTrees) LoadTaskTree(ctx context.Context, scope string, ownerID string) (types.TaskTree, error) {
+	f.scope, f.ownerID = scope, ownerID
+	return f.tree, nil
+}
+
+func (f *fakeGatewayTaskTrees) SaveTaskTree(ctx context.Context, scope string, ownerID string, tree types.TaskTree) (types.TaskTree, error) {
+	f.scope, f.ownerID, f.tree = scope, ownerID, tree
+	return f.tree, nil
+}
+
+func (f *fakeGatewayTaskTrees) CreateTaskNode(ctx context.Context, scope string, ownerID string, parentID string, node types.TaskNode) (types.TaskTree, error) {
+	f.scope, f.ownerID, f.parentID, f.node = scope, ownerID, parentID, node
+	return f.tree, nil
+}
+
+func (f *fakeGatewayTaskTrees) DeleteTaskNode(ctx context.Context, scope string, ownerID string, taskID string) (types.TaskTree, error) {
+	f.scope, f.ownerID, f.taskID = scope, ownerID, taskID
+	return f.tree, nil
+}
+
+func (f *fakeGatewayTaskTrees) MoveTaskNode(ctx context.Context, scope string, ownerID string, taskID string, toParentID string) (types.TaskTree, error) {
+	f.scope, f.ownerID, f.taskID, f.toParentID = scope, ownerID, taskID, toParentID
+	return f.tree, nil
+}
+
+func (f *fakeGatewayTaskTrees) ReorderTaskChildren(ctx context.Context, scope string, ownerID string, parentID string, taskIDs []string) (types.TaskTree, error) {
+	f.scope, f.ownerID, f.parentID, f.order = scope, ownerID, parentID, taskIDs
+	return f.tree, nil
 }

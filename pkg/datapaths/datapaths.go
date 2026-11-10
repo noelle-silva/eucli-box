@@ -51,6 +51,9 @@ const (
 	RelPromptFoldersFile = "prompt-folders.json"
 )
 
+// 任务树的文件名：角色与工作区各一份，作用域目录由数据存储层解析。
+const RelTaskTreeFile = "task-tree.json"
+
 // Join 以数据根目录为基准合并相对路径。
 func Join(root string, rel string) string {
 	return filepath.Join(root, filepath.FromSlash(rel))

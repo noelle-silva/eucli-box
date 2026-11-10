@@ -213,6 +213,31 @@ func (p paths) promptScopeFile(scope string, ownerID string, fileName string) (s
 	return filepath.Join(location.dir, fileName), location.ownerDir, nil
 }
 
+// taskScopeDir 解析任务的作用域目录。
+// 任务只有角色与工作区两个归属，目录仍由 roleDir / workspaceDir 单点解析，
+// 因此任务树与提示词库落在同一个实体目录里；全局作用域在这里明确拒绝。
+func (p paths) taskScopeDir(scope string, ownerID string) (string, error) {
+	switch scope {
+	case types.TaskScopeRole:
+		return p.roleDir(ownerID)
+	case types.TaskScopeWorkspace:
+		return p.workspaceDir(ownerID)
+	default:
+		return "", storageInvalid("unsupported task scope: "+scope, nil)
+	}
+}
+
+// taskTreeFile 返回任务树文件的位置与归属目录。
+// 任务只有一份数据文件，文件名在这里连同目录一起确定；
+// 归属目录同时作为「实体是否存在」的判据由调用方检查。
+func (p paths) taskTreeFile(scope string, ownerID string) (string, string, error) {
+	dir, err := p.taskScopeDir(scope, ownerID)
+	if err != nil {
+		return "", "", err
+	}
+	return filepath.Join(dir, datapaths.RelTaskTreeFile), dir, nil
+}
+
 func (p paths) sessionRoleDir(roleID string) (string, error) {
 	return p.safeJoin(p.sessionRolesRoot(), roleID)
 }

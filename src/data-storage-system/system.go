@@ -81,6 +81,13 @@ type System interface {
 	RemoveFolderFromParent(ctx context.Context, scope string, ownerID string, folderID string, parentID string) (types.PromptFolderLibrary, error)
 	MovePromptToFolder(ctx context.Context, scope string, ownerID string, promptID string, fromFolderID string, toFolderID string) (types.PromptFolderLibrary, error)
 
+	LoadTaskTree(ctx context.Context, scope string, ownerID string) (types.TaskTree, error)
+	SaveTaskTree(ctx context.Context, scope string, ownerID string, tree types.TaskTree) (types.TaskTree, error)
+	CreateTaskNode(ctx context.Context, scope string, ownerID string, parentID string, node types.TaskNode) (types.TaskTree, error)
+	DeleteTaskNode(ctx context.Context, scope string, ownerID string, taskID string) (types.TaskTree, error)
+	MoveTaskNode(ctx context.Context, scope string, ownerID string, taskID string, toParentID string) (types.TaskTree, error)
+	ReorderTaskChildren(ctx context.Context, scope string, ownerID string, parentID string, taskIDs []string) (types.TaskTree, error)
+
 	LoadRequestRecordConfig(ctx context.Context) (types.RequestRecordConfig, error)
 	SaveRequestRecordConfig(ctx context.Context, config types.RequestRecordConfig) (types.RequestRecordConfig, error)
 	AppendRequestRecord(ctx context.Context, record types.RequestRecord) (types.RequestRecord, error)

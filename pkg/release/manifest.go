@@ -193,14 +193,16 @@ func validateIdentity(identity types.ReleaseArtifactIdentity) error {
 	return nil
 }
 
+// validateSourceRecord 校验源码记录事实：仓库与提交编号成对出现；
+// 两者都为空表示未记录源码。记录标记由构造方按事实派生，不作为校验输入。
 func validateSourceRecord(source types.ReleaseSourceRecord) error {
 	repository := strings.TrimSpace(source.Repository)
 	commit := strings.TrimSpace(source.Commit)
-	if !source.Recorded {
-		if repository != "" || commit != "" {
-			return fmt.Errorf("未记录源码的发布物不能携带源码仓库或提交编号")
-		}
+	if repository == "" && commit == "" {
 		return nil
+	}
+	if repository == "" || commit == "" {
+		return fmt.Errorf("源码仓库与提交编号必须同时提供或同时为空")
 	}
 	parsed, err := url.Parse(repository)
 	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || parsed.Host == "" {

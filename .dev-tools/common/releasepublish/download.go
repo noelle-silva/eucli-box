@@ -19,7 +19,7 @@ func (p *Publisher) readIndex(ctx context.Context, source types.OfficialReleaseS
 	if err != nil {
 		return releasecatalog.Index{}, err
 	}
-	return releasecatalog.ReadIndex(ctx, p.client, repository, source.Ref, p.indexBase())
+	return releasecatalog.ReadRepositoryIndex(ctx, p.client, repository, source.Ref, p.indexBase())
 }
 
 // indexBase 返回读取索引与构造下载地址的基础地址；隔离验证环境使用同源模拟服务。
@@ -71,7 +71,7 @@ func (p *Publisher) DownloadPublished(ctx context.Context, identity types.Releas
 	if !ok {
 		return DownloadResult{}, fmt.Errorf("官方索引没有 %s 的 %s 平台压缩包", releasecatalog.Target(identity), types.ReleasePlatformWindowsX64)
 	}
-	archiveURL, err := releasecatalog.DownloadURL(p.indexBase(), source.Repository, "", pkg)
+	archiveURL, err := releasecatalog.ResolveDownloadURL(p.indexBase(), source.Repository, "", pkg)
 	if err != nil {
 		return DownloadResult{}, fmt.Errorf("官方索引压缩包地址无效：%w", err)
 	}

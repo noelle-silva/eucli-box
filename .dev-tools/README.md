@@ -47,3 +47,18 @@ go run devtools/build -version 0.2.0.9
 ```
 
 说明：`devtools` 是 `.dev-tools/` 的 Go 模块名，由仓库根 `go.work` 纳入工作区，因此在任意工具目录内都能解析到本入口，无需在仓库根存在同名实体目录。底层铺货命令是 `eucli-store-sync`；需要更细的落点控制（工作区、输出根等）时可直接调用它。
+
+## 改共享包时的双模块验证
+
+`.dev-tools` 是独立 Go 模块，与业务端共享 `eucli-box/pkg/*` 的导出事实。改动业务端导出函数时，业务端测试不会覆盖本模块，必须显式验证两条：
+
+```bash
+# 业务端
+cd .. && go build ./... && go test ./pkg/... ./src/... ./cmd/...
+
+# 开发工具
+cd .dev-tools && go build ./... && go test ./...
+```
+
+导出 API 的演进规则：能力扩展用新函数名，旧签名保留为薄转发（标注 Deprecated 与移除条件），并由 `pkg/releasecatalog/compat_test.go` 钉住；既有调用方不会因签名变更而断裂。
+

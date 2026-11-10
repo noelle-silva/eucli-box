@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -193,10 +194,18 @@ func validateIdentity(identity types.ReleaseArtifactIdentity) error {
 }
 
 func validateSourceRecord(source types.ReleaseSourceRecord) error {
-	if !strings.HasPrefix(strings.TrimSpace(source.Repository), "https://github.com/") {
-		return fmt.Errorf("源码来源必须指向固定 GitHub 仓库")
-	}
+	repository := strings.TrimSpace(source.Repository)
 	commit := strings.TrimSpace(source.Commit)
+	if !source.Recorded {
+		if repository != "" || commit != "" {
+			return fmt.Errorf("未记录源码的发布物不能携带源码仓库或提交编号")
+		}
+		return nil
+	}
+	parsed, err := url.Parse(repository)
+	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || parsed.Host == "" {
+		return fmt.Errorf("源码来源必须是固定 HTTPS 仓库地址")
+	}
 	if len(commit) != 40 {
 		return fmt.Errorf("源码状态必须使用完整 Git 提交编号")
 	}
@@ -211,12 +220,11 @@ func validateSourceRecord(source types.ReleaseSourceRecord) error {
 
 func validateOfficialSource(source string) error {
 	source = strings.TrimSuffix(strings.TrimSpace(source), "/")
-	if !strings.HasPrefix(source, "https://github.com/") {
-		return fmt.Errorf("官方来源必须指向固定 GitHub 仓库")
+	if source == "" {
+		return fmt.Errorf("发布来源不能为空")
 	}
-	parts := strings.Split(strings.TrimPrefix(source, "https://github.com/"), "/")
-	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
-		return fmt.Errorf("官方来源必须精确指向一个 GitHub 仓库")
+	if err := types.ValidateReleaseSourceAddress(source); err != nil {
+		return fmt.Errorf("发布来源无效：%w", err)
 	}
 	return nil
 }

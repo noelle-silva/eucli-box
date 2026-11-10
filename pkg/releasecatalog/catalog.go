@@ -56,6 +56,22 @@ func ArchiveName(identity types.ReleaseArtifactIdentity, version string) (string
 	return fmt.Sprintf("%s-%s_%s_%s.zip", identity.Kind, identity.ID, version, types.ReleasePlatformWindowsX64), nil
 }
 
+// Repository 是固定代码托管仓库的两段身份：地址与归属、仓库名。
+type Repository struct {
+	Address string
+	Owner   string
+	Name    string
+}
+
+// ParseRepository 解析仓库地址：只接受两段 HTTPS 仓库路径，其余一律拒绝。
+func ParseRepository(value string) (Repository, error) {
+	normalized, err := normalizeRepository(value)
+	if err != nil {
+		return Repository{}, err
+	}
+	return Repository{Address: normalized.repository, Owner: normalized.owner, Name: normalized.name}, nil
+}
+
 type repositoryParts struct {
 	repository string
 	owner      string

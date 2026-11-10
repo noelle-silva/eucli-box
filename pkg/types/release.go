@@ -1,6 +1,9 @@
 package types
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 type EucliBoxCompatibility struct {
 	MinimumVersion          string `json:"minimumVersion"`
@@ -34,7 +37,32 @@ const (
 
 	ReleaseCandidateStatusCompleted = "completed"
 	ReleaseCandidateStatusFailed    = "failed"
+
+	// ReleaseSourceOfficialName 是内嵌官方来源的保留名字，不可注册为自定义来源。
+	ReleaseSourceOfficialName = "official"
+
+	// 来源提供方式：代码托管仓库、用户网络商店、本机目录。
+	ReleaseSourceKindGithub = "github"
+	ReleaseSourceKindRemote = "remote"
+	ReleaseSourceKindShelf  = "shelf"
 )
+
+// ReleaseSourceRef 是候选事实的发布来源描述：名字对外展示，提供方式决定读取与下载规则。
+type ReleaseSourceRef struct {
+	Name       string `json:"name"`
+	Kind       string `json:"kind"`
+	Repository string `json:"repository,omitempty"`
+	IndexURL   string `json:"indexUrl,omitempty"`
+	Ref        string `json:"ref,omitempty"`
+}
+
+// Address 返回来源的固定读取地址：代码托管仓库地址优先，其次清单地址。
+func (s ReleaseSourceRef) Address() string {
+	if repository := strings.TrimSpace(s.Repository); repository != "" {
+		return repository
+	}
+	return strings.TrimSpace(s.IndexURL)
+}
 
 type ReleaseArtifactIdentity struct {
 	Kind string `json:"kind"`
@@ -115,7 +143,7 @@ type ArtifactInstallationList struct {
 // 以及它与已装事实比对后的结论；不携带任何快照状态。
 type ArtifactReleaseCandidate struct {
 	Artifact          ReleaseArtifactIdentity   `json:"artifact"`
-	Source            OfficialReleaseSource     `json:"source"`
+	Source            ReleaseSourceRef          `json:"source"`
 	Installed         bool                      `json:"installed"`
 	CurrentVersion    string                    `json:"currentVersion,omitempty"`
 	LatestVersion     string                    `json:"latestVersion,omitempty"`

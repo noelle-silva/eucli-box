@@ -57,6 +57,7 @@ type system struct {
 	rotationMu   sync.Mutex
 	keyCursors   map[string]int
 	modelCursors map[string]int
+	breaker      *memberBreaker
 }
 
 func NewSystem(config Config, network NetworkSystem, storage StorageSystem) (System, error) {
@@ -72,7 +73,14 @@ func NewSystem(config Config, network NetworkSystem, storage StorageSystem) (Sys
 	if config.RequestTimeout == 0 {
 		config.RequestTimeout = 60 * time.Second
 	}
-	return &system{config: config, network: network, storage: storage, keyCursors: map[string]int{}, modelCursors: map[string]int{}}, nil
+	return &system{
+		config:       config,
+		network:      network,
+		storage:      storage,
+		keyCursors:   map[string]int{},
+		modelCursors: map[string]int{},
+		breaker:      newMemberBreaker(memberCooldown),
+	}, nil
 }
 
 func normalizeBaseURL(baseURL string) string {

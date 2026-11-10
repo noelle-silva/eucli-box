@@ -9,7 +9,7 @@ import (
 	apperrors "eucli-box/pkg/errors"
 )
 
-// switchableNetworkCodes 是传输层里"换一个成员很可能就好了"的错误码。
+// switchableNetworkCodes 是传输层里"这个成员当前不可用"的错误码。
 var switchableNetworkCodes = []string{
 	"network.timeout",
 	"network.connection_failed",
@@ -20,10 +20,12 @@ var switchableNetworkCodes = []string{
 	"network.connection_refused",
 }
 
-// shouldSwitchMember 判断一次成员失败是否值得顺位换下一个成员。
-// 换了可能就好的才换：链路不通、上游过载或限流、凭据失效、响应解析不出内容。
-// 请求本身有问题（参数错、模型不存在）换谁都会一样错，直接失败更诚实。
-func shouldSwitchMember(err error) bool {
+// isMemberFailure 判断一次失败是不是这个成员自己的责任：
+// 链路不通、上游过载或限流、凭据失效、响应解析不出内容，都算它。
+// 请求本身有问题（参数错、模型不存在）不算——错在我们，不该记在成员账上。
+//
+// 这个判断同时决定两件事：要不要顺位换下一个成员，以及要不要把它关进小黑屋。
+func isMemberFailure(err error) bool {
 	if err == nil || errors.Is(err, context.Canceled) {
 		return false
 	}

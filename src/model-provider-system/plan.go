@@ -10,11 +10,26 @@ import (
 type planCandidate struct {
 	provider types.Provider
 	model    types.ModelInfo
+	// key 是这个候选在熔断表里的身份；为空表示不参与熔断
+	// （单供应商坐标没有替补成员，跳过它没有意义）。
+	key string
 }
 
-// label 是候选的可读标识，用于兜底失败时的错误汇总。
+// label 是候选在错误汇总里显示的名字。
 func (c planCandidate) label() string {
-	return c.provider.ID + "/" + c.model.ID
+	if c.key != "" {
+		return c.key
+	}
+	return memberKey(c.provider.ID, c.model.ID)
+}
+
+// memberKey 是成员在熔断表里的统一身份：同一家供应商的同一个注册模型，
+// 无论出现在哪个组里都共用一条记录。
+func memberKey(providerID string, modelID string) string {
+	if providerID == "" || modelID == "" {
+		return ""
+	}
+	return providerID + "/" + modelID
 }
 
 // requestPlan 是一次模型请求的执行计划：一个候选就是普通请求，
@@ -39,11 +54,11 @@ func (p requestPlan) shouldTryNext(index int, err error, dispatched bool) bool {
 	if dispatched || p.isLast(index) {
 		return false
 	}
-	return shouldSwitchMember(err)
+	return isMemberFailure(err)
 }
 
-// planRequest 把坐标翻译成执行计划：fallback 组成员全部展开成候选链，
-// 其余策略仍只选出一个成员。展开候选链不推进轮询游标。
+// planRequest 把坐标翻译成执行计划：先剔除小黑屋里的成员，再交给策略选人。
+// fallback 组把剩余成员按顺序展开成兜底链，其余策略仍只选出一个成员。
 func (s *system) planRequest(ctx context.Context, coordinate types.ModelCoordinate) (requestPlan, error) {
 	if !isModelGroupCoordinate(coordinate) {
 		provider, model, err := s.resolveProviderCoordinate(ctx, coordinate)
@@ -56,12 +71,31 @@ func (s *system) planRequest(ctx context.Context, coordinate types.ModelCoordina
 	if err != nil {
 		return requestPlan{}, err
 	}
+	indexes := s.availableMemberIndexes(model)
 	if model.Strategy != types.RotationStrategyFallback {
-		candidate, err := s.selectGroupMember(ctx, group, model)
+		candidate, err := s.selectGroupMember(ctx, group, model, indexes)
 		if err != nil {
 			return requestPlan{}, err
 		}
 		return requestPlan{candidates: []planCandidate{candidate}}, nil
 	}
-	return s.buildFallbackChain(ctx, model)
+	return s.buildFallbackChain(ctx, model, indexes)
+}
+
+// availableMemberIndexes 返回本次可以参与选择的成员下标：刚失败过的成员被跳过。
+// 全都还在小黑屋里时返回全部成员——宁可去试一个坏成员，也不能让整组直接不可用。
+func (s *system) availableMemberIndexes(model types.ModelGroupModel) []int {
+	all := make([]int, 0, len(model.Members))
+	available := make([]int, 0, len(model.Members))
+	for index, member := range model.Members {
+		all = append(all, index)
+		if s.breaker.isCooling(memberKey(member.ProviderID, member.ModelID)) {
+			continue
+		}
+		available = append(available, index)
+	}
+	if len(available) == 0 {
+		return all
+	}
+	return available
 }

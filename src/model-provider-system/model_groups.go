@@ -59,31 +59,37 @@ func (s *system) loadModelGroupModel(ctx context.Context, coordinate types.Model
 	return types.ModelGroup{}, types.ModelGroupModel{}, providerModelNotFound("model group coordinate does not exist", nil)
 }
 
-// selectGroupMember 按轮询类策略选出本轮成员并解析；这是模型组唯一的轮询选择入口。
-func (s *system) selectGroupMember(ctx context.Context, group types.ModelGroup, model types.ModelGroupModel) (planCandidate, error) {
-	weights := make([]int, 0, len(model.Members))
-	for _, member := range model.Members {
-		weights = append(weights, member.Weight)
+// selectGroupMember 按轮询类策略在候选下标里选出本轮成员并解析；
+// 这是模型组唯一的轮询选择入口，weights 与 indexes 一一对应。
+func (s *system) selectGroupMember(ctx context.Context, group types.ModelGroup, model types.ModelGroupModel, indexes []int) (planCandidate, error) {
+	weights := make([]int, 0, len(indexes))
+	for _, index := range indexes {
+		weights = append(weights, model.Members[index].Weight)
 	}
-	index, err := s.pickRotatedIndex("group:"+group.ID+":"+model.ID, model.Strategy, weights)
+	offset, err := s.pickRotatedIndex("group:"+group.ID+":"+model.ID, model.Strategy, weights)
 	if err != nil {
 		return planCandidate{}, err
 	}
-	member := model.Members[index]
+	member := model.Members[indexes[offset]]
 	provider, resolved, err := s.resolveProviderCoordinate(ctx, types.ModelCoordinate{ProviderID: member.ProviderID, ModelID: member.ModelID})
 	if err != nil {
 		return planCandidate{}, err
 	}
-	return planCandidate{provider: provider, model: applyGroupReasoningProfile(model, resolved)}, nil
+	return planCandidate{
+		provider: provider,
+		model:    applyGroupReasoningProfile(model, resolved),
+		key:      memberKey(member.ProviderID, member.ModelID),
+	}, nil
 }
 
-// buildFallbackChain 把 fallback 组成员按配置顺序展开成候选链：
-// 第一个永远是首选，往下都是它的兜底。
+// buildFallbackChain 把候选成员按配置顺序展开成兜底链：
+// 排在最前的永远是首选，往下都是它的兜底。
 // 解析不出来的成员直接跳过——它本身已经坏了，正是兜底链要绕开的东西。
-func (s *system) buildFallbackChain(ctx context.Context, model types.ModelGroupModel) (requestPlan, error) {
-	candidates := make([]planCandidate, 0, len(model.Members))
+func (s *system) buildFallbackChain(ctx context.Context, model types.ModelGroupModel, indexes []int) (requestPlan, error) {
+	candidates := make([]planCandidate, 0, len(indexes))
 	var firstErr error
-	for _, member := range model.Members {
+	for _, index := range indexes {
+		member := model.Members[index]
 		provider, resolved, err := s.resolveProviderCoordinate(ctx, types.ModelCoordinate{ProviderID: member.ProviderID, ModelID: member.ModelID})
 		if err != nil {
 			if firstErr == nil {
@@ -91,7 +97,11 @@ func (s *system) buildFallbackChain(ctx context.Context, model types.ModelGroupM
 			}
 			continue
 		}
-		candidates = append(candidates, planCandidate{provider: provider, model: applyGroupReasoningProfile(model, resolved)})
+		candidates = append(candidates, planCandidate{
+			provider: provider,
+			model:    applyGroupReasoningProfile(model, resolved),
+			key:      memberKey(member.ProviderID, member.ModelID),
+		})
 	}
 	if len(candidates) == 0 {
 		return requestPlan{}, providerModelNotFound("no fallback member is available", firstErr)

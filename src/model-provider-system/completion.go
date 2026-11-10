@@ -14,7 +14,7 @@ func (s *system) Complete(ctx context.Context, request types.ModelRequest) (type
 	if err != nil {
 		return types.ModelResponse{}, err
 	}
-	return runCandidates(plan, func(candidate planCandidate) (types.ModelResponse, bool, error) {
+	return s.runPlan(plan, func(candidate planCandidate) (types.ModelResponse, bool, error) {
 		response, err := s.completeOnce(ctx, request, candidate)
 		return response, false, err
 	})
@@ -27,34 +27,38 @@ func (s *system) CompleteStream(ctx context.Context, request types.ModelRequest,
 	if err != nil {
 		return types.ModelResponse{}, err
 	}
-	return runCandidates(plan, func(candidate planCandidate) (types.ModelResponse, bool, error) {
+	return s.runPlan(plan, func(candidate planCandidate) (types.ModelResponse, bool, error) {
 		return s.completeStreamOnce(ctx, request, candidate, onEvent)
 	})
 }
 
-// runCandidates 沿执行计划依次尝试候选：普通计划失败即止，兜底链顺位往下。
+// runPlan 沿执行计划依次尝试候选：普通计划失败即止，兜底链顺位往下。
+// 成员责任的失败记一次熔断记忆，成功则抹掉它的记录。
 // attempt 回报本次尝试是否已经把内容交给调用方——交给过就不能再换人。
-func runCandidates[T any](plan requestPlan, attempt func(planCandidate) (T, bool, error)) (T, error) {
-	var zero T
+func (s *system) runPlan(plan requestPlan, attempt func(planCandidate) (types.ModelResponse, bool, error)) (types.ModelResponse, error) {
 	failures := make([]failedMember, 0, len(plan.candidates))
 	for index, candidate := range plan.candidates {
 		response, dispatched, err := attempt(candidate)
 		if err == nil {
+			s.breaker.clear(candidate.key)
 			return response, nil
+		}
+		if isMemberFailure(err) {
+			s.breaker.trip(candidate.key)
 		}
 		failures = append(failures, failedMember{label: candidate.label(), err: err})
 		if !plan.fallback() {
-			return zero, err
+			return types.ModelResponse{}, err
 		}
 		if plan.shouldTryNext(index, err, dispatched) {
 			continue
 		}
 		if plan.isLast(index) {
-			return zero, aggregateMemberFailures(failures)
+			return types.ModelResponse{}, aggregateMemberFailures(failures)
 		}
-		return zero, err
+		return types.ModelResponse{}, err
 	}
-	return zero, aggregateMemberFailures(failures)
+	return types.ModelResponse{}, aggregateMemberFailures(failures)
 }
 
 // completeOnce 对单个候选发起一次非流式请求。

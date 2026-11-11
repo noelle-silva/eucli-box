@@ -145,8 +145,10 @@ func TestSessionSummaryCarriesProjectionFactsAndDeterministicSort(t *testing.T) 
 	sameMoment := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
 	older := types.Session{ID: "session-older", RoleID: "developer", Title: "older", CreatedAt: sameMoment.Add(-time.Hour), UpdatedAt: sameMoment.Add(-time.Hour), LastActive: sameMoment.Add(-time.Hour)}
 	newerB := types.Session{ID: "session-b", RoleID: "developer", Title: "newer-b", CreatedAt: sameMoment, UpdatedAt: sameMoment, LastActive: sameMoment}
+	measuredContextTokens := 32000
 	newerA := types.Session{ID: "session-a", RoleID: "developer", Title: "newer-a", CreatedAt: sameMoment, UpdatedAt: sameMoment, LastActive: sameMoment, Messages: []types.Message{
-		{ID: "m1", Type: "user", Content: "你好", BranchID: "main", CreatedAt: sameMoment, UpdatedAt: sameMoment},
+		{ID: "m1", Type: "user", Content: "你好", BranchID: "main", CreatedAt: sameMoment, UpdatedAt: sameMoment, ContextTokens: &measuredContextTokens},
+		{ID: "m2", Type: "assistant", Content: "在", BranchID: "main", ParentMessageID: "m1", CreatedAt: sameMoment, UpdatedAt: sameMoment},
 	}}
 	for _, session := range []types.Session{older, newerB, newerA} {
 		if err := system.SaveSession(ctx, session); err != nil {
@@ -162,8 +164,12 @@ func TestSessionSummaryCarriesProjectionFactsAndDeterministicSort(t *testing.T) 
 		t.Fatalf("sort contract violated: %#v", sessions)
 	}
 	first := sessions[0]
-	if !first.CreatedAt.Equal(sameMoment) || first.MessageCount != 1 || first.Source != roleSessionScope("developer").fingerprint() {
+	if !first.CreatedAt.Equal(sameMoment) || first.MessageCount != 2 || first.Source != roleSessionScope("developer").fingerprint() {
 		t.Fatalf("summary projection facts = %#v", first)
+	}
+	// 上下文真值取最后一条带真值的消息：末尾那条助手消息没用量，仍回到用户消息上的值。
+	if first.ContextTokens != measuredContextTokens {
+		t.Fatalf("summary contextTokens = %d, want %d", first.ContextTokens, measuredContextTokens)
 	}
 }
 

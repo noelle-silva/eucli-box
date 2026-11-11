@@ -15,7 +15,8 @@ import (
 const (
 	// sessionIndexSchemaVersion 是会话索引文档的结构版本。
 	// 旧索引（缺字段）一律判为无效并按数据目录重建，开发阶段不做迁移。
-	sessionIndexSchemaVersion = 3
+	// v4：摘要新增 contextTokens（会话已使用的上下文规模）。
+	sessionIndexSchemaVersion = 4
 	// sessionIndexSort 是索引与列表共用的排序契约：
 	// lastActive 降序，同刻按 id 升序，保证结果与目录枚举顺序无关。
 	sessionIndexSort = "lastActiveDescIdAsc"
@@ -72,6 +73,7 @@ func sessionSummaryFromStored(session types.Session, scope sessionScope) types.S
 		UpdatedAt:          session.UpdatedAt,
 		LastActive:         session.LastActive,
 		MessageCount:       len(session.Messages),
+		ContextTokens:      sessionContextTokens(session.Messages),
 		Source:             scope.fingerprint(),
 	}
 }

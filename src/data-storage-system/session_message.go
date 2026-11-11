@@ -429,6 +429,18 @@ func sessionLastMessagePreview(messages []types.Message) string {
 	return clampSessionPreview(text)
 }
 
+// sessionContextTokens 返回会话已使用的上下文规模：取最后一条带真值的消息。
+// 与消息行同一口径——用户消息记本轮请求发出时的规模，助手消息记回复完成后的规模，
+// 所以「最后一条带真值」就是眼下这份上下文的大小。缺真值时返回 0，不估算。
+func sessionContextTokens(messages []types.Message) int {
+	for index := len(messages) - 1; index >= 0; index-- {
+		if tokens := messages[index].ContextTokens; tokens != nil && *tokens > 0 {
+			return *tokens
+		}
+	}
+	return 0
+}
+
 func sessionMessagePartPreview(message types.Message) string {
 	for _, part := range message.Parts {
 		switch {

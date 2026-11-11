@@ -339,6 +339,9 @@ type SessionSummary struct {
 	UpdatedAt          time.Time `json:"updatedAt"`
 	LastActive         time.Time `json:"lastActive"`
 	MessageCount       int       `json:"messageCount"`
+	// ContextTokens 是该会话已使用的上下文规模：取最后一条带真值的消息，与消息上的
+	// contextTokens 同一口径。0 表示上游从未给过用量，不推算、不估算。
+	ContextTokens int `json:"contextTokens"`
 	// Source 是会话所属 scope 的指纹（role:/group:/workspace:）。
 	// 索引条目必须自证来源，错放的索引在读取时会被判为无效并重建。
 	Source string `json:"source,omitempty"`

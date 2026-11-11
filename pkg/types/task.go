@@ -18,14 +18,17 @@ type TaskTree struct {
 // TaskNode 是任务树上的一个节点：自己带内容，也可以是下一层的容器。
 // ID 是身份，全树唯一；Name 允许为空（展示名由界面兜底）；
 // Description 与 Name 一样是给人看的标注，不参与任何上下文组装；
-// Content 是可复制文本，唯一去向是剪贴板。
+// Content 是可复制文本，唯一去向是剪贴板；
+// CopyHighlight 是卡片展示标记：开启后该任务的复制键用主题色标出，
+// 它不改变复制内容与复制行为，也不参与上下文组装。
 // 子节点集合与顺序都只认 Children 数组，时间字段由存储维护。
 type TaskNode struct {
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	Description string     `json:"description,omitempty"`
-	Content     string     `json:"content"`
-	Children    []TaskNode `json:"children"`
-	CreatedAt   string     `json:"createdAt,omitempty"`
-	UpdatedAt   string     `json:"updatedAt,omitempty"`
+	ID            string     `json:"id"`
+	Name          string     `json:"name"`
+	Description   string     `json:"description,omitempty"`
+	Content       string     `json:"content"`
+	CopyHighlight bool       `json:"copyHighlight,omitempty"`
+	Children      []TaskNode `json:"children"`
+	CreatedAt     string     `json:"createdAt,omitempty"`
+	UpdatedAt     string     `json:"updatedAt,omitempty"`
 }

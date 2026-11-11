@@ -73,7 +73,7 @@ func TestTaskTreeReadWriteDeleteCycle(t *testing.T) {
 	}
 
 	tree := types.TaskTree{Tasks: []types.TaskNode{
-		{ID: "t1", Name: "梳理需求", Description: "先看原型", Content: "复制正文一", Children: []types.TaskNode{
+		{ID: "t1", Name: "梳理需求", Description: "先看原型", Content: "复制正文一", CopyHighlight: true, Children: []types.TaskNode{
 			{ID: "t1-1", Name: "读代码", Content: "复制正文二"},
 		}},
 		{ID: "t2", Name: "写实现"},
@@ -98,6 +98,13 @@ func TestTaskTreeReadWriteDeleteCycle(t *testing.T) {
 	}
 	if loaded.Tasks[0].Children[0].Content != "复制正文二" {
 		t.Fatalf("loaded child content = %q", loaded.Tasks[0].Children[0].Content)
+	}
+	// 卡片展示标记原样往返；没写这个字段的节点读出来就是关闭。
+	if !loaded.Tasks[0].CopyHighlight {
+		t.Fatal("loaded copy highlight = false, want true")
+	}
+	if loaded.Tasks[1].CopyHighlight {
+		t.Fatal("loaded copy highlight = true, want false for a node without the field")
 	}
 
 	afterDelete, err := system.DeleteTaskNode(ctx, types.TaskScopeRole, "developer", "t1")
@@ -171,6 +178,24 @@ func TestNormalizeTaskTreeForSaveTimestamps(t *testing.T) {
 	}
 	if saved.Tasks[0].UpdatedAt != updated {
 		t.Fatalf("reordered parent updatedAt = %q, want %q", saved.Tasks[0].UpdatedAt, updated)
+	}
+
+	// 只翻转卡片展示标记也算节点自己变了：该节点刷新时间，同层其他节点不动。
+	highlighted := types.TaskTree{Tasks: []types.TaskNode{
+		{ID: "a", Name: "父", Content: "父正文", CopyHighlight: true, Children: []types.TaskNode{
+			{ID: "b", Name: "子一", Content: "子正文"},
+			{ID: "c", Name: "子二", Content: ""},
+		}},
+	}}
+	saved, err = normalizeTaskTreeForSave(highlighted, previous, updated)
+	if err != nil {
+		t.Fatalf("normalizeTaskTreeForSave() error = %v", err)
+	}
+	if !saved.Tasks[0].CopyHighlight {
+		t.Fatal("copy highlight = false, want kept")
+	}
+	if saved.Tasks[0].UpdatedAt != updated || saved.Tasks[0].Children[0].UpdatedAt != created {
+		t.Fatalf("copy highlight timestamps = %#v, want only the toggled node refreshed", saved.Tasks[0])
 	}
 
 	added := types.TaskTree{Tasks: []types.TaskNode{

@@ -336,12 +336,13 @@ func normalizeTaskNodeForSave(node types.TaskNode, previousByID map[string]types
 	return node, nil
 }
 
-// taskNodeChanged 判定节点自身是否真的变化：名字、备注、正文，
+// taskNodeChanged 判定节点自身是否真的变化：名字、备注、正文、卡片展示标记，
 // 以及子节点集合或顺序的变化都算这个节点变了。
 func taskNodeChanged(previous types.TaskNode, current types.TaskNode) bool {
 	return previous.Name != current.Name ||
 		previous.Description != current.Description ||
 		previous.Content != current.Content ||
+		previous.CopyHighlight != current.CopyHighlight ||
 		!slices.Equal(taskChildIDs(previous.Children), taskChildIDs(current.Children))
 }
 

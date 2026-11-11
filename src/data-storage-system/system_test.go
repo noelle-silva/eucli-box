@@ -718,19 +718,33 @@ func TestSessionFavoritesWorkspaceRefKeepsWorkspaceAndRoleIdentity(t *testing.T)
 
 func TestSessionDesksStore(t *testing.T) {
 	system := newTestSystem(t)
-	desks := types.SessionDesks{
-		Folders: []types.SessionDeskFolder{{ID: "deskf-1", Name: "Important", CreatedAt: 1, UpdatedAt: 1}},
-		ChatRefsByFolderID: map[string][]types.SessionDeskChatRef{
-			"deskf-1": {{TargetKind: "role", TargetID: "developer", ChatID: "session-1", AddedAt: 2}},
-		},
-	}
+	desks := types.SessionDesks{Items: []types.SessionDeskItem{
+		{Type: types.SessionDeskItemChat, Chat: &types.SessionDeskChatRef{TargetKind: "role", TargetID: "developer", ChatID: "session-1", AddedAt: 2}},
+		{Type: types.SessionDeskItemGroup, Group: &types.SessionDeskGroup{
+			ID:        "deskf-1",
+			Name:      "Important",
+			Color:     "hsl(210, 28%, 88%)",
+			Collapsed: true,
+			Chats:     []types.SessionDeskChatRef{{TargetKind: "role", TargetID: "developer", ChatID: "session-2", AddedAt: 3}},
+			CreatedAt: 1,
+			UpdatedAt: 1,
+		}},
+	}}
 
 	saved, err := system.SaveSessionDesks(context.Background(), desks)
 	if err != nil {
 		t.Fatalf("SaveSessionDesks() error = %v", err)
 	}
-	if len(saved.Folders) != 1 || saved.Folders[0].ID != "deskf-1" || len(saved.ChatRefsByFolderID["deskf-1"]) != 1 {
+	if len(saved.Items) != 2 || saved.Items[0].Chat == nil || saved.Items[0].Chat.ChatID != "session-1" {
 		t.Fatalf("saved desks = %#v", saved)
+	}
+	group := saved.Items[1].Group
+	if group == nil || group.ID != "deskf-1" || group.Color != "hsl(210, 28%, 88%)" || !group.Collapsed || len(group.Chats) != 1 {
+		t.Fatalf("saved group = %#v", group)
+	}
+	// 结构只剩 Items 一份表达：旧字段不会回流到输出里。
+	if len(saved.LegacyFolders) != 0 || len(saved.LegacyChatRefsByFolderID) != 0 {
+		t.Fatalf("saved desks kept legacy fields: %#v", saved)
 	}
 	assertFile(t, filepath.Join(system.paths.root, "sessions", "desks.json"))
 
@@ -738,25 +752,31 @@ func TestSessionDesksStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadSessionDesks() error = %v", err)
 	}
-	if len(loaded.Folders) != 1 || loaded.ChatRefsByFolderID["deskf-1"][0].ChatID != "session-1" {
+	if len(loaded.Items) != 2 || loaded.Items[1].Group == nil || loaded.Items[1].Group.Chats[0].ChatID != "session-2" {
 		t.Fatalf("loaded desks = %#v", loaded)
 	}
 }
 
 func TestSessionDesksWorkspaceRefKeepsWorkspaceAndRoleIdentity(t *testing.T) {
 	system := newTestSystem(t)
-	desks := types.SessionDesks{
-		Folders: []types.SessionDeskFolder{{ID: "deskf-1", Name: "Workspace", CreatedAt: 1, UpdatedAt: 1}},
-		ChatRefsByFolderID: map[string][]types.SessionDeskChatRef{
-			"deskf-1": {{TargetKind: "workspace", TargetID: "workspace-1", RoleID: "role-1", ChatID: "session-1", AddedAt: 2}},
-		},
-	}
+	desks := types.SessionDesks{Items: []types.SessionDeskItem{
+		{Type: types.SessionDeskItemGroup, Group: &types.SessionDeskGroup{
+			ID:        "deskf-1",
+			Name:      "Workspace",
+			Chats:     []types.SessionDeskChatRef{{TargetKind: "workspace", TargetID: "workspace-1", RoleID: "role-1", ChatID: "session-1", AddedAt: 2}},
+			CreatedAt: 1,
+			UpdatedAt: 1,
+		}},
+	}}
 
 	saved, err := system.SaveSessionDesks(context.Background(), desks)
 	if err != nil {
 		t.Fatalf("SaveSessionDesks() error = %v", err)
 	}
-	ref := saved.ChatRefsByFolderID["deskf-1"][0]
+	if saved.Items[0].Group == nil || len(saved.Items[0].Group.Chats) != 1 {
+		t.Fatalf("saved workspace desk = %#v", saved)
+	}
+	ref := saved.Items[0].Group.Chats[0]
 	if ref.TargetKind != "workspace" || ref.TargetID != "workspace-1" || ref.RoleID != "role-1" {
 		t.Fatalf("saved workspace desk ref = %#v", ref)
 	}
@@ -765,19 +785,88 @@ func TestSessionDesksWorkspaceRefKeepsWorkspaceAndRoleIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadSessionDesks() error = %v", err)
 	}
-	ref = loaded.ChatRefsByFolderID["deskf-1"][0]
+	ref = loaded.Items[0].Group.Chats[0]
 	if ref.TargetID != "workspace-1" || ref.RoleID != "role-1" || ref.ChatID != "session-1" {
 		t.Fatalf("loaded workspace desk ref = %#v", ref)
 	}
 
-	invalid := types.SessionDesks{
-		Folders: []types.SessionDeskFolder{{ID: "deskf-1", Name: "Workspace", CreatedAt: 1, UpdatedAt: 1}},
-		ChatRefsByFolderID: map[string][]types.SessionDeskChatRef{
-			"deskf-1": {{TargetKind: "workspace", TargetID: "workspace-1", ChatID: "session-1", AddedAt: 2}},
-		},
-	}
+	invalid := types.SessionDesks{Items: []types.SessionDeskItem{
+		{Type: types.SessionDeskItemGroup, Group: &types.SessionDeskGroup{
+			ID:        "deskf-1",
+			Name:      "Workspace",
+			Chats:     []types.SessionDeskChatRef{{TargetKind: "workspace", TargetID: "workspace-1", ChatID: "session-1", AddedAt: 2}},
+			CreatedAt: 1,
+			UpdatedAt: 1,
+		}},
+	}}
 	if _, err := system.SaveSessionDesks(context.Background(), invalid); err == nil {
 		t.Fatal("SaveSessionDesks(workspace without role) should fail")
+	}
+}
+
+// 旧版两层结构在读取写入闸门处一次性摊平：根收藏夹的条目回到顶层，其余 folder 变成分组。
+func TestSessionDesksMigratesLegacyFolders(t *testing.T) {
+	system := newTestSystem(t)
+	legacy := types.SessionDesks{
+		LegacyFolders: []types.SessionDeskFolder{
+			{ID: "desk-root", Name: "桌面", CreatedAt: 1, UpdatedAt: 1},
+			{ID: "deskf-1", Name: "Important", CreatedAt: 2, UpdatedAt: 2},
+		},
+		LegacyChatRefsByFolderID: map[string][]types.SessionDeskChatRef{
+			"desk-root": {{TargetKind: "role", TargetID: "developer", ChatID: "session-1", AddedAt: 5}},
+			"deskf-1":   {{TargetKind: "role", TargetID: "developer", ChatID: "session-2", AddedAt: 6}},
+		},
+	}
+
+	saved, err := system.SaveSessionDesks(context.Background(), legacy)
+	if err != nil {
+		t.Fatalf("SaveSessionDesks() error = %v", err)
+	}
+	if len(saved.Items) != 2 {
+		t.Fatalf("migrated items = %#v", saved.Items)
+	}
+	if saved.Items[0].Type != types.SessionDeskItemChat || saved.Items[0].Chat == nil || saved.Items[0].Chat.ChatID != "session-1" {
+		t.Fatalf("root folder chat should stay on top level: %#v", saved.Items[0])
+	}
+	group := saved.Items[1].Group
+	if group == nil || group.ID != "deskf-1" || len(group.Chats) != 1 || group.Chats[0].ChatID != "session-2" {
+		t.Fatalf("legacy folder should become a group: %#v", group)
+	}
+}
+
+// 同一条会话在桌面上只能出现一次：顶层与组内共用同一把去重键。
+func TestSessionDesksRejectsDuplicateChatAcrossPlacements(t *testing.T) {
+	system := newTestSystem(t)
+	ref := types.SessionDeskChatRef{TargetKind: "role", TargetID: "developer", ChatID: "session-1", AddedAt: 2}
+	desks := types.SessionDesks{Items: []types.SessionDeskItem{
+		{Type: types.SessionDeskItemChat, Chat: &ref},
+		{Type: types.SessionDeskItemGroup, Group: &types.SessionDeskGroup{
+			ID:        "deskg-1",
+			Name:      "Group",
+			Chats:     []types.SessionDeskChatRef{ref},
+			CreatedAt: 1,
+			UpdatedAt: 1,
+		}},
+	}}
+	if _, err := system.SaveSessionDesks(context.Background(), desks); err == nil {
+		t.Fatal("SaveSessionDesks(duplicate chat across placements) should fail")
+	}
+}
+
+// 分组颜色是受限的样式标记，任意字符串不能混进事实文件。
+func TestSessionDesksRejectsInvalidGroupColor(t *testing.T) {
+	system := newTestSystem(t)
+	desks := types.SessionDesks{Items: []types.SessionDeskItem{
+		{Type: types.SessionDeskItemGroup, Group: &types.SessionDeskGroup{
+			ID:        "deskg-1",
+			Name:      "Group",
+			Color:     "url(javascript:alert(1))",
+			CreatedAt: 1,
+			UpdatedAt: 1,
+		}},
+	}}
+	if _, err := system.SaveSessionDesks(context.Background(), desks); err == nil {
+		t.Fatal("SaveSessionDesks(invalid group color) should fail")
 	}
 }
 

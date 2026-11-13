@@ -73,7 +73,7 @@ func TestTaskTreeReadWriteDeleteCycle(t *testing.T) {
 	}
 
 	tree := types.TaskTree{Tasks: []types.TaskNode{
-		{ID: "t1", Name: "梳理需求", Description: "先看原型", Content: "复制正文一", CopyHighlight: true, Children: []types.TaskNode{
+		{ID: "t1", Name: "梳理需求", Description: "先看原型", Content: "复制正文一", CopyHighlight: true, Status: types.TaskStatusDoing, Children: []types.TaskNode{
 			{ID: "t1-1", Name: "读代码", Content: "复制正文二"},
 		}},
 		{ID: "t2", Name: "写实现"},
@@ -106,6 +106,13 @@ func TestTaskTreeReadWriteDeleteCycle(t *testing.T) {
 	if loaded.Tasks[1].CopyHighlight {
 		t.Fatal("loaded copy highlight = true, want false for a node without the field")
 	}
+	// 进度状态原样往返；旧数据没有这个字段，读出来就是「未开始」。
+	if loaded.Tasks[0].Status != types.TaskStatusDoing {
+		t.Fatalf("loaded status = %q, want %q", loaded.Tasks[0].Status, types.TaskStatusDoing)
+	}
+	if loaded.Tasks[1].Status != types.TaskStatusTodo {
+		t.Fatalf("loaded status = %q, want %q for a node without the field", loaded.Tasks[1].Status, types.TaskStatusTodo)
+	}
 
 	afterDelete, err := system.DeleteTaskNode(ctx, types.TaskScopeRole, "developer", "t1")
 	if err != nil {
@@ -119,6 +126,58 @@ func TestTaskTreeReadWriteDeleteCycle(t *testing.T) {
 		t.Fatal("DeleteTaskNode(missing) = nil error, want failure")
 	} else if !strings.Contains(err.Error(), "task does not exist") {
 		t.Fatalf("missing task error = %v", err)
+	}
+}
+
+// 状态四态：缺省即「未开始」，认不出的值读写都如实报错，不静默改写。
+func TestTaskStatusNormalization(t *testing.T) {
+	system := newTestSystem(t)
+	ctx := context.Background()
+	if err := system.SaveRole(ctx, types.Role{ID: "developer", Name: "Developer"}); err != nil {
+		t.Fatalf("SaveRole() error = %v", err)
+	}
+
+	file := filepath.Join(system.paths.root, "roles", "developer", "task-tree.json")
+
+	// 保存时缺省状态补成「未开始」，落盘后也是这个值。
+	saved, err := system.SaveTaskTree(ctx, types.TaskScopeRole, "developer", types.TaskTree{Tasks: []types.TaskNode{{ID: "a"}}})
+	if err != nil {
+		t.Fatalf("SaveTaskTree() error = %v", err)
+	}
+	if saved.Tasks[0].Status != types.TaskStatusTodo {
+		t.Fatalf("status = %q, want %q", saved.Tasks[0].Status, types.TaskStatusTodo)
+	}
+
+	// 四态原样保存。
+	for _, status := range []string{types.TaskStatusTodo, types.TaskStatusDoing, types.TaskStatusDone, types.TaskStatusArchived} {
+		saved, err := system.SaveTaskTree(ctx, types.TaskScopeRole, "developer", types.TaskTree{Tasks: []types.TaskNode{
+			{ID: "a", Status: status},
+		}})
+		if err != nil {
+			t.Fatalf("SaveTaskTree(status=%s) error = %v", status, err)
+		}
+		if saved.Tasks[0].Status != status {
+			t.Fatalf("status = %q, want %q", saved.Tasks[0].Status, status)
+		}
+	}
+
+	// 写入认不出的状态直接拒绝。
+	if _, err := system.SaveTaskTree(ctx, types.TaskScopeRole, "developer", types.TaskTree{Tasks: []types.TaskNode{
+		{ID: "a", Status: "ghost"},
+	}}); err == nil {
+		t.Fatal("SaveTaskTree(unknown status) = nil error, want failure")
+	} else if !strings.Contains(err.Error(), "unsupported task status") {
+		t.Fatalf("unknown status error = %v", err)
+	}
+
+	// 磁盘上出现认不出的状态时，读取如实报错。
+	if err := writeJSON(ctx, file, types.TaskTree{Tasks: []types.TaskNode{{ID: "a", Status: "ghost"}}}); err != nil {
+		t.Fatalf("writeJSON(fixture) error = %v", err)
+	}
+	if _, err := system.LoadTaskTree(ctx, types.TaskScopeRole, "developer"); err == nil {
+		t.Fatal("LoadTaskTree(unknown status) = nil error, want failure")
+	} else if !strings.Contains(err.Error(), "unsupported task status") {
+		t.Fatalf("unknown stored status error = %v", err)
 	}
 }
 
@@ -196,6 +255,24 @@ func TestNormalizeTaskTreeForSaveTimestamps(t *testing.T) {
 	}
 	if saved.Tasks[0].UpdatedAt != updated || saved.Tasks[0].Children[0].UpdatedAt != created {
 		t.Fatalf("copy highlight timestamps = %#v, want only the toggled node refreshed", saved.Tasks[0])
+	}
+
+	// 只改进度状态同样算节点自己变了。
+	progressed := types.TaskTree{Tasks: []types.TaskNode{
+		{ID: "a", Name: "父", Content: "父正文", Status: types.TaskStatusDone, Children: []types.TaskNode{
+			{ID: "b", Name: "子一", Content: "子正文"},
+			{ID: "c", Name: "子二", Content: ""},
+		}},
+	}}
+	saved, err = normalizeTaskTreeForSave(progressed, previous, updated)
+	if err != nil {
+		t.Fatalf("normalizeTaskTreeForSave() error = %v", err)
+	}
+	if saved.Tasks[0].Status != types.TaskStatusDone {
+		t.Fatalf("status = %q, want %q", saved.Tasks[0].Status, types.TaskStatusDone)
+	}
+	if saved.Tasks[0].UpdatedAt != updated || saved.Tasks[0].Children[0].UpdatedAt != created {
+		t.Fatalf("status timestamps = %#v, want only the changed node refreshed", saved.Tasks[0])
 	}
 
 	added := types.TaskTree{Tasks: []types.TaskNode{

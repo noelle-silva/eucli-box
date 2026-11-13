@@ -230,32 +230,61 @@ func readTaskTree(ctx context.Context, target string) (types.TaskTree, error) {
 	if err := validateStoredTaskTree(tree); err != nil {
 		return types.TaskTree{}, err
 	}
-	return normalizeTaskTreeCollections(tree), nil
+	return normalizeStoredTaskTree(tree)
 }
 
 func emptyTaskTree() types.TaskTree {
 	return types.TaskTree{Tasks: []types.TaskNode{}}
 }
 
-// normalizeTaskTreeCollections 把空集合归位成空切片，避免 JSON 里出现 null。
-func normalizeTaskTreeCollections(tree types.TaskTree) types.TaskTree {
+// normalizeStoredTaskTree 把落盘形态归一到当前结构：
+// 空集合归位成空切片（避免 JSON 里出现 null），缺失的状态补成「未开始」，
+// 认不出的状态如实报错，不静默改写成别的进度。
+func normalizeStoredTaskTree(tree types.TaskTree) (types.TaskTree, error) {
 	if tree.Tasks == nil {
 		tree.Tasks = []types.TaskNode{}
 	}
 	for index := range tree.Tasks {
-		tree.Tasks[index] = normalizeTaskNodeCollections(tree.Tasks[index])
+		node, err := normalizeStoredTaskNode(tree.Tasks[index])
+		if err != nil {
+			return types.TaskTree{}, err
+		}
+		tree.Tasks[index] = node
 	}
-	return tree
+	return tree, nil
 }
 
-func normalizeTaskNodeCollections(node types.TaskNode) types.TaskNode {
+func normalizeStoredTaskNode(node types.TaskNode) (types.TaskNode, error) {
+	status, err := normalizeTaskStatus(node.Status)
+	if err != nil {
+		return types.TaskNode{}, err
+	}
+	node.Status = status
 	if node.Children == nil {
 		node.Children = []types.TaskNode{}
 	}
 	for index := range node.Children {
-		node.Children[index] = normalizeTaskNodeCollections(node.Children[index])
+		child, err := normalizeStoredTaskNode(node.Children[index])
+		if err != nil {
+			return types.TaskNode{}, err
+		}
+		node.Children[index] = child
 	}
-	return node
+	return node, nil
+}
+
+// normalizeTaskStatus 归一任务状态：缺省（旧数据里没有这个字段）即「未开始」，
+// 其余必须是四态之一，认不出来的一律报错。
+func normalizeTaskStatus(value string) (string, error) {
+	status := strings.TrimSpace(value)
+	if status == "" {
+		return types.TaskStatusTodo, nil
+	}
+	switch status {
+	case types.TaskStatusTodo, types.TaskStatusDoing, types.TaskStatusDone, types.TaskStatusArchived:
+		return status, nil
+	}
+	return "", storageInvalid("unsupported task status: "+value, nil)
 }
 
 // validateStoredTaskTree 判定磁盘上的树是否合规：id 必须存在且全树唯一。
@@ -283,9 +312,15 @@ func validateStoredTaskTree(tree types.TaskTree) error {
 
 // normalizeTaskTreeForSave 校验并规范化待保存的树。
 // 时间字段一律由存储给出，调用方携带的时间不采信。
+// 对照用的前一版也走同一套归一：旧数据里缺失的字段（例如状态）在两边都补齐之后
+// 再比较，否则「空」与补出来的默认值会被误判成一次真实修改。
 func normalizeTaskTreeForSave(tree types.TaskTree, previous types.TaskTree, now string) (types.TaskTree, error) {
-	previousByID := make(map[string]types.TaskNode, countTaskNodes(previous.Tasks))
-	indexTaskNodes(previous.Tasks, previousByID)
+	normalizedPrevious, err := normalizeStoredTaskTree(previous)
+	if err != nil {
+		return types.TaskTree{}, err
+	}
+	previousByID := make(map[string]types.TaskNode, countTaskNodes(normalizedPrevious.Tasks))
+	indexTaskNodes(normalizedPrevious.Tasks, previousByID)
 
 	seen := make(map[string]struct{}, countTaskNodes(tree.Tasks))
 	tasks := make([]types.TaskNode, 0, len(tree.Tasks))
@@ -310,6 +345,12 @@ func normalizeTaskNodeForSave(node types.TaskNode, previousByID map[string]types
 		return types.TaskNode{}, storageInvalid("duplicate task id: "+node.ID, nil)
 	}
 	seen[node.ID] = struct{}{}
+
+	status, err := normalizeTaskStatus(node.Status)
+	if err != nil {
+		return types.TaskNode{}, err
+	}
+	node.Status = status
 
 	children := make([]types.TaskNode, 0, len(node.Children))
 	for _, child := range node.Children {
@@ -336,13 +377,14 @@ func normalizeTaskNodeForSave(node types.TaskNode, previousByID map[string]types
 	return node, nil
 }
 
-// taskNodeChanged 判定节点自身是否真的变化：名字、备注、正文、卡片展示标记，
+// taskNodeChanged 判定节点自身是否真的变化：名字、备注、正文、卡片展示标记、进度状态，
 // 以及子节点集合或顺序的变化都算这个节点变了。
 func taskNodeChanged(previous types.TaskNode, current types.TaskNode) bool {
 	return previous.Name != current.Name ||
 		previous.Description != current.Description ||
 		previous.Content != current.Content ||
 		previous.CopyHighlight != current.CopyHighlight ||
+		previous.Status != current.Status ||
 		!slices.Equal(taskChildIDs(previous.Children), taskChildIDs(current.Children))
 }
 

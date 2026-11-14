@@ -53,9 +53,10 @@ type ProviderAPIKey struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+// ProviderRegisteredModel 是供应商登记的对外模型：ID 是对外引用身份，
+// SourceModelID 是实际发往上游的模型名。
 type ProviderRegisteredModel struct {
 	ID                     string          `json:"id"`
-	Name                   string          `json:"name"`
 	SourceModelID          string          `json:"sourceModelId"`
 	SupportsReasoning      bool            `json:"supportsReasoning,omitempty"`
 	DefaultReasoningEffort ReasoningEffort `json:"defaultReasoningEffort,omitempty"`
@@ -86,9 +87,10 @@ type ModelGroup struct {
 	UpdatedAt time.Time         `json:"updatedAt"`
 }
 
+// ModelGroupModel 是模型组对外暴露的模型入口：对外只认 ID，
+// 成员才是实际可用的供应商模型。
 type ModelGroupModel struct {
 	ID                     string             `json:"id"`
-	Name                   string             `json:"name"`
 	Strategy               RotationStrategy   `json:"strategy"`
 	SupportsReasoning      bool               `json:"supportsReasoning,omitempty"`
 	DefaultReasoningEffort ReasoningEffort    `json:"defaultReasoningEffort,omitempty"`

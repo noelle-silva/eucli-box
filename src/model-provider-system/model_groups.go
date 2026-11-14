@@ -166,9 +166,6 @@ func (s *system) validateModelGroups(ctx context.Context, groups []types.ModelGr
 			if model.ID == "" {
 				return providerInvalid("model group exposed model id is required", nil)
 			}
-			if model.Name == "" {
-				return providerInvalid("model group exposed model name is required", nil)
-			}
 			if _, ok := seenModels[model.ID]; ok {
 				return providerInvalid("model group exposed model id must be unique", nil)
 			}
@@ -202,7 +199,6 @@ func normalizeModelGroups(groups []types.ModelGroup) []types.ModelGroup {
 		models := make([]types.ModelGroupModel, 0, len(group.Models))
 		for _, model := range group.Models {
 			model.ID = strings.TrimSpace(model.ID)
-			model.Name = strings.TrimSpace(model.Name)
 			model.Strategy = normalizeRotationStrategy(model.Strategy)
 			if model.SupportsReasoning {
 				model.DefaultReasoningEffort = types.NormalizeReasoningEffort(model.DefaultReasoningEffort, types.DefaultReasoningEffort)

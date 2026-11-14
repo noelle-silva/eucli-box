@@ -34,7 +34,6 @@ func groupFixture(t *testing.T, strategy types.RotationStrategy) (System, *fakeN
 		Name: "Group",
 		Models: []types.ModelGroupModel{{
 			ID:       "exposed",
-			Name:     "Exposed",
 			Strategy: strategy,
 			Members:  members,
 		}},

@@ -87,7 +87,7 @@ func TestResolveModelFailsWhenModelMissing(t *testing.T) {
 func TestResolveModelMapsRegisteredModelToSourceModel(t *testing.T) {
 	storage := newFakeProviderStorage()
 	provider := testOpenAIProvider()
-	provider.RegisteredModels = []types.ProviderRegisteredModel{{ID: "fast", Name: "Fast", SourceModelID: "gpt-4.1"}}
+	provider.RegisteredModels = []types.ProviderRegisteredModel{{ID: "fast", SourceModelID: "gpt-4.1"}}
 	storage.providers["openai-main"] = provider
 	system := newTestProviderSystem(t, &fakeNetwork{}, storage)
 
@@ -95,7 +95,8 @@ func TestResolveModelMapsRegisteredModelToSourceModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveModel() error = %v", err)
 	}
-	if model.ID != "gpt-4.1" || model.Name != "Fast" {
+	// 注册模型退役展示名后，解析出的模型名就是上游真名。
+	if model.ID != "gpt-4.1" || model.Name != "gpt-4.1" {
 		t.Fatalf("model = %#v", model)
 	}
 }
@@ -103,7 +104,7 @@ func TestResolveModelMapsRegisteredModelToSourceModel(t *testing.T) {
 func TestResolveModelCarriesRegisteredReasoningProfile(t *testing.T) {
 	storage := newFakeProviderStorage()
 	provider := testOpenAIProvider()
-	provider.RegisteredModels = []types.ProviderRegisteredModel{{ID: "thinking", Name: "Thinking", SourceModelID: "gpt-4.1", SupportsReasoning: true, DefaultReasoningEffort: types.ReasoningEffortHigh}}
+	provider.RegisteredModels = []types.ProviderRegisteredModel{{ID: "thinking", SourceModelID: "gpt-4.1", SupportsReasoning: true, DefaultReasoningEffort: types.ReasoningEffortHigh}}
 	storage.providers["openai-main"] = provider
 	system := newTestProviderSystem(t, &fakeNetwork{}, storage)
 
@@ -119,7 +120,7 @@ func TestResolveModelCarriesRegisteredReasoningProfile(t *testing.T) {
 func TestResolveModelGroupUsesRegisteredMemberModel(t *testing.T) {
 	storage := newFakeProviderStorage()
 	storage.providers["openai-main"] = testOpenAIProvider()
-	storage.modelGroups = []types.ModelGroup{{ID: "main-group", Name: "Main Group", Models: []types.ModelGroupModel{{ID: "balanced", Name: "Balanced", Strategy: types.RotationStrategySequential, Members: []types.ModelGroupMember{{ProviderID: "openai-main", ModelID: "gpt-4.1", Weight: 1}}}}}}
+	storage.modelGroups = []types.ModelGroup{{ID: "main-group", Name: "Main Group", Models: []types.ModelGroupModel{{ID: "balanced", Strategy: types.RotationStrategySequential, Members: []types.ModelGroupMember{{ProviderID: "openai-main", ModelID: "gpt-4.1", Weight: 1}}}}}}
 	system := newTestProviderSystem(t, &fakeNetwork{}, storage)
 
 	provider, model, err := system.ResolveModel(context.Background(), types.ModelCoordinate{Kind: "model_group", GroupID: "main-group", ModelID: "balanced"})
@@ -134,9 +135,9 @@ func TestResolveModelGroupUsesRegisteredMemberModel(t *testing.T) {
 func TestResolveModelGroupOverridesReasoningProfile(t *testing.T) {
 	storage := newFakeProviderStorage()
 	provider := testOpenAIProvider()
-	provider.RegisteredModels = []types.ProviderRegisteredModel{{ID: "gpt-4.1", Name: "gpt-4.1", SourceModelID: "gpt-4.1", SupportsReasoning: true, DefaultReasoningEffort: types.ReasoningEffortLow}}
+	provider.RegisteredModels = []types.ProviderRegisteredModel{{ID: "gpt-4.1", SourceModelID: "gpt-4.1", SupportsReasoning: true, DefaultReasoningEffort: types.ReasoningEffortLow}}
 	storage.providers["openai-main"] = provider
-	storage.modelGroups = []types.ModelGroup{{ID: "main-group", Name: "Main Group", Models: []types.ModelGroupModel{{ID: "balanced", Name: "Balanced", Strategy: types.RotationStrategySequential, SupportsReasoning: true, DefaultReasoningEffort: types.ReasoningEffortXHigh, Members: []types.ModelGroupMember{{ProviderID: "openai-main", ModelID: "gpt-4.1", Weight: 1}}}}}}
+	storage.modelGroups = []types.ModelGroup{{ID: "main-group", Name: "Main Group", Models: []types.ModelGroupModel{{ID: "balanced", Strategy: types.RotationStrategySequential, SupportsReasoning: true, DefaultReasoningEffort: types.ReasoningEffortXHigh, Members: []types.ModelGroupMember{{ProviderID: "openai-main", ModelID: "gpt-4.1", Weight: 1}}}}}}
 	system := newTestProviderSystem(t, &fakeNetwork{}, storage)
 
 	_, model, err := system.ResolveModel(context.Background(), types.ModelCoordinate{Kind: "model_group", GroupID: "main-group", ModelID: "balanced"})
@@ -1232,7 +1233,6 @@ func testOpenAIProvider() types.Provider {
 		Models:   []types.ModelInfo{{ID: "gpt-4.1", Name: "gpt-4.1"}},
 		RegisteredModels: []types.ProviderRegisteredModel{{
 			ID:            "gpt-4.1",
-			Name:          "gpt-4.1",
 			SourceModelID: "gpt-4.1",
 		}},
 	}
@@ -1248,7 +1248,6 @@ func testAnthropicProvider() types.Provider {
 		Models:   []types.ModelInfo{{ID: "claude-3-5-sonnet", Name: "claude-3-5-sonnet"}},
 		RegisteredModels: []types.ProviderRegisteredModel{{
 			ID:            "claude-3-5-sonnet",
-			Name:          "claude-3-5-sonnet",
 			SourceModelID: "claude-3-5-sonnet",
 		}},
 	}

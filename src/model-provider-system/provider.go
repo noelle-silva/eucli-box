@@ -119,9 +119,6 @@ func validateProvider(provider types.Provider) error {
 		if strings.TrimSpace(model.ID) == "" {
 			return providerInvalid("registered model id is required", nil)
 		}
-		if strings.TrimSpace(model.Name) == "" {
-			return providerInvalid("registered model name is required", nil)
-		}
 		if strings.TrimSpace(model.SourceModelID) == "" {
 			return providerInvalid("registered model sourceModelId is required", nil)
 		}
@@ -181,15 +178,11 @@ func normalizeProvider(provider types.Provider) types.Provider {
 	registered := make([]types.ProviderRegisteredModel, 0, len(provider.RegisteredModels))
 	for _, model := range provider.RegisteredModels {
 		model.ID = strings.TrimSpace(model.ID)
-		model.Name = strings.TrimSpace(model.Name)
 		model.SourceModelID = strings.TrimSpace(model.SourceModelID)
 		if model.SupportsReasoning {
 			model.DefaultReasoningEffort = types.NormalizeReasoningEffort(model.DefaultReasoningEffort, types.DefaultReasoningEffort)
 		} else {
 			model.DefaultReasoningEffort = ""
-		}
-		if model.Name == "" {
-			model.Name = model.ID
 		}
 		if model.CreatedAt.IsZero() {
 			model.CreatedAt = now

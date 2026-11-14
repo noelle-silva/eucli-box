@@ -21,7 +21,6 @@ func groupRotationFixture(t *testing.T, memberCount int) (System, *fakeProviderS
 		provider.Name = providerID
 		provider.RegisteredModels = []types.ProviderRegisteredModel{{
 			ID:            "exposed",
-			Name:          "exposed",
 			SourceModelID: "source-" + strconv.Itoa(index),
 		}}
 		storage.providers[providerID] = provider
@@ -33,7 +32,6 @@ func groupRotationFixture(t *testing.T, memberCount int) (System, *fakeProviderS
 		Name: "Group",
 		Models: []types.ModelGroupModel{{
 			ID:       "exposed",
-			Name:     "Exposed",
 			Strategy: types.RotationStrategySequential,
 			Members:  members,
 		}},
@@ -99,14 +97,13 @@ func TestCompleteRecordsResolvedRequestModelForModelGroup(t *testing.T) {
 	provider := testOpenAIProvider()
 	provider.ID = "provider-0"
 	provider.Name = "主供应商"
-	provider.RegisteredModels = []types.ProviderRegisteredModel{{ID: "exposed", Name: "exposed", SourceModelID: "gpt-4.1"}}
+	provider.RegisteredModels = []types.ProviderRegisteredModel{{ID: "exposed", SourceModelID: "gpt-4.1"}}
 	storage.providers["provider-0"] = provider
 	storage.modelGroups = []types.ModelGroup{{
 		ID:   "group",
 		Name: "Group",
 		Models: []types.ModelGroupModel{{
 			ID:       "exposed",
-			Name:     "Exposed",
 			Strategy: types.RotationStrategySequential,
 			Members:  []types.ModelGroupMember{{ProviderID: "provider-0", ModelID: "exposed", Weight: 1}},
 		}},

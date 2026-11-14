@@ -100,11 +100,8 @@ func resolveRegisteredModel(provider types.Provider, registeredID string) (types
 		if sourceID == "" {
 			return types.ModelInfo{}, providerModelNotFound("registered model has empty sourceModelId", nil)
 		}
-		name := strings.TrimSpace(registered.Name)
-		if name == "" {
-			name = sourceID
-		}
-		return types.ModelInfo{ID: sourceID, Name: name, SupportsReasoning: registered.SupportsReasoning, DefaultReasoningEffort: registered.DefaultReasoningEffort}, nil
+		// 注册模型只保留对外 ID 与上游模型名：解析结果的模型名就是上游真名。
+		return types.ModelInfo{ID: sourceID, Name: sourceID, SupportsReasoning: registered.SupportsReasoning, DefaultReasoningEffort: registered.DefaultReasoningEffort}, nil
 	}
 	return types.ModelInfo{}, providerModelNotFound("registered model does not exist", nil)
 }

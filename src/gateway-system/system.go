@@ -82,6 +82,8 @@ type ProviderSystem interface {
 	SaveModelRequestConfig(ctx context.Context, config types.ModelRequestConfig) (types.ModelRequestConfig, error)
 	LoadModelGroups(ctx context.Context) ([]types.ModelGroup, error)
 	SaveModelGroups(ctx context.Context, groups []types.ModelGroup) ([]types.ModelGroup, error)
+	// RotationStrategies 返回模型组可选的策略清单：静态事实，无需 I/O。
+	RotationStrategies() []types.RotationStrategyOption
 	RefreshModels(ctx context.Context, providerID string) ([]types.ModelInfo, error)
 }
 

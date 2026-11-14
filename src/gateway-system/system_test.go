@@ -989,7 +989,14 @@ func newTestGateway(t *testing.T, fakes *gatewayFakes) System {
 		}
 		sources[types.ReleaseArtifactKindPlugin] = fakes.installSourcePlugin
 	}
-	system, err := NewSystem(Config{Addr: "127.0.0.1:0", InstallSources: sources, SessionChanges: fakes.sessionChanges}, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseSource, fakes.requestRecords, fakes.promptLibraries, fakes.promptFolders, fakes.taskTrees)
+	return newTestGatewayWithConfig(t, fakes, Config{Addr: "127.0.0.1:0", InstallSources: sources, SessionChanges: fakes.sessionChanges})
+}
+
+// newTestGatewayWithConfig 用给定配置装配网关：
+// 需要特殊配置（例如固定 Key、安装来源）的用例走这里，其余用例仍用 newTestGateway 拿默认配置。
+func newTestGatewayWithConfig(t *testing.T, fakes *gatewayFakes, config Config) System {
+	t.Helper()
+	system, err := NewSystem(config, fakes.runtime, fakes.roles, fakes.groups, fakes.workspaces, fakes.providers, fakes.tools, fakes.sessions, fakes.stickers, fakes.hooks, fakes.placeholders, fakes.systemPlugins, fakes.assist, fakes.releaseSource, fakes.requestRecords, fakes.promptLibraries, fakes.promptFolders, fakes.taskTrees)
 	if err != nil {
 		t.Fatalf("NewSystem() error = %v", err)
 	}
@@ -1928,7 +1935,9 @@ type fakeGatewayProviders struct {
 	providers          map[string]types.Provider
 	modelGroups        []types.ModelGroup
 	modelRequestConfig types.ModelRequestConfig
-	order              []string
+	// strategies 是策略清单接口要转发的静态事实，由用例按需装配。
+	strategies []types.RotationStrategyOption
+	order      []string
 }
 
 func newFakeGatewayProviders() *fakeGatewayProviders {
@@ -1980,6 +1989,9 @@ func (f *fakeGatewayProviders) LoadModelGroups(ctx context.Context) ([]types.Mod
 func (f *fakeGatewayProviders) SaveModelGroups(ctx context.Context, groups []types.ModelGroup) ([]types.ModelGroup, error) {
 	f.modelGroups = groups
 	return f.modelGroups, nil
+}
+func (f *fakeGatewayProviders) RotationStrategies() []types.RotationStrategyOption {
+	return f.strategies
 }
 func (f *fakeGatewayProviders) RefreshModels(ctx context.Context, providerID string) ([]types.ModelInfo, error) {
 	return []types.ModelInfo{{ID: "gpt-4.1", Name: "GPT-4.1"}}, nil

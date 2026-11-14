@@ -43,14 +43,16 @@ func (s *system) runPlan(plan requestPlan, attempt func(planCandidate) (types.Mo
 			s.breaker.clear(candidate.key)
 			return response, nil
 		}
-		if isMemberFailure(err) {
-			s.breaker.trip(candidate.key)
+		// 失败只归因一次：要不要换人、要不要关人都读同一份判定。
+		grade := gradeMemberFailure(err)
+		if grade.attributable {
+			s.breaker.recordFailure(candidate.key, grade)
 		}
 		failures = append(failures, failedMember{label: candidate.label(), err: err})
 		if !plan.fallback() {
 			return types.ModelResponse{}, err
 		}
-		if plan.shouldTryNext(index, err, dispatched) {
+		if plan.shouldTryNext(index, grade, dispatched) {
 			continue
 		}
 		if plan.isLast(index) {

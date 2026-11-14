@@ -251,6 +251,12 @@ func (s *system) handleSaveModelGroups(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusOK, saved)
 }
 
+// handleListModelGroupStrategies 返回模型组可选的策略清单：
+// 客户端据此渲染下拉项，策略文案只有供应商系统那一份事实，网关不再另抄一套。
+func (s *system) handleListModelGroupStrategies(w http.ResponseWriter, r *http.Request) {
+	writeData(w, http.StatusOK, s.providers.RotationStrategies())
+}
+
 func (s *system) handleRefreshProviderModels(w http.ResponseWriter, r *http.Request) {
 	providerID, err := pathValue(r, "providerID")
 	if err != nil {

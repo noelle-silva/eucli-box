@@ -1,52 +1,10 @@
 package modelprovider
 
 import (
-	"context"
-	"errors"
-	"net/http"
 	"strings"
 
 	apperrors "eucli-box/pkg/errors"
 )
-
-// switchableNetworkCodes 是传输层里"这个成员当前不可用"的错误码。
-var switchableNetworkCodes = []string{
-	"network.timeout",
-	"network.connection_failed",
-	"network.connection_lost",
-	"network.request_failed",
-	"network.dns_failed",
-	"network.tls_failed",
-	"network.connection_refused",
-}
-
-// isMemberFailure 判断一次失败是不是这个成员自己的责任：
-// 链路不通、上游过载或限流、凭据失效、响应解析不出内容，都算它。
-// 请求本身有问题（参数错、模型不存在）不算——错在我们，不该记在成员账上。
-//
-// 这个判断同时决定两件事：要不要顺位换下一个成员，以及要不要把它关进小黑屋。
-func isMemberFailure(err error) bool {
-	if err == nil || errors.Is(err, context.Canceled) {
-		return false
-	}
-	payload := apperrors.BuildErrorPayload(err)
-	if payload == nil {
-		return false
-	}
-	if status, ok := apperrors.ProviderStatusCode(payload); ok {
-		switch status {
-		case http.StatusUnauthorized,
-			http.StatusForbidden,
-			http.StatusRequestTimeout,
-			http.StatusConflict,
-			http.StatusTooManyRequests:
-			return true
-		}
-		return status >= 500
-	}
-	return apperrors.HasErrorCode(payload, switchableNetworkCodes...) ||
-		apperrors.HasErrorCode(payload, "provider.parse_failed", "provider.network_failed")
-}
 
 // failedMember 记录兜底链上一个成员的失败。
 type failedMember struct {

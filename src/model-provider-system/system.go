@@ -20,6 +20,10 @@ type System interface {
 	LoadModelGroups(ctx context.Context) ([]types.ModelGroup, error)
 	SaveModelGroups(ctx context.Context, groups []types.ModelGroup) ([]types.ModelGroup, error)
 
+	// RotationStrategies 返回模型组可选的轮询策略清单：静态事实，无 I/O、不会失败，
+	// 顺序即客户端下拉的展示顺序；客户端提交的 value 必须能原样落回策略字段。
+	RotationStrategies() []types.RotationStrategyOption
+
 	RefreshModels(ctx context.Context, providerID string) ([]types.ModelInfo, error)
 	// ResolveModel 解析坐标并推进模型组轮询：只有真正要用模型时才调用。
 	ResolveModel(ctx context.Context, coordinate types.ModelCoordinate) (types.Provider, types.ModelInfo, error)
@@ -79,7 +83,7 @@ func NewSystem(config Config, network NetworkSystem, storage StorageSystem) (Sys
 		storage:      storage,
 		keyCursors:   map[string]int{},
 		modelCursors: map[string]int{},
-		breaker:      newMemberBreaker(memberCooldown),
+		breaker:      newMemberBreaker(),
 	}, nil
 }
 

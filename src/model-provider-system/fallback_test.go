@@ -2,6 +2,7 @@ package modelprovider
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	apperrors "eucli-box/pkg/errors"
@@ -25,6 +26,14 @@ func openAIContentResponse(content string) types.HTTPResponse {
 
 func openAIFailureResponse(status int) types.HTTPResponse {
 	return types.HTTPResponse{StatusCode: status, Body: []byte(`{"error":{"message":"boom","type":"server_error"}}`)}
+}
+
+// openAIRateLimitResponse 造一个带上游 Retry-After 的限流响应：
+// 用来钉住"限流档关多久听上游的"这条规则。
+func openAIRateLimitResponse(retryAfterSeconds string) types.HTTPResponse {
+	response := openAIFailureResponse(http.StatusTooManyRequests)
+	response.Headers = map[string][]string{"Retry-After": {retryAfterSeconds}}
+	return response
 }
 
 func streamContentChunk(content string) string {

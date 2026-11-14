@@ -50,11 +50,11 @@ func (p requestPlan) isLast(index int) bool {
 
 // shouldTryNext 判断第 index 个候选失败后是否还有继续往下试的理由。
 // 已经分发过内容就不能再换人：用户看到的内容收不回来，换人只会变成重放。
-func (p requestPlan) shouldTryNext(index int, err error, dispatched bool) bool {
+func (p requestPlan) shouldTryNext(index int, grade memberFailureGrade, dispatched bool) bool {
 	if dispatched || p.isLast(index) {
 		return false
 	}
-	return isMemberFailure(err)
+	return grade.attributable
 }
 
 // planRequest 把坐标翻译成执行计划：先剔除小黑屋里的成员，再交给策略选人。

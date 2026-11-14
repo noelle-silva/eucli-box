@@ -18,6 +18,23 @@ func normalizeRotationStrategy(strategy types.RotationStrategy) types.RotationSt
 	}
 }
 
+// rotationStrategyOptions 是模型组策略清单的唯一事实源：
+// value 是服务端唯一认的提交值，label 与 description 只用于客户端渲染下拉项。
+// 顺序即展示顺序，调用方不要重排。
+var rotationStrategyOptions = []types.RotationStrategyOption{
+	{Value: types.RotationStrategySequential, Label: "顺序轮询", Description: "按成员顺序轮流使用，均摊负载"},
+	{Value: types.RotationStrategyWeightedRandom, Label: "权重随机", Description: "按成员权重随机抽取"},
+	{Value: types.RotationStrategyFallback, Label: "故障转移", Description: "始终从第一位开始，失败才顺位换下一个"},
+}
+
+// RotationStrategies 返回模型组可选的策略清单。
+// 返回副本：清单是全局共用的事实，调用方改它不该影响别人拿到的下一份。
+func (s *system) RotationStrategies() []types.RotationStrategyOption {
+	options := make([]types.RotationStrategyOption, len(rotationStrategyOptions))
+	copy(options, rotationStrategyOptions)
+	return options
+}
+
 func positiveWeight(value int) int {
 	if value < 1 {
 		return 1

@@ -3,6 +3,7 @@ package modelprovider
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strconv"
 	"testing"
 	"time"
@@ -52,20 +53,26 @@ func concreteSystem(t *testing.T, s System) *system {
 	return concrete
 }
 
-// freezeBreakerClock 把熔断记忆的时钟换成可控时钟，便于验证冷却到期。
-func freezeBreakerClock(s System, cooldown time.Duration) *time.Time {
+// frozenBreaker 把熔断记忆的时钟换成可控时钟，便于验证计数窗口与冷却到期。
+func frozenBreaker(s System) *time.Time {
 	clock := time.Now()
-	breaker := newMemberBreaker(cooldown)
+	breaker := newMemberBreaker()
 	breaker.now = func() time.Time { return clock }
 	s.(*system).breaker = breaker
 	return &clock
+}
+
+// firstMemberKey 是组里链首成员在熔断表里的身份。
+func firstMemberKey() string {
+	return memberKey("provider-0", "gpt-4.1")
 }
 
 // TestSequentialSkipsCoolingMember 钉住顺序轮询与熔断的配合：
 // 刚失败过的成员本轮不再被选中，号码牌在剩下的成员里继续转。
 func TestSequentialSkipsCoolingMember(t *testing.T) {
 	system, network, _ := groupFixture(t, types.RotationStrategySequential)
-	network.byHost["a.example.test"] = fakeNetworkReply{response: openAIFailureResponse(500)}
+	// 凭据失效是一眼看得出的硬伤：第一次失败就把它关掉。
+	network.byHost["a.example.test"] = fakeNetworkReply{response: openAIFailureResponse(http.StatusUnauthorized)}
 	network.byHost["b.example.test"] = fakeNetworkReply{response: openAIContentResponse("rescued")}
 
 	if _, err := system.Complete(context.Background(), groupRequest()); err == nil {
@@ -92,7 +99,7 @@ func TestRandomStrategyNeverPicksCoolingMember(t *testing.T) {
 	system, network, hosts := groupFixture(t, types.RotationStrategyWeightedRandom)
 	network.byHost[hosts[0]] = fakeNetworkReply{response: openAIContentResponse("first")}
 	network.byHost[hosts[1]] = fakeNetworkReply{response: openAIContentResponse("second")}
-	concreteSystem(t, system).breaker.trip(memberKey("provider-0", "gpt-4.1"))
+	concreteSystem(t, system).breaker.recordFailure(firstMemberKey(), memberFailureGrade{attributable: true, tier: breakerTierHard})
 
 	for round := 0; round < 10; round++ {
 		if _, err := system.Complete(context.Background(), groupRequest()); err != nil {
@@ -106,12 +113,14 @@ func TestRandomStrategyNeverPicksCoolingMember(t *testing.T) {
 	}
 }
 
-// TestFallbackStartsFromNextMemberWhileFirstCools 钉住兜底链首冷却后的收益：
-// 首选成员被关之后，后续请求不再白敲一次坏门，直接找替补。
-func TestFallbackStartsFromNextMemberWhileFirstCools(t *testing.T) {
+// TestFallbackCoolsMemberAfterConsecutiveTransientFailures 钉住偶发档的收益：
+// 上游 5xx 第一次只记一笔（仍然换人），连着第二次才把链首关掉，
+// 之后的请求不再白敲坏门，直接找替补。
+func TestFallbackCoolsMemberAfterConsecutiveTransientFailures(t *testing.T) {
 	system, network, hosts := groupFixture(t, types.RotationStrategyFallback)
-	network.byHost[hosts[0]] = fakeNetworkReply{response: openAIFailureResponse(500)}
+	network.byHost[hosts[0]] = fakeNetworkReply{response: openAIFailureResponse(http.StatusInternalServerError)}
 	network.byHost[hosts[1]] = fakeNetworkReply{response: openAIContentResponse("rescued")}
+	breaker := concreteSystem(t, system).breaker
 
 	if _, err := system.Complete(context.Background(), groupRequest()); err != nil {
 		t.Fatalf("首次 Complete() error = %v", err)
@@ -119,14 +128,101 @@ func TestFallbackStartsFromNextMemberWhileFirstCools(t *testing.T) {
 	if len(network.calls) != 2 {
 		t.Fatalf("首次上游调用次数 = %d, want 2", len(network.calls))
 	}
+	if breaker.isCooling(firstMemberKey()) {
+		t.Fatalf("偶发档第一次失败不该关人")
+	}
+
+	if _, err := system.Complete(context.Background(), groupRequest()); err != nil {
+		t.Fatalf("第二次 Complete() error = %v", err)
+	}
+	if !breaker.isCooling(firstMemberKey()) {
+		t.Fatalf("偶发档连续两次失败应当关人")
+	}
+
+	if _, err := system.Complete(context.Background(), groupRequest()); err != nil {
+		t.Fatalf("第三次 Complete() error = %v", err)
+	}
+	if len(network.calls) != 5 {
+		t.Fatalf("累计上游调用次数 = %d, want 5（冷却中的链首不应再被尝试）", len(network.calls))
+	}
+	if hostOfURL(network.calls[4].URL) != hosts[1] {
+		t.Fatalf("第三次请求打到了 %s, want %s", network.calls[4].URL, hosts[1])
+	}
+}
+
+// TestFallbackClosesChainOnCredentialFailure 钉住硬伤档：上游 401 一次就关，
+// 后续请求不必再为同一把失效凭据付一次往返。
+func TestFallbackClosesChainOnCredentialFailure(t *testing.T) {
+	system, network, hosts := groupFixture(t, types.RotationStrategyFallback)
+	network.byHost[hosts[0]] = fakeNetworkReply{response: openAIFailureResponse(http.StatusUnauthorized)}
+	network.byHost[hosts[1]] = fakeNetworkReply{response: openAIContentResponse("rescued")}
+
+	if _, err := system.Complete(context.Background(), groupRequest()); err != nil {
+		t.Fatalf("首次 Complete() error = %v", err)
+	}
+	if !concreteSystem(t, system).breaker.isCooling(firstMemberKey()) {
+		t.Fatalf("凭据失效应当在第一次失败后就把成员关掉")
+	}
 	if _, err := system.Complete(context.Background(), groupRequest()); err != nil {
 		t.Fatalf("第二次 Complete() error = %v", err)
 	}
 	if len(network.calls) != 3 {
-		t.Fatalf("累计上游调用次数 = %d, want 3（冷却中的链首不应再被尝试）", len(network.calls))
+		t.Fatalf("累计上游调用次数 = %d, want 3（失效凭据的成员不应再被试）", len(network.calls))
 	}
 	if hostOfURL(network.calls[2].URL) != hosts[1] {
-		t.Fatalf("第三次打到了 %s, want %s", network.calls[2].URL, hosts[1])
+		t.Fatalf("第二次请求打到了 %s, want %s", network.calls[2].URL, hosts[1])
+	}
+}
+
+// TestFallbackHonorsUpstreamRetryAfter 钉住限流档：429 一次就关，
+// 关多久听上游的 Retry-After，到点才放回选择池。
+func TestFallbackHonorsUpstreamRetryAfter(t *testing.T) {
+	system, network, hosts := groupFixture(t, types.RotationStrategyFallback)
+	clock := frozenBreaker(system)
+	network.byHost[hosts[0]] = fakeNetworkReply{response: openAIRateLimitResponse("300")}
+	network.byHost[hosts[1]] = fakeNetworkReply{response: openAIContentResponse("rescued")}
+	breaker := concreteSystem(t, system).breaker
+
+	if _, err := system.Complete(context.Background(), groupRequest()); err != nil {
+		t.Fatalf("首次 Complete() error = %v", err)
+	}
+	if !breaker.isCooling(firstMemberKey()) {
+		t.Fatalf("限流应当在第一次失败后就把成员关掉")
+	}
+	*clock = clock.Add(4 * time.Minute)
+	if !breaker.isCooling(firstMemberKey()) {
+		t.Fatalf("上游要求等 300 秒，第 4 分钟不该放人")
+	}
+	*clock = clock.Add(2 * time.Minute)
+	if breaker.isCooling(firstMemberKey()) {
+		t.Fatalf("超过上游给的等待时长后应当放人")
+	}
+}
+
+// TestTransientStrikeWindowResetsAcrossMinutes 钉住计数窗口的作用：
+// 隔着几分钟的两条失败不算"连着"，成员不会被慢慢攒成小黑屋。
+func TestTransientStrikeWindowResetsAcrossMinutes(t *testing.T) {
+	system, network, hosts := groupFixture(t, types.RotationStrategyFallback)
+	clock := frozenBreaker(system)
+	network.byHost[hosts[0]] = fakeNetworkReply{response: openAIFailureResponse(http.StatusInternalServerError)}
+	network.byHost[hosts[1]] = fakeNetworkReply{response: openAIContentResponse("rescued")}
+	breaker := concreteSystem(t, system).breaker
+
+	if _, err := system.Complete(context.Background(), groupRequest()); err != nil {
+		t.Fatalf("首次 Complete() error = %v", err)
+	}
+	*clock = clock.Add(breakerStrikeWindow + time.Minute)
+	if _, err := system.Complete(context.Background(), groupRequest()); err != nil {
+		t.Fatalf("窗口外的第二次 Complete() error = %v", err)
+	}
+	if breaker.isCooling(firstMemberKey()) {
+		t.Fatalf("间隔超过计数窗口的两次失败不该关人")
+	}
+	if _, err := system.Complete(context.Background(), groupRequest()); err != nil {
+		t.Fatalf("第三次 Complete() error = %v", err)
+	}
+	if !breaker.isCooling(firstMemberKey()) {
+		t.Fatalf("窗口内连着的两次失败应当关人")
 	}
 }
 
@@ -134,11 +230,18 @@ func TestFallbackStartsFromNextMemberWhileFirstCools(t *testing.T) {
 // 全员都在小黑屋里时照样发起请求，不能因为熔断把整组拖成不可用。
 func TestAllMembersCoolingStillAttempts(t *testing.T) {
 	system, network, hosts := groupFixture(t, types.RotationStrategyFallback)
-	network.byHost[hosts[0]] = fakeNetworkReply{response: openAIFailureResponse(500)}
-	network.byHost[hosts[1]] = fakeNetworkReply{response: openAIFailureResponse(502)}
+	network.byHost[hosts[0]] = fakeNetworkReply{response: openAIFailureResponse(http.StatusInternalServerError)}
+	network.byHost[hosts[1]] = fakeNetworkReply{response: openAIFailureResponse(http.StatusBadGateway)}
+	breaker := concreteSystem(t, system).breaker
 
-	if _, err := system.Complete(context.Background(), groupRequest()); err == nil {
-		t.Fatalf("全员失败时应当报错")
+	// 两轮失败把两个成员都攒到偶发档的关停门槛。
+	for round := 0; round < 2; round++ {
+		if _, err := system.Complete(context.Background(), groupRequest()); err == nil {
+			t.Fatalf("第 %d 轮全员失败时应当报错", round+1)
+		}
+	}
+	if !breaker.isCooling(firstMemberKey()) || !breaker.isCooling(memberKey("provider-1", "gpt-4.1")) {
+		t.Fatalf("两轮失败后两个成员都应当在小黑屋里")
 	}
 	callsAfterFailure := len(network.calls)
 
@@ -156,10 +259,10 @@ func TestAllMembersCoolingStillAttempts(t *testing.T) {
 }
 
 // TestRequestErrorDoesNotCoolMember 钉住责任划分：
-// 请求本身有错不算成员的账，不该因此把它关起来。
+// 请求本身有错不算成员的账，既不该换人，也不该因此把它关起来。
 func TestRequestErrorDoesNotCoolMember(t *testing.T) {
 	system, network, hosts := groupFixture(t, types.RotationStrategyFallback)
-	network.byHost[hosts[0]] = fakeNetworkReply{response: openAIFailureResponse(400)}
+	network.byHost[hosts[0]] = fakeNetworkReply{response: openAIFailureResponse(http.StatusBadRequest)}
 	network.byHost[hosts[1]] = fakeNetworkReply{response: openAIContentResponse("rescued")}
 
 	if _, err := system.Complete(context.Background(), groupRequest()); err == nil {
@@ -176,10 +279,13 @@ func TestRequestErrorDoesNotCoolMember(t *testing.T) {
 			t.Fatalf("第 %d 次打到了 %s, want %s", index+1, call.URL, hosts[0])
 		}
 	}
+	if concreteSystem(t, system).breaker.isCooling(firstMemberKey()) {
+		t.Fatalf("请求错误不该记在成员账上")
+	}
 }
 
 // TestStreamFailureAfterContentCoolsMember 钉住记录与换人解耦：
-// 已经吐过内容时本次不能换人，但这个成员照样要进小黑屋，后续请求不再白试。
+// 已经吐过内容时本次不能换人，但这个成员照样要按偶发档记账，连着两次后进小黑屋。
 func TestStreamFailureAfterContentCoolsMember(t *testing.T) {
 	system, network, hosts := groupFixture(t, types.RotationStrategyFallback)
 	network.byHost[hosts[0]] = fakeNetworkReply{
@@ -188,15 +294,18 @@ func TestStreamFailureAfterContentCoolsMember(t *testing.T) {
 		streamErr:    errStreamBroken,
 	}
 	network.byHost[hosts[1]] = fakeNetworkReply{response: openAIContentResponse("rescued")}
+	breaker := concreteSystem(t, system).breaker
 
-	if _, err := system.CompleteStream(context.Background(), groupRequest(), func(event types.ModelStreamEvent) error { return nil }); err == nil {
-		t.Fatalf("已吐内容后断流应当报错")
+	for round := 0; round < 2; round++ {
+		if _, err := system.CompleteStream(context.Background(), groupRequest(), func(event types.ModelStreamEvent) error { return nil }); err == nil {
+			t.Fatalf("第 %d 次已吐内容后断流应当报错", round+1)
+		}
 	}
-	if len(network.calls) != 1 {
-		t.Fatalf("首次上游调用次数 = %d, want 1（已吐内容不换人）", len(network.calls))
+	if len(network.calls) != 2 {
+		t.Fatalf("上游调用次数 = %d, want 2（已吐内容不换人，两轮都只碰链首）", len(network.calls))
 	}
-	if !concreteSystem(t, system).breaker.isCooling(memberKey("provider-0", "gpt-4.1")) {
-		t.Fatalf("断流成员没有被关进小黑屋")
+	if !breaker.isCooling(firstMemberKey()) {
+		t.Fatalf("连着两次断流的成员应当被关进小黑屋")
 	}
 	response, err := system.Complete(context.Background(), groupRequest())
 	if err != nil {
@@ -207,12 +316,12 @@ func TestStreamFailureAfterContentCoolsMember(t *testing.T) {
 	}
 }
 
-// TestMemberReturnsToSelectionAfterCooldown 钉住放行规则：
-// 冷却到期后成员重新参与选择，不会被永久拉黑。
-func TestMemberReturnsToSelectionAfterCooldown(t *testing.T) {
+// TestMemberReturnsToSelectionAfterHardCooldown 钉住放行规则：
+// 硬伤档关满 5 分钟后成员重新参与选择，不会被永久拉黑。
+func TestMemberReturnsToSelectionAfterHardCooldown(t *testing.T) {
 	system, network, hosts := groupFixture(t, types.RotationStrategySequential)
-	clock := freezeBreakerClock(system, time.Minute)
-	network.byHost[hosts[0]] = fakeNetworkReply{response: openAIFailureResponse(500)}
+	clock := frozenBreaker(system)
+	network.byHost[hosts[0]] = fakeNetworkReply{response: openAIFailureResponse(http.StatusForbidden)}
 	network.byHost[hosts[1]] = fakeNetworkReply{response: openAIContentResponse("ok")}
 
 	if _, err := system.Complete(context.Background(), groupRequest()); err == nil {
@@ -225,7 +334,7 @@ func TestMemberReturnsToSelectionAfterCooldown(t *testing.T) {
 		t.Fatalf("冷却期内打到了 %s, want %s", last, hosts[1])
 	}
 
-	*clock = clock.Add(2 * time.Minute)
+	*clock = clock.Add(breakerHardCooldown + time.Minute)
 	network.byHost[hosts[0]] = fakeNetworkReply{response: openAIContentResponse("back")}
 	callsBefore := len(network.calls)
 	for round := 0; round < 2; round++ {
@@ -239,34 +348,5 @@ func TestMemberReturnsToSelectionAfterCooldown(t *testing.T) {
 	}
 	if !seen[hosts[0]] {
 		t.Fatalf("冷却到期后成员一没有重新参与选择")
-	}
-}
-
-// TestMemberBreakerCooldownExpires 钉住小黑屋会自己放人：到期后成员重新可用。
-func TestMemberBreakerCooldownExpires(t *testing.T) {
-	breaker := newMemberBreaker(time.Minute)
-	clock := time.Now()
-	breaker.now = func() time.Time { return clock }
-	key := memberKey("provider-0", "gpt-4.1")
-
-	breaker.trip(key)
-	if !breaker.isCooling(key) {
-		t.Fatalf("关进去之后应当处于冷却")
-	}
-	if breaker.isCooling("") {
-		t.Fatalf("空 key 不应参与熔断")
-	}
-	clock = clock.Add(2 * time.Minute)
-	if breaker.isCooling(key) {
-		t.Fatalf("冷却到期后应当放出来")
-	}
-	if _, ok := breaker.openUntil[key]; ok {
-		t.Fatalf("到期记录没有被清掉")
-	}
-
-	breaker.trip(key)
-	breaker.clear(key)
-	if breaker.isCooling(key) {
-		t.Fatalf("成功之后应当抹掉记录")
 	}
 }

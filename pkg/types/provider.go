@@ -43,6 +43,14 @@ const (
 	RotationStrategyFallback RotationStrategy = "fallback"
 )
 
+// RotationStrategyOption 是策略清单里的一项：value 是客户端提交时原样回填的取值，
+// label 与 description 只用于渲染下拉项，不参与任何服务端判断。
+type RotationStrategyOption struct {
+	Value       RotationStrategy `json:"value"`
+	Label       string           `json:"label"`
+	Description string           `json:"description"`
+}
+
 type ProviderAPIKey struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`

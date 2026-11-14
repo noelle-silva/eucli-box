@@ -125,3 +125,44 @@ func TestCompleteRecordsResolvedRequestModelForModelGroup(t *testing.T) {
 		t.Fatalf("request model = %#v", response.RequestModel)
 	}
 }
+
+// TestRotationStrategiesExposeStableOptions 钉住策略清单这份对外事实：
+// 顺序稳定、必含 fallback、每项都带展示文案，且 value 提交回来时仍落在同一个策略上。
+func TestRotationStrategiesExposeStableOptions(t *testing.T) {
+	system, _, _ := groupRotationFixture(t, 2)
+	options := system.RotationStrategies()
+	wantValues := []types.RotationStrategy{
+		types.RotationStrategySequential,
+		types.RotationStrategyWeightedRandom,
+		types.RotationStrategyFallback,
+	}
+	if len(options) != len(wantValues) {
+		t.Fatalf("策略数量 = %d, want %d", len(options), len(wantValues))
+	}
+	foundFallback := false
+	for index, want := range wantValues {
+		option := options[index]
+		if option.Value != want {
+			t.Fatalf("第 %d 项 value = %q, want %q", index+1, option.Value, want)
+		}
+		// 客户端把这个 value 原样提交回来时必须仍然落回同一个策略，不能被归一化改掉。
+		if normalized := normalizeRotationStrategy(option.Value); normalized != want {
+			t.Fatalf("第 %d 项 value = %q 提交后被归一化成 %q", index+1, option.Value, normalized)
+		}
+		if option.Label == "" || option.Description == "" {
+			t.Fatalf("第 %d 项缺少展示文案：%#v", index+1, option)
+		}
+		if option.Value == types.RotationStrategyFallback {
+			foundFallback = true
+		}
+	}
+	if !foundFallback {
+		t.Fatalf("策略清单必须包含 %q", types.RotationStrategyFallback)
+	}
+
+	// 清单是全局共用的事实：调用方改自己拿到的那份，不该影响下一份。
+	options[0].Label = "改过的文案"
+	if again := system.RotationStrategies(); again[0].Label == "改过的文案" {
+		t.Fatalf("策略清单必须返回副本")
+	}
+}

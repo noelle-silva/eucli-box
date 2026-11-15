@@ -261,6 +261,33 @@ type ToolResult struct {
 	CreatedAt           time.Time           `json:"createdAt"`
 }
 
+// ToolResultNoticeCancelled 是取消落定的统一收尾说明。
+// 取消只改状态并在正文末尾补这一句：工具在被中断前已经产出的内容必须原样保留，
+// 收尾说明永远追加在后面，不顶替任何产出。
+const ToolResultNoticeCancelled = "[已取消]"
+
+// ToolResultNoticeFailed 是失败落定的统一收尾标记。
+// 失败同样只能追加：已经跑出来的输出留在前面，失败原因跟在标记后面。
+const ToolResultNoticeFailed = "[执行失败]"
+
+// AppendToolContentNotice 把一条收尾说明追加到已产出内容的末尾。
+// 已产出内容原样保留（只去掉尾部换行），说明另起一段；
+// 没有产出内容时，正文就是这条说明本身。
+func AppendToolContentNotice(content string, notice string) string {
+	content = strings.TrimRight(content, "\r\n")
+	if strings.TrimSpace(content) == "" {
+		content = ""
+	}
+	notice = strings.TrimSpace(notice)
+	if notice == "" {
+		return content
+	}
+	if content == "" {
+		return notice
+	}
+	return content + "\n\n" + notice
+}
+
 type ToolConfirmation struct {
 	ID         string `json:"id"`
 	DecisionID string `json:"decisionId"`

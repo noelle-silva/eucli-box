@@ -519,14 +519,20 @@ func readyAsyncToolTasks(tasks []types.AsyncToolTask) []types.AsyncToolTask {
 	return ready
 }
 
+// asyncToolResultContent 把异步任务的结果整理成回灌文本。
+// 正文优先用工具结果自带的 Content：它已经包含工具跑出来的内容和收尾说明；
+// 结果没有正文时才退回任务错误摘要，绝不用摘要顶掉产出。
 func asyncToolResultContent(task types.AsyncToolTask) string {
 	status := "失败"
-	content := strings.TrimSpace(task.Error)
-	if task.Result != nil && task.Result.Status == types.ToolStatusSuccess {
-		status = "成功"
+	content := ""
+	if task.Result != nil {
+		if task.Result.Status == types.ToolStatusSuccess {
+			status = "成功"
+		}
 		content = strings.TrimSpace(task.Result.Content)
-	} else if task.Result != nil && content == "" {
-		content = strings.TrimSpace(task.Result.Content)
+	}
+	if content == "" {
+		content = strings.TrimSpace(task.Error)
 	}
 	return fmt.Sprintf("以下是异步任务 %s 的执行结果\n工具：%s\n状态：%s\n结果：%s", task.ID, asyncToolResultToolName(task), status, content)
 }

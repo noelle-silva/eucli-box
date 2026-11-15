@@ -67,7 +67,9 @@ func (s *system) ExecuteWithOutputUpdate(ctx context.Context, plan types.ToolRun
 	}
 	startedAt := time.Now()
 	capabilities := newCapabilitySession(plan, s.storage, s.messageSystem(), s.confirmationBridge())
+	live := &toolLiveOutput{}
 	outcome := s.executeToolProcess(ctx, plan.Tool.ID, plan.Executable, plan.Tool.BodyDirectory, input, capabilities, func(update types.ToolOutputUpdate) {
+		live.observe(update)
 		var relayed types.ToolOutputUpdate
 		relayed.CallID = plan.Action.ID
 		relayed.ToolName = plan.Action.ToolName
@@ -77,7 +79,7 @@ func (s *system) ExecuteWithOutputUpdate(ctx context.Context, plan types.ToolRun
 			onUpdate(relayed)
 		}
 	})
-	result := toolResultFromOutcome(plan, outcome)
+	result := toolResultFromOutcome(plan, outcome, live.previewSnapshot())
 	// 产出附件随结果返回：附件在写入时已由宿主校验与落盘，
 	// 即使本次执行随后失败，已完成的附件仍是有效产物。
 	result.ProducedAttachments = capabilities.attachments()
@@ -113,14 +115,18 @@ func (s *system) workspaceContextForTool(ctx context.Context, plan types.ToolRun
 
 // toolResultFromOutcome 把一次工具进程执行的真实终局翻译成统一的工具结果事实。
 // 它只翻译终局，不决定执行耗时——耗时由执行边界统一测量后写入。
-func toolResultFromOutcome(plan types.ToolRunPlan, outcome toolProcessOutcome) types.ToolResult {
+//
+// 所有终局共用同一份「已产出内容」：取消、失联、协议失败、进程异常退出，
+// 工具跑出来的东西都必须留在正文里，收尾说明只追加在后。
+func toolResultFromOutcome(plan types.ToolRunPlan, outcome toolProcessOutcome, producedPreview string) types.ToolResult {
+	produced := producedToolContent(outcome.Stdout, producedPreview)
 	switch outcome.FailureKind {
 	case "user_cancelled":
-		return toolCancelledResult(plan, "tool execution cancelled", outcome.FailureError)
+		return toolCancelledResult(plan, "tool execution cancelled", produced, outcome.FailureError)
 	case "tool_unresponsive":
-		return toolFailureResult(plan, protocolFailureMessage("tool execution became unresponsive", outcome.FailureError), outcome.FailureKind, outcome.FailureError)
+		return toolFailureResult(plan, protocolFailureMessage("tool execution became unresponsive", outcome.FailureError), produced, outcome.FailureKind, outcome.FailureError)
 	case "tool_protocol_failed":
-		return toolFailureResult(plan, protocolFailureMessage("tool control protocol failed", outcome.FailureError), outcome.FailureKind, outcome.FailureError)
+		return toolFailureResult(plan, protocolFailureMessage("tool control protocol failed", outcome.FailureError), produced, outcome.FailureKind, outcome.FailureError)
 	}
 	if outcome.ExitError != nil {
 		message := outcome.ExitError.Error()
@@ -130,12 +136,50 @@ func toolResultFromOutcome(plan types.ToolRunPlan, outcome toolProcessOutcome) t
 		if outcome.FailureError != nil {
 			message += ": " + outcome.FailureError.Error()
 		}
-		return failedResult(plan, message)
+		return failedResult(plan, message, produced)
 	}
 	if outcome.FailureError != nil {
-		return failedResult(plan, "tool process failed: "+outcome.FailureError.Error())
+		return failedResult(plan, "tool process failed: "+outcome.FailureError.Error(), produced)
 	}
-	return parseToolOutput(plan, outcome.Stdout)
+	return parseToolOutput(plan, outcome.Stdout, producedPreview)
+}
+
+// producedToolContent 还原工具在落定之前已经产出的内容。
+// 工具自己写出的完整成功输出最完整，优先用它；
+// 其次用实时尾窗；两者都没有时退回 stdout 原文，绝不让已有的输出凭空消失。
+func producedToolContent(stdout []byte, producedPreview string) string {
+	if content, settled := parsedOutputContent(stdout); settled {
+		return content
+	}
+	return rawOutputText(stdout, producedPreview)
+}
+
+// rawOutputText 是「工具写出的原始输出」的兜底文本：
+// 实时尾窗通常是人类可读的进度，优先；没有尾窗就用 stdout 原文。
+func rawOutputText(stdout []byte, producedPreview string) string {
+	if preview := strings.TrimSpace(producedPreview); preview != "" {
+		return preview
+	}
+	return strings.TrimSpace(string(stdout))
+}
+
+// parsedOutputContent 判断 stdout 是不是一份完整的工具输出。
+// 完整输出说明工具已经自己给出了终局：产出只可能是它携带的成功内容，
+// 其余状态没有「已产出内容」可言；解析不出来时 settled 为 false，
+// 交给调用方退回原始文本。
+func parsedOutputContent(stdout []byte) (string, bool) {
+	payload := bytes.TrimSpace(stdout)
+	if len(payload) == 0 {
+		return "", false
+	}
+	var output types.ToolExecutionOutput
+	if err := json.Unmarshal(payload, &output); err != nil {
+		return "", false
+	}
+	if output.Status != types.ToolStatusSuccess {
+		return "", true
+	}
+	return strings.TrimSpace(output.Content), true
 }
 
 // protocolFailureMessage 在协议层失败消息后附加可用的真实原因，
@@ -190,10 +234,13 @@ func validatePlan(plan types.ToolRunPlan) error {
 	return nil
 }
 
-func parseToolOutput(plan types.ToolRunPlan, raw []byte) types.ToolResult {
+// parseToolOutput 把工具的最终输出解释成结果事实。
+// 输出不成形时同样要保住已经写出来的东西：正文用实时尾窗或 stdout 原文兜底，
+// 不让一句「不是合法 JSON」把工具的输出抹掉。
+func parseToolOutput(plan types.ToolRunPlan, raw []byte, producedPreview string) types.ToolResult {
 	var output types.ToolExecutionOutput
 	if err := json.Unmarshal(bytes.TrimSpace(raw), &output); err != nil {
-		return failedResult(plan, "tool output is not valid json")
+		return failedResult(plan, "tool output is not valid json", rawOutputText(raw, producedPreview))
 	}
 	switch output.Status {
 	case types.ToolStatusSuccess:
@@ -205,6 +252,6 @@ func parseToolOutput(plan types.ToolRunPlan, raw []byte) types.ToolResult {
 		}
 		return types.ToolResult{ID: newToolResultID(), ActionID: plan.Action.ID, ToolName: plan.Action.ToolName, Status: output.Status, Content: output.Content, Metadata: output.Metadata, Error: errMsg, CreatedAt: time.Now().UTC()}
 	default:
-		return failedResult(plan, "tool output status is invalid")
+		return failedResult(plan, "tool output status is invalid", rawOutputText(raw, producedPreview))
 	}
 }

@@ -135,7 +135,7 @@ func settleRunUnfinishedToolParts(record *runRecord, state string, status types.
 			part.State = state
 			part.UpdatedAt = now
 			if part.Result == nil {
-				part.Result = &types.ToolPartResult{ID: utils.NewID("tool-result"), ActionID: strings.TrimSpace(part.CallID), ToolName: part.ToolName, Status: status, Error: strings.TrimSpace(reason), CreatedAt: now}
+				part.Result = &types.ToolPartResult{ID: utils.NewID("tool-result"), ActionID: strings.TrimSpace(part.CallID), ToolName: part.ToolName, Status: status, Content: settledToolContent(status), Error: strings.TrimSpace(reason), CreatedAt: now}
 			}
 			changed = true
 		}
@@ -158,6 +158,16 @@ func cancelRunToolParts(record *runRecord, reason string) bool {
 
 func failRunToolParts(record *runRecord, reason string) bool {
 	return settleRunUnfinishedToolParts(record, "error", types.ToolStatusFailed, reason)
+}
+
+// settledToolContent 是整轮收口时「工具还没有结果」的部件正文。
+// 收口不编造产出，但取消必须留下一句可读的收尾说明：
+// 前端展示优先取正文，正文空着就会退回内部原因，用户看到的会是一句英文报错。
+func settledToolContent(status types.ToolStatus) string {
+	if status == types.ToolStatusCancelled {
+		return types.AppendToolContentNotice("", types.ToolResultNoticeCancelled)
+	}
+	return ""
 }
 
 func isTerminalToolPartState(state string) bool {

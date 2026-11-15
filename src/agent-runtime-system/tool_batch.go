@@ -95,11 +95,28 @@ func (s *system) handleToolIntents(ctx context.Context, record *runRecord, conte
 		s.publishAssistantMessageUpdate(record)
 		return nil
 	})
+	// 取消时已经有确定结论的工具，结果就是它被中断前留下的产出事实：
+	// 先把它们写进部件，别让整轮收口用一个空结果盖掉已经跑出来的内容。
+	s.settleCancelledToolResults(record, executed.Cancelled)
 	if updateErr != nil {
 		return nil, updateErr
 	}
 
-	return orderedToolResults(entries, executed)
+	return orderedToolResults(entries, executed.Executed)
+}
+
+// settleCancelledToolResults 把取消瞬间已经落定的工具结果写进部件。
+// 这里不落盘：整轮的取消收口会统一保存会话，这里只负责让部件先拿到事实。
+func (s *system) settleCancelledToolResults(record *runRecord, settled []toolExecutionResult) {
+	if len(settled) == 0 {
+		return
+	}
+	record.sessionMu.Lock()
+	defer record.sessionMu.Unlock()
+	for _, result := range settled {
+		upsertRunToolPart(record, result.Entry.Action, toolResultPartState(result), &result.Entry.Plan.Decision, &result.Result)
+	}
+	_ = s.setRunMessageIDs(record.runID, record.inputMessageID, record.lastMessageID)
 }
 
 func (s *system) resolvePendingToolConfirmations(ctx context.Context, record *runRecord, contextSession *types.Session, entries []toolRunEntry) error {
@@ -141,7 +158,7 @@ func (s *system) markPendingToolsCancelled(record *runRecord, entries []toolRunE
 			continue
 		}
 		metadata := map[string]any{"cancelReason": "user_interrupted"}
-		result := types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: entry.Action.ID, ToolName: entry.Action.ToolName, Status: types.ToolStatusCancelled, Metadata: metadata, Error: err.Error(), CreatedAt: time.Now().UTC()}
+		result := types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: entry.Action.ID, ToolName: entry.Action.ToolName, Status: types.ToolStatusCancelled, Content: types.AppendToolContentNotice("", types.ToolResultNoticeCancelled), Metadata: metadata, Error: err.Error(), CreatedAt: time.Now().UTC()}
 		upsertRunToolPart(record, entry.Action, "cancelled", &entry.Plan.Decision, &result)
 	}
 }
@@ -170,9 +187,9 @@ func (s *system) applyPreparedToolPlan(record *runRecord, entry *toolRunEntry) {
 	}
 }
 
-func (s *system) executeReadyTools(ctx context.Context, record *runRecord, entries []toolRunEntry, onResult func(toolExecutionResult) error) ([]toolExecutionResult, error) {
+func (s *system) executeReadyTools(ctx context.Context, record *runRecord, entries []toolRunEntry, onResult func(toolExecutionResult) error) (toolExecutionBatch, error) {
 	if len(entries) == 0 {
-		return nil, nil
+		return toolExecutionBatch{}, nil
 	}
 	limit := s.config.MaxParallelTools
 	if limit > len(entries) {
@@ -203,10 +220,14 @@ func (s *system) executeReadyTools(ctx context.Context, record *runRecord, entri
 				s.publishToolOutputUpdate(outputContext, entry, update)
 			})
 			if cancellationErr, ok := toolExecutionCancelled(ctx, nil, err); ok {
-				resultCh <- toolExecutionResult{Entry: entry, Err: cancellationErr}
+				// 取消不改写已经拿到的结论：执行边界翻译出了什么状态就带什么状态回去，
+				// 要不要落定由批次层按「是否已有确定结论」决定。
+				resultCh <- toolExecutionResult{Entry: entry, Result: result, Err: cancellationErr}
 				return
 			}
-			if err != nil {
+			if err != nil && strings.TrimSpace(string(result.Status)) == "" {
+				// 只有执行边界没给出任何终局时才兜底造失败结果：
+				// 已经带状态的结果携带的是工具自己的事实，不能被这条兜底覆盖。
 				result = failedToolResult(entry.Action, err.Error())
 			}
 			resultCh <- toolExecutionResult{Entry: entry, Result: result, Err: err}
@@ -216,11 +237,14 @@ func (s *system) executeReadyTools(ctx context.Context, record *runRecord, entri
 		wg.Wait()
 		close(resultCh)
 	}()
-	results := make([]toolExecutionResult, 0, len(entries))
+	batch := toolExecutionBatch{Executed: make([]toolExecutionResult, 0, len(entries))}
 	var firstUpdateErr error
 	for result := range resultCh {
-		results = append(results, result)
+		batch.Executed = append(batch.Executed, result)
 		if isToolContextCancelled(result.Err) {
+			if hasSettledToolResult(result.Result) {
+				batch.Cancelled = append(batch.Cancelled, result)
+			}
 			if firstUpdateErr == nil {
 				firstUpdateErr = result.Err
 			}
@@ -233,7 +257,20 @@ func (s *system) executeReadyTools(ctx context.Context, record *runRecord, entri
 			firstUpdateErr = err
 		}
 	}
-	return results, firstUpdateErr
+	return batch, firstUpdateErr
+}
+
+// hasSettledToolResult 判定取消瞬间这次调用是否已经带有值得保留的结论。
+// 成功与被取消都是工具自己的终局事实，必须原样保留；
+// 失败只是取消过程的副作用（工具观察到父进程被终止后自行报错），
+// 由整轮收口按取消落定，不能记成一次工具失败。
+func hasSettledToolResult(result types.ToolResult) bool {
+	switch result.Status {
+	case types.ToolStatusSuccess, types.ToolStatusCancelled:
+		return true
+	default:
+		return false
+	}
 }
 
 func pendingConfirmationPlans(entries []toolRunEntry) []types.ToolRunPlan {
@@ -336,10 +373,10 @@ func toolExecutionResultByIndex(results []toolExecutionResult, index int) (toolE
 	return toolExecutionResult{}, false
 }
 
+// toolResultPartState 由结果自身给出的终局决定部件状态。
+// 错误只用来解释「没有终局」的情况：工具被取消时可能已经成功跑完，
+// 那时结果状态是 success，部件就必须留在已完成，不能被取消标成失败。
 func toolResultPartState(result toolExecutionResult) string {
-	if result.Err != nil {
-		return "error"
-	}
 	switch result.Result.Status {
 	case types.ToolStatusSuccess:
 		return "completed"
@@ -347,9 +384,10 @@ func toolResultPartState(result toolExecutionResult) string {
 		return "denied"
 	case types.ToolStatusCancelled:
 		return "cancelled"
-	default:
+	case types.ToolStatusFailed:
 		return "error"
 	}
+	return "error"
 }
 
 func deniedToolResult(action types.ToolAction, decision types.PermissionDecision) types.ToolResult {
@@ -427,4 +465,13 @@ type toolExecutionResult struct {
 	Entry  toolRunEntry
 	Result types.ToolResult
 	Err    error
+}
+
+// toolExecutionBatch 是一批工具执行的收集事实。
+// Executed 保留全部执行结果（含被取消的），供按调用顺序取回；
+// Cancelled 单独挑出「取消瞬间已经有确定结论」的那些——它们带着工具被中断前的产出，
+// 必须写进部件，不能留给整轮收口用一个空结果覆盖。
+type toolExecutionBatch struct {
+	Executed  []toolExecutionResult
+	Cancelled []toolExecutionResult
 }

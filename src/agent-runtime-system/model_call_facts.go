@@ -114,15 +114,20 @@ func runFactsTargetMessage(record *runRecord) *types.Message {
 	return &record.session.Messages[index]
 }
 
-// applyModelDuration 写入调用总耗时与各输出阶段跨度；没有时间事实时对应项保持原值。
+// applyModelDuration 写入调用总耗时、各输出阶段跨度与首字等待；
+// 各事实独立落账：总耗时缺失不影响已经发生的首字，没有时间事实的项保持原值。
 func applyModelDuration(message *types.Message, timing modelCallTiming) bool {
-	totalMs := timing.totalMs()
-	if totalMs <= 0 {
-		return false
+	applied := false
+	if totalMs := timing.totalMs(); totalMs > 0 {
+		message.ModelDurationMs = totalMs
+		applyModelPartDurations(message, timing)
+		applied = true
 	}
-	message.ModelDurationMs = totalMs
-	applyModelPartDurations(message, timing)
-	return true
+	if firstTokenMs := timing.firstTokenMs(); firstTokenMs > 0 {
+		message.FirstTokenMs = firstTokenMs
+		applied = true
+	}
+	return applied
 }
 
 func applyModelPartDurations(message *types.Message, timing modelCallTiming) {

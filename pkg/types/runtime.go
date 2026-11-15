@@ -43,6 +43,9 @@ type Message struct {
 	Reason          string `json:"reason,omitempty"`
 	TokenEstimate   int    `json:"tokenEstimate,omitempty"`
 	ModelDurationMs int64  `json:"modelDurationMs,omitempty"`
+	// FirstTokenMs 是本条回复那次模型调用从发起到首个真实增量到达的等待时长；
+	// 思考与正文增量都算首字，谁先到就是谁。非流式或本次调用没有产生增量时为零，不推算。
+	FirstTokenMs int64 `json:"firstTokenMs,omitempty"`
 	// CacheRate 是本条回复对应那次模型调用的缓存率真值；上游没有缓存数据时为空，不推算。
 	CacheRate *float64 `json:"cacheRate,omitempty"`
 	// ContextTokens 是「到这条消息为止的上下文规模」真值，两种角色都是同一个口径：

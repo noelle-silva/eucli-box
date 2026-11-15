@@ -650,6 +650,7 @@ func TestRunRecordsModelTimingForStreamingReply(t *testing.T) {
 	fakes := newRuntimeFakes()
 	const gap = 30 * time.Millisecond
 	fakes.provider.streamEventGap = gap
+	fakes.provider.streamFirstEventDelay = gap
 	fakes.provider.streamEvents = []types.ModelStreamEvent{
 		{Type: types.ModelStreamEventReasoningDelta, ReasoningDelta: "想", Reasoning: "想", CreatedAt: time.Now().UTC()},
 		{Type: types.ModelStreamEventReasoningDelta, ReasoningDelta: "法", Reasoning: "想法", CreatedAt: time.Now().UTC()},
@@ -675,6 +676,10 @@ func TestRunRecordsModelTimingForStreamingReply(t *testing.T) {
 	if message.ModelDurationMs < gapMs {
 		t.Fatalf("modelDurationMs = %d, want >= %d", message.ModelDurationMs, gapMs)
 	}
+	// 首字 = 调用开始到首个真实增量（这里是首个思考增量）到达的等待。
+	if message.FirstTokenMs < gapMs/2 || message.FirstTokenMs > message.ModelDurationMs {
+		t.Fatalf("firstTokenMs = %d, want between %d and %d", message.FirstTokenMs, gapMs/2, message.ModelDurationMs)
+	}
 	reasoning := reasoningPartByType(message)
 	if reasoning == nil || reasoning.DurationMs < gapMs/2 {
 		t.Fatalf("reasoning duration = %#v, want >= %d", reasoning, gapMs/2)
@@ -685,6 +690,34 @@ func TestRunRecordsModelTimingForStreamingReply(t *testing.T) {
 	}
 	if message.ModelDurationMs < reasoning.DurationMs || message.ModelDurationMs < text.DurationMs {
 		t.Fatalf("model duration %d should not be less than reasoning %d / text %d", message.ModelDurationMs, reasoning.DurationMs, text.DurationMs)
+	}
+}
+
+func TestRunRecordsFirstTokenFromContentWithoutReasoning(t *testing.T) {
+	fakes := newRuntimeFakes()
+	const gap = 30 * time.Millisecond
+	fakes.provider.streamEventGap = gap
+	fakes.provider.streamFirstEventDelay = gap
+	fakes.provider.streamEvents = []types.ModelStreamEvent{
+		{Type: types.ModelStreamEventContentDelta, ContentDelta: "你", Content: "你", CreatedAt: time.Now().UTC()},
+		{Type: types.ModelStreamEventContentDelta, ContentDelta: "好", Content: "你好", CreatedAt: time.Now().UTC()},
+	}
+	fakes.provider.streamResponse = types.ModelResponse{ID: "stream-content-first", Content: "你好"}
+	system := newTestRuntime(t, fakes, Config{})
+	state, err := system.StartRun(context.Background(), types.RunRequest{RoleID: "developer", Message: "hi", Stream: types.BoolPtr(true)})
+	if err != nil {
+		t.Fatalf("StartRun() error = %v", err)
+	}
+	final := waitRun(t, system, state.ID)
+	if final.Status != types.RunStatusCompleted {
+		t.Fatalf("final = %#v", final)
+	}
+	session := fakes.storage.lastSession()
+	message := session.Messages[len(session.Messages)-1]
+	gapMs := int64(gap / time.Millisecond)
+	// 没有思考增量时，正文的首个增量就是首字。
+	if message.FirstTokenMs < gapMs/2 || message.FirstTokenMs > message.ModelDurationMs {
+		t.Fatalf("firstTokenMs = %d, want between %d and %d", message.FirstTokenMs, gapMs/2, message.ModelDurationMs)
 	}
 }
 
@@ -706,6 +739,10 @@ func TestRunRecordsModelDurationForNonStreamingReply(t *testing.T) {
 	message := session.Messages[len(session.Messages)-1]
 	if message.ModelDurationMs < int64(delay/time.Millisecond)/2 {
 		t.Fatalf("modelDurationMs = %d, want >= %d", message.ModelDurationMs, int64(delay/time.Millisecond)/2)
+	}
+	// 非流式没有增量到达的时刻，首字留空，不拿总耗时冒充。
+	if message.FirstTokenMs != 0 {
+		t.Fatalf("non-streaming firstTokenMs = %d, want 0", message.FirstTokenMs)
 	}
 	// 非流式没有可依据的阶段跨度：思考与正文部件即使存在，耗时也保持为空。
 	if reasoning := reasoningPartByType(message); reasoning != nil && reasoning.DurationMs != 0 {
@@ -3923,24 +3960,25 @@ func fakeRuntimeNativeTools(tools []types.ToolDefinition, names []string) []type
 }
 
 type fakeRuntimeProvider struct {
-	mu                  sync.Mutex
-	responses           []types.ModelResponse
-	errors              []error
-	streamEvents        []types.ModelStreamEvent
-	streamEventsBatches [][]types.ModelStreamEvent
-	streamResponse      types.ModelResponse
-	streamResponses     []types.ModelResponse
-	streamErrors        []error
-	streamPostErrors    []error
-	callBlocks          []chan struct{}
-	alwaysTool          bool
-	completeDelay       time.Duration
-	streamEventGap      time.Duration
-	calls               int
-	requests            []types.ModelRequest
-	block               chan struct{}
-	err                 error
-	panicValue          any
+	mu                    sync.Mutex
+	responses             []types.ModelResponse
+	errors                []error
+	streamEvents          []types.ModelStreamEvent
+	streamEventsBatches   [][]types.ModelStreamEvent
+	streamResponse        types.ModelResponse
+	streamResponses       []types.ModelResponse
+	streamErrors          []error
+	streamPostErrors      []error
+	callBlocks            []chan struct{}
+	alwaysTool            bool
+	completeDelay         time.Duration
+	streamEventGap        time.Duration
+	streamFirstEventDelay time.Duration
+	calls                 int
+	requests              []types.ModelRequest
+	block                 chan struct{}
+	err                   error
+	panicValue            any
 }
 
 func (f *fakeRuntimeProvider) Complete(ctx context.Context, request types.ModelRequest) (types.ModelResponse, error) {
@@ -4043,6 +4081,7 @@ func (f *fakeRuntimeProvider) CompleteStream(ctx context.Context, request types.
 		f.streamPostErrors = f.streamPostErrors[1:]
 	}
 	eventGap := f.streamEventGap
+	firstEventDelay := f.streamFirstEventDelay
 	response := f.streamResponse
 	if len(f.streamResponses) > 0 {
 		response = f.streamResponses[0]
@@ -4052,6 +4091,13 @@ func (f *fakeRuntimeProvider) CompleteStream(ctx context.Context, request types.
 		response = types.ModelResponse{ID: "default-stream", Content: "done"}
 	}
 	f.mu.Unlock()
+	if len(events) > 0 && firstEventDelay > 0 {
+		select {
+		case <-time.After(firstEventDelay):
+		case <-ctx.Done():
+			return types.ModelResponse{}, ctx.Err()
+		}
+	}
 	for index, event := range events {
 		if index > 0 && eventGap > 0 {
 			select {

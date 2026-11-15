@@ -11,7 +11,9 @@ import (
 
 // scriptedSession 按脚本回应两类能力：发送消息按序取结果，转呈确认固定一个结论。
 type scriptedSession struct {
+	reportRecorder
 	messageResults     []toolcontrol.CapabilityResult
+	messageErr         []error
 	messageIndex       int
 	messageCalls       []types.ToolMessageRequest
 	confirmationResult toolcontrol.CapabilityResult
@@ -22,12 +24,15 @@ func (s *scriptedSession) Request(_ context.Context, capability string, access s
 	switch capability {
 	case types.ToolCapabilitySessionMessage:
 		s.messageCalls = append(s.messageCalls, payload.(types.ToolMessageRequest))
-		if s.messageIndex >= len(s.messageResults) {
+		index := s.messageIndex
+		if index >= len(s.messageResults) {
 			return toolcontrol.CapabilityResult{Status: toolcontrol.CapabilityStatusFailed, Error: "脚本里没有更多发送结果"}, nil
 		}
-		result := s.messageResults[s.messageIndex]
 		s.messageIndex++
-		return result, nil
+		if index < len(s.messageErr) && s.messageErr[index] != nil {
+			return toolcontrol.CapabilityResult{}, s.messageErr[index]
+		}
+		return s.messageResults[index], nil
 	case types.ToolCapabilityToolConfirmation:
 		s.confirmationCalls = append(s.confirmationCalls, payload.(types.ToolConfirmationFact))
 		return s.confirmationResult, nil

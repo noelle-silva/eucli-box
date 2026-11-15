@@ -254,10 +254,17 @@ type ToolMessageRequest struct {
 	ResumeRunID string `json:"resumeRunId,omitempty"`
 }
 
-// ToolMessageStatus 是发送会话消息的结果状态：
-// 角色已经答复，或者角色那边卡在一件需要用户点头的事上。
+// ToolMessageStatus 是发送会话消息的结果状态，按时间顺序分两种时相：
+//   - 受理时相：accepted 表示消息已经落进目标会话并起跑，会话身份此刻就已确定，
+//     工具据此立刻拿到会话标识，不必等角色把话说完；
+//   - 落定时相：replied 表示角色已经停下并给出答复，failed 表示这次运行没能跑完，
+//     confirmation_required 表示角色卡在一件需要用户点头的事上。
+//
+// failed 与 confirmation_required 都属于「会话已经建立」，因此同样带着会话身份。
 const (
+	ToolMessageStatusAccepted             = "accepted"
 	ToolMessageStatusReplied              = "replied"
+	ToolMessageStatusFailed               = "failed"
 	ToolMessageStatusConfirmationRequired = "confirmation_required"
 )
 
@@ -273,15 +280,21 @@ type ToolConfirmationFact struct {
 }
 
 // ToolMessageResult 是发送会话消息的响应：状态决定其余字段的含义。
+//   - accepted：带回会话身份与运行标识，消息字段留空；
 //   - replied：带回角色停下后最新的一条消息；
+//   - failed：带回会话身份与运行标识，原因放在 Error；
 //   - confirmation_required：带回待确认的决策事实，消息字段留空。
+//
+// 除「消息还没送进会话」这一种情况外，会话身份一律非空，
+// 让调用方在任何结局下都能凭它回去料理这个会话。
 type ToolMessageResult struct {
-	Status       string                   `json:"status"`
-	RunID        string                   `json:"runId,omitempty"`
-	SessionID    string                   `json:"sessionId"`
-	MessageID    string                   `json:"messageId,omitempty"`
-	RoleID       string                   `json:"roleId"`
-	Message      string                   `json:"message,omitempty"`
+	Status       string                `json:"status"`
+	RunID        string                `json:"runId,omitempty"`
+	SessionID    string                `json:"sessionId"`
+	MessageID    string                `json:"messageId,omitempty"`
+	RoleID       string                `json:"roleId"`
+	Message      string                `json:"message,omitempty"`
+	Error        string                `json:"error,omitempty"`
 	Confirmation *ToolConfirmationFact `json:"confirmation,omitempty"`
 }
 

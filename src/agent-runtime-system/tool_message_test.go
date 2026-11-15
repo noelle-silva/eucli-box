@@ -2,6 +2,7 @@ package agentruntime
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"eucli-box/pkg/types"
@@ -73,10 +74,10 @@ func TestResumeRunMustBelongToSameRole(t *testing.T) {
 	system := &system{runs: map[string]*runRecord{
 		"run-2": {runID: "run-2", state: types.RunState{ID: "run-2", RoleID: "role-b", SessionID: "session-2", Status: types.RunStatusRunning}},
 	}}
-	if _, err := system.toolMessageRunToWatch(context.Background(), types.ToolMessageRequest{RoleID: "role-x", ResumeRunID: "run-2"}, "role-x", "", "", "run-2"); err == nil {
+	if _, err := system.resumeToolMessageRun("run-2", "role-x"); err == nil {
 		t.Fatal("resume across roles must be rejected")
 	}
-	state, err := system.toolMessageRunToWatch(context.Background(), types.ToolMessageRequest{RoleID: "role-b", ResumeRunID: "run-2"}, "role-b", "", "", "run-2")
+	state, err := system.resumeToolMessageRun("run-2", "role-b")
 	if err != nil {
 		t.Fatalf("resume same role error = %v", err)
 	}
@@ -88,7 +89,38 @@ func TestResumeRunMustBelongToSameRole(t *testing.T) {
 // TestResumeMissingRunFailsLoudly 验证续等找不到运行时不静默返回空结果。
 func TestResumeMissingRunFailsLoudly(t *testing.T) {
 	system := &system{runs: map[string]*runRecord{}}
-	if _, err := system.toolMessageRunToWatch(context.Background(), types.ToolMessageRequest{RoleID: "role-b", ResumeRunID: "run-gone"}, "role-b", "", "", "run-gone"); err == nil {
+	if _, err := system.resumeToolMessageRun("run-gone", "role-b"); err == nil {
 		t.Fatal("missing run must fail loudly")
+	}
+}
+
+// TestFailedToolMessageKeepsSessionIdentity 钉住「会话已建立就不许丢身份」：
+// 运行失败时必须把会话标识与运行标识原样带回，原因另放一处，
+// 让调用方在任何结局下都能回到那个会话。
+func TestFailedToolMessageKeepsSessionIdentity(t *testing.T) {
+	result := failedToolMessage(types.RunState{ID: "run-1", SessionID: "session-1"}, "role-b", "供应商连接断开")
+	if result.Status != types.ToolMessageStatusFailed {
+		t.Fatalf("status = %q, want %q", result.Status, types.ToolMessageStatusFailed)
+	}
+	if result.SessionID != "session-1" {
+		t.Fatalf("failed result must keep the session identity, got %#v", result)
+	}
+	if result.RunID != "run-1" {
+		t.Fatalf("failed result must keep the run identity, got %#v", result)
+	}
+	if result.RoleID != "role-b" {
+		t.Fatalf("failed result must keep the role identity, got %#v", result)
+	}
+	if result.Error != "供应商连接断开" {
+		t.Fatalf("failure reason = %q", result.Error)
+	}
+}
+
+// TestFailedToolMessageAlwaysHasReason 验证失败结果不会交出空白原因：
+// 没有原因时给一句可读的落定说明，界面与模型都不必猜。
+func TestFailedToolMessageAlwaysHasReason(t *testing.T) {
+	result := failedToolMessage(types.RunState{ID: "run-1", SessionID: "session-1"}, "role-b", "   ")
+	if strings.TrimSpace(result.Error) == "" {
+		t.Fatalf("failed result must carry a reason, got %#v", result)
 	}
 }

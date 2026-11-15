@@ -10,8 +10,21 @@ import (
 	"eucli-box/tools/subagent/internal/types"
 )
 
+// reportRecorder 记录工具走实时通道报过什么。
+// 会话身份应当在会话建立的那一刻就出现在这里，而不是等整份结果写完。
+type reportRecorder struct {
+	reports []string
+	err     error
+}
+
+func (r *reportRecorder) Report(preview string) error {
+	r.reports = append(r.reports, preview)
+	return r.err
+}
+
 // fakeSession 是会话能力服务的测试替身：记录转发的请求并按设定应答。
 type fakeSession struct {
+	reportRecorder
 	request types.ToolMessageRequest
 	result  toolcontrol.CapabilityResult
 	err     error

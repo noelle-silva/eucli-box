@@ -11,6 +11,7 @@ import (
 
 // directorySession 记录名册请求的载荷，并按设定应答。
 type directorySession struct {
+	reportRecorder
 	request types.ToolRoleDirectoryRequest
 	payload types.ToolRoleDirectoryResult
 }

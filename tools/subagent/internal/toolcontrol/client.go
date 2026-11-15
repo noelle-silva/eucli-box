@@ -21,6 +21,10 @@ type Client struct {
 
 	pendingMu sync.Mutex
 	pending   map[string]chan Message
+
+	reportMu   sync.Mutex
+	reportSeq  uint64
+	reportSize uint64
 }
 
 func Connect(ctx context.Context, address string, token string) (*Client, error) {
@@ -126,6 +130,29 @@ func (c *Client) Request(ctx context.Context, capability string, access string, 
 	case <-c.done:
 		return CapabilityResult{}, errors.New("tool control client is closed")
 	}
+}
+
+// Report 把一段实时进度交给宿主：控制通道上的单向消息，
+// 序列号在这里自增，业务侧只说「要报这一段」。
+// 宿主把它转成界面上的过程进展；工具意外终止时，最后一份尾窗
+// 会成为「已经产出过什么」的证据留在结果里。
+func (c *Client) Report(preview string) error {
+	if c == nil || c.conn == nil || c.encoder == nil {
+		return errors.New("tool control client is closed")
+	}
+	c.reportMu.Lock()
+	c.reportSeq++
+	sequence := c.reportSeq
+	c.reportSize += uint64(len(preview))
+	total := c.reportSize
+	c.reportMu.Unlock()
+	return c.write(Message{
+		Version:  ProtocolVersion,
+		Type:     MessageOutputUpdate,
+		Token:    c.token,
+		Sequence: sequence,
+		Update:   &OutputUpdate{Bytes: total, Preview: preview},
+	})
 }
 
 // dispatchCapabilityResponse 把宿主的能力响应交给等待中的请求；

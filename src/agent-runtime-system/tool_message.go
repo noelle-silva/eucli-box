@@ -11,11 +11,15 @@ import (
 // 发布方与消费方共用这一个常量，避免两处字面量漂移。
 const toolConfirmationRequiredEventType = "tool_confirmation_required"
 
-// DeliverToolMessage 是「发送会话消息」能力的实现：
-// 它把请求交给日常发送消息的同一入口起跑，等这条运行自己停下，
-// 再把角色最新一条消息原样交给工具。等待期间不设超时，
-// 故障失联由工具控制的看门狗判定。
-// 带上续等标识时不再发新消息，只接着等那条运行——转呈确认之后用它续等。
+// DeliverToolMessage 是「发送会话消息」能力的实现，分两趟交付：
+//
+//   - 受理趟（不带续等标识）：把消息交给日常发送入口起跑，会话身份在起跑那一刻
+//     就已落定，于是当场把它交回工具，绝不等角色把话说完；
+//   - 续等趟（带续等标识）：接上同一条运行等它停下，再取回角色最新一条消息。
+//
+// 会话一旦建立，任何结局都必须带着会话身份回传：取消、失败、找不到回传消息
+// 全都走结果状态，不再用错误把已经成立的会话身份一起丢掉。
+// 错误只表示「消息还没送进会话」——参数不合法、角色不存在、起跑失败。
 func (s *system) DeliverToolMessage(ctx context.Context, request types.ToolMessageRequest) (types.ToolMessageResult, error) {
 	roleID := strings.TrimSpace(request.RoleID)
 	workspaceID := strings.TrimSpace(request.WorkspaceID)
@@ -27,8 +31,45 @@ func (s *system) DeliverToolMessage(ctx context.Context, request types.ToolMessa
 	if message == "" && resumeRunID == "" {
 		return types.ToolMessageResult{}, runtimeInvalid("message is required", nil)
 	}
-	// 订阅先于起跑：运行可能在起跑函数返回前就已落定终态，
-	// 先订阅才不会漏掉那一条终态事件。
+	if resumeRunID != "" {
+		return s.awaitToolMessageRun(ctx, request, roleID, workspaceID)
+	}
+	return s.startToolMessageRun(ctx, roleID, workspaceID, message, strings.TrimSpace(request.SessionID))
+}
+
+// startToolMessageRun 起跑一条会话消息，并把刚建立的会话身份当场交回工具。
+//
+// StartRun 返回的是起跑前的快照：会话是在 startRun 内部创建并写进运行记录的，
+// 所以这里重新取一次快照，回执里的会话标识才是真的。
+func (s *system) startToolMessageRun(ctx context.Context, roleID string, workspaceID string, message string, sessionID string) (types.ToolMessageResult, error) {
+	state, err := s.StartRun(ctx, types.RunRequest{
+		RoleID:      roleID,
+		WorkspaceID: workspaceID,
+		SessionID:   sessionID,
+		Message:     message,
+	})
+	if err != nil {
+		return types.ToolMessageResult{}, err
+	}
+	if fresh, ok := s.getRunState(state.ID); ok {
+		state = fresh
+	}
+	sessionID = strings.TrimSpace(state.SessionID)
+	if sessionID == "" {
+		return types.ToolMessageResult{}, runtimeStateInvalid("运行没有会话身份", nil)
+	}
+	return types.ToolMessageResult{
+		Status:    types.ToolMessageStatusAccepted,
+		RunID:     state.ID,
+		SessionID: sessionID,
+		RoleID:    roleID,
+	}, nil
+}
+
+// awaitToolMessageRun 接上既有运行等它停下，把终局落成结果。
+// 会话此刻一定已经建立，因此每一条路径都带着会话身份返回。
+func (s *system) awaitToolMessageRun(ctx context.Context, request types.ToolMessageRequest, roleID string, workspaceID string) (types.ToolMessageResult, error) {
+	// 订阅先于定位：运行可能在定位返回前就已落定终态，先订阅才不会漏掉那一条。
 	subscriptionCtx, stopSubscription := context.WithCancel(context.Background())
 	defer stopSubscription()
 	events, unsubscribe, err := s.Subscribe(subscriptionCtx)
@@ -37,13 +78,16 @@ func (s *system) DeliverToolMessage(ctx context.Context, request types.ToolMessa
 	}
 	defer unsubscribe()
 
-	state, err := s.toolMessageRunToWatch(ctx, request, roleID, workspaceID, message, resumeRunID)
+	state, err := s.resumeToolMessageRun(strings.TrimSpace(request.ResumeRunID), roleID)
 	if err != nil {
 		return types.ToolMessageResult{}, err
 	}
+	if strings.TrimSpace(state.SessionID) == "" {
+		return types.ToolMessageResult{}, runtimeStateInvalid("运行没有会话身份", nil)
+	}
 	terminal, stopped, confirmation, err := s.waitToolMessageRun(ctx, state, events)
 	if err != nil {
-		return types.ToolMessageResult{}, err
+		return failedToolMessage(terminal, roleID, err.Error()), nil
 	}
 	if confirmation != nil {
 		return types.ToolMessageResult{
@@ -55,18 +99,18 @@ func (s *system) DeliverToolMessage(ctx context.Context, request types.ToolMessa
 		}, nil
 	}
 	if stopped || terminal.Status == types.RunStatusCancelled {
-		return types.ToolMessageResult{}, runtimeStateInvalid("会话消息已取消", nil)
+		return failedToolMessage(terminal, roleID, "会话消息已取消"), nil
 	}
 	if terminal.Status != types.RunStatusCompleted {
-		return types.ToolMessageResult{}, runtimeStateInvalid(toolMessageFailureReason(terminal), nil)
+		return failedToolMessage(terminal, roleID, toolMessageFailureReason(terminal)), nil
 	}
 	messageID := s.runFinalMessageID(terminal.ID)
 	if messageID == "" {
-		return types.ToolMessageResult{}, runtimeStateInvalid("运行没有产出可回传的消息", nil)
+		return failedToolMessage(terminal, roleID, "运行没有产出可回传的消息"), nil
 	}
 	session, err := s.loadToolMessageSession(ctx, workspaceID, roleID, terminal.SessionID)
 	if err != nil {
-		return types.ToolMessageResult{}, err
+		return failedToolMessage(terminal, roleID, err.Error()), nil
 	}
 	for _, item := range session.Messages {
 		if item.ID == messageID {
@@ -80,20 +124,27 @@ func (s *system) DeliverToolMessage(ctx context.Context, request types.ToolMessa
 			}, nil
 		}
 	}
-	return types.ToolMessageResult{}, runtimeStateInvalid("会话中没有找到本次运行的最后一条消息", nil)
+	return failedToolMessage(terminal, roleID, "会话中没有找到本次运行的最后一条消息"), nil
 }
 
-// toolMessageRunToWatch 决定这次要观察哪条运行：新请求就照日常入口起跑，
-// 续等请求则只认既有运行，不发新消息、也不另起会话。
-func (s *system) toolMessageRunToWatch(ctx context.Context, request types.ToolMessageRequest, roleID string, workspaceID string, message string, resumeRunID string) (types.RunState, error) {
-	if resumeRunID == "" {
-		return s.StartRun(ctx, types.RunRequest{
-			RoleID:      roleID,
-			WorkspaceID: workspaceID,
-			SessionID:   strings.TrimSpace(request.SessionID),
-			Message:     message,
-		})
+// failedToolMessage 落定一次没能跑完的会话消息：状态是失败，会话身份原样带回。
+// 外部原因放在 Error，与「消息根本没送进会话」的通道错误区分开。
+func failedToolMessage(state types.RunState, roleID string, reason string) types.ToolMessageResult {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "会话消息运行失败"
 	}
+	return types.ToolMessageResult{
+		Status:    types.ToolMessageStatusFailed,
+		RunID:     state.ID,
+		SessionID: strings.TrimSpace(state.SessionID),
+		RoleID:    roleID,
+		Error:     reason,
+	}
+}
+
+// resumeToolMessageRun 只认既有运行：续等不再发新消息、也不另起会话。
+func (s *system) resumeToolMessageRun(resumeRunID string, roleID string) (types.RunState, error) {
 	state, ok := s.getRunState(resumeRunID)
 	if !ok {
 		return types.RunState{}, runtimeNotFound("run to resume was not found", nil)

@@ -21,6 +21,7 @@ const (
 	MessageReady              = "ready"
 	MessagePing               = "ping"
 	MessagePong               = "pong"
+	MessageOutputUpdate       = "output_update"
 	MessageCapabilityRequest  = "capability_request"
 	MessageCapabilityResponse = "capability_response"
 )

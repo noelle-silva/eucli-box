@@ -14,8 +14,13 @@ import (
 
 // SessionService 是工具访问宿主能力的窄接口：由控制通道客户端实现；
 // 独立运行（无宿主控制通道）时为 nil，需要宿主的能力动作明确失败。
+//
+// 同一个对象有两个出口：Request 走能力请求，等宿主回执；
+// Report 走实时进度，单向、不等回执。会话身份一落定就走 Report 亮出去，
+// 不必等整份结果写完——工具被中途掐断时，那一行仍会留在界面上。
 type SessionService interface {
 	Request(ctx context.Context, capability string, access string, payload any) (toolcontrol.CapabilityResult, error)
+	Report(preview string) error
 }
 
 // 动作名：发送消息是默认动作，列出角色是第二个动作。
@@ -67,19 +72,8 @@ func stringValue(value any) string {
 	return text
 }
 
+// failure 落定「消息还没送进会话」这一类失败：此时没有会话身份可交代，
+// 正文只有原因。会话已经建立的失败走 failedOutput，那里会话身份必带。
 func failure(message string, err error, metadata map[string]any) types.ToolExecutionOutput {
-	errorMessage := message
-	if err != nil {
-		errorMessage = message + ": " + err.Error()
-	}
-	if metadata == nil {
-		metadata = map[string]any{}
-	}
-	metadata["error"] = errorMessage
-	return types.ToolExecutionOutput{
-		Status:   types.ToolStatusFailed,
-		Content:  errorMessage,
-		Error:    errorMessage,
-		Metadata: metadata,
-	}
+	return failedOutput("", "", message, err, metadata)
 }

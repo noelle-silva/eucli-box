@@ -10,10 +10,11 @@ import (
 	"eucli-box/tools/subagent/internal/types"
 )
 
-// executeSend 把一个发送意图交给宿主：发送、等待角色停下、取回最新回复
-// 全部由宿主按其日常发送口径完成。
-// 目标角色若卡在待确认上，就把那张审批单在本次调用里抛给宿主，
-// 拿到裁决后接着等这条运行的结果，直到它真正停下。
+// executeSend 把一条发送意图交给宿主，按「先拿回执、再等答复」两趟走完。
+//
+// 第一趟只负责把消息送进目标会话：宿主一旦起跑，会话身份就已经落定，
+// 于是立刻把它交回来。工具拿到会话身份先走实时通道亮出去，再去等角色把话说完——
+// 这样无论后面是顺利答复、报错还是被中途掐断，调用方手里都已经有会话标识。
 func executeSend(ctx context.Context, input types.ToolExecutionInput, session SessionService) types.ToolExecutionOutput {
 	request, err := parseSendRequest(input.Arguments, input.WorkspaceID)
 	if err != nil {
@@ -23,29 +24,61 @@ func executeSend(ctx context.Context, input types.ToolExecutionInput, session Se
 		return failure("当前没有宿主控制通道，无法发送会话消息", nil, nil)
 	}
 	answer, err := requestMessage(ctx, session, request)
-	for err == nil && answer.Status == types.ToolMessageStatusConfirmationRequired {
-		next, relayErr := settleConfirmationAndResume(ctx, session, request, answer)
-		if relayErr != nil {
-			return failure("目标角色等待确认，无法继续", relayErr, map[string]any{"sessionId": answer.SessionID})
-		}
-		answer, err = next, nil
-	}
 	if err != nil {
 		return failure("发送会话消息失败", err, nil)
 	}
-	if answer.Status != types.ToolMessageStatusReplied {
-		return failure("目标角色未能给出答复", nil, map[string]any{"status": answer.Status, "sessionId": answer.SessionID})
+	sessionID := strings.TrimSpace(answer.SessionID)
+	if sessionID == "" {
+		return failure("宿主没有交回会话身份", nil, nil)
 	}
-	content := fmt.Sprintf("角色 %s 已回复（会话 %s，消息 %s）：\n%s", answer.RoleID, answer.SessionID, answer.MessageID, answer.Message)
-	return types.ToolExecutionOutput{
-		Status:  types.ToolStatusSuccess,
-		Content: content,
-		Metadata: map[string]any{
-			"roleId":    answer.RoleID,
-			"sessionId": answer.SessionID,
-			"messageId": answer.MessageID,
-			"message":   answer.Message,
-		},
+	// 会话已经建立：先把身份亮出去，再去等下文。
+	// 上报是尽力而为：它失败不影响这次发送，但原因如实留在结果里。
+	reportErr := session.Report(sessionHeader(sessionID))
+	return settleSend(ctx, session, request, answer, reportErr)
+}
+
+// settleSend 把一次已经受理的发送推到终局：接着等答复，途中转呈确认。
+//
+// 契约：accepted 只会出现在受理趟，续等趟一定落定成 replied、
+// failed 或 confirmation_required，因此这里的循环不会原地打转。
+// 会话此刻已经建立，所以每一条出口都带着会话身份。
+func settleSend(ctx context.Context, session SessionService, request types.ToolMessageRequest, answer types.ToolMessageResult, reportErr error) types.ToolExecutionOutput {
+	sessionID := strings.TrimSpace(answer.SessionID)
+	roleID := strings.TrimSpace(answer.RoleID)
+	extra := map[string]any{}
+	if reportErr != nil {
+		extra["reportError"] = reportErr.Error()
+	}
+	var err error
+	for {
+		switch answer.Status {
+		case types.ToolMessageStatusAccepted:
+			answer, err = requestMessage(ctx, session, resumeRequest(request, answer))
+		case types.ToolMessageStatusConfirmationRequired:
+			answer, err = settleConfirmationAndResume(ctx, session, request, answer)
+		case types.ToolMessageStatusReplied:
+			return successOutput(answer, extra)
+		case types.ToolMessageStatusFailed:
+			return failedOutput(sessionID, roleID, "目标角色未能给出答复", errors.New(answer.Error), extra)
+		default:
+			return failedOutput(sessionID, roleID, "宿主返回了无法识别的结果状态", fmt.Errorf("status=%s", answer.Status), extra)
+		}
+		if err != nil {
+			return failedOutput(sessionID, roleID, "发送会话消息失败", err, extra)
+		}
+		if next := strings.TrimSpace(answer.SessionID); next != "" {
+			sessionID = next
+		}
+	}
+}
+
+// resumeRequest 是受理回执之后的那一趟：不再发新消息，只接上同一条运行等它停下。
+func resumeRequest(request types.ToolMessageRequest, answer types.ToolMessageResult) types.ToolMessageRequest {
+	return types.ToolMessageRequest{
+		RoleID:      request.RoleID,
+		WorkspaceID: request.WorkspaceID,
+		SessionID:   strings.TrimSpace(answer.SessionID),
+		ResumeRunID: strings.TrimSpace(answer.RunID),
 	}
 }
 

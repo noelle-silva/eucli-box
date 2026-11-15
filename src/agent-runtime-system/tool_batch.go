@@ -158,7 +158,7 @@ func (s *system) markPendingToolsCancelled(record *runRecord, entries []toolRunE
 			continue
 		}
 		metadata := map[string]any{"cancelReason": "user_interrupted"}
-		result := types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: entry.Action.ID, ToolName: entry.Action.ToolName, Status: types.ToolStatusCancelled, Content: types.AppendToolExecutionMarker("", types.ToolStatusCancelled, types.ToolExecutionNoticeCancelled), Metadata: metadata, Error: err.Error(), CreatedAt: time.Now().UTC()}
+		result := types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: entry.Action.ID, ToolName: entry.Action.ToolName, Status: types.ToolStatusCancelled, Content: types.AppendToolExecutionMarker("", string(types.ToolStatusCancelled), types.ToolExecutionNoticeCancelledDuringConfirmation), Metadata: metadata, Error: err.Error(), CreatedAt: time.Now().UTC()}
 		upsertRunToolPart(record, entry.Action, "cancelled", &entry.Plan.Decision, &result)
 	}
 }
@@ -390,16 +390,20 @@ func toolResultPartState(result toolExecutionResult) string {
 	return "error"
 }
 
+// deniedToolResult 落定一次拒绝：拒绝发生在执行之前，没有产出可言，
+// 正文就是宿主写的拒绝标记，原因同时留在 Error 供模型纠错。
 func deniedToolResult(action types.ToolAction, decision types.PermissionDecision) types.ToolResult {
-	return types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: action.ID, ToolName: action.ToolName, Status: types.ToolStatusDenied, Error: decision.Reason, CreatedAt: time.Now().UTC()}
+	return types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: action.ID, ToolName: action.ToolName, Status: types.ToolStatusDenied, Content: types.ToolExecutionMarker(string(types.ToolStatusDenied), types.ToolExecutionNoticeDenied(decision.Reason)), Error: decision.Reason, CreatedAt: time.Now().UTC()}
 }
 
+// failedToolResult 落定一次宿主侧失败（参数不合法、执行前就失败等）：
+// 正文是宿主写的失败标记，原因同时留在 Error。
 func failedToolResult(action types.ToolAction, message string) types.ToolResult {
 	message = strings.TrimSpace(message)
 	if message == "" {
 		message = "tool execution failed"
 	}
-	return types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: action.ID, ToolName: action.ToolName, Status: types.ToolStatusFailed, Content: message, Error: message, CreatedAt: time.Now().UTC()}
+	return types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: action.ID, ToolName: action.ToolName, Status: types.ToolStatusFailed, Content: types.ToolExecutionMarker(string(types.ToolStatusFailed), types.ToolExecutionNoticeFailed(message)), Error: message, CreatedAt: time.Now().UTC()}
 }
 
 // failedIntentEntry 把一次无法执行的工具意图落定为该次调用的失败结果：

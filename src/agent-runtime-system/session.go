@@ -71,7 +71,7 @@ func (s *system) recoverAsyncToolTasks(session types.Session) types.Session {
 		}
 		session.AsyncToolTasks[index].Status = types.AsyncToolTaskStatusFailed
 		session.AsyncToolTasks[index].FinishedAt = now
-		session.AsyncToolTasks[index].Error = "异步任务所在进程已结束，任务未完成。"
+		session.AsyncToolTasks[index].Error = types.ToolExecutionNoticeAsyncProcessGone
 		result := failedToolResult(session.AsyncToolTasks[index].Action, session.AsyncToolTasks[index].Error)
 		session.AsyncToolTasks[index].Result = &result
 	}

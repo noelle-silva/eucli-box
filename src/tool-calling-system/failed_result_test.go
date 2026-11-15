@@ -17,7 +17,7 @@ func TestFailedResultKeepsProducedContent(t *testing.T) {
 	if result.Status != types.ToolStatusFailed {
 		t.Fatalf("status = %q, want failed", result.Status)
 	}
-	want := "line-1\nline-2\n\n<eucli-box-tool-execution state=\"failed\">tool control protocol failed: EOF</eucli-box-tool-execution>"
+	want := "line-1\nline-2\n\n<eucli-box-tool-execution state=\"failed\">Execution failed: tool control protocol failed: EOF</eucli-box-tool-execution>"
 	if result.Content != want {
 		t.Fatalf("content = %q, want %q", result.Content, want)
 	}
@@ -36,7 +36,7 @@ func TestParseToolOutputKeepsRawStdout(t *testing.T) {
 	if result.Status != types.ToolStatusFailed {
 		t.Fatalf("status = %q, want failed", result.Status)
 	}
-	want := "panic: boom\n\ngoroutine 1\n\n<eucli-box-tool-execution state=\"failed\">tool output is not valid json</eucli-box-tool-execution>"
+	want := "panic: boom\n\ngoroutine 1\n\n<eucli-box-tool-execution state=\"failed\">Execution failed: tool output is not valid json</eucli-box-tool-execution>"
 	if result.Content != want {
 		t.Fatalf("content = %q, want %q", result.Content, want)
 	}
@@ -46,7 +46,7 @@ func TestParseToolOutputKeepsRawStdout(t *testing.T) {
 func TestParseToolOutputPrefersLivePreview(t *testing.T) {
 	result := parseToolOutput(testPlan(), []byte(`{"status":`), "building...\n100%")
 
-	want := "building...\n100%\n\n<eucli-box-tool-execution state=\"failed\">tool output is not valid json</eucli-box-tool-execution>"
+	want := "building...\n100%\n\n<eucli-box-tool-execution state=\"failed\">Execution failed: tool output is not valid json</eucli-box-tool-execution>"
 	if result.Content != want {
 		t.Fatalf("content = %q, want %q", result.Content, want)
 	}
@@ -58,5 +58,18 @@ func TestParseToolOutputSuccessIsUnchanged(t *testing.T) {
 
 	if result.Content != "done" {
 		t.Fatalf("content = %q, want done", result.Content)
+	}
+}
+
+// 执行前的拒绝同样写宿主标记：拒绝发生在执行之前，正文只有标记。
+func TestDeniedResultWritesMarker(t *testing.T) {
+	result := deniedResult(testPlan(), "tool is not in role whitelist")
+
+	want := `<eucli-box-tool-execution state="denied">Tool call denied: tool is not in role whitelist</eucli-box-tool-execution>`
+	if result.Content != want {
+		t.Fatalf("content = %q, want %q", result.Content, want)
+	}
+	if result.Error != "tool is not in role whitelist" {
+		t.Fatalf("error = %q", result.Error)
 	}
 }

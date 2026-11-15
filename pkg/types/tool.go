@@ -261,13 +261,57 @@ type ToolResult struct {
 	CreatedAt           time.Time           `json:"createdAt"`
 }
 
-// ToolExecutionMarkerTag 是宿主收尾标记的标签名。
-// 工具正文尾部补的运行状态用它包起来：专属标签名把「宿主补的事实」
-// 与「工具自己的输出」在语法上分开，模型读到不会把两者混成一份数据。
-const ToolExecutionMarkerTag = "eucli-box-tool-execution"
+// 宿主补进正文的两类事实各有专属标签：工具执行收尾与异步任务回灌。
+// 专属标签名把「宿主说的事实」与「工具自己的输出」在语法上分开，
+// 模型读到不会把两者混成同一份数据，工具输出里自带的标签也不会被误认。
+const (
+	ToolExecutionMarkerTag = "eucli-box-tool-execution"
+	ToolAsyncResultTag     = "eucli-box-async-tool-result"
+)
 
-// ToolExecutionNoticeCancelled 是取消收尾标记里的人读说明。
-const ToolExecutionNoticeCancelled = "已取消"
+// 宿主替工具收尾时写进标签的说明：一句话说清是谁、因为什么、最后怎么了。
+// 说明统一英文，避免同一份正文里中英混排。
+const (
+	// 取消：停止前已经有输出，产出留在上面。
+	ToolExecutionNoticeCancelledAfterOutput = "User stopped this execution. The output above was produced before the stop."
+	// 取消：一个字都没来得及输出。
+	ToolExecutionNoticeCancelledWithoutOutput = "User stopped this execution before any output was produced."
+	// 取消：当时正等着用户确认。
+	ToolExecutionNoticeCancelledDuringConfirmation = "User stopped this execution while it was awaiting confirmation."
+	// 收口：整轮被停止时这个工具还没有结果。
+	ToolExecutionNoticeRunCancelled = "The run was cancelled before this tool produced a result."
+	// 收口：整轮失败时这个工具还没有结果。
+	ToolExecutionNoticeRunFailed = "The run failed before this tool produced a result."
+	// 受理：任务已转交后台。
+	ToolExecutionNoticeAsyncAccepted = "Task accepted. The result will be delivered when it finishes."
+	// 后台任务所在进程结束，任务没跑完。
+	ToolExecutionNoticeAsyncProcessGone = "The background task process ended before the task finished."
+	// 失败与拒绝的公共开头，具体原因接在冒号后面。
+	ToolExecutionNoticeFailedPrefix = "Execution failed: "
+	ToolExecutionNoticeDeniedPrefix = "Tool call denied: "
+)
+
+// ToolExecutionStateAccepted 是异步任务受理时宿主写的收尾状态：
+// 它不是工具结果状态，而是「这次调用已转交后台」的运行期事实。
+const ToolExecutionStateAccepted = "accepted"
+
+// ToolExecutionNoticeFailed 把失败原因接在统一开头后面；没有原因时只留开头。
+func ToolExecutionNoticeFailed(reason string) string {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return strings.TrimSuffix(ToolExecutionNoticeFailedPrefix, ": ")
+	}
+	return ToolExecutionNoticeFailedPrefix + reason
+}
+
+// ToolExecutionNoticeDenied 把拒绝原因接在统一开头后面；没有原因时只留开头。
+func ToolExecutionNoticeDenied(reason string) string {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return strings.TrimSuffix(ToolExecutionNoticeDeniedPrefix, ": ")
+	}
+	return ToolExecutionNoticeDeniedPrefix + reason
+}
 
 // xmlTextEscaper 转义文本节点与属性值里的 XML 元字符；
 // 工具输出里出现的尖括号与引号因此不会把标记结构撑破。
@@ -280,12 +324,11 @@ var xmlTextEscaper = strings.NewReplacer(
 )
 
 // ToolExecutionMarker 生成一段宿主收尾标记：
-// state 属性承载机器可读的状态枚举，文本节点承载人读说明；
+// state 属性写明终局状态，文本节点写明具体是什么情况；
 // 没有说明时输出自闭合标签。
-func ToolExecutionMarker(state ToolStatus, detail string) string {
-	state = ToolStatus(escapeXMLText(string(state)))
+func ToolExecutionMarker(state string, detail string) string {
+	open := "<" + ToolExecutionMarkerTag + ` state="` + escapeXMLText(strings.TrimSpace(state)) + `"`
 	detail = strings.TrimSpace(detail)
-	open := "<" + ToolExecutionMarkerTag + ` state="` + string(state) + `"`
 	if detail == "" {
 		return open + " />"
 	}
@@ -295,13 +338,29 @@ func ToolExecutionMarker(state ToolStatus, detail string) string {
 // AppendToolExecutionMarker 把收尾标记追加到已产出内容的末尾。
 // 已产出内容原样保留（只去掉尾部换行），标记另起一段；
 // 没有产出内容时，正文就是标记本身。
-func AppendToolExecutionMarker(content string, state ToolStatus, detail string) string {
+func AppendToolExecutionMarker(content string, state string, detail string) string {
 	marker := ToolExecutionMarker(state, detail)
 	content = strings.TrimRight(content, "\r\n")
 	if strings.TrimSpace(content) == "" {
 		return marker
 	}
 	return content + "\n\n" + marker
+}
+
+// WrapToolAsyncResult 用身份标签把回灌正文整段包起来：
+// 属性声明任务身份，标签中间是给人和模型读的整段说明。
+// 正文原样嵌入、不做转义——正文里可能已经带了宿主收尾标记，
+// 转义会把内层标记变成死文本，读的人就看不出它属于谁了。
+func WrapToolAsyncResult(body string, taskID string, toolName string, status string) string {
+	open := "<" + ToolAsyncResultTag +
+		` task-id="` + escapeXMLText(strings.TrimSpace(taskID)) + `"` +
+		` tool="` + escapeXMLText(strings.TrimSpace(toolName)) + `"` +
+		` status="` + escapeXMLText(strings.TrimSpace(status)) + `"`
+	body = strings.TrimRight(body, "\r\n")
+	if strings.TrimSpace(body) == "" {
+		return open + " />"
+	}
+	return open + ">\n" + body + "\n</" + ToolAsyncResultTag + ">"
 }
 
 func escapeXMLText(value string) string {

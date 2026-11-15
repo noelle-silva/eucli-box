@@ -14,7 +14,7 @@ func TestToolCancelledResultKeepsProducedContent(t *testing.T) {
 	if result.Status != types.ToolStatusCancelled {
 		t.Fatalf("status = %q, want cancelled", result.Status)
 	}
-	want := "line-1\nline-2\n\n<eucli-box-tool-execution state=\"cancelled\">已取消</eucli-box-tool-execution>"
+	want := "line-1\nline-2\n\n<eucli-box-tool-execution state=\"cancelled\">User stopped this execution. The output above was produced before the stop.</eucli-box-tool-execution>"
 	if result.Content != want {
 		t.Fatalf("content = %q, want %q", result.Content, want)
 	}
@@ -28,7 +28,7 @@ func TestToolCancelledResultWithoutProducedContent(t *testing.T) {
 	plan := types.ToolRunPlan{Action: types.ToolAction{ID: "a1", ToolName: "shell_command"}}
 	result := toolCancelledResult(plan, "tool execution cancelled", "  ", nil)
 
-	want := "<eucli-box-tool-execution state=\"cancelled\">已取消</eucli-box-tool-execution>"
+	want := "<eucli-box-tool-execution state=\"cancelled\">User stopped this execution before any output was produced.</eucli-box-tool-execution>"
 	if result.Content != want {
 		t.Fatalf("content = %q, want %q", result.Content, want)
 	}

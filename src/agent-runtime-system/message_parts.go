@@ -135,7 +135,8 @@ func settleRunUnfinishedToolParts(record *runRecord, state string, status types.
 			part.State = state
 			part.UpdatedAt = now
 			if part.Result == nil {
-				part.Result = &types.ToolPartResult{ID: utils.NewID("tool-result"), ActionID: strings.TrimSpace(part.CallID), ToolName: part.ToolName, Status: status, Content: settledToolContent(status), Error: strings.TrimSpace(reason), CreatedAt: now}
+				trimmedReason := strings.TrimSpace(reason)
+				part.Result = &types.ToolPartResult{ID: utils.NewID("tool-result"), ActionID: strings.TrimSpace(part.CallID), ToolName: part.ToolName, Status: status, Content: settledToolContent(status, trimmedReason), Error: trimmedReason, CreatedAt: now}
 			}
 			changed = true
 		}
@@ -161,13 +162,21 @@ func failRunToolParts(record *runRecord, reason string) bool {
 }
 
 // settledToolContent 是整轮收口时「工具还没有结果」的部件正文。
-// 收口不编造产出，但取消必须留下一段可读的宿主标记：
-// 前端展示优先取正文，正文空着就会退回内部原因，用户看到的会是一句英文报错。
-func settledToolContent(status types.ToolStatus) string {
-	if status == types.ToolStatusCancelled {
-		return types.AppendToolExecutionMarker("", types.ToolStatusCancelled, types.ToolExecutionNoticeCancelled)
+// 收口不编造产出，但必须留下一段说明整轮结局的标记：
+// 正文空着，前端就会退回内部原因，用户看到的会是一句英文报错。
+func settledToolContent(status types.ToolStatus, reason string) string {
+	switch status {
+	case types.ToolStatusCancelled:
+		return types.ToolExecutionMarker(string(types.ToolStatusCancelled), types.ToolExecutionNoticeRunCancelled)
+	case types.ToolStatusFailed:
+		notice := types.ToolExecutionNoticeRunFailed
+		if trimmed := strings.TrimSpace(reason); trimmed != "" {
+			notice += " Reason: " + trimmed
+		}
+		return types.ToolExecutionMarker(string(types.ToolStatusFailed), notice)
+	default:
+		return ""
 	}
-	return ""
 }
 
 func isTerminalToolPartState(state string) bool {

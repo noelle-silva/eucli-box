@@ -59,7 +59,7 @@ func (s *system) acceptAsyncToolTask(record *runRecord, action types.ToolAction,
 		Plan:               plan,
 		SubmittedAt:        now,
 	}
-	result := types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: action.ID, ToolName: action.ToolName, Status: types.ToolStatusSuccess, Content: fmt.Sprintf("异步任务 %s 已受理，真实执行结果会在稍后回灌。", task.ID), Metadata: map[string]any{"asyncTaskId": task.ID, "asyncAccepted": true}, CreatedAt: now}
+	result := types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: action.ID, ToolName: action.ToolName, Status: types.ToolStatusSuccess, Content: types.ToolExecutionMarker(types.ToolExecutionStateAccepted, types.ToolExecutionNoticeAsyncAccepted), Metadata: map[string]any{"asyncTaskId": task.ID, "asyncAccepted": true}, CreatedAt: now}
 	record.session.AsyncToolTasks = upsertAsyncToolTask(record.session.AsyncToolTasks, task)
 	s.mu.Lock()
 	s.asyncTasks[task.ID] = task
@@ -519,22 +519,22 @@ func readyAsyncToolTasks(tasks []types.AsyncToolTask) []types.AsyncToolTask {
 	return ready
 }
 
-// asyncToolResultContent 把异步任务的结果整理成回灌文本。
-// 正文优先用工具结果自带的 Content：它已经包含工具跑出来的内容和收尾说明；
-// 结果没有正文时才退回任务错误摘要，绝不用摘要顶掉产出。
+// asyncToolResultContent 把异步任务的结果整理成回灌正文：
+// 外层标签声明任务身份，标签里按行写清任务、工具、状态与结果。
+// 状态用结果自己的枚举值，比「成功 / 失败」这种二值描述更精确。
 func asyncToolResultContent(task types.AsyncToolTask) string {
-	status := "失败"
+	status := string(types.ToolStatusFailed)
 	content := ""
 	if task.Result != nil {
-		if task.Result.Status == types.ToolStatusSuccess {
-			status = "成功"
-		}
+		status = string(task.Result.Status)
 		content = strings.TrimSpace(task.Result.Content)
 	}
 	if content == "" {
 		content = strings.TrimSpace(task.Error)
 	}
-	return fmt.Sprintf("以下是异步任务 %s 的执行结果\n工具：%s\n状态：%s\n结果：%s", task.ID, asyncToolResultToolName(task), status, content)
+	toolName := asyncToolResultToolName(task)
+	body := fmt.Sprintf("Task: %s\nTool: %s\nStatus: %s\nResult: %s", task.ID, toolName, status, content)
+	return types.WrapToolAsyncResult(body, task.ID, toolName, status)
 }
 
 func asyncToolResultToolName(task types.AsyncToolTask) string {

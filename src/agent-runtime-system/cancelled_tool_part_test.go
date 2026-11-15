@@ -43,7 +43,7 @@ func TestCancelRunToolPartsWritesReadableContent(t *testing.T) {
 	if part.Result == nil || part.Result.Status != types.ToolStatusCancelled {
 		t.Fatalf("result = %#v", part.Result)
 	}
-	if part.Result.Content != `<eucli-box-tool-execution state="cancelled">已取消</eucli-box-tool-execution>` {
+	if part.Result.Content != `<eucli-box-tool-execution state="cancelled">The run was cancelled before this tool produced a result.</eucli-box-tool-execution>` {
 		t.Fatalf("content = %q", part.Result.Content)
 	}
 	if part.Result.Error != "cancelled by user" {
@@ -114,21 +114,31 @@ func TestToolResultPartStateFollowsResultStatus(t *testing.T) {
 	}
 }
 
-// 异步任务回灌：结果自带正文时优先用它，任务错误摘要不能顶掉工具产出。
+// 异步任务回灌：身份标签包住整段说明，工具产出原样留在结果行。
 func TestAsyncToolResultContentKeepsProducedOutput(t *testing.T) {
+	produced := "line-1\nline-2\n\n<eucli-box-tool-execution state=\"failed\">Execution failed: tool execution became unresponsive</eucli-box-tool-execution>"
 	task := types.AsyncToolTask{
 		ID:       "task-1",
 		ToolName: "shell_command",
 		Error:    "tool execution became unresponsive",
-		Result:   &types.ToolResult{Status: types.ToolStatusFailed, Content: "line-1\nline-2\n\n<eucli-box-tool-execution state=\"failed\">tool execution became unresponsive</eucli-box-tool-execution>"},
+		Result:   &types.ToolResult{Status: types.ToolStatusFailed, Content: produced},
 	}
 
 	content := asyncToolResultContent(task)
-	if !strings.Contains(content, "line-1") || !strings.Contains(content, "line-2") {
-		t.Fatalf("content = %q, want produced output kept", content)
+	wantPrefix := `<eucli-box-async-tool-result task-id="task-1" tool="shell_command" status="failed">` + "\n"
+	if !strings.HasPrefix(content, wantPrefix) {
+		t.Fatalf("content = %q, want prefix %q", content, wantPrefix)
 	}
-	if strings.HasPrefix(content, "以下是异步任务 task-1 的执行结果\n工具：shell_command\n状态：失败\n结果：tool execution became unresponsive") {
-		t.Fatalf("content = %q, error summary replaced produced output", content)
+	for _, line := range []string{"Task: task-1", "Tool: shell_command", "Status: failed"} {
+		if !strings.Contains(content, line) {
+			t.Fatalf("content = %q, missing %q", content, line)
+		}
+	}
+	if !strings.Contains(content, produced) {
+		t.Fatalf("content = %q, want produced output kept verbatim", content)
+	}
+	if !strings.HasSuffix(content, "\n</eucli-box-async-tool-result>") {
+		t.Fatalf("content = %q, want closing tag", content)
 	}
 }
 
@@ -136,7 +146,53 @@ func TestAsyncToolResultContentKeepsProducedOutput(t *testing.T) {
 func TestAsyncToolResultContentFallsBackToTaskError(t *testing.T) {
 	task := types.AsyncToolTask{ID: "task-2", ToolName: "shell_command", Error: "boom"}
 
-	if content := asyncToolResultContent(task); !strings.Contains(content, "结果：boom") {
+	content := asyncToolResultContent(task)
+	if !strings.Contains(content, "Result: boom") {
 		t.Fatalf("content = %q", content)
+	}
+}
+
+// 拒绝落定也要带宿主标记：正文是标记，原因同时留在 Error。
+func TestDeniedToolResultWritesMarker(t *testing.T) {
+	action := types.ToolAction{ID: "a1", ToolName: "shell_command"}
+	decision := types.PermissionDecision{Status: types.PermissionStatusDenied, Reason: "tool is not in role whitelist"}
+	result := deniedToolResult(action, decision)
+
+	want := `<eucli-box-tool-execution state="denied">Tool call denied: tool is not in role whitelist</eucli-box-tool-execution>`
+	if result.Content != want {
+		t.Fatalf("content = %q, want %q", result.Content, want)
+	}
+	if result.Error != decision.Reason {
+		t.Fatalf("error = %q, want reason kept", result.Error)
+	}
+}
+
+// 宿主侧失败（参数不合法、执行前失败）同样只写标记，不留裸文本。
+func TestFailedToolResultWritesMarker(t *testing.T) {
+	result := failedToolResult(types.ToolAction{ID: "a1", ToolName: "shell_command"}, "failed to normalize tool intent")
+
+	want := `<eucli-box-tool-execution state="failed">Execution failed: failed to normalize tool intent</eucli-box-tool-execution>`
+	if result.Content != want {
+		t.Fatalf("content = %q, want %q", result.Content, want)
+	}
+	if result.Error != "failed to normalize tool intent" {
+		t.Fatalf("error = %q", result.Error)
+	}
+}
+
+// 整轮失败收口时，未落定的工具同样留下宿主标记。
+func TestFailRunToolPartsWritesMarker(t *testing.T) {
+	record := runningToolRecord("intent-1")
+
+	if !failRunToolParts(record, "model call failed") {
+		t.Fatal("failRunToolParts() = false, want true")
+	}
+	part := record.session.Messages[0].Parts[0]
+	if part.State != "error" {
+		t.Fatalf("state = %q, want error", part.State)
+	}
+	want := `<eucli-box-tool-execution state="failed">The run failed before this tool produced a result. Reason: model call failed</eucli-box-tool-execution>`
+	if part.Result == nil || part.Result.Content != want {
+		t.Fatalf("result = %#v, want content %q", part.Result, want)
 	}
 }

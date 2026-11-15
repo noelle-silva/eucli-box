@@ -2635,7 +2635,7 @@ func TestNewSystemRecoversReadyAsyncToolTaskIntoSession(t *testing.T) {
 
 	_ = newTestRuntime(t, fakes, Config{})
 	session := fakes.storage.sessions["developer/session-1"]
-	if len(session.Messages) != 2 || session.Messages[1].Type != types.MessageTypeAsyncToolResult || !strings.Contains(session.Messages[1].Content, "以下是异步任务 async-1 的执行结果") || !strings.Contains(session.Messages[1].Content, "recovered result") {
+	if len(session.Messages) != 2 || session.Messages[1].Type != types.MessageTypeAsyncToolResult || !strings.Contains(session.Messages[1].Content, `<eucli-box-async-tool-result task-id="async-1"`) || !strings.Contains(session.Messages[1].Content, "recovered result") {
 		t.Fatalf("recovered messages = %#v", session.Messages)
 	}
 	if len(session.AsyncToolTasks) != 1 || session.AsyncToolTasks[0].Status != types.AsyncToolTaskStatusCompleted || session.AsyncToolTasks[0].CompletedAt.IsZero() {
@@ -2669,7 +2669,7 @@ func TestNewSystemMarksLostRunningAsyncToolTaskFailedAndBackfills(t *testing.T) 
 
 	_ = newTestRuntime(t, fakes, Config{})
 	session := fakes.storage.sessions["developer/session-1"]
-	if len(session.Messages) != 2 || session.Messages[1].Type != types.MessageTypeAsyncToolResult || !strings.Contains(session.Messages[1].Content, "状态：失败") || !strings.Contains(session.Messages[1].Content, "进程已结束") {
+	if len(session.Messages) != 2 || session.Messages[1].Type != types.MessageTypeAsyncToolResult || !strings.Contains(session.Messages[1].Content, `status="failed"`) || !strings.Contains(session.Messages[1].Content, "background task process ended") {
 		t.Fatalf("recovered messages = %#v", session.Messages)
 	}
 	if len(session.AsyncToolTasks) != 1 || session.AsyncToolTasks[0].Status != types.AsyncToolTaskStatusCompleted || session.AsyncToolTasks[0].Result == nil || session.AsyncToolTasks[0].Result.Status != types.ToolStatusFailed {

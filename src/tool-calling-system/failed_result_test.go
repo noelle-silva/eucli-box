@@ -10,14 +10,14 @@ func testPlan() types.ToolRunPlan {
 	return types.ToolRunPlan{Action: types.ToolAction{ID: "a1", ToolName: "shell_command"}}
 }
 
-// 失败落定同样保留已产出内容：失败标记与原因只追加在后面。
+// 失败落定同样保留已产出内容：宿主标记与原因只追加在后面。
 func TestFailedResultKeepsProducedContent(t *testing.T) {
 	result := toolFailureResult(testPlan(), "tool control protocol failed: EOF", "line-1\nline-2", "tool_protocol_failed", nil)
 
 	if result.Status != types.ToolStatusFailed {
 		t.Fatalf("status = %q, want failed", result.Status)
 	}
-	want := "line-1\nline-2\n\n" + types.ToolResultNoticeFailed + " tool control protocol failed: EOF"
+	want := "line-1\nline-2\n\n<eucli-box-tool-execution state=\"failed\">tool control protocol failed: EOF</eucli-box-tool-execution>"
 	if result.Content != want {
 		t.Fatalf("content = %q, want %q", result.Content, want)
 	}
@@ -36,7 +36,7 @@ func TestParseToolOutputKeepsRawStdout(t *testing.T) {
 	if result.Status != types.ToolStatusFailed {
 		t.Fatalf("status = %q, want failed", result.Status)
 	}
-	want := "panic: boom\n\ngoroutine 1\n\n" + types.ToolResultNoticeFailed + " tool output is not valid json"
+	want := "panic: boom\n\ngoroutine 1\n\n<eucli-box-tool-execution state=\"failed\">tool output is not valid json</eucli-box-tool-execution>"
 	if result.Content != want {
 		t.Fatalf("content = %q, want %q", result.Content, want)
 	}
@@ -46,8 +46,9 @@ func TestParseToolOutputKeepsRawStdout(t *testing.T) {
 func TestParseToolOutputPrefersLivePreview(t *testing.T) {
 	result := parseToolOutput(testPlan(), []byte(`{"status":`), "building...\n100%")
 
-	if result.Content != "building...\n100%\n\n"+types.ToolResultNoticeFailed+" tool output is not valid json" {
-		t.Fatalf("content = %q", result.Content)
+	want := "building...\n100%\n\n<eucli-box-tool-execution state=\"failed\">tool output is not valid json</eucli-box-tool-execution>"
+	if result.Content != want {
+		t.Fatalf("content = %q, want %q", result.Content, want)
 	}
 }
 

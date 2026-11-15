@@ -161,11 +161,11 @@ func failRunToolParts(record *runRecord, reason string) bool {
 }
 
 // settledToolContent 是整轮收口时「工具还没有结果」的部件正文。
-// 收口不编造产出，但取消必须留下一句可读的收尾说明：
+// 收口不编造产出，但取消必须留下一段可读的宿主标记：
 // 前端展示优先取正文，正文空着就会退回内部原因，用户看到的会是一句英文报错。
 func settledToolContent(status types.ToolStatus) string {
 	if status == types.ToolStatusCancelled {
-		return types.AppendToolContentNotice("", types.ToolResultNoticeCancelled)
+		return types.AppendToolExecutionMarker("", types.ToolStatusCancelled, types.ToolExecutionNoticeCancelled)
 	}
 	return ""
 }

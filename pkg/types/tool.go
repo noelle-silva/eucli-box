@@ -261,31 +261,51 @@ type ToolResult struct {
 	CreatedAt           time.Time           `json:"createdAt"`
 }
 
-// ToolResultNoticeCancelled 是取消落定的统一收尾说明。
-// 取消只改状态并在正文末尾补这一句：工具在被中断前已经产出的内容必须原样保留，
-// 收尾说明永远追加在后面，不顶替任何产出。
-const ToolResultNoticeCancelled = "[已取消]"
+// ToolExecutionMarkerTag 是宿主收尾标记的标签名。
+// 工具正文尾部补的运行状态用它包起来：专属标签名把「宿主补的事实」
+// 与「工具自己的输出」在语法上分开，模型读到不会把两者混成一份数据。
+const ToolExecutionMarkerTag = "eucli-box-tool-execution"
 
-// ToolResultNoticeFailed 是失败落定的统一收尾标记。
-// 失败同样只能追加：已经跑出来的输出留在前面，失败原因跟在标记后面。
-const ToolResultNoticeFailed = "[执行失败]"
+// ToolExecutionNoticeCancelled 是取消收尾标记里的人读说明。
+const ToolExecutionNoticeCancelled = "已取消"
 
-// AppendToolContentNotice 把一条收尾说明追加到已产出内容的末尾。
-// 已产出内容原样保留（只去掉尾部换行），说明另起一段；
-// 没有产出内容时，正文就是这条说明本身。
-func AppendToolContentNotice(content string, notice string) string {
+// xmlTextEscaper 转义文本节点与属性值里的 XML 元字符；
+// 工具输出里出现的尖括号与引号因此不会把标记结构撑破。
+var xmlTextEscaper = strings.NewReplacer(
+	"&", "&amp;",
+	"<", "&lt;",
+	">", "&gt;",
+	`"`, "&quot;",
+	"'", "&apos;",
+)
+
+// ToolExecutionMarker 生成一段宿主收尾标记：
+// state 属性承载机器可读的状态枚举，文本节点承载人读说明；
+// 没有说明时输出自闭合标签。
+func ToolExecutionMarker(state ToolStatus, detail string) string {
+	state = ToolStatus(escapeXMLText(string(state)))
+	detail = strings.TrimSpace(detail)
+	open := "<" + ToolExecutionMarkerTag + ` state="` + string(state) + `"`
+	if detail == "" {
+		return open + " />"
+	}
+	return open + ">" + escapeXMLText(detail) + "</" + ToolExecutionMarkerTag + ">"
+}
+
+// AppendToolExecutionMarker 把收尾标记追加到已产出内容的末尾。
+// 已产出内容原样保留（只去掉尾部换行），标记另起一段；
+// 没有产出内容时，正文就是标记本身。
+func AppendToolExecutionMarker(content string, state ToolStatus, detail string) string {
+	marker := ToolExecutionMarker(state, detail)
 	content = strings.TrimRight(content, "\r\n")
 	if strings.TrimSpace(content) == "" {
-		content = ""
+		return marker
 	}
-	notice = strings.TrimSpace(notice)
-	if notice == "" {
-		return content
-	}
-	if content == "" {
-		return notice
-	}
-	return content + "\n\n" + notice
+	return content + "\n\n" + marker
+}
+
+func escapeXMLText(value string) string {
+	return xmlTextEscaper.Replace(value)
 }
 
 type ToolConfirmation struct {

@@ -158,7 +158,7 @@ func (s *system) markPendingToolsCancelled(record *runRecord, entries []toolRunE
 			continue
 		}
 		metadata := map[string]any{"cancelReason": "user_interrupted"}
-		result := types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: entry.Action.ID, ToolName: entry.Action.ToolName, Status: types.ToolStatusCancelled, Content: types.AppendToolContentNotice("", types.ToolResultNoticeCancelled), Metadata: metadata, Error: err.Error(), CreatedAt: time.Now().UTC()}
+		result := types.ToolResult{ID: newRuntimeID("tool-result"), ActionID: entry.Action.ID, ToolName: entry.Action.ToolName, Status: types.ToolStatusCancelled, Content: types.AppendToolExecutionMarker("", types.ToolStatusCancelled, types.ToolExecutionNoticeCancelled), Metadata: metadata, Error: err.Error(), CreatedAt: time.Now().UTC()}
 		upsertRunToolPart(record, entry.Action, "cancelled", &entry.Plan.Decision, &result)
 	}
 }

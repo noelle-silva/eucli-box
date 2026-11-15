@@ -6,7 +6,7 @@ import (
 	"eucli-box/pkg/types"
 )
 
-// 取消落定必须保留已经产出的内容：收尾说明只追加在末尾，不顶替正文。
+// 取消落定必须保留已经产出的内容：宿主标记只追加在末尾，不顶替正文。
 func TestToolCancelledResultKeepsProducedContent(t *testing.T) {
 	plan := types.ToolRunPlan{Action: types.ToolAction{ID: "a1", ToolName: "shell_command"}}
 	result := toolCancelledResult(plan, "tool execution cancelled", "line-1\nline-2", nil)
@@ -14,8 +14,9 @@ func TestToolCancelledResultKeepsProducedContent(t *testing.T) {
 	if result.Status != types.ToolStatusCancelled {
 		t.Fatalf("status = %q, want cancelled", result.Status)
 	}
-	if result.Content != "line-1\nline-2\n\n"+types.ToolResultNoticeCancelled {
-		t.Fatalf("content = %q", result.Content)
+	want := "line-1\nline-2\n\n<eucli-box-tool-execution state=\"cancelled\">已取消</eucli-box-tool-execution>"
+	if result.Content != want {
+		t.Fatalf("content = %q, want %q", result.Content, want)
 	}
 	if result.Error != "tool execution cancelled" {
 		t.Fatalf("error = %q, want internal reason kept", result.Error)
@@ -27,8 +28,9 @@ func TestToolCancelledResultWithoutProducedContent(t *testing.T) {
 	plan := types.ToolRunPlan{Action: types.ToolAction{ID: "a1", ToolName: "shell_command"}}
 	result := toolCancelledResult(plan, "tool execution cancelled", "  ", nil)
 
-	if result.Content != types.ToolResultNoticeCancelled {
-		t.Fatalf("content = %q, want %q", result.Content, types.ToolResultNoticeCancelled)
+	want := "<eucli-box-tool-execution state=\"cancelled\">已取消</eucli-box-tool-execution>"
+	if result.Content != want {
+		t.Fatalf("content = %q, want %q", result.Content, want)
 	}
 }
 

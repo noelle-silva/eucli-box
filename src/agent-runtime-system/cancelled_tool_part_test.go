@@ -43,8 +43,8 @@ func TestCancelRunToolPartsWritesReadableContent(t *testing.T) {
 	if part.Result == nil || part.Result.Status != types.ToolStatusCancelled {
 		t.Fatalf("result = %#v", part.Result)
 	}
-	if part.Result.Content != types.ToolResultNoticeCancelled {
-		t.Fatalf("content = %q, want %q", part.Result.Content, types.ToolResultNoticeCancelled)
+	if part.Result.Content != `<eucli-box-tool-execution state="cancelled">已取消</eucli-box-tool-execution>` {
+		t.Fatalf("content = %q", part.Result.Content)
 	}
 	if part.Result.Error != "cancelled by user" {
 		t.Fatalf("error = %q, want internal reason kept", part.Result.Error)
@@ -120,7 +120,7 @@ func TestAsyncToolResultContentKeepsProducedOutput(t *testing.T) {
 		ID:       "task-1",
 		ToolName: "shell_command",
 		Error:    "tool execution became unresponsive",
-		Result:   &types.ToolResult{Status: types.ToolStatusFailed, Content: "line-1\nline-2\n\n" + types.ToolResultNoticeFailed + " tool execution became unresponsive"},
+		Result:   &types.ToolResult{Status: types.ToolStatusFailed, Content: "line-1\nline-2\n\n<eucli-box-tool-execution state=\"failed\">tool execution became unresponsive</eucli-box-tool-execution>"},
 	}
 
 	content := asyncToolResultContent(task)

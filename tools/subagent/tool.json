@@ -2,7 +2,7 @@
   "id": "subagent",
   "name": "subagent",
   "description": "子代理工具：把消息真正发给指定角色并取回它最新的回复，或按当前工作区列出可用的角色。",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "eucliBoxCompatibility": {
     "minimumVersion": "0.1.0",
     "maximumVersionExclusive": "0.2.0"

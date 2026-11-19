@@ -199,10 +199,13 @@ func obtainInputs(ctx context.Context, client *http.Client, recipe Recipe, cache
 }
 
 func prepareGitBash(ctx context.Context, recipe Recipe, inputs map[string]string, target string, tempRoot string) error {
-	minGit := inputs["MinGit-2.42.0.2-64-bit.zip"]
-	portable := inputs["PortableGit-2.42.0.2-64-bit.7z.exe"]
-	if minGit == "" || portable == "" {
-		return fmt.Errorf("Git Bash 固定输入不完整")
+	minGit, err := preparedInputPath(recipe, inputs, "mingit")
+	if err != nil {
+		return err
+	}
+	portable, err := preparedInputPath(recipe, inputs, "portable-git")
+	if err != nil {
+		return err
 	}
 	if err := extractZip(minGit, target); err != nil {
 		return fmt.Errorf("解开 MinGit 失败：%w", err)
@@ -238,6 +241,19 @@ func prepareGitBash(ctx context.Context, recipe Recipe, inputs map[string]string
 		return err
 	}
 	return validatePinnedFiles(target, recipe.RequiredFiles)
+}
+
+// preparedInputPath 按角色取已准备好的输入文件路径：准备流程只认配方声明的角色，不认发行包文件名。
+func preparedInputPath(recipe Recipe, inputs map[string]string, role string) (string, error) {
+	input, err := recipe.InputByRole(role)
+	if err != nil {
+		return "", err
+	}
+	path := inputs[input.Name]
+	if strings.TrimSpace(path) == "" {
+		return "", fmt.Errorf("外部随包配方 %s 的角色 %s 输入文件未准备", recipe.Name, role)
+	}
+	return path, nil
 }
 
 // prepareSingleZip 将单一 zip 输入原样解开到目标目录，并附带书面通告。

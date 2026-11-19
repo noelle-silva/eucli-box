@@ -37,11 +37,13 @@ type Recipe struct {
 	Sources        []string           `json:"sources"`
 	Artifacts      []string           `json:"artifacts"`
 	RepositoryPath string             `json:"repositoryPath,omitempty"`
+	Expectations   []string           `json:"expectations,omitempty"`
 	Inputs         []InputFile        `json:"inputs,omitempty"`
 	RequiredFiles  []PinnedFileRecord `json:"requiredFiles"`
 }
 
 type InputFile struct {
+	Role   string `json:"role,omitempty"`
 	Name   string `json:"name"`
 	URL    string `json:"url"`
 	Size   int64  `json:"size"`
@@ -80,6 +82,16 @@ func (c Catalog) Recipe(name string) (Recipe, error) {
 	return Recipe{}, fmt.Errorf("外部随包配方 %q 不存在", name)
 }
 
+// InputByRole 按角色取配方的输入文件：角色是配方语义，与具体发行包文件名解耦。
+func (r Recipe) InputByRole(role string) (InputFile, error) {
+	for _, input := range r.Inputs {
+		if input.Role == role {
+			return input, nil
+		}
+	}
+	return InputFile{}, fmt.Errorf("外部随包配方 %s 没有声明角色 %s 的输入文件", r.Name, role)
+}
+
 func (c Catalog) RecipesForArtifact(artifact types.ReleaseArtifactIdentity) []Recipe {
 	target := artifact.Kind + ":" + artifact.ID
 	result := make([]Recipe, 0, 1)
@@ -115,7 +127,19 @@ func validateCatalog(catalog Catalog) error {
 			return fmt.Errorf("外部随包配方必须按名称排序")
 		}
 		switch recipe.Kind {
-		case "git-bash", "powershell", "nushell", "command-analyzer":
+		case "git-bash", "powershell", "nushell":
+			if len(recipe.Expectations) == 0 {
+				return fmt.Errorf("外部随包配方 %s 必须声明运行核对期望输出", recipe.Name)
+			}
+			for _, expectation := range recipe.Expectations {
+				if strings.TrimSpace(expectation) == "" {
+					return fmt.Errorf("外部随包配方 %s 包含空的运行核对期望输出", recipe.Name)
+				}
+			}
+		case "command-analyzer":
+			if len(recipe.Expectations) != 0 {
+				return fmt.Errorf("外部随包配方 %s 不使用运行核对期望输出", recipe.Name)
+			}
 		default:
 			return fmt.Errorf("外部随包配方 %s 的类别无效", recipe.Name)
 		}
@@ -137,12 +161,33 @@ func validateCatalog(catalog Catalog) error {
 		} else if recipe.RepositoryPath != "" || len(recipe.Inputs) == 0 {
 			return fmt.Errorf("可准备外部内容配方 %s 的目录或输入无效", recipe.Name)
 		}
+		inputRoles := map[string]struct{}{}
 		for inputIndex, input := range recipe.Inputs {
 			if inputIndex > 0 && recipe.Inputs[inputIndex-1].Name >= input.Name {
 				return fmt.Errorf("外部随包配方 %s 的输入必须按名称排序", recipe.Name)
 			}
 			if filepath.Base(input.Name) != input.Name || !validHTTPSURL(input.URL) || input.Size <= 0 || !validSHA256(input.SHA256) {
 				return fmt.Errorf("外部随包配方 %s 的输入 %s 无效", recipe.Name, input.Name)
+			}
+			if input.Role == "" {
+				continue
+			}
+			if !validRole(input.Role) {
+				return fmt.Errorf("外部随包配方 %s 的输入 %s 角色无效", recipe.Name, input.Name)
+			}
+			if _, exists := inputRoles[input.Role]; exists {
+				return fmt.Errorf("外部随包配方 %s 的输入角色 %s 重复", recipe.Name, input.Role)
+			}
+			inputRoles[input.Role] = struct{}{}
+		}
+		if recipe.Kind == "git-bash" {
+			if len(inputRoles) != 2 {
+				return fmt.Errorf("外部随包配方 %s 的输入角色必须恰好是 mingit 与 portable-git", recipe.Name)
+			}
+			for _, role := range []string{"mingit", "portable-git"} {
+				if _, exists := inputRoles[role]; !exists {
+					return fmt.Errorf("外部随包配方 %s 缺少输入角色 %s", recipe.Name, role)
+				}
 			}
 		}
 		for _, required := range recipe.RequiredFiles {
@@ -169,6 +214,16 @@ func validSHA256(value string) bool {
 	}
 	_, err := hex.DecodeString(value)
 	return err == nil
+}
+
+func validRole(value string) bool {
+	for _, char := range value {
+		if char >= 'a' && char <= 'z' || char >= '0' && char <= '9' || char == '-' {
+			continue
+		}
+		return false
+	}
+	return value != ""
 }
 
 func safeRelativePath(value string) bool {

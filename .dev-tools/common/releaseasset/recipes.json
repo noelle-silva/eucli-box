@@ -22,37 +22,40 @@
     {
       "name": "git-bash-root",
       "kind": "git-bash",
-      "version": "Git for Windows 2.42.0.windows.2; Bash 5.2.15",
-      "source": "https://github.com/git-for-windows/git/releases/tag/v2.42.0.windows.2",
+      "version": "Git for Windows 2.56.1.windows.1; Bash 5.3.15",
+      "source": "https://github.com/git-for-windows/git/releases/tag/v2.56.1.windows.1",
       "sources": [
-        "https://github.com/git-for-windows/git/releases/download/v2.42.0.windows.2/MinGit-2.42.0.2-64-bit.zip",
-        "https://github.com/git-for-windows/git/releases/download/v2.42.0.windows.2/PortableGit-2.42.0.2-64-bit.7z.exe"
+        "https://github.com/git-for-windows/git/releases/download/v2.56.1.windows.1/MinGit-2.56.1-64-bit.zip",
+        "https://github.com/git-for-windows/git/releases/download/v2.56.1.windows.1/PortableGit-2.56.1-64-bit.7z.exe"
       ],
       "artifacts": ["tool:shell_command"],
+      "expectations": ["git version 2.56.1.windows.1"],
       "inputs": [
         {
-          "name": "MinGit-2.42.0.2-64-bit.zip",
-          "url": "https://github.com/git-for-windows/git/releases/download/v2.42.0.windows.2/MinGit-2.42.0.2-64-bit.zip",
-          "size": 39487291,
-          "sha256": "7139f2c13667c70facd6c105d955a4bbd034b807535963b5f6fc6ed026bb53a3"
+          "role": "mingit",
+          "name": "MinGit-2.56.1-64-bit.zip",
+          "url": "https://github.com/git-for-windows/git/releases/download/v2.56.1.windows.1/MinGit-2.56.1-64-bit.zip",
+          "size": 39849768,
+          "sha256": "4a92850b6e917da4fd010669b614b55dccf5b0ec333a534cc4be4700dfefdafd"
         },
         {
-          "name": "PortableGit-2.42.0.2-64-bit.7z.exe",
-          "url": "https://github.com/git-for-windows/git/releases/download/v2.42.0.windows.2/PortableGit-2.42.0.2-64-bit.7z.exe",
-          "size": 57890920,
-          "sha256": "9254a4a0c597f1c4700cb607cedd83aef2215c289a3b2b1b7475cf58d51c005e"
+          "role": "portable-git",
+          "name": "PortableGit-2.56.1-64-bit.7z.exe",
+          "url": "https://github.com/git-for-windows/git/releases/download/v2.56.1.windows.1/PortableGit-2.56.1-64-bit.7z.exe",
+          "size": 60125512,
+          "sha256": "9dd04a608ceb5f6ab32a73709e0ecb159d211da71b697c45ff81f6dd0c6b49c7"
         }
       ],
       "requiredFiles": [
         {
           "path": "bin/bash.exe",
-          "size": 45576,
-          "sha256": "c6174b19689254556f318a8b507ed9c3bb317d4805917a281b226665b1a42a05"
+          "size": 44888,
+          "sha256": "1f654b9227b44acae4d388daa44564624adf42c48cd29373645a9fcde9fc7f99"
         },
         {
           "path": "usr/bin/bash.exe",
-          "size": 2295184,
-          "sha256": "0a0ec9b7259d0fbdaa037f1ff630cf37f097e0c82bbe8275c7084d59120644b0"
+          "size": 2449886,
+          "sha256": "5490d0da5e7cf9d92068cc48fcc590f2bcf8564add8ff91c3b5fe541eb2d72e3"
         }
       ]
     },
@@ -65,6 +68,7 @@
         "https://github.com/nushell/nushell/releases/download/0.115.0/nu-0.115.0-x86_64-pc-windows-msvc.zip"
       ],
       "artifacts": ["tool:shell_command"],
+      "expectations": ["0.115.0"],
       "inputs": [
         {
           "name": "nu-0.115.0-x86_64-pc-windows-msvc.zip",
@@ -90,6 +94,7 @@
         "https://github.com/PowerShell/PowerShell/releases/download/v7.6.5/PowerShell-7.6.5-win-x64.zip"
       ],
       "artifacts": ["tool:shell_command"],
+      "expectations": ["7.6.5"],
       "inputs": [
         {
           "name": "PowerShell-7.6.5-win-x64.zip",

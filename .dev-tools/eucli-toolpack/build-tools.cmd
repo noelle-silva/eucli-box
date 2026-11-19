@@ -26,16 +26,13 @@ goto parseargs
 
 set "ASSET_ROOT=%REPO_ROOT%\.dev-workspace\.release\verification\cache\assets"
 
-if defined TOOL_PARAM (
-    pushd "%RUNTIME%\work" >nul 2>nul
-    go run devtools/eucli-release-assets -target "tool:%TOOL_PARAM%" -root "%REPO_ROOT%" -output "%ASSET_ROOT%\prepared" -cache "%ASSET_ROOT%\cache" -temp "%ASSET_ROOT%\temp"
-    set "ASSET_STATUS=%ERRORLEVEL%"
-    popd >nul 2>nul
-    if not "%ASSET_STATUS%"=="0" (
-        echo [FAIL] prepare assets for tool:%TOOL_PARAM%
-        exit /b %ASSET_STATUS%
-    )
+if not defined TOOL_PARAM goto assets-prepared
+call "%TOOLROOT%\prepare-assets.cmd" "%TOOL_PARAM%"
+if errorlevel 1 (
+    echo [FAIL] prepare assets for tool:%TOOL_PARAM%
+    exit /b 1
 )
+:assets-prepared
 
 pushd "%RUNTIME%\work" || exit /b 1
 if defined TOOL_PARAM (

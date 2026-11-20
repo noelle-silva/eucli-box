@@ -37,8 +37,8 @@ func TestAnthropicThinkingAutoOmitsThinkingFields(t *testing.T) {
 		if _, ok := body["output_config"]; ok {
 			t.Fatalf("%s: auto 档位不应发送 output_config 字段: %#v", tc.name, body["output_config"])
 		}
-		if maxTokens != anthropicAutoReplyTokens {
-			t.Fatalf("%s: auto 档位 max_tokens = %d, want %d", tc.name, maxTokens, anthropicAutoReplyTokens)
+		if maxTokens != anthropicMaxOutputTokens {
+			t.Fatalf("%s: auto 档位 max_tokens = %d, want %d", tc.name, maxTokens, anthropicMaxOutputTokens)
 		}
 	}
 }
@@ -65,8 +65,8 @@ func TestAnthropicThinkingLatestUsesAdaptiveAndOutputConfig(t *testing.T) {
 	if !ok || outputConfig["effort"] != "high" {
 		t.Fatalf("output_config = %#v", body["output_config"])
 	}
-	if maxTokens != anthropicAutoReplyTokens {
-		t.Fatalf("adaptive 形态 max_tokens = %d, want %d", maxTokens, anthropicAutoReplyTokens)
+	if maxTokens != anthropicMaxOutputTokens {
+		t.Fatalf("adaptive 形态 max_tokens = %d, want %d", maxTokens, anthropicMaxOutputTokens)
 	}
 }
 
@@ -79,8 +79,8 @@ func TestAnthropicThinkingLegacyUsesBudgetTokens(t *testing.T) {
 	if _, ok := body["output_config"]; ok {
 		t.Fatalf("legacy 形态不应携带 output_config: %#v", body["output_config"])
 	}
-	if maxTokens != 3072+anthropicReplyTokenReserve {
-		t.Fatalf("legacy 形态 max_tokens = %d, want %d", maxTokens, 3072+anthropicReplyTokenReserve)
+	if maxTokens != anthropicMaxOutputTokens {
+		t.Fatalf("legacy 形态 max_tokens = %d, want %d", maxTokens, anthropicMaxOutputTokens)
 	}
 }
 

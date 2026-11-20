@@ -27,6 +27,27 @@ type anthropicUsagePayload struct {
 	OutputTokens             *int `json:"output_tokens"`
 	CacheCreationInputTokens *int `json:"cache_creation_input_tokens"`
 	CacheReadInputTokens     *int `json:"cache_read_input_tokens"`
+	// OutputTokensDetails 里带 thinking_tokens：本轮输出中用于内部推理的量。
+	// 它与正文共用 output_tokens 配额，因此诊断截断时必须一并读出来。
+	OutputTokensDetails *struct {
+		ThinkingTokens *int `json:"thinking_tokens"`
+	} `json:"output_tokens_details"`
+}
+
+// anthropicOutputTokens 取本轮输出总量，缺失按 0 处理（仅用于错误诊断）。
+func anthropicOutputTokens(payload *anthropicUsagePayload) int {
+	if payload == nil || payload.OutputTokens == nil {
+		return 0
+	}
+	return *payload.OutputTokens
+}
+
+// anthropicThinkingTokens 取本轮思考用量，缺失按 0 处理（仅用于错误诊断）。
+func anthropicThinkingTokens(payload *anthropicUsagePayload) int {
+	if payload == nil || payload.OutputTokensDetails == nil || payload.OutputTokensDetails.ThinkingTokens == nil {
+		return 0
+	}
+	return *payload.OutputTokensDetails.ThinkingTokens
 }
 
 // anthropicTokenUsage 把 Anthropic 的用量字段归一为统一容器：原样搬运，不做换算。
@@ -82,8 +103,9 @@ func anthropicContextTotalTokens(payload *anthropicUsagePayload) *int {
 }
 
 type anthropicCompleteResponse struct {
-	ID      string                 `json:"id"`
-	Usage   *anthropicUsagePayload `json:"usage"`
+	ID         string                 `json:"id"`
+	StopReason string                 `json:"stop_reason"`
+	Usage      *anthropicUsagePayload `json:"usage"`
 	Content []struct {
 		Type      string         `json:"type"`
 		Text      string         `json:"text"`
@@ -104,6 +126,8 @@ type anthropicStreamPayload struct {
 	} `json:"message"`
 	Usage        *anthropicUsagePayload `json:"usage"`
 	Index        int                    `json:"index"`
+	// StopReason 出现在 message_delta 事件里，标记本轮生成为何结束。
+	StopReason string `json:"stop_reason"`
 	ContentBlock struct {
 		Type      string         `json:"type"`
 		Text      string         `json:"text"`
@@ -120,6 +144,8 @@ type anthropicStreamPayload struct {
 		Thinking    string `json:"thinking"`
 		Signature   string `json:"signature"`
 		PartialJSON string `json:"partial_json"`
+		// StopReason 随 message_delta 事件下发，标记本轮生成为何结束。
+		StopReason string `json:"stop_reason"`
 	} `json:"delta"`
 }
 
@@ -134,6 +160,7 @@ type anthropicStreamParser struct {
 	sse                *sseParser
 	onEvent            types.ModelStreamHandler
 	id                 string
+	stopReason         string
 	content            strings.Builder
 	reasoning          strings.Builder
 	reasoningSignature string
@@ -236,6 +263,10 @@ func (p *anthropicStreamParser) Finish(response types.HTTPResponse) (types.Model
 	if err := p.sse.Finish(); err != nil {
 		return types.ModelResponse{}, err
 	}
+	// 拒答与截断必须显式失败，否则上层会把它当成一次成功的空回复。
+	if err := anthropicStopReasonError(p.stopReason, anthropicOutputTokens(p.usage), anthropicThinkingTokens(p.usage)); err != nil {
+		return types.ModelResponse{}, err
+	}
 	result := types.ModelResponse{ID: p.id, Content: p.content.String(), Reasoning: p.reasoning.String(), ReasoningSource: "an", ReasoningSignature: p.reasoningSignature, ReasoningData: p.reasoningData, Usage: anthropicTokenUsage(p.usage), CacheRate: anthropicCacheRate(p.usage), ContextTokens: anthropicContextTokens(p.usage), ContextTotalTokens: anthropicContextTotalTokens(p.usage), Raw: response.Body, CreatedAt: p.createdAt}
 	indexes := make([]int, 0, len(p.toolUses))
 	for index := range p.toolUses {
@@ -279,6 +310,10 @@ func (p *anthropicStreamParser) acceptEvent(event sseEvent) error {
 	// 逐项取最新真值，不丢弃上游任一字段。
 	p.mergeUsage(payload.Message.Usage)
 	p.mergeUsage(payload.Usage)
+	// stop_reason 随 message_delta 下发，记录最后一次真值。
+	if stopReason := strings.TrimSpace(payload.Delta.StopReason); stopReason != "" {
+		p.stopReason = stopReason
+	}
 	switch payload.Type {
 	case "content_block_start":
 		if payload.ContentBlock.Type == "text" && payload.ContentBlock.Text != "" {
@@ -374,6 +409,10 @@ func (anthropicAdapter) ParseCompleteResponse(response types.HTTPResponse) (type
 	var payload anthropicCompleteResponse
 	if err := json.Unmarshal(response.Body, &payload); err != nil {
 		return types.ModelResponse{}, providerParseFailed("failed to parse Anthropic completion", err)
+	}
+	// 拒答与截断必须显式失败，否则上层会把它当成一次成功的空回复。
+	if err := anthropicStopReasonError(payload.StopReason, anthropicOutputTokens(payload.Usage), anthropicThinkingTokens(payload.Usage)); err != nil {
+		return types.ModelResponse{}, err
 	}
 	createdAt := time.Now().UTC()
 	result := types.ModelResponse{ID: payload.ID, Usage: anthropicTokenUsage(payload.Usage), CacheRate: anthropicCacheRate(payload.Usage), ContextTokens: anthropicContextTokens(payload.Usage), ContextTotalTokens: anthropicContextTotalTokens(payload.Usage), Raw: response.Body, CreatedAt: createdAt}

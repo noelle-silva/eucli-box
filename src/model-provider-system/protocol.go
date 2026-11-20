@@ -117,6 +117,34 @@ func sortInts(values []int) {
 	}
 }
 
+// protocolOptions 是协议清单的唯一事实源。
+//
+// 它同时服务两件事：客户端下拉项的渲染来源，以及 adapterFor 的取值域。
+// 新增一条协议在这里加一项、并在 protocolAdapterFor 里给出对应适配器即可，
+// 两边不会漂移——清单本身就是"服务端认哪些协议"的定义。
+// 顺序即客户端展示顺序，默认推荐项排在第一位。
+var protocolOptions = []types.CapabilityOption{
+	{
+		Value:       string(types.ProviderProtocolAnthropicLatest),
+		Label:       "Anthropic (Latest)",
+		Description: "下发 adaptive 思考参数，新一代 Claude 唯一接受的形态",
+	},
+	{
+		Value:       string(types.ProviderProtocolOpenAI),
+		Label:       "OpenAI 兼容",
+		Description: "兼容 OpenAI 协议的第三方服务商与中转站",
+	},
+	{
+		Value:       string(types.ProviderProtocolAnthropicLegacy),
+		Label:       "Anthropic (Legacy)",
+		Description: "下发 budget_tokens 预算形态，仅供不支持 adaptive 的老模型",
+	},
+}
+
+// adapterFor 为某个协议装配适配器。
+//
+// 取值域由 protocolOptions 定义，这里只负责"给定协议 -> 适配器"的映射，
+// 因此不可能把清单里没有的协议悄悄放行，也不会漏配清单里的协议。
 func adapterFor(protocol types.ProviderProtocol) (protocolAdapter, error) {
 	switch protocol {
 	case types.ProviderProtocolOpenAI:

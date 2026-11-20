@@ -128,6 +128,7 @@ func (s *system) registerRoutes() {
 	s.mux.HandleFunc("PUT /api/conversation-image/config", s.authWrap(s.handleSaveConversationImageConfig))
 	s.mux.HandleFunc("GET /api/model-groups", s.authWrap(s.handleLoadModelGroups))
 	s.mux.HandleFunc("GET /api/model-groups/strategies", s.authWrap(s.handleListModelGroupStrategies))
+	s.mux.HandleFunc("GET /api/capabilities", s.authWrap(s.handleListCapabilities))
 	s.mux.HandleFunc("PUT /api/model-groups", s.authWrap(s.handleSaveModelGroups))
 	s.mux.HandleFunc("POST /api/providers", s.authWrap(s.handleSaveProvider))
 	s.mux.HandleFunc("GET /api/providers/{providerID}", s.authWrap(s.handleLoadProvider))

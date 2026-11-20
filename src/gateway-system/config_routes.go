@@ -251,6 +251,12 @@ func (s *system) handleSaveModelGroups(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusOK, saved)
 }
 
+// handleListCapabilities 返回服务端对外声明的能力清单：
+// 客户端据此渲染协议下拉与思考档位下拉，词汇表只有模型供应商系统那一份事实。
+func (s *system) handleListCapabilities(w http.ResponseWriter, r *http.Request) {
+	writeData(w, http.StatusOK, s.providers.Capabilities())
+}
+
 // handleListModelGroupStrategies 返回模型组可选的策略清单：
 // 客户端据此渲染下拉项，策略文案只有供应商系统那一份事实，网关不再另抄一套。
 func (s *system) handleListModelGroupStrategies(w http.ResponseWriter, r *http.Request) {

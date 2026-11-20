@@ -1937,7 +1937,10 @@ type fakeGatewayProviders struct {
 	modelRequestConfig types.ModelRequestConfig
 	// strategies 是策略清单接口要转发的静态事实，由用例按需装配。
 	strategies []types.RotationStrategyOption
-	order      []string
+	// capabilityProtocols / capabilityEfforts 是能力清单接口要转发的静态事实，由用例按需装配。
+	capabilityProtocols []types.CapabilityOption
+	capabilityEfforts   []types.CapabilityOption
+	order               []string
 }
 
 func newFakeGatewayProviders() *fakeGatewayProviders {
@@ -1992,6 +1995,9 @@ func (f *fakeGatewayProviders) SaveModelGroups(ctx context.Context, groups []typ
 }
 func (f *fakeGatewayProviders) RotationStrategies() []types.RotationStrategyOption {
 	return f.strategies
+}
+func (f *fakeGatewayProviders) Capabilities() types.Capabilities {
+	return types.Capabilities{Protocols: f.capabilityProtocols, ReasoningEfforts: f.capabilityEfforts}
 }
 func (f *fakeGatewayProviders) RefreshModels(ctx context.Context, providerID string) ([]types.ModelInfo, error) {
 	return []types.ModelInfo{{ID: "gpt-4.1", Name: "GPT-4.1"}}, nil

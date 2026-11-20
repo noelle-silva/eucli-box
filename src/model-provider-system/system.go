@@ -24,6 +24,10 @@ type System interface {
 	// 顺序即客户端下拉的展示顺序；客户端提交的 value 必须能原样落回策略字段。
 	RotationStrategies() []types.RotationStrategyOption
 
+	// Capabilities 返回服务端对外声明的完整能力清单（协议与思考档位）：
+	// 静态事实，无 I/O、不会失败，客户端据此渲染下拉项而不必复制任何枚举。
+	Capabilities() types.Capabilities
+
 	RefreshModels(ctx context.Context, providerID string) ([]types.ModelInfo, error)
 	// ResolveModel 解析坐标并推进模型组轮询：只有真正要用模型时才调用。
 	ResolveModel(ctx context.Context, coordinate types.ModelCoordinate) (types.Provider, types.ModelInfo, error)

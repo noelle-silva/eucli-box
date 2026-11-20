@@ -84,6 +84,8 @@ type ProviderSystem interface {
 	SaveModelGroups(ctx context.Context, groups []types.ModelGroup) ([]types.ModelGroup, error)
 	// RotationStrategies 返回模型组可选的策略清单：静态事实，无需 I/O。
 	RotationStrategies() []types.RotationStrategyOption
+	// Capabilities 返回服务端对外声明的能力清单（协议与思考档位）：静态事实，无需 I/O。
+	Capabilities() types.Capabilities
 	RefreshModels(ctx context.Context, providerID string) ([]types.ModelInfo, error)
 }
 

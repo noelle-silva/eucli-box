@@ -61,6 +61,26 @@ type RotationStrategyOption struct {
 	Description string           `json:"description"`
 }
 
+// CapabilityOption 是一份"服务端认的取值清单"里的一项，供客户端渲染下拉项。
+//
+// value 是唯一被服务端接受的提交值，必须能原样落回对应字段；
+// label 与 description 只用于展示，不参与任何服务端判断。
+// 客户端不得复制这些取值：词汇表归服务端所有，客户端只渲染拿到的清单。
+type CapabilityOption struct {
+	Value       string `json:"value"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
+}
+
+// Capabilities 是服务端对外声明的一份完整能力清单。
+//
+// 它回答"这个服务端接受哪些取值"，让客户端不必硬编码任何枚举。
+// Protocols 与 ReasoningEfforts 的顺序即客户端下拉的展示顺序。
+type Capabilities struct {
+	Protocols        []CapabilityOption `json:"protocols"`
+	ReasoningEfforts []CapabilityOption `json:"reasoningEfforts"`
+}
+
 type ProviderAPIKey struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`

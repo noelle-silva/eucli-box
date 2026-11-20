@@ -4,9 +4,19 @@ import "time"
 
 type ProviderProtocol string
 
+// Anthropic 协议存在两代互不兼容的思考参数形态，因此拆成两条独立轨道：
+//
+//   - anthropic_latest：thinking.type=adaptive 搭配 output_config.effort。
+//     这是新一代 Claude 唯一接受的形态，也是当前默认应选用的协议。
+//   - anthropic_legacy：thinking.type=enabled 搭配 budget_tokens 预算。
+//     只服务于尚未支持 adaptive 的老模型，需要时由使用者显式选择。
+//
+// 两条轨道共用同一套请求/响应解析与缓存断点逻辑，差异仅在思考参数的构造，
+// 因此不存在任何按模型名分支的判断。
 const (
-	ProviderProtocolOpenAI    ProviderProtocol = "openai"
-	ProviderProtocolAnthropic ProviderProtocol = "anthropic"
+	ProviderProtocolOpenAI          ProviderProtocol = "openai"
+	ProviderProtocolAnthropicLatest ProviderProtocol = "anthropic_latest"
+	ProviderProtocolAnthropicLegacy ProviderProtocol = "anthropic_legacy"
 )
 
 type Provider struct {

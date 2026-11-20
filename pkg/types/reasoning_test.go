@@ -7,18 +7,20 @@ func TestCanonicalReasoningEffort(t *testing.T) {
 		input string
 		want  ReasoningEffort
 	}{
-		{"minimal", ReasoningEffortMinimal},
+		{"auto", ReasoningEffortAuto},
 		{"low", ReasoningEffortLow},
 		{"medium", ReasoningEffortMedium},
 		{"high", ReasoningEffortHigh},
 		{"xhigh", ReasoningEffortXHigh},
 		{"max", ReasoningEffortMax},
-		{"ultra", ReasoningEffortUltra},
 		{" high ", ReasoningEffortHigh},
-		{"very_low", ReasoningEffortMinimal},
+		{"very_low", ReasoningEffortLow},
 		{"very_high", ReasoningEffortXHigh},
 		{"", ""},
 		{"extreme", ""},
+		// 已移除档位不再被接受：静默映射会改变使用者真实意图。
+		{"minimal", ""},
+		{"ultra", ""},
 	}
 	for _, tc := range cases {
 		if got := CanonicalReasoningEffort(ReasoningEffort(tc.input)); got != tc.want {

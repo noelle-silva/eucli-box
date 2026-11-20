@@ -3,25 +3,32 @@ package types
 import "strings"
 
 // ReasoningEffort 是全局统一的思考等级词汇表。
-// 取值直接采用社区通用的厂商原词（minimal / low / medium / high / xhigh / max / ultra），
-// 存储、网关入参、客户端展示共用同一套字面量，不再维护中文档位与英文档位之间的二次翻译。
+//
+// 取值域收敛为各厂商共同接受的交集：auto 与 low / medium / high / xhigh / max。
+// 其中 auto 的语义是"不表态"：适配器不得向任何上游发送思考相关字段，
+// 由模型自身的默认行为决定思考程度。它不是一个可以换算成预算的档位，
+// 因此换算函数必须显式处理它，而不能落进 default 分支。
+//
+// 历史上曾存在 minimal 与 ultra 两档，实测在 OpenAI 与 Anthropic 两种
+// 现行协议下都会被上游以 400 拒绝（不在其接受的值域内），故整档移除。
 type ReasoningEffort string
 
 const (
-	ReasoningEffortMinimal ReasoningEffort = "minimal"
-	ReasoningEffortLow     ReasoningEffort = "low"
-	ReasoningEffortMedium  ReasoningEffort = "medium"
-	ReasoningEffortHigh    ReasoningEffort = "high"
-	ReasoningEffortXHigh   ReasoningEffort = "xhigh"
-	ReasoningEffortMax     ReasoningEffort = "max"
-	ReasoningEffortUltra   ReasoningEffort = "ultra"
+	ReasoningEffortAuto   ReasoningEffort = "auto"
+	ReasoningEffortLow    ReasoningEffort = "low"
+	ReasoningEffortMedium ReasoningEffort = "medium"
+	ReasoningEffortHigh   ReasoningEffort = "high"
+	ReasoningEffortXHigh  ReasoningEffort = "xhigh"
+	ReasoningEffortMax    ReasoningEffort = "max"
 
 	DefaultReasoningEffort ReasoningEffort = ReasoningEffortMedium
 )
 
 // reasoningEffortLegacyAliases 记录词汇表统一前落库的旧取值，只在解析入口归一一次。
+// 已移除档位（minimal / ultra）不在此列：它们不是同义改写，而是被删掉的能力档位，
+// 静默映射会改变使用者的真实意图，因此交由调用方按非法输入快速失败。
 var reasoningEffortLegacyAliases = map[ReasoningEffort]ReasoningEffort{
-	"very_low":  ReasoningEffortMinimal,
+	"very_low":  ReasoningEffortLow,
 	"very_high": ReasoningEffortXHigh,
 }
 
@@ -44,13 +51,12 @@ func TrimReasoningEffort(value ReasoningEffort) ReasoningEffort {
 
 func isCanonicalReasoningEffort(value ReasoningEffort) bool {
 	switch value {
-	case ReasoningEffortMinimal,
+	case ReasoningEffortAuto,
 		ReasoningEffortLow,
 		ReasoningEffortMedium,
 		ReasoningEffortHigh,
 		ReasoningEffortXHigh,
-		ReasoningEffortMax,
-		ReasoningEffortUltra:
+		ReasoningEffortMax:
 		return true
 	default:
 		return false

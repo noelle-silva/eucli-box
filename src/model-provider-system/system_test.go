@@ -1244,7 +1244,7 @@ func testAnthropicProvider() types.Provider {
 		Name:     "Anthropic",
 		BaseURL:  "https://api.anthropic.test/v1",
 		Key:      "secret",
-		Protocol: types.ProviderProtocolAnthropic,
+		Protocol: types.ProviderProtocolAnthropicLegacy,
 		Models:   []types.ModelInfo{{ID: "claude-3-5-sonnet", Name: "claude-3-5-sonnet"}},
 		RegisteredModels: []types.ProviderRegisteredModel{{
 			ID:            "claude-3-5-sonnet",

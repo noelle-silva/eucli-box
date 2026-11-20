@@ -179,8 +179,9 @@ func (openAIAdapter) BuildCompleteRequest(provider types.Provider, request types
 		"model":    request.Coordinate.ModelID,
 		"messages": messages,
 	}
-	if request.ReasoningEffort != "" {
-		body["reasoning_effort"] = openAIReasoningEffort(request.ReasoningEffort)
+	// auto 档位表示不表态：不发送 reasoning_effort，交给模型默认行为。
+	if effort := openAIReasoningEffort(request.ReasoningEffort); effort != "" {
+		body["reasoning_effort"] = effort
 	} else if request.Temperature != nil {
 		body["temperature"] = *request.Temperature
 	}
@@ -206,12 +207,16 @@ func (openAIAdapter) BuildCompleteRequest(provider types.Provider, request types
 	}, nil
 }
 
-// openAIReasoningEffort 把统一等级映射成 OpenAI 兼容端点的 reasoning_effort 字面量。
-// 除 ultra 之外全部同名直通；ultra 是词汇表最上档，OpenAI 侧最高只认 max，落地下传 max。
+// openAIReasoningEffort 把统一档位映射成 reasoning_effort 字面量。
+// 空档位表示本次调用不开启推理，auto 档位表示不表态，两者都返回空串，
+// 由调用方直接省略该字段。
 func openAIReasoningEffort(effort types.ReasoningEffort) string {
+	if types.TrimReasoningEffort(effort) == "" {
+		return ""
+	}
 	normalized := types.NormalizeReasoningEffort(effort, types.DefaultReasoningEffort)
-	if normalized == types.ReasoningEffortUltra {
-		return "max"
+	if normalized == types.ReasoningEffortAuto {
+		return ""
 	}
 	return string(normalized)
 }

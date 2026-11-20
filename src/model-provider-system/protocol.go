@@ -121,8 +121,10 @@ func adapterFor(protocol types.ProviderProtocol) (protocolAdapter, error) {
 	switch protocol {
 	case types.ProviderProtocolOpenAI:
 		return openAIAdapter{}, nil
-	case types.ProviderProtocolAnthropic:
-		return anthropicAdapter{}, nil
+	case types.ProviderProtocolAnthropicLatest:
+		return anthropicAdapter{thinking: anthropicThinkingBuilder{mode: anthropicThinkingAdaptive}}, nil
+	case types.ProviderProtocolAnthropicLegacy:
+		return anthropicAdapter{thinking: anthropicThinkingBuilder{mode: anthropicThinkingBudget}}, nil
 	default:
 		return nil, providerUnsupportedProtocol("provider protocol is not supported", nil)
 	}

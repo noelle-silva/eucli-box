@@ -9,7 +9,11 @@ import (
 	"eucli-box/pkg/types"
 )
 
-type anthropicAdapter struct{}
+// anthropicAdapter 对应一条 Anthropic 轨道。两条轨道共用全部请求/响应逻辑，
+// 仅在思考参数的构造上不同，形态由 thinking 决定。
+type anthropicAdapter struct {
+	thinking anthropicThinkingBuilder
+}
 
 type anthropicModelListResponse struct {
 	Data []struct {
@@ -172,7 +176,7 @@ func (anthropicAdapter) ParseListModelsResponse(response types.HTTPResponse) ([]
 	return models, nil
 }
 
-func (anthropicAdapter) BuildCompleteRequest(provider types.Provider, request types.ModelRequest, timeout int64) (types.HTTPRequest, error) {
+func (a anthropicAdapter) BuildCompleteRequest(provider types.Provider, request types.ModelRequest, timeout int64) (types.HTTPRequest, error) {
 	messages, systemText, err := anthropicMessages(request.Messages)
 	if err != nil {
 		return types.HTTPRequest{}, err
@@ -181,16 +185,12 @@ func (anthropicAdapter) BuildCompleteRequest(provider types.Provider, request ty
 		"model":    request.Coordinate.ModelID,
 		"messages": messages,
 	}
-	// Anthropic 要求 thinking 预算必须小于 max_tokens，输出上限因此由预算推导，
-	// 避免高档位预算撞上固定上限触发 400 而不是静默降级。
-	thinkingBudgetTokens := 0
-	if request.ReasoningEffort != "" {
-		thinkingBudgetTokens = anthropicThinkingBudgetTokens(request.ReasoningEffort)
-		body["thinking"] = map[string]any{"type": "enabled", "budget_tokens": thinkingBudgetTokens}
-	} else if request.Temperature != nil {
+	// 思考参数按轨道形态构造，输出上限随之推导。
+	// auto 档位与未开启推理都不发送思考字段，由模型默认行为决定。
+	body["max_tokens"] = a.thinking.apply(body, request.ReasoningEffort)
+	if request.ReasoningEffort == "" && request.Temperature != nil {
 		body["temperature"] = *request.Temperature
 	}
-	body["max_tokens"] = thinkingBudgetTokens + anthropicReplyTokenReserve
 	if request.Stream {
 		body["stream"] = true
 	}
@@ -217,28 +217,6 @@ func (anthropicAdapter) BuildCompleteRequest(provider types.Provider, request ty
 		Body:     payload,
 		Timeout:  time.Duration(timeout),
 	}, nil
-}
-
-// anthropicReplyTokenReserve 是思考预算之外留给正文输出的 token 余量。
-const anthropicReplyTokenReserve = 4096
-
-func anthropicThinkingBudgetTokens(effort types.ReasoningEffort) int {
-	switch types.NormalizeReasoningEffort(effort, types.DefaultReasoningEffort) {
-	case types.ReasoningEffortMinimal:
-		return 1024
-	case types.ReasoningEffortLow:
-		return 1536
-	case types.ReasoningEffortHigh:
-		return 3072
-	case types.ReasoningEffortXHigh:
-		return 4096
-	case types.ReasoningEffortMax:
-		return 6144
-	case types.ReasoningEffortUltra:
-		return 8192
-	default:
-		return 2048
-	}
 }
 
 func (anthropicAdapter) NewCompleteStreamParser(onEvent types.ModelStreamHandler) completeStreamParser {

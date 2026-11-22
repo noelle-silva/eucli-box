@@ -1,0 +1,14 @@
+* text=auto
+
+# Go 源码一律使用 LF。
+# gofmt 只认 LF：工作区若被检出成 CRLF，格式检查会把整个目录判为不合规，
+# 淹没有效信号。仓库里存的本来就是 LF，这条把检出行为也固定下来。
+*.go text eol=lf
+
+# Windows 脚本保持 CRLF，避免执行兼容问题
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Unix 脚本保持 LF
+*.sh text eol=lf

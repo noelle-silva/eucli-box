@@ -12,17 +12,17 @@ import (
 // 只依据真实执行计数判断活动，不依赖 UI 状态或运行日志。
 // 更新期间同时承载运行任务的事实：取消句柄、任务基座、阶段、下载进度与结束信号。
 type toolActivity struct {
-	mu            sync.Mutex
+	mu             sync.Mutex
 	activeRequests int
-	updating      bool
-	operationID   string
-	changed       chan struct{}
-	cancel        context.CancelFunc
-	phase         string
-	progress      types.ReleaseOperationProgress
-	baseVersion   string
-	baseInstalled bool
-	done          chan struct{}
+	updating       bool
+	operationID    string
+	changed        chan struct{}
+	cancel         context.CancelFunc
+	phase          string
+	progress       types.ReleaseOperationProgress
+	baseVersion    string
+	baseInstalled  bool
+	done           chan struct{}
 }
 
 func (a *toolActivity) ensureChanged() {

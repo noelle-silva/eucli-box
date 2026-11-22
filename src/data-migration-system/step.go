@@ -13,10 +13,10 @@ import (
 // Step 是一级迁移的登记事实：只声明从哪个数据版本迁到哪个、
 // 改变哪些资料、怎样在开始前检查、怎样执行、怎样核对结果。
 type Step struct {
-	ID          string   // 唯一标识，例如 "1.0.0-to-1.1.0"
-	FromVersion string   // 只接受自己明确认识的前一版本
-	ToVersion   string   // 只产生明确的下一版本
-	Scope       []string // 改变范围与恢复范围：相对数据目录的路径前缀
+	ID          string                                          // 唯一标识，例如 "1.0.0-to-1.1.0"
+	FromVersion string                                          // 只接受自己明确认识的前一版本
+	ToVersion   string                                          // 只产生明确的下一版本
+	Scope       []string                                        // 改变范围与恢复范围：相对数据目录的路径前缀
 	Precheck    func(ctx context.Context, dataDir string) error // 开始条件
 	Apply       func(ctx context.Context, dataDir string) error // 执行改变
 	Verify      func(ctx context.Context, dataDir string) error // 结果核对

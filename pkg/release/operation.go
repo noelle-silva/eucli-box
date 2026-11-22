@@ -18,28 +18,28 @@ const (
 	OperationActionInstall = "install"
 	OperationActionUpdate  = "update"
 
-	OperationResultRunning = "running"
-	OperationResultSuccess = "success"
-	OperationResultFailed  = "failed"
+	OperationResultRunning   = "running"
+	OperationResultSuccess   = "success"
+	OperationResultFailed    = "failed"
 	OperationResultCancelled = "cancelled"
 )
 
 // OperationRecord 记录一次单项安装或更新操作停在哪一个环节。
 // Phase 只能取固定 Phase 词表；Result 单独表示操作是否已经结束以及结束结果。
 type OperationRecord struct {
-	SchemaVersion  int                         `json:"schemaVersion"`
-	OperationID    string                      `json:"operationId"`
+	SchemaVersion  int                           `json:"schemaVersion"`
+	OperationID    string                        `json:"operationId"`
 	Artifact       types.ReleaseArtifactIdentity `json:"artifact"`
-	Action         string                      `json:"action"`
-	TargetVersion  string                      `json:"targetVersion"`
-	Phase          string                      `json:"phase"`
-	Result         string                      `json:"result"`
-	CurrentVersion string                      `json:"currentVersion"`
-	WorkDirectory  string                      `json:"workDirectory"`
-	StartedAt      time.Time                   `json:"startedAt"`
-	UpdatedAt      time.Time                   `json:"updatedAt"`
-	ErrorCode      string                      `json:"errorCode"`
-	ErrorMessage   string                      `json:"errorMessage"`
+	Action         string                        `json:"action"`
+	TargetVersion  string                        `json:"targetVersion"`
+	Phase          string                        `json:"phase"`
+	Result         string                        `json:"result"`
+	CurrentVersion string                        `json:"currentVersion"`
+	WorkDirectory  string                        `json:"workDirectory"`
+	StartedAt      time.Time                     `json:"startedAt"`
+	UpdatedAt      time.Time                     `json:"updatedAt"`
+	ErrorCode      string                        `json:"errorCode"`
+	ErrorMessage   string                        `json:"errorMessage"`
 }
 
 // NewOperationRecord 构造一次新的操作记录；操作 ID、身份、动作、目标版本和工作目录全部必须有效。

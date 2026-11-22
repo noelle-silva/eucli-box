@@ -46,13 +46,13 @@ type IndexArtifact struct {
 
 // IndexVersion 是索引中一个正式版本记录。
 type IndexVersion struct {
-	Version        string                  `json:"version"`
-	PublishedAt    time.Time               `json:"publishedAt"`
-	SourceRevision string                  `json:"sourceRevision"`
-	DataVersion    string                  `json:"dataVersion,omitempty"`
+	Version        string                       `json:"version"`
+	PublishedAt    time.Time                    `json:"publishedAt"`
+	SourceRevision string                       `json:"sourceRevision"`
+	DataVersion    string                       `json:"dataVersion,omitempty"`
 	Compatibility  *types.EucliBoxCompatibility `json:"compatibility,omitempty"`
-	ReleaseNotes   string                  `json:"releaseNotes,omitempty"`
-	Packages       []IndexPackage          `json:"packages"`
+	ReleaseNotes   string                       `json:"releaseNotes,omitempty"`
+	Packages       []IndexPackage               `json:"packages"`
 }
 
 // IndexPackage 是索引中一个平台压缩包记录。

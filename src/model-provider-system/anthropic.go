@@ -106,7 +106,7 @@ type anthropicCompleteResponse struct {
 	ID         string                 `json:"id"`
 	StopReason string                 `json:"stop_reason"`
 	Usage      *anthropicUsagePayload `json:"usage"`
-	Content []struct {
+	Content    []struct {
 		Type      string         `json:"type"`
 		Text      string         `json:"text"`
 		Thinking  string         `json:"thinking"`
@@ -124,10 +124,10 @@ type anthropicStreamPayload struct {
 		ID    string                 `json:"id"`
 		Usage *anthropicUsagePayload `json:"usage"`
 	} `json:"message"`
-	Usage        *anthropicUsagePayload `json:"usage"`
-	Index        int                    `json:"index"`
+	Usage *anthropicUsagePayload `json:"usage"`
+	Index int                    `json:"index"`
 	// StopReason 出现在 message_delta 事件里，标记本轮生成为何结束。
-	StopReason string `json:"stop_reason"`
+	StopReason   string `json:"stop_reason"`
 	ContentBlock struct {
 		Type      string         `json:"type"`
 		Text      string         `json:"text"`

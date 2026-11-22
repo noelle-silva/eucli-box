@@ -16,12 +16,12 @@ const currentProgramSchemaVersion = 1
 
 // currentProgramRecord 只记录当前启用版本和已核对的发布身份，不记录用户配置和密钥。
 type currentProgramRecord struct {
-	SchemaVersion    int                          `json:"schemaVersion"`
+	SchemaVersion    int                           `json:"schemaVersion"`
 	Artifact         types.ReleaseArtifactIdentity `json:"artifact"`
-	Version          string                       `json:"version"`
-	Platform         string                       `json:"platform"`
-	ProgramDirectory string                       `json:"programDirectory"`
-	Status           string                       `json:"status"`
+	Version          string                        `json:"version"`
+	Platform         string                        `json:"platform"`
+	ProgramDirectory string                        `json:"programDirectory"`
+	Status           string                        `json:"status"`
 }
 
 // CurrentProgram 表示当前启用版本的可核对事实。

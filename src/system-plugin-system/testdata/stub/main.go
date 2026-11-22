@@ -35,24 +35,24 @@ type message struct {
 }
 
 type behavior struct {
-	Handshake      string            `json:"handshake"`
-	Capabilities   []capability      `json:"capabilities"`
-	NoReady        bool              `json:"noReady"`
-	CrashOnStart   bool              `json:"crashOnStart"`
-	ExitAfterReady bool              `json:"exitAfterReady"`
-	IgnoreStop     bool              `json:"ignoreStop"`
-	IgnorePing     bool              `json:"ignorePing"`
-	InvokeDelayMs  int               `json:"invokeDelayMs"`
-	WaitForFile    string            `json:"waitForFile"`
-	CreateFile     string            `json:"createFile"`
-	ResponseFile   string            `json:"responseFile"`
-	Status         string            `json:"status"`
-	Error          string            `json:"error"`
-	Values         map[string]string `json:"values"`
-	TrackFile      string            `json:"trackFile"`
-	MigrationState string            `json:"migrationState"`
-	MigrationFailure bool            `json:"migrationFailure"`
-	EmitEvent      *struct {
+	Handshake        string            `json:"handshake"`
+	Capabilities     []capability      `json:"capabilities"`
+	NoReady          bool              `json:"noReady"`
+	CrashOnStart     bool              `json:"crashOnStart"`
+	ExitAfterReady   bool              `json:"exitAfterReady"`
+	IgnoreStop       bool              `json:"ignoreStop"`
+	IgnorePing       bool              `json:"ignorePing"`
+	InvokeDelayMs    int               `json:"invokeDelayMs"`
+	WaitForFile      string            `json:"waitForFile"`
+	CreateFile       string            `json:"createFile"`
+	ResponseFile     string            `json:"responseFile"`
+	Status           string            `json:"status"`
+	Error            string            `json:"error"`
+	Values           map[string]string `json:"values"`
+	TrackFile        string            `json:"trackFile"`
+	MigrationState   string            `json:"migrationState"`
+	MigrationFailure bool              `json:"migrationFailure"`
+	EmitEvent        *struct {
 		Name    string         `json:"name"`
 		Payload map[string]any `json:"payload"`
 	} `json:"emitEvent"`
@@ -162,7 +162,8 @@ func runDataMigrationMode() {
 	os.Exit(0)
 }
 
-func handleInvoke(incoming message) {	if settings.CreateFile != "" {
+func handleInvoke(incoming message) {
+	if settings.CreateFile != "" {
 		_ = os.WriteFile(settings.CreateFile, []byte("ready"), 0o644)
 	}
 	for settings.WaitForFile != "" {

@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	datastorage "eucli-box/src/data-storage-system"
 	"eucli-box/pkg/datapaths"
+	datastorage "eucli-box/src/data-storage-system"
 )
 
 const testTargetVersion = "1.2.0"

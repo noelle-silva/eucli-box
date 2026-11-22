@@ -173,13 +173,13 @@ func (f *toolOperationFixture) makeToolCandidateFromSource(id string, version st
 		}
 	}
 	product := types.ReleaseProductRecord{
-		SchemaVersion:    release.ReleaseManifestSchemaVersion,
-		Artifact:         types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: id},
-		Version:          version,
-		Platform:         types.ReleasePlatformWindowsX64,
-		OfficialSource:   "https://github.com/noelle-silva/eucli-box-ai-tools",
-		Compatibility:    &types.EucliBoxCompatibility{MinimumVersion: "0.1.0", MaximumVersionExclusive: "0.2.0"},
-		Source:           types.ReleaseSourceRecord{Repository: "https://github.com/noelle-silva/eucli-box", Commit: "0123456789abcdef0123456789abcdef01234567", Recorded: true},
+		SchemaVersion:  release.ReleaseManifestSchemaVersion,
+		Artifact:       types.ReleaseArtifactIdentity{Kind: types.ReleaseArtifactKindTool, ID: id},
+		Version:        version,
+		Platform:       types.ReleasePlatformWindowsX64,
+		OfficialSource: "https://github.com/noelle-silva/eucli-box-ai-tools",
+		Compatibility:  &types.EucliBoxCompatibility{MinimumVersion: "0.1.0", MaximumVersionExclusive: "0.2.0"},
+		Source:         types.ReleaseSourceRecord{Repository: "https://github.com/noelle-silva/eucli-box", Commit: "0123456789abcdef0123456789abcdef01234567", Recorded: true},
 	}
 	productPayload, err := json.MarshalIndent(product, "", "  ")
 	if err != nil {

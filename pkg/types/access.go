@@ -44,11 +44,11 @@ type PersistentKeyView struct {
 
 // PersistentKeyCreated 是创建长期 Key 的一次性响应：明文完整 Key 只在此返回一次。
 type PersistentKeyCreated struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	PlainKey    string `json:"plainKey"`
-	ExpiresAt   *string `json:"expiresAt"`
-	CreatedAt   string `json:"createdAt"`
+	ID        string  `json:"id"`
+	Name      string  `json:"name"`
+	PlainKey  string  `json:"plainKey"`
+	ExpiresAt *string `json:"expiresAt"`
+	CreatedAt string  `json:"createdAt"`
 }
 
 // PersistentPortState 是长期端口期望状态词表。
@@ -67,7 +67,7 @@ const (
 // PersistentPortConflictReason 是长期端口开放失败的原因。
 const (
 	PersistentPortConflictLocalEntrypoint = "与本机受托端口冲突"
-	PersistentPortConflictDuplicatePort    = "端口已被其他长期端口记录使用"
+	PersistentPortConflictDuplicatePort   = "端口已被其他长期端口记录使用"
 )
 
 // PersistentKeyVerifyResult 是长期 Key 核对结果。

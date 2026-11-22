@@ -99,30 +99,30 @@ type ReleaseExternalAsset struct {
 }
 
 type ReleaseProductRecord struct {
-	SchemaVersion    int                     `json:"schemaVersion"`
-	Artifact         ReleaseArtifactIdentity `json:"artifact"`
-	Version          string                  `json:"version"`
-	Platform         string                  `json:"platform"`
-	OfficialSource   string                  `json:"officialSource"`
-	Compatibility    *EucliBoxCompatibility  `json:"eucliBoxCompatibility,omitempty"`
-	Source           ReleaseSourceRecord     `json:"source"`
-	DataVersion      string                  `json:"dataVersion,omitempty"`
-	ExternalAssets   []ReleaseExternalAsset  `json:"externalAssets,omitempty"`
+	SchemaVersion  int                     `json:"schemaVersion"`
+	Artifact       ReleaseArtifactIdentity `json:"artifact"`
+	Version        string                  `json:"version"`
+	Platform       string                  `json:"platform"`
+	OfficialSource string                  `json:"officialSource"`
+	Compatibility  *EucliBoxCompatibility  `json:"eucliBoxCompatibility,omitempty"`
+	Source         ReleaseSourceRecord     `json:"source"`
+	DataVersion    string                  `json:"dataVersion,omitempty"`
+	ExternalAssets []ReleaseExternalAsset  `json:"externalAssets,omitempty"`
 }
 
 type ReleaseManifest struct {
-	SchemaVersion    int                     `json:"schemaVersion"`
-	Artifact         ReleaseArtifactIdentity `json:"artifact"`
-	Version          string                  `json:"version"`
-	Platform         string                  `json:"platform"`
-	TagName          string                  `json:"tagName"`
-	OfficialSource   string                  `json:"officialSource"`
-	Compatibility    *EucliBoxCompatibility  `json:"eucliBoxCompatibility,omitempty"`
-	Source           ReleaseSourceRecord     `json:"source"`
-	DataVersion      string                  `json:"dataVersion,omitempty"`
-	ExternalAssets   []ReleaseExternalAsset  `json:"externalAssets,omitempty"`
-	Archive          ReleaseFileRecord       `json:"archive"`
-	Files            []ReleaseFileRecord     `json:"files"`
+	SchemaVersion  int                     `json:"schemaVersion"`
+	Artifact       ReleaseArtifactIdentity `json:"artifact"`
+	Version        string                  `json:"version"`
+	Platform       string                  `json:"platform"`
+	TagName        string                  `json:"tagName"`
+	OfficialSource string                  `json:"officialSource"`
+	Compatibility  *EucliBoxCompatibility  `json:"eucliBoxCompatibility,omitempty"`
+	Source         ReleaseSourceRecord     `json:"source"`
+	DataVersion    string                  `json:"dataVersion,omitempty"`
+	ExternalAssets []ReleaseExternalAsset  `json:"externalAssets,omitempty"`
+	Archive        ReleaseFileRecord       `json:"archive"`
+	Files          []ReleaseFileRecord     `json:"files"`
 }
 
 // ArtifactInstallation 是业务端当前真实的已装事实：某个发布物装了、装的是哪个版本、适用什么范围。
@@ -161,7 +161,7 @@ type ArtifactReleaseCandidate struct {
 // ArtifactCandidateList 是某个分类在某个来源下的候选完整清单：
 // 来源种类（official/local）+ 该分类全部可展示项。
 type ArtifactCandidateList struct {
-	SourceKind string                    `json:"source"`
+	SourceKind string                     `json:"source"`
 	Candidates []ArtifactReleaseCandidate `json:"candidates"`
 }
 
@@ -227,19 +227,19 @@ const (
 )
 
 const (
-	ArtifactPhaseCandidate    = "candidate"
+	ArtifactPhaseCandidate     = "candidate"
 	ArtifactPhaseCompatibility = "compatibility"
-	ArtifactPhaseActivity     = "activity"
-	ArtifactPhaseDownload     = "download"
-	ArtifactPhaseManifest     = "manifest"
-	ArtifactPhaseArchive      = "archive"
-	ArtifactPhasePackage      = "package"
-	ArtifactPhasePrepare      = "prepare"
-	ArtifactPhaseMigration    = "migration"
-	ArtifactPhaseSwitch       = "switch"
-	ArtifactPhaseProbe        = "probe"
-	ArtifactPhaseRestore      = "restore"
-	ArtifactPhaseRefresh      = "refresh"
+	ArtifactPhaseActivity      = "activity"
+	ArtifactPhaseDownload      = "download"
+	ArtifactPhaseManifest      = "manifest"
+	ArtifactPhaseArchive       = "archive"
+	ArtifactPhasePackage       = "package"
+	ArtifactPhasePrepare       = "prepare"
+	ArtifactPhaseMigration     = "migration"
+	ArtifactPhaseSwitch        = "switch"
+	ArtifactPhaseProbe         = "probe"
+	ArtifactPhaseRestore       = "restore"
+	ArtifactPhaseRefresh       = "refresh"
 )
 
 // 发布物数据迁移的四态结果词表：与各发布物迁移模式回报的结果一致。
@@ -252,23 +252,23 @@ const (
 
 // 固定错误码：工具和插件后台、网关、客户端统一使用，不得各自造同义名称。
 const (
-	ArtifactErrorNotInstalled       = "ARTIFACT_NOT_INSTALLED"
-	ArtifactErrorReleaseUnavailable = "ARTIFACT_RELEASE_UNAVAILABLE"
-	ArtifactErrorCandidateMismatch  = "ARTIFACT_CANDIDATE_MISMATCH"
-	ArtifactErrorCompatibility      = "ARTIFACT_COMPATIBILITY_FAILED"
-	ArtifactErrorDownloadFailed     = "ARTIFACT_DOWNLOAD_FAILED"
-	ArtifactErrorManifestInvalid    = "ARTIFACT_MANIFEST_INVALID"
-	ArtifactErrorPackageInvalid     = "ARTIFACT_PACKAGE_INVALID"
-	ArtifactErrorPathInvalid        = "ARTIFACT_PATH_INVALID"
-	ArtifactErrorToolActive         = "TOOL_ACTIVE"
-	ArtifactErrorPluginActive       = "PLUGIN_ACTIVE"
-	ArtifactErrorUpdateInProgress   = "ARTIFACT_UPDATE_IN_PROGRESS"
-	ArtifactErrorPrepareFailed      = "ARTIFACT_PREPARE_FAILED"
+	ArtifactErrorNotInstalled        = "ARTIFACT_NOT_INSTALLED"
+	ArtifactErrorReleaseUnavailable  = "ARTIFACT_RELEASE_UNAVAILABLE"
+	ArtifactErrorCandidateMismatch   = "ARTIFACT_CANDIDATE_MISMATCH"
+	ArtifactErrorCompatibility       = "ARTIFACT_COMPATIBILITY_FAILED"
+	ArtifactErrorDownloadFailed      = "ARTIFACT_DOWNLOAD_FAILED"
+	ArtifactErrorManifestInvalid     = "ARTIFACT_MANIFEST_INVALID"
+	ArtifactErrorPackageInvalid      = "ARTIFACT_PACKAGE_INVALID"
+	ArtifactErrorPathInvalid         = "ARTIFACT_PATH_INVALID"
+	ArtifactErrorToolActive          = "TOOL_ACTIVE"
+	ArtifactErrorPluginActive        = "PLUGIN_ACTIVE"
+	ArtifactErrorUpdateInProgress    = "ARTIFACT_UPDATE_IN_PROGRESS"
+	ArtifactErrorPrepareFailed       = "ARTIFACT_PREPARE_FAILED"
 	ArtifactErrorDataMigrationFailed = "ARTIFACT_DATA_MIGRATION_FAILED"
-	ArtifactErrorSwitchFailed       = "ARTIFACT_SWITCH_FAILED"
-	ArtifactErrorProbeFailed        = "ARTIFACT_PROBE_FAILED"
-	ArtifactErrorRestoreFailed      = "ARTIFACT_RESTORE_FAILED"
-	ArtifactErrorStateUnknown       = "ARTIFACT_STATE_UNKNOWN"
-	ArtifactErrorDataChanged        = "ARTIFACT_DATA_CHANGED"
-	ArtifactErrorCancelRejected     = "ARTIFACT_CANCEL_REJECTED"
+	ArtifactErrorSwitchFailed        = "ARTIFACT_SWITCH_FAILED"
+	ArtifactErrorProbeFailed         = "ARTIFACT_PROBE_FAILED"
+	ArtifactErrorRestoreFailed       = "ARTIFACT_RESTORE_FAILED"
+	ArtifactErrorStateUnknown        = "ARTIFACT_STATE_UNKNOWN"
+	ArtifactErrorDataChanged         = "ARTIFACT_DATA_CHANGED"
+	ArtifactErrorCancelRejected      = "ARTIFACT_CANCEL_REJECTED"
 )

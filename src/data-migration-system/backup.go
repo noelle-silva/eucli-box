@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"eucli-box/pkg/datapaths"
 	"fmt"
 	"io"
 	"os"
@@ -12,7 +13,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"eucli-box/pkg/datapaths"
 )
 
 const (

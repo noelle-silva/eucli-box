@@ -334,10 +334,10 @@ func normalizeFolderIDList(ids []string, label string) ([]string, error) {
 	for _, id := range ids {
 		id = strings.TrimSpace(id)
 		if id == "" {
-			return nil, storageInvalid(label + " id is required", nil)
+			return nil, storageInvalid(label+" id is required", nil)
 		}
 		if _, ok := seen[id]; ok {
-			return nil, storageInvalid(label + " id is duplicated: "+id, nil)
+			return nil, storageInvalid(label+" id is duplicated: "+id, nil)
 		}
 		seen[id] = struct{}{}
 		normalized = append(normalized, id)

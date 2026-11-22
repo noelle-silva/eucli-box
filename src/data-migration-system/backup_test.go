@@ -280,12 +280,12 @@ func TestWorkspaceDirIsSiblingOfDataDir(t *testing.T) {
 func TestScopeMatching(t *testing.T) {
 	scope := []string{testCounterScope, path.Join(datapaths.RelMetaDir, "stamps")}
 	matches := map[string]bool{
-		testCounterScope:                              true,
-		testCounterScope + ".bak":                     false,
-		path.Join(datapaths.RelMetaDir, "stamps/a.json"):          true,
-		path.Join(datapaths.RelMetaDir, "stamps/deep/b.json"):     true,
-		path.Join(datapaths.RelMetaDir, "stamps-backup/c.json"):   false,
-		datapaths.RelVersionFile:                      false,
+		testCounterScope:                                        true,
+		testCounterScope + ".bak":                               false,
+		path.Join(datapaths.RelMetaDir, "stamps/a.json"):        true,
+		path.Join(datapaths.RelMetaDir, "stamps/deep/b.json"):   true,
+		path.Join(datapaths.RelMetaDir, "stamps-backup/c.json"): false,
+		datapaths.RelVersionFile:                                false,
 	}
 	for pathValue, want := range matches {
 		if got := scopeMatches(scope, pathValue); got != want {
@@ -297,7 +297,7 @@ func TestScopeMatching(t *testing.T) {
 func TestManifestJSONShape(t *testing.T) {
 	manifest := backupManifest{
 		SchemaVersion: 1,
-		Files: []backupManifestFile{{Path: datapaths.RelVersionFile, SizeBytes: 96, SHA256: strings.Repeat("ab", 32)}},
+		Files:         []backupManifestFile{{Path: datapaths.RelVersionFile, SizeBytes: 96, SHA256: strings.Repeat("ab", 32)}},
 		TotalBytes:    96,
 		CreatedAt:     "2026-08-13T10:00:00.000000000Z",
 	}

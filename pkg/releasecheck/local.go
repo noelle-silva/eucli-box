@@ -227,7 +227,7 @@ func (s *LocalSourceReader) localCandidate(ctx context.Context, identity types.R
 
 // LocalShelfItem 是货架上一个可下载物的清单事实。
 type LocalShelfItem struct {
-	Artifact types.ReleaseArtifactIdentity
+	Artifact  types.ReleaseArtifactIdentity
 	Candidate *ReleaseCandidate
 }
 

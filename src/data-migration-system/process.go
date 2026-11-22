@@ -31,10 +31,10 @@ type processRecord struct {
 }
 
 type processStepResult struct {
-	StepID            string `json:"stepID"`
-	Phase             string `json:"phase"`
+	StepID             string `json:"stepID"`
+	Phase              string `json:"phase"`
 	DataVersionWritten string `json:"dataVersionWritten"`
-	CheckedAt         string `json:"checkedAt"`
+	CheckedAt          string `json:"checkedAt"`
 }
 
 type processBackupInfo struct {

@@ -400,7 +400,8 @@ func TestCompleteOpenAISendsReasoningWithEncryptedData(t *testing.T) {
 	}
 }
 
-func TestCompleteOpenAISkipsAnthropicCarrierButKeepsVisibleReasoningTextOutOfProtocolCarrier(t *testing.T) {
+func TestCompleteOpenAIDropsAnthropicSourceReasoning(t *testing.T) {
+	// 按协议隔离：Anthropic 来源（"an"）的思维链明文与载体都不进 OpenAI 请求。
 	storage := newFakeProviderStorage()
 	storage.providers["openai-main"] = testOpenAIProvider()
 	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"done"}}]}`)}}
@@ -424,11 +425,14 @@ func TestCompleteOpenAISkipsAnthropicCarrierButKeepsVisibleReasoningTextOutOfPro
 		t.Fatalf("Complete() error = %v", err)
 	}
 	bodyStr := string(network.lastRequest.Body)
+	if strings.Contains(bodyStr, "可见思考文字") {
+		t.Fatalf("cross-provider reasoning text leaked into OpenAI request: %s", bodyStr)
+	}
 	if strings.Contains(bodyStr, "anthropic-data") || strings.Contains(bodyStr, "anthropic-signature") {
 		t.Fatalf("cross-provider carrier leaked into OpenAI request: %s", bodyStr)
 	}
-	if !strings.Contains(bodyStr, `"reasoning_content":"可见思考文字"`) {
-		t.Fatalf("visible reasoning text should still be carried: %s", bodyStr)
+	if strings.Contains(bodyStr, `reasoning_content`) {
+		t.Fatalf("no op-source reasoning should be sent: %s", bodyStr)
 	}
 	if strings.Contains(bodyStr, `encrypted_content`) {
 		t.Fatalf("cross-provider encrypted carrier should not be injected into OpenAI request: %s", bodyStr)
@@ -468,7 +472,9 @@ func TestCompleteAnthropicSendsThinkingBlockWithSignature(t *testing.T) {
 	}
 }
 
-func TestCompleteAnthropicSkipsOpenAICarrier(t *testing.T) {
+func TestCompleteAnthropicDropsOpenAISourceReasoning(t *testing.T) {
+	// 对称守卫：OpenAI 来源（"op"）的思维链明文与加密体都不进 Anthropic 请求，
+	// 也不能因为别家的明文而伪造出一个没有来源依据的 thinking 块。
 	storage := newFakeProviderStorage()
 	storage.providers["anthropic-main"] = testAnthropicProvider()
 	network := &fakeNetwork{response: types.HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"msg-1","content":[{"type":"text","text":"done"}]}`)}}
@@ -494,11 +500,11 @@ func TestCompleteAnthropicSkipsOpenAICarrier(t *testing.T) {
 	if strings.Contains(bodyStr, "openai-encrypted") {
 		t.Fatalf("cross-provider carrier leaked into Anthropic request: %s", bodyStr)
 	}
-	if !strings.Contains(bodyStr, `"type":"thinking"`) {
-		t.Fatalf("visible reasoning text should still be carried in Anthropic thinking block: %s", bodyStr)
+	if strings.Contains(bodyStr, "可见思考文字") {
+		t.Fatalf("cross-provider reasoning text leaked into Anthropic request: %s", bodyStr)
 	}
-	if strings.Contains(bodyStr, `"data":"openai-encrypted"`) {
-		t.Fatalf("cross-provider encrypted carrier should not be injected into Anthropic request: %s", bodyStr)
+	if strings.Contains(bodyStr, `"type":"thinking"`) {
+		t.Fatalf("no an-source reasoning should mean no thinking block: %s", bodyStr)
 	}
 }
 
@@ -751,7 +757,7 @@ func TestCompleteOpenAIUsesReasoningContentField(t *testing.T) {
 			Role:    "assistant",
 			Content: "正式回答",
 			Parts: []types.MessagePart{
-				{Type: "reasoning", Text: "先分析上下文再组织答案", Source: "model"},
+				{Type: "reasoning", Text: "先分析上下文再组织答案", Source: "op"},
 			},
 		}},
 	})
@@ -973,7 +979,7 @@ func TestCompleteAnthropicUsesThinkingBlock(t *testing.T) {
 			Role:    "assistant",
 			Content: "正式回答",
 			Parts: []types.MessagePart{
-				{Type: "reasoning", Text: "先判断范围再给方案", Source: "model"},
+				{Type: "reasoning", Text: "先判断范围再给方案", Source: "an"},
 			},
 		}},
 	})

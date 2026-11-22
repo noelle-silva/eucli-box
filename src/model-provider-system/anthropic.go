@@ -491,8 +491,12 @@ func anthropicMessages(messages []types.PromptMessage) ([]map[string]any, string
 	return converted, systemText, nil
 }
 
+// appendAnthropicReasoningContent 把 Anthropic 自己的思维链回传为 thinking 块。
+// 明文与签名必须同源：两者都只取 source 为 "an" 的片段，别家的思考一概不搬，
+// 否则 Claude 会把别家的思路当成自己的，且明文与签名互相对不上。
+// 该消息没有任何 "an" 来源的思维链记录时直接返回原 content，不伪造 thinking 块。
 func appendAnthropicReasoningContent(content any, message types.PromptMessage) any {
-	thinkingText := promptReasoningText(message)
+	thinkingText := promptReasoningTextForSource(message, "an")
 	carrierPart, hasCarrier := firstPromptReasoningPartForSource(message, "an")
 	if thinkingText == "" && !hasCarrier {
 		return content

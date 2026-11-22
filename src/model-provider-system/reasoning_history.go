@@ -6,6 +6,8 @@ import (
 	"eucli-box/pkg/types"
 )
 
+// 思维链历史按 source 标记隔离：source 是协议维度标记（"an" / "op"），
+// 不是厂商名或模型名。回传时明文与签名/加密体必须取自同一 source，同进同退。
 func promptReasoningParts(message types.PromptMessage) []types.MessagePart {
 	parts := make([]types.MessagePart, 0, len(message.Parts))
 	for _, part := range message.Parts {
@@ -20,9 +22,24 @@ func promptReasoningParts(message types.PromptMessage) []types.MessagePart {
 	return parts
 }
 
-func promptReasoningText(message types.PromptMessage) string {
-	blocks := make([]string, 0, len(message.Parts))
+// promptReasoningPartsForSource 只保留 source 精确匹配的思维链片段。
+// source 为空表示按"未标记来源"匹配，不做任何跨来源兜底。
+func promptReasoningPartsForSource(message types.PromptMessage, source string) []types.MessagePart {
+	trimmedSource := strings.TrimSpace(source)
+	matched := make([]types.MessagePart, 0, len(message.Parts))
 	for _, part := range promptReasoningParts(message) {
+		if strings.TrimSpace(part.Source) != trimmedSource {
+			continue
+		}
+		matched = append(matched, part)
+	}
+	return matched
+}
+
+// promptReasoningTextForSource 拼接指定来源的思维链明文。
+func promptReasoningTextForSource(message types.PromptMessage, source string) string {
+	blocks := make([]string, 0, len(message.Parts))
+	for _, part := range promptReasoningPartsForSource(message, source) {
 		text := strings.TrimSpace(part.Text)
 		if text == "" {
 			continue
@@ -32,20 +49,12 @@ func promptReasoningText(message types.PromptMessage) string {
 	return strings.Join(blocks, "\n\n")
 }
 
-func firstPromptReasoningPart(message types.PromptMessage) (types.MessagePart, bool) {
-	for _, part := range promptReasoningParts(message) {
-		return part, true
-	}
-	return types.MessagePart{}, false
-}
-
+// firstPromptReasoningPartForSource 取指定来源的第一个思维链片段，
+// 它是该来源签名与加密体的唯一载体。
 func firstPromptReasoningPartForSource(message types.PromptMessage, source string) (types.MessagePart, bool) {
-	trimmedSource := strings.TrimSpace(source)
-	for _, part := range promptReasoningParts(message) {
-		if trimmedSource != "" && strings.TrimSpace(part.Source) != trimmedSource {
-			continue
-		}
-		return part, true
+	parts := promptReasoningPartsForSource(message, source)
+	if len(parts) == 0 {
+		return types.MessagePart{}, false
 	}
-	return types.MessagePart{}, false
+	return parts[0], true
 }

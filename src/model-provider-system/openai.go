@@ -436,9 +436,12 @@ func openAIToolImagesMessage(toolParts []types.MessagePart, images []types.Promp
 	return map[string]any{"role": "user", "content": items}
 }
 
+// openAIAssistantMessage 组装历史助手消息。
+// 思维链按 source 隔离：明文 reasoning_content 与加密体 reasoning.encrypted_content
+// 都只取 source 为 "op" 的片段，同进同退；该消息没有 "op" 来源记录时两个字段都不发。
 func openAIAssistantMessage(message types.PromptMessage) map[string]any {
 	assistant := map[string]any{"role": "assistant", "content": openAIMessageContent(message)}
-	if reasoning := promptReasoningText(message); reasoning != "" {
+	if reasoning := promptReasoningTextForSource(message, "op"); reasoning != "" {
 		assistant["reasoning_content"] = reasoning
 	}
 	if part, ok := firstPromptReasoningPartForSource(message, "op"); ok {

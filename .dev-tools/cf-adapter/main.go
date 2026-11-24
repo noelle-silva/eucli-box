@@ -416,7 +416,13 @@ func cmdTest() error {
 	if err := runGo(worktree, goEnv(depsStore, true), "test", "./pkg/...", "./src/...", "./cmd/..."); err != nil {
 		return err
 	}
-	if err := runGo(filepath.Join(worktree, ".dev-tools"), goEnv(depsStore, false), "test", "./..."); err != nil {
+	devWorkspaceDir := filepath.Join(worktree, ".dev-workspace")
+	_, existedBefore := os.Stat(devWorkspaceDir)
+	err = runGo(filepath.Join(worktree, ".dev-tools"), goEnv(depsStore, false), "test", "./...")
+	if errors.Is(existedBefore, fs.ErrNotExist) {
+		_ = os.RemoveAll(devWorkspaceDir)
+	}
+	if err != nil {
 		return err
 	}
 	return nil

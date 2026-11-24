@@ -1,6 +1,6 @@
 module devtools
 
-go 1.23
+go 1.24.0
 
 require eucli-box v0.0.0
 

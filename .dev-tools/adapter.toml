@@ -1,0 +1,18 @@
+contract = 3
+
+[app]
+name = "eucli-box"
+ports = 1
+
+[commands]
+deps   = "go -C .dev-tools run ./cf-adapter deps"
+build  = "go -C .dev-tools run ./cf-adapter build"
+start  = "go -C .dev-tools run ./cf-adapter start"
+health = "go -C .dev-tools run ./cf-adapter health"
+stop   = "go -C .dev-tools run ./cf-adapter stop"
+seed   = "go -C .dev-tools run ./cf-adapter seed"
+test   = "go -C .dev-tools run ./cf-adapter test"
+
+[quick-build.env]
+GOCACHE = "${EUCLI_CF_QUICK_BUILD_DIR}/go-cache"
+GOMODCACHE = "${EUCLI_CF_DEPS_STORE}/go/pkg/mod"

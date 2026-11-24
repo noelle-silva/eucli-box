@@ -13,7 +13,7 @@ go run devtools/build
 例如构建 `file_reader`：
 
 ```
-cd apps/eucli-box/tools/file_reader
+cd tools/file_reader
 go run devtools/build
 ```
 

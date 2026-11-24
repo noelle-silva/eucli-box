@@ -669,7 +669,7 @@ func helperModuleGoMod(t *testing.T) string {
 		t.Fatalf("runtime.Caller failed")
 	}
 	repoRoot := filepath.Dir(filepath.Dir(filepath.Dir(callerFile)))
-	return fmt.Sprintf("module ebbchelper\n\ngo 1.23.0\n\nrequire eucli-box v0.0.0\n\nreplace eucli-box => %s\n", filepath.ToSlash(repoRoot))
+	return fmt.Sprintf("module ebbchelper\n\ngo 1.24.0\n\nrequire eucli-box v0.0.0\n\nreplace eucli-box => %s\n", filepath.ToSlash(repoRoot))
 }
 
 type fakePermission struct {
